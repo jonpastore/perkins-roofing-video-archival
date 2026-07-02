@@ -1,0 +1,20 @@
+[
+  {"q": "What kind of underlayment should be used on a tile roof?", "answerable": true, "keywords": ["underlayment", "polyglass"]},
+  {"q": "What are red flags in a tile roof estimate?", "answerable": true, "keywords": ["drip metal", "underlayment", "rake"]},
+  {"q": "Why do concrete roof tiles fade or perform poorly in South Florida?", "answerable": true, "keywords": ["concrete", "fade"]},
+  {"q": "What is the difference between snap lock and mechanically seamed standing seam metal roofs?", "answerable": true, "keywords": ["standing seam", "metal"]},
+  {"q": "How can I tell if a roofer is lying to me?", "answerable": true, "keywords": ["roofer", "lie"]},
+  {"q": "Why do roofing companies fail?", "answerable": true, "keywords": ["fail", "business"]},
+  {"q": "What should be installed on hips and ridges of a tile roof?", "answerable": true, "keywords": ["hip", "ridge", "metal"]},
+  {"q": "How are clay tiles fastened so they resist wind?", "answerable": true, "keywords": ["fasten", "foam", "screw"]},
+  {"q": "What size drip metal should be used?", "answerable": true, "keywords": ["drip metal", "3x3"]},
+  {"q": "Why are rake tiles important?", "answerable": true, "keywords": ["rake", "gable"]},
+  {"q": "What is the most cost effective roofing system?", "answerable": true, "keywords": ["cost", "roof"]},
+  {"q": "How do I maintain a tile roof?", "answerable": true, "keywords": ["maintain", "tile"]},
+
+  {"q": "How do I bake sourdough bread?", "answerable": false, "keywords": []},
+  {"q": "What is the best programming language for machine learning?", "answerable": false, "keywords": []},
+  {"q": "How do I change the oil in my car?", "answerable": false, "keywords": []},
+  {"q": "What is the capital of France?", "answerable": false, "keywords": []},
+  {"q": "How do I file my income taxes?", "answerable": false, "keywords": []}
+]

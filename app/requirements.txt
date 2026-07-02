@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+SQLAlchemy>=2.0
+numpy>=1.26
+# prod adds: psycopg[binary], pgvector, google-cloud-speech, google-cloud-storage,
+#            google-cloud-aiplatform (Vertex) or anthropic, google-api-python-client (YouTube Data API)

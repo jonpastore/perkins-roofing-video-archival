@@ -1,0 +1,23 @@
+# Databases & downloaded media (large, regenerable)
+*.db
+poc/data/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Logs
+logs/
+*.log
+
+# Local tooling state
+.omc/
+.claude/
+
+# Env / secrets
+*.env
+.env*

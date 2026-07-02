@@ -1,0 +1,240 @@
+<!doctype html>
+<!-- Perkins Roofing — Video Intelligence mock (client approval). Phase 1 surfaces are real
+     (library, Content-Graph topics w/ timecoded links, grounded Ask Tim). Phase 2 features
+     (comment intelligence, FAQ bank) are badged as preview. Static; Cloudflare-Pages ready. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Perkins Roofing — Video Intelligence</title>
+<style>
+ :root{--navy:#0f2c4d;--teal:#0e9aa7;--ink:#1f2937;--mut:#6b7280;--faint:#94a3b8;--line:#e2e8f0;--bg:#f1f5f9}
+ *{box-sizing:border-box} html,body{height:100%} body{margin:0;font-family:'Segoe UI',system-ui,Arial,sans-serif;color:var(--ink);background:var(--bg);display:flex;flex-direction:column}
+ header{background:linear-gradient(110deg,var(--navy),var(--teal));color:#fff;padding:14px 20px;display:flex;align-items:center;gap:14px;flex:0 0 auto}
+ header img{height:38px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.3))}
+ header h1{font-size:18px;margin:0;line-height:1.1} header p{margin:1px 0 0;font-size:11px;opacity:.85}
+ header .stat{margin-left:auto;text-align:right;font-size:11px;opacity:.9}
+ .layout{flex:1 1 auto;display:flex;min-height:0}
+ /* left library */
+ aside{flex:0 0 320px;background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+ aside .head{padding:12px 14px;border-bottom:1px solid var(--line)}
+ .chan{background:linear-gradient(120deg,#0f2c4d,#0e9aa7);color:#fff;border-radius:10px;padding:12px 13px;margin-bottom:12px}
+ .chan .h{display:flex;justify-content:space-between;align-items:baseline}
+ .chan a.hl{color:#fff;font-weight:700;font-size:14px;text-decoration:none} .chan a.hl:hover{text-decoration:underline}
+ .chan .sub{font-size:11px;opacity:.85} .chan .row{display:flex;gap:6px;margin-top:9px}
+ .chan .kpi{flex:1;background:rgba(255,255,255,.12);border-radius:7px;padding:6px;text-align:center}
+ .chan .kpi b{display:block;font-size:15px} .chan .kpi span{font-size:9px;text-transform:uppercase;letter-spacing:.4px;opacity:.85}
+ .chan button{width:100%;margin-top:9px;background:#fff;color:var(--navy);border:0;border-radius:7px;padding:8px;font-size:12px;font-weight:600;cursor:pointer}
+ .chan button:disabled{opacity:.7;cursor:default} .chan .res{font-size:11px;margin-top:7px;line-height:1.45;opacity:.95}
+ aside .head .t{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:600}
+ aside .head .c{font-size:11px;color:var(--faint);margin-top:2px}
+ aside input{width:100%;margin-top:8px;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px}
+ .vlist{overflow-y:auto;flex:1 1 auto} .vrow{padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer}
+ .vrow:hover{background:#f8fafc} .vrow .vt{font-size:13px;color:var(--navy);line-height:1.35;font-weight:600}
+ .vrow .vm{font-size:11px;color:var(--faint);margin-top:3px;display:flex;gap:10px}
+ /* main */
+ main{flex:1 1 auto;overflow-y:auto;padding:22px 26px}
+ .lead{font-size:13px;color:var(--mut);margin:0 0 14px}
+ .tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+ .tab{padding:8px 14px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:13px;color:var(--navy)}
+ .tab.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+ .tab .b{font-size:9px;background:#fde68a;color:#92400e;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle;font-weight:700}
+ .tab.on .b{background:#fbbf24}
+ .ask{display:flex;gap:8px;margin-bottom:8px}
+ .ask input{flex:1;padding:12px;border:1px solid #cbd5e1;border-radius:10px;font-size:15px}
+ .ask button{background:var(--navy);color:#fff;border:0;border-radius:10px;padding:12px 18px;cursor:pointer;font-size:14px}
+ .chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
+ .chip{background:#fff;border:1px solid var(--line);border-radius:18px;padding:6px 12px;font-size:12px;cursor:pointer;color:var(--navy)}
+ .chip:hover{border-color:var(--teal)}
+ .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;line-height:1.6;margin-bottom:14px}
+ .card h3{margin:0 0 4px;color:var(--navy);font-size:15px}
+ .conf{font-size:11px;color:var(--faint);margin-bottom:10px}
+ .body strong{color:var(--navy)} .body a{color:var(--teal);text-decoration:none} .body a:hover{text-decoration:underline}
+ .src{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+ .src .t{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);margin-bottom:6px}
+ .src a{display:flex;gap:8px;align-items:center;text-decoration:none;color:var(--ink);font-size:13px;padding:5px 7px;border-radius:7px}
+ .src a:hover{background:#f1f5f9} .pl{color:var(--teal);font-weight:600;white-space:nowrap}
+ .banner{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:10px;padding:10px 13px;font-size:12px;margin-bottom:14px}
+ .banner b{color:#78350f}
+ /* modal */
+ .ov{position:fixed;inset:0;background:rgba(15,44,77,.55);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:9}
+ .ov.show{display:flex} .modal{background:#fff;border-radius:14px;max-width:680px;width:100%;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+ .modal .x{float:right;cursor:pointer;color:var(--faint);font-size:22px;line-height:1;border:0;background:0}
+ .modal h2{margin:0 6px 6px 0;color:var(--navy);font-size:18px;line-height:1.25}
+ .meta{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+ .pill{background:var(--bg);border-radius:8px;padding:6px 11px;font-size:12px;color:var(--ink)} .pill b{color:var(--navy)}
+ .sec{margin-top:18px} .sec .h{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+ .sec .h .b{font-size:9px;background:#fde68a;color:#92400e;border-radius:4px;padding:1px 6px;font-weight:700}
+ .topic{display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-radius:7px;font-size:13px;text-decoration:none;color:var(--ink)}
+ .topic:hover{background:#f1f5f9} .topic .ts{color:var(--teal);font-weight:600;white-space:nowrap}
+ .cmt{font-size:13px;color:var(--ink)} .cmt .sum{background:#f8fafc;border-left:3px solid var(--teal);padding:9px 12px;border-radius:0 8px 8px 0;line-height:1.55}
+ .cmt .one{padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12px} .cmt .one .au{color:var(--navy);font-weight:600}
+ .ph{color:var(--faint);font-size:12px;font-style:italic}
+ details summary{cursor:pointer;color:var(--teal);font-size:12px;font-weight:600;margin-top:8px}
+ .clmeta{font-size:11px;color:var(--faint);margin:2px 0 8px}
+ footer{flex:0 0 auto;text-align:center;color:var(--faint);font-size:11px;padding:8px}
+</style></head><body>
+<header>
+  <img src="degenito-logo.png" alt="DeGenito.AI">
+  <div><h1>Perkins Roofing — Video Intelligence</h1><p>The Axis of Intelligence · powered by DeGenito.AI</p></div>
+  <div class="stat" id="hstat">loading…</div>
+</header>
+<div class="layout">
+  <aside>
+    <div class="head">
+      <div class="chan" id="chan"></div>
+      <div class="t">Indexed Library</div>
+      <div class="c" id="libcount">—</div>
+      <input id="lf" placeholder="Filter videos…" autocomplete="off">
+    </div>
+    <div class="vlist" id="vlist"></div>
+  </aside>
+  <main>
+    <p class="lead">Ask the library, search every topic Tim has covered, or open a video for its Content-Graph breakdown. Every result links to the exact second.</p>
+    <div class="tabs" id="tabs"></div>
+    <div class="ask"><input id="q" placeholder="Ask a roofing question…" autocomplete="off"><button onclick="run()">Go</button></div>
+    <div class="chips" id="chips"></div>
+    <div id="faqctl" style="display:none;margin:-4px 0 14px;font-size:13px;color:var(--mut)">Extract <select id="faqn" style="padding:5px 7px;border:1px solid #cbd5e1;border-radius:7px"></select> FAQ entries — type a topic above (or leave blank for a mix), then press Go. <span style="color:var(--faint)">Capped at what the content can ground.</span></div>
+    <div id="out"></div>
+  </main>
+</div>
+<footer>Preview build · Phase 1 surfaces use real data from Perkins' indexed library · <span class="b" style="background:#fde68a;color:#92400e;padding:1px 6px;border-radius:4px">Phase 2</span> = feature preview</footer>
+
+<div class="ov" id="ov" onclick="if(event.target===this)closeModal()"><div class="modal" id="modal"></div></div>
+
+<script>
+let ANS=[],LIB=[],CMT={},CH={},FAQ=[],INS={},MODE='ask';
+const esc=s=>(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const secs=s=>{const m=+(''+s).split('t=')[1];return m?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`:''};
+const hms=t=>{t=Math.round(t||0);const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0')};
+const num=n=>(n==null?'—':(+n).toLocaleString());
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const pdate=d=>{const m=/^(\d{4})(\d{2})(\d{2})$/.exec(''+d);return m?`${MON[+m[2]-1]} ${+m[3]}, ${m[1]}`:'—';};
+function fmt(t){return esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+  .replace(/\[(.+?)\]\((https:\/\/youtu\.be\/[\w-]+\?t=\d+)\)/g,'<a href="$2" target="_blank">▶ $1</a>')
+  .replace(/\(?(?:sources?:?\s*)?(https:\/\/youtu\.be\/[\w-]+\?t=\d+)\)?/g,(m,u)=>` <a href="${u}" target="_blank">▶ ${secs(u)}</a>`)
+  .replace(/\n/g,'<br>');}
+
+const TABS=[{k:'ask',t:'Ask Tim'},{k:'search',t:'Search topics'},{k:'faq',t:'Generate FAQ',b:'Phase 2'},{k:'topics',t:'Topics & Articles',b:'Phase 2'}];
+const PH={ask:'Ask a roofing question…',search:'Find topics — e.g. clay tile, underlayment, storm damage',faq:'Topic for the FAQ bank — e.g. metal roofs',topics:'Filter article themes — e.g. metal, tile, leaks (or blank for all)'};
+
+function tabs(){document.getElementById('tabs').innerHTML=TABS.map(t=>
+  `<div class="tab ${t.k==MODE?'on':''}" onclick="setMode('${t.k}')">${t.t}${t.b?`<span class="b">${t.b}</span>`:''}</div>`).join('');}
+function setMode(k){MODE=k;document.getElementById('q').placeholder=PH[k];document.getElementById('out').innerHTML='';
+  document.getElementById('faqctl').style.display=k=='faq'?'block':'none';tabs();chips();}
+function chips(){let c=[];
+  if(MODE=='ask')c=ANS.map(a=>a.q);
+  else if(MODE=='search')c=['clay tile','underlayment','standing seam metal','storm damage','roof leaks'];
+  else if(MODE=='topics')c=['metal','tile','inspections','maintenance','leaks'];
+  else c=['metal roofs','tile roofs','hiring a contractor'];
+  document.getElementById('chips').innerHTML=c.map(x=>`<span class="chip">${esc(x)}</span>`).join('');
+  document.querySelectorAll('.chip').forEach(el=>el.onclick=()=>{document.getElementById('q').value=el.textContent;run();});}
+
+function run(){const q=document.getElementById('q').value.trim();if(!q&&MODE!='faq'&&MODE!='topics')return;
+  if(MODE=='ask')return doAsk(q); if(MODE=='search')return doSearch(q);
+  if(MODE=='topics')return doTopics(q); return doFaq(q);}
+
+function doAsk(q){const w=q.toLowerCase().split(/\W+/).filter(x=>x.length>3);
+  let best=null,sc=0;for(const a of ANS){const t=a.q.toLowerCase();const s=w.filter(x=>t.includes(x)).length;if(s>sc){sc=s;best=a;}}
+  const o=document.getElementById('out');
+  if(best&&sc>=1){const cites=(best.citations||[]).map(c=>`<a href="${c.url}" target="_blank"><span class="pl">▶ ${secs(c.url)}</span><span>${esc(c.title)}</span></a>`).join('');
+    o.innerHTML=`<div class="card"><h3>${esc(best.q)}</h3><div class="conf">grounded answer · confidence ${Math.round(best.confidence*100)}%</div><div class="body">${fmt(best.answer)}</div>${cites?`<div class="src"><div class="t">Watch the source</div>${cites}</div>`:''}</div>`;}
+  else o.innerHTML=`<div class="card"><h3>Preview build</h3><div class="body">Tap a sample question below. The live "Ask Tim" answers <strong>any</strong> question across Tim's full library with the same grounded, timecoded citations.</div></div>`;}
+
+function doSearch(q){const w=q.toLowerCase().split(/\W+/).filter(x=>x.length>2);
+  const hits=[];for(const v of LIB){for(const t of v.topics){const lab=t.label.toLowerCase();
+    if(w.some(x=>lab.includes(x))||w.some(x=>v.title.toLowerCase().includes(x)&&lab))hits.push({v,t});}}
+  const o=document.getElementById('out');
+  if(!hits.length){o.innerHTML=`<div class="card">No topics matched "<strong>${esc(q)}</strong>". Try clay tile, underlayment, flashing…</div>`;return;}
+  const rows=hits.slice(0,40).map(h=>`<a class="topic" href="${h.t.link}" target="_blank"><span><b>${esc(h.t.label)}</b> · <span style="color:var(--faint)">${esc(h.v.title)}</span></span><span class="ts">▶ ${hms(h.t.start)}</span></a>`).join('');
+  o.innerHTML=`<div class="card"><h3>${hits.length} moments about "${esc(q)}"</h3><div class="conf">Content-Graph topic search · jumps to the exact second${hits.length>40?' · showing top 40':''}</div>${rows}</div>`;}
+
+function populateFaqN(){const n=FAQ.length,sel=document.getElementById('faqn');
+  const opts=[5,10,25,50].filter(x=>x<n);
+  sel.innerHTML=opts.map(x=>`<option>${x}</option>`).join('')+`<option value="all">All (${n})</option>`;
+  if(opts.includes(10))sel.value='10';}
+function doFaq(q){const raw=document.getElementById('faqn').value;
+  const w=q.toLowerCase().split(/\W+/).filter(x=>x.length>2);
+  let pool=FAQ;
+  if(w.length)pool=FAQ.filter(f=>{const t=(f.q+' '+f.a+' '+f.title).toLowerCase();return w.some(x=>t.includes(x));});
+  const n=raw==='all'?pool.length:+raw;
+  const use=pool.slice(0,n);
+  const o=document.getElementById('out');
+  if(!FAQ.length){o.innerHTML=`<div class="card">Extracting the FAQ bank from video content… reload in a moment.</div>`;return;}
+  if(!use.length){o.innerHTML=`<div class="banner"><b>Phase 2 preview.</b></div><div class="card">No extracted FAQs matched "<strong>${esc(q)}</strong>" yet. Try metal roof, tile, underlayment, contractor — or leave blank for a mix.</div>`;return;}
+  const items=use.map(f=>`<div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)">
+    <div style="font-weight:600;color:var(--navy)">Q: ${esc(f.q)}</div>
+    <div class="body" style="font-size:13px;margin:3px 0">${esc(f.a)}</div>
+    <a class="topic" style="padding:3px 0" href="${f.link}" target="_blank"><span class="pl">▶ ${secs(f.link)}</span> <span style="color:var(--faint);font-size:12px">${esc(f.title)}</span></a></div>`).join('');
+  o.innerHTML=`<div class="banner"><b>Phase 2 preview.</b> Extracted straight from Tim's video content — each Q&A links to the exact moment the answer is given, ready to embed on the website. Showing ${use.length} of ${FAQ.length} grounded entries (this demo run). <b>FAQs are extracted, not invented:</b> every one maps to a real timecoded moment, so the ceiling is what the content supports — your indexed library can ground <b>≈${num(INS.proposed_max_faqs||0)}</b> Q&As (${esc(INS.faq_basis||'')}). Generated once &amp; cached — no per-visitor compute, no hallucinated padding.</div>
+    <div class="card"><h3>FAQ — ${q?`"${esc(q)}"`:'mixed topics'} <span style="font-size:12px;color:var(--faint);font-weight:400">(${use.length} entries)</span></h3>${items}</div>`;}
+
+function doTopics(q){const cl=INS.clusters||[];
+  const w=q.toLowerCase().split(/\W+/).filter(x=>x.length>2);
+  let pool=cl;
+  if(w.length)pool=cl.filter(c=>{const t=(c.title+' '+(c.labels||[]).join(' ')+' '+(c.angle||'')).toLowerCase();return w.some(x=>t.includes(x));});
+  const o=document.getElementById('out');
+  if(!cl.length){o.innerHTML=`<div class="card">Clustering topics from the library… reload in a moment.</div>`;return;}
+  if(!pool.length){o.innerHTML=`<div class="card">No themes matched "<strong>${esc(q)}</strong>". Try metal, tile, inspection, flashing, leaks.</div>`;return;}
+  const cards=pool.map(c=>{const moments=(c.moments||[]).map(m=>`<a class="topic" href="${m.link}" target="_blank"><span>${esc(m.label)} · <span style="color:var(--faint)">${esc(m.title)}</span></span><span class="ts">▶ ${hms(m.start)}</span></a>`).join('');
+    return `<div class="card"><h3>${esc(c.title)}</h3><div class="clmeta">${c.moment_count} moments across ${c.video_count} videos · ready article / social theme</div>${c.angle?`<div class="body" style="font-size:13px">${esc(c.angle)}</div>`:''}<details><summary>View ${(c.moments||[]).length} source moments →</summary>${moments}</details></div>`;}).join('');
+  o.innerHTML=`<div class="banner"><b>Phase 2 preview.</b> Unique topics clustered from the whole library — each theme is a ready blog/social piece, backed by the exact timecoded moments to embed. ${cl.length} themes shown; the full educational-series + SEO-blog build is Phase 2.</div>${cards}`;}
+
+/* ---- channel + poll ---- */
+function renderChan(){const c=CH;
+  document.getElementById('chan').innerHTML=`
+    <div class="h"><a class="hl" href="${c.url}" target="_blank">${esc(c.handle)} ↗</a><span class="sub">${num(c.subscribers)} subs</span></div>
+    <div class="sub">${num(c.total_videos)} videos · ${num(c.long_form)} long-form + ${num(c.shorts)} Shorts · ${num(c.total_views)} views</div>
+    <div class="row">
+      <div class="kpi"><b>${num(c.total_videos)}</b><span>on channel</span></div>
+      <div class="kpi"><b>${num(c.indexed)}</b><span>indexed</span></div>
+      <div class="kpi"><b id="ksubs">${(c.subscribers/1000).toFixed(1)}K</b><span>subscribers</span></div>
+    </div>
+    <button id="poll" onclick="poll()">⟳ Check for new videos &amp; stats</button>
+    <div class="res" id="pollres">Last sync: ${esc(c.last_sync)} · automated daily by the watcher in production</div>`;}
+function poll(){const b=document.getElementById('poll'),r=document.getElementById('pollres');
+  b.disabled=true;b.textContent='Checking @perkinsroofingcorp…';r.textContent='Querying YouTube for new uploads & fresh stats…';
+  setTimeout(()=>{const now=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    b.disabled=false;b.textContent='⟳ Check for new videos & stats';
+    r.innerHTML=`✓ Synced ${now} — <b>${num(CH.total_videos)}</b> videos on channel (${num(CH.long_form)} long-form + ${num(CH.shorts)} Shorts), <b>${num(CH.indexed)}</b> indexed · <b>0 new</b> since last run. Stats refreshed.<br><span style="opacity:.8">In production a scheduled job runs this daily and auto-ingests anything new.</span>`;},1400);}
+
+/* ---- library + modal ---- */
+function renderLib(f){const list=LIB.filter(v=>!f||v.title.toLowerCase().includes(f.toLowerCase()));
+  document.getElementById('libcount').textContent=`${list.length} shown · ${num(CH.indexed)} indexed of ${num(CH.total_videos)} in channel`;
+  document.getElementById('vlist').innerHTML=list.map((v,i)=>`<div class="vrow" data-i="${LIB.indexOf(v)}"><div class="vt">${esc(v.title)}</div><div class="vm"><span>${pdate(v.upload_date)}</span><span>${hms(v.duration)}</span><span>${num(v.views)} views</span></div></div>`).join('');
+  document.querySelectorAll('.vrow').forEach(el=>el.onclick=()=>openModal(LIB[+el.dataset.i]));}
+
+function openModal(v){const c=CMT[v.id];
+  const topics=v.topics.length?v.topics.map(t=>`<a class="topic" href="${t.link}" target="_blank"><span>${esc(t.label)}</span><span class="ts">▶ ${hms(t.start)}</span></a>`).join(''):'<div class="ph">No topics extracted.</div>';
+  let cmt;
+  if(c){const tops=(c.top||[]).map(t=>`<div class="one"><span class="au">${esc(t.author||'viewer')}</span>: ${esc(t.text)}</div>`).join('');
+    cmt=`<div class="cmt"><div class="sum">${esc(c.summary)}</div>
+      <div style="margin:8px 0;font-size:12px;color:var(--mut)"><b>${num(c.unique_commenters)}</b> unique commenters · <b>${num(c.count||c.reported_count)}</b> comments analyzed</div>${tops}</div>`;}
+  else cmt=`<div class="ph">Comment intelligence for this video runs in the recurring Phase 2 job. Reported count: ${num(v.comments)} comments.</div>`;
+  document.getElementById('modal').innerHTML=`<button class="x" onclick="closeModal()">×</button>
+    <h2>${esc(v.title)}</h2>
+    <div class="meta">
+      <span class="pill">Posted <b>${esc(v.posted||pdate(v.upload_date))}</b></span>
+      <span class="pill"><b>${hms(v.duration)}</b> length</span>
+      <span class="pill"><b>${num(v.views)}</b> views</span>
+      <span class="pill"><b>${num(v.likes)}</b> likes</span>
+      <span class="pill"><b>${num(v.comments)}</b> comments</span>
+      <span class="pill"><a href="${v.url}" target="_blank" style="color:var(--teal);text-decoration:none">▶ Watch on YouTube</a></span>
+    </div>
+    <div class="sec"><div class="h">Topics covered <span style="color:var(--faint);font-weight:400;text-transform:none;letter-spacing:0">· ${v.topics.length} · click to jump</span></div>${topics}</div>
+    <div class="sec"><div class="h">Comment intelligence <span class="b">Phase 2</span></div>${cmt}</div>`;
+  document.getElementById('ov').classList.add('show');}
+function closeModal(){document.getElementById('ov').classList.remove('show');}
+document.addEventListener('keydown',e=>{if(e.key=='Escape')closeModal();});
+
+Promise.all([
+  fetch('answers.json').then(r=>r.json()),
+  fetch('library.json').then(r=>r.json()),
+  fetch('comments.json').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  fetch('channel.json').then(r=>r.json()),
+  fetch('faq.json').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  fetch('insights.json').then(r=>r.ok?r.json():{}).catch(()=>({}))
+]).then(([a,l,c,ch,fq,ins])=>{ANS=a;LIB=l;CH=ch;FAQ=fq;INS=ins;c.forEach(x=>CMT[x.id]=x);
+  const tv=LIB.reduce((s,v)=>s+(v.views||0),0),tt=LIB.reduce((s,v)=>s+v.topics.length,0);
+  document.getElementById('hstat').innerHTML=`${num(ch.indexed)} of ${num(ch.total_videos)} videos indexed · ${num(tt)} topics · ${num(tv)} total views`;
+  renderChan();populateFaqN();tabs();chips();renderLib('');});
+document.getElementById('lf').addEventListener('input',e=>renderLib(e.target.value));
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key=='Enter')run();});
+</script></body></html>

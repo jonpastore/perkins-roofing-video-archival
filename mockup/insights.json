@@ -1,0 +1,3972 @@
+{
+  "graph_counts": {
+    "claims": 1191,
+    "objections": 970,
+    "topics": 1248
+  },
+  "topic_themes": 467,
+  "groundable_moments": 3409,
+  "proposed_max_faqs": 2628,
+  "faq_basis": "1191 claims + 970 objections + 467 unique topic themes = 2628 groundable Q&As across 161 videos",
+  "clusters": [
+    {
+      "rep": "Tile roofing",
+      "labels": [
+        "Standing seam roofs",
+        "Metal roof materials",
+        "Commercial roofing services",
+        "Budget roofing options",
+        "Tile roofing",
+        "Metal roofing",
+        "Flat roofing",
+        "Wind resistance in roofing",
+        "Commercial roofing",
+        "Emergency roof repair",
+        "Electrolysis in metal roofs",
+        "Dissimilar metals in roofing",
+        "Metal roofing fabrication",
+        "Business systems for roofing",
+        "Monopolization of roofing materials in Florida",
+        "State of Florida roofing contractors",
+        "Natural churn in roofing businesses",
+        "Franchising as a solution for new roofers",
+        "Custom roofing design",
+        "Shingle roof materials",
+        "Temporary roof repairs",
+        "Metal roofing price increase",
+        "Types of metal roofing panels",
+        "Tile roof options",
+        "Florida-specific roofing challenges",
+        "Florida roofing market trends",
+        "Specialty roofing products",
+        "Flat roof maintenance",
+        "Comparison of roofing materials",
+        "Metal roofing options",
+        "Improper roof repairs",
+        "Standing seam metal roofing",
+        "Sales and marketing for roofing",
+        "Slope change on roof",
+        "Mitered finish on roof",
+        "Regional roofing differences (East vs. West Coast Florida)",
+        "TPO roof problems",
+        "Asphaltic roof recommendation",
+        "Condo roofing problems",
+        "Popular metal roofing colors",
+        "Coastal metal roofing options",
+        "Metal roofing myths",
+        "Lightning and metal roofs",
+        "Metal roofing considerations",
+        "Unrealistic roofing prices",
+        "Hidden costs in roofing",
+        "Metal roofing panels",
+        "Metal roof installation",
+        "Re-roofing a turret",
+        "Metal roofing for waterfront properties",
+        "Metal roofing advantages",
+        "Electrolysis in roofing",
+        "Tree growing from roof",
+        "Repair vs. re-roofing",
+        "Florida insurance for roofs",
+        "Northern vs. Florida roofing standards",
+        "Homeowner behavior during roofing jobs",
+        "Tile roof removal process",
+        "Mechanically fastened tile roof",
+        "Stages of a tile re-roof",
+        "Tariffs impact on roofing materials",
+        "Discipline in roofing business",
+        "Confidence in roofing",
+        "Metal roof maintenance",
+        "Tile roof materials",
+        "Flat roof construction",
+        "Metal roof removal",
+        "Standing seam metal roof",
+        "Tools for roof inspection",
+        "Metal roofs vs. other roofing materials",
+        "Recommendations for roofing materials",
+        "Upgrade options for roofing",
+        "Flat roofs",
+        "Sloped roofs",
+        "Polyglass roofing system",
+        "High-rise roofing challenges",
+        "Asphalt roofing application",
+        "High revenue in roofing industry",
+        "Systematized roofing services",
+        "Florida-specific roofing market",
+        "Hurricane impact on roofing demand",
+        "Insurance requirements for roofing",
+        "Metal roof restoration process",
+        "Eyebrow work on roofs",
+        "Torch roll roofing (S6)",
+        "Tile roof completion",
+        "Flat roof challenges",
+        "Metal deck roofing",
+        "Copper roofing details",
+        "Polyglass Poly Fresco roofing system",
+        "Three-ply roofing system",
+        "Ancillary roof issues",
+        "Tile roof demolition",
+        "Barrel tile roofing",
+        "Warranty and roofing system",
+        "Tile roof maintenance",
+        "Commercial vs residential roofing",
+        "Safety on tile roofs",
+        "Stone coated steel roofing",
+        "Metal roof installation over shingles",
+        "Hurricane zone roofing",
+        "Shingle roof damage",
+        "Tile roof damage",
+        "Metal roof damage",
+        "Flat roof damage",
+        "Flat roof details",
+        "Commercial roofing differences",
+        "Marking lines on roof",
+        "Emergency roofing services",
+        "Cost analysis of roofing systems",
+        "Longevity of different roofing types",
+        "Proximity to water and roofing materials",
+        "Re-roofing timelines",
+        "Inspection from the roof",
+        "Inflation impact on roofing materials",
+        "Business sustainability in roofing",
+        "Impact on roofing industry",
+        "Annual roof inspections",
+        "Shingle roof deterioration",
+        "Tile roof deterioration",
+        "Metal roof deterioration",
+        "Flat roof deterioration",
+        "Flat roof engineering",
+        "Ridge of the roof",
+        "Hip of the roof",
+        "Valley of the roof",
+        "Gable of the roof",
+        "Flat roof definition",
+        "Built-up roofing methods",
+        "Single ply roofing",
+        "Pros of built-up roofing",
+        "Cons of built-up roofing",
+        "Pros of single ply roofing",
+        "Shingle roof",
+        "Tile roof",
+        "Metal roof",
+        "Liquid applied roofing systems",
+        "Types of roof decks"
+      ],
+      "moment_count": 144,
+      "video_count": 79,
+      "moments": [
+        {
+          "label": "Standing seam roofs",
+          "video_id": "670QE0CZQGE",
+          "title": "Snap Lock vs Mechanically Seamed Standing Seam: What's the REAL Difference?",
+          "start": 78.0,
+          "link": "https://youtu.be/670QE0CZQGE?t=78"
+        },
+        {
+          "label": "Metal roof materials",
+          "video_id": "670QE0CZQGE",
+          "title": "Snap Lock vs Mechanically Seamed Standing Seam: What's the REAL Difference?",
+          "start": 142.0,
+          "link": "https://youtu.be/670QE0CZQGE?t=142"
+        },
+        {
+          "label": "Commercial roofing services",
+          "video_id": "GD2N2j0m25M",
+          "title": "Free Emergency Roof Repair with Commercial Roof Maintenance",
+          "start": 437.0,
+          "link": "https://youtu.be/GD2N2j0m25M?t=437"
+        },
+        {
+          "label": "Budget roofing options",
+          "video_id": "dMLcQcsYKLU",
+          "title": "Perkins Penny: The No-BS Budget Roofing Option from Perkins Roofing",
+          "start": 50.0,
+          "link": "https://youtu.be/dMLcQcsYKLU?t=50"
+        },
+        {
+          "label": "Tile roofing",
+          "video_id": "dMLcQcsYKLU",
+          "title": "Perkins Penny: The No-BS Budget Roofing Option from Perkins Roofing",
+          "start": 76.0,
+          "link": "https://youtu.be/dMLcQcsYKLU?t=76"
+        },
+        {
+          "label": "Tile roofing",
+          "video_id": "q7xVmhOYg60",
+          "title": "Mitered Bermuda Style Tile Re-Roof: South Florida",
+          "start": 21.0,
+          "link": "https://youtu.be/q7xVmhOYg60?t=21"
+        },
+        {
+          "label": "Metal roofing",
+          "video_id": "dMLcQcsYKLU",
+          "title": "Perkins Penny: The No-BS Budget Roofing Option from Perkins Roofing",
+          "start": 119.0,
+          "link": "https://youtu.be/dMLcQcsYKLU?t=119"
+        },
+        {
+          "label": "Metal roofing",
+          "video_id": "pFyjI6gnck8",
+          "title": "2024 Florida Roofing Code Updates",
+          "start": 462.0,
+          "link": "https://youtu.be/pFyjI6gnck8?t=462"
+        },
+        {
+          "label": "Flat roofing",
+          "video_id": "dMLcQcsYKLU",
+          "title": "Perkins Penny: The No-BS Budget Roofing Option from Perkins Roofing",
+          "start": 152.0,
+          "link": "https://youtu.be/dMLcQcsYKLU?t=152"
+        },
+        {
+          "label": "Wind resistance in roofing",
+          "video_id": "dMLcQcsYKLU",
+          "title": "Perkins Penny: The No-BS Budget Roofing Option from Perkins Roofing",
+          "start": 126.0,
+          "link": "https://youtu.be/dMLcQcsYKLU?t=126"
+        },
+        {
+          "label": "Commercial roofing",
+          "video_id": "oPnVIbgbcxE",
+          "title": "Florida Rainy Season is HERE\u2026 and Roofing Prices Jump on April 15th! Act NOW Before It\u2019s Too Late",
+          "start": 124.0,
+          "link": "https://youtu.be/oPnVIbgbcxE?t=124"
+        },
+        {
+          "label": "Emergency roof repair",
+          "video_id": "oPnVIbgbcxE",
+          "title": "Florida Rainy Season is HERE\u2026 and Roofing Prices Jump on April 15th! Act NOW Before It\u2019s Too Late",
+          "start": 145.0,
+          "link": "https://youtu.be/oPnVIbgbcxE?t=145"
+        },
+        {
+          "label": "Electrolysis in metal roofs",
+          "video_id": "XOp_KSUW7iA",
+          "title": "Ask Me Anything (AMA) #1 & Perkins Consulting Services",
+          "start": 435.0,
+          "link": "https://youtu.be/XOp_KSUW7iA?t=435"
+        },
+        {
+          "label": "Dissimilar metals in roofing",
+          "video_id": "XOp_KSUW7iA",
+          "title": "Ask Me Anything (AMA) #1 & Perkins Consulting Services",
+          "start": 445.0,
+          "link": "https://youtu.be/XOp_KSUW7iA?t=445"
+        },
+        {
+          "label": "Metal roofing fabrication",
+          "video_id": "v3HM-ADY3vo",
+          "title": "Florida Metal Roofs (w/ Tim Dyer of Metal Productions)",
+          "start": 77.0,
+          "link": "https://youtu.be/v3HM-ADY3vo?t=77"
+        },
+        {
+          "label": "Business systems for roofing",
+          "video_id": "gtbkLgg_G9o",
+          "title": "96% OF ROOFING COMPANIES FAIL IN 5 YEARS \u2013 DON'T BE ONE! JOIN PERKINS ROOFING FRANCHISE",
+          "start": 254.0,
+          "link": "https://youtu.be/gtbkLgg_G9o?t=254"
+        },
+        {
+          "label": "Monopolization of roofing materials in Florida",
+          "video_id": "LG0TFzKEmKw",
+          "title": "The Monopolization of Roofing in Florida",
+          "start": 120.0,
+          "link": "https://youtu.be/LG0TFzKEmKw?t=120"
+        },
+        {
+          "label": "State of Florida roofing contractors",
+          "video_id": "LG0TFzKEmKw",
+          "title": "The Monopolization of Roofing in Florida",
+          "start": 255.0,
+          "link": "https://youtu.be/LG0TFzKEmKw?t=255"
+        },
+        {
+          "label": "Natural churn in roofing businesses",
+          "video_id": "LG0TFzKEmKw",
+          "title": "The Monopolization of Roofing in Florida",
+          "start": 428.0,
+          "link": "https://youtu.be/LG0TFzKEmKw?t=428"
+        },
+        {
+          "label": "Franchising as a solution for new roofers",
+          "video_id": "LG0TFzKEmKw",
+          "title": "The Monopolization of Roofing in Florida",
+          "start": 489.0,
+          "link": "https://youtu.be/LG0TFzKEmKw?t=489"
+        },
+        {
+          "label": "Custom roofing design",
+          "video_id": "yFtI3gIeszw",
+          "title": "Flat Roof Modern Wall Detail",
+          "start": 717.0,
+          "link": "https://youtu.be/yFtI3gIeszw?t=717"
+        },
+        {
+          "label": "Shingle roof materials",
+          "video_id": "kYKGmrX7BCY",
+          "title": "Shingle Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 77.0,
+          "link": "https://youtu.be/kYKGmrX7BCY?t=77"
+        },
+        {
+          "label": "Temporary roof repairs",
+          "video_id": "z9vWdP-DPRA",
+          "title": "Florida Tile Roof Insurance Claims - Upgrade Your Roof Tiles!",
+          "start": 158.0,
+          "link": "https://youtu.be/z9vWdP-DPRA?t=158"
+        },
+        {
+          "label": "Metal roofing price increase",
+          "video_id": "XIEOVNkaPaQ",
+          "title": "Metal Roof Price Increase Coming! Time Sensitive",
+          "start": 71.0,
+          "link": "https://youtu.be/XIEOVNkaPaQ?t=71"
+        },
+        {
+          "label": "Types of metal roofing panels",
+          "video_id": "LhwhnwnmM1Q",
+          "title": "Metal Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 90.0,
+          "link": "https://youtu.be/LhwhnwnmM1Q?t=90"
+        }
+      ],
+      "title": "Mastering Metal Roofing: Key Insights for Durability and Style",
+      "angle": "This article explores essential topics in metal roofing, from materials and installation to maintenance, helping homeowners and contractors make informed decisions for long-lasting, stylish roofs."
+    },
+    {
+      "rep": "Heat",
+      "labels": [
+        "Skylights",
+        "Reinsurance",
+        "Home Inspection",
+        "Rake Tiles",
+        "Attic Safety",
+        "Vent Pipes",
+        "Roof Age",
+        "Concrete Tiles",
+        "Tree Maintenance",
+        "Valley Cuts",
+        "Heat",
+        "Teja Borha Clay Tile",
+        "Electrostatic Coating",
+        "Waterproof Tile Design",
+        "Tile Durability",
+        "Roof Installation Techniques",
+        "Tile Removal Challenges",
+        "Roof Leak Issues",
+        "Attic Inspection",
+        "Concrete vs. Clay Tiles",
+        "Manufacturers of Concrete Tiles",
+        "Moisture Absorption",
+        "Tile Blending",
+        "Tile Installation",
+        "Tile Manufacturing Quality",
+        "Impact Windows",
+        "Poly Anchor HV",
+        "Sellers",
+        "Buyers",
+        "Estimates",
+        "Pricing",
+        "Underlayments",
+        "Commercial vs. Residential Roofing Estimates",
+        "Roof Deck Inspection",
+        "Penetrations and Flashings",
+        "HVAC Unit Height and Code Compliance",
+        "Stair and Hatch Code Compliance",
+        "Drip Metal and Waterproofing",
+        "Walk Pads and Roof Protection",
+        "Insurance Snowball of Death",
+        "Contractor Insurance Types",
+        "General Liability Insurance",
+        "Common Insurance Exclusions",
+        "Auto Insurance",
+        "Workers Compensation Insurance",
+        "Scam Claims and Settlements",
+        "Inland Marine and Umbrella Insurance",
+        "Solar Reflectivity Index (SRI)",
+        "Moisture Absorption Issues",
+        "Tile Cracking and Breakage",
+        "Warranty and Maintenance",
+        "Recurring Maintenance Costs",
+        "Pressure Cleaning Needs",
+        "Clay Tile Superiority",
+        "Roofing Material Longevity",
+        "Shingle Roof Maintenance",
+        "Tile Roof Maintenance",
+        "Metal Roof Maintenance",
+        "Flat Roof Maintenance",
+        "Nails Popping Up",
+        "Flashings Maintenance",
+        "Valley Maintenance",
+        "Certificate of Insurance (COI)",
+        "Code Updates",
+        "Geographical Application of Codes",
+        "Plywood Requirements",
+        "Drip Metal Requirements",
+        "Nailing Patterns for Metal",
+        "L Metal Requirements",
+        "Shingle Nailing Patterns",
+        "Roofing Code",
+        "High Velocity Hurricane Zone (HVHZ)",
+        "Roof Inspection",
+        "Residential Roofing",
+        "Commercial Roofing",
+        "Roof Maintenance",
+        "Gutter Installation",
+        "Tile Roofing",
+        "Liability",
+        "Warranty",
+        "Project Overview",
+        "Roofing Materials",
+        "Demo Process",
+        "Valley Metal Installation",
+        "Dry Roof Installation",
+        "Permitting Issues",
+        "Inspection Requirements",
+        "Project Delays",
+        "Roof Deck Definition",
+        "Roof Deck Examples",
+        "Neighbor's Roof Example",
+        "Repair vs. Replacement",
+        "Roofing Regulations",
+        "Hurricane Zone Considerations",
+        "Structural Integrity",
+        "Insurance"
+      ],
+      "moment_count": 104,
+      "video_count": 22,
+      "moments": [
+        {
+          "label": "Skylights",
+          "video_id": "ls9zLWRiDHg",
+          "title": "Tile Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 521.0,
+          "link": "https://youtu.be/ls9zLWRiDHg?t=521"
+        },
+        {
+          "label": "Skylights",
+          "video_id": "q7xVmhOYg60",
+          "title": "Mitered Bermuda Style Tile Re-Roof: South Florida",
+          "start": 342.0,
+          "link": "https://youtu.be/q7xVmhOYg60?t=342"
+        },
+        {
+          "label": "Reinsurance",
+          "video_id": "HIDtr10pyWE",
+          "title": "Florida Insurance Market (w/ Lexus Pepin of Southshore Insurance)",
+          "start": 384.0,
+          "link": "https://youtu.be/HIDtr10pyWE?t=384"
+        },
+        {
+          "label": "Home Inspection",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 35.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=35"
+        },
+        {
+          "label": "Rake Tiles",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 75.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=75"
+        },
+        {
+          "label": "Attic Safety",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 106.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=106"
+        },
+        {
+          "label": "Vent Pipes",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 195.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=195"
+        },
+        {
+          "label": "Roof Age",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 246.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=246"
+        },
+        {
+          "label": "Concrete Tiles",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 328.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=328"
+        },
+        {
+          "label": "Tree Maintenance",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 426.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=426"
+        },
+        {
+          "label": "Valley Cuts",
+          "video_id": "_czcsCdEGdg",
+          "title": "Must Have! Get a Roof Inspection Report Before You Buy!",
+          "start": 453.0,
+          "link": "https://youtu.be/_czcsCdEGdg?t=453"
+        },
+        {
+          "label": "Heat",
+          "video_id": "A876TtXk02w",
+          "title": "Evergrene Metal Re-Roof By Perkins Roofing",
+          "start": 21.0,
+          "link": "https://youtu.be/A876TtXk02w?t=21"
+        },
+        {
+          "label": "Heat",
+          "video_id": "A876TtXk02w",
+          "title": "Evergrene Metal Re-Roof By Perkins Roofing",
+          "start": 64.0,
+          "link": "https://youtu.be/A876TtXk02w?t=64"
+        },
+        {
+          "label": "Heat",
+          "video_id": "A876TtXk02w",
+          "title": "Evergrene Metal Re-Roof By Perkins Roofing",
+          "start": 90.0,
+          "link": "https://youtu.be/A876TtXk02w?t=90"
+        },
+        {
+          "label": "Heat",
+          "video_id": "A876TtXk02w",
+          "title": "Evergrene Metal Re-Roof By Perkins Roofing",
+          "start": 95.0,
+          "link": "https://youtu.be/A876TtXk02w?t=95"
+        },
+        {
+          "label": "Heat",
+          "video_id": "A876TtXk02w",
+          "title": "Evergrene Metal Re-Roof By Perkins Roofing",
+          "start": 128.0,
+          "link": "https://youtu.be/A876TtXk02w?t=128"
+        },
+        {
+          "label": "Heat",
+          "video_id": "A876TtXk02w",
+          "title": "Evergrene Metal Re-Roof By Perkins Roofing",
+          "start": 137.0,
+          "link": "https://youtu.be/A876TtXk02w?t=137"
+        },
+        {
+          "label": "Heat",
+          "video_id": "A876TtXk02w",
+          "title": "Evergrene Metal Re-Roof By Perkins Roofing",
+          "start": 156.0,
+          "link": "https://youtu.be/A876TtXk02w?t=156"
+        },
+        {
+          "label": "Teja Borha Clay Tile",
+          "video_id": "E_X65i3xQO0",
+          "title": "Florida Clay Flat Tile Re-Roof",
+          "start": 53.0,
+          "link": "https://youtu.be/E_X65i3xQO0?t=53"
+        },
+        {
+          "label": "Electrostatic Coating",
+          "video_id": "E_X65i3xQO0",
+          "title": "Florida Clay Flat Tile Re-Roof",
+          "start": 71.0,
+          "link": "https://youtu.be/E_X65i3xQO0?t=71"
+        },
+        {
+          "label": "Waterproof Tile Design",
+          "video_id": "E_X65i3xQO0",
+          "title": "Florida Clay Flat Tile Re-Roof",
+          "start": 109.0,
+          "link": "https://youtu.be/E_X65i3xQO0?t=109"
+        },
+        {
+          "label": "Tile Durability",
+          "video_id": "E_X65i3xQO0",
+          "title": "Florida Clay Flat Tile Re-Roof",
+          "start": 150.0,
+          "link": "https://youtu.be/E_X65i3xQO0?t=150"
+        },
+        {
+          "label": "Roof Installation Techniques",
+          "video_id": "E_X65i3xQO0",
+          "title": "Florida Clay Flat Tile Re-Roof",
+          "start": 210.0,
+          "link": "https://youtu.be/E_X65i3xQO0?t=210"
+        },
+        {
+          "label": "Tile Removal Challenges",
+          "video_id": "E_X65i3xQO0",
+          "title": "Florida Clay Flat Tile Re-Roof",
+          "start": 263.0,
+          "link": "https://youtu.be/E_X65i3xQO0?t=263"
+        },
+        {
+          "label": "Roof Leak Issues",
+          "video_id": "E_X65i3xQO0",
+          "title": "Florida Clay Flat Tile Re-Roof",
+          "start": 551.0,
+          "link": "https://youtu.be/E_X65i3xQO0?t=551"
+        }
+      ],
+      "title": "Heat",
+      "angle": ""
+    },
+    {
+      "rep": "Roofing materials",
+      "labels": [
+        "Roofing materials",
+        "Roof materials",
+        "Tile materials",
+        "Roofing materials comparison",
+        "Roofing materials and details",
+        "Roofing materials and maintenance",
+        "Waterproofing materials (Polyglass PV70)",
+        "Window framing materials",
+        "Metal roofing materials",
+        "Durability of materials in Florida",
+        "Roofing materials and techniques",
+        "Flat roofing materials",
+        "Roof tile materials",
+        "Special materials handling",
+        "Roofing materials (Polyglass)",
+        "Roof types and materials",
+        "Roofing material delivery",
+        "Waterproofing materials",
+        "Roofing materials transport",
+        "Cheap materials used",
+        "Roofing materials and phases",
+        "Roofing materials and products",
+        "Roofing materials and components",
+        "Shingle materials",
+        "Cheaper materials"
+      ],
+      "moment_count": 48,
+      "video_count": 48,
+      "moments": [
+        {
+          "label": "Roofing materials",
+          "video_id": "1UzUCFbLaZ4",
+          "title": "Why Roofing Systems Fail: Materials, Florida Codes & The Future of Roofing | John Massengill",
+          "start": 75.0,
+          "link": "https://youtu.be/1UzUCFbLaZ4?t=75"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "zQ-r0C7NkTU",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt .5)",
+          "start": 310.0,
+          "link": "https://youtu.be/zQ-r0C7NkTU?t=310"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "aOMRXUdZTew",
+          "title": "Commercial Standing Seam Metal Roof (Pt.2)",
+          "start": 85.0,
+          "link": "https://youtu.be/aOMRXUdZTew?t=85"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "XKt1lnZFG8I",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 1)",
+          "start": 134.0,
+          "link": "https://youtu.be/XKt1lnZFG8I?t=134"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "CSd1hO8x9W4",
+          "title": "Perkins Roofing Mother's Day and Military Discount",
+          "start": 97.0,
+          "link": "https://youtu.be/CSd1hO8x9W4?t=97"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "bcLzCpnA8A8",
+          "title": "Comedy: Who needs a new roof? (profiling construction customers)",
+          "start": 368.0,
+          "link": "https://youtu.be/bcLzCpnA8A8?t=368"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "sDwbr3MH8r4",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 2)",
+          "start": 576.0,
+          "link": "https://youtu.be/sDwbr3MH8r4?t=576"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "j2OR8MJH4UA",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 1)",
+          "start": 146.0,
+          "link": "https://youtu.be/j2OR8MJH4UA?t=146"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "dtl6P6Lv6aE",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt. 2)",
+          "start": 98.0,
+          "link": "https://youtu.be/dtl6P6Lv6aE?t=98"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "q8UxF0GIZeA",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 9",
+          "start": 61.0,
+          "link": "https://youtu.be/q8UxF0GIZeA?t=61"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "6S984qjVBuE",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 6",
+          "start": 56.0,
+          "link": "https://youtu.be/6S984qjVBuE?t=56"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "9NumO1gGiqs",
+          "title": "West Palm Beach Ford Polyfresko Re-Roof",
+          "start": 50.0,
+          "link": "https://youtu.be/9NumO1gGiqs?t=50"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "pFyjI6gnck8",
+          "title": "2024 Florida Roofing Code Updates",
+          "start": 20.0,
+          "link": "https://youtu.be/pFyjI6gnck8?t=20"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "BnsaVtCb0GU",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 2",
+          "start": 125.0,
+          "link": "https://youtu.be/BnsaVtCb0GU?t=125"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "i6mx9EkBh0k",
+          "title": "Florida Building Code Tile Re-Roof in Cape Coral (Florida Roofer)",
+          "start": 91.0,
+          "link": "https://youtu.be/i6mx9EkBh0k?t=91"
+        },
+        {
+          "label": "Roofing materials",
+          "video_id": "Y0dalIDL340",
+          "title": "Boynton Beach Clay Tile Reroof Two Story Waterfront Home | Perkins Roofing Corp.",
+          "start": 18.0,
+          "link": "https://youtu.be/Y0dalIDL340?t=18"
+        },
+        {
+          "label": "Roof materials",
+          "video_id": "GD2N2j0m25M",
+          "title": "Free Emergency Roof Repair with Commercial Roof Maintenance",
+          "start": 101.0,
+          "link": "https://youtu.be/GD2N2j0m25M?t=101"
+        },
+        {
+          "label": "Roof materials",
+          "video_id": "SxdHJZbyO78",
+          "title": "How to Re-Roof a Tile Roof in Florida",
+          "start": 148.0,
+          "link": "https://youtu.be/SxdHJZbyO78?t=148"
+        },
+        {
+          "label": "Tile materials",
+          "video_id": "JnoLblXenaA",
+          "title": "EXPOSED: How Roofers Are Cutting Corners On Tile Roofs In 2026",
+          "start": 432.0,
+          "link": "https://youtu.be/JnoLblXenaA?t=432"
+        },
+        {
+          "label": "Roofing materials comparison",
+          "video_id": "dMLcQcsYKLU",
+          "title": "Perkins Penny: The No-BS Budget Roofing Option from Perkins Roofing",
+          "start": 138.0,
+          "link": "https://youtu.be/dMLcQcsYKLU?t=138"
+        },
+        {
+          "label": "Roofing materials comparison",
+          "video_id": "z9vWdP-DPRA",
+          "title": "Florida Tile Roof Insurance Claims - Upgrade Your Roof Tiles!",
+          "start": 192.0,
+          "link": "https://youtu.be/z9vWdP-DPRA?t=192"
+        },
+        {
+          "label": "Roofing materials comparison",
+          "video_id": "MV4UcLS53l8",
+          "title": "Roofing Secrets Home Owners Need to Know: An Interview w/ Polyglass VP Jimmy Akins",
+          "start": 483.0,
+          "link": "https://youtu.be/MV4UcLS53l8?t=483"
+        },
+        {
+          "label": "Roofing materials comparison",
+          "video_id": "sp3iZacTL_g",
+          "title": "Beware of Solar Panels on Your Roof",
+          "start": 74.0,
+          "link": "https://youtu.be/sp3iZacTL_g?t=74"
+        },
+        {
+          "label": "Roofing materials comparison",
+          "video_id": "IantcmzfaHk",
+          "title": "What is the Most Cost Effective Roofing System?",
+          "start": 22.0,
+          "link": "https://youtu.be/IantcmzfaHk?t=22"
+        },
+        {
+          "label": "Roofing materials and details",
+          "video_id": "mwM6TjmLoLY",
+          "title": "How to Know When a Roofer is Lying to You (5 Top Lies Roofers Tell You To Get Your Money)",
+          "start": 105.0,
+          "link": "https://youtu.be/mwM6TjmLoLY?t=105"
+        }
+      ],
+      "title": "Mastering Roofing Materials: A Comprehensive Guide for Florida Homeowners",
+      "angle": "This guide helps Florida homeowners understand the best roofing materials for durability, maintenance, and weather resistance in the state's unique climate."
+    },
+    {
+      "rep": "Tile installation",
+      "labels": [
+        "Panel installation techniques",
+        "Tile installation challenges",
+        "Roofing installation techniques",
+        "Window installation",
+        "Christmas lights installation",
+        "Tile installation adjustments",
+        "Tile installation methods",
+        "Hip metal installation",
+        "Valley metal installation",
+        "Clay tile installation",
+        "Gutter installation",
+        "Drip metal installation",
+        "Underlayment installation",
+        "Tapered insulation installation",
+        "Tile installation",
+        "Solar fan installation",
+        "Ridge metal installation",
+        "Mortar installation",
+        "Tile installation techniques",
+        "Tile types and installation",
+        "TU Plus installation",
+        "Panel installation method",
+        "Detail pieces in installation",
+        "Metal installation",
+        "Foam installation",
+        "Shingle installation"
+      ],
+      "moment_count": 31,
+      "video_count": 27,
+      "moments": [
+        {
+          "label": "Panel installation techniques",
+          "video_id": "670QE0CZQGE",
+          "title": "Snap Lock vs Mechanically Seamed Standing Seam: What's the REAL Difference?",
+          "start": 456.0,
+          "link": "https://youtu.be/670QE0CZQGE?t=456"
+        },
+        {
+          "label": "Tile installation challenges",
+          "video_id": "K4zF77nU9Ew",
+          "title": "New Prototype Clay Flat Tile By Tejas Borja",
+          "start": 140.0,
+          "link": "https://youtu.be/K4zF77nU9Ew?t=140"
+        },
+        {
+          "label": "Roofing installation techniques",
+          "video_id": "z9vWdP-DPRA",
+          "title": "Florida Tile Roof Insurance Claims - Upgrade Your Roof Tiles!",
+          "start": 204.0,
+          "link": "https://youtu.be/z9vWdP-DPRA?t=204"
+        },
+        {
+          "label": "Window installation",
+          "video_id": "mN2ght9vHAw",
+          "title": "Impact Window Estimate Red Flags: An Inside Cheat Sheet From A Florida Contractor",
+          "start": 228.0,
+          "link": "https://youtu.be/mN2ght9vHAw?t=228"
+        },
+        {
+          "label": "Christmas lights installation",
+          "video_id": "GgcYY0mJJK0",
+          "title": "Big Mistake!  Don't Install Your Christmas Lights Like This!",
+          "start": 22.0,
+          "link": "https://youtu.be/GgcYY0mJJK0?t=22"
+        },
+        {
+          "label": "Tile installation adjustments",
+          "video_id": "8HMdFNIIMFA",
+          "title": "Tejas Borja & Perkins Roofing Special Offer",
+          "start": 210.0,
+          "link": "https://youtu.be/8HMdFNIIMFA?t=210"
+        },
+        {
+          "label": "Tile installation methods",
+          "video_id": "tb75SaFvPNU",
+          "title": "I Re-Roofed Only One Side of a Townhouse",
+          "start": 264.0,
+          "link": "https://youtu.be/tb75SaFvPNU?t=264"
+        },
+        {
+          "label": "Hip metal installation",
+          "video_id": "ey91hTVc0OQ",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 4)",
+          "start": 158.0,
+          "link": "https://youtu.be/ey91hTVc0OQ?t=158"
+        },
+        {
+          "label": "Valley metal installation",
+          "video_id": "ey91hTVc0OQ",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 4)",
+          "start": 771.0,
+          "link": "https://youtu.be/ey91hTVc0OQ?t=771"
+        },
+        {
+          "label": "Clay tile installation",
+          "video_id": "FJYcbDGZ8Ik",
+          "title": "How to Install Tile On a Tower Roof in Florida",
+          "start": 65.0,
+          "link": "https://youtu.be/FJYcbDGZ8Ik?t=65"
+        },
+        {
+          "label": "Gutter installation",
+          "video_id": "macSIgr4WLM",
+          "title": "Starter home? Starter problems. \ud83d\ude05",
+          "start": 103.0,
+          "link": "https://youtu.be/macSIgr4WLM?t=103"
+        },
+        {
+          "label": "Drip metal installation",
+          "video_id": "4N85m6Zeji8",
+          "title": "Tile Roof: Loading Tiles & Frequently Asked Questions",
+          "start": 101.0,
+          "link": "https://youtu.be/4N85m6Zeji8?t=101"
+        },
+        {
+          "label": "Drip metal installation",
+          "video_id": "9F9rQBvBNdM",
+          "title": "Evergrene Tile Re Roof in Palm Beach Gardens",
+          "start": 280.0,
+          "link": "https://youtu.be/9F9rQBvBNdM?t=280"
+        },
+        {
+          "label": "Underlayment installation",
+          "video_id": "sDwbr3MH8r4",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 2)",
+          "start": 338.0,
+          "link": "https://youtu.be/sDwbr3MH8r4?t=338"
+        },
+        {
+          "label": "Tapered insulation installation",
+          "video_id": "aTbWOh6j0fY",
+          "title": "How To Add Slope on a Flat Roof",
+          "start": 89.0,
+          "link": "https://youtu.be/aTbWOh6j0fY?t=89"
+        },
+        {
+          "label": "Tile installation",
+          "video_id": "q8UxF0GIZeA",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 9",
+          "start": 536.0,
+          "link": "https://youtu.be/q8UxF0GIZeA?t=536"
+        },
+        {
+          "label": "Tile installation",
+          "video_id": "6S984qjVBuE",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 6",
+          "start": 51.0,
+          "link": "https://youtu.be/6S984qjVBuE?t=51"
+        },
+        {
+          "label": "Tile installation",
+          "video_id": "TJKO36dmMFc",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 5",
+          "start": 233.0,
+          "link": "https://youtu.be/TJKO36dmMFc?t=233"
+        },
+        {
+          "label": "Tile installation",
+          "video_id": "9F9rQBvBNdM",
+          "title": "Evergrene Tile Re Roof in Palm Beach Gardens",
+          "start": 405.0,
+          "link": "https://youtu.be/9F9rQBvBNdM?t=405"
+        },
+        {
+          "label": "Solar fan installation",
+          "video_id": "MGp0FwoRsk4",
+          "title": "Standing Seam Metal Roof Details",
+          "start": 155.0,
+          "link": "https://youtu.be/MGp0FwoRsk4?t=155"
+        },
+        {
+          "label": "Ridge metal installation",
+          "video_id": "4g4VibUWTs8",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 8",
+          "start": 631.0,
+          "link": "https://youtu.be/4g4VibUWTs8?t=631"
+        },
+        {
+          "label": "Mortar installation",
+          "video_id": "M1b6yGnwyT8",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 7",
+          "start": 311.0,
+          "link": "https://youtu.be/M1b6yGnwyT8?t=311"
+        },
+        {
+          "label": "Mortar installation",
+          "video_id": "bPyTl6vIjvk",
+          "title": "Fisher Island High-Rise Barrel Tile Re-Roof Part 1",
+          "start": 124.0,
+          "link": "https://youtu.be/bPyTl6vIjvk?t=124"
+        },
+        {
+          "label": "Tile installation techniques",
+          "video_id": "M1b6yGnwyT8",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 7",
+          "start": 610.0,
+          "link": "https://youtu.be/M1b6yGnwyT8?t=610"
+        },
+        {
+          "label": "Tile types and installation",
+          "video_id": "rI2mGN_IUgY",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 4",
+          "start": 386.0,
+          "link": "https://youtu.be/rI2mGN_IUgY?t=386"
+        }
+      ],
+      "title": "Mastering Roofing: Techniques and Challenges for Every Project",
+      "angle": "This article explores essential roofing techniques and common challenges, helping homeowners and professionals achieve flawless installations."
+    },
+    {
+      "rep": "Rake tiles",
+      "labels": [
+        "Rake tiles",
+        "Clay roof tiles",
+        "Teahas Borha Americano tiles",
+        "Moisture absorption in tiles",
+        "Mitered tile install",
+        "Concrete tile characteristics",
+        "Hip metal and hip tiles",
+        "Removing roof tiles",
+        "Concrete tiles",
+        "Composite tiles performance",
+        "Broken tile repair",
+        "Rake tiles installation",
+        "Perimeter tiles",
+        "Broken tiles",
+        "Ridge tiles construction",
+        "Hip tiles vs field tiles",
+        "Hip and ridge tiles",
+        "Shingle vs. tile",
+        "Types of tiles",
+        "Slate tiles",
+        "Water bubbles in tiles"
+      ],
+      "moment_count": 24,
+      "video_count": 18,
+      "moments": [
+        {
+          "label": "Rake tiles",
+          "video_id": "ls9zLWRiDHg",
+          "title": "Tile Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 313.0,
+          "link": "https://youtu.be/ls9zLWRiDHg?t=313"
+        },
+        {
+          "label": "Rake tiles",
+          "video_id": "JnoLblXenaA",
+          "title": "EXPOSED: How Roofers Are Cutting Corners On Tile Roofs In 2026",
+          "start": 77.0,
+          "link": "https://youtu.be/JnoLblXenaA?t=77"
+        },
+        {
+          "label": "Clay roof tiles",
+          "video_id": "K4zF77nU9Ew",
+          "title": "New Prototype Clay Flat Tile By Tejas Borja",
+          "start": 90.0,
+          "link": "https://youtu.be/K4zF77nU9Ew?t=90"
+        },
+        {
+          "label": "Teahas Borha Americano tiles",
+          "video_id": "K4zF77nU9Ew",
+          "title": "New Prototype Clay Flat Tile By Tejas Borja",
+          "start": 110.0,
+          "link": "https://youtu.be/K4zF77nU9Ew?t=110"
+        },
+        {
+          "label": "Moisture absorption in tiles",
+          "video_id": "z9vWdP-DPRA",
+          "title": "Florida Tile Roof Insurance Claims - Upgrade Your Roof Tiles!",
+          "start": 258.0,
+          "link": "https://youtu.be/z9vWdP-DPRA?t=258"
+        },
+        {
+          "label": "Moisture absorption in tiles",
+          "video_id": "aJrDyyeWQlY",
+          "title": "Concrete vs. Clay Roof Tiles | Perkins Roofing Corp.",
+          "start": 478.0,
+          "link": "https://youtu.be/aJrDyyeWQlY?t=478"
+        },
+        {
+          "label": "Mitered tile install",
+          "video_id": "5bVJpMu5_u0",
+          "title": "How To Install a Mitered Tile Roof (PGA National - Duel Sloped Roof)",
+          "start": 53.0,
+          "link": "https://youtu.be/5bVJpMu5_u0?t=53"
+        },
+        {
+          "label": "Concrete tile characteristics",
+          "video_id": "5bVJpMu5_u0",
+          "title": "How To Install a Mitered Tile Roof (PGA National - Duel Sloped Roof)",
+          "start": 287.0,
+          "link": "https://youtu.be/5bVJpMu5_u0?t=287"
+        },
+        {
+          "label": "Hip metal and hip tiles",
+          "video_id": "FJYcbDGZ8Ik",
+          "title": "How to Install Tile On a Tower Roof in Florida",
+          "start": 112.0,
+          "link": "https://youtu.be/FJYcbDGZ8Ik?t=112"
+        },
+        {
+          "label": "Removing roof tiles",
+          "video_id": "SxdHJZbyO78",
+          "title": "How to Re-Roof a Tile Roof in Florida",
+          "start": 213.0,
+          "link": "https://youtu.be/SxdHJZbyO78?t=213"
+        },
+        {
+          "label": "Concrete tiles",
+          "video_id": "QDETv8UjMcA",
+          "title": "TARIFF UPDATE: Florida Roofing Market (URGENT - April 2025)",
+          "start": 101.0,
+          "link": "https://youtu.be/QDETv8UjMcA?t=101"
+        },
+        {
+          "label": "Concrete tiles",
+          "video_id": "7HFdCuh8c1s",
+          "title": "Beware of New Construction Roofs in Florida",
+          "start": 36.0,
+          "link": "https://youtu.be/7HFdCuh8c1s?t=36"
+        },
+        {
+          "label": "Composite tiles performance",
+          "video_id": "NUcPwpTXPM8",
+          "title": "Shingle v Tile v Metal Roof Maintenance Costs over 25 Years",
+          "start": 246.0,
+          "link": "https://youtu.be/NUcPwpTXPM8?t=246"
+        },
+        {
+          "label": "Broken tile repair",
+          "video_id": "kYBsgUwJv3s",
+          "title": "Top 5 Tips to Maintain Your Tile Roof",
+          "start": 283.0,
+          "link": "https://youtu.be/kYBsgUwJv3s?t=283"
+        },
+        {
+          "label": "Rake tiles installation",
+          "video_id": "3LebQkIpSHE",
+          "title": "Bermuda Style Flat Tile Roof Palm Beach County",
+          "start": 329.0,
+          "link": "https://youtu.be/3LebQkIpSHE?t=329"
+        },
+        {
+          "label": "Perimeter tiles",
+          "video_id": "TJKO36dmMFc",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 5",
+          "start": 362.0,
+          "link": "https://youtu.be/TJKO36dmMFc?t=362"
+        },
+        {
+          "label": "Broken tiles",
+          "video_id": "7HFdCuh8c1s",
+          "title": "Beware of New Construction Roofs in Florida",
+          "start": 188.0,
+          "link": "https://youtu.be/7HFdCuh8c1s?t=188"
+        },
+        {
+          "label": "Ridge tiles construction",
+          "video_id": "bPyTl6vIjvk",
+          "title": "Fisher Island High-Rise Barrel Tile Re-Roof Part 1",
+          "start": 420.0,
+          "link": "https://youtu.be/bPyTl6vIjvk?t=420"
+        },
+        {
+          "label": "Hip tiles vs field tiles",
+          "video_id": "7xLMZUhKO3o",
+          "title": "How to Maintain a Tile Roof | Perkins Roofing Corp.",
+          "start": 109.0,
+          "link": "https://youtu.be/7xLMZUhKO3o?t=109"
+        },
+        {
+          "label": "Hip and ridge tiles",
+          "video_id": "GjfypnQ213M",
+          "title": "How To Install Roof Tiles in South Florida | Perkins Roofing Corp.",
+          "start": 236.0,
+          "link": "https://youtu.be/GjfypnQ213M?t=236"
+        },
+        {
+          "label": "Shingle vs. tile",
+          "video_id": "aJrDyyeWQlY",
+          "title": "Concrete vs. Clay Roof Tiles | Perkins Roofing Corp.",
+          "start": 68.0,
+          "link": "https://youtu.be/aJrDyyeWQlY?t=68"
+        },
+        {
+          "label": "Types of tiles",
+          "video_id": "aJrDyyeWQlY",
+          "title": "Concrete vs. Clay Roof Tiles | Perkins Roofing Corp.",
+          "start": 285.0,
+          "link": "https://youtu.be/aJrDyyeWQlY?t=285"
+        },
+        {
+          "label": "Slate tiles",
+          "video_id": "aJrDyyeWQlY",
+          "title": "Concrete vs. Clay Roof Tiles | Perkins Roofing Corp.",
+          "start": 434.0,
+          "link": "https://youtu.be/aJrDyyeWQlY?t=434"
+        },
+        {
+          "label": "Water bubbles in tiles",
+          "video_id": "fxCM54VRdMA",
+          "title": "Why You Should NEVER Coat Tile or Shingle Roofs | Perkins Roofing Corp.",
+          "start": 13.0,
+          "link": "https://youtu.be/fxCM54VRdMA?t=13"
+        }
+      ],
+      "title": "Mastering Roof Tile Techniques: Expert Insights from Perkins Roofing",
+      "angle": "This article dives into the nuances of roof tile installation and maintenance, offering practical advice for homeowners and roofing professionals."
+    },
+    {
+      "rep": "Attic inspection",
+      "labels": [
+        "Residential inspection report details",
+        "Commercial inspection report details",
+        "Insurance purposes for inspection report",
+        "Discounts for inspection reports",
+        "Roof inspection",
+        "Annual inspection",
+        "Roof inspection process",
+        "Home inspection",
+        "Roofing inspections",
+        "Annual roof inspection",
+        "Seam inspection techniques",
+        "Attic inspection tools",
+        "Chimney and superstructure inspection",
+        "Attic inspection importance",
+        "Roof inspection importance",
+        "Property inspection",
+        "Gutter inspection",
+        "Tile roof inspection",
+        "Flat roof inspection",
+        "Attic inspection",
+        "Gutter system inspection",
+        "Attic inspection for wood damage"
+      ],
+      "moment_count": 23,
+      "video_count": 16,
+      "moments": [
+        {
+          "label": "Residential inspection report details",
+          "video_id": "wbcFXnsYsj0",
+          "title": "Estimate or Inspection Report: What's the Difference?",
+          "start": 74.0,
+          "link": "https://youtu.be/wbcFXnsYsj0?t=74"
+        },
+        {
+          "label": "Commercial inspection report details",
+          "video_id": "wbcFXnsYsj0",
+          "title": "Estimate or Inspection Report: What's the Difference?",
+          "start": 183.0,
+          "link": "https://youtu.be/wbcFXnsYsj0?t=183"
+        },
+        {
+          "label": "Insurance purposes for inspection report",
+          "video_id": "wbcFXnsYsj0",
+          "title": "Estimate or Inspection Report: What's the Difference?",
+          "start": 151.0,
+          "link": "https://youtu.be/wbcFXnsYsj0?t=151"
+        },
+        {
+          "label": "Discounts for inspection reports",
+          "video_id": "wbcFXnsYsj0",
+          "title": "Estimate or Inspection Report: What's the Difference?",
+          "start": 114.0,
+          "link": "https://youtu.be/wbcFXnsYsj0?t=114"
+        },
+        {
+          "label": "Roof inspection",
+          "video_id": "oPnVIbgbcxE",
+          "title": "Florida Rainy Season is HERE\u2026 and Roofing Prices Jump on April 15th! Act NOW Before It\u2019s Too Late",
+          "start": 120.0,
+          "link": "https://youtu.be/oPnVIbgbcxE?t=120"
+        },
+        {
+          "label": "Annual inspection",
+          "video_id": "Px7MAryN_wU",
+          "title": "Perkins Roofing New Tiered Pricing",
+          "start": 226.0,
+          "link": "https://youtu.be/Px7MAryN_wU?t=226"
+        },
+        {
+          "label": "Roof inspection process",
+          "video_id": "AnotOjX6eCA",
+          "title": "Evergrene HOA Palm Beach Gardens Standing Seam Metal Roof",
+          "start": 281.0,
+          "link": "https://youtu.be/AnotOjX6eCA?t=281"
+        },
+        {
+          "label": "Home inspection",
+          "video_id": "macSIgr4WLM",
+          "title": "Starter home? Starter problems. \ud83d\ude05",
+          "start": 75.0,
+          "link": "https://youtu.be/macSIgr4WLM?t=75"
+        },
+        {
+          "label": "Roofing inspections",
+          "video_id": "sDwbr3MH8r4",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 2)",
+          "start": 227.0,
+          "link": "https://youtu.be/sDwbr3MH8r4?t=227"
+        },
+        {
+          "label": "Annual roof inspection",
+          "video_id": "qmdzVcbV-Zk",
+          "title": "Do You Need Annual Maintenance on a Flat Roof? Tips to Protect Your Investment",
+          "start": 74.0,
+          "link": "https://youtu.be/qmdzVcbV-Zk?t=74"
+        },
+        {
+          "label": "Seam inspection techniques",
+          "video_id": "qmdzVcbV-Zk",
+          "title": "Do You Need Annual Maintenance on a Flat Roof? Tips to Protect Your Investment",
+          "start": 292.0,
+          "link": "https://youtu.be/qmdzVcbV-Zk?t=292"
+        },
+        {
+          "label": "Attic inspection tools",
+          "video_id": "BcvbwED-Q6o",
+          "title": "Essential Roof Estimating Tools for Roofing Contractors | Perkins Roofing Franchise Tips",
+          "start": 215.0,
+          "link": "https://youtu.be/BcvbwED-Q6o?t=215"
+        },
+        {
+          "label": "Chimney and superstructure inspection",
+          "video_id": "TJ6M9mGFV4Q",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 3",
+          "start": 266.0,
+          "link": "https://youtu.be/TJ6M9mGFV4Q?t=266"
+        },
+        {
+          "label": "Attic inspection importance",
+          "video_id": "3T4dx1ZUON8",
+          "title": "Five Things to Look for in a Good Contractor",
+          "start": 339.0,
+          "link": "https://youtu.be/3T4dx1ZUON8?t=339"
+        },
+        {
+          "label": "Roof inspection importance",
+          "video_id": "3T4dx1ZUON8",
+          "title": "Five Things to Look for in a Good Contractor",
+          "start": 378.0,
+          "link": "https://youtu.be/3T4dx1ZUON8?t=378"
+        },
+        {
+          "label": "Property inspection",
+          "video_id": "vBQdVnOTRVw",
+          "title": "Fort Myers & SWFL Hurricane Ian Roofing Update | Perkins Roofing Corp.",
+          "start": 43.0,
+          "link": "https://youtu.be/vBQdVnOTRVw?t=43"
+        },
+        {
+          "label": "Gutter inspection",
+          "video_id": "5qS3Hi-u574",
+          "title": "Jupiter & Palm Beach County May Have Storm Damage from Hurricane Ian",
+          "start": 126.0,
+          "link": "https://youtu.be/5qS3Hi-u574?t=126"
+        },
+        {
+          "label": "Tile roof inspection",
+          "video_id": "OFNAQ10z8qc",
+          "title": "How To Find a Roof Leak | Perkins Roofing Corp.",
+          "start": 213.0,
+          "link": "https://youtu.be/OFNAQ10z8qc?t=213"
+        },
+        {
+          "label": "Flat roof inspection",
+          "video_id": "OFNAQ10z8qc",
+          "title": "How To Find a Roof Leak | Perkins Roofing Corp.",
+          "start": 234.0,
+          "link": "https://youtu.be/OFNAQ10z8qc?t=234"
+        },
+        {
+          "label": "Attic inspection",
+          "video_id": "fxCM54VRdMA",
+          "title": "Why You Should NEVER Coat Tile or Shingle Roofs | Perkins Roofing Corp.",
+          "start": 121.0,
+          "link": "https://youtu.be/fxCM54VRdMA?t=121"
+        },
+        {
+          "label": "Attic inspection",
+          "video_id": "qriLczFgwPo",
+          "title": "How to Know When You Need a New Roof | Perkins Roofing Corp.",
+          "start": 281.0,
+          "link": "https://youtu.be/qriLczFgwPo?t=281"
+        },
+        {
+          "label": "Gutter system inspection",
+          "video_id": "1_utK5rREzs",
+          "title": "Why You NEED Before and After Hurricane Season Roof Inspections | Perkins Roofing Corp.",
+          "start": 181.0,
+          "link": "https://youtu.be/1_utK5rREzs?t=181"
+        },
+        {
+          "label": "Attic inspection for wood damage",
+          "video_id": "1_utK5rREzs",
+          "title": "Why You NEED Before and After Hurricane Season Roof Inspections | Perkins Roofing Corp.",
+          "start": 220.0,
+          "link": "https://youtu.be/1_utK5rREzs?t=220"
+        }
+      ],
+      "title": "Mastering Roof Inspections: A Comprehensive Guide for Homeowners and Businesses",
+      "angle": "This guide helps homeowners and business owners understand the importance of roof inspections, the process involved, and how to leverage inspection reports for insurance and maintenance purposes."
+    },
+    {
+      "rep": "Roof maintenance",
+      "labels": [
+        "Roof maintenance types",
+        "Roof maintenance benefits",
+        "Roof maintenance",
+        "Property maintenance",
+        "Home maintenance",
+        "Roof maintenance importance",
+        "Importance of maintenance",
+        "Roof maintenance issues",
+        "Roof longevity and maintenance",
+        "AC unit maintenance",
+        "Roof types requiring maintenance",
+        "Roofing maintenance analogy",
+        "Mortar maintenance",
+        "Tree maintenance",
+        "Roof maintenance vs restoration"
+      ],
+      "moment_count": 19,
+      "video_count": 15,
+      "moments": [
+        {
+          "label": "Roof maintenance types",
+          "video_id": "GD2N2j0m25M",
+          "title": "Free Emergency Roof Repair with Commercial Roof Maintenance",
+          "start": 96.0,
+          "link": "https://youtu.be/GD2N2j0m25M?t=96"
+        },
+        {
+          "label": "Roof maintenance benefits",
+          "video_id": "GD2N2j0m25M",
+          "title": "Free Emergency Roof Repair with Commercial Roof Maintenance",
+          "start": 122.0,
+          "link": "https://youtu.be/GD2N2j0m25M?t=122"
+        },
+        {
+          "label": "Roof maintenance",
+          "video_id": "oPnVIbgbcxE",
+          "title": "Florida Rainy Season is HERE\u2026 and Roofing Prices Jump on April 15th! Act NOW Before It\u2019s Too Late",
+          "start": 170.0,
+          "link": "https://youtu.be/oPnVIbgbcxE?t=170"
+        },
+        {
+          "label": "Roof maintenance",
+          "video_id": "mjgO9fj5a7M",
+          "title": "When a Crazy Person Removes a Roof Vent and Only Covers It With a Tile...",
+          "start": 12.0,
+          "link": "https://youtu.be/mjgO9fj5a7M?t=12"
+        },
+        {
+          "label": "Roof maintenance",
+          "video_id": "sZO5rKsp37E",
+          "title": "Perkins Roofing & Perkins Construction Spring Cleaning Discount!",
+          "start": 254.0,
+          "link": "https://youtu.be/sZO5rKsp37E?t=254"
+        },
+        {
+          "label": "Property maintenance",
+          "video_id": "x4NGa71-3c4",
+          "title": "Wake and Make Podcast - Intro",
+          "start": 339.0,
+          "link": "https://youtu.be/x4NGa71-3c4?t=339"
+        },
+        {
+          "label": "Property maintenance",
+          "video_id": "bcLzCpnA8A8",
+          "title": "Comedy: Who needs a new roof? (profiling construction customers)",
+          "start": 430.0,
+          "link": "https://youtu.be/bcLzCpnA8A8?t=430"
+        },
+        {
+          "label": "Home maintenance",
+          "video_id": "x4NGa71-3c4",
+          "title": "Wake and Make Podcast - Intro",
+          "start": 425.0,
+          "link": "https://youtu.be/x4NGa71-3c4?t=425"
+        },
+        {
+          "label": "Roof maintenance importance",
+          "video_id": "G87EtCn_jKc",
+          "title": "Roofing 201: Roof Maintenance & Prolonging Your Roof Life in Florida",
+          "start": 89.0,
+          "link": "https://youtu.be/G87EtCn_jKc?t=89"
+        },
+        {
+          "label": "Roof maintenance importance",
+          "video_id": "dVFAV2GdrbQ",
+          "title": "Perkins Protection Program",
+          "start": 26.0,
+          "link": "https://youtu.be/dVFAV2GdrbQ?t=26"
+        },
+        {
+          "label": "Importance of maintenance",
+          "video_id": "coyplj8c71E",
+          "title": "Roofing 101: Essential Insights for Florida Home Owners",
+          "start": 487.0,
+          "link": "https://youtu.be/coyplj8c71E?t=487"
+        },
+        {
+          "label": "Roof maintenance issues",
+          "video_id": "sp3iZacTL_g",
+          "title": "Beware of Solar Panels on Your Roof",
+          "start": 265.0,
+          "link": "https://youtu.be/sp3iZacTL_g?t=265"
+        },
+        {
+          "label": "Roof longevity and maintenance",
+          "video_id": "NUcPwpTXPM8",
+          "title": "Shingle v Tile v Metal Roof Maintenance Costs over 25 Years",
+          "start": 300.0,
+          "link": "https://youtu.be/NUcPwpTXPM8?t=300"
+        },
+        {
+          "label": "AC unit maintenance",
+          "video_id": "qmdzVcbV-Zk",
+          "title": "Do You Need Annual Maintenance on a Flat Roof? Tips to Protect Your Investment",
+          "start": 467.0,
+          "link": "https://youtu.be/qmdzVcbV-Zk?t=467"
+        },
+        {
+          "label": "Roof types requiring maintenance",
+          "video_id": "dVFAV2GdrbQ",
+          "title": "Perkins Protection Program",
+          "start": 39.0,
+          "link": "https://youtu.be/dVFAV2GdrbQ?t=39"
+        },
+        {
+          "label": "Roofing maintenance analogy",
+          "video_id": "dVFAV2GdrbQ",
+          "title": "Perkins Protection Program",
+          "start": 48.0,
+          "link": "https://youtu.be/dVFAV2GdrbQ?t=48"
+        },
+        {
+          "label": "Mortar maintenance",
+          "video_id": "7xLMZUhKO3o",
+          "title": "How to Maintain a Tile Roof | Perkins Roofing Corp.",
+          "start": 167.0,
+          "link": "https://youtu.be/7xLMZUhKO3o?t=167"
+        },
+        {
+          "label": "Tree maintenance",
+          "video_id": "DGAqXh8u3Tw",
+          "title": "Trees Are NOT Your Roof's Friend! Why You Must Cut Back Trees | Perkins Roofing Corp.",
+          "start": 72.0,
+          "link": "https://youtu.be/DGAqXh8u3Tw?t=72"
+        },
+        {
+          "label": "Roof maintenance vs restoration",
+          "video_id": "IFi575E12KM",
+          "title": "What Does Flat and Metal Roof Maintenance Look Like? | Roofing in Key Largo",
+          "start": 10.0,
+          "link": "https://youtu.be/IFi575E12KM?t=10"
+        }
+      ],
+      "title": "The Ultimate Guide to Roof Maintenance: Protect Your Home and Save Money",
+      "angle": "This comprehensive guide helps homeowners understand the importance of roof maintenance, the different types of maintenance required, and how regular upkeep can extend the life of their roof and prevent costly repairs."
+    },
+    {
+      "rep": "Wall flashings",
+      "labels": [
+        "Wall flashings",
+        "Box flashing",
+        "Counter flashing issues",
+        "Wall flashings and reflashing",
+        "Wall flashing inspection",
+        "Wall flashing techniques",
+        "Base flashings installation",
+        "Stainless steel flashings",
+        "Liquid flashing for penetrations",
+        "Roof flashing problems",
+        "Copper flashings and patina",
+        "L flashing and counter flashing",
+        "Wall transitions and flashings",
+        "Perimeter flashings"
+      ],
+      "moment_count": 16,
+      "video_count": 15,
+      "moments": [
+        {
+          "label": "Wall flashings",
+          "video_id": "ls9zLWRiDHg",
+          "title": "Tile Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 519.0,
+          "link": "https://youtu.be/ls9zLWRiDHg?t=519"
+        },
+        {
+          "label": "Wall flashings",
+          "video_id": "mwM6TjmLoLY",
+          "title": "How to Know When a Roofer is Lying to You (5 Top Lies Roofers Tell You To Get Your Money)",
+          "start": 407.0,
+          "link": "https://youtu.be/mwM6TjmLoLY?t=407"
+        },
+        {
+          "label": "Box flashing",
+          "video_id": "ey91hTVc0OQ",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 4)",
+          "start": 928.0,
+          "link": "https://youtu.be/ey91hTVc0OQ?t=928"
+        },
+        {
+          "label": "Counter flashing issues",
+          "video_id": "CEsCxJVoBow",
+          "title": "Say No to TPO Roofs",
+          "start": 37.0,
+          "link": "https://youtu.be/CEsCxJVoBow?t=37"
+        },
+        {
+          "label": "Wall flashings and reflashing",
+          "video_id": "SxdHJZbyO78",
+          "title": "How to Re-Roof a Tile Roof in Florida",
+          "start": 348.0,
+          "link": "https://youtu.be/SxdHJZbyO78?t=348"
+        },
+        {
+          "label": "Wall flashing inspection",
+          "video_id": "kYBsgUwJv3s",
+          "title": "Top 5 Tips to Maintain Your Tile Roof",
+          "start": 210.0,
+          "link": "https://youtu.be/kYBsgUwJv3s?t=210"
+        },
+        {
+          "label": "Wall flashing techniques",
+          "video_id": "rHuDIqHwid4",
+          "title": "Miami Beach and Brickell High Rise ReRoofs",
+          "start": 212.0,
+          "link": "https://youtu.be/rHuDIqHwid4?t=212"
+        },
+        {
+          "label": "Base flashings installation",
+          "video_id": "zlJGzJNntJA",
+          "title": "Ocean Front Metal Roof Restoration Fort Lauderdale High Rise",
+          "start": 122.0,
+          "link": "https://youtu.be/zlJGzJNntJA?t=122"
+        },
+        {
+          "label": "Stainless steel flashings",
+          "video_id": "dtl6P6Lv6aE",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt. 2)",
+          "start": 83.0,
+          "link": "https://youtu.be/dtl6P6Lv6aE?t=83"
+        },
+        {
+          "label": "Stainless steel flashings",
+          "video_id": "515byFUH6Uo",
+          "title": "Miami High Rise Re Roof and Concrete Repairs (Pt. 1)",
+          "start": 382.0,
+          "link": "https://youtu.be/515byFUH6Uo?t=382"
+        },
+        {
+          "label": "Liquid flashing for penetrations",
+          "video_id": "Dv0X5P98fWQ",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 10",
+          "start": 305.0,
+          "link": "https://youtu.be/Dv0X5P98fWQ?t=305"
+        },
+        {
+          "label": "Roof flashing problems",
+          "video_id": "7HFdCuh8c1s",
+          "title": "Beware of New Construction Roofs in Florida",
+          "start": 71.0,
+          "link": "https://youtu.be/7HFdCuh8c1s?t=71"
+        },
+        {
+          "label": "Copper flashings and patina",
+          "video_id": "BnsaVtCb0GU",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 2",
+          "start": 247.0,
+          "link": "https://youtu.be/BnsaVtCb0GU?t=247"
+        },
+        {
+          "label": "L flashing and counter flashing",
+          "video_id": "BnsaVtCb0GU",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 2",
+          "start": 396.0,
+          "link": "https://youtu.be/BnsaVtCb0GU?t=396"
+        },
+        {
+          "label": "Wall transitions and flashings",
+          "video_id": "TwvZpjuNgvk",
+          "title": "Miami Beach TERRACE DECK Restoration | Project Profile | Perkins Roofing Corp.",
+          "start": 92.0,
+          "link": "https://youtu.be/TwvZpjuNgvk?t=92"
+        },
+        {
+          "label": "Perimeter flashings",
+          "video_id": "1_utK5rREzs",
+          "title": "Why You NEED Before and After Hurricane Season Roof Inspections | Perkins Roofing Corp.",
+          "start": 260.0,
+          "link": "https://youtu.be/1_utK5rREzs?t=260"
+        }
+      ],
+      "title": "Mastering Roof Flashing: Techniques, Problems, and Solutions",
+      "angle": "This article dives into essential roof flashing techniques, common issues, and expert solutions to help homeowners and contractors maintain a watertight roof."
+    },
+    {
+      "rep": "Roofing techniques",
+      "labels": [
+        "Roofing techniques",
+        "Roofing sales techniques",
+        "Panel cutting techniques",
+        "Negotiation tactics",
+        "Riveting technique",
+        "Waterproofing techniques",
+        "Tile walking techniques",
+        "Measuring tools and techniques"
+      ],
+      "moment_count": 14,
+      "video_count": 14,
+      "moments": [
+        {
+          "label": "Roofing techniques",
+          "video_id": "1UzUCFbLaZ4",
+          "title": "Why Roofing Systems Fail: Materials, Florida Codes & The Future of Roofing | John Massengill",
+          "start": 181.0,
+          "link": "https://youtu.be/1UzUCFbLaZ4?t=181"
+        },
+        {
+          "label": "Roofing techniques",
+          "video_id": "zQ-r0C7NkTU",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt .5)",
+          "start": 342.0,
+          "link": "https://youtu.be/zQ-r0C7NkTU?t=342"
+        },
+        {
+          "label": "Roofing techniques",
+          "video_id": "aOMRXUdZTew",
+          "title": "Commercial Standing Seam Metal Roof (Pt.2)",
+          "start": 182.0,
+          "link": "https://youtu.be/aOMRXUdZTew?t=182"
+        },
+        {
+          "label": "Roofing techniques",
+          "video_id": "XKt1lnZFG8I",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 1)",
+          "start": 152.0,
+          "link": "https://youtu.be/XKt1lnZFG8I?t=152"
+        },
+        {
+          "label": "Roofing techniques",
+          "video_id": "sDwbr3MH8r4",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 2)",
+          "start": 497.0,
+          "link": "https://youtu.be/sDwbr3MH8r4?t=497"
+        },
+        {
+          "label": "Roofing techniques",
+          "video_id": "q8UxF0GIZeA",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 9",
+          "start": 374.0,
+          "link": "https://youtu.be/q8UxF0GIZeA?t=374"
+        },
+        {
+          "label": "Roofing techniques",
+          "video_id": "i6mx9EkBh0k",
+          "title": "Florida Building Code Tile Re-Roof in Cape Coral (Florida Roofer)",
+          "start": 275.0,
+          "link": "https://youtu.be/i6mx9EkBh0k?t=275"
+        },
+        {
+          "label": "Roofing sales techniques",
+          "video_id": "XOp_KSUW7iA",
+          "title": "Ask Me Anything (AMA) #1 & Perkins Consulting Services",
+          "start": 94.0,
+          "link": "https://youtu.be/XOp_KSUW7iA?t=94"
+        },
+        {
+          "label": "Panel cutting techniques",
+          "video_id": "MUXcwHmn3q4",
+          "title": "Commercial Standing Seam Metal Roof (Pt.3)",
+          "start": 905.0,
+          "link": "https://youtu.be/MUXcwHmn3q4?t=905"
+        },
+        {
+          "label": "Negotiation tactics",
+          "video_id": "NnbyC46D9-k",
+          "title": "I\u2019m not part of your real estate deal \ud83d\ude11",
+          "start": 252.0,
+          "link": "https://youtu.be/NnbyC46D9-k?t=252"
+        },
+        {
+          "label": "Riveting technique",
+          "video_id": "MGp0FwoRsk4",
+          "title": "Standing Seam Metal Roof Details",
+          "start": 500.0,
+          "link": "https://youtu.be/MGp0FwoRsk4?t=500"
+        },
+        {
+          "label": "Waterproofing techniques",
+          "video_id": "6S984qjVBuE",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 6",
+          "start": 87.0,
+          "link": "https://youtu.be/6S984qjVBuE?t=87"
+        },
+        {
+          "label": "Tile walking techniques",
+          "video_id": "TJKO36dmMFc",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 5",
+          "start": 580.0,
+          "link": "https://youtu.be/TJKO36dmMFc?t=580"
+        },
+        {
+          "label": "Measuring tools and techniques",
+          "video_id": "jpqGQ1a0W2E",
+          "title": "How to Measure Your Roof | Perkins Roofing Corp.",
+          "start": 212.0,
+          "link": "https://youtu.be/jpqGQ1a0W2E?t=212"
+        }
+      ],
+      "title": "Mastering the Roof: Essential Techniques for Pros and Sales Teams",
+      "angle": "This article dives into the critical techniques and tools used in roofing, offering valuable insights for both roofing professionals and sales teams looking to enhance their expertise and customer interactions."
+    },
+    {
+      "rep": "Woodpecker damage",
+      "labels": [
+        "Woodpecker damage",
+        "Roof damage from trees",
+        "Roof damage from animals",
+        "Roof damage concerns",
+        "Fascia damage",
+        "Structural wood damage",
+        "Roof damage",
+        "Water damage",
+        "Termite damage",
+        "Hurricane damage assessment",
+        "Storm damage identification",
+        "Roof damage causes",
+        "Hurricane Ian damage",
+        "Fascia and wood damage"
+      ],
+      "moment_count": 14,
+      "video_count": 11,
+      "moments": [
+        {
+          "label": "Woodpecker damage",
+          "video_id": "XpRkeWcflW8",
+          "title": "Perkins Construction Exterior House Painting",
+          "start": 103.0,
+          "link": "https://youtu.be/XpRkeWcflW8?t=103"
+        },
+        {
+          "label": "Roof damage from trees",
+          "video_id": "G87EtCn_jKc",
+          "title": "Roofing 201: Roof Maintenance & Prolonging Your Roof Life in Florida",
+          "start": 151.0,
+          "link": "https://youtu.be/G87EtCn_jKc?t=151"
+        },
+        {
+          "label": "Roof damage from animals",
+          "video_id": "G87EtCn_jKc",
+          "title": "Roofing 201: Roof Maintenance & Prolonging Your Roof Life in Florida",
+          "start": 172.0,
+          "link": "https://youtu.be/G87EtCn_jKc?t=172"
+        },
+        {
+          "label": "Roof damage concerns",
+          "video_id": "mjgO9fj5a7M",
+          "title": "When a Crazy Person Removes a Roof Vent and Only Covers It With a Tile...",
+          "start": 10.0,
+          "link": "https://youtu.be/mjgO9fj5a7M?t=10"
+        },
+        {
+          "label": "Fascia damage",
+          "video_id": "uaXTXvikvWY",
+          "title": "Don't Do This On Your Tile Toof!",
+          "start": 82.0,
+          "link": "https://youtu.be/uaXTXvikvWY?t=82"
+        },
+        {
+          "label": "Structural wood damage",
+          "video_id": "j2OR8MJH4UA",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 1)",
+          "start": 480.0,
+          "link": "https://youtu.be/j2OR8MJH4UA?t=480"
+        },
+        {
+          "label": "Roof damage",
+          "video_id": "q7xVmhOYg60",
+          "title": "Mitered Bermuda Style Tile Re-Roof: South Florida",
+          "start": 38.0,
+          "link": "https://youtu.be/q7xVmhOYg60?t=38"
+        },
+        {
+          "label": "Water damage",
+          "video_id": "q7xVmhOYg60",
+          "title": "Mitered Bermuda Style Tile Re-Roof: South Florida",
+          "start": 101.0,
+          "link": "https://youtu.be/q7xVmhOYg60?t=101"
+        },
+        {
+          "label": "Termite damage",
+          "video_id": "rI2mGN_IUgY",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 4",
+          "start": 222.0,
+          "link": "https://youtu.be/rI2mGN_IUgY?t=222"
+        },
+        {
+          "label": "Hurricane damage assessment",
+          "video_id": "i6mx9EkBh0k",
+          "title": "Florida Building Code Tile Re-Roof in Cape Coral (Florida Roofer)",
+          "start": 21.0,
+          "link": "https://youtu.be/i6mx9EkBh0k?t=21"
+        },
+        {
+          "label": "Storm damage identification",
+          "video_id": "i6mx9EkBh0k",
+          "title": "Florida Building Code Tile Re-Roof in Cape Coral (Florida Roofer)",
+          "start": 343.0,
+          "link": "https://youtu.be/i6mx9EkBh0k?t=343"
+        },
+        {
+          "label": "Roof damage causes",
+          "video_id": "-8YFC6G6byE",
+          "title": "Tropical Storm Nicole Update! | Miami, FTL, Palm Beach",
+          "start": 124.0,
+          "link": "https://youtu.be/-8YFC6G6byE?t=124"
+        },
+        {
+          "label": "Hurricane Ian damage",
+          "video_id": "vBQdVnOTRVw",
+          "title": "Fort Myers & SWFL Hurricane Ian Roofing Update | Perkins Roofing Corp.",
+          "start": 2.0,
+          "link": "https://youtu.be/vBQdVnOTRVw?t=2"
+        },
+        {
+          "label": "Fascia and wood damage",
+          "video_id": "1_utK5rREzs",
+          "title": "Why You NEED Before and After Hurricane Season Roof Inspections | Perkins Roofing Corp.",
+          "start": 65.0,
+          "link": "https://youtu.be/1_utK5rREzs?t=65"
+        }
+      ],
+      "title": "Protect Your Roof: A Guide to Identifying and Preventing Common Damage",
+      "angle": "This guide helps homeowners spot and address various types of roof damage, ensuring their homes stay safe and secure."
+    },
+    {
+      "rep": "Roof leaks",
+      "labels": [
+        "Roof leaks and damage",
+        "Roof leaks and causes",
+        "Roof leaks",
+        "Valley leaks",
+        "Active leaks and penetrations",
+        "Roof leak causes",
+        "Roof leak detection methods",
+        "Weak points for leaks",
+        "New construction leaks"
+      ],
+      "moment_count": 13,
+      "video_count": 11,
+      "moments": [
+        {
+          "label": "Roof leaks and damage",
+          "video_id": "z9vWdP-DPRA",
+          "title": "Florida Tile Roof Insurance Claims - Upgrade Your Roof Tiles!",
+          "start": 62.0,
+          "link": "https://youtu.be/z9vWdP-DPRA?t=62"
+        },
+        {
+          "label": "Roof leaks and causes",
+          "video_id": "sp3iZacTL_g",
+          "title": "Beware of Solar Panels on Your Roof",
+          "start": 345.0,
+          "link": "https://youtu.be/sp3iZacTL_g?t=345"
+        },
+        {
+          "label": "Roof leaks",
+          "video_id": "uaXTXvikvWY",
+          "title": "Don't Do This On Your Tile Toof!",
+          "start": 14.0,
+          "link": "https://youtu.be/uaXTXvikvWY?t=14"
+        },
+        {
+          "label": "Roof leaks",
+          "video_id": "macSIgr4WLM",
+          "title": "Starter home? Starter problems. \ud83d\ude05",
+          "start": 50.0,
+          "link": "https://youtu.be/macSIgr4WLM?t=50"
+        },
+        {
+          "label": "Roof leaks",
+          "video_id": "wAhHpqDR_FE",
+          "title": "Rainy Season has Begun 6.3.22 Update",
+          "start": 28.0,
+          "link": "https://youtu.be/wAhHpqDR_FE?t=28"
+        },
+        {
+          "label": "Roof leaks",
+          "video_id": "qriLczFgwPo",
+          "title": "How to Know When You Need a New Roof | Perkins Roofing Corp.",
+          "start": 62.0,
+          "link": "https://youtu.be/qriLczFgwPo?t=62"
+        },
+        {
+          "label": "Valley leaks",
+          "video_id": "uaXTXvikvWY",
+          "title": "Don't Do This On Your Tile Toof!",
+          "start": 46.0,
+          "link": "https://youtu.be/uaXTXvikvWY?t=46"
+        },
+        {
+          "label": "Valley leaks",
+          "video_id": "j2OR8MJH4UA",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 1)",
+          "start": 513.0,
+          "link": "https://youtu.be/j2OR8MJH4UA?t=513"
+        },
+        {
+          "label": "Active leaks and penetrations",
+          "video_id": "515byFUH6Uo",
+          "title": "Miami High Rise Re Roof and Concrete Repairs (Pt. 1)",
+          "start": 404.0,
+          "link": "https://youtu.be/515byFUH6Uo?t=404"
+        },
+        {
+          "label": "Roof leak causes",
+          "video_id": "9F9rQBvBNdM",
+          "title": "Evergrene Tile Re Roof in Palm Beach Gardens",
+          "start": 128.0,
+          "link": "https://youtu.be/9F9rQBvBNdM?t=128"
+        },
+        {
+          "label": "Roof leak detection methods",
+          "video_id": "OFNAQ10z8qc",
+          "title": "How To Find a Roof Leak | Perkins Roofing Corp.",
+          "start": 20.0,
+          "link": "https://youtu.be/OFNAQ10z8qc?t=20"
+        },
+        {
+          "label": "Weak points for leaks",
+          "video_id": "OFNAQ10z8qc",
+          "title": "How To Find a Roof Leak | Perkins Roofing Corp.",
+          "start": 81.0,
+          "link": "https://youtu.be/OFNAQ10z8qc?t=81"
+        },
+        {
+          "label": "New construction leaks",
+          "video_id": "f7mPiOsn40g",
+          "title": "5 Ways Contractors Will RIP YOU OFF & How to Protect Yourself | Perkins Roofing Corp.",
+          "start": 307.0,
+          "link": "https://youtu.be/f7mPiOsn40g?t=307"
+        }
+      ],
+      "title": "Stop Roof Leaks Before They Start: Expert Insights from Perkins Roofing",
+      "angle": "This article helps homeowners and contractors understand common roof leak causes, detection methods, and prevention strategies to protect their properties."
+    },
+    {
+      "rep": "Secondary water barrier",
+      "labels": [
+        "Temporary vapor barrier",
+        "Polyglass XFR barrier",
+        "Secondary water barrier",
+        "MTS (secondary water barrier)",
+        "Secondary water barrier (MTS)",
+        "Water barrier",
+        "Staggering water barrier papers",
+        "Types of secondary water barriers",
+        "Tile roof secondary water barrier",
+        "Metal roof secondary water barrier",
+        "Shingle roof secondary water barrier"
+      ],
+      "moment_count": 13,
+      "video_count": 8,
+      "moments": [
+        {
+          "label": "Temporary vapor barrier",
+          "video_id": "q3mqcvHep0Q",
+          "title": "High-Rise Flat Polyglass Polyfresko Re-Roofs in Miami Beach & Brickell Key Pt. 2 | Perkins Roofing",
+          "start": 439.0,
+          "link": "https://youtu.be/q3mqcvHep0Q?t=439"
+        },
+        {
+          "label": "Polyglass XFR barrier",
+          "video_id": "MGp0FwoRsk4",
+          "title": "Standing Seam Metal Roof Details",
+          "start": 342.0,
+          "link": "https://youtu.be/MGp0FwoRsk4?t=342"
+        },
+        {
+          "label": "Secondary water barrier",
+          "video_id": "TJKO36dmMFc",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 5",
+          "start": 203.0,
+          "link": "https://youtu.be/TJKO36dmMFc?t=203"
+        },
+        {
+          "label": "Secondary water barrier",
+          "video_id": "Y0dalIDL340",
+          "title": "Boynton Beach Clay Tile Reroof Two Story Waterfront Home | Perkins Roofing Corp.",
+          "start": 153.0,
+          "link": "https://youtu.be/Y0dalIDL340?t=153"
+        },
+        {
+          "label": "Secondary water barrier",
+          "video_id": "npHrqdZ2lTg",
+          "title": "Don't Skip the Secondary Water Barrier! | Perkins Roofing Corp.",
+          "start": 4.0,
+          "link": "https://youtu.be/npHrqdZ2lTg?t=4"
+        },
+        {
+          "label": "MTS (secondary water barrier)",
+          "video_id": "TJ6M9mGFV4Q",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 3",
+          "start": 184.0,
+          "link": "https://youtu.be/TJ6M9mGFV4Q?t=184"
+        },
+        {
+          "label": "Secondary water barrier (MTS)",
+          "video_id": "BnsaVtCb0GU",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 2",
+          "start": 300.0,
+          "link": "https://youtu.be/BnsaVtCb0GU?t=300"
+        },
+        {
+          "label": "Water barrier",
+          "video_id": "GjfypnQ213M",
+          "title": "How To Install Roof Tiles in South Florida | Perkins Roofing Corp.",
+          "start": 135.0,
+          "link": "https://youtu.be/GjfypnQ213M?t=135"
+        },
+        {
+          "label": "Staggering water barrier papers",
+          "video_id": "npHrqdZ2lTg",
+          "title": "Don't Skip the Secondary Water Barrier! | Perkins Roofing Corp.",
+          "start": 48.0,
+          "link": "https://youtu.be/npHrqdZ2lTg?t=48"
+        },
+        {
+          "label": "Types of secondary water barriers",
+          "video_id": "npHrqdZ2lTg",
+          "title": "Don't Skip the Secondary Water Barrier! | Perkins Roofing Corp.",
+          "start": 102.0,
+          "link": "https://youtu.be/npHrqdZ2lTg?t=102"
+        },
+        {
+          "label": "Tile roof secondary water barrier",
+          "video_id": "npHrqdZ2lTg",
+          "title": "Don't Skip the Secondary Water Barrier! | Perkins Roofing Corp.",
+          "start": 141.0,
+          "link": "https://youtu.be/npHrqdZ2lTg?t=141"
+        },
+        {
+          "label": "Metal roof secondary water barrier",
+          "video_id": "npHrqdZ2lTg",
+          "title": "Don't Skip the Secondary Water Barrier! | Perkins Roofing Corp.",
+          "start": 144.0,
+          "link": "https://youtu.be/npHrqdZ2lTg?t=144"
+        },
+        {
+          "label": "Shingle roof secondary water barrier",
+          "video_id": "npHrqdZ2lTg",
+          "title": "Don't Skip the Secondary Water Barrier! | Perkins Roofing Corp.",
+          "start": 162.0,
+          "link": "https://youtu.be/npHrqdZ2lTg?t=162"
+        }
+      ],
+      "title": "Mastering Secondary Water Barriers: A Roofer's Guide",
+      "angle": "This guide helps roofers and homeowners understand the different types of secondary water barriers, their applications, and best practices for installation to ensure long-lasting roof protection."
+    },
+    {
+      "rep": "Roofing services",
+      "labels": [
+        "Roofing services",
+        "Construction services",
+        "Painting services",
+        "Roofing services offered",
+        "Roofing company services"
+      ],
+      "moment_count": 10,
+      "video_count": 7,
+      "moments": [
+        {
+          "label": "Roofing services",
+          "video_id": "v3HM-ADY3vo",
+          "title": "Florida Metal Roofs (w/ Tim Dyer of Metal Productions)",
+          "start": 398.0,
+          "link": "https://youtu.be/v3HM-ADY3vo?t=398"
+        },
+        {
+          "label": "Roofing services",
+          "video_id": "cvmA39HTvo0",
+          "title": "Perkins Roofing & Construction New Year Discount!",
+          "start": 145.0,
+          "link": "https://youtu.be/cvmA39HTvo0?t=145"
+        },
+        {
+          "label": "Roofing services",
+          "video_id": "WLYaBUmv-1E",
+          "title": "CALL NOW (January 2025 Only) Special Deal - Get Your Roof at Cost!",
+          "start": 70.0,
+          "link": "https://youtu.be/WLYaBUmv-1E?t=70"
+        },
+        {
+          "label": "Roofing services",
+          "video_id": "vBQdVnOTRVw",
+          "title": "Fort Myers & SWFL Hurricane Ian Roofing Update | Perkins Roofing Corp.",
+          "start": 12.0,
+          "link": "https://youtu.be/vBQdVnOTRVw?t=12"
+        },
+        {
+          "label": "Construction services",
+          "video_id": "v3HM-ADY3vo",
+          "title": "Florida Metal Roofs (w/ Tim Dyer of Metal Productions)",
+          "start": 432.0,
+          "link": "https://youtu.be/v3HM-ADY3vo?t=432"
+        },
+        {
+          "label": "Painting services",
+          "video_id": "cvmA39HTvo0",
+          "title": "Perkins Roofing & Construction New Year Discount!",
+          "start": 154.0,
+          "link": "https://youtu.be/cvmA39HTvo0?t=154"
+        },
+        {
+          "label": "Roofing services offered",
+          "video_id": "DJlwSeF8lTQ",
+          "title": "Roofing 301: Advanced Roofing Concepts and Market Trends for Florida Home Owners",
+          "start": 277.0,
+          "link": "https://youtu.be/DJlwSeF8lTQ?t=277"
+        },
+        {
+          "label": "Roofing services offered",
+          "video_id": "G87EtCn_jKc",
+          "title": "Roofing 201: Roof Maintenance & Prolonging Your Roof Life in Florida",
+          "start": 365.0,
+          "link": "https://youtu.be/G87EtCn_jKc?t=365"
+        },
+        {
+          "label": "Roofing services offered",
+          "video_id": "coyplj8c71E",
+          "title": "Roofing 101: Essential Insights for Florida Home Owners",
+          "start": 385.0,
+          "link": "https://youtu.be/coyplj8c71E?t=385"
+        },
+        {
+          "label": "Roofing company services",
+          "video_id": "vBQdVnOTRVw",
+          "title": "Fort Myers & SWFL Hurricane Ian Roofing Update | Perkins Roofing Corp.",
+          "start": 0.0,
+          "link": "https://youtu.be/vBQdVnOTRVw?t=0"
+        }
+      ],
+      "title": "Perkins Roofing: Your One-Stop Shop for Roofing, Construction, and Painting Services",
+      "angle": "This article explores the comprehensive range of services offered by Perkins Roofing, helping homeowners and businesses find reliable solutions for all their roofing, construction, and painting needs."
+    },
+    {
+      "rep": "Roofing types",
+      "labels": [
+        "Roofing types",
+        "Glass types",
+        "Shingle types",
+        "Underlayment types and benefits",
+        "Coating types (PB84, PB77, PB70)",
+        "Tile types",
+        "Roof types and styles",
+        "Roof types and conditions"
+      ],
+      "moment_count": 9,
+      "video_count": 9,
+      "moments": [
+        {
+          "label": "Roofing types",
+          "video_id": "oPnVIbgbcxE",
+          "title": "Florida Rainy Season is HERE\u2026 and Roofing Prices Jump on April 15th! Act NOW Before It\u2019s Too Late",
+          "start": 16.0,
+          "link": "https://youtu.be/oPnVIbgbcxE?t=16"
+        },
+        {
+          "label": "Roofing types",
+          "video_id": "WLYaBUmv-1E",
+          "title": "CALL NOW (January 2025 Only) Special Deal - Get Your Roof at Cost!",
+          "start": 121.0,
+          "link": "https://youtu.be/WLYaBUmv-1E?t=121"
+        },
+        {
+          "label": "Glass types",
+          "video_id": "mN2ght9vHAw",
+          "title": "Impact Window Estimate Red Flags: An Inside Cheat Sheet From A Florida Contractor",
+          "start": 501.0,
+          "link": "https://youtu.be/mN2ght9vHAw?t=501"
+        },
+        {
+          "label": "Shingle types",
+          "video_id": "Px7MAryN_wU",
+          "title": "Perkins Roofing New Tiered Pricing",
+          "start": 369.0,
+          "link": "https://youtu.be/Px7MAryN_wU?t=369"
+        },
+        {
+          "label": "Underlayment types and benefits",
+          "video_id": "mxLyabBjf1o",
+          "title": "Florida West Coast Tile Re-Roof (Perkins Roofing Naples)",
+          "start": 483.0,
+          "link": "https://youtu.be/mxLyabBjf1o?t=483"
+        },
+        {
+          "label": "Coating types (PB84, PB77, PB70)",
+          "video_id": "LLYJ0Tb5k-A",
+          "title": "Ocean Front Metal Roof Restoration Pt  3",
+          "start": 314.0,
+          "link": "https://youtu.be/LLYJ0Tb5k-A?t=314"
+        },
+        {
+          "label": "Tile types",
+          "video_id": "GjfypnQ213M",
+          "title": "How To Install Roof Tiles in South Florida | Perkins Roofing Corp.",
+          "start": 66.0,
+          "link": "https://youtu.be/GjfypnQ213M?t=66"
+        },
+        {
+          "label": "Roof types and styles",
+          "video_id": "EpOEAftcp58",
+          "title": "When Should I Restore My Roof? | Perkins Roofing Corp.",
+          "start": 23.0,
+          "link": "https://youtu.be/EpOEAftcp58?t=23"
+        },
+        {
+          "label": "Roof types and conditions",
+          "video_id": "1_utK5rREzs",
+          "title": "Why You NEED Before and After Hurricane Season Roof Inspections | Perkins Roofing Corp.",
+          "start": 47.0,
+          "link": "https://youtu.be/1_utK5rREzs?t=47"
+        }
+      ],
+      "title": "Mastering Roofing: A Comprehensive Guide to Types and Solutions",
+      "angle": "This guide helps homeowners and contractors understand the various roofing materials and styles to make informed decisions for durable and aesthetically pleasing roofs."
+    },
+    {
+      "rep": "Roof repairs",
+      "labels": [
+        "Exterior renovations",
+        "Kitchen renovations",
+        "Garage renovations",
+        "Roof repair costs",
+        "Truss repair and leveling",
+        "Color matching for repairs",
+        "Concrete repairs",
+        "Roof repairs"
+      ],
+      "moment_count": 9,
+      "video_count": 8,
+      "moments": [
+        {
+          "label": "Exterior renovations",
+          "video_id": "mN2ght9vHAw",
+          "title": "Impact Window Estimate Red Flags: An Inside Cheat Sheet From A Florida Contractor",
+          "start": 441.0,
+          "link": "https://youtu.be/mN2ght9vHAw?t=441"
+        },
+        {
+          "label": "Kitchen renovations",
+          "video_id": "cvmA39HTvo0",
+          "title": "Perkins Roofing & Construction New Year Discount!",
+          "start": 157.0,
+          "link": "https://youtu.be/cvmA39HTvo0?t=157"
+        },
+        {
+          "label": "Garage renovations",
+          "video_id": "cvmA39HTvo0",
+          "title": "Perkins Roofing & Construction New Year Discount!",
+          "start": 159.0,
+          "link": "https://youtu.be/cvmA39HTvo0?t=159"
+        },
+        {
+          "label": "Roof repair costs",
+          "video_id": "CEsCxJVoBow",
+          "title": "Say No to TPO Roofs",
+          "start": 167.0,
+          "link": "https://youtu.be/CEsCxJVoBow?t=167"
+        },
+        {
+          "label": "Truss repair and leveling",
+          "video_id": "aTbWOh6j0fY",
+          "title": "How To Add Slope on a Flat Roof",
+          "start": 62.0,
+          "link": "https://youtu.be/aTbWOh6j0fY?t=62"
+        },
+        {
+          "label": "Color matching for repairs",
+          "video_id": "BcvbwED-Q6o",
+          "title": "Essential Roof Estimating Tools for Roofing Contractors | Perkins Roofing Franchise Tips",
+          "start": 262.0,
+          "link": "https://youtu.be/BcvbwED-Q6o?t=262"
+        },
+        {
+          "label": "Concrete repairs",
+          "video_id": "dtl6P6Lv6aE",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt. 2)",
+          "start": 163.0,
+          "link": "https://youtu.be/dtl6P6Lv6aE?t=163"
+        },
+        {
+          "label": "Roof repairs",
+          "video_id": "syvI00r_bwA",
+          "title": "7 Ways Roofing Contractors Cut Corners in Florida",
+          "start": 24.0,
+          "link": "https://youtu.be/syvI00r_bwA?t=24"
+        },
+        {
+          "label": "Roof repairs",
+          "video_id": "DGAqXh8u3Tw",
+          "title": "Trees Are NOT Your Roof's Friend! Why You Must Cut Back Trees | Perkins Roofing Corp.",
+          "start": 48.0,
+          "link": "https://youtu.be/DGAqXh8u3Tw?t=48"
+        }
+      ],
+      "title": "Transform Your Home with Perkins Roofing: Expert Tips for Renovations & Repairs",
+      "angle": "This article provides homeowners with essential insights on exterior, kitchen, and garage renovations, as well as roof and concrete repairs, helping them make informed decisions for their home improvement projects."
+    },
+    {
+      "rep": "Tree damage to roofs",
+      "labels": [
+        "Structural deficiencies in roofs",
+        "Animal damage to roofs",
+        "Handling unexpected roof issues",
+        "Hurricane roof damage by category",
+        "Structural failure of shingle roofs",
+        "Tile roof vulnerabilities",
+        "Tree damage to roofs",
+        "Common roof damage points"
+      ],
+      "moment_count": 9,
+      "video_count": 9,
+      "moments": [
+        {
+          "label": "Structural deficiencies in roofs",
+          "video_id": "K4zF77nU9Ew",
+          "title": "New Prototype Clay Flat Tile By Tejas Borja",
+          "start": 180.0,
+          "link": "https://youtu.be/K4zF77nU9Ew?t=180"
+        },
+        {
+          "label": "Animal damage to roofs",
+          "video_id": "kYKGmrX7BCY",
+          "title": "Shingle Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 377.0,
+          "link": "https://youtu.be/kYKGmrX7BCY?t=377"
+        },
+        {
+          "label": "Handling unexpected roof issues",
+          "video_id": "kOoV9UiFrG8",
+          "title": "What Does It Take to Own A Perkins Roofing Franchise?",
+          "start": 443.0,
+          "link": "https://youtu.be/kOoV9UiFrG8?t=443"
+        },
+        {
+          "label": "Hurricane roof damage by category",
+          "video_id": "uyBfGfbFxo0",
+          "title": "Best Roof for Florida Hurricanes: Shingle, Tile, or Metal Wind Ratings Explained",
+          "start": 442.0,
+          "link": "https://youtu.be/uyBfGfbFxo0?t=442"
+        },
+        {
+          "label": "Structural failure of shingle roofs",
+          "video_id": "tpxdWz4Oqnw",
+          "title": "New Florida HOA Law 2024: What Homeowners Need to Know About Metal Roof Restrictions",
+          "start": 395.0,
+          "link": "https://youtu.be/tpxdWz4Oqnw?t=395"
+        },
+        {
+          "label": "Tile roof vulnerabilities",
+          "video_id": "-8YFC6G6byE",
+          "title": "Tropical Storm Nicole Update! | Miami, FTL, Palm Beach",
+          "start": 139.0,
+          "link": "https://youtu.be/-8YFC6G6byE?t=139"
+        },
+        {
+          "label": "Tree damage to roofs",
+          "video_id": "5qS3Hi-u574",
+          "title": "Jupiter & Palm Beach County May Have Storm Damage from Hurricane Ian",
+          "start": 41.0,
+          "link": "https://youtu.be/5qS3Hi-u574?t=41"
+        },
+        {
+          "label": "Tree damage to roofs",
+          "video_id": "DGAqXh8u3Tw",
+          "title": "Trees Are NOT Your Roof's Friend! Why You Must Cut Back Trees | Perkins Roofing Corp.",
+          "start": 26.0,
+          "link": "https://youtu.be/DGAqXh8u3Tw?t=26"
+        },
+        {
+          "label": "Common roof damage points",
+          "video_id": "OFNAQ10z8qc",
+          "title": "How To Find a Roof Leak | Perkins Roofing Corp.",
+          "start": 297.0,
+          "link": "https://youtu.be/OFNAQ10z8qc?t=297"
+        }
+      ],
+      "title": "Roofing Red Flags: How to Spot and Fix Common Roof Damage",
+      "angle": "This guide helps homeowners and property managers identify and address common roof damage points, from structural deficiencies to animal and weather-related issues, ensuring long-term roof health."
+    },
+    {
+      "rep": "Wood pricing",
+      "labels": [
+        "Wood pricing",
+        "Insurance pricing factors",
+        "Contractor pricing challenges",
+        "High HOA fees in Florida",
+        "Fair pricing practices",
+        "Contract pricing and transparency",
+        "Challenges in pricing jobs",
+        "Permit fees",
+        "Engineering fees"
+      ],
+      "moment_count": 9,
+      "video_count": 8,
+      "moments": [
+        {
+          "label": "Wood pricing",
+          "video_id": "ls9zLWRiDHg",
+          "title": "Tile Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 75.0,
+          "link": "https://youtu.be/ls9zLWRiDHg?t=75"
+        },
+        {
+          "label": "Insurance pricing factors",
+          "video_id": "HIDtr10pyWE",
+          "title": "Florida Insurance Market (w/ Lexus Pepin of Southshore Insurance)",
+          "start": 226.0,
+          "link": "https://youtu.be/HIDtr10pyWE?t=226"
+        },
+        {
+          "label": "Contractor pricing challenges",
+          "video_id": "XIEOVNkaPaQ",
+          "title": "Metal Roof Price Increase Coming! Time Sensitive",
+          "start": 46.0,
+          "link": "https://youtu.be/XIEOVNkaPaQ?t=46"
+        },
+        {
+          "label": "High HOA fees in Florida",
+          "video_id": "DJlwSeF8lTQ",
+          "title": "Roofing 301: Advanced Roofing Concepts and Market Trends for Florida Home Owners",
+          "start": 504.0,
+          "link": "https://youtu.be/DJlwSeF8lTQ?t=504"
+        },
+        {
+          "label": "Fair pricing practices",
+          "video_id": "8_T9Qvh6hAM",
+          "title": "Beware of Contractor Wood Prices",
+          "start": 217.0,
+          "link": "https://youtu.be/8_T9Qvh6hAM?t=217"
+        },
+        {
+          "label": "Contract pricing and transparency",
+          "video_id": "25MU81_znXQ",
+          "title": "April 2022 Price Increases Are Happening! | STAY IN THE KNOW! | Perkins Roofing Corp.",
+          "start": 402.0,
+          "link": "https://youtu.be/25MU81_znXQ?t=402"
+        },
+        {
+          "label": "Challenges in pricing jobs",
+          "video_id": "3wDGcwWUvQI",
+          "title": "Q1 2022 Market Volatility and How it Affects YOU! | Perkins Roofing Corp.",
+          "start": 335.0,
+          "link": "https://youtu.be/3wDGcwWUvQI?t=335"
+        },
+        {
+          "label": "Permit fees",
+          "video_id": "c6EwfV0TpxU",
+          "title": "Permit Fees vs. Engineering Fees vs. Permitting | What's the Difference?",
+          "start": 107.0,
+          "link": "https://youtu.be/c6EwfV0TpxU?t=107"
+        },
+        {
+          "label": "Engineering fees",
+          "video_id": "c6EwfV0TpxU",
+          "title": "Permit Fees vs. Engineering Fees vs. Permitting | What's the Difference?",
+          "start": 183.0,
+          "link": "https://youtu.be/c6EwfV0TpxU?t=183"
+        }
+      ],
+      "title": "Navigating the Complexities of Roofing Pricing: A Guide for Homeowners and Contractors",
+      "angle": "This article breaks down the key factors influencing roofing costs, helping homeowners understand fair pricing and contractors navigate pricing challenges effectively."
+    },
+    {
+      "rep": "Concrete restoration",
+      "labels": [
+        "Concrete restoration",
+        "Boardwalk restoration",
+        "Pool fencing restoration",
+        "Metal roof restoration",
+        "Terrace deck restoration",
+        "Types of roof restorations"
+      ],
+      "moment_count": 8,
+      "video_count": 7,
+      "moments": [
+        {
+          "label": "Concrete restoration",
+          "video_id": "cvmA39HTvo0",
+          "title": "Perkins Roofing & Construction New Year Discount!",
+          "start": 148.0,
+          "link": "https://youtu.be/cvmA39HTvo0?t=148"
+        },
+        {
+          "label": "Concrete restoration",
+          "video_id": "q3mqcvHep0Q",
+          "title": "High-Rise Flat Polyglass Polyfresko Re-Roofs in Miami Beach & Brickell Key Pt. 2 | Perkins Roofing",
+          "start": 56.0,
+          "link": "https://youtu.be/q3mqcvHep0Q?t=56"
+        },
+        {
+          "label": "Concrete restoration",
+          "video_id": "515byFUH6Uo",
+          "title": "Miami High Rise Re Roof and Concrete Repairs (Pt. 1)",
+          "start": 393.0,
+          "link": "https://youtu.be/515byFUH6Uo?t=393"
+        },
+        {
+          "label": "Boardwalk restoration",
+          "video_id": "sZO5rKsp37E",
+          "title": "Perkins Roofing & Perkins Construction Spring Cleaning Discount!",
+          "start": 43.0,
+          "link": "https://youtu.be/sZO5rKsp37E?t=43"
+        },
+        {
+          "label": "Pool fencing restoration",
+          "video_id": "sZO5rKsp37E",
+          "title": "Perkins Roofing & Perkins Construction Spring Cleaning Discount!",
+          "start": 165.0,
+          "link": "https://youtu.be/sZO5rKsp37E?t=165"
+        },
+        {
+          "label": "Metal roof restoration",
+          "video_id": "oGTSVJan-Rw",
+          "title": "Ocean Front Metal Roof Restoration Fort Lauderdale High Rise (Pt. 2)",
+          "start": 71.0,
+          "link": "https://youtu.be/oGTSVJan-Rw?t=71"
+        },
+        {
+          "label": "Terrace deck restoration",
+          "video_id": "TwvZpjuNgvk",
+          "title": "Miami Beach TERRACE DECK Restoration | Project Profile | Perkins Roofing Corp.",
+          "start": 6.0,
+          "link": "https://youtu.be/TwvZpjuNgvk?t=6"
+        },
+        {
+          "label": "Types of roof restorations",
+          "video_id": "7FnMjSi46IY",
+          "title": "Liquid Applied Roofing System Pros & Cons | Perkins Roofing Corp.",
+          "start": 4.0,
+          "link": "https://youtu.be/7FnMjSi46IY?t=4"
+        }
+      ],
+      "title": "Revitalize Your Space: Expert Restoration Tips from Perkins Roofing",
+      "angle": "This article offers practical advice on various restoration projects, helping homeowners and property managers maintain and enhance their properties."
+    },
+    {
+      "rep": "Roofing problems",
+      "labels": [
+        "Roofing problems",
+        "Diverter issues",
+        "Supply issues",
+        "Underlayment issues",
+        "Ponding water issues",
+        "Structural load problems"
+      ],
+      "moment_count": 8,
+      "video_count": 8,
+      "moments": [
+        {
+          "label": "Roofing problems",
+          "video_id": "zQ-r0C7NkTU",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt .5)",
+          "start": 126.0,
+          "link": "https://youtu.be/zQ-r0C7NkTU?t=126"
+        },
+        {
+          "label": "Roofing problems",
+          "video_id": "aOMRXUdZTew",
+          "title": "Commercial Standing Seam Metal Roof (Pt.2)",
+          "start": 431.0,
+          "link": "https://youtu.be/aOMRXUdZTew?t=431"
+        },
+        {
+          "label": "Diverter issues",
+          "video_id": "uaXTXvikvWY",
+          "title": "Don't Do This On Your Tile Toof!",
+          "start": 21.0,
+          "link": "https://youtu.be/uaXTXvikvWY?t=21"
+        },
+        {
+          "label": "Supply issues",
+          "video_id": "QDETv8UjMcA",
+          "title": "TARIFF UPDATE: Florida Roofing Market (URGENT - April 2025)",
+          "start": 165.0,
+          "link": "https://youtu.be/QDETv8UjMcA?t=165"
+        },
+        {
+          "label": "Underlayment issues",
+          "video_id": "7HFdCuh8c1s",
+          "title": "Beware of New Construction Roofs in Florida",
+          "start": 62.0,
+          "link": "https://youtu.be/7HFdCuh8c1s?t=62"
+        },
+        {
+          "label": "Ponding water issues",
+          "video_id": "7FnMjSi46IY",
+          "title": "Liquid Applied Roofing System Pros & Cons | Perkins Roofing Corp.",
+          "start": 82.0,
+          "link": "https://youtu.be/7FnMjSi46IY?t=82"
+        },
+        {
+          "label": "Ponding water issues",
+          "video_id": "BZF58V5o4Jw",
+          "title": "What Are the Pros and Cons of Different Roof Decks? Choose the Best One for You!",
+          "start": 310.0,
+          "link": "https://youtu.be/BZF58V5o4Jw?t=310"
+        },
+        {
+          "label": "Structural load problems",
+          "video_id": "bJeEdNb27C4",
+          "title": "All About Flat Roofs and the Sloping of Flat Roofs | Perkins Roofing Corp.",
+          "start": 63.0,
+          "link": "https://youtu.be/bJeEdNb27C4?t=63"
+        }
+      ],
+      "title": "Roofing Woes: Common Problems and How to Fix Them",
+      "angle": "This article helps homeowners identify and address common roofing issues, ensuring their homes stay safe and dry."
+    },
+    {
+      "rep": "Cricket construction",
+      "labels": [
+        "General contracting and construction",
+        "Roofing and construction business",
+        "Pergola builds",
+        "Roofing and construction politics",
+        "Cricket construction",
+        "Pre-construction measurements",
+        "Adaptability in construction"
+      ],
+      "moment_count": 8,
+      "video_count": 8,
+      "moments": [
+        {
+          "label": "General contracting and construction",
+          "video_id": "6VefVamvS2E",
+          "title": "Real Estate Mastery in South Florida (w/ Matan Morag)",
+          "start": 302.0,
+          "link": "https://youtu.be/6VefVamvS2E?t=302"
+        },
+        {
+          "label": "Roofing and construction business",
+          "video_id": "x4NGa71-3c4",
+          "title": "Wake and Make Podcast - Intro",
+          "start": 70.0,
+          "link": "https://youtu.be/x4NGa71-3c4?t=70"
+        },
+        {
+          "label": "Pergola builds",
+          "video_id": "cvmA39HTvo0",
+          "title": "Perkins Roofing & Construction New Year Discount!",
+          "start": 160.0,
+          "link": "https://youtu.be/cvmA39HTvo0?t=160"
+        },
+        {
+          "label": "Roofing and construction politics",
+          "video_id": "zQ-r0C7NkTU",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt .5)",
+          "start": 273.0,
+          "link": "https://youtu.be/zQ-r0C7NkTU?t=273"
+        },
+        {
+          "label": "Cricket construction",
+          "video_id": "ey91hTVc0OQ",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 4)",
+          "start": 861.0,
+          "link": "https://youtu.be/ey91hTVc0OQ?t=861"
+        },
+        {
+          "label": "Cricket construction",
+          "video_id": "MUXcwHmn3q4",
+          "title": "Commercial Standing Seam Metal Roof (Pt.3)",
+          "start": 102.0,
+          "link": "https://youtu.be/MUXcwHmn3q4?t=102"
+        },
+        {
+          "label": "Pre-construction measurements",
+          "video_id": "XKt1lnZFG8I",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 1)",
+          "start": 474.0,
+          "link": "https://youtu.be/XKt1lnZFG8I?t=474"
+        },
+        {
+          "label": "Adaptability in construction",
+          "video_id": "kOoV9UiFrG8",
+          "title": "What Does It Take to Own A Perkins Roofing Franchise?",
+          "start": 431.0,
+          "link": "https://youtu.be/kOoV9UiFrG8?t=431"
+        }
+      ],
+      "title": "Building Beyond the Basics: Perkins Roofing's Diverse Construction Expertise",
+      "angle": "This article explores Perkins Roofing's wide range of services, from general contracting to specialized builds, offering valuable insights for homeowners and contractors looking to enhance their projects."
+    },
+    {
+      "rep": "Roof slope",
+      "labels": [
+        "Roof slope/pitch",
+        "Roof slope classifications",
+        "Roof slope requirements",
+        "Roof slope and installation",
+        "Roof slope and substrate considerations",
+        "Drainage and slope creation",
+        "Roof slope"
+      ],
+      "moment_count": 8,
+      "video_count": 8,
+      "moments": [
+        {
+          "label": "Roof slope/pitch",
+          "video_id": "Q3p_hXIftec",
+          "title": "How Much Does a Roof Cost in Florida? A Complete Guide to Roofing Estimates & Costs",
+          "start": 474.0,
+          "link": "https://youtu.be/Q3p_hXIftec?t=474"
+        },
+        {
+          "label": "Roof slope classifications",
+          "video_id": "mvxKUW6FfOA",
+          "title": "Get a Quick Roof Estimate with Perkins Roofing's Free Tool \u2013 Accurate, Instant, and Easy!",
+          "start": 65.0,
+          "link": "https://youtu.be/mvxKUW6FfOA?t=65"
+        },
+        {
+          "label": "Roof slope requirements",
+          "video_id": "dtl6P6Lv6aE",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt. 2)",
+          "start": 472.0,
+          "link": "https://youtu.be/dtl6P6Lv6aE?t=472"
+        },
+        {
+          "label": "Roof slope and installation",
+          "video_id": "i6mx9EkBh0k",
+          "title": "Florida Building Code Tile Re-Roof in Cape Coral (Florida Roofer)",
+          "start": 383.0,
+          "link": "https://youtu.be/i6mx9EkBh0k?t=383"
+        },
+        {
+          "label": "Roof slope and substrate considerations",
+          "video_id": "syvI00r_bwA",
+          "title": "7 Ways Roofing Contractors Cut Corners in Florida",
+          "start": 409.0,
+          "link": "https://youtu.be/syvI00r_bwA?t=409"
+        },
+        {
+          "label": "Drainage and slope creation",
+          "video_id": "TwvZpjuNgvk",
+          "title": "Miami Beach TERRACE DECK Restoration | Project Profile | Perkins Roofing Corp.",
+          "start": 134.0,
+          "link": "https://youtu.be/TwvZpjuNgvk?t=134"
+        },
+        {
+          "label": "Roof slope",
+          "video_id": "DGAqXh8u3Tw",
+          "title": "Trees Are NOT Your Roof's Friend! Why You Must Cut Back Trees | Perkins Roofing Corp.",
+          "start": 61.0,
+          "link": "https://youtu.be/DGAqXh8u3Tw?t=61"
+        },
+        {
+          "label": "Roof slope",
+          "video_id": "Zlcf7W5icGk",
+          "title": "What are the parts of a Roof? Roof Component Breakdown | Perkins Roofing Corp.",
+          "start": 58.0,
+          "link": "https://youtu.be/Zlcf7W5icGk?t=58"
+        }
+      ],
+      "title": "Mastering Roof Slope: Key Insights for Perfect Installation",
+      "angle": "This guide helps homeowners and contractors understand roof slope classifications, requirements, and installation tips for optimal drainage and durability."
+    },
+    {
+      "rep": "Shopping for insurance",
+      "labels": [
+        "Shopping for insurance",
+        "Role of MGAs in insurance",
+        "Homeowners insurance costs",
+        "Contractor insurance and licensing",
+        "Types of insurance (liability, auto, workers comp)",
+        "Minimum liability insurance coverage",
+        "Builders risk insurance",
+        "Windstorm insurance"
+      ],
+      "moment_count": 8,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Shopping for insurance",
+          "video_id": "HIDtr10pyWE",
+          "title": "Florida Insurance Market (w/ Lexus Pepin of Southshore Insurance)",
+          "start": 377.0,
+          "link": "https://youtu.be/HIDtr10pyWE?t=377"
+        },
+        {
+          "label": "Role of MGAs in insurance",
+          "video_id": "HIDtr10pyWE",
+          "title": "Florida Insurance Market (w/ Lexus Pepin of Southshore Insurance)",
+          "start": 287.0,
+          "link": "https://youtu.be/HIDtr10pyWE?t=287"
+        },
+        {
+          "label": "Homeowners insurance costs",
+          "video_id": "DJlwSeF8lTQ",
+          "title": "Roofing 301: Advanced Roofing Concepts and Market Trends for Florida Home Owners",
+          "start": 454.0,
+          "link": "https://youtu.be/DJlwSeF8lTQ?t=454"
+        },
+        {
+          "label": "Contractor insurance and licensing",
+          "video_id": "syvI00r_bwA",
+          "title": "7 Ways Roofing Contractors Cut Corners in Florida",
+          "start": 197.0,
+          "link": "https://youtu.be/syvI00r_bwA?t=197"
+        },
+        {
+          "label": "Types of insurance (liability, auto, workers comp)",
+          "video_id": "1lRQlAz8v-M",
+          "title": "What You Didn\u2019t Know About Roofing Insurance",
+          "start": 83.0,
+          "link": "https://youtu.be/1lRQlAz8v-M?t=83"
+        },
+        {
+          "label": "Minimum liability insurance coverage",
+          "video_id": "1lRQlAz8v-M",
+          "title": "What You Didn\u2019t Know About Roofing Insurance",
+          "start": 422.0,
+          "link": "https://youtu.be/1lRQlAz8v-M?t=422"
+        },
+        {
+          "label": "Builders risk insurance",
+          "video_id": "kW_JNbnRW7k",
+          "title": "Roofing Contract Terms: What do they mean?",
+          "start": 115.0,
+          "link": "https://youtu.be/kW_JNbnRW7k?t=115"
+        },
+        {
+          "label": "Windstorm insurance",
+          "video_id": "kW_JNbnRW7k",
+          "title": "Roofing Contract Terms: What do they mean?",
+          "start": 166.0,
+          "link": "https://youtu.be/kW_JNbnRW7k?t=166"
+        }
+      ],
+      "title": "Navigating the Insurance Maze: A Contractor's Guide",
+      "angle": "This article breaks down essential insurance topics for contractors, helping them understand coverage options, costs, and compliance to protect their business and clients."
+    },
+    {
+      "rep": "Hurricane season preparation",
+      "labels": [
+        "Hurricane season preparation",
+        "Site preparation",
+        "Storm preparation",
+        "Rainy season preparation",
+        "Hurricane preparedness"
+      ],
+      "moment_count": 7,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Hurricane season preparation",
+          "video_id": "GD2N2j0m25M",
+          "title": "Free Emergency Roof Repair with Commercial Roof Maintenance",
+          "start": 63.0,
+          "link": "https://youtu.be/GD2N2j0m25M?t=63"
+        },
+        {
+          "label": "Hurricane season preparation",
+          "video_id": "oPnVIbgbcxE",
+          "title": "Florida Rainy Season is HERE\u2026 and Roofing Prices Jump on April 15th! Act NOW Before It\u2019s Too Late",
+          "start": 112.0,
+          "link": "https://youtu.be/oPnVIbgbcxE?t=112"
+        },
+        {
+          "label": "Hurricane season preparation",
+          "video_id": "IFi575E12KM",
+          "title": "What Does Flat and Metal Roof Maintenance Look Like? | Roofing in Key Largo",
+          "start": 215.0,
+          "link": "https://youtu.be/IFi575E12KM?t=215"
+        },
+        {
+          "label": "Site preparation",
+          "video_id": "BcvbwED-Q6o",
+          "title": "Essential Roof Estimating Tools for Roofing Contractors | Perkins Roofing Franchise Tips",
+          "start": 420.0,
+          "link": "https://youtu.be/BcvbwED-Q6o?t=420"
+        },
+        {
+          "label": "Storm preparation",
+          "video_id": "-8YFC6G6byE",
+          "title": "Tropical Storm Nicole Update! | Miami, FTL, Palm Beach",
+          "start": 13.0,
+          "link": "https://youtu.be/-8YFC6G6byE?t=13"
+        },
+        {
+          "label": "Rainy season preparation",
+          "video_id": "wAhHpqDR_FE",
+          "title": "Rainy Season has Begun 6.3.22 Update",
+          "start": 70.0,
+          "link": "https://youtu.be/wAhHpqDR_FE?t=70"
+        },
+        {
+          "label": "Hurricane preparedness",
+          "video_id": "wAhHpqDR_FE",
+          "title": "Rainy Season has Begun 6.3.22 Update",
+          "start": 77.0,
+          "link": "https://youtu.be/wAhHpqDR_FE?t=77"
+        }
+      ],
+      "title": "Storm-Proof Your Roof: Essential Prep for Hurricane Season",
+      "angle": "This guide helps homeowners fortify their roofs against hurricanes with expert tips from Perkins Roofing."
+    },
+    {
+      "rep": "Roof underlayment",
+      "labels": [
+        "Synthetic underlayment issues",
+        "Roof underlayment",
+        "XFR underlayment",
+        "Self-adhered underlayments",
+        "Roofing underlayments",
+        "Tile underlayment"
+      ],
+      "moment_count": 7,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Synthetic underlayment issues",
+          "video_id": "kYKGmrX7BCY",
+          "title": "Shingle Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 486.0,
+          "link": "https://youtu.be/kYKGmrX7BCY?t=486"
+        },
+        {
+          "label": "Roof underlayment",
+          "video_id": "z9vWdP-DPRA",
+          "title": "Florida Tile Roof Insurance Claims - Upgrade Your Roof Tiles!",
+          "start": 511.0,
+          "link": "https://youtu.be/z9vWdP-DPRA?t=511"
+        },
+        {
+          "label": "Roof underlayment",
+          "video_id": "9F9rQBvBNdM",
+          "title": "Evergrene Tile Re Roof in Palm Beach Gardens",
+          "start": 221.0,
+          "link": "https://youtu.be/9F9rQBvBNdM?t=221"
+        },
+        {
+          "label": "XFR underlayment",
+          "video_id": "a98I4dlc4w4",
+          "title": "How to Install a Metal Roof in Florida - STEP-BY-STEP",
+          "start": 130.0,
+          "link": "https://youtu.be/a98I4dlc4w4?t=130"
+        },
+        {
+          "label": "Self-adhered underlayments",
+          "video_id": "pFyjI6gnck8",
+          "title": "2024 Florida Roofing Code Updates",
+          "start": 149.0,
+          "link": "https://youtu.be/pFyjI6gnck8?t=149"
+        },
+        {
+          "label": "Roofing underlayments",
+          "video_id": "pFyjI6gnck8",
+          "title": "2024 Florida Roofing Code Updates",
+          "start": 133.0,
+          "link": "https://youtu.be/pFyjI6gnck8?t=133"
+        },
+        {
+          "label": "Tile underlayment",
+          "video_id": "aJrDyyeWQlY",
+          "title": "Concrete vs. Clay Roof Tiles | Perkins Roofing Corp.",
+          "start": 181.0,
+          "link": "https://youtu.be/aJrDyyeWQlY?t=181"
+        }
+      ],
+      "title": "Mastering Roof Underlayment: Key Insights for Durable Roofing",
+      "angle": "This article explores the nuances of various roof underlayments, including synthetic, self-adhered, and tile options, helping homeowners and contractors make informed decisions for long-lasting roof protection."
+    },
+    {
+      "rep": "Metal tile roof restoration",
+      "labels": [
+        "Concrete tile roof lifespan",
+        "Metal tile roof restoration",
+        "Support structures on tile roofs",
+        "Walking up and down tile roofs",
+        "Roof restoration and re-roof challenges",
+        "Silicone over tile roofs"
+      ],
+      "moment_count": 7,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Concrete tile roof lifespan",
+          "video_id": "IHnNKhUPkSI",
+          "title": "When to Install Aluminum, Copper or Stainless Steel on a Roof in Florida",
+          "start": 250.0,
+          "link": "https://youtu.be/IHnNKhUPkSI?t=250"
+        },
+        {
+          "label": "Metal tile roof restoration",
+          "video_id": "rHuDIqHwid4",
+          "title": "Miami Beach and Brickell High Rise ReRoofs",
+          "start": 31.0,
+          "link": "https://youtu.be/rHuDIqHwid4?t=31"
+        },
+        {
+          "label": "Metal tile roof restoration",
+          "video_id": "zlJGzJNntJA",
+          "title": "Ocean Front Metal Roof Restoration Fort Lauderdale High Rise",
+          "start": 76.0,
+          "link": "https://youtu.be/zlJGzJNntJA?t=76"
+        },
+        {
+          "label": "Support structures on tile roofs",
+          "video_id": "a1-60YkDRcU",
+          "title": "How to walk on a Tile Roof",
+          "start": 126.0,
+          "link": "https://youtu.be/a1-60YkDRcU?t=126"
+        },
+        {
+          "label": "Walking up and down tile roofs",
+          "video_id": "a1-60YkDRcU",
+          "title": "How to walk on a Tile Roof",
+          "start": 194.0,
+          "link": "https://youtu.be/a1-60YkDRcU?t=194"
+        },
+        {
+          "label": "Roof restoration and re-roof challenges",
+          "video_id": "25MU81_znXQ",
+          "title": "April 2022 Price Increases Are Happening! | STAY IN THE KNOW! | Perkins Roofing Corp.",
+          "start": 88.0,
+          "link": "https://youtu.be/25MU81_znXQ?t=88"
+        },
+        {
+          "label": "Silicone over tile roofs",
+          "video_id": "fxCM54VRdMA",
+          "title": "Why You Should NEVER Coat Tile or Shingle Roofs | Perkins Roofing Corp.",
+          "start": 6.0,
+          "link": "https://youtu.be/fxCM54VRdMA?t=6"
+        }
+      ],
+      "title": "Maximizing Tile Roof Longevity: Expert Insights from Perkins Roofing",
+      "angle": "This article explores key aspects of tile roof maintenance and restoration, helping homeowners and contractors make informed decisions to extend roof lifespan and overcome common challenges."
+    },
+    {
+      "rep": "Safety measures",
+      "labels": [
+        "Safety measures",
+        "Tile measurements and quantities",
+        "Roof measurements"
+      ],
+      "moment_count": 6,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Safety measures",
+          "video_id": "MUXcwHmn3q4",
+          "title": "Commercial Standing Seam Metal Roof (Pt.3)",
+          "start": 939.0,
+          "link": "https://youtu.be/MUXcwHmn3q4?t=939"
+        },
+        {
+          "label": "Safety measures",
+          "video_id": "sDwbr3MH8r4",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 2)",
+          "start": 678.0,
+          "link": "https://youtu.be/sDwbr3MH8r4?t=678"
+        },
+        {
+          "label": "Safety measures",
+          "video_id": "dtl6P6Lv6aE",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt. 2)",
+          "start": 332.0,
+          "link": "https://youtu.be/dtl6P6Lv6aE?t=332"
+        },
+        {
+          "label": "Safety measures",
+          "video_id": "q8UxF0GIZeA",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 9",
+          "start": 450.0,
+          "link": "https://youtu.be/q8UxF0GIZeA?t=450"
+        },
+        {
+          "label": "Tile measurements and quantities",
+          "video_id": "SMii7a_rMQw",
+          "title": "Different Roof Tile Profiles in Florida | Perkins Roofing Corp.",
+          "start": 61.0,
+          "link": "https://youtu.be/SMii7a_rMQw?t=61"
+        },
+        {
+          "label": "Roof measurements",
+          "video_id": "Zlcf7W5icGk",
+          "title": "What are the parts of a Roof? Roof Component Breakdown | Perkins Roofing Corp.",
+          "start": 35.0,
+          "link": "https://youtu.be/Zlcf7W5icGk?t=35"
+        }
+      ],
+      "title": "Safety First: Essential Roofing Measures for Every Project",
+      "angle": "This article highlights critical safety measures for roofers, ensuring secure and accident-free work environments for professionals in the field."
+    },
+    {
+      "rep": "Impact windows",
+      "labels": [
+        "Impact windows and painting",
+        "Impact windows and doors",
+        "Impact windows"
+      ],
+      "moment_count": 6,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Impact windows and painting",
+          "video_id": "oPnVIbgbcxE",
+          "title": "Florida Rainy Season is HERE\u2026 and Roofing Prices Jump on April 15th! Act NOW Before It\u2019s Too Late",
+          "start": 194.0,
+          "link": "https://youtu.be/oPnVIbgbcxE?t=194"
+        },
+        {
+          "label": "Impact windows and doors",
+          "video_id": "cvmA39HTvo0",
+          "title": "Perkins Roofing & Construction New Year Discount!",
+          "start": 157.0,
+          "link": "https://youtu.be/cvmA39HTvo0?t=157"
+        },
+        {
+          "label": "Impact windows and doors",
+          "video_id": "sDwbr3MH8r4",
+          "title": "The Truth About High-Pitched Roofs & Impact Windows: Expert Tips (Pt. 2)",
+          "start": 791.0,
+          "link": "https://youtu.be/sDwbr3MH8r4?t=791"
+        },
+        {
+          "label": "Impact windows",
+          "video_id": "XpRkeWcflW8",
+          "title": "Perkins Construction Exterior House Painting",
+          "start": 207.0,
+          "link": "https://youtu.be/XpRkeWcflW8?t=207"
+        },
+        {
+          "label": "Impact windows",
+          "video_id": "CSd1hO8x9W4",
+          "title": "Perkins Roofing Mother's Day and Military Discount",
+          "start": 67.0,
+          "link": "https://youtu.be/CSd1hO8x9W4?t=67"
+        },
+        {
+          "label": "Impact windows",
+          "video_id": "q7xVmhOYg60",
+          "title": "Mitered Bermuda Style Tile Re-Roof: South Florida",
+          "start": 431.0,
+          "link": "https://youtu.be/q7xVmhOYg60?t=431"
+        }
+      ],
+      "title": "Fortify Your Home: The Ultimate Guide to Impact Windows and Doors",
+      "angle": "This guide helps homeowners understand the benefits and installation process of impact windows and doors to enhance home security and energy efficiency."
+    },
+    {
+      "rep": "Concrete vs. clay tiles",
+      "labels": [
+        "Concrete vs. clay tiles",
+        "Clay vs. concrete tiles",
+        "Roofing materials comparison (concrete vs. clay tiles)",
+        "Tile materials (clay vs. concrete)",
+        "Difference between concrete and clay tiles"
+      ],
+      "moment_count": 6,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Concrete vs. clay tiles",
+          "video_id": "JnoLblXenaA",
+          "title": "EXPOSED: How Roofers Are Cutting Corners On Tile Roofs In 2026",
+          "start": 434.0,
+          "link": "https://youtu.be/JnoLblXenaA?t=434"
+        },
+        {
+          "label": "Concrete vs. clay tiles",
+          "video_id": "kYBsgUwJv3s",
+          "title": "Top 5 Tips to Maintain Your Tile Roof",
+          "start": 63.0,
+          "link": "https://youtu.be/kYBsgUwJv3s?t=63"
+        },
+        {
+          "label": "Clay vs. concrete tiles",
+          "video_id": "8HMdFNIIMFA",
+          "title": "Tejas Borja & Perkins Roofing Special Offer",
+          "start": 52.0,
+          "link": "https://youtu.be/8HMdFNIIMFA?t=52"
+        },
+        {
+          "label": "Roofing materials comparison (concrete vs. clay tiles)",
+          "video_id": "mxLyabBjf1o",
+          "title": "Florida West Coast Tile Re-Roof (Perkins Roofing Naples)",
+          "start": 407.0,
+          "link": "https://youtu.be/mxLyabBjf1o?t=407"
+        },
+        {
+          "label": "Tile materials (clay vs. concrete)",
+          "video_id": "SMii7a_rMQw",
+          "title": "Different Roof Tile Profiles in Florida | Perkins Roofing Corp.",
+          "start": 33.0,
+          "link": "https://youtu.be/SMii7a_rMQw?t=33"
+        },
+        {
+          "label": "Difference between concrete and clay tiles",
+          "video_id": "aJrDyyeWQlY",
+          "title": "Concrete vs. Clay Roof Tiles | Perkins Roofing Corp.",
+          "start": 11.0,
+          "link": "https://youtu.be/aJrDyyeWQlY?t=11"
+        }
+      ],
+      "title": "Concrete vs. Clay Tiles: The Ultimate Roofing Showdown",
+      "angle": "This article helps homeowners and contractors weigh the pros and cons of concrete and clay tiles to make an informed roofing choice."
+    },
+    {
+      "rep": "Roofing safety",
+      "labels": [
+        "Fascia protection",
+        "Roofing safety",
+        "Ladder safety",
+        "Fire safety",
+        "Balcony protection"
+      ],
+      "moment_count": 6,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Fascia protection",
+          "video_id": "JnoLblXenaA",
+          "title": "EXPOSED: How Roofers Are Cutting Corners On Tile Roofs In 2026",
+          "start": 168.0,
+          "link": "https://youtu.be/JnoLblXenaA?t=168"
+        },
+        {
+          "label": "Roofing safety",
+          "video_id": "zQ-r0C7NkTU",
+          "title": "Miami High Rise Re-Roof and Concrete Repairs (Pt .5)",
+          "start": 254.0,
+          "link": "https://youtu.be/zQ-r0C7NkTU?t=254"
+        },
+        {
+          "label": "Roofing safety",
+          "video_id": "i6mx9EkBh0k",
+          "title": "Florida Building Code Tile Re-Roof in Cape Coral (Florida Roofer)",
+          "start": 190.0,
+          "link": "https://youtu.be/i6mx9EkBh0k?t=190"
+        },
+        {
+          "label": "Ladder safety",
+          "video_id": "BcvbwED-Q6o",
+          "title": "Essential Roof Estimating Tools for Roofing Contractors | Perkins Roofing Franchise Tips",
+          "start": 81.0,
+          "link": "https://youtu.be/BcvbwED-Q6o?t=81"
+        },
+        {
+          "label": "Fire safety",
+          "video_id": "BcvbwED-Q6o",
+          "title": "Essential Roof Estimating Tools for Roofing Contractors | Perkins Roofing Franchise Tips",
+          "start": 448.0,
+          "link": "https://youtu.be/BcvbwED-Q6o?t=448"
+        },
+        {
+          "label": "Balcony protection",
+          "video_id": "q8UxF0GIZeA",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 9",
+          "start": 562.0,
+          "link": "https://youtu.be/q8UxF0GIZeA?t=562"
+        }
+      ],
+      "title": "Safeguarding Your Home: Essential Roofing and Safety Tips",
+      "angle": "This article provides homeowners with crucial insights on fascia protection, roofing safety, ladder safety, fire safety, and balcony protection to ensure a secure and well-maintained home."
+    },
+    {
+      "rep": "Roof age and lifespan",
+      "labels": [
+        "Roof longevity",
+        "Roof types and lifespans",
+        "Roof age",
+        "Roof age and lifespan",
+        "Contractor longevity"
+      ],
+      "moment_count": 6,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Roof longevity",
+          "video_id": "GD2N2j0m25M",
+          "title": "Free Emergency Roof Repair with Commercial Roof Maintenance",
+          "start": 196.0,
+          "link": "https://youtu.be/GD2N2j0m25M?t=196"
+        },
+        {
+          "label": "Roof types and lifespans",
+          "video_id": "G87EtCn_jKc",
+          "title": "Roofing 201: Roof Maintenance & Prolonging Your Roof Life in Florida",
+          "start": 409.0,
+          "link": "https://youtu.be/G87EtCn_jKc?t=409"
+        },
+        {
+          "label": "Roof age",
+          "video_id": "macSIgr4WLM",
+          "title": "Starter home? Starter problems. \ud83d\ude05",
+          "start": 63.0,
+          "link": "https://youtu.be/macSIgr4WLM?t=63"
+        },
+        {
+          "label": "Roof age and lifespan",
+          "video_id": "kYBsgUwJv3s",
+          "title": "Top 5 Tips to Maintain Your Tile Roof",
+          "start": 90.0,
+          "link": "https://youtu.be/kYBsgUwJv3s?t=90"
+        },
+        {
+          "label": "Roof age and lifespan",
+          "video_id": "qriLczFgwPo",
+          "title": "How to Know When You Need a New Roof | Perkins Roofing Corp.",
+          "start": 49.0,
+          "link": "https://youtu.be/qriLczFgwPo?t=49"
+        },
+        {
+          "label": "Contractor longevity",
+          "video_id": "f7mPiOsn40g",
+          "title": "5 Ways Contractors Will RIP YOU OFF & How to Protect Yourself | Perkins Roofing Corp.",
+          "start": 206.0,
+          "link": "https://youtu.be/f7mPiOsn40g?t=206"
+        }
+      ],
+      "title": "Maximizing Your Roof's Lifespan: Expert Tips from Perkins Roofing",
+      "angle": "This article provides homeowners with essential insights on roof longevity, types, and age, helping them make informed decisions to extend their roof's lifespan and choose the right contractor."
+    },
+    {
+      "rep": "Wood replacement",
+      "labels": [
+        "Wood replacement",
+        "Plywood replacement costs",
+        "Gutter replacement",
+        "Roof replacement misunderstandings",
+        "Skylight replacement",
+        "Fascia replacement"
+      ],
+      "moment_count": 6,
+      "video_count": 6,
+      "moments": [
+        {
+          "label": "Wood replacement",
+          "video_id": "mwM6TjmLoLY",
+          "title": "How to Know When a Roofer is Lying to You (5 Top Lies Roofers Tell You To Get Your Money)",
+          "start": 345.0,
+          "link": "https://youtu.be/mwM6TjmLoLY?t=345"
+        },
+        {
+          "label": "Plywood replacement costs",
+          "video_id": "8_T9Qvh6hAM",
+          "title": "Beware of Contractor Wood Prices",
+          "start": 60.0,
+          "link": "https://youtu.be/8_T9Qvh6hAM?t=60"
+        },
+        {
+          "label": "Gutter replacement",
+          "video_id": "XKt1lnZFG8I",
+          "title": "Commercial Standing Seam Metal Roof (Pt. 1)",
+          "start": 430.0,
+          "link": "https://youtu.be/XKt1lnZFG8I?t=430"
+        },
+        {
+          "label": "Roof replacement misunderstandings",
+          "video_id": "MMboiIEJFsA",
+          "title": "Vacation homes and Florida insurance... a love story \ud83d\ude02",
+          "start": 132.0,
+          "link": "https://youtu.be/MMboiIEJFsA?t=132"
+        },
+        {
+          "label": "Skylight replacement",
+          "video_id": "Dv0X5P98fWQ",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 10",
+          "start": 395.0,
+          "link": "https://youtu.be/Dv0X5P98fWQ?t=395"
+        },
+        {
+          "label": "Fascia replacement",
+          "video_id": "Y0dalIDL340",
+          "title": "Boynton Beach Clay Tile Reroof Two Story Waterfront Home | Perkins Roofing Corp.",
+          "start": 337.0,
+          "link": "https://youtu.be/Y0dalIDL340?t=337"
+        }
+      ],
+      "title": "Roofing Revealed: Debunking Myths and Mastering Repairs",
+      "angle": "This article demystifies common roofing misunderstandings and provides clear guidance on repairs, helping homeowners make informed decisions and avoid costly mistakes."
+    },
+    {
+      "rep": "Underlayment importance",
+      "labels": [
+        "Underlayment importance",
+        "Teamwork importance",
+        "Branding importance",
+        "Gutter placement and importance"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Underlayment importance",
+          "video_id": "ls9zLWRiDHg",
+          "title": "Tile Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 116.0,
+          "link": "https://youtu.be/ls9zLWRiDHg?t=116"
+        },
+        {
+          "label": "Underlayment importance",
+          "video_id": "kYKGmrX7BCY",
+          "title": "Shingle Roof Estimate Red Flags: An Inside Cheat Sheet from a Florida Roofer",
+          "start": 335.0,
+          "link": "https://youtu.be/kYKGmrX7BCY?t=335"
+        },
+        {
+          "label": "Teamwork importance",
+          "video_id": "v3HM-ADY3vo",
+          "title": "Florida Metal Roofs (w/ Tim Dyer of Metal Productions)",
+          "start": 392.0,
+          "link": "https://youtu.be/v3HM-ADY3vo?t=392"
+        },
+        {
+          "label": "Branding importance",
+          "video_id": "gtbkLgg_G9o",
+          "title": "96% OF ROOFING COMPANIES FAIL IN 5 YEARS \u2013 DON'T BE ONE! JOIN PERKINS ROOFING FRANCHISE",
+          "start": 420.0,
+          "link": "https://youtu.be/gtbkLgg_G9o?t=420"
+        },
+        {
+          "label": "Gutter placement and importance",
+          "video_id": "DJgriG6P-KE",
+          "title": "Do You Need Gutters? YES! | Perkins Roofing Corp.",
+          "start": 3.0,
+          "link": "https://youtu.be/DJgriG6P-KE?t=3"
+        }
+      ],
+      "title": "The Roof Over Your Head: Why Every Detail Matters",
+      "angle": "This article explores the critical aspects of roofing, from underlayment and gutter placement to teamwork and branding, helping homeowners and contractors make informed decisions."
+    },
+    {
+      "rep": "Permitting process",
+      "labels": [
+        "Testing and approvals process",
+        "Permitting process",
+        "Roofing process",
+        "Inspection process"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Testing and approvals process",
+          "video_id": "MV4UcLS53l8",
+          "title": "Roofing Secrets Home Owners Need to Know: An Interview w/ Polyglass VP Jimmy Akins",
+          "start": 265.0,
+          "link": "https://youtu.be/MV4UcLS53l8?t=265"
+        },
+        {
+          "label": "Permitting process",
+          "video_id": "Px7MAryN_wU",
+          "title": "Perkins Roofing New Tiered Pricing",
+          "start": 217.0,
+          "link": "https://youtu.be/Px7MAryN_wU?t=217"
+        },
+        {
+          "label": "Permitting process",
+          "video_id": "c6EwfV0TpxU",
+          "title": "Permit Fees vs. Engineering Fees vs. Permitting | What's the Difference?",
+          "start": 45.0,
+          "link": "https://youtu.be/c6EwfV0TpxU?t=45"
+        },
+        {
+          "label": "Roofing process",
+          "video_id": "macSIgr4WLM",
+          "title": "Starter home? Starter problems. \ud83d\ude05",
+          "start": 124.0,
+          "link": "https://youtu.be/macSIgr4WLM?t=124"
+        },
+        {
+          "label": "Inspection process",
+          "video_id": "3T4dx1ZUON8",
+          "title": "Five Things to Look for in a Good Contractor",
+          "start": 237.0,
+          "link": "https://youtu.be/3T4dx1ZUON8?t=237"
+        }
+      ],
+      "title": "Navigating the Roofing Journey: From Testing to Inspection",
+      "angle": "This guide breaks down the essential steps in the roofing process, helping homeowners and contractors ensure a smooth and compliant project from start to finish."
+    },
+    {
+      "rep": "Roofing service areas",
+      "labels": [
+        "Geographic service areas",
+        "Roofing service areas",
+        "Service areas"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Geographic service areas",
+          "video_id": "wbcFXnsYsj0",
+          "title": "Estimate or Inspection Report: What's the Difference?",
+          "start": 200.0,
+          "link": "https://youtu.be/wbcFXnsYsj0?t=200"
+        },
+        {
+          "label": "Roofing service areas",
+          "video_id": "d6XyWEU_u7E",
+          "title": "Concrete Tiles Suck Pt. 3",
+          "start": 247.0,
+          "link": "https://youtu.be/d6XyWEU_u7E?t=247"
+        },
+        {
+          "label": "Roofing service areas",
+          "video_id": "WLYaBUmv-1E",
+          "title": "CALL NOW (January 2025 Only) Special Deal - Get Your Roof at Cost!",
+          "start": 78.0,
+          "link": "https://youtu.be/WLYaBUmv-1E?t=78"
+        },
+        {
+          "label": "Service areas",
+          "video_id": "CSd1hO8x9W4",
+          "title": "Perkins Roofing Mother's Day and Military Discount",
+          "start": 154.0,
+          "link": "https://youtu.be/CSd1hO8x9W4?t=154"
+        },
+        {
+          "label": "Service areas",
+          "video_id": "dVFAV2GdrbQ",
+          "title": "Perkins Protection Program",
+          "start": 143.0,
+          "link": "https://youtu.be/dVFAV2GdrbQ?t=143"
+        }
+      ],
+      "title": "Maximizing Your Roofing Reach: Service Areas Explained",
+      "angle": "This article helps homeowners and business owners understand the geographic and roofing service areas Perkins Roofing covers, ensuring they find the right experts for their needs."
+    },
+    {
+      "rep": "Franchise opportunities",
+      "labels": [
+        "Franchising opportunities",
+        "Franchise opportunities",
+        "Roofing franchise opportunities"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Franchising opportunities",
+          "video_id": "wbcFXnsYsj0",
+          "title": "Estimate or Inspection Report: What's the Difference?",
+          "start": 220.0,
+          "link": "https://youtu.be/wbcFXnsYsj0?t=220"
+        },
+        {
+          "label": "Franchise opportunities",
+          "video_id": "d6XyWEU_u7E",
+          "title": "Concrete Tiles Suck Pt. 3",
+          "start": 274.0,
+          "link": "https://youtu.be/d6XyWEU_u7E?t=274"
+        },
+        {
+          "label": "Franchise opportunities",
+          "video_id": "CSd1hO8x9W4",
+          "title": "Perkins Roofing Mother's Day and Military Discount",
+          "start": 179.0,
+          "link": "https://youtu.be/CSd1hO8x9W4?t=179"
+        },
+        {
+          "label": "Roofing franchise opportunities",
+          "video_id": "mvxKUW6FfOA",
+          "title": "Get a Quick Roof Estimate with Perkins Roofing's Free Tool \u2013 Accurate, Instant, and Easy!",
+          "start": 436.0,
+          "link": "https://youtu.be/mvxKUW6FfOA?t=436"
+        },
+        {
+          "label": "Roofing franchise opportunities",
+          "video_id": "ShbcDu7RAsY",
+          "title": "Own a Perkins Roofing Franchise!",
+          "start": 40.0,
+          "link": "https://youtu.be/ShbcDu7RAsY?t=40"
+        }
+      ],
+      "title": "Unlock Your Entrepreneurial Potential with Perkins Roofing Franchises",
+      "angle": "This article explores the exciting franchise opportunities available through Perkins Roofing, helping aspiring entrepreneurs and investors discover a profitable path in the roofing industry."
+    },
+    {
+      "rep": "Safety equipment",
+      "labels": [
+        "Safety equipment",
+        "Safety equipment (yo-yo harness)",
+        "Roofing equipment"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Safety equipment",
+          "video_id": "aOMRXUdZTew",
+          "title": "Commercial Standing Seam Metal Roof (Pt.2)",
+          "start": 515.0,
+          "link": "https://youtu.be/aOMRXUdZTew?t=515"
+        },
+        {
+          "label": "Safety equipment",
+          "video_id": "BcvbwED-Q6o",
+          "title": "Essential Roof Estimating Tools for Roofing Contractors | Perkins Roofing Franchise Tips",
+          "start": 385.0,
+          "link": "https://youtu.be/BcvbwED-Q6o?t=385"
+        },
+        {
+          "label": "Safety equipment (yo-yo harness)",
+          "video_id": "LLYJ0Tb5k-A",
+          "title": "Ocean Front Metal Roof Restoration Pt  3",
+          "start": 208.0,
+          "link": "https://youtu.be/LLYJ0Tb5k-A?t=208"
+        },
+        {
+          "label": "Roofing equipment",
+          "video_id": "q8UxF0GIZeA",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 9",
+          "start": 497.0,
+          "link": "https://youtu.be/q8UxF0GIZeA?t=497"
+        },
+        {
+          "label": "Roofing equipment",
+          "video_id": "i6mx9EkBh0k",
+          "title": "Florida Building Code Tile Re-Roof in Cape Coral (Florida Roofer)",
+          "start": 104.0,
+          "link": "https://youtu.be/i6mx9EkBh0k?t=104"
+        }
+      ],
+      "title": "Essential Gear for Roofing Safety and Efficiency",
+      "angle": "This article highlights the must-have safety and roofing equipment for professionals, ensuring secure and productive work on every project."
+    },
+    {
+      "rep": "Roofing discounts",
+      "labels": [
+        "Insurance discounts",
+        "Roofing discounts",
+        "Military discounts",
+        "Mother's Day discounts"
+      ],
+      "moment_count": 5,
+      "video_count": 3,
+      "moments": [
+        {
+          "label": "Insurance discounts",
+          "video_id": "aOMRXUdZTew",
+          "title": "Commercial Standing Seam Metal Roof (Pt.2)",
+          "start": 142.0,
+          "link": "https://youtu.be/aOMRXUdZTew?t=142"
+        },
+        {
+          "label": "Roofing discounts",
+          "video_id": "CSd1hO8x9W4",
+          "title": "Perkins Roofing Mother's Day and Military Discount",
+          "start": 45.0,
+          "link": "https://youtu.be/CSd1hO8x9W4?t=45"
+        },
+        {
+          "label": "Roofing discounts",
+          "video_id": "WLYaBUmv-1E",
+          "title": "CALL NOW (January 2025 Only) Special Deal - Get Your Roof at Cost!",
+          "start": 24.0,
+          "link": "https://youtu.be/WLYaBUmv-1E?t=24"
+        },
+        {
+          "label": "Military discounts",
+          "video_id": "CSd1hO8x9W4",
+          "title": "Perkins Roofing Mother's Day and Military Discount",
+          "start": 51.0,
+          "link": "https://youtu.be/CSd1hO8x9W4?t=51"
+        },
+        {
+          "label": "Mother's Day discounts",
+          "video_id": "CSd1hO8x9W4",
+          "title": "Perkins Roofing Mother's Day and Military Discount",
+          "start": 80.0,
+          "link": "https://youtu.be/CSd1hO8x9W4?t=80"
+        }
+      ],
+      "title": "Slash Your Roofing Costs: Discounts You Can't Miss!",
+      "angle": "This article reveals exclusive roofing discounts, including insurance and military deals, helping homeowners save big on their next roofing project."
+    },
+    {
+      "rep": "TPO flat roofs",
+      "labels": [
+        "TPO flat roofs",
+        "Metal roof transition to flat roof",
+        "Types of flat roofs",
+        "Maintenance of flat roofs",
+        "Slope vs. flat roofs"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "TPO flat roofs",
+          "video_id": "dMLcQcsYKLU",
+          "title": "Perkins Penny: The No-BS Budget Roofing Option from Perkins Roofing",
+          "start": 156.0,
+          "link": "https://youtu.be/dMLcQcsYKLU?t=156"
+        },
+        {
+          "label": "Metal roof transition to flat roof",
+          "video_id": "MGp0FwoRsk4",
+          "title": "Standing Seam Metal Roof Details",
+          "start": 51.0,
+          "link": "https://youtu.be/MGp0FwoRsk4?t=51"
+        },
+        {
+          "label": "Types of flat roofs",
+          "video_id": "uUzcKdhtHxI",
+          "title": "Pros and Cons of Different Flat Roofs | Perkins Roofing Corp.",
+          "start": 16.0,
+          "link": "https://youtu.be/uUzcKdhtHxI?t=16"
+        },
+        {
+          "label": "Maintenance of flat roofs",
+          "video_id": "EpOEAftcp58",
+          "title": "When Should I Restore My Roof? | Perkins Roofing Corp.",
+          "start": 136.0,
+          "link": "https://youtu.be/EpOEAftcp58?t=136"
+        },
+        {
+          "label": "Slope vs. flat roofs",
+          "video_id": "BZF58V5o4Jw",
+          "title": "What Are the Pros and Cons of Different Roof Decks? Choose the Best One for You!",
+          "start": 262.0,
+          "link": "https://youtu.be/BZF58V5o4Jw?t=262"
+        }
+      ],
+      "title": "Mastering Flat Roofs: Types, Maintenance, and More",
+      "angle": "This guide helps homeowners and property managers understand the different types of flat roofs, their maintenance needs, and how to transition between roofing materials."
+    },
+    {
+      "rep": "Career transitions",
+      "labels": [
+        "Career transitions",
+        "Urethane wall transitions",
+        "Roof transitions",
+        "Slope transition details",
+        "Roof transition areas"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Career transitions",
+          "video_id": "v3HM-ADY3vo",
+          "title": "Florida Metal Roofs (w/ Tim Dyer of Metal Productions)",
+          "start": 220.0,
+          "link": "https://youtu.be/v3HM-ADY3vo?t=220"
+        },
+        {
+          "label": "Urethane wall transitions",
+          "video_id": "Px7MAryN_wU",
+          "title": "Perkins Roofing New Tiered Pricing",
+          "start": 287.0,
+          "link": "https://youtu.be/Px7MAryN_wU?t=287"
+        },
+        {
+          "label": "Roof transitions",
+          "video_id": "tb75SaFvPNU",
+          "title": "I Re-Roofed Only One Side of a Townhouse",
+          "start": 139.0,
+          "link": "https://youtu.be/tb75SaFvPNU?t=139"
+        },
+        {
+          "label": "Slope transition details",
+          "video_id": "5bVJpMu5_u0",
+          "title": "How To Install a Mitered Tile Roof (PGA National - Duel Sloped Roof)",
+          "start": 252.0,
+          "link": "https://youtu.be/5bVJpMu5_u0?t=252"
+        },
+        {
+          "label": "Roof transition areas",
+          "video_id": "4N85m6Zeji8",
+          "title": "Tile Roof: Loading Tiles & Frequently Asked Questions",
+          "start": 429.0,
+          "link": "https://youtu.be/4N85m6Zeji8?t=429"
+        }
+      ],
+      "title": "Mastering Roof Transitions: A Guide for Seamless Results",
+      "angle": "This guide helps roofers and DIY enthusiasts understand the best practices for roof transitions, ensuring durability and aesthetic appeal."
+    },
+    {
+      "rep": "Urethane coating",
+      "labels": [
+        "Urethane coating",
+        "Polyurethane coating",
+        "Stone coating protection",
+        "Acrylic coating systems",
+        "Roof coating techniques"
+      ],
+      "moment_count": 5,
+      "video_count": 5,
+      "moments": [
+        {
+          "label": "Urethane coating",
+          "video_id": "sZO5rKsp37E",
+          "title": "Perkins Roofing & Perkins Construction Spring Cleaning Discount!",
+          "start": 78.0,
+          "link": "https://youtu.be/sZO5rKsp37E?t=78"
+        },
+        {
+          "label": "Polyurethane coating",
+          "video_id": "6S984qjVBuE",
+          "title": "Fisher Island High Rise Barrel Tile Re-Roof Part 6",
+          "start": 115.0,
+          "link": "https://youtu.be/6S984qjVBuE?t=115"
+        },
+        {
+          "label": "Stone coating protection",
+          "video_id": "PhHzDsACGO8",
+          "title": "Stone Coated Metal Roof Install in South Florida",
+          "start": 57.0,
+          "link": "https://youtu.be/PhHzDsACGO8?t=57"
+        },
+        {
+          "label": "Acrylic coating systems",
+          "video_id": "7FnMjSi46IY",
+          "title": "Liquid Applied Roofing System Pros & Cons | Perkins Roofing Corp.",
+          "start": 47.0,
+          "link": "https://youtu.be/7FnMjSi46IY?t=47"
+        },
+        {
+          "label": "Roof coating techniques",
+          "video_id": "fxCM54VRdMA",
+          "title": "Why You Should NEVER Coat Tile or Shingle Roofs | Perkins Roofing Corp.",
+          "start": 107.0,
+          "link": "https://youtu.be/fxCM54VRdMA?t=107"
+        }
+      ],
+      "title": "Mastering Roof Coatings: Techniques and Systems for Longevity",
+      "angle": "This article explores the latest in urethane, polyurethane, stone, and acrylic roof coatings, helping homeowners and contractors make informed decisions for durable roof protection."
+    }
+  ]
+}

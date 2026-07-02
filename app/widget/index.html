@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- "Ask Tim" embeddable widget. Calls the API /ask; renders the grounded answer with
+     timecoded citations, and shows the abstention message when confidence is low. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ask Tim — Perkins Roofing</title>
+<style>
+ body{font-family:'Segoe UI',Arial,sans-serif;max-width:640px;margin:24px auto;padding:0 16px;color:#1f2937}
+ h2{color:#0f2c4d} .ask{display:flex;gap:8px}
+ input{flex:1;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px}
+ button{background:#0f2c4d;color:#fff;border:0;border-radius:8px;padding:11px 16px;cursor:pointer}
+ #a{margin-top:16px;white-space:pre-wrap;line-height:1.5}
+ .cites a{display:inline-block;margin:4px 6px 0 0;font-size:12px;color:#0e7490}
+ .muted{color:#94a3b8;font-size:12px}
+</style></head><body>
+<h2>Ask Tim — Perkins Roofing</h2>
+<p class="muted">Answers come straight from Tim's videos, with links to the exact moment.</p>
+<div class="ask">
+  <input id="q" placeholder="e.g. What underlayment should I use on a tile roof?" />
+  <button onclick="ask()">Ask</button>
+</div>
+<div id="a"></div>
+<div id="c" class="cites"></div>
+<script>
+const API = location.origin;  // served from the same FastAPI app
+async function ask(){
+  const q = document.getElementById('q').value.trim(); if(!q) return;
+  document.getElementById('a').textContent = "Thinking…"; document.getElementById('c').innerHTML="";
+  try{
+    const r = await fetch(API + "/ask", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q})});
+    const d = await r.json();
+    document.getElementById('a').textContent = d.answer;
+    if(!d.abstained && d.citations){ document.getElementById('c').innerHTML =
+      d.citations.map(u=>`<a href="${u}" target="_blank">▶ watch source</a>`).join(""); }
+  }catch(e){ document.getElementById('a').textContent = "Sorry — something went wrong."; }
+}
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')ask();});
+</script></body></html>
