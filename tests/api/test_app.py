@@ -21,6 +21,9 @@ def test_search_with_sales_token(monkeypatch):
     assert r.status_code == 200 and r.json() == [{"ok": 1}]
 
 
-def test_promote_stub_exists():
-    # the Cloud Scheduler target must exist (not 404)
-    assert TestClient(appmod.app).post("/internal/promote").json() == {"promoted": 0}
+def test_promote_calls_promoter(monkeypatch):
+    # the Cloud Scheduler target must exist (not 404) and invoke the promoter
+    import jobs.promote_job as pj
+    monkeypatch.setattr(pj, "run", lambda: {"promoted": 3, "errored": 0})
+    r = TestClient(appmod.app).post("/internal/promote")
+    assert r.status_code == 200 and r.json()["promoted"] == 3

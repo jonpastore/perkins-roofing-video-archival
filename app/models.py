@@ -66,6 +66,32 @@ class Chunk(Base):
     embedding = Column(_EMBEDDING)    # pgvector Vector(3072) on Postgres, JSON on SQLite
     embed_model = Column(String); version = Column(String)
 
+class EmailTemplate(Base):
+    __tablename__ = "email_templates"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String); subject = Column(String); body = Column(Text)
+    created_by = Column(String)
+
+class Article(Base):
+    __tablename__ = "articles"
+    slug = Column(String, primary_key=True)
+    title = Column(String); meta = Column(Text)
+    content_md = Column(Text); faq_json = Column(JSON); jsonld_json = Column(JSON)
+    role = Column(String)             # pillar | cluster | standalone
+    pillar_slug = Column(String)
+    wp_post_id = Column(Integer)
+    status = Column(String)           # draft | scheduled | published
+    publish_at = Column(DateTime)
+
+class ScheduledContent(Base):
+    __tablename__ = "scheduled_content"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String)             # article | reel
+    ref_id = Column(String)
+    publish_at = Column(DateTime)
+    status = Column(String, default="scheduled")  # scheduled | published | error
+    target = Column(String)
+
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
 

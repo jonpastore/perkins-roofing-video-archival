@@ -38,9 +38,15 @@ class VertexLLM:
             vertexai.init(project=self._project, location=self._location)
             self._model = GenerativeModel(self._chat_model)
 
-    def chat(self, prompt, want_json=False):
+    def chat(self, prompt, want_json=False, response_schema=None):
         self._ensure_chat()
-        cfg = {"response_mime_type": "application/json"} if want_json else {}
+        cfg = {}
+        if want_json or response_schema:
+            cfg["response_mime_type"] = "application/json"
+        if response_schema:
+            # Controlled generation — Gemini is constrained to valid JSON matching the schema,
+            # eliminating the intermittent unescaped-newline parse failures on long article content.
+            cfg["response_schema"] = response_schema
         return _with_retry(lambda: self._model.generate_content(prompt, generation_config=cfg).text)
 
     def embed(self, texts, batch=100):

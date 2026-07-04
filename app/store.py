@@ -20,7 +20,8 @@ def vector_search(query, k=8):
         # PROD: pgvector cosine ANN over chunks.embedding vector(3072) + HNSW index.
         from pgvector.psycopg import register_vector
         s = SessionLocal()
-        register_vector(s.connection().connection)  # adapt list<->vector on this psycopg conn
+        # .driver_connection is the raw psycopg3 conn (unwrap SQLAlchemy's pool proxy)
+        register_vector(s.connection().connection.driver_connection)
         rows = s.execute(text(
             'SELECT id, video_id, text, start, "end", 1 - (embedding <=> :q) AS score '
             'FROM chunks ORDER BY embedding <=> :q LIMIT :k'),
