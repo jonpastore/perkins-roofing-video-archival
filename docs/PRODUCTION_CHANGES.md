@@ -57,6 +57,17 @@ Current staging = `https://jhk.14f.myftpupload.com` (GoDaddy temp domain). Produ
 - **cerberus GPU** is dedicated to Whisper for the project (`ansible/whisper.yml`, ollama disabled).
   Release with `-e dedicate_gpu=false` when done.
 
+## Source-video archival notes
+- All 841 source videos are archived to the private `-media` GCS bucket (`jobs/archive_job.py`),
+  browsable + downloadable from the SPA Archive section (V4 signed URLs, 1h TTL; `api-run-sa`
+  self-signs via `serviceAccountTokenCreator`). ~full-res MP4s — expect tens–hundreds of GB.
+- **Egress is per-download and unbounded by design** (owner chose "archive everything"). There is
+  no download rate-limit or audit log yet — if download volume grows, add a `Video`-level download
+  audit + consider a rate limit. Storage ≈ $0.02/GB/mo; egress ≈ $0.12/GB on each download.
+- The `archive_job` needs adequate ephemeral disk on Cloud Run (peak ~1.5–3× a video's size during
+  yt-dlp merge). Locally it runs via the Auth Proxy with owner ADC (the vertex-dev-sa key has no
+  storage perms — `run_archive.sh` unsets GOOGLE_APPLICATION_CREDENTIALS for GCS).
+
 ## Article engine notes
 - Articles publish as **draft** by default (human review) — pass `status="publish"` to go live.
 - Video-grounding embeds Tim's real clips (oEmbed player + `?t=` deep-links + VideoObject schema);
