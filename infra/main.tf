@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
@@ -150,7 +154,8 @@ resource "google_sql_database_instance" "pg" {
   deletion_protection = true
 
   settings {
-    tier = "db-custom-1-3840"
+    tier    = "db-custom-1-3840"   # 1 vCPU / 3.75GB
+    edition = "ENTERPRISE"          # ENTERPRISE_PLUS only accepts db-perf-optimized-* tiers
 
     backup_configuration {
       enabled    = true
@@ -158,9 +163,11 @@ resource "google_sql_database_instance" "pg" {
     }
 
     ip_configuration {
-      # Private IP only — Cloud Run connects via Cloud SQL Auth Proxy (Unix socket).
-      # Public IP disabled to reduce attack surface.
-      ipv4_enabled = false
+      # Public IP but NO authorized networks — direct connections are blocked. Access is only
+      # via the Cloud SQL Auth Proxy / connector with IAM (Cloud Run uses the built-in connector;
+      # `gcloud sql connect` temporarily whitelists an operator IP for migrations). SSL enforced.
+      ipv4_enabled = true
+      ssl_mode     = "ENCRYPTED_ONLY"
     }
   }
 
@@ -170,6 +177,31 @@ resource "google_sql_database_instance" "pg" {
 resource "google_sql_database" "perkins" {
   name     = "perkins"
   instance = google_sql_database_instance.pg.name
+}
+
+# App DB user — password generated + stored in Secret Manager (never in git/state plaintext).
+resource "random_password" "db" {
+  length  = 32
+  special = false
+}
+
+resource "google_sql_user" "app" {
+  name     = "app"
+  instance = google_sql_database_instance.pg.name
+  password = random_password.db.result
+}
+
+resource "google_secret_manager_secret" "db_password" {
+  secret_id = "db-password"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "db_password" {
+  secret      = google_secret_manager_secret.db_password.id
+  secret_data = random_password.db.result
 }
 
 # ---------------------------------------------------------------------------
