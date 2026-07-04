@@ -15,11 +15,19 @@ Current staging = `https://jhk.14f.myftpupload.com` (GoDaddy temp domain). Produ
    (author/editor role) → that's `WP_APP_PWD` (24 chars; store WITHOUT the display spaces).
 2. **Pretty permalinks.** Settings → Permalinks → **Post name** (anything but "Plain"), or `/wp-json/`
    REST routes 404. (Staging fix confirmed this was the issue.)
-3. **Install the JSON-LD mu-plugin.** Drop `wp-mu-plugin/perkins-jsonld.php` into
-   `wp-content/mu-plugins/` (create the dir if absent). This is a **filesystem step** (SFTP / host
-   File Manager) — WordPress cannot install mu-plugins over REST. Without it, the VideoObject /
-   FAQPage / Article JSON-LD is NOT emitted (WP strips `<script>` from post content), so articles
-   lose their schema/AIO signal even though the data is stored in post meta `_perkins_jsonld`.
+3. **Install the JSON-LD plugin — BEFORE publishing any articles.** Two forms:
+   - **Prod (preferred):** drop `wp-mu-plugin/perkins-jsonld.php` into `wp-content/mu-plugins/`
+     (filesystem/SFTP — mu-plugins can't be installed over REST).
+   - **No filesystem access:** upload `wp-plugin/perkins-jsonld/` (zip it) via **Plugins → Add New →
+     Upload Plugin** and Activate. (On staging this was automated with
+     `scripts/wp_install_plugin.py` — Playwright logs into wp-admin and uploads; needs the real
+     wp-admin LOGIN password, NOT the application password.)
+   - **CRITICAL ORDERING:** the plugin `register_post_meta('_perkins_jsonld')` must be active
+     BEFORE articles are published — WordPress **silently drops writes to unregistered meta keys**,
+     so any article published before the plugin is active renders NO schema (VideoObject/FAQPage/
+     Article) and must be re-published afterward. Install+activate first, then publish.
+   - Without the plugin the JSON-LD is stored in post meta but never emitted (WP strips `<script>`
+     from post content), so articles lose their schema/AIO signal.
 4. **Video embeds (oEmbed).** No plugin needed — WordPress autoembed renders a bare YouTube URL on
    its own line into a player (verified on staging). Just confirm the active theme doesn't strip it.
 5. **SEO plugin (P6).** Confirm Yoast or RankMath. Ensure it does NOT emit a *conflicting* Article/
