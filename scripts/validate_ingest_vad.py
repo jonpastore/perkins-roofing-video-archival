@@ -71,4 +71,24 @@ ingest.ingest_video("goodvid", transcript=trB)
 if calls != {"embed": 1, "extract": 1}:
     _fail(f"re-running a normal video must not reprocess, calls={calls}")
 
-print("INGEST VAD/RESUMABILITY OK — skips persist terminally, no reprocess on rerun")
+# --- Case C: the EXPENSIVE fetch must be gated behind freshness (critic C1) ---
+# Do NOT inject a transcript — exercise the real get_transcript path with a call counter.
+from app import transcript as _T  # noqa: E402
+fetch = {"n": 0}
+
+
+def _fake_fetch(vid):
+    fetch["n"] += 1
+    return {"source": "whisper", "segments": [{"text": "real roof talk", "start": 0, "end": 3}],
+            "words": [], "speech_ratio": 0.9}
+
+
+_T.get_transcript = _fake_fetch
+ingest.ingest_video("fetchvid")                      # first run → fetches once
+if fetch["n"] != 1:
+    _fail(f"first ingest should fetch transcript once, got {fetch['n']}")
+ingest.ingest_video("fetchvid")                      # resumable rerun → MUST NOT re-fetch
+if fetch["n"] != 1:
+    _fail(f"resumable rerun re-transcribed (C1 defect): fetch called {fetch['n']}x")
+
+print("INGEST VAD/RESUMABILITY OK — skips persist, no reprocess, expensive fetch gated on rerun")

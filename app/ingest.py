@@ -41,20 +41,37 @@ def ingest_video(vid, meta=None, force=False, transcript=None):
     s.add(v); s.commit()
 
     # ---- stage: transcript
-    tr = transcript if transcript is not None else T.get_transcript(vid)
-    # VAD gate: a near-silent clip (music-only Short) gets no indexed content, but the stage
-    # still completes so the video is never re-transcribed on the next resumable pass.
-    if "speech_ratio" in tr and not should_transcribe(tr["speech_ratio"]):
-        tr = {**tr, "segments": [], "words": []}
-    h = _hash([tr["source"], [x["text"] for x in tr["segments"]]])
-    if force or not _fresh(_run(s, vid, "transcript"), h):
-        s.query(Segment).filter_by(video_id=vid).delete()
-        s.query(Word).filter_by(video_id=vid).delete()
-        for seg in tr["segments"]:
-            s.add(Segment(video_id=vid, text=seg["text"], start=seg["start"], end=seg["end"], source=tr["source"]))
-        for w in tr["words"]:
-            s.add(Word(video_id=vid, word=w["word"], start=w["start"], confidence=w["confidence"]))
-        s.commit(); _set(s, vid, "transcript", "done", h)
+    # The fetch (Whisper GPU + yt-dlp download) is EXPENSIVE, so gate it behind the stage's
+    # freshness: a resumable rerun of an already-transcribed video reuses the DB segments and
+    # never re-downloads/re-transcribes. Only fetch when injected, forced, or not-yet-done.
+    prev_t = _run(s, vid, "transcript")
+    already = bool(prev_t and prev_t.status == "done"
+                   and prev_t.pipeline_version == settings.PIPELINE_VERSION)
+    if transcript is not None:
+        tr = transcript
+    elif force or not already:
+        try:
+            tr = T.get_transcript(vid)
+        except Exception as e:                       # record the failure so it's queryable
+            s.rollback(); _set(s, vid, "transcript", "error", err=str(e)[:200])
+            s.close(); return status(vid)
+    else:
+        tr = None                                    # already done at this version — reuse DB
+
+    if tr is not None:
+        # VAD gate: a near-silent clip (music-only Short) gets no indexed content, but the
+        # stage still completes so it is never re-transcribed on the next resumable pass.
+        if "speech_ratio" in tr and not should_transcribe(tr["speech_ratio"]):
+            tr = {**tr, "segments": [], "words": []}
+        h = _hash([tr["source"], [x["text"] for x in tr["segments"]]])
+        if force or not _fresh(prev_t, h):
+            s.query(Segment).filter_by(video_id=vid).delete()
+            s.query(Word).filter_by(video_id=vid).delete()
+            for seg in tr["segments"]:
+                s.add(Segment(video_id=vid, text=seg["text"], start=seg["start"], end=seg["end"], source=tr["source"]))
+            for w in tr["words"]:
+                s.add(Word(video_id=vid, word=w["word"], start=w["start"], confidence=w["confidence"]))
+            s.commit(); _set(s, vid, "transcript", "done", h)
 
     segs = s.query(Segment).filter_by(video_id=vid).order_by(Segment.start).all()
     seg_dicts = [{"text": x.text, "start": x.start} for x in segs]

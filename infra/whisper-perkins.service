@@ -10,6 +10,8 @@ Wants=network-online.target
 User=morpheus
 WorkingDirectory=/home/morpheus/whisper-perkins
 Environment=PATH=/home/morpheus/whisper-perkins/venv/bin:/usr/local/bin:/usr/bin:/bin
+# WHISPER_TOKEN lives here (mode 600, NOT in git) — provisioned by ansible/whisper.yml.
+EnvironmentFile=-/etc/whisper-perkins.env
 ExecStart=/home/morpheus/whisper-perkins/venv/bin/uvicorn asr:app --host 0.0.0.0 --port 9000
 Restart=on-failure
 RestartSec=5

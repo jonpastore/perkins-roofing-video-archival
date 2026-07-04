@@ -17,11 +17,14 @@ class _Row:
 def vector_search(query, k=8):
     q = embed([query])[0]
     if _is_pg():
-        # PROD: requires `chunks.embedding vector(3072)` + HNSW index + register_vector(conn).
+        # PROD: pgvector cosine ANN over chunks.embedding vector(3072) + HNSW index.
+        from pgvector.psycopg import register_vector
         s = SessionLocal()
+        register_vector(s.connection().connection)  # adapt list<->vector on this psycopg conn
         rows = s.execute(text(
             'SELECT id, video_id, text, start, "end", 1 - (embedding <=> :q) AS score '
-            'FROM chunks ORDER BY embedding <=> :q LIMIT :k'), {"q": q, "k": k}).fetchall()
+            'FROM chunks ORDER BY embedding <=> :q LIMIT :k'),
+            {"q": np.array(q, dtype=np.float32), "k": k}).fetchall()
         s.close()
         return [(_Row(r), float(r.score)) for r in rows]
     # DEV: numpy cosine

@@ -29,3 +29,11 @@ class Settings:
     MAX_VIDEOS_PER_RUN = int(os.getenv("MAX_VIDEOS_PER_RUN", "500"))
 
 settings = Settings()
+
+# Prod fail-fast (tenancy guard): a prod deploy must use Vertex + Cloud SQL, never the dev
+# cerberus/ollama box or local sqlite. Set PERKINS_ENV=prod on Cloud Run.
+if os.getenv("PERKINS_ENV") == "prod":
+    if settings.EMBED_BACKEND != "vertex" or settings.LLM_BACKEND != "vertex":
+        raise RuntimeError("prod requires EMBED_BACKEND=LLM_BACKEND=vertex (no dev ollama)")
+    if settings.DB_URL.startswith("sqlite"):
+        raise RuntimeError("prod requires Postgres/Cloud SQL, not sqlite")

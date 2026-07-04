@@ -9,6 +9,14 @@ from .config import settings
 
 Base = declarative_base()
 
+# Embedding column is dialect-conditional: real pgvector Vector(3072) on Postgres (prod),
+# JSON list on SQLite (dev). gemini-embedding-001 is 3072-dim — never mixed with other models.
+try:
+    from pgvector.sqlalchemy import Vector
+    _EMBEDDING = JSON().with_variant(Vector(3072), "postgresql")
+except ImportError:  # dev/sqlite has no pgvector installed
+    _EMBEDDING = JSON()
+
 class Video(Base):
     __tablename__ = "videos"
     id = Column(String, primary_key=True)
@@ -55,7 +63,7 @@ class Chunk(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     video_id = Column(String, index=True)
     text = Column(Text); start = Column(Float); end = Column(Float)
-    embedding = Column(JSON)          # PROD: pgvector Vector(3072) + HNSW (gemini-embedding-001)
+    embedding = Column(_EMBEDDING)    # pgvector Vector(3072) on Postgres, JSON on SQLite
     embed_model = Column(String); version = Column(String)
 
 engine = create_engine(settings.DB_URL, future=True)

@@ -1,0 +1,89 @@
+---
+# IaC for the cerberus STT node. Source of truth for the Whisper service — replaces the
+# earlier ad-hoc SSH/systemctl setup so there is no configuration drift.
+#   Converge:    ansible-playbook whisper.yml
+#   Drift check: ansible-playbook whisper.yml --check --diff   (0 changed == no drift)
+#   Release GPU back to ollama when the project ends: -e dedicate_gpu=false
+- name: Perkins Whisper STT node (cerberus) — IaC-managed, GPU-dedicated
+  hosts: stt
+  gather_facts: true
+  vars:
+    whisper_dir: /home/morpheus/whisper-perkins
+    dedicate_gpu: true   # stop+disable ollama so the 5090 is Whisper-only for this project
+
+  tasks:
+    - name: Install ffmpeg (yt-dlp audio extraction)
+      become: true
+      ansible.builtin.apt:
+        name: ffmpeg
+        state: present
+        update_cache: true
+
+    - name: Create whisper working dir
+      ansible.builtin.file:
+        path: "{{ whisper_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create venv + install Python deps
+      ansible.builtin.pip:
+        name:
+          - faster-whisper
+          - fastapi
+          - uvicorn[standard]
+          - python-multipart
+          - yt-dlp
+          - requests
+        virtualenv: "{{ whisper_dir }}/venv"
+        virtualenv_command: python3 -m venv
+
+    - name: Deploy ASR server (canonical source = infra/whisper_asr.py)
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../infra/whisper_asr.py"
+        dest: "{{ whisper_dir }}/asr.py"
+        mode: "0644"
+      notify: restart whisper
+
+    - name: Provision WHISPER_TOKEN env file (secret — from env, never committed)
+      become: true
+      ansible.builtin.copy:
+        content: "WHISPER_TOKEN={{ lookup('env', 'WHISPER_TOKEN') }}\n"
+        dest: /etc/whisper-perkins.env
+        mode: "0600"
+        owner: root
+        group: root
+      no_log: true
+      when: lookup('env', 'WHISPER_TOKEN') | length > 0
+      notify: restart whisper
+
+    - name: Install systemd unit (canonical source = infra/whisper-perkins.service)
+      become: true
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../infra/whisper-perkins.service"
+        dest: /etc/systemd/system/whisper-perkins.service
+        mode: "0644"
+      notify: restart whisper
+
+    - name: Enable + start whisper service
+      become: true
+      ansible.builtin.systemd:
+        name: whisper-perkins
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Dedicate the 5090 to Whisper (stop + disable ollama)
+      become: true
+      ansible.builtin.systemd:
+        name: ollama
+        enabled: false
+        state: stopped
+      when: dedicate_gpu | bool
+
+  handlers:
+    - name: restart whisper
+      become: true
+      ansible.builtin.systemd:
+        name: whisper-perkins
+        state: restarted
+        daemon_reload: true
