@@ -248,11 +248,21 @@ resource "google_cloud_run_v2_service" "api" {
   name     = "api"
   location = var.region
 
+  lifecycle {
+    # GCP normalizes scaling counts 0->null (a perpetual provider diff), and the container
+    # image is deployed by CI/CD, not Terraform — ignore both so drift checks stay clean.
+    ignore_changes = [
+      scaling, # service-level scaling block GCP auto-populates with 0s (perpetual 0->null diff)
+      template[0].containers[0].image,
+    ]
+  }
+
   template {
     service_account = google_service_account.api_run_sa.email
 
     scaling {
-      min_instance_count = 0
+      # min_instance_count omitted — GCP treats explicit 0 as null → perpetual plan diff.
+      # Scale-to-zero is the default.
       max_instance_count = 4
     }
 
