@@ -36,10 +36,18 @@ def from_gcp_stt(vid):
     # PROD: download audio to GCS, call Speech-to-Text v2 (word-level + confidence), normalize.
     raise NotImplementedError("GCP STT v2 backend — implement for production (word ts + confidence)")
 
+def from_whisper(vid):
+    """Local Whisper STT (free, on cerberus) — returns the normalized transcript schema."""
+    from adapters.stt_whisper import transcribe
+    return transcribe(vid)
+
+
 def get_transcript(vid):
     if settings.TRANSCRIPT_POLICY == "stt_only":
-        return from_gcp_stt(vid)
+        return from_whisper(vid) if os.getenv("WHISPER_URL") else from_gcp_stt(vid)
     try:
         return from_youtube_caption(vid)
     except FileNotFoundError:
+        if os.getenv("WHISPER_URL"):
+            return from_whisper(vid)
         return from_gcp_stt(vid)

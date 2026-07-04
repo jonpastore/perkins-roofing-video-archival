@@ -1,0 +1,18 @@
+# Perkins v2 local STT — faster-whisper endpoint on cerberus (RTX 5090).
+# Install: sudo cp whisper-perkins.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#          sudo systemctl enable --now whisper-perkins
+[Unit]
+Description=Perkins Whisper ASR (faster-whisper large-v3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=morpheus
+WorkingDirectory=/home/morpheus/whisper-perkins
+Environment=PATH=/home/morpheus/whisper-perkins/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/morpheus/whisper-perkins/venv/bin/uvicorn asr:app --host 0.0.0.0 --port 9000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

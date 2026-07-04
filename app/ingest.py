@@ -7,6 +7,7 @@ from .models import SessionLocal, init_db, Video, IngestionRun, Segment, Word, G
 from . import transcript as T, graph as G
 from .llm import embed
 from core.chunking import chunk_segments
+from core.vad import should_transcribe
 
 def _hash(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:16]
@@ -28,7 +29,7 @@ def _set(s, vid, stage, status, content_hash=None, err=None):
 def _fresh(st, h):
     return st and st.status == "done" and st.content_hash == h and st.pipeline_version == settings.PIPELINE_VERSION
 
-def ingest_video(vid, meta=None, force=False):
+def ingest_video(vid, meta=None, force=False, transcript=None):
     init_db()
     s = SessionLocal()
     v = s.get(Video, vid) or Video(id=vid, url=f"https://youtu.be/{vid}")
@@ -40,7 +41,11 @@ def ingest_video(vid, meta=None, force=False):
     s.add(v); s.commit()
 
     # ---- stage: transcript
-    tr = T.get_transcript(vid)
+    tr = transcript if transcript is not None else T.get_transcript(vid)
+    # VAD gate: a near-silent clip (music-only Short) gets no indexed content, but the stage
+    # still completes so the video is never re-transcribed on the next resumable pass.
+    if "speech_ratio" in tr and not should_transcribe(tr["speech_ratio"]):
+        tr = {**tr, "segments": [], "words": []}
     h = _hash([tr["source"], [x["text"] for x in tr["segments"]]])
     if force or not _fresh(_run(s, vid, "transcript"), h):
         s.query(Segment).filter_by(video_id=vid).delete()
@@ -57,27 +62,33 @@ def ingest_video(vid, meta=None, force=False):
     # ---- stage: graph
     gh = _hash([settings.GRAPH_VERSION, len(seg_dicts)])
     if force or not _fresh(_run(s, vid, "graph"), gh):
-        try:
-            s.query(GraphNode).filter_by(video_id=vid).delete(); s.commit()
-            for r in G.extract(seg_dicts):
-                s.add(GraphNode(video_id=vid, **r))
-            s.commit(); _set(s, vid, "graph", "done", gh)
-        except Exception as e:
-            s.rollback(); _set(s, vid, "graph", "error", err=str(e)[:200])
+        if not seg_dicts:
+            _set(s, vid, "graph", "done", gh)          # no content → terminal, don't reprocess
+        else:
+            try:
+                s.query(GraphNode).filter_by(video_id=vid).delete(); s.commit()
+                for r in G.extract(seg_dicts):
+                    s.add(GraphNode(video_id=vid, **r))
+                s.commit(); _set(s, vid, "graph", "done", gh)
+            except Exception as e:
+                s.rollback(); _set(s, vid, "graph", "error", err=str(e)[:200])
 
     # ---- stage: embed
     eh = _hash([settings.EMBED_MODEL, settings.CHUNK_SIZE, len(seg_dicts)])
     if force or not _fresh(_run(s, vid, "embed"), eh):
-        try:
-            s.query(Chunk).filter_by(video_id=vid).delete(); s.commit()
-            chunks = chunk_segments(segs, settings.CHUNK_SIZE)
-            vecs = embed([c[0] for c in chunks]) if chunks else []
-            for (text, a, b), vec in zip(chunks, vecs):
-                s.add(Chunk(video_id=vid, text=text, start=a, end=b, embedding=vec,
-                            embed_model=settings.EMBED_MODEL, version=settings.PIPELINE_VERSION))
-            s.commit(); _set(s, vid, "embed", "done", eh)
-        except Exception as e:
-            s.rollback(); _set(s, vid, "embed", "error", err=str(e)[:200])
+        if not seg_dicts:
+            _set(s, vid, "embed", "done", eh)          # no content → terminal, don't reprocess
+        else:
+            try:
+                s.query(Chunk).filter_by(video_id=vid).delete(); s.commit()
+                chunks = chunk_segments(segs, settings.CHUNK_SIZE)
+                vecs = embed([c[0] for c in chunks]) if chunks else []
+                for (text, a, b), vec in zip(chunks, vecs):
+                    s.add(Chunk(video_id=vid, text=text, start=a, end=b, embedding=vec,
+                                embed_model=settings.EMBED_MODEL, version=settings.PIPELINE_VERSION))
+                s.commit(); _set(s, vid, "embed", "done", eh)
+            except Exception as e:
+                s.rollback(); _set(s, vid, "embed", "error", err=str(e)[:200])
 
     s.close()
     return status(vid)

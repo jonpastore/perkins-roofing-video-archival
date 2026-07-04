@@ -6,6 +6,7 @@ Optional bearer auth via WHISPER_TOKEN env var.
 """
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -22,8 +23,9 @@ model = WhisperModel(MODEL_NAME, device="cuda", compute_type="float16")
 
 def _fetch_audio(url: str, dst: Path) -> None:
     # yt-dlp handles YouTube + most direct media URLs; extract 16kHz mono wav for whisper.
+    # Invoke yt-dlp via the venv's Python so it resolves without relying on PATH (nohup).
     subprocess.run(
-        ["yt-dlp", "-x", "--audio-format", "wav",
+        [sys.executable, "-m", "yt_dlp", "-x", "--audio-format", "wav",
          "--postprocessor-args", "-ar 16000 -ac 1",
          "-o", str(dst), url],
         check=True, capture_output=True, timeout=1800,
@@ -59,7 +61,8 @@ async def asr(req: Request):
         "segments": segs,
         "language": info.language,
         "duration": dur,
-        "speech_ratio": round(speech / dur, 3) if dur else 0.0,
+        # clamp to [0,1] — VAD segments are normally non-overlapping but guard anyway
+        "speech_ratio": min(1.0, round(speech / dur, 3)) if dur else 0.0,
     }
 
 
