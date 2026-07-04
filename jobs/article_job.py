@@ -41,6 +41,7 @@ ARTICLE_SCHEMA = {
             "items": {
                 "type": "OBJECT",
                 "properties": {"q": {"type": "STRING"}, "a": {"type": "STRING"}},
+                "required": ["q", "a"],
             },
         },
         "keywords": {"type": "ARRAY", "items": {"type": "STRING"}},
@@ -169,7 +170,14 @@ def generate_article(
 
     title = article.get("title") or keyword
     content = article.get("content") or ""
-    faq = article.get("faq") or []
+    # Embed a real WordPress video player for the top source clip (bare URL on its own line →
+    # WP oEmbed). Keeps the inline ?t= deep-links + VideoObject schema too.
+    if video_chunks:
+        content = _inject_oembed(content, video_chunks)
+    # Normalize FAQ at the I/O boundary — the LLM occasionally omits a field.
+    faq = [{"q": it["q"], "a": it.get("a", "")}
+           for it in (article.get("faq") or [])
+           if isinstance(it, dict) and it.get("q")]
     slug = article.get("slug") or ""
 
     # ── 5. QA checks ─────────────────────────────────────────────────────────
@@ -472,6 +480,20 @@ def _append_video_grounding(user_prompt: str, chunks: list[tuple]) -> str:
         yt_link = video_link(chunk.video_id, chunk.start)
         lines.append(f"- {yt_link} : {chunk.text[:300]}")
     return user_prompt + "\n".join(lines)
+
+
+def _inject_oembed(content: str, chunks: list[tuple]) -> str:
+    """Insert a bare YouTube watch URL (with &t= start) on its own line after the first
+    paragraph so WordPress oEmbeds a real inline player. python-markdown leaves a bare URL
+    un-linked, so it survives to WP's autoembed."""
+    if not chunks:
+        return content
+    chunk, _score = chunks[0]
+    url = f"https://www.youtube.com/watch?v={chunk.video_id}&t={int(chunk.start)}s"
+    parts = content.split("\n\n", 1)
+    if len(parts) == 2:
+        return f"{parts[0]}\n\n{url}\n\n{parts[1]}"
+    return f"{url}\n\n{content}"
 
 
 def _build_video_jsonld(chunks: list[tuple]) -> list[dict]:
