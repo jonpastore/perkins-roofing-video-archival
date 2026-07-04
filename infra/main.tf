@@ -91,6 +91,14 @@ resource "google_project_iam_member" "api_storage_viewer" {
   member  = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+# Let api-run-sa self-sign (IAM SignBlob) so it can mint V4 signed URLs for private
+# media-bucket downloads (the archive download UI) without a downloaded key.
+resource "google_service_account_iam_member" "api_sign" {
+  service_account_id = google_service_account.api_run_sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
 # ---------------------------------------------------------------------------
 # 4. IAM bindings — jobs-sa
 #    roles/speech.client grants Cloud Speech-to-Text access.

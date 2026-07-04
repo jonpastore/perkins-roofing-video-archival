@@ -23,6 +23,7 @@ class Video(Base):
     title = Column(String); duration = Column(Float); upload_date = Column(String)
     views = Column(Integer); likes = Column(Integer); comments = Column(Integer)
     url = Column(String)
+    archive_uri = Column(String)      # gs:// URI of the archived source MP4 in the media bucket
 
 class IngestionRun(Base):
     __tablename__ = "ingestion_runs"
@@ -91,6 +92,24 @@ class ScheduledContent(Base):
     publish_at = Column(DateTime)
     status = Column(String, default="scheduled")  # scheduled | published | error
     target = Column(String)
+
+class MiniSeries(Base):
+    __tablename__ = "mini_series"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_id = Column(String, index=True)
+    title = Column(String)
+    parts_json = Column(JSON)         # [{title, start, end}] proposed clip in/out points
+    approved = Column(Integer, default=0)  # 0 pending | 1 admin-approved
+
+class SocialPost(Base):
+    __tablename__ = "social_posts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series_id = Column(Integer, index=True)
+    part = Column(Integer)
+    platform = Column(String)         # instagram | tiktok
+    gcs_url = Column(String)          # public rendered-reel URL
+    external_id = Column(String)      # returned post id (idempotency)
+    status = Column(String, default="pending")
 
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)

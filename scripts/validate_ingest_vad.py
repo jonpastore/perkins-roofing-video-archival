@@ -74,6 +74,7 @@ if calls != {"embed": 1, "extract": 1}:
 # --- Case C: the EXPENSIVE fetch must be gated behind freshness (critic C1) ---
 # Do NOT inject a transcript — exercise the real get_transcript path with a call counter.
 from app import transcript as _T  # noqa: E402
+
 fetch = {"n": 0}
 
 

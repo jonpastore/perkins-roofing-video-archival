@@ -27,7 +27,7 @@ os.environ.setdefault("WP_APP_PWD", "test-app-password")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ── Init DB ───────────────────────────────────────────────────────────────────
-from app.models import Base, engine, SessionLocal, Article  # noqa: E402
+from app.models import Article, Base, SessionLocal, engine  # noqa: E402
 
 Base.metadata.create_all(engine)
 
@@ -85,10 +85,11 @@ _wp.update_status = _fake_update_status
 
 # Patch at the jobs.article_job import level too (lazy imports inside function)
 import importlib  # noqa: E402
-import jobs.article_job as _job  # noqa: E402
 
 # Patch the module-level lazy import names used inside generate_article
 import unittest.mock as _mock  # noqa: E402
+
+import jobs.article_job as _job  # noqa: E402
 
 _wp_patch = _mock.patch("jobs.article_job.publish", _fake_publish, create=True)
 _wp_patch.start()

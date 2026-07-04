@@ -1,0 +1,381 @@
+"""Render job (I/O orchestration — coverage-omitted).
+
+render_part() is the Cloud Run Job entrypoint for a single series part:
+
+  1. Idempotency check — skip if a SocialPost with gcs_url already exists for
+     this series_id + part_index.
+  2. Pull source video via yt-dlp (adapters.yt_dlp.pull_video).
+  3. Enforce ≤300s clip duration (raises ValueError on violation — preserves
+     editorial intent; never silently truncates).
+  4. Extract the part's clip in/out range (adapters.ffmpeg.clip).
+  5. Generate title and closing cards via adapters.ffmpeg.make_card when
+     title_img/closing_img are not supplied.
+  6. Fuse title card + clip + closing card into a 1080×1920 reel
+     (adapters.ffmpeg.fuse using core.render_spec).
+  7. Upload the reel to the public GCS bucket and return the public URL.
+  8. Persist/update a SocialPost row (series_id, part, platform, gcs_url,
+     status="rendered").
+  9. Insert a ScheduledContent row (kind="reel", ref_id=social_post.id,
+     publish_at=utcnow(), target="instagram,tiktok", status="scheduled")
+     so the scheduler.due selector can find it.
+
+run() sweeps all approved MiniSeries and calls render_part for each unrendered
+part, then is invoked by the Terraform `render` Cloud Run Job.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import tempfile
+from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
+
+# Public GCS bucket name follows the project convention.
+# The bucket must be created with uniform public-read ACL before use.
+_GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+
+# Maximum allowed clip duration (seconds) per IG/TikTok spec.
+_MAX_CLIP_SECS = 300
+
+# Default platform recorded on SocialPost rows created by this job.
+_DEFAULT_PLATFORM = "instagram,tiktok"
+
+# Closing card text used when no closing_img is supplied.
+_CLOSING_TEXT = "Perkins Roofing"
+
+
+def _reels_bucket() -> str:
+    project = _GOOGLE_CLOUD_PROJECT or os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    if not project:
+        raise RuntimeError(
+            "GOOGLE_CLOUD_PROJECT env var is required for GCS upload"
+        )
+    return f"{project}-reels"
+
+
+def _gcs_object_key(series_id: int, part_index: int) -> str:
+    return f"{series_id}/{part_index}.mp4"
+
+
+def _public_url(bucket: str, key: str) -> str:
+    return f"https://storage.googleapis.com/{bucket}/{key}"
+
+
+def _upload_to_gcs(local_path: str, bucket_name: str, object_key: str) -> str:
+    """Upload *local_path* to GCS and return the public URL.
+
+    Degrades gracefully: if google-cloud-storage is unavailable or the bucket
+    does not exist/credentials are missing, raises RuntimeError with a clear
+    message rather than surfacing a raw GCS exception.
+
+    Returns:
+        Public URL ``https://storage.googleapis.com/{bucket}/{key}``.
+    """
+    try:
+        from google.cloud import storage  # noqa: PLC0415
+        from google.cloud.exceptions import GoogleCloudError  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "google-cloud-storage is not installed; "
+            "run: pip install google-cloud-storage"
+        ) from exc
+
+    try:
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(object_key)
+        blob.upload_from_filename(local_path, content_type="video/mp4")
+        # Ensure the object is publicly readable.
+        blob.make_public()
+    except GoogleCloudError as exc:
+        raise RuntimeError(
+            f"GCS upload failed (bucket={bucket_name!r}, key={object_key!r}): {exc}"
+        ) from exc
+
+    return _public_url(bucket_name, object_key)
+
+
+def render_part(
+    series_id: int,
+    part_index: int,
+    *,
+    title_img: str | None = None,
+    closing_img: str | None = None,
+    work_dir: str | None = None,
+) -> dict:
+    """Render one part of a MiniSeries and publish it to GCS.
+
+    Args:
+        series_id:   Primary key of the MiniSeries row.
+        part_index:  Zero-based index into MiniSeries.parts_json.
+        title_img:   Path to the title card image (PNG/JPG).  When None a card
+                     is generated automatically from the MiniSeries title.
+        closing_img: Path to the closing card image (PNG/JPG).  When None a
+                     card reading "Perkins Roofing" is generated automatically.
+        work_dir:    Scratch directory for intermediate files.  A temporary
+                     directory is used when None (cleaned up on exit).
+
+    Returns:
+        Dict::
+
+            {
+                "skipped":      bool,   # True when idempotency guard fired
+                "series_id":    int,
+                "part_index":   int,
+                "gcs_url":      str,    # public reel URL
+                "social_post_id": int,
+                "scheduled_content_id": int | None,
+            }
+
+    Raises:
+        RuntimeError: on missing env vars, GCS errors, or invalid series data.
+        ValueError: if the clip duration exceeds 300 s (editorial-intent guard).
+        IndexError: if part_index is out of range for the series' parts_json.
+    """
+    from app.models import MiniSeries, ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
+
+    db = SessionLocal()
+    try:
+        # ── 1. Idempotency check ─────────────────────────────────────────────
+        existing = (
+            db.query(SocialPost)
+            .filter(
+                SocialPost.series_id == series_id,
+                SocialPost.part == part_index,
+                SocialPost.gcs_url.isnot(None),
+            )
+            .first()
+        )
+        if existing and existing.gcs_url:
+            logger.info(
+                "render_part skipped (already rendered): series=%d part=%d url=%s",
+                series_id,
+                part_index,
+                existing.gcs_url,
+            )
+            return {
+                "skipped": True,
+                "series_id": series_id,
+                "part_index": part_index,
+                "gcs_url": existing.gcs_url,
+                "social_post_id": existing.id,
+                "scheduled_content_id": None,
+            }
+
+        # ── 2. Load series metadata ──────────────────────────────────────────
+        series = db.get(MiniSeries, series_id)
+        if series is None:
+            raise RuntimeError(f"MiniSeries id={series_id} not found")
+        if not series.approved:
+            raise RuntimeError(
+                f"MiniSeries id={series_id} has not been admin-approved"
+            )
+
+        parts = series.parts_json or []
+        if part_index >= len(parts):
+            raise IndexError(
+                f"part_index={part_index} out of range for series {series_id} "
+                f"(has {len(parts)} parts)"
+            )
+        part = parts[part_index]
+        start = float(part["start"])
+        end = float(part["end"])
+        video_id = series.video_id
+        series_title = series.title or f"Series {series_id}"
+
+    finally:
+        db.close()
+
+    # ── 3. Enforce ≤300s cap ─────────────────────────────────────────────────
+    clip_duration = end - start
+    if clip_duration > _MAX_CLIP_SECS:
+        raise ValueError(
+            f"Clip duration {clip_duration:.1f}s exceeds the {_MAX_CLIP_SECS}s limit "
+            f"(series={series_id}, part={part_index}, start={start}, end={end}). "
+            "Adjust the part boundaries in the MiniSeries before rendering."
+        )
+
+    # ── 4-7. Download + clip + fuse + upload ─────────────────────────────────
+    _use_tmp = work_dir is None
+    _tmp_ctx = tempfile.TemporaryDirectory() if _use_tmp else None
+    scratch = _tmp_ctx.name if _tmp_ctx else work_dir
+
+    try:
+        from adapters.ffmpeg import clip as ffmpeg_clip  # noqa: PLC0415
+        from adapters.ffmpeg import fuse as ffmpeg_fuse  # noqa: PLC0415
+        from adapters.ffmpeg import make_card  # noqa: PLC0415
+        from adapters.yt_dlp import pull_video  # noqa: PLC0415
+
+        # 4. Pull source video
+        logger.info("pull_video: video_id=%s -> %s", video_id, scratch)
+        src_path = pull_video(video_id, scratch)
+
+        # 5. Extract clip
+        clip_path = os.path.join(scratch, f"clip_{series_id}_{part_index}.mp4")
+        logger.info("clip: %s [%.2f, %.2f] -> %s", src_path, start, end, clip_path)
+        ffmpeg_clip(src_path, start, end, clip_path)
+
+        # 6. Generate cards if not supplied
+        part_title = part.get("title") or series_title
+        if title_img is None:
+            title_img = os.path.join(scratch, f"title_{series_id}_{part_index}.png")
+            logger.info("make_card (title): %r -> %s", part_title, title_img)
+            make_card(part_title, title_img)
+
+        if closing_img is None:
+            closing_img = os.path.join(scratch, f"closing_{series_id}_{part_index}.png")
+            logger.info("make_card (closing): %r -> %s", _CLOSING_TEXT, closing_img)
+            make_card(_CLOSING_TEXT, closing_img)
+
+        # 7. Fuse
+        reel_path = os.path.join(scratch, f"reel_{series_id}_{part_index}.mp4")
+        logger.info("fuse -> %s", reel_path)
+        ffmpeg_fuse(clip_path, title_img, closing_img, reel_path)
+
+        # 8. Upload to GCS
+        bucket_name = _reels_bucket()
+        object_key = _gcs_object_key(series_id, part_index)
+        logger.info("uploading to gs://%s/%s", bucket_name, object_key)
+        gcs_url = _upload_to_gcs(reel_path, bucket_name, object_key)
+        logger.info("upload complete: %s", gcs_url)
+
+    finally:
+        if _tmp_ctx:
+            _tmp_ctx.cleanup()
+
+    # ── 9. Persist SocialPost + ScheduledContent ─────────────────────────────
+    db = SessionLocal()
+    try:
+        # Upsert SocialPost
+        post = (
+            db.query(SocialPost)
+            .filter(
+                SocialPost.series_id == series_id,
+                SocialPost.part == part_index,
+            )
+            .first()
+        )
+        if post is None:
+            post = SocialPost(
+                series_id=series_id,
+                part=part_index,
+                platform=_DEFAULT_PLATFORM,
+            )
+            db.add(post)
+        post.gcs_url = gcs_url
+        post.status = "rendered"
+        db.flush()  # populate post.id before using it in ScheduledContent
+
+        # Insert ScheduledContent row for the Wave-4 promoter.
+        # publish_at=utcnow() so scheduler.due can select it immediately;
+        # target records the destination platforms.
+        sched = ScheduledContent(
+            kind="reel",
+            ref_id=str(post.id),
+            publish_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            status="scheduled",
+            target=_DEFAULT_PLATFORM,
+        )
+        db.add(sched)
+        db.commit()
+        db.refresh(post)
+        db.refresh(sched)
+
+        logger.info(
+            "persisted SocialPost id=%d ScheduledContent id=%d",
+            post.id,
+            sched.id,
+        )
+        return {
+            "skipped": False,
+            "series_id": series_id,
+            "part_index": part_index,
+            "gcs_url": gcs_url,
+            "social_post_id": post.id,
+            "scheduled_content_id": sched.id,
+        }
+    finally:
+        db.close()
+
+
+def run(limit: int | None = None) -> dict:
+    """Sweep all approved MiniSeries and render any unrendered parts.
+
+    A part is considered unrendered when no SocialPost row exists for that
+    series_id + part_index with a non-null gcs_url.
+
+    Args:
+        limit: Maximum number of *series* to process.  None means no cap.
+
+    Returns:
+        Dict::
+
+            {
+                "rendered": int,   # parts successfully rendered
+                "skipped":  int,   # parts already rendered (idempotency)
+                "errored":  int,   # parts that raised an exception
+            }
+    """
+    from app.models import MiniSeries, SessionLocal, SocialPost  # noqa: PLC0415
+
+    db = SessionLocal()
+    try:
+        query = db.query(MiniSeries).filter(MiniSeries.approved == 1)
+        if limit is not None:
+            query = query.limit(limit)
+        approved = query.all()
+        # Snapshot: build list of (series_id, part_index) pairs to render
+        work: list[tuple[int, int]] = []
+        for series in approved:
+            parts = series.parts_json or []
+            for part_index in range(len(parts)):
+                rendered = (
+                    db.query(SocialPost)
+                    .filter(
+                        SocialPost.series_id == series.id,
+                        SocialPost.part == part_index,
+                        SocialPost.gcs_url.isnot(None),
+                    )
+                    .first()
+                )
+                if not rendered:
+                    work.append((series.id, part_index))
+    finally:
+        db.close()
+
+    rendered_count = 0
+    skipped_count = 0
+    errored_count = 0
+
+    for series_id, part_index in work:
+        try:
+            result = render_part(series_id, part_index)
+            if result["skipped"]:
+                skipped_count += 1
+            else:
+                rendered_count += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "render_part error series=%d part=%d: %s",
+                series_id,
+                part_index,
+                exc,
+            )
+            errored_count += 1
+
+    return {
+        "rendered": rendered_count,
+        "skipped": skipped_count,
+        "errored": errored_count,
+    }
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    logging.basicConfig(level=logging.INFO)
+    _limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    print(json.dumps(run(limit=_limit), indent=2))

@@ -1,6 +1,9 @@
 """yt-dlp adapter (I/O, coverage-omitted) — enumerate a channel's full upload set
-(videos + shorts + streams tabs, de-duped) and pull audio for local Whisper STT."""
+(videos + shorts + streams tabs, de-duped) and pull audio for local Whisper STT.
+
+Also provides pull_video() for downloading the best available MP4 for render jobs."""
 import json
+import os
 import subprocess
 
 _TABS = ("videos", "shorts", "streams")
@@ -38,3 +41,44 @@ def list_channel(channel_id, limit=None):
                     e["url"] = f"https://www.youtube.com/shorts/{vid}"
                 merged.append(e)
     return merged, failed
+
+
+def pull_video(video_id: str, dst: str) -> str:
+    """Download the best available MP4 for *video_id* into directory *dst*.
+
+    Uses yt-dlp format selection ``bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best``
+    to prefer native MP4 containers, avoiding a post-merge transcode where possible.
+
+    Args:
+        video_id: YouTube video ID (e.g. ``"dQw4w9WgXcQ"``).
+        dst:      Directory path where the downloaded file will be placed.
+
+    Returns:
+        Absolute path to the downloaded MP4 file.
+
+    Raises:
+        subprocess.CalledProcessError: if yt-dlp exits non-zero.
+        subprocess.TimeoutExpired: if the download takes longer than 900s.
+        FileNotFoundError: if no MP4 file is found in *dst* after the download.
+    """
+    os.makedirs(dst, exist_ok=True)
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    output_template = os.path.join(dst, f"{video_id}.%(ext)s")
+    cmd = [
+        "yt-dlp",
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "--merge-output-format", "mp4",
+        "-o", output_template,
+        "--no-playlist",
+        url,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=900)
+
+    # Locate the downloaded file (ext may vary on fallback formats)
+    for fname in os.listdir(dst):
+        if fname.startswith(video_id) and fname.endswith(".mp4"):
+            return os.path.join(dst, fname)
+
+    raise FileNotFoundError(
+        f"pull_video: no MP4 found in {dst!r} after downloading {video_id!r}"
+    )

@@ -18,7 +18,21 @@ def run(now=None):
     promoted, errored = 0, 0
     for r in due(rows, now):
         try:
-            # Resolve Article by slug (ref_id == Article.slug)
+            if r.kind == "reel":
+                # Wave-4 social publisher does not exist yet. Move the reel to a distinct
+                # terminal-for-now state that core.scheduler.due() does NOT select, so it is
+                # NOT re-picked every cron tick (avoids an inflated count + a double-publish
+                # trap). The future Wave-4 publisher selects on status == "awaiting_social".
+                r.status = "awaiting_social"
+                s.add(r)
+                print(
+                    f"[promote] scheduled_content {r.id} kind=reel: "
+                    "reel ready, moved to awaiting_social (Wave-4 will publish)"
+                )
+                promoted += 1
+                continue
+
+            # article branch — resolve by slug (ref_id == Article.slug)
             article = s.get(Article, r.ref_id) if r.kind == "article" else None
             if article and article.wp_post_id:
                 wordpress.update_status(article.wp_post_id, "publish")

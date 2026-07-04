@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { User } from "firebase/auth";
 import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
+import { Archive } from "./pages/Archive";
 
 type Role = "admin" | "sales" | null;
 
@@ -13,8 +14,8 @@ function ConfigPage() { return <main><h2>Config</h2></main>; }
 function SearchAskPage() { return <main><h2>Search / Ask</h2></main>; }
 function ComposeEmailPage() { return <main><h2>Compose Email</h2></main>; }
 
-type AdminTab = "templates" | "articles" | "scheduling" | "video-approval" | "config";
-type SalesTab = "search-ask" | "compose-email";
+type AdminTab = "templates" | "articles" | "scheduling" | "video-approval" | "config" | "archive";
+type SalesTab = "search-ask" | "compose-email" | "archive";
 
 function AdminShell() {
   const [tab, setTab] = useState<AdminTab>("templates");
@@ -30,6 +31,7 @@ function AdminShell() {
             ["articles", "Articles"],
             ["scheduling", "Scheduling"],
             ["video-approval", "Video Approval"],
+            ["archive", "Archive"],
             ["config", "Config"],
           ] as [AdminTab, string][]
         ).map(([id, label]) => (
@@ -65,6 +67,7 @@ function AdminShell() {
         {tab === "articles" && <ArticlesPage />}
         {tab === "scheduling" && <SchedulingPage />}
         {tab === "video-approval" && <VideoApprovalPage />}
+        {tab === "archive" && <Archive />}
         {tab === "config" && <ConfigPage />}
       </div>
     </div>
@@ -83,6 +86,7 @@ function SalesShell() {
           [
             ["search-ask", "Search / Ask"],
             ["compose-email", "Compose Email"],
+            ["archive", "Archive"],
           ] as [SalesTab, string][]
         ).map(([id, label]) => (
           <button
@@ -115,6 +119,7 @@ function SalesShell() {
       <div style={{ flex: 1, padding: 32, overflowY: "auto" }}>
         {tab === "search-ask" && <SearchAskPage />}
         {tab === "compose-email" && <ComposeEmailPage />}
+        {tab === "archive" && <Archive />}
       </div>
     </div>
   );
