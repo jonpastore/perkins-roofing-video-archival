@@ -1,5 +1,5 @@
 """SQLAlchemy data layer. Dev: SQLite (embedding as JSON). Prod: Postgres + pgvector
-(swap Chunk.embedding to Vector(768) + HNSW index via Alembic migration). The canonical
+(swap Chunk.embedding to Vector(3072) + HNSW index via migration). The canonical
 versioned-artifact model the council required: every derived row carries a version, and
 IngestionRun tracks per-stage status + content_hash for idempotent/resumable ingestion."""
 from datetime import datetime
@@ -55,7 +55,7 @@ class Chunk(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     video_id = Column(String, index=True)
     text = Column(Text); start = Column(Float); end = Column(Float)
-    embedding = Column(JSON)          # PROD: pgvector Vector(768) + HNSW index
+    embedding = Column(JSON)          # PROD: pgvector Vector(3072) + HNSW (gemini-embedding-001)
     embed_model = Column(String); version = Column(String)
 
 engine = create_engine(settings.DB_URL, future=True)

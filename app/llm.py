@@ -1,8 +1,13 @@
 """Embeddings + LLM with backend routing + cost guardrails. Dev = cerberus Ollama.
 Prod backends: Vertex AI / Anthropic (guarded imports — explicit, never silent)."""
-import json, re, os, urllib.request
+import json
+import os
+import re
+import urllib.request
+
 from .config import settings
-from .observability import Cost, log
+from .observability import Cost
+
 
 def _ollama(path, payload, timeout=300):
     req = urllib.request.Request(settings.OLLAMA_URL + path, data=json.dumps(payload).encode(),
@@ -16,7 +21,8 @@ def embed(texts):
     if settings.EMBED_BACKEND == "ollama":
         return _ollama("/api/embed", {"model": settings.EMBED_MODEL, "input": texts})["embeddings"]
     if settings.EMBED_BACKEND == "vertex":
-        raise NotImplementedError("Vertex text-embedding-005 — google-cloud-aiplatform; set GOOGLE_CLOUD_PROJECT")
+        from adapters.llm import get_default
+        return get_default().embed(texts)
     raise NotImplementedError("embed backend " + settings.EMBED_BACKEND)
 
 # ---------------- chat ----------------
@@ -33,7 +39,8 @@ def chat(prompt, want_json=False, timeout=300):
     elif settings.LLM_BACKEND == "anthropic":
         txt = _anthropic(prompt)
     elif settings.LLM_BACKEND == "vertex":
-        raise NotImplementedError("Vertex GenerativeModel — google-cloud-aiplatform; set GOOGLE_CLOUD_PROJECT")
+        from adapters.llm import get_default
+        txt = get_default().chat(prompt, want_json=want_json)
     else:
         raise NotImplementedError("llm backend " + settings.LLM_BACKEND)
     if want_json:

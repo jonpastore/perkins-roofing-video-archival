@@ -18,6 +18,19 @@ logs/
 .omc/
 .claude/
 
+# SPA build artifacts
+web/node_modules/
+web/dist/
+
 # Env / secrets
 *.env
 .env*
+# GCP service-account keys — NEVER commit
+*-sa.json
+infra/vertex-dev-sa.json
+
+# Coverage + Terraform local state (keep .terraform.lock.hcl tracked)
+.coverage
+infra/.terraform/
+*.tfstate
+*.tfstate.*

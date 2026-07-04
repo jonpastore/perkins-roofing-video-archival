@@ -1,103 +1,373 @@
-# Terraform skeleton — provisions the platform in the CLIENT's own GCP project.
-# (Stub for the production build; gated on deposit + client GCP. Apply post-deposit.)
 terraform {
-  required_providers { google = { source = "hashicorp/google", version = "~> 5.0" } }
-}
-variable "project_id" { type = string }
-variable "region"     { type = string  default = "us-east1" }
-
-provider "google" { project = var.project_id, region = var.region }
-
-# --- Storage: media archive + audio ---
-resource "google_storage_bucket" "media" {
-  name          = "${var.project_id}-perkins-media"
-  location      = var.region
-  force_destroy = false
-  lifecycle_rule {                      # cost control: age out cold media to Nearline/Archive
-    condition { age = 60 }
-    action { type = "SetStorageClass", storage_class = "NEARLINE" }
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 6.0"
+    }
   }
 }
 
-# --- Database: Cloud SQL Postgres (enable pgvector extension via migration) ---
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+# ---------------------------------------------------------------------------
+# 1. API enablement (idempotent — safe even if already enabled)
+# ---------------------------------------------------------------------------
+
+locals {
+  required_apis = toset([
+    "aiplatform.googleapis.com",
+    "speech.googleapis.com",
+    "sqladmin.googleapis.com",
+    "run.googleapis.com",
+    "secretmanager.googleapis.com",
+    "cloudscheduler.googleapis.com",
+    "storage.googleapis.com",
+    "iam.googleapis.com",
+  ])
+}
+
+resource "google_project_service" "apis" {
+  for_each = local.required_apis
+
+  project            = var.project_id
+  service            = each.value
+  disable_on_destroy = false
+}
+
+# ---------------------------------------------------------------------------
+# 2. Service accounts
+# ---------------------------------------------------------------------------
+
+resource "google_service_account" "api_run_sa" {
+  account_id   = "api-run-sa"
+  display_name = "Perkins API — Cloud Run service identity"
+  project      = var.project_id
+}
+
+resource "google_service_account" "jobs_sa" {
+  account_id   = "jobs-sa"
+  display_name = "Perkins Jobs — Cloud Run Job identity (ingest, render, article, social)"
+  project      = var.project_id
+}
+
+resource "google_service_account" "scheduler_sa" {
+  account_id   = "scheduler-sa"
+  display_name = "Perkins Scheduler — Cloud Scheduler OIDC invoker"
+  project      = var.project_id
+}
+
+# ---------------------------------------------------------------------------
+# 3. IAM bindings — api-run-sa
+# ---------------------------------------------------------------------------
+
+resource "google_project_iam_member" "api_aiplatform" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+resource "google_project_iam_member" "api_cloudsql" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+resource "google_project_iam_member" "api_secretmanager" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+resource "google_project_iam_member" "api_storage_viewer" {
+  project = var.project_id
+  role    = "roles/storage.objectViewer"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+# ---------------------------------------------------------------------------
+# 4. IAM bindings — jobs-sa
+#    roles/speech.client grants Cloud Speech-to-Text access.
+#    Fallback if unavailable: roles/serviceusage.serviceUsageConsumer + custom role.
+# ---------------------------------------------------------------------------
+
+resource "google_project_iam_member" "jobs_aiplatform" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
+resource "google_project_iam_member" "jobs_speech" {
+  project = var.project_id
+  role    = "roles/speech.client"
+  member  = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
+resource "google_project_iam_member" "jobs_cloudsql" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
+resource "google_project_iam_member" "jobs_storage_admin" {
+  project = var.project_id
+  role    = "roles/storage.objectAdmin"
+  member  = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
+resource "google_project_iam_member" "jobs_secretmanager" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
+# ---------------------------------------------------------------------------
+# 5. IAM bindings — scheduler-sa
+# ---------------------------------------------------------------------------
+
+resource "google_project_iam_member" "scheduler_run_invoker" {
+  project = var.project_id
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${google_service_account.scheduler_sa.email}"
+}
+
+# ---------------------------------------------------------------------------
+# 6. Cloud SQL — Postgres 16
+#    Tier: db-custom-1-3840 (1 vCPU, 3.75 GB RAM) — right-size after load testing.
+#
+#    pgvector is NOT a Cloud SQL flag; it is a Postgres extension enabled
+#    post-provision with:
+#      CREATE EXTENSION IF NOT EXISTS vector;
+#    See bootstrap.sh for the exact gcloud sql connect command.
+# ---------------------------------------------------------------------------
+
 resource "google_sql_database_instance" "pg" {
-  name             = "perkins-pg"
+  name             = "${var.project_id}-pg"
   database_version = "POSTGRES_16"
-  settings { tier = "db-custom-1-3840" }  # right-size later
+  region           = var.region
   deletion_protection = true
+
+  settings {
+    tier = "db-custom-1-3840"
+
+    backup_configuration {
+      enabled    = true
+      start_time = "03:00"
+    }
+
+    ip_configuration {
+      # Private IP only — Cloud Run connects via Cloud SQL Auth Proxy (Unix socket).
+      # Public IP disabled to reduce attack surface.
+      ipv4_enabled = false
+    }
+  }
+
+  depends_on = [google_project_service.apis]
 }
 
-# --- Secrets ---
-resource "google_secret_manager_secret" "yt_oauth" {
-  secret_id = "youtube-oauth"
-  replication { auto {} }
+resource "google_sql_database" "perkins" {
+  name     = "perkins"
+  instance = google_sql_database_instance.pg.name
 }
 
-# --- Async ingestion: Pub/Sub topic feeding a Cloud Run Job ---
-resource "google_pubsub_topic" "ingest" { name = "perkins-ingest" }
+# ---------------------------------------------------------------------------
+# 7. GCS buckets
+#    media: private, uniform bucket-level access (raw video, audio, ffmpeg artifacts)
+#    reels: public-read, uniform bucket-level access (rendered 9:16 reels for IG/TikTok)
+# ---------------------------------------------------------------------------
 
-# --- Service accounts (least privilege) ---
-resource "google_service_account" "api" {
-  account_id = "perkins-api"; display_name = "Perkins API (Cloud Run)"
-}
-resource "google_service_account" "worker" {
-  account_id = "perkins-worker"; display_name = "Perkins ingest worker (Cloud Run Job)"
+resource "google_storage_bucket" "media" {
+  name                        = "${var.project_id}-media"
+  location                    = var.region
+  force_destroy               = false
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition { age = 90 }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "NEARLINE"
+    }
+  }
 }
 
-# --- Online serving: API (Cloud Run service) ---
+resource "google_storage_bucket" "reels" {
+  name                        = "${var.project_id}-reels"
+  location                    = var.region
+  force_destroy               = false
+  uniform_bucket_level_access = true
+}
+
+# Public-read binding on reels bucket only — IG/TikTok require public video URLs.
+resource "google_storage_bucket_iam_member" "reels_public" {
+  bucket = google_storage_bucket.reels.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
+}
+
+# ---------------------------------------------------------------------------
+# 8. Cloud Run v2 — API service
+#    Placeholder image replaced with the real API container at Wave 1 deploy.
+# ---------------------------------------------------------------------------
+
 resource "google_cloud_run_v2_service" "api" {
-  name     = "perkins-api"
+  name     = "api"
   location = var.region
+
   template {
-    service_account = google_service_account.api.email
-    scaling { min_instance_count = 1, max_instance_count = 4 }
+    service_account = google_service_account.api_run_sa.email
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 4
+    }
+
     containers {
-      image = "gcr.io/${var.project_id}/perkins:latest"
-      env { name = "DB_URL"        value = "postgresql+psycopg://…/perkins" }
-      env { name = "EMBED_BACKEND" value = "vertex" }
-      env { name = "LLM_BACKEND"   value = "vertex" }
+      image = "gcr.io/cloudrun/hello"
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
     }
   }
+
+  depends_on = [google_project_service.apis]
 }
 
-# --- Offline ingestion: worker (Cloud Run Job, separate from API) ---
-resource "google_cloud_run_v2_job" "ingest" {
-  name     = "perkins-ingest"
+# ---------------------------------------------------------------------------
+# 9. Cloud Run v2 Jobs — ingest, render, article, social
+#    Placeholder image replaced with real jobs container at Wave 1 deploy.
+# ---------------------------------------------------------------------------
+
+locals {
+  job_names = toset(["ingest", "render", "article", "social"])
+}
+
+resource "google_cloud_run_v2_job" "jobs" {
+  for_each = local.job_names
+
+  name     = each.value
   location = var.region
-  template { template {
-    service_account = google_service_account.worker.email
-    timeout = "3600s"
-    containers {
-      image   = "gcr.io/${var.project_id}/perkins:latest"
-      command = ["python", "-m", "app.worker"]
-    }
-  } }
-}
 
-# --- Scheduler: poll the channel for new uploads → enqueue ingest ---
-resource "google_cloud_scheduler_job" "poll" {
-  name     = "perkins-poll"
-  schedule = "0 */6 * * *"            # every 6h
-  pubsub_target {
-    topic_name = google_pubsub_topic.ingest.id
-    data       = base64encode("poll")
-  }
-}
+  template {
+    template {
+      service_account = google_service_account.jobs_sa.email
+      max_retries     = 3
+      timeout         = "3600s"
 
-# --- Monitoring: alert on failed ingestion + budget guard ---
-resource "google_monitoring_alert_policy" "ingest_failures" {
-  display_name = "Perkins ingest failures"
-  combiner     = "OR"
-  conditions {
-    display_name = "Cloud Run Job failures"
-    condition_threshold {
-      filter          = "resource.type=\"cloud_run_job\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\""
-      comparison      = "COMPARISON_GT"
-      threshold_value = 0
-      duration        = "0s"
+      containers {
+        image = "gcr.io/cloudrun/hello"
+
+        resources {
+          limits = {
+            cpu    = "2"
+            memory = "2Gi"
+          }
+        }
+      }
     }
   }
+
+  depends_on = [google_project_service.apis]
 }
 
-output "media_bucket" { value = google_storage_bucket.media.name }
-output "api_url"       { value = google_cloud_run_v2_service.api.uri }
+# ---------------------------------------------------------------------------
+# 10. Cloud Scheduler — promote scheduled content every 15 minutes
+#     Hits /internal/promote on the API service via OIDC (scheduler-sa).
+# ---------------------------------------------------------------------------
+
+resource "google_cloud_scheduler_job" "promote_scheduled_content" {
+  name      = "promote-scheduled-content"
+  region    = var.region
+  schedule  = "*/15 * * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/promote"
+    http_method = "POST"
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# ---------------------------------------------------------------------------
+# 11. Secret Manager — secret containers only (no versions)
+#     Populate secret values via bootstrap.sh after billing is confirmed.
+# ---------------------------------------------------------------------------
+
+locals {
+  secret_ids = toset([
+    "youtube-api-key",
+    "serper-api-key",
+    "resend-api-key",
+    "wordpress-app-password",
+    "meta-app-secret",
+    "meta-system-user-token",
+    "tiktok-client-secret",
+    "tiktok-refresh-token",
+  ])
+}
+
+resource "google_secret_manager_secret" "secrets" {
+  for_each  = local.secret_ids
+  secret_id = each.value
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# ---------------------------------------------------------------------------
+# 12. Billing budget alert
+#     Guarded with count=0 when billing_account is empty so terraform validate
+#     passes without the value. Jon fills in billing_account variable to activate.
+#     Format: XXXXXX-XXXXXX-XXXXXX (find in GCP Console → Billing).
+# ---------------------------------------------------------------------------
+
+resource "google_billing_budget" "spend_cap" {
+  count = var.billing_account != "" ? 1 : 0
+
+  billing_account = var.billing_account
+  display_name    = "Perkins Platform Monthly Cap"
+
+  budget_filter {
+    projects = ["projects/${var.project_id}"]
+  }
+
+  amount {
+    specified_amount {
+      currency_code = "USD"
+      units         = tostring(var.budget_amount)
+    }
+  }
+
+  threshold_rules {
+    threshold_percent = 0.5
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 0.9
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  threshold_rules {
+    threshold_percent = 1.0
+    spend_basis       = "CURRENT_SPEND"
+  }
+
+  # all_updates_rule omitted — alerts fire to the billing account's default contacts.
+  # Add a monitoring_notification_channels entry here post-billing if needed.
+}

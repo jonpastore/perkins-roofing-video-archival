@@ -6,6 +6,7 @@ from .config import settings
 from .models import SessionLocal, init_db, Video, IngestionRun, Segment, Word, GraphNode, Chunk
 from . import transcript as T, graph as G
 from .llm import embed
+from core.chunking import chunk_segments
 
 def _hash(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:16]
@@ -69,10 +70,7 @@ def ingest_video(vid, meta=None, force=False):
     if force or not _fresh(_run(s, vid, "embed"), eh):
         try:
             s.query(Chunk).filter_by(video_id=vid).delete(); s.commit()
-            chunks = []
-            for i in range(0, len(segs), settings.CHUNK_SIZE):
-                grp = segs[i:i + settings.CHUNK_SIZE]
-                chunks.append((" ".join(x.text for x in grp), grp[0].start, grp[-1].end))
+            chunks = chunk_segments(segs, settings.CHUNK_SIZE)
             vecs = embed([c[0] for c in chunks]) if chunks else []
             for (text, a, b), vec in zip(chunks, vecs):
                 s.add(Chunk(video_id=vid, text=text, start=a, end=b, embedding=vec,

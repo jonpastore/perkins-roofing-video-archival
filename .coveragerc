@@ -1,0 +1,15 @@
+[run]
+source = core
+omit =
+    adapters/*
+    api/*
+    jobs/*
+    tests/*
+
+[report]
+fail_under = 97
+show_missing = true
+exclude_lines =
+    pragma: no cover
+    \.\.\.
+    raise NotImplementedError

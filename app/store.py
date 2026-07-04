@@ -17,7 +17,7 @@ class _Row:
 def vector_search(query, k=8):
     q = embed([query])[0]
     if _is_pg():
-        # PROD: requires `chunks.embedding vector(768)` + HNSW index + register_vector(conn).
+        # PROD: requires `chunks.embedding vector(3072)` + HNSW index + register_vector(conn).
         s = SessionLocal()
         rows = s.execute(text(
             'SELECT id, video_id, text, start, "end", 1 - (embedding <=> :q) AS score '
