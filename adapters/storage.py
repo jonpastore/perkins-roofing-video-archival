@@ -87,6 +87,25 @@ def object_size(bucket: str, key: str) -> int:
         ) from exc
 
 
+def _iam_sign_kwargs() -> dict:
+    """V4 signing kwargs. On Cloud Run the ADC are compute-engine credentials with no local
+    private key, so signing must go through the IAM signBlob API — pass the SA email + a fresh
+    access token (needs roles/iam.serviceAccountTokenCreator on the SA itself). With a service-
+    account key file (local dev) the key signs locally, so no extra kwargs are needed."""
+    try:
+        import google.auth  # noqa: PLC0415
+        from google.auth import compute_engine  # noqa: PLC0415
+        from google.auth.transport import requests as _greq  # noqa: PLC0415
+
+        creds, _ = google.auth.default()
+        if isinstance(creds, compute_engine.Credentials):
+            creds.refresh(_greq.Request())
+            return {"service_account_email": creds.service_account_email, "access_token": creds.token}
+    except Exception:  # noqa: BLE001 — fall back to local signing
+        pass
+    return {}
+
+
 def signed_download_url(
     bucket: str,
     key: str,
@@ -130,6 +149,7 @@ def signed_download_url(
             expiration=datetime.timedelta(seconds=ttl_seconds),
             method="GET",
             response_disposition=disposition,
+            **_iam_sign_kwargs(),
         )
     except (GoogleCloudError, Exception) as exc:
         # V4 signing without a key needs iam.serviceAccounts.signBlob; that failure is a
@@ -184,6 +204,7 @@ def signed_get_url(
             version="v4",
             expiration=datetime.timedelta(seconds=ttl_seconds),
             method="GET",
+            **_iam_sign_kwargs(),
         )
     except (GoogleCloudError, Exception) as exc:
         raise RuntimeError(
