@@ -64,20 +64,50 @@ class VertexLLM:
         return out
 
 
+class OllamaLLM:
+    """Local (cerberus Ollama) chat backend with the SAME .chat interface as VertexLLM — used
+    for one-time backlog priming (article/FAQ generation) on the free GPU. Returns a JSON string
+    when want_json/response_schema (via Ollama format=json), matching VertexLLM's .text contract."""
+
+    def chat(self, prompt, want_json=False, response_schema=None):
+        import re  # noqa: PLC0415
+        from app.config import settings  # noqa: PLC0415
+        from app.llm import _ollama  # noqa: PLC0415
+        payload = {
+            "model": settings.LLM_MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.1 if (want_json or response_schema) else 0.4, "num_ctx": 8192},
+        }
+        if want_json or response_schema:
+            payload["format"] = "json"
+        out = _ollama("/api/generate", payload)
+        return re.sub(r"<think>.*?</think>", "", out.get("response", ""), flags=re.S).strip()
+
+    def embed(self, texts, batch=100):
+        from app.llm import embed as _embed  # noqa: PLC0415
+        return _embed(list(texts))
+
+
 _default = None
 
 
 def get_default():
-    """Lazy singleton built from env (GOOGLE_CLOUD_PROJECT, GCP_REGION, LLM_MODEL, EMBED_MODEL)."""
+    """Lazy singleton, backend-selected by settings.LLM_BACKEND. 'ollama' -> local cerberus
+    (priming); otherwise Vertex (live). Built from env (GOOGLE_CLOUD_PROJECT, GCP_REGION, models)."""
     global _default
     if _default is None:
-        project = os.getenv("GOOGLE_CLOUD_PROJECT")
-        if not project:
-            raise RuntimeError("GOOGLE_CLOUD_PROJECT unset — required for the Vertex backend")
-        _default = VertexLLM(
-            project=project,
-            location=os.getenv("GCP_REGION", "us-central1"),
-            chat_model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
-            embed_model=os.getenv("EMBED_MODEL", "gemini-embedding-001"),
-        )
+        from app.config import settings  # noqa: PLC0415
+        if settings.LLM_BACKEND == "ollama":
+            _default = OllamaLLM()
+        else:
+            project = os.getenv("GOOGLE_CLOUD_PROJECT")
+            if not project:
+                raise RuntimeError("GOOGLE_CLOUD_PROJECT unset — required for the Vertex backend")
+            _default = VertexLLM(
+                project=project,
+                location=os.getenv("GCP_REGION", "us-central1"),
+                chat_model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+                embed_model=os.getenv("EMBED_MODEL", "gemini-embedding-001"),
+            )
     return _default
