@@ -1,7 +1,10 @@
-"""Behavioral tests for api/routes/faq.py.
+"""Behavioral tests for the persistent FAQ system (api/routes/faq.py).
 
 Uses a fresh FastAPI app (not the real api.app) so the router is tested in
 isolation. The conftest.py sets DB_URL to a temp SQLite file before any import.
+
+All LLM calls (app.llm.chat via _rephrase_via_llm, app.answer.ask) are monkeypatched
+so no live network calls are made.
 """
 import pytest
 from fastapi import FastAPI
@@ -9,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
 from api.routes.faq import router
-from app.models import GraphNode, SessionLocal, init_db
+from app.models import FaqEntry, GraphNode, SessionLocal, Video, init_db
 
 
 def _make_app():
@@ -30,257 +33,490 @@ def _sales_client():
 
 AUTH = {"Authorization": "Bearer tok"}
 
+# Node IDs assigned during seeding (populated in setup_module)
+_NODE_IDS: dict = {}
+
 
 def setup_module(module):
     init_db()
-    # Seed content_graph with objection + claim rows for tests
     with SessionLocal() as db:
-        existing = db.query(GraphNode).filter(
-            GraphNode.video_id == "testvid1"
-        ).count()
+        # Clean slate for FAQ entries (nodes may already exist from other test modules)
+        db.query(FaqEntry).delete()
+        db.commit()
+
+        # Ensure video rows exist for title join tests
+        if not db.query(Video).filter(Video.id == "testvid1").first():
+            db.add(Video(id="testvid1", title="Roof Installation Guide"))
+        if not db.query(Video).filter(Video.id == "testvid2").first():
+            db.add(Video(id="testvid2", title="Shingles vs Metal"))
+        db.commit()
+
+        # Seed content_graph nodes (idempotent: skip if already present)
+        existing = db.query(GraphNode).filter(GraphNode.video_id == "testvid1").count()
         if existing == 0:
-            db.add(GraphNode(
-                video_id="testvid1",
-                kind="objections",
-                label="Metal roofs are too noisy in rain",
-                detail="Many homeowners worry about rain noise on metal roofs",
-                start=42.0,
-                version="v1",
-            ))
-            db.add(GraphNode(
-                video_id="testvid1",
-                kind="claims",
-                label="How long does a roof installation take?",
-                detail="Typical installation timeline for a full replacement",
-                start=90.0,
-                version="v1",
-            ))
-            db.add(GraphNode(
-                video_id="testvid2",
-                kind="objections",
-                label="Shingles vs metal cost comparison",
-                detail="",
-                start=15.0,
-                version="v1",
-            ))
-            # A row without start — should be excluded from mined
-            db.add(GraphNode(
-                video_id="testvid1",
-                kind="claims",
-                label="No timestamp claim",
-                detail="",
-                start=None,
-                version="v1",
-            ))
+            n1 = GraphNode(video_id="testvid1", kind="objections",
+                           label="Metal roofs are too noisy in rain",
+                           detail="Many homeowners worry about rain noise on metal roofs",
+                           start=42.0, version="v1")
+            n2 = GraphNode(video_id="testvid1", kind="claims",
+                           label="How long does a roof installation take?",
+                           detail="Typical installation timeline for a full replacement",
+                           start=90.0, version="v1")
+            n3 = GraphNode(video_id="testvid2", kind="objections",
+                           label="Shingles vs metal cost comparison",
+                           detail="", start=15.0, version="v1")
+            # No timestamp — must be excluded from mining
+            n4 = GraphNode(video_id="testvid1", kind="claims",
+                           label="No timestamp claim", detail="", start=None, version="v1")
+            db.add_all([n1, n2, n3, n4])
             db.commit()
+            _NODE_IDS["n1"] = n1.id
+            _NODE_IDS["n2"] = n2.id
+            _NODE_IDS["n3"] = n3.id
+            _NODE_IDS["n4"] = n4.id
+        else:
+            nodes = db.query(GraphNode).filter(GraphNode.video_id.in_(["testvid1", "testvid2"])).all()
+            for n in nodes:
+                if n.label == "Metal roofs are too noisy in rain":
+                    _NODE_IDS["n1"] = n.id
+                elif n.label == "How long does a roof installation take?":
+                    _NODE_IDS["n2"] = n.id
+                elif n.label == "Shingles vs metal cost comparison":
+                    _NODE_IDS["n3"] = n.id
+                elif n.label == "No timestamp claim":
+                    _NODE_IDS["n4"] = n.id
+
+
+def teardown_module(module):
+    """Clean up FAQ entries after this module so other test modules start fresh."""
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
 
 
 # ---------------------------------------------------------------------------
-# GET /faq/mined — helpers
+# LLM stubs
 # ---------------------------------------------------------------------------
 
 def _fake_rephrase(statements):
-    """LLM stub: prefix each statement with 'Rephrased: ' and append '?'."""
+    """Returns 'Rephrased: <statement>?' for each item — same length as input."""
     return [f"Rephrased: {s}?" for s in statements]
 
 
 def _failing_rephrase(statements):
-    """LLM stub that simulates a failure (returns empty list → fallback)."""
+    """Simulates LLM failure — triggers heuristic fallback."""
     return []
 
 
+def _fake_ask(question):
+    return {
+        "answer": f"Answer for: {question}",
+        "citations": ["https://youtu.be/testvid1?t=42"],
+        "abstained": False,
+    }
+
+
 # ---------------------------------------------------------------------------
-# GET /faq/mined
+# POST /faq/mine
 # ---------------------------------------------------------------------------
 
-def test_mined_returns_list(monkeypatch):
+def test_mine_creates_entries(monkeypatch):
+    """Mining with 3 eligible nodes (start != None) should create 3 entries."""
     import api.routes.faq as faq_mod
     monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    # Ensure clean slate
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+
     c = _admin_client()
-    r = c.get("/faq/mined", headers=AUTH)
+    r = c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
     assert r.status_code == 200, r.text
-    items = r.json()
-    assert isinstance(items, list)
-    assert len(items) >= 3
+    data = r.json()
+    assert data["mined"] == 3, f"Expected 3, got {data}"
+    assert data["remaining_uncovered"] == 0
+
+    with SessionLocal() as db:
+        count = db.query(FaqEntry).count()
+    assert count == 3
 
 
-def test_mined_item_shape(monkeypatch):
+def test_mine_idempotent(monkeypatch):
+    """Mining again when all nodes are covered returns mined=0, no duplicates."""
     import api.routes.faq as faq_mod
     monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    # Ensure entries exist from previous test (or re-mine)
+    with SessionLocal() as db:
+        count = db.query(FaqEntry).count()
+    if count == 0:
+        c = _admin_client()
+        c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
     c = _admin_client()
-    r = c.get("/faq/mined", headers=AUTH)
+    r = c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
     assert r.status_code == 200, r.text
-    item = r.json()[0]
-    assert "question" in item
-    assert "video_id" in item
-    assert "t" in item
-    assert "url" in item
+    data = r.json()
+    assert data["mined"] == 0, f"Expected 0 new on second mine, got {data['mined']}"
+
+    with SessionLocal() as db:
+        count = db.query(FaqEntry).count()
+    assert count == 3, f"Expected exactly 3 entries (no duplicates), got {count}"
+
+
+def test_mine_tags_source_node(monkeypatch):
+    """Each FaqEntry links back to the correct source_node_id."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+    c = _admin_client()
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+    with SessionLocal() as db:
+        entries = db.query(FaqEntry).all()
+        node_ids_in_entries = {e.source_node_id for e in entries}
+    # n4 has start=None so it must NOT be tagged
+    assert _NODE_IDS.get("n4") not in node_ids_in_entries
+    # The three valid nodes must all be tagged
+    for key in ("n1", "n2", "n3"):
+        assert _NODE_IDS[key] in node_ids_in_entries, f"{key} not tagged"
+
+
+def test_mine_questions_use_rephraser(monkeypatch):
+    """Questions should come from the LLM rephraser (prefix 'Rephrased:')."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+    c = _admin_client()
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+    with SessionLocal() as db:
+        entries = db.query(FaqEntry).all()
+    for e in entries:
+        assert e.question.startswith("Rephrased: "), f"Unexpected: {e.question!r}"
+        assert e.question.endswith("?")
+
+
+def test_mine_fallback_heuristic(monkeypatch):
+    """When LLM fails, heuristic produces questions ending with '?' without 'Rephrased:' prefix."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _failing_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+    c = _admin_client()
+    r = c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["mined"] == 3
+
+    with SessionLocal() as db:
+        entries = db.query(FaqEntry).all()
+    for e in entries:
+        assert e.question.endswith("?")
+        assert not e.question.startswith("Rephrased: ")
+
+
+def test_mine_excludes_no_timestamp(monkeypatch):
+    """Nodes with start=None are never mined."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+    c = _admin_client()
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+    with SessionLocal() as db:
+        entries = db.query(FaqEntry).all()
+    questions = [e.question for e in entries]
+    assert not any("No timestamp claim" in q for q in questions)
+
+
+def test_mine_sales_forbidden(monkeypatch):
+    """Sales role cannot call POST /faq/mine."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+    c = _sales_client()
+    r = c.post("/faq/mine", json={"limit": 10}, headers=AUTH)
+    assert r.status_code == 403, r.text
+
+
+# ---------------------------------------------------------------------------
+# GET /faq
+# ---------------------------------------------------------------------------
+
+def _ensure_entries(monkeypatch):
+    """Helper: ensure 3 mined entries exist."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+    with SessionLocal() as db:
+        if db.query(FaqEntry).count() == 0:
+            c = _admin_client()
+            c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+
+def test_get_faq_returns_items(monkeypatch):
+    _ensure_entries(monkeypatch)
+    c = _admin_client()
+    r = c.get("/faq", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "total" in data
+    assert "items" in data
+    assert data["total"] == 3
+    assert len(data["items"]) == 3
+
+
+def test_get_faq_item_shape(monkeypatch):
+    _ensure_entries(monkeypatch)
+    c = _admin_client()
+    r = c.get("/faq", headers=AUTH)
+    item = r.json()["items"][0]
+    for key in ("id", "question", "answer", "status", "video_id", "video_title", "url", "start"):
+        assert key in item, f"Missing key: {key}"
     assert item["url"].startswith("https://youtu.be/")
     assert "?t=" in item["url"]
 
 
-def test_mined_question_comes_from_rephraser(monkeypatch):
-    """Questions should come from the LLM rephraser when it succeeds."""
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+def test_get_faq_video_title_not_raw_id(monkeypatch):
+    """video_title must be the human title from the videos table, not the raw video_id."""
+    _ensure_entries(monkeypatch)
     c = _admin_client()
-    r = c.get("/faq/mined", headers=AUTH)
-    items = r.json()
-    assert len(items) >= 1
+    r = c.get("/faq", headers=AUTH)
+    items = r.json()["items"]
     for item in items:
-        assert item["question"].startswith("Rephrased: "), (
-            f"Expected rephrased question, got: {item['question']!r}"
+        # Title must not equal video_id (it should be the actual title)
+        assert item["video_title"] != item["video_id"], (
+            f"video_title is raw id: {item['video_title']!r}"
         )
-        assert item["question"].endswith("?"), f"Not a question: {item['question']!r}"
 
 
-def test_mined_fallback_when_llm_fails(monkeypatch):
-    """When the rephraser returns [], fall back to the heuristic (still ends with '?')."""
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _failing_rephrase)
+def test_get_faq_answered_filter_no(monkeypatch):
+    """?answered=no returns only mined (unanswered) entries."""
+    _ensure_entries(monkeypatch)
     c = _admin_client()
-    r = c.get("/faq/mined", headers=AUTH)
+    r = c.get("/faq?answered=no", headers=AUTH)
     assert r.status_code == 200, r.text
-    items = r.json()
-    assert len(items) >= 1
-    for item in items:
-        assert item["question"].endswith("?"), f"Not a question: {item['question']!r}"
-        assert not item["question"].startswith("Rephrased: "), "Fallback should not use rephraser prefix"
+    data = r.json()
+    for item in data["items"]:
+        assert item["status"] == "mined"
 
 
-def test_mined_question_ends_with_questionmark(monkeypatch):
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+def test_get_faq_answered_filter_yes(monkeypatch):
+    """?answered=yes returns only answered entries (empty when none answered)."""
+    _ensure_entries(monkeypatch)
     c = _admin_client()
-    r = c.get("/faq/mined", headers=AUTH)
-    items = r.json()
-    for item in items:
-        assert item["question"].endswith("?"), f"Not a question: {item['question']!r}"
-
-
-def test_mined_excludes_rows_without_start(monkeypatch):
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
-    c = _admin_client()
-    r = c.get("/faq/mined", headers=AUTH)
-    questions = [i["question"] for i in r.json()]
-    # The row with label "No timestamp claim" and start=None must be absent
-    assert not any("No timestamp claim" in q for q in questions)
-
-
-def test_mined_filter_by_q(monkeypatch):
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
-    c = _admin_client()
-    r = c.get("/faq/mined?q=noisy", headers=AUTH)
+    r = c.get("/faq?answered=yes", headers=AUTH)
     assert r.status_code == 200, r.text
-    items = r.json()
+    # Initially none are answered
+    assert r.json()["total"] == 0
+
+
+def test_get_faq_search_q(monkeypatch):
+    """?q= filters by substring in question text."""
+    _ensure_entries(monkeypatch)
+    c = _admin_client()
+    r = c.get("/faq?q=noisy", headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
     assert len(items) >= 1
     for item in items:
         assert "noisy" in item["question"].lower()
 
 
-def test_mined_filter_no_match(monkeypatch):
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+def test_get_faq_pagination(monkeypatch):
+    """limit + offset paginate correctly."""
+    _ensure_entries(monkeypatch)
     c = _admin_client()
-    r = c.get("/faq/mined?q=zzznomatchzzz", headers=AUTH)
-    assert r.status_code == 200, r.text
-    assert r.json() == []
+    r1 = c.get("/faq?limit=2&offset=0", headers=AUTH)
+    r2 = c.get("/faq?limit=2&offset=2", headers=AUTH)
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    d1 = r1.json()
+    d2 = r2.json()
+    assert d1["total"] == 3
+    assert len(d1["items"]) == 2
+    assert len(d2["items"]) == 1
+    # No overlap
+    ids1 = {i["id"] for i in d1["items"]}
+    ids2 = {i["id"] for i in d2["items"]}
+    assert ids1.isdisjoint(ids2)
 
 
-def test_mined_limit(monkeypatch):
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
-    c = _admin_client()
-    r = c.get("/faq/mined?limit=2", headers=AUTH)
-    assert r.status_code == 200, r.text
-    assert len(r.json()) <= 2
-
-
-def test_sales_can_get_mined(monkeypatch):
-    import api.routes.faq as faq_mod
-    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+def test_get_faq_sales_allowed(monkeypatch):
+    """Sales role can GET /faq."""
+    _ensure_entries(monkeypatch)
     c = _sales_client()
-    r = c.get("/faq/mined", headers=AUTH)
+    r = c.get("/faq", headers=AUTH)
     assert r.status_code == 200, r.text
 
 
-def test_mined_401_without_token():
+def test_get_faq_401_without_token():
     c = _admin_client()
-    r = c.get("/faq/mined")
+    r = c.get("/faq")
     assert r.status_code == 401, r.text
 
 
 # ---------------------------------------------------------------------------
-# POST /faq/build
+# POST /faq/{id}/answer
 # ---------------------------------------------------------------------------
 
-def test_build_returns_faq(monkeypatch):
-    # Monkeypatch app.answer.ask to avoid live LLM/network
-    import api.routes.faq as faq_module
+def test_answer_one_stores_answer(monkeypatch):
+    """POST /faq/{id}/answer generates + stores the answer, sets status=answered."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
 
-    def fake_ask(question):
-        return {
-            "answer": f"Answer for: {question}",
-            "citations": ["https://youtu.be/testvid1?t=42"],
-        }
-
-    monkeypatch.setattr(faq_module, "ask", fake_ask, raising=False)
-    # Also patch at the import path used inside the route
-    import app.answer as answer_mod
-    monkeypatch.setattr(answer_mod, "ask", fake_ask)
-
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
     c = _admin_client()
-    r = c.post(
-        "/faq/build",
-        json={"questions": ["What is the best roofing material?"]},
-        headers=AUTH,
-    )
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+    with SessionLocal() as db:
+        entry_id = db.query(FaqEntry.id).first()[0]
+
+    # Patch app.answer.ask
+    import app.answer as answer_mod
+    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+    # Also patch inside faq routes module scope
+    monkeypatch.setattr(faq_mod, "ask", _fake_ask, raising=False)
+
+    r = c.post(f"/faq/{entry_id}/answer", headers=AUTH)
     assert r.status_code == 200, r.text
     data = r.json()
-    assert "faq" in data
-    assert len(data["faq"]) == 1
-    entry = data["faq"][0]
-    assert entry["question"] == "What is the best roofing material?"
-    assert "answer" in entry
-    assert "citations" in entry
+    assert data["status"] == "answered"
+    assert data["answer"].startswith("Answer for:")
+
+    with SessionLocal() as db:
+        entry = db.query(FaqEntry).filter(FaqEntry.id == entry_id).first()
+    assert entry.status == "answered"
+    assert entry.answer.startswith("Answer for:")
 
 
-def test_build_skips_blank_questions(monkeypatch):
+def test_answer_one_404_unknown(monkeypatch):
     import app.answer as answer_mod
-
-    calls = []
-
-    def fake_ask(question):
-        calls.append(question)
-        return {"answer": "ok", "citations": []}
-
-    monkeypatch.setattr(answer_mod, "ask", fake_ask)
-
+    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
     c = _admin_client()
-    r = c.post(
-        "/faq/build",
-        json={"questions": ["Valid question?", "", "   ", "Another?"]},
-        headers=AUTH,
-    )
-    assert r.status_code == 200, r.text
-    data = r.json()
-    # blank/whitespace-only questions must be skipped
-    assert len(data["faq"]) == 2
+    r = c.post("/faq/999999/answer", headers=AUTH)
+    assert r.status_code == 404, r.text
 
 
-def test_sales_cannot_build():
+def test_answer_one_sales_forbidden():
+    """Sales role cannot POST /faq/{id}/answer."""
     c = _sales_client()
-    r = c.post(
-        "/faq/build",
-        json={"questions": ["What is metal roofing?"]},
-        headers=AUTH,
-    )
+    r = c.post("/faq/1/answer", headers=AUTH)
     assert r.status_code == 403, r.text
 
 
-def test_build_401_without_token():
+# ---------------------------------------------------------------------------
+# POST /faq/answer-batch
+# ---------------------------------------------------------------------------
+
+def test_answer_batch(monkeypatch):
+    """answer-batch answers up to limit unanswered entries."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
     c = _admin_client()
-    r = c.post("/faq/build", json={"questions": ["Q?"]})
-    assert r.status_code == 401, r.text
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+    import app.answer as answer_mod
+    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+
+    r = c.post("/faq/answer-batch", json={"limit": 25}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["answered"] == 3
+    assert data["remaining"] == 0
+
+    with SessionLocal() as db:
+        answered = db.query(FaqEntry).filter(FaqEntry.status == "answered").count()
+    assert answered == 3
+
+
+def test_answer_batch_respects_limit(monkeypatch):
+    """answer-batch with limit=1 answers only 1 entry."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+    c = _admin_client()
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+    import app.answer as answer_mod
+    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+
+    r = c.post("/faq/answer-batch", json={"limit": 1}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["answered"] == 1
+    assert data["remaining"] == 2
+
+
+def test_answer_batch_sales_forbidden():
+    c = _sales_client()
+    r = c.post("/faq/answer-batch", json={"limit": 5}, headers=AUTH)
+    assert r.status_code == 403, r.text
+
+
+# ---------------------------------------------------------------------------
+# GET /faq/coverage
+# ---------------------------------------------------------------------------
+
+def test_coverage_counts(monkeypatch):
+    """Coverage reflects mined / answered / uncovered correctly."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+
+    c = _admin_client()
+
+    # Before mining
+    r = c.get("/faq/coverage", headers=AUTH)
+    assert r.status_code == 200, r.text
+    before = r.json()
+    assert before["mined"] == 0
+    assert before["answered"] == 0
+    assert before["uncovered_nodes"] == 3  # 3 nodes with start != None
+
+    # After mining
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+    r = c.get("/faq/coverage", headers=AUTH)
+    mid = r.json()
+    assert mid["mined"] == 3
+    assert mid["answered"] == 0
+    assert mid["uncovered_nodes"] == 0
+
+    # After answering all
+    import app.answer as answer_mod
+    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+    c.post("/faq/answer-batch", json={"limit": 25}, headers=AUTH)
+    r = c.get("/faq/coverage", headers=AUTH)
+    after = r.json()
+    assert after["mined"] == 3
+    assert after["answered"] == 3
+    assert after["uncovered_nodes"] == 0
+
+
+def test_coverage_sales_allowed():
+    """Sales role can GET /faq/coverage."""
+    c = _sales_client()
+    r = c.get("/faq/coverage", headers=AUTH)
+    assert r.status_code == 200, r.text

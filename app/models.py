@@ -119,6 +119,19 @@ class PlatformConfig(Base):
     key = Column(String, primary_key=True)
     value = Column(String)
 
+class FaqEntry(Base):
+    __tablename__ = "faq_entries"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=True)
+    source_kind = Column(String, nullable=False)   # claim | objection
+    source_node_id = Column(Integer, nullable=False, unique=True)  # FK to content_graph.id (tagging)
+    video_id = Column(String, nullable=False, index=True)
+    start = Column(Float, nullable=False)
+    status = Column(String, nullable=False, default="mined")  # mined | answered
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (Index("ix_faq_source_node", "source_node_id"),)
+
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
 

@@ -105,7 +105,7 @@ function AdminShell() {
         ["articles", "Articles"],
         ["faq", "FAQ"],
         ["templates", "Templates"],
-        ["scheduling", "Scheduling"],
+        ["scheduling", "Content Scheduling"],
         ["video-approval", "Video Approval"],
         ["archive", "Archive"],
         ["users", "Users"],

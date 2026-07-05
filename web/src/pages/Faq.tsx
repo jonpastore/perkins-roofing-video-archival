@@ -2,240 +2,293 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
 
-interface MinedItem {
+interface FaqItem {
+  id: number;
   question: string;
+  answer: string | null;
+  status: string;
   video_id: string;
-  t: number;
+  video_title: string;
   url: string;
+  start: number;
 }
 
-interface FaqEntry {
-  question: string;
-  answer: string;
-  citations: string[];
+interface FaqListResponse {
+  total: number;
+  items: FaqItem[];
+}
+
+interface Coverage {
+  mined: number;
+  answered: number;
+  uncovered_nodes: number;
 }
 
 function mmss(t: number): string {
   const m = Math.floor(t / 60);
-  const s = t % 60;
+  const s = Math.floor(t % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+const PAGE_SIZE = 50;
+
 export function Faq() {
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [items, setItems] = useState<FaqItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [filter, setFilter] = useState("");
-  const [mined, setMined] = useState<MinedItem[]>([]);
+  const [answeredFilter, setAnsweredFilter] = useState<"all" | "yes" | "no">("all");
   const [loading, setLoading] = useState(true);
+  const [coverageLoading, setCoverageLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [building, setBuilding] = useState(false);
-  const [buildError, setBuildError] = useState<string | null>(null);
-  const [results, setResults] = useState<FaqEntry[] | null>(null);
+  const [mining, setMining] = useState(false);
+  const [generatingBatch, setGeneratingBatch] = useState(false);
+  const [answeringId, setAnsweringId] = useState<number | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function load(q?: string) {
+  function loadCoverage() {
+    setCoverageLoading(true);
+    apiFetch("/faq/coverage")
+      .then((r) => r.json())
+      .then((d: Coverage) => setCoverage(d))
+      .catch(() => setCoverage(null))
+      .finally(() => setCoverageLoading(false));
+  }
+
+  function loadItems(q: string, ans: "all" | "yes" | "no", off: number) {
     setLoading(true);
     setError(null);
-    const qs = q ? `?q=${encodeURIComponent(q)}&limit=100` : "?limit=100";
-    apiFetch(`/faq/mined${qs}`)
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String(off),
+      answered: ans,
+    });
+    if (q) params.set("q", q);
+    apiFetch(`/faq?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((data: MinedItem[]) => {
-        setMined(data);
-        setSelected(new Set());
-        setResults(null);
+      .then((d: FaqListResponse) => {
+        setItems(d.items);
+        setTotal(d.total);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }
 
   useEffect(() => {
-    load();
+    loadCoverage();
+    loadItems("", "all", 0);
   }, []);
 
   function handleFilterChange(val: string) {
     setFilter(val);
     if (filterTimer.current) clearTimeout(filterTimer.current);
-    filterTimer.current = setTimeout(() => load(val || undefined), 350);
+    filterTimer.current = setTimeout(() => {
+      setOffset(0);
+      loadItems(val, answeredFilter, 0);
+    }, 350);
   }
 
-  function toggleSelect(idx: number) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+  function handleAnsweredChange(val: "all" | "yes" | "no") {
+    setAnsweredFilter(val);
+    setOffset(0);
+    loadItems(filter, val, 0);
   }
 
-  function toggleAll() {
-    if (selected.size === mined.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(mined.map((_, i) => i)));
-    }
-  }
-
-  async function handleBuild() {
-    if (selected.size === 0) return;
-    setBuildError(null);
-    setBuilding(true);
-    setResults(null);
-    try {
-      const questions = [...selected].map((i) => mined[i].question);
-      const r = await apiFetch("/faq/build", {
-        method: "POST",
-        body: JSON.stringify({ questions }),
+  function handleLoadMore() {
+    const nextOffset = offset + PAGE_SIZE;
+    setOffset(nextOffset);
+    apiFetch(`/faq?limit=${PAGE_SIZE}&offset=${nextOffset}&answered=${answeredFilter}${filter ? `&q=${encodeURIComponent(filter)}` : ""}`)
+      .then((r) => r.json())
+      .then((d: FaqListResponse) => {
+        setItems((prev) => [...prev, ...d.items]);
+        setTotal(d.total);
       });
+  }
+
+  async function handleMine() {
+    setMining(true);
+    setActionMsg(null);
+    try {
+      const r = await apiFetch("/faq/mine", { method: "POST", body: JSON.stringify({ limit: 200 }) });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const data = await r.json();
-      setResults(data.faq as FaqEntry[]);
+      const d = await r.json();
+      setActionMsg(`Mined ${d.mined} new questions. ${d.remaining_uncovered} content items still available.`);
+      loadCoverage();
+      setOffset(0);
+      loadItems(filter, answeredFilter, 0);
     } catch (e: unknown) {
-      setBuildError(e instanceof Error ? e.message : String(e));
+      setActionMsg(`Mine failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      setBuilding(false);
+      setMining(false);
     }
   }
+
+  async function handleGenerateBatch() {
+    setGeneratingBatch(true);
+    setActionMsg(null);
+    try {
+      const r = await apiFetch("/faq/answer-batch", { method: "POST", body: JSON.stringify({ limit: 25 }) });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const d = await r.json();
+      setActionMsg(`Generated ${d.answered} answers. ${d.remaining} still unanswered.`);
+      loadCoverage();
+      setOffset(0);
+      loadItems(filter, answeredFilter, 0);
+    } catch (e: unknown) {
+      setActionMsg(`Generate failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setGeneratingBatch(false);
+    }
+  }
+
+  async function handleAnswerOne(item: FaqItem) {
+    setAnsweringId(item.id);
+    try {
+      const r = await apiFetch(`/faq/${item.id}/answer`, { method: "POST" });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const updated: FaqItem = await r.json();
+      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+      loadCoverage();
+    } catch (e: unknown) {
+      setActionMsg(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAnsweringId(null);
+    }
+  }
+
+  const hasMore = offset + PAGE_SIZE < total;
 
   return (
-    <main style={{ maxWidth: 900 }}>
+    <main style={{ maxWidth: 960 }}>
       <PageTitle>FAQ Builder</PageTitle>
 
-      {/* Filter + Build controls */}
+      {/* Coverage summary bar */}
       <Card style={{ marginBottom: 20 }}>
+        {coverageLoading ? (
+          <p style={{ margin: 0, fontSize: 14, color: BRAND.sub }}>Loading coverage…</p>
+        ) : coverage ? (
+          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: 14, color: BRAND.ink }}>
+                <strong style={{ color: BRAND.navyText }}>{coverage.mined}</strong> questions mined
+                {" · "}
+                <strong style={{ color: BRAND.navyText }}>{coverage.answered}</strong> answered
+                {" · "}
+                <strong style={{ color: BRAND.navyText }}>{coverage.uncovered_nodes}</strong> content items still available
+              </span>
+            </div>
+            <Button
+              onClick={handleMine}
+              disabled={mining || coverage.uncovered_nodes === 0}
+              variant="ghost"
+              style={{ whiteSpace: "nowrap", fontSize: 13 }}
+            >
+              {mining ? "Mining…" : `Mine more${coverage.uncovered_nodes > 0 ? ` (${coverage.uncovered_nodes})` : ""}`}
+            </Button>
+            <Button
+              onClick={handleGenerateBatch}
+              disabled={generatingBatch || coverage.mined === coverage.answered}
+              style={{ whiteSpace: "nowrap", fontSize: 13 }}
+            >
+              {generatingBatch ? "Generating…" : "Generate answers"}
+            </Button>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: 14, color: BRAND.sub }}>Coverage unavailable.</p>
+        )}
+        {actionMsg && (
+          <p style={{ margin: "10px 0 0", fontSize: 13, color: BRAND.sub }}>{actionMsg}</p>
+        )}
+      </Card>
+
+      {/* Filters */}
+      <Card style={{ marginBottom: 20, padding: "14px 20px" }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <input
             value={filter}
             onChange={(e) => handleFilterChange(e.target.value)}
-            placeholder="Filter by topic…"
+            placeholder="Search questions…"
             style={{ ...inputStyle, flex: 1, minWidth: 180 }}
           />
+          <select
+            value={answeredFilter}
+            onChange={(e) => handleAnsweredChange(e.target.value as "all" | "yes" | "no")}
+            style={{ ...inputStyle, minWidth: 130 }}
+          >
+            <option value="all">All</option>
+            <option value="yes">Answered</option>
+            <option value="no">Unanswered</option>
+          </select>
           <span style={{ fontSize: 13, color: BRAND.sub, whiteSpace: "nowrap" }}>
-            {mined.length} question{mined.length !== 1 ? "s" : ""}
-            {selected.size > 0 && `, ${selected.size} selected`}
+            {total} question{total !== 1 ? "s" : ""}
           </span>
-          <Button
-            variant="ghost"
-            style={{ padding: "8px 14px", fontSize: 13 }}
-            onClick={toggleAll}
-            disabled={mined.length === 0}
-          >
-            {selected.size === mined.length && mined.length > 0 ? "Deselect all" : "Select all"}
-          </Button>
-          <Button
-            onClick={handleBuild}
-            disabled={selected.size === 0 || building}
-            style={{ whiteSpace: "nowrap" }}
-          >
-            {building ? "Building…" : "Build grounded answers"}
-          </Button>
         </div>
-        {buildError && <p style={{ color: BRAND.red, fontSize: 14, marginTop: 10 }}>{buildError}</p>}
       </Card>
 
       {loading && <Loading />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
-      {/* Mined questions list */}
-      {!loading && !error && mined.length === 0 && (
+      {!loading && !error && items.length === 0 && (
         <Card>
           <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
-            No mined questions found{filter ? ` for "${filter}"` : ""}.
+            No questions found{filter ? ` for "${filter}"` : ""}. Use "Mine more" to generate from content.
           </p>
         </Card>
       )}
 
-      {!loading && !error && mined.length > 0 && (
-        <Card style={{ marginBottom: 24, padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead>
-              <tr style={{ borderBottom: `2px solid ${BRAND.border}`, background: BRAND.bg }}>
-                <th style={{ padding: "10px 14px", width: 36 }} />
-                <th style={{ padding: "10px 14px", textAlign: "left", color: BRAND.sub, fontWeight: 600 }}>
-                  Question
-                </th>
-                <th style={{ padding: "10px 14px", textAlign: "left", color: BRAND.sub, fontWeight: 600, whiteSpace: "nowrap" }}>
-                  Source
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {mined.map((item, idx) => (
-                <tr
-                  key={`${item.video_id}-${item.t}-${idx}`}
-                  style={{
-                    borderBottom: `1px solid ${BRAND.border}`,
-                    background: selected.has(idx) ? "#f0f4ff" : undefined,
-                    cursor: "pointer",
-                  }}
-                  onClick={() => toggleSelect(idx)}
-                >
-                  <td style={{ padding: "10px 14px", textAlign: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={selected.has(idx)}
-                      onChange={() => toggleSelect(idx)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ cursor: "pointer", width: 16, height: 16 }}
-                    />
-                  </td>
-                  <td style={{ padding: "10px 14px", color: BRAND.ink }}>{item.question}</td>
-                  <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+      {!loading && !error && items.length > 0 && (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {items.map((item) => (
+              <Card key={item.id} style={{ borderLeft: `4px solid ${item.status === "answered" ? BRAND.navy : BRAND.border}` }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: "0 0 6px", fontWeight: 700, color: BRAND.navyText, fontSize: 15 }}>
+                      {item.question}
+                    </p>
+                    {item.answer ? (
+                      <p style={{ margin: "0 0 8px", color: BRAND.ink, fontSize: 14, lineHeight: 1.6 }}>
+                        {item.answer}
+                      </p>
+                    ) : (
+                      <p style={{ margin: "0 0 8px", color: BRAND.sub, fontSize: 13, fontStyle: "italic" }}>
+                        No answer yet.
+                      </p>
+                    )}
                     <a
                       href={item.url}
                       target="_blank"
                       rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ color: BRAND.red, textDecoration: "none", fontWeight: 600, fontSize: 13 }}
+                      style={{ color: BRAND.red, fontSize: 13, textDecoration: "none", fontWeight: 600 }}
                     >
-                      ▶ {mmss(item.t)}
+                      ▶ {item.video_title} @ {mmss(item.start)}
                     </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {/* Build results */}
-      {results !== null && (
-        <>
-          <h3 style={{ color: BRAND.navyText, fontSize: 16, margin: "0 0 14px" }}>
-            Grounded answers ({results.length})
-          </h3>
-          {results.length === 0 ? (
-            <Card>
-              <p style={{ color: BRAND.sub, fontSize: 14, margin: 0 }}>No answers returned.</p>
-            </Card>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {results.map((entry, i) => (
-                <Card key={i} style={{ borderTop: `3px solid ${BRAND.red}` }}>
-                  <p style={{ margin: "0 0 8px", fontWeight: 700, color: BRAND.navyText, fontSize: 15 }}>
-                    {entry.question}
-                  </p>
-                  <p style={{ margin: "0 0 10px", color: BRAND.ink, fontSize: 14, lineHeight: 1.6 }}>
-                    {entry.answer}
-                  </p>
-                  {entry.citations.length > 0 && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {entry.citations.map((url, j) => (
-                        <a
-                          key={j}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: BRAND.red, fontSize: 12, textDecoration: "none", fontWeight: 600 }}
-                        >
-                          ▶ Source {j + 1}
-                        </a>
-                      ))}
-                    </div>
+                  </div>
+                  {item.status !== "answered" && (
+                    <Button
+                      variant="ghost"
+                      disabled={answeringId === item.id}
+                      onClick={() => handleAnswerOne(item)}
+                      style={{ fontSize: 12, padding: "6px 12px", whiteSpace: "nowrap", flexShrink: 0 }}
+                    >
+                      {answeringId === item.id ? "Generating…" : "Generate answer"}
+                    </Button>
                   )}
-                </Card>
-              ))}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {hasMore && (
+            <div style={{ textAlign: "center", marginTop: 20 }}>
+              <Button variant="ghost" onClick={handleLoadMore} style={{ fontSize: 13 }}>
+                Load more ({total - offset - items.length} remaining)
+              </Button>
             </div>
           )}
         </>

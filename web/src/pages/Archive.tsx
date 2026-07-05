@@ -185,7 +185,6 @@ function DetailPanel({ videoId }: { videoId: string }) {
 export function Archive() {
   const [videos, setVideos] = useState<ArchiveVideo[]>([]);
   const [search, setSearch] = useState("");
-  const [archivedOnly, setArchivedOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -196,7 +195,6 @@ export function Archive() {
     setError(null);
     const params = new URLSearchParams();
     if (search) params.set("q", search);
-    if (archivedOnly) params.set("archived_only", "true");
     apiFetch(`/archive/videos?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -205,7 +203,7 @@ export function Archive() {
       .then(setVideos)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [search, archivedOnly]);
+  }, [search]);
 
   async function handleDownload(video: ArchiveVideo) {
     setDownloading(video.id);
@@ -246,14 +244,6 @@ export function Archive() {
             width: 280,
           }}
         />
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "#444" }}>
-          <input
-            type="checkbox"
-            checked={archivedOnly}
-            onChange={(e) => setArchivedOnly(e.target.checked)}
-          />
-          Archived only
-        </label>
       </div>
 
       {/* States */}
@@ -274,14 +264,13 @@ export function Archive() {
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Title</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Duration</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Upload Date</th>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Status</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Download</th>
             </tr>
           </thead>
           <tbody>
             {videos.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: "24px 12px", color: "#888", textAlign: "center" }}>
+                <td colSpan={4} style={{ padding: "24px 12px", color: "#888", textAlign: "center" }}>
                   No videos found.
                 </td>
               </tr>
@@ -294,6 +283,26 @@ export function Archive() {
                 >
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {/* Accordion toggle — left of the row */}
+                      <button
+                        onClick={() => toggleExpand(v.id)}
+                        aria-label={expandedId === v.id ? "Collapse" : "Expand"}
+                        style={{
+                          fontFamily: "monospace",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: BRAND.red,
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: "0 2px",
+                          lineHeight: 1,
+                          flexShrink: 0,
+                          userSelect: "none",
+                        }}
+                      >
+                        {expandedId === v.id ? "[-]" : "[+]"}
+                      </button>
                       {/* Play button — opens YouTube video */}
                       <a
                         href={`https://youtu.be/${v.id}`}
@@ -325,10 +334,6 @@ export function Archive() {
                       >
                         {v.title}
                       </span>
-                      {/* Chevron hint */}
-                      <span style={{ color: BRAND.sub, fontSize: 11, userSelect: "none" }}>
-                        {expandedId === v.id ? "▲" : "▼"}
-                      </span>
                     </div>
                   </td>
                   <td style={{ padding: "10px 12px", color: "#555" }}>
@@ -338,60 +343,30 @@ export function Archive() {
                     {v.upload_date ?? "—"}
                   </td>
                   <td style={{ padding: "10px 12px" }}>
-                    {v.archived ? (
-                      <span
-                        style={{
-                          background: "#e6f9f0",
-                          color: "#1a7f4b",
-                          padding: "2px 10px",
-                          borderRadius: 20,
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      >
-                        Archived
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          background: "#fff3e0",
-                          color: "#b45309",
-                          padding: "2px 10px",
-                          borderRadius: 20,
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      >
-                        Pending
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: "10px 12px" }}>
-                    {v.archived ? (
-                      <button
-                        onClick={() => handleDownload(v)}
-                        disabled={downloading === v.id}
-                        style={{
-                          padding: "6px 14px",
-                          background: downloading === v.id ? "#ccc" : "#1a1a2e",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: 6,
-                          cursor: downloading === v.id ? "not-allowed" : "pointer",
-                          fontSize: 13,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {downloading === v.id ? "..." : "Download"}
-                      </button>
-                    ) : (
-                      <span style={{ color: "#bbb", fontSize: 13 }}>—</span>
-                    )}
+                    <button
+                      onClick={() => handleDownload(v)}
+                      disabled={downloading === v.id}
+                      title="Download"
+                      aria-label="Download"
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: downloading === v.id ? "not-allowed" : "pointer",
+                        padding: "4px 6px",
+                        fontSize: 18,
+                        lineHeight: 1,
+                        color: downloading === v.id ? "#bbb" : BRAND.navy,
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      {downloading === v.id ? "…" : "⬇"}
+                    </button>
                   </td>
                 </tr>
                 {expandedId === v.id && (
                   <tr key={`${v.id}-detail`}>
-                    <td colSpan={5} style={{ padding: 0 }}>
+                    <td colSpan={4} style={{ padding: 0 }}>
                       <DetailPanel videoId={v.id} />
                     </td>
                   </tr>
