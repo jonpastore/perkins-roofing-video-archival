@@ -19,7 +19,7 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --service-account "api-run-sa@${PROJECT}.iam.gserviceaccount.com" \
   --add-cloudsql-instances "$CONN" \
   --set-env-vars "PERKINS_ENV=prod,GOOGLE_CLOUD_PROJECT=${PROJECT},GCP_REGION=${REGION},EMBED_BACKEND=vertex,LLM_BACKEND=vertex,EMBED_MODEL=gemini-embedding-001,LLM_MODEL=gemini-2.5-flash,DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}" \
-  --no-allow-unauthenticated
+  --allow-unauthenticated --set-secrets INTERNAL_SECRET=internal-secret:latest
 
 # Point each job at the same image with its module entrypoint.
 # Terraform defines these 4 jobs (main.tf job_names). --args uses the = form because the

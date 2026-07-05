@@ -22,18 +22,21 @@ def test_search_with_sales_token(monkeypatch):
 
 
 def test_promote_calls_promoter(monkeypatch):
-    # the Cloud Scheduler target must exist (not 404) and invoke the promoter
+    # the Cloud Scheduler target must exist and invoke the promoter (guarded by INTERNAL_SECRET)
     import jobs.promote_job as pj
     monkeypatch.setattr(pj, "run", lambda: {"promoted": 3, "errored": 0})
-    r = TestClient(appmod.app).post("/internal/promote")
+    monkeypatch.setenv("INTERNAL_SECRET", "s3cr3t")
+    c = TestClient(appmod.app)
+    assert c.post("/internal/promote").status_code == 403  # no secret
+    r = c.post("/internal/promote", headers={"X-Internal-Secret": "s3cr3t"})
     assert r.status_code == 200 and r.json()["promoted"] == 3
 
 
 def test_social_calls_social_job(monkeypatch):
-    # the Cloud Scheduler social target must exist and invoke social_job.run
     import jobs.social_job as sj
     monkeypatch.setattr(sj, "run", lambda: {"published": 2, "skipped": 0, "errored": 0})
-    r = TestClient(appmod.app).post("/internal/social")
+    monkeypatch.setenv("INTERNAL_SECRET", "s3cr3t")
+    r = TestClient(appmod.app).post("/internal/social", headers={"X-Internal-Secret": "s3cr3t"})
     assert r.status_code == 200 and r.json()["published"] == 2
 
 

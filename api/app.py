@@ -2,7 +2,7 @@
 This is the PROD entrypoint (replaces the unauthenticated app/api.py). Search/ask require an
 authenticated sales|admin caller; /internal/promote is the Cloud Scheduler target, protected
 at the Cloud Run IAM layer (scheduler-sa OIDC, run.invoker)."""
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from api.auth import require_role
@@ -38,18 +38,26 @@ def ask(q: Query, _claims=Depends(require_role("ask"))):
     return A.ask(q.query, q.k)
 
 
-@app.post("/internal/promote")
+def _require_internal(x_internal_secret: str = Header(default="")):
+    """Guard for /internal/* cron targets. The service is GCP-IAM-open so the browser SPA can
+    reach the Firebase-authed routes; the internal cron routes are protected here by a shared
+    secret (INTERNAL_SECRET env, set on the scheduler headers). Denies if unset/mismatched."""
+    import os
+    expected = os.getenv("INTERNAL_SECRET", "")
+    if not expected or x_internal_secret != expected:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+
+@app.post("/internal/promote", dependencies=[Depends(_require_internal)])
 def promote():
-    """Cloud Scheduler target — authenticated at the Cloud Run IAM layer (scheduler-sa OIDC).
-    Promotes due scheduled_content (articles + reels)."""
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). Promotes due scheduled_content."""
     from jobs.promote_job import run
     return run()
 
 
-@app.post("/internal/social")
+@app.post("/internal/social", dependencies=[Depends(_require_internal)])
 def social():
-    """Cloud Scheduler target — authenticated at the Cloud Run IAM layer (scheduler-sa OIDC).
-    Publishes awaiting_social reels to IG and TikTok."""
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). Publishes awaiting_social reels."""
     from jobs.social_job import run
     return run()
 
