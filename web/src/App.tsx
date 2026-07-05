@@ -1,9 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
 import { Archive } from "./pages/Archive";
 
 type Role = "admin" | "sales" | null;
+
+// Perkins Roofing brand palette (from perkinsroofing.net)
+const BRAND = {
+  red: "#ef3c1a",
+  redDark: "#cf2e2e",
+  navy: "#1b2a52",
+  navyActive: "#26386b",
+  navyText: "#2b3c73",
+};
+const FONT = "system-ui, 'Segoe UI', Roboto, sans-serif";
 
 // Placeholder page components — filled in later waves
 function TemplatesPage() { return <main><h2>Templates</h2></main>; }
@@ -14,27 +24,48 @@ function ConfigPage() { return <main><h2>Config</h2></main>; }
 function SearchAskPage() { return <main><h2>Search / Ask</h2></main>; }
 function ComposeEmailPage() { return <main><h2>Compose Email</h2></main>; }
 
-type AdminTab = "templates" | "articles" | "scheduling" | "video-approval" | "config" | "archive";
-type SalesTab = "search-ask" | "compose-email" | "archive";
-
-function AdminShell() {
-  const [tab, setTab] = useState<AdminTab>("templates");
+// Shared console shell: branded sidebar + content area. Both the admin and sales
+// consoles are the same layout with different tabs, so they share this one component.
+function Shell({
+  title,
+  tabs,
+  render,
+}: {
+  title: string;
+  tabs: [string, string][];
+  render: (tab: string) => ReactNode;
+}) {
+  const [tab, setTab] = useState<string>(tabs[0][0]);
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
-      <nav style={{ width: 200, background: "#1a1a2e", color: "#fff", padding: "24px 0" }}>
-        <div style={{ padding: "0 16px 24px", fontWeight: 700, fontSize: 15 }}>
-          Perkins Admin
+    <div style={{ display: "flex", height: "100vh", fontFamily: FONT }}>
+      <nav
+        style={{
+          width: 220,
+          background: BRAND.navy,
+          color: "#fff",
+          display: "flex",
+          flexDirection: "column",
+          padding: "18px 0",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "0 16px 18px",
+            marginBottom: 10,
+            borderBottom: "1px solid rgba(255,255,255,0.12)",
+          }}
+        >
+          <img
+            src="/perkins-logo.png"
+            alt="Perkins Roofing"
+            style={{ height: 36, background: "#fff", borderRadius: 6, padding: "3px 5px" }}
+          />
+          <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
         </div>
-        {(
-          [
-            ["templates", "Templates"],
-            ["articles", "Articles"],
-            ["scheduling", "Scheduling"],
-            ["video-approval", "Video Approval"],
-            ["archive", "Archive"],
-            ["config", "Config"],
-          ] as [AdminTab, string][]
-        ).map(([id, label]) => (
+        {tabs.map(([id, label]) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -42,84 +73,105 @@ function AdminShell() {
               display: "block",
               width: "100%",
               textAlign: "left",
-              padding: "10px 16px",
-              background: tab === id ? "#16213e" : "transparent",
-              color: tab === id ? "#e94560" : "#ccc",
-              border: "none",
+              padding: "11px 16px",
+              background: tab === id ? BRAND.navyActive : "transparent",
+              color: tab === id ? "#fff" : "#c3c9d9",
+              borderLeft: tab === id ? `3px solid ${BRAND.red}` : "3px solid transparent",
               cursor: "pointer",
               fontSize: 14,
+              fontWeight: tab === id ? 600 : 400,
             }}
           >
             {label}
           </button>
         ))}
-        <div style={{ marginTop: "auto", padding: "24px 16px 0" }}>
+        <div style={{ marginTop: "auto", padding: "18px 16px 0" }}>
           <button
             onClick={signOutUser}
-            style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 13 }}
+            style={{ background: "none", border: "none", color: "#9aa3ba", cursor: "pointer", fontSize: 13 }}
           >
             Sign out
           </button>
         </div>
       </nav>
-      <div style={{ flex: 1, padding: 32, overflowY: "auto" }}>
-        {tab === "templates" && <TemplatesPage />}
-        {tab === "articles" && <ArticlesPage />}
-        {tab === "scheduling" && <SchedulingPage />}
-        {tab === "video-approval" && <VideoApprovalPage />}
-        {tab === "archive" && <Archive />}
-        {tab === "config" && <ConfigPage />}
+      <div style={{ flex: 1, padding: 32, overflowY: "auto", background: "#f7f8fa" }}>
+        {render(tab)}
       </div>
     </div>
   );
 }
 
-function SalesShell() {
-  const [tab, setTab] = useState<SalesTab>("search-ask");
+function AdminShell() {
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
-      <nav style={{ width: 200, background: "#1a1a2e", color: "#fff", padding: "24px 0" }}>
-        <div style={{ padding: "0 16px 24px", fontWeight: 700, fontSize: 15 }}>
-          Perkins Sales
-        </div>
-        {(
-          [
-            ["search-ask", "Search / Ask"],
-            ["compose-email", "Compose Email"],
-            ["archive", "Archive"],
-          ] as [SalesTab, string][]
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            style={{
-              display: "block",
-              width: "100%",
-              textAlign: "left",
-              padding: "10px 16px",
-              background: tab === id ? "#16213e" : "transparent",
-              color: tab === id ? "#e94560" : "#ccc",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 14,
-            }}
-          >
-            {label}
-          </button>
-        ))}
-        <div style={{ marginTop: "auto", padding: "24px 16px 0" }}>
-          <button
-            onClick={signOutUser}
-            style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 13 }}
-          >
-            Sign out
-          </button>
-        </div>
-      </nav>
-      <div style={{ flex: 1, padding: 32, overflowY: "auto" }}>
-        {tab === "search-ask" && <SearchAskPage />}
-        {tab === "compose-email" && <ComposeEmailPage />}
-        {tab === "archive" && <Archive />}
+    <Shell
+      title="Perkins Admin"
+      tabs={[
+        ["templates", "Templates"],
+        ["articles", "Articles"],
+        ["scheduling", "Scheduling"],
+        ["video-approval", "Video Approval"],
+        ["archive", "Archive"],
+        ["config", "Config"],
+      ]}
+      render={(tab) => (
+        <>
+          {tab === "templates" && <TemplatesPage />}
+          {tab === "articles" && <ArticlesPage />}
+          {tab === "scheduling" && <SchedulingPage />}
+          {tab === "video-approval" && <VideoApprovalPage />}
+          {tab === "archive" && <Archive />}
+          {tab === "config" && <ConfigPage />}
+        </>
+      )}
+    />
+  );
+}
+
+function SalesShell() {
+  return (
+    <Shell
+      title="Perkins Sales"
+      tabs={[
+        ["search-ask", "Search / Ask"],
+        ["compose-email", "Compose Email"],
+        ["archive", "Archive"],
+      ]}
+      render={(tab) => (
+        <>
+          {tab === "search-ask" && <SearchAskPage />}
+          {tab === "compose-email" && <ComposeEmailPage />}
+          {tab === "archive" && <Archive />}
+        </>
+      )}
+    />
+  );
+}
+
+// Centered branded card used by the login + no-role screens
+function CenterCard({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "100vh",
+        fontFamily: FONT,
+        background: `linear-gradient(160deg, #f7f8fa 0%, #eef1f6 100%)`,
+      }}
+    >
+      <div
+        style={{
+          background: "#fff",
+          borderRadius: 14,
+          padding: "44px 40px",
+          boxShadow: "0 8px 30px rgba(27,42,82,0.12)",
+          textAlign: "center",
+          minWidth: 340,
+          borderTop: `4px solid ${BRAND.red}`,
+        }}
+      >
+        {children}
       </div>
     </div>
   );
@@ -142,57 +194,39 @@ function LoginScreen() {
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100vh",
-        fontFamily: "system-ui, sans-serif",
-        background: "#f5f5f5",
-      }}
-    >
-      <div
+    <CenterCard>
+      <img
+        src="/perkins-logo.png"
+        alt="Perkins Roofing"
+        style={{ height: 60, marginBottom: 20 }}
+      />
+      <p style={{ margin: "0 0 28px", color: BRAND.navyText, fontSize: 15, fontWeight: 600 }}>
+        Video Content Console
+      </p>
+      <button
+        onClick={handleSignIn}
+        disabled={loading}
         style={{
-          background: "#fff",
-          borderRadius: 12,
-          padding: "48px 40px",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
-          textAlign: "center",
-          minWidth: 320,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "13px 28px",
+          background: loading ? "#ccc" : BRAND.red,
+          color: "#fff",
+          border: "none",
+          borderRadius: 8,
+          cursor: loading ? "not-allowed" : "pointer",
+          fontSize: 15,
+          fontWeight: 600,
+          boxShadow: loading ? "none" : "0 2px 8px rgba(239,60,26,0.35)",
         }}
+        onMouseOver={(e) => { if (!loading) e.currentTarget.style.background = BRAND.redDark; }}
+        onMouseOut={(e) => { if (!loading) e.currentTarget.style.background = BRAND.red; }}
       >
-        <h1 style={{ margin: "0 0 8px", fontSize: 22, color: "#1a1a2e" }}>
-          Perkins Roofing
-        </h1>
-        <p style={{ margin: "0 0 32px", color: "#666", fontSize: 14 }}>
-          Video Content Console
-        </p>
-        <button
-          onClick={handleSignIn}
-          disabled={loading}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "12px 24px",
-            background: loading ? "#ccc" : "#1a1a2e",
-            color: "#fff",
-            border: "none",
-            borderRadius: 8,
-            cursor: loading ? "not-allowed" : "pointer",
-            fontSize: 15,
-            fontWeight: 600,
-          }}
-        >
-          {loading ? "Signing in..." : "Sign in with Google"}
-        </button>
-        {error && (
-          <p style={{ marginTop: 16, color: "#e94560", fontSize: 13 }}>{error}</p>
-        )}
-      </div>
-    </div>
+        {loading ? "Signing in…" : "Sign in with Google"}
+      </button>
+      {error && <p style={{ marginTop: 16, color: BRAND.red, fontSize: 13 }}>{error}</p>}
+    </CenterCard>
   );
 }
 
@@ -223,11 +257,11 @@ export default function App() {
           alignItems: "center",
           justifyContent: "center",
           height: "100vh",
-          fontFamily: "system-ui, sans-serif",
-          color: "#666",
+          fontFamily: FONT,
+          color: BRAND.navyText,
         }}
       >
-        Loading...
+        Loading…
       </div>
     );
   }
@@ -238,24 +272,29 @@ export default function App() {
 
   // Signed in but no recognized role
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100vh",
-        fontFamily: "system-ui, sans-serif",
-        color: "#666",
-      }}
-    >
-      <p>Your account does not have an assigned role. Contact your administrator.</p>
+    <CenterCard>
+      <img src="/perkins-logo.png" alt="Perkins Roofing" style={{ height: 52, marginBottom: 18 }} />
+      <p style={{ margin: "0 0 6px", color: BRAND.navyText, fontWeight: 600, fontSize: 16 }}>
+        Access pending
+      </p>
+      <p style={{ margin: "0 0 22px", color: "#667085", fontSize: 14, maxWidth: 300 }}>
+        Your account doesn’t have an assigned role yet. Contact your administrator.
+      </p>
       <button
         onClick={signOutUser}
-        style={{ marginTop: 16, padding: "8px 20px", cursor: "pointer" }}
+        style={{
+          padding: "10px 22px",
+          cursor: "pointer",
+          background: "#fff",
+          color: BRAND.navyText,
+          border: `1px solid ${BRAND.navyText}`,
+          borderRadius: 8,
+          fontSize: 14,
+          fontWeight: 600,
+        }}
       >
         Sign out
       </button>
-    </div>
+    </CenterCard>
   );
 }
