@@ -146,6 +146,14 @@ resource "google_service_account_iam_member" "api_sign" {
   member             = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+# Read-only Firebase Auth access so verify_id_token(check_revoked=True) can fetch the
+# user record to check token revocation. Without this every authed request 401s.
+resource "google_project_iam_member" "api_firebaseauth_viewer" {
+  project = var.project_id
+  role    = "roles/firebaseauth.viewer"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
 # ---------------------------------------------------------------------------
 # 4. IAM bindings — jobs-sa
 #    roles/speech.client grants Cloud Speech-to-Text access.
