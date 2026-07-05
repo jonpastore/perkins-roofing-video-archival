@@ -719,6 +719,163 @@ def _wp_base_url() -> str:
     return os.environ.get("WP_URL", "https://perkinsroofing.net").rstrip("/")
 
 
+# ---------------------------------------------------------------------------
+# Scored generation loop — generate → score → refine until SEO/AIO score == 100
+# ---------------------------------------------------------------------------
+
+def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
+    """Deterministic JSON-LD: Article + FAQPage (so the JSON-LD check always passes)."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+    from core.jsonld import build_article, build_faq_page  # noqa: PLC0415
+
+    slug = ctx.get("pillar_slug") or fields.get("slug") or ""
+    url = f"{_wp_base_url()}/{slug}".rstrip("/")
+    date = datetime.now(timezone.utc).date().isoformat()
+    jsonld = [build_article(
+        (fields.get("title") or "")[:110],
+        fields.get("meta") or "",
+        "Perkins Roofing",
+        date,
+        url,
+    )]
+    if fields.get("faq_json"):
+        jsonld.append(build_faq_page(fields["faq_json"]))
+    return jsonld
+
+
+def _clamp_meta(meta: str, title: str, content_md: str) -> str:
+    """Deterministically coerce the meta description into the 120-160 char band."""
+    meta = re.sub(r"\s+", " ", (meta or "").strip())
+    if 120 <= len(meta) <= 160:
+        return meta
+    text = re.sub(r"\s+", " ", _strip_html(content_md or "")).strip()
+    base = meta or (f"{title}: {text}" if title else text)
+    if len(base) < 120:
+        base = re.sub(r"\s+", " ", f"{title}: {text}").strip()
+    if len(base) < 120:
+        base = (base + " Expert South Florida roofing guidance from Perkins Roofing's licensed team.")
+    base = re.sub(r"\s+", " ", base).strip()
+    if len(base) > 160:
+        base = base[:159].rstrip()
+    return base
+
+
+def _fallback_faq(keyword: str, content_md: str) -> list[dict]:
+    """Last-resort deterministic FAQ so the FAQ check can pass when the LLM omits one."""
+    text = re.sub(r"\s+", " ", _strip_html(content_md or "")).strip()
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 20]
+    a = (sentences[0] if sentences else f"Perkins Roofing can help with {keyword}.")[:300]
+    b = (sentences[1] if len(sentences) > 1 else a)[:300]
+    return [
+        {"q": f"What should homeowners know about {keyword}?", "a": a},
+        {"q": f"Why does {keyword} matter for my roof?", "a": b},
+        {"q": f"Can Perkins Roofing help with {keyword}?",
+         "a": f"Yes. Perkins Roofing's licensed South Florida team handles {keyword} and can assess your roof, "
+              f"explain the options, and give you a free estimate."},
+    ]
+
+
+def _ensure_video_link(content_md: str, keyword: str) -> str:
+    """Guarantee an embedded YouTube link (the 'video' check) by appending the top
+    grounded clip when the body has none. Best-effort — returns content unchanged on
+    any retrieval failure."""
+    if re.search(r"youtube\.com|youtu\.be", content_md or "", re.IGNORECASE):
+        return content_md
+    try:
+        from app.retrieval import hybrid_search  # noqa: PLC0415
+        chunks = (hybrid_search(keyword, k=1).get("chunks") or [])
+        if not chunks:
+            return content_md
+        chunk = chunks[0][0]
+        url = f"https://youtu.be/{chunk.video_id}?t={int(chunk.start or 0)}"
+        return f"{content_md}\n<h2>Watch: {keyword}</h2>\n<p>See it explained: <a href=\"{url}\">{url}</a></p>"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_ensure_video_link failed for %r: %s", keyword, exc)
+        return content_md
+
+
+def _regen_faq(keyword: str, content_md: str, *, llm) -> list[dict]:
+    """One targeted LLM call to produce 3-4 grounded FAQ pairs; [] on failure."""
+    prompt = (
+        f"Write 3-4 frequently asked questions with concise, professional answers for a roofing "
+        f"article about '{keyword}', grounded ONLY in the article below. Return JSON: "
+        f'{{"faq":[{{"q":"...","a":"..."}}]}}.\n\nARTICLE:\n{_strip_html(content_md)[:3000]}'
+    )
+    try:
+        raw = llm.chat(prompt, want_json=True)
+        parsed = parse_model_json(raw) if isinstance(raw, str) else raw
+        return [{"q": it["q"], "a": it.get("a", "")}
+                for it in (parsed.get("faq") or [])
+                if isinstance(it, dict) and it.get("q")]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_regen_faq failed for %r: %s", keyword, exc)
+        return []
+
+
+def generate_scored_article(
+    keyword: str,
+    ctx: dict,
+    *,
+    target: int = 100,
+    max_iters: int = 3,
+    llm=None,
+) -> dict:
+    """Generate an article, then loop (generate → score → refine) until the SEO/AIO
+    score reaches ``target`` (default 100) or ``max_iters`` is hit.
+
+    Verification is the pure ``core.seo.score_article``. Structural checks that can be
+    satisfied deterministically (JSON-LD, meta length, a FAQ) are guaranteed on the
+    final pass so a finished draft never ships below 100 on fixable dimensions.
+
+    Returns the generate_article_content fields plus ``jsonld_json`` and ``seo_score``.
+    """
+    from core.seo import failing_keys, score_article  # noqa: PLC0415
+
+    if llm is None:
+        from adapters.llm import get_default  # noqa: PLC0415
+        llm = get_default()
+
+    fields = generate_article_content(keyword, ctx, llm=llm)
+
+    def _score(f: dict, jl: list) -> dict:
+        return score_article(f.get("title", ""), f.get("meta", ""),
+                             f.get("content_md", ""), f.get("faq_json"), bool(jl))
+
+    jsonld = _build_article_jsonld(fields, ctx)
+    result = _score(fields, jsonld)
+    it = 0
+    while result["score"] < target and it < max_iters:
+        it += 1
+        fails = set(failing_keys(result))
+        # Content-quality gaps (headings, length, video, title) → full refine pass
+        if fails & {"headings", "wordcount", "video", "title_len"}:
+            fields = refine_article_content(fields, keyword, llm=llm)
+        # FAQ gap → one targeted FAQ generation
+        if "faq" in fails and not fields.get("faq_json"):
+            fields["faq_json"] = _regen_faq(keyword, fields.get("content_md", ""), llm=llm)
+        # Meta gaps → deterministic clamp into 120-160
+        if fails & {"meta_present", "meta_len"}:
+            fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
+                                         fields.get("content_md", ""))
+        jsonld = _build_article_jsonld(fields, ctx)
+        result = _score(fields, jsonld)
+
+    # Final deterministic guarantees for structural checks.
+    fields["content_md"] = _ensure_video_link(fields.get("content_md", ""), keyword)
+    fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
+                                 fields.get("content_md", ""))
+    if not fields.get("faq_json"):
+        fields["faq_json"] = _fallback_faq(keyword, fields.get("content_md", ""))
+    jsonld = _build_article_jsonld(fields, ctx)
+    result = _score(fields, jsonld)
+
+    fields["jsonld_json"] = jsonld
+    fields["seo_score"] = result["score"]
+    logger.info("generate_scored_article %r → score %d/100 (%d iters)",
+                keyword, result["score"], it)
+    return fields
+
+
 def _strip_html(text: str) -> str:
     """Remove HTML tags from a string (for SERP/PAA data before prompt injection)."""
     return re.sub(r"<[^>]+>", "", text)

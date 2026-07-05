@@ -16,6 +16,26 @@ function localInputToIso(localStr: string): string {
   return new Date(localStr).toISOString();
 }
 
+/** Interpret a datetime-local string as wall-clock time in the given IANA timezone
+ *  and return the corresponding UTC ISO-8601 string. Uses offset correction via
+ *  Intl (no external library). */
+function wallTimeInTzToIso(localStr: string, tz: string): string {
+  if (!localStr) return "";
+  const [datePart, timePart] = localStr.split("T");
+  const [y, mo, d] = datePart.split("-").map(Number);
+  const [h, mi] = (timePart ?? "00:00").split(":").map(Number);
+  const asUTC = Date.UTC(y, mo - 1, d, h, mi);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).formatToParts(asUTC).map((p) => [p.type, p.value])
+  );
+  const shownHour = parts.hour === "24" ? 0 : Number(parts.hour);
+  const shown = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), shownHour, Number(parts.minute));
+  return new Date(asUTC - (shown - asUTC)).toISOString();
+}
+
 /** Format a UTC/ISO timestamp using the browser's locale, showing both date and time. */
 function fmtLocale(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -281,8 +301,8 @@ function computeSeoScore(article: ArticleFull): SeoResult {
     detail: `${titleLen} chars`,
   });
 
-  // 4. Has H2 or H3 headings in content_md (15 pts)
-  const hasHeadings = /^#{2,3}\s/m.test(article.content_md ?? "");
+  // 4. Has H2 or H3 headings in content_md (15 pts) — matches HTML or markdown
+  const hasHeadings = /(<h[23][\s/>])|(^#{2,3}\s)/im.test(article.content_md ?? "");
   checks.push({ label: "Has H2/H3 headings in content", points: 15, pass: hasHeadings });
 
   // 5. Has FAQ (faq_json non-empty array) (15 pts)
@@ -310,8 +330,9 @@ function computeSeoScore(article: ArticleFull): SeoResult {
   const hasVideo = /youtube\.com|youtu\.be/i.test(article.content_md ?? "");
   checks.push({ label: "Has embedded video link", points: 10, pass: hasVideo });
 
-  // 8. Word count > 300 (15 pts)
+  // 8. Word count > 300 (15 pts) — strip HTML tags before counting
   const wordCount = (article.content_md ?? "")
+    .replace(/<[^>]+>/g, " ")
     .replace(/[#*>`_~\[\]]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 0).length;
@@ -380,6 +401,21 @@ interface ArticleModalProps {
   onRefresh: () => void;
 }
 
+const TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Phoenix",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "UTC",
+];
+
+function looksLikeHtml(s: string): boolean {
+  return /<(h[1-6]|p|ul|ol|li|div|strong|em|a|br|table)\b/i.test(s);
+}
+
 function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
   const [article, setArticle] = useState<ArticleFull | null>(null);
   const [loading, setLoading] = useState(true);
@@ -387,6 +423,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduleTz, setScheduleTz] = useState(USER_TZ);
   const [scheduling, setScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleSuccess, setScheduleSuccess] = useState(false);
@@ -433,7 +470,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     setScheduleError(null);
     setScheduleSuccess(false);
     try {
-      const isoAt = localInputToIso(scheduleAt);
+      const isoAt = wallTimeInTzToIso(scheduleAt, scheduleTz);
 
       const sr = await apiFetch("/scheduling", {
         method: "POST",
@@ -443,6 +480,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
           publish_at: isoAt,
           target: "wordpress",
           status: "scheduled",
+          tz: scheduleTz,
         }),
       });
       if (!sr.ok) {
@@ -474,7 +512,9 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     ? (article!.faq_json as FaqItem[]).filter((f) => f && typeof f.q === "string")
     : [];
 
-  const renderedHtml = article?.content_md ? renderMarkdown(article.content_md) : "";
+  const renderedHtml = article?.content_md
+    ? (looksLikeHtml(article.content_md) ? article.content_md : renderMarkdown(article.content_md))
+    : "";
   const seo = article ? computeSeoScore(article) : null;
 
   // Score bar color
@@ -580,9 +620,15 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                   onChange={(e) => { setScheduleAt(e.target.value); setScheduleSuccess(false); }}
                   style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
                 />
-                <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
-                  {USER_TZ}
-                </span>
+                <select
+                  value={scheduleTz}
+                  onChange={(e) => setScheduleTz(e.target.value)}
+                  style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                >
+                  {(TIMEZONES.includes(USER_TZ) ? TIMEZONES : [USER_TZ, ...TIMEZONES]).map((tz) => (
+                    <option key={tz} value={tz}>{tz}</option>
+                  ))}
+                </select>
                 <Button
                   variant="ghost"
                   onClick={handleSchedule}

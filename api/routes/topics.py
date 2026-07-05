@@ -358,7 +358,7 @@ def generate_cluster_article(
             meta=pillar_content["meta"] or f"Complete guide to {topic} from Perkins Roofing.",
             content_md=pillar_content["content_md"],
             faq_json=pillar_content["faq_json"] or None,
-            jsonld_json=None,
+            jsonld_json=pillar_content.get("jsonld_json"),
             role="pillar",
             pillar_slug=pillar_slug,
             wp_post_id=None,
@@ -407,7 +407,7 @@ def generate_cluster_article(
                 meta=cluster_content["meta"] or f"Expert roofing advice on {subtopic} from Perkins Roofing.",
                 content_md=cluster_content["content_md"],
                 faq_json=cluster_content["faq_json"] or None,
-                jsonld_json=None,
+                jsonld_json=cluster_content.get("jsonld_json"),
                 role="cluster",
                 pillar_slug=pillar_slug,
                 wp_post_id=None,
@@ -633,14 +633,14 @@ def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str)
     keyword and topic so the article is at minimum a finished stub the editor can expand.
     """
     try:
-        from jobs.article_job import generate_article_content, sanitize_article_html  # noqa: PLC0415
-        fields = generate_article_content(keyword, ctx)
-        # Sanitize so no markdown artifacts ship
-        fields = dict(fields)
+        from jobs.article_job import generate_scored_article, sanitize_article_html  # noqa: PLC0415
+        # Generative loop with SEO/AIO verification — refines until the score hits 100
+        # (or max iters), and always returns finished JSON-LD.
+        fields = dict(generate_scored_article(keyword, ctx))
         fields["content_md"] = sanitize_article_html(fields.get("content_md") or "")
         return fields
     except Exception as exc:  # noqa: BLE001
-        logger.warning("generate_article_content failed for %r, using fallback: %s", keyword, exc)
+        logger.warning("generate_scored_article failed for %r, using fallback: %s", keyword, exc)
         topic = ctx.get("topic") or keyword
         role = ctx.get("role", "standalone")
         pillar_slug = ctx.get("pillar_slug") or ""
@@ -661,6 +661,8 @@ def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str)
             "meta": f"Expert advice on {keyword} from Perkins Roofing.",
             "content_md": content_md,
             "faq_json": [],
+            "jsonld_json": None,
+            "seo_score": 0,
         }
 
 
