@@ -22,18 +22,20 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --no-allow-unauthenticated
 
 # Point each job at the same image with its module entrypoint.
+# Terraform defines these 4 jobs (main.tf job_names). --args uses the = form because the
+# value begins with '-m' (gcloud would otherwise parse it as a flag).
 declare -A JOBS=(
-  [ingest]="jobs.ingest_worker" [embed]="jobs.embed_job" [render]="jobs.render_job"
+  [ingest]="jobs.ingest_worker" [render]="jobs.render_job"
   [article]="jobs.article_job" [social]="jobs.social_job"
 )
+JOB_ENV="PERKINS_ENV=prod,GOOGLE_CLOUD_PROJECT=${PROJECT},GCP_REGION=${REGION},EMBED_BACKEND=vertex,LLM_BACKEND=vertex,EMBED_MODEL=gemini-embedding-001,LLM_MODEL=gemini-2.5-flash,DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}"
 for job in "${!JOBS[@]}"; do
   echo "== Deploy job: $job (${JOBS[$job]}) =="
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
     --service-account "jobs-sa@${PROJECT}.iam.gserviceaccount.com" \
     --set-cloudsql-instances "$CONN" \
-    --command python --args "-m,${JOBS[$job]}" \
-    --set-env-vars "PERKINS_ENV=prod,GOOGLE_CLOUD_PROJECT=${PROJECT},GCP_REGION=${REGION},EMBED_BACKEND=vertex,LLM_BACKEND=vertex,EMBED_MODEL=gemini-embedding-001,LLM_MODEL=gemini-2.5-flash,DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}" \
-    2>/dev/null || echo "  (job $job not yet created by terraform — apply infra first)"
+    --command python --args="-m,${JOBS[$job]}" \
+    --set-env-vars "$JOB_ENV"
 done
 
 echo "== Done. API + jobs on image: $IMAGE =="

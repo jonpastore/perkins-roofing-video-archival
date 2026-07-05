@@ -52,3 +52,30 @@ def social():
     Publishes awaiting_social reels to IG and TikTok."""
     from jobs.social_job import run
     return run()
+
+
+@app.get("/status")
+def status(_claims=Depends(require_role("view_status"))):
+    """Admin observability (Req 6): corpus + pipeline + content counts, last errors."""
+    from sqlalchemy import func
+
+    from app.models import (Article, Chunk, IngestionRun, ScheduledContent,
+                            SessionLocal, Video)
+    s = SessionLocal()
+    try:
+        errors = [
+            {"video_id": r.video_id, "stage": r.stage, "error": (r.last_error or "")[:200]}
+            for r in s.query(IngestionRun).filter(IngestionRun.status == "error").limit(20)
+        ]
+        return {
+            "videos": s.query(func.count(Video.id)).scalar(),
+            "videos_embedded": s.query(func.count(func.distinct(Chunk.video_id))).scalar(),
+            "videos_archived": s.query(func.count(Video.id)).filter(Video.archive_uri.isnot(None)).scalar(),
+            "transcripts_done": s.query(func.count(IngestionRun.id)).filter(
+                IngestionRun.stage == "transcript", IngestionRun.status == "done").scalar(),
+            "articles": s.query(func.count(Article.slug)).scalar(),
+            "scheduled_content": s.query(func.count(ScheduledContent.id)).scalar(),
+            "failed_stages": errors,
+        }
+    finally:
+        s.close()

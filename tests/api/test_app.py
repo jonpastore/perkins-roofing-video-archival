@@ -35,3 +35,13 @@ def test_social_calls_social_job(monkeypatch):
     monkeypatch.setattr(sj, "run", lambda: {"published": 2, "skipped": 0, "errored": 0})
     r = TestClient(appmod.app).post("/internal/social")
     assert r.status_code == 200 and r.json()["published"] == 2
+
+
+def test_status_admin_only(monkeypatch):
+    from app.models import init_db
+    init_db()  # ensure the corpus tables exist in the temp DB
+    set_verifier(lambda t: {"uid": "u", "email": "e", "role": "admin"})
+    r = TestClient(appmod.app).get("/status", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200 and "videos" in r.json()
+    set_verifier(lambda t: {"uid": "u", "email": "e", "role": "sales"})
+    assert TestClient(appmod.app).get("/status", headers={"Authorization": "Bearer x"}).status_code == 403
