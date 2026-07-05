@@ -52,6 +52,96 @@ ARTICLE_SCHEMA = {
 }
 
 
+def generate_article_content(
+    keyword: str,
+    ctx: dict,
+    *,
+    llm=None,
+    ground_videos: bool = True,
+) -> dict:
+    """Generate real article content via LLM + retrieval WITHOUT publishing to WordPress.
+
+    Reuses the same prompt-building, video-grounding, and LLM-call logic as
+    ``generate_article`` but skips the WordPress publish step and all DB persistence.
+    Use this to produce finished draft content synchronously (e.g. from an API
+    route), then persist the returned fields yourself.
+
+    Args:
+        keyword:       Primary target keyword.
+        ctx:           Article context dict (same shape as generate_article ctx).
+                       Must include at minimum ``{"keyword": keyword}``.
+        llm:           Optional VertexLLM instance.  Falls back to the default
+                       singleton when omitted.
+        ground_videos: When True, call app.retrieval.hybrid_search to ground the
+                       prompt in source videos.  Best-effort: if retrieval fails
+                       the article is still generated.
+
+    Returns:
+        Dict with keys::
+
+            {
+                "title":      str,
+                "slug":       str,
+                "meta":       str,   # metaDescription
+                "content_md": str,   # full markdown body
+                "faq_json":   list,  # [{q, a}, ...]
+            }
+
+    Raises:
+        RuntimeError: if the LLM returns unparseable JSON after 3 attempts.
+    """
+    if llm is None:
+        from adapters.llm import get_default  # noqa: PLC0415
+        llm = get_default()
+
+    # ── Enrich ctx ────────────────────────────────────────────────────────────
+    enriched = dict(ctx)
+    enriched.setdefault("keyword", keyword)
+
+    # ── Build prompt ──────────────────────────────────────────────────────────
+    sys_prompt = system_prompt()
+    user_prompt = template_prompt(enriched)
+
+    # ── Video grounding (best-effort) ─────────────────────────────────────────
+    if ground_videos:
+        try:
+            from app.retrieval import hybrid_search  # noqa: PLC0415
+            result = hybrid_search(keyword, k=4)
+            video_chunks = result.get("chunks") or []
+            if video_chunks:
+                user_prompt = _append_video_grounding(user_prompt, video_chunks)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("video grounding failed for %r, continuing: %s", keyword, exc)
+
+    # ── Call LLM (retry up to 3×) ─────────────────────────────────────────────
+    prompt = f"{sys_prompt}\n\n{user_prompt}"
+    article: dict = {}
+    for _ in range(3):
+        try:
+            raw = llm.chat(prompt, want_json=True, response_schema=ARTICLE_SCHEMA)
+        except TypeError:
+            raw = llm.chat(prompt, want_json=True)
+        parsed = parse_model_json(raw)
+        if isinstance(parsed, dict) and parsed.get("content"):
+            article = parsed
+            break
+
+    if not article.get("content"):
+        raise RuntimeError(f"LLM returned unparseable JSON for keyword '{keyword}'")
+
+    faq = [{"q": it["q"], "a": it.get("a", "")}
+           for it in (article.get("faq") or [])
+           if isinstance(it, dict) and it.get("q")]
+
+    return {
+        "title":      article.get("title") or keyword,
+        "slug":       article.get("slug") or "",
+        "meta":       article.get("metaDescription") or "",
+        "content_md": article.get("content") or "",
+        "faq_json":   faq,
+    }
+
+
 def generate_article(
     keyword: str,
     ctx: dict,
@@ -419,6 +509,72 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+def refine_article_content(fields: dict, keyword: str, *, llm=None) -> dict:
+    """Run a second SEO/AIO pass on first-pass article fields.
+
+    Takes the output of generate_article_content ({title, slug, meta, content_md,
+    faq_json}) and asks the LLM to revise it for:
+      - AIO (AI-answer optimized): question-led headings, concise direct answers, FAQ-friendly
+      - SEO: keyword coverage, meta description quality, scannable structure
+
+    Returns an improved version of the same field dict.  If the LLM call fails for
+    any reason the original fields are returned unchanged (fail-open).
+
+    Args:
+        fields:  First-pass dict from generate_article_content.
+        keyword: Primary target keyword (used to anchor the refine prompt).
+        llm:     Optional LLM instance; falls back to default singleton.
+    """
+    if llm is None:
+        try:
+            from adapters.llm import get_default  # noqa: PLC0415
+            llm = get_default()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("refine_article_content: no llm available, skipping: %s", exc)
+            return fields
+
+    refine_prompt = (
+        f"You are an expert SEO and AIO (AI-answer optimized) content editor.\n"
+        f"Primary keyword: {keyword}\n\n"
+        f"Revise the article below to be FULLY AIO-optimized and SEO-optimized:\n"
+        f"- Use clear question-led headings (e.g. ## What is X? ## How does X work?)\n"
+        f"- Provide concise, direct answers immediately after each heading\n"
+        f"- Ensure the target keyword and semantic variants appear naturally throughout\n"
+        f"- Improve the meta description to be compelling and keyword-rich (≤160 chars)\n"
+        f"- Add or improve a FAQ section with common questions and concise answers\n"
+        f"- Preserve all factual content; only improve structure and clarity\n\n"
+        f"Return a JSON object with exactly these keys: title, slug, metaDescription, content, faq\n"
+        f"where faq is an array of {{q, a}} objects.\n\n"
+        f"CURRENT TITLE: {fields.get('title', '')}\n"
+        f"CURRENT META: {fields.get('meta', '')}\n"
+        f"CURRENT CONTENT:\n{fields.get('content_md', '')[:4000]}\n"
+        f"CURRENT FAQ: {fields.get('faq_json', [])}"
+    )
+
+    try:
+        raw = llm.chat(refine_prompt, want_json=True)
+        from core.json_repair import parse_model_json  # noqa: PLC0415
+        parsed = parse_model_json(raw) if isinstance(raw, str) else raw
+        if not isinstance(parsed, dict) or not parsed.get("content"):
+            logger.warning("refine_article_content: bad LLM response for %r, keeping first pass", keyword)
+            return fields
+
+        faq = [{"q": it["q"], "a": it.get("a", "")}
+               for it in (parsed.get("faq") or [])
+               if isinstance(it, dict) and it.get("q")]
+
+        return {
+            "title":      parsed.get("title") or fields["title"],
+            "slug":       parsed.get("slug") or fields["slug"],
+            "meta":       parsed.get("metaDescription") or fields["meta"],
+            "content_md": parsed.get("content") or fields["content_md"],
+            "faq_json":   faq or fields["faq_json"],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("refine_article_content failed for %r, keeping first pass: %s", keyword, exc)
+        return fields
+
 
 def _wp_base_url() -> str:
     """Read WP_URL from env, stripping trailing slash."""

@@ -74,7 +74,7 @@ function ProposalCard({
             rel="noopener noreferrer"
             style={{ fontSize: 13, color: BRAND.red, textDecoration: "none", fontWeight: 600 }}
           >
-            youtu.be/{proposal.video_id}
+            ▶ Watch source video on YouTube
           </a>
         </div>
         {approved && <Badge tone="green">Approved</Badge>}

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.auth import require_role
+from app.config import settings
 from app.models import Article, SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,16 @@ def _slugify(title: str) -> str:
     return s
 
 
+def _wp_url_for(wp_post_id: int | None) -> str | None:
+    """Return the full WordPress post URL when wp_post_id and WP_URL are set; else None."""
+    if not wp_post_id:
+        return None
+    wp_base = settings.WP_URL or os.environ.get("WP_URL", "").rstrip("/")
+    if not wp_base:
+        return None
+    return f"{wp_base}/?p={wp_post_id}"
+
+
 def _article_summary(a: Article) -> dict:
     return {
         "slug": a.slug,
@@ -43,6 +54,7 @@ def _article_summary(a: Article) -> dict:
         "status": a.status,
         "pillar_slug": a.pillar_slug,
         "wp_post_id": a.wp_post_id,
+        "wp_url": _wp_url_for(a.wp_post_id),
         "publish_at": a.publish_at.isoformat() if a.publish_at else None,
     }
 
@@ -58,6 +70,7 @@ def _article_full(a: Article) -> dict:
         "role": a.role,
         "pillar_slug": a.pillar_slug,
         "wp_post_id": a.wp_post_id,
+        "wp_url": _wp_url_for(a.wp_post_id),
         "status": a.status,
         "publish_at": a.publish_at.isoformat() if a.publish_at else None,
     }

@@ -9,6 +9,7 @@ interface ArticleSummary {
   status: string;
   pillar_slug: string | null;
   wp_post_id: number | null;
+  wp_url: string | null;
   publish_at: string | null;
 }
 
@@ -17,6 +18,7 @@ interface ArticleFull extends ArticleSummary {
   content_md: string | null;
   faq_json: unknown;
   jsonld_json: unknown;
+  // wp_url is already on ArticleSummary via extends
 }
 
 interface FaqItem {
@@ -68,58 +70,150 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// Extract YouTube video ID and start seconds from any YouTube URL.
+// Handles: youtube.com/watch?v=ID&t=Ns  youtu.be/ID?t=Ns  /embed/ID
+function parseYouTubeUrl(url: string): { id: string; start: number } | null {
+  try {
+    const u = new URL(url);
+    let id = "";
+    let start = 0;
+    if (u.hostname === "youtu.be") {
+      id = u.pathname.slice(1).split("?")[0];
+      start = parseInt(u.searchParams.get("t") ?? "0", 10) || 0;
+    } else if (
+      u.hostname === "www.youtube.com" ||
+      u.hostname === "youtube.com" ||
+      u.hostname === "m.youtube.com"
+    ) {
+      if (u.pathname === "/watch") {
+        id = u.searchParams.get("v") ?? "";
+        const t = u.searchParams.get("t") ?? "0";
+        start = parseInt(t, 10) || 0;
+      } else if (u.pathname.startsWith("/embed/")) {
+        id = u.pathname.split("/embed/")[1].split("?")[0];
+        start = parseInt(u.searchParams.get("start") ?? "0", 10) || 0;
+      }
+    }
+    if (!id) return null;
+    return { id, start };
+  } catch {
+    return null;
+  }
+}
+
+function renderYouTubeEmbed(id: string, start: number): string {
+  const src = `https://www.youtube.com/embed/${escapeHtml(id)}${start > 0 ? `?start=${start}` : ""}`;
+  return (
+    `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:8px;margin:16px 0">` +
+    `<iframe src="${src}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0" ` +
+    `allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" ` +
+    `allowfullscreen loading="lazy" title="YouTube video"></iframe>` +
+    `</div>`
+  );
+}
+
+// Admonition types for GitHub-style callouts: [!TIP], [!NOTE], [!WARNING], [!IMPORTANT]
+const ADMONITION_TYPES: Record<string, { label: string; bg: string; border: string; labelColor: string }> = {
+  TIP: { label: "Tip", bg: "#f0fdf4", border: "#22c55e", labelColor: "#15803d" },
+  NOTE: { label: "Note", bg: "#eff6ff", border: "#3b82f6", labelColor: "#1d4ed8" },
+  WARNING: { label: "Warning", bg: "#fffbeb", border: "#f59e0b", labelColor: "#b45309" },
+  IMPORTANT: { label: "Important", bg: "#fdf4ff", border: "#a855f7", labelColor: "#7e22ce" },
+  CAUTION: { label: "Caution", bg: "#fff1f2", border: "#f43f5e", labelColor: "#be123c" },
+};
+
 function renderMarkdown(md: string): string {
   if (!md) return "";
   const lines = md.split("\n");
   const out: string[] = [];
   let inList = false;
+  // Admonition state: we collect blockquote lines and flush when the block ends
+  let admonitionType: string | null = null;
+  let admonitionLines: string[] = [];
 
   const closeList = () => {
     if (inList) { out.push("</ul>"); inList = false; }
   };
 
+  const flushAdmonition = () => {
+    if (admonitionType === null) return;
+    const def = ADMONITION_TYPES[admonitionType];
+    if (def) {
+      const icon = admonitionType === "TIP" ? "💡"
+        : admonitionType === "NOTE" ? "ℹ️"
+        : admonitionType === "WARNING" ? "⚠️"
+        : admonitionType === "CAUTION" ? "🚨"
+        : "❗";
+      const body = admonitionLines.map((l) => `<p style="margin:4px 0 0;font-size:14px;color:#374151">${inlineFormat(escapeHtml(l))}</p>`).join("");
+      out.push(
+        `<div style="border-left:4px solid ${def.border};background:${def.bg};border-radius:6px;padding:10px 14px;margin:12px 0">` +
+        `<span style="font-weight:700;font-size:13px;color:${def.labelColor}">${icon} ${def.label}</span>` +
+        body +
+        `</div>`
+      );
+    }
+    admonitionType = null;
+    admonitionLines = [];
+  };
+
   const inlineFormat = (raw: string): string => {
-    // raw is already html-escaped — apply only span-level patterns
     return raw
-      // **bold**
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      // *italic*
       .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-      // `code`
       .replace(/`([^`]+)`/g, "<code>$1</code>")
-      // [text](url) — url is already escaped so & → &amp; etc.
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener noreferrer">$1</a>');
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener noreferrer" target="_blank">$1</a>');
   };
 
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Blank line
-    if (!trimmed) {
+    // Blockquote / admonition lines start with >
+    if (trimmed.startsWith(">")) {
       closeList();
+      const content = trimmed.slice(1).trim();
+      // First line of a blockquote: check for [!TYPE]
+      if (admonitionType === null) {
+        const typeMatch = content.match(/^\[!(TIP|NOTE|WARNING|IMPORTANT|CAUTION)\]$/i);
+        if (typeMatch) {
+          admonitionType = typeMatch[1].toUpperCase();
+        } else {
+          // Regular blockquote — treat as admonition-less, just emit a <blockquote>
+          out.push(`<blockquote style="border-left:3px solid #d1d5db;margin:8px 0;padding:4px 12px;color:#6b7280">${inlineFormat(escapeHtml(content))}</blockquote>`);
+        }
+      } else {
+        if (content) admonitionLines.push(content);
+      }
       continue;
     }
 
-    // ATX headings
-    const h3 = trimmed.match(/^###\s+(.*)/);
-    if (h3) { closeList(); out.push(`<h3>${inlineFormat(escapeHtml(h3[1]))}</h3>`); continue; }
-    const h2 = trimmed.match(/^##\s+(.*)/);
-    if (h2) { closeList(); out.push(`<h2>${inlineFormat(escapeHtml(h2[1]))}</h2>`); continue; }
-    const h1 = trimmed.match(/^#\s+(.*)/);
-    if (h1) { closeList(); out.push(`<h1>${inlineFormat(escapeHtml(h1[1]))}</h1>`); continue; }
+    // Non-blockquote line: flush any pending admonition
+    flushAdmonition();
 
-    // Unordered list item
+    if (!trimmed) { closeList(); continue; }
+
+    // Check if this line is a bare YouTube URL (standalone paragraph)
+    const ytMatch = parseYouTubeUrl(trimmed);
+    if (ytMatch) {
+      closeList();
+      out.push(renderYouTubeEmbed(ytMatch.id, ytMatch.start));
+      continue;
+    }
+
+    const h3 = trimmed.match(/^###\s+(.*)/);
+    if (h3) { closeList(); out.push(`<h3 style="font-size:17px;margin:20px 0 8px;color:#1a202c">${inlineFormat(escapeHtml(h3[1]))}</h3>`); continue; }
+    const h2 = trimmed.match(/^##\s+(.*)/);
+    if (h2) { closeList(); out.push(`<h2 style="font-size:20px;margin:24px 0 10px;color:#1a202c">${inlineFormat(escapeHtml(h2[1]))}</h2>`); continue; }
+    const h1 = trimmed.match(/^#\s+(.*)/);
+    if (h1) { closeList(); out.push(`<h1 style="font-size:26px;line-height:1.2;margin:0 0 16px;color:#1a202c">${inlineFormat(escapeHtml(h1[1]))}</h1>`); continue; }
     const li = trimmed.match(/^[-*]\s+(.*)/);
     if (li) {
       if (!inList) { out.push("<ul>"); inList = true; }
       out.push(`<li>${inlineFormat(escapeHtml(li[1]))}</li>`);
       continue;
     }
-
-    // Paragraph
     closeList();
     out.push(`<p>${inlineFormat(escapeHtml(trimmed))}</p>`);
   }
+  flushAdmonition();
   closeList();
   return out.join("\n");
 }
@@ -188,7 +282,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     try {
       const isoAt = new Date(scheduleAt).toISOString();
 
-      // 1. Create scheduling entry
       const sr = await apiFetch("/scheduling", {
         method: "POST",
         body: JSON.stringify({
@@ -204,7 +297,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
         throw new Error((body as { detail?: string }).detail ?? `${sr.status} ${sr.statusText}`);
       }
 
-      // 2. Update article status + publish_at
       const ar = await apiFetch(`/articles/${slug}`, {
         method: "PUT",
         body: JSON.stringify({ status: "scheduled", publish_at: isoAt }),
@@ -258,7 +350,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
           overflow: "hidden",
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -289,14 +380,12 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
           </button>
         </div>
 
-        {/* Body */}
         <div style={{ padding: 24 }}>
           {loading && <Loading />}
           {error && <ErrorMsg>Failed to load article: {error}</ErrorMsg>}
 
           {article && (
             <>
-              {/* Meta row */}
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
                 {statusBadge(article.status)}
                 {roleBadge(article.role)}
@@ -306,21 +395,29 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                     {new Date(article.publish_at).toLocaleString()}
                   </span>
                 )}
-                {article.wp_post_id && (
+                {article.wp_post_id && article.wp_url && (
+                  <a
+                    href={article.wp_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 13, color: BRAND.navyText, alignSelf: "center", textDecoration: "underline" }}
+                  >
+                    View on WordPress ↗
+                  </a>
+                )}
+                {article.wp_post_id && !article.wp_url && (
                   <span style={{ fontSize: 13, color: BRAND.sub, alignSelf: "center" }}>
                     WP #{article.wp_post_id}
                   </span>
                 )}
               </div>
 
-              {/* Meta description */}
               {article.meta && (
                 <p style={{ fontSize: 13, color: BRAND.sub, margin: "0 0 16px", fontStyle: "italic" }}>
                   {article.meta}
                 </p>
               )}
 
-              {/* Publish / Schedule actions (only when not already published) */}
               {article.status !== "published" && (
                 <div
                   style={{
@@ -335,7 +432,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                     border: `1px solid ${BRAND.border}`,
                   }}
                 >
-                  {/* Publish now */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <Button
                       onClick={handlePublish}
@@ -351,7 +447,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
 
                   <div style={{ width: 1, background: BRAND.border, alignSelf: "stretch" }} />
 
-                  {/* Schedule */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       <input
@@ -379,7 +474,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                 </div>
               )}
 
-              {/* Article content */}
               {renderedHtml ? (
                 <div
                   style={{
@@ -398,7 +492,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                 <p style={{ color: BRAND.sub, fontSize: 14 }}>No content.</p>
               )}
 
-              {/* FAQ */}
               {faqItems.length > 0 && (
                 <div style={{ marginTop: 24, borderTop: `1px solid ${BRAND.border}`, paddingTop: 20 }}>
                   <h4 style={{ margin: "0 0 14px", color: BRAND.navyText, fontSize: 14, fontWeight: 700 }}>
@@ -422,7 +515,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
           )}
         </div>
 
-        {/* Footer */}
         <div
           style={{
             padding: "14px 24px",
@@ -436,6 +528,197 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Article row — shared between flat list and cluster view
+// ---------------------------------------------------------------------------
+
+interface ArticleRowProps {
+  a: ArticleSummary;
+  clusterTitle: string;
+  indented?: boolean;
+  deletingSlug: string | null;
+  onView: (slug: string) => void;
+  onEdit: (a: ArticleSummary) => void;
+  onDelete: (a: ArticleSummary) => void;
+}
+
+function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, onDelete }: ArticleRowProps) {
+  return (
+    <tr style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+      <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink, paddingLeft: indented ? 32 : 12 }}>
+        <button
+          onClick={() => onView(a.slug)}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            color: BRAND.navyText,
+            fontWeight: 600,
+            fontSize: 14,
+            textAlign: "left",
+            textDecoration: "underline",
+            textDecorationColor: BRAND.border,
+          }}
+        >
+          {a.title}
+        </button>
+      </td>
+      <td style={{ padding: "10px 12px", fontSize: 13, color: BRAND.ink, maxWidth: 220 }}>
+        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={clusterTitle}>
+          {clusterTitle}
+        </span>
+      </td>
+      <td style={{ padding: "10px 12px" }}>{roleBadge(a.role)}</td>
+      <td style={{ padding: "10px 12px" }}>{statusBadge(a.status)}</td>
+      <td style={{ padding: "10px 12px", color: BRAND.sub }}>
+        {a.wp_post_id && a.wp_url ? (
+          <a
+            href={a.wp_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 13, color: BRAND.navyText, textDecoration: "underline" }}
+          >
+            View on WordPress ↗
+          </a>
+        ) : a.wp_post_id ? (
+          <span style={{ fontSize: 13 }}>WP #{a.wp_post_id}</span>
+        ) : (
+          <span style={{ color: BRAND.border }}>—</span>
+        )}
+      </td>
+      <td style={{ padding: "10px 12px", color: BRAND.sub, fontSize: 13 }}>
+        {a.status === "published" && a.publish_at
+          ? new Date(a.publish_at).toLocaleDateString()
+          : a.status === "scheduled" && a.publish_at
+          ? (
+            <span>
+              <Badge tone="amber">Scheduled</Badge>
+              {" "}
+              <span style={{ fontSize: 12 }}>{new Date(a.publish_at).toLocaleDateString()}</span>
+            </span>
+          )
+          : <span style={{ color: BRAND.border }}>—</span>}
+      </td>
+      <td style={{ padding: "10px 12px" }}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button
+            onClick={() => onEdit(a)}
+            title="Edit article"
+            aria-label="Edit article"
+            style={{
+              background: "none",
+              border: `1px solid ${BRAND.border}`,
+              borderRadius: 6,
+              cursor: "pointer",
+              padding: "4px 8px",
+              fontSize: 15,
+              color: BRAND.navyText,
+              lineHeight: 1,
+            }}
+          >
+            ✎
+          </button>
+          <button
+            onClick={() => onDelete(a)}
+            disabled={deletingSlug === a.slug}
+            title="Delete article"
+            aria-label="Delete article"
+            style={{
+              background: "none",
+              border: `1px solid ${BRAND.redDark}`,
+              borderRadius: 6,
+              cursor: deletingSlug === a.slug ? "not-allowed" : "pointer",
+              padding: "4px 8px",
+              fontSize: 15,
+              color: BRAND.redDark,
+              lineHeight: 1,
+              opacity: deletingSlug === a.slug ? 0.5 : 1,
+            }}
+          >
+            🗑
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Grouping helpers
+// ---------------------------------------------------------------------------
+
+type SortMode = "cluster" | "date";
+
+interface ClusterGroup {
+  pillarSlug: string;
+  pillar: ArticleSummary | null;
+  clusters: ArticleSummary[];
+}
+
+function groupByCluster(articles: ArticleSummary[]): ClusterGroup[] {
+  // Build a map of pillar slug → group
+  const groups = new Map<string, ClusterGroup>();
+
+  // First pass: identify all pillar articles
+  for (const a of articles) {
+    if (a.role === "pillar") {
+      const key = a.slug;
+      if (!groups.has(key)) {
+        groups.set(key, { pillarSlug: key, pillar: a, clusters: [] });
+      } else {
+        groups.get(key)!.pillar = a;
+      }
+    }
+  }
+
+  // Second pass: attach clusters to their pillar group
+  const orphans: ArticleSummary[] = [];
+  for (const a of articles) {
+    if (a.role === "cluster") {
+      const key = a.pillar_slug ?? "";
+      if (key && groups.has(key)) {
+        groups.get(key)!.clusters.push(a);
+      } else if (key) {
+        // Pillar not in list yet — create a placeholder group
+        if (!groups.has(key)) {
+          groups.set(key, { pillarSlug: key, pillar: null, clusters: [] });
+        }
+        groups.get(key)!.clusters.push(a);
+      } else {
+        orphans.push(a);
+      }
+    } else if (a.role === "standalone") {
+      orphans.push(a);
+    }
+  }
+
+  // Sort groups: pillar publish_at desc (nulls last), then standalone/orphans at end
+  const sorted = [...groups.values()].sort((ga, gb) => {
+    const ta = ga.pillar?.publish_at ?? null;
+    const tb = gb.pillar?.publish_at ?? null;
+    if (ta && tb) return new Date(tb).getTime() - new Date(ta).getTime();
+    if (ta) return -1;
+    if (tb) return 1;
+    return (ga.pillar?.title ?? ga.pillarSlug).localeCompare(gb.pillar?.title ?? gb.pillarSlug);
+  });
+
+  // Append standalone/orphan articles as their own singleton groups
+  for (const a of orphans) {
+    sorted.push({ pillarSlug: a.slug, pillar: a, clusters: [] });
+  }
+
+  return sorted;
+}
+
+function sortByDate(articles: ArticleSummary[]): ArticleSummary[] {
+  return [...articles].sort((a, b) => {
+    const ta = a.publish_at ? new Date(a.publish_at).getTime() : 0;
+    const tb = b.publish_at ? new Date(b.publish_at).getTime() : 0;
+    return tb - ta;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +736,10 @@ export function Articles() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [viewingSlug, setViewingSlug] = useState<string | null>(null);
+
+  // Sort + filter state
+  const [sortMode, setSortMode] = useState<SortMode>("cluster");
+  const [filterCluster, setFilterCluster] = useState<string>("");
 
   function load() {
     setLoading(true);
@@ -489,7 +776,6 @@ export function Articles() {
       content_md: "",
     });
     setSaveError(null);
-    // Fetch full article to pre-fill meta + content_md
     apiFetch(`/articles/${a.slug}`)
       .then((r) => r.json())
       .then((full: ArticleFull) => {
@@ -499,7 +785,7 @@ export function Articles() {
           content_md: full.content_md ?? "",
         }));
       })
-      .catch(() => {/* non-fatal — form still opens */});
+      .catch(() => {/* non-fatal */});
     setShowForm(true);
   }
 
@@ -567,6 +853,54 @@ export function Articles() {
     color: BRAND.navyText,
     marginBottom: 4,
   } as const;
+
+  // Derive unique cluster options for the filter dropdown (pillars that have clusters)
+  const clusterOptions: { slug: string; title: string }[] = [];
+  const seenPillars = new Set<string>();
+  for (const a of articles) {
+    if (a.role === "pillar" && !seenPillars.has(a.slug)) {
+      seenPillars.add(a.slug);
+      clusterOptions.push({ slug: a.slug, title: a.title });
+    }
+  }
+  // Also include pillar_slug references from clusters where the pillar isn't in the list
+  for (const a of articles) {
+    if (a.role === "cluster" && a.pillar_slug && !seenPillars.has(a.pillar_slug)) {
+      seenPillars.add(a.pillar_slug);
+      clusterOptions.push({ slug: a.pillar_slug, title: a.pillar_slug });
+    }
+  }
+
+  // Apply cluster filter
+  const filteredArticles = filterCluster
+    ? articles.filter(
+        (a) =>
+          a.slug === filterCluster ||
+          a.pillar_slug === filterCluster
+      )
+    : articles;
+
+  // Build a slug→title map for pillar articles so cluster rows can show the pillar title
+  const pillarTitleBySlug = new Map<string, string>();
+  for (const a of articles) {
+    if (a.role === "pillar") {
+      pillarTitleBySlug.set(a.slug, a.title);
+    }
+  }
+
+  /** Return the cluster topic title to display for any article. */
+  function clusterTitleFor(a: ArticleSummary): string {
+    if (a.role === "pillar") return a.title;
+    if (a.pillar_slug) return pillarTitleBySlug.get(a.pillar_slug) ?? a.title;
+    return a.title;
+  }
+
+  const rowProps = {
+    deletingSlug,
+    onView: setViewingSlug,
+    onEdit: openEdit,
+    onDelete: handleDelete,
+  };
 
   return (
     <main style={{ maxWidth: 1000 }}>
@@ -678,77 +1012,166 @@ export function Articles() {
               </p>
             </Card>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead>
-                <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Role</th>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>WP Post</th>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Publish at</th>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {articles.map((a) => (
-                  <tr key={a.slug} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
-                    <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink }}>
+            <>
+              {/* Controls bar: sort + cluster filter */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                  marginBottom: 16,
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* Sort toggle */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 13, color: BRAND.sub, fontWeight: 600 }}>Sort:</span>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      border: `1px solid ${BRAND.border}`,
+                      borderRadius: 8,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {(["cluster", "date"] as SortMode[]).map((m) => (
                       <button
-                        onClick={() => setViewingSlug(a.slug)}
+                        key={m}
+                        onClick={() => setSortMode(m)}
+                        style={{
+                          padding: "6px 14px",
+                          border: "none",
+                          cursor: "pointer",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          background: sortMode === m ? BRAND.navy : "#fff",
+                          color: sortMode === m ? "#fff" : BRAND.navyText,
+                        }}
+                      >
+                        {m === "cluster" ? "By cluster" : "By date"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Cluster filter — only shown when clusterOptions exist */}
+                {clusterOptions.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 13, color: BRAND.sub, fontWeight: 600 }}>Cluster:</span>
+                    <select
+                      value={filterCluster}
+                      onChange={(e) => setFilterCluster(e.target.value)}
+                      style={{ ...inputStyle, fontSize: 13, padding: "6px 10px" }}
+                    >
+                      <option value="">All clusters</option>
+                      {clusterOptions.map((o) => (
+                        <option key={o.slug} value={o.slug}>{o.title}</option>
+                      ))}
+                    </select>
+                    {filterCluster && (
+                      <button
+                        onClick={() => setFilterCluster("")}
                         style={{
                           background: "none",
                           border: "none",
-                          padding: 0,
                           cursor: "pointer",
-                          color: BRAND.navyText,
-                          fontWeight: 600,
-                          fontSize: 14,
-                          textAlign: "left",
-                          textDecoration: "underline",
-                          textDecorationColor: BRAND.border,
+                          color: BRAND.sub,
+                          fontSize: 18,
+                          lineHeight: 1,
+                          padding: "0 2px",
                         }}
+                        title="Clear filter"
+                        aria-label="Clear cluster filter"
                       >
-                        {a.title}
+                        &times;
                       </button>
-                      {a.pillar_slug && (
-                        <span style={{ display: "block", fontSize: 12, color: BRAND.sub, fontWeight: 400 }}>
-                          pillar: {a.pillar_slug}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>{roleBadge(a.role)}</td>
-                    <td style={{ padding: "10px 12px" }}>{statusBadge(a.status)}</td>
-                    <td style={{ padding: "10px 12px", color: BRAND.sub }}>
-                      {a.wp_post_id ?? <span style={{ color: BRAND.border }}>—</span>}
-                    </td>
-                    <td style={{ padding: "10px 12px", color: BRAND.sub, fontSize: 13 }}>
-                      {a.publish_at
-                        ? new Date(a.publish_at).toLocaleString()
-                        : <span style={{ color: BRAND.border }}>—</span>}
-                    </td>
-                    <td style={{ padding: "10px 12px" }}>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <Button
-                          variant="ghost"
-                          style={{ padding: "6px 14px", fontSize: 13 }}
-                          onClick={() => openEdit(a)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="danger"
-                          style={{ padding: "6px 14px", fontSize: 13 }}
-                          disabled={deletingSlug === a.slug}
-                          onClick={() => handleDelete(a)}
-                        >
-                          {deletingSlug === a.slug ? "Deleting…" : "Delete"}
-                        </Button>
-                      </div>
-                    </td>
+                    )}
+                  </div>
+                )}
+
+                <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: "auto" }}>
+                  {filteredArticles.length} article{filteredArticles.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
+                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
+                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Cluster</th>
+                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Role</th>
+                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>WP</th>
+                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Published</th>
+                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sortMode === "date" ? (
+                    // Flat list sorted by publish_at desc
+                    sortByDate(filteredArticles).map((a) => (
+                      <ArticleRow key={a.slug} a={a} clusterTitle={clusterTitleFor(a)} {...rowProps} />
+                    ))
+                  ) : (
+                    // Cluster-grouped view
+                    groupByCluster(filteredArticles).map((group) => (
+                      <>
+                        {/* Pillar header row — blue left border */}
+                        {group.pillar ? (
+                          <tr
+                            key={`pillar-${group.pillarSlug}`}
+                            style={{ borderBottom: `1px solid ${BRAND.border}`, background: "#f0f4ff" }}
+                          >
+                            <td
+                              colSpan={7}
+                              style={{ padding: 0 }}
+                            >
+                              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <tbody>
+                                  <ArticleRow
+                                    a={group.pillar}
+                                    clusterTitle={group.pillar.title}
+                                    {...rowProps}
+                                  />
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        ) : (
+                          // Pillar not loaded — show a muted header with the slug
+                          <tr
+                            key={`pillar-stub-${group.pillarSlug}`}
+                            style={{ background: "#f0f4ff", borderBottom: `1px solid ${BRAND.border}` }}
+                          >
+                            <td
+                              colSpan={7}
+                              style={{
+                                padding: "8px 12px",
+                                fontSize: 13,
+                                color: BRAND.sub,
+                                fontStyle: "italic",
+                              }}
+                            >
+                              Cluster: {group.pillarSlug}
+                            </td>
+                          </tr>
+                        )}
+                        {/* Cluster articles — indented */}
+                        {group.clusters.map((c) => (
+                          <ArticleRow
+                            key={c.slug}
+                            a={c}
+                            clusterTitle={group.pillar?.title ?? c.title}
+                            indented
+                            {...rowProps}
+                          />
+                        ))}
+                      </>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </>
           )}
         </>
       )}

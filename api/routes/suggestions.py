@@ -43,15 +43,25 @@ def _to_question(label: str, detail: str) -> str:
 
 
 @router.get("")
-def get_suggestions(claims=Depends(require_role("view_status"))):
+def get_suggestions(
+    limit: int = 25,
+    claims=Depends(require_role("view_status")),
+):
     """Compute proactive content opportunities from current DB state.
 
-    Returns:
-      article_topics  - up to 12 high-frequency topics not yet in any article
-      reels           - approved MiniSeries with no ScheduledContent (kind=reel) or SocialPost
-      faqs            - up to 12 objection/claim questions whose video has no article
-      unused_videos   - up to 12 videos with transcripts/topics not used in articles or MiniSeries
+    Query params:
+      limit  - max items per bucket (default 25, min 1, max 200)
+
+    Returns four buckets plus total counts per bucket:
+      article_topics        - high-frequency topics not yet in any article, ranked by video count
+      article_topics_total  - total uncovered topics (before limit)
+      reels                 - approved MiniSeries with no ScheduledContent (kind=reel) or SocialPost
+      faqs                  - objection/claim questions whose video has no article
+      faqs_total            - total unbuilt FAQ items (before limit)
+      unused_videos         - videos with transcripts/topics not used in articles or MiniSeries
+      unused_videos_total   - total unused videos (before limit)
     """
+    limit = max(1, min(limit, 200))
     with SessionLocal() as db:
         # --- Collect article coverage sets ---
         articles = db.query(Article).all()
@@ -89,7 +99,7 @@ def get_suggestions(claims=Depends(require_role("view_status"))):
             topic_groups[key]["video_ids"].add(row.video_id)
 
         # Filter out topics already covered by an article (title match)
-        article_topics = []
+        article_topics_all = []
         for key, g in sorted(
             topic_groups.items(),
             key=lambda kv: len(kv[1]["video_ids"]),
@@ -97,13 +107,13 @@ def get_suggestions(claims=Depends(require_role("view_status"))):
         ):
             if key in article_titles_lower:
                 continue
-            article_topics.append({
+            article_topics_all.append({
                 "label": g["label"],
                 "count": len(g["video_ids"]),
                 "sample": g["sample"],
             })
-            if len(article_topics) >= 12:
-                break
+        article_topics_total = len(article_topics_all)
+        article_topics = article_topics_all[:limit]
 
         # --- reels bucket ---
         approved_series = (
@@ -152,20 +162,25 @@ def get_suggestions(claims=Depends(require_role("view_status"))):
             )
             .all()
         )
-        faqs = []
+        # Build video title lookup
+        video_title_map: dict[str, str] = {
+            v.id: (v.title or v.id) for v in db.query(Video).all()
+        }
+        faqs_all = []
         for row in faq_rows:
             if row.video_id in article_video_ids:
                 continue
             question = _to_question(row.label or "", row.detail or "")
             if not question:
                 continue
-            faqs.append({
+            faqs_all.append({
                 "question": question,
                 "video_id": row.video_id,
+                "title": video_title_map.get(row.video_id, row.video_id),
                 "t": int(row.start),
             })
-            if len(faqs) >= 12:
-                break
+        faqs_total = len(faqs_all)
+        faqs = faqs_all[:limit]
 
         # --- unused_videos bucket ---
         # Videos that have at least one Segment (transcript) or GraphNode (topics)
@@ -186,7 +201,7 @@ def get_suggestions(claims=Depends(require_role("view_status"))):
         covered_video_ids = segment_video_ids | graph_video_ids
 
         all_videos = db.query(Video).all()
-        unused_videos = []
+        unused_videos_all = []
         for v in all_videos:
             if v.id not in covered_video_ids:
                 continue
@@ -194,13 +209,16 @@ def get_suggestions(claims=Depends(require_role("view_status"))):
                 continue
             if v.id in series_video_ids:
                 continue
-            unused_videos.append({"video_id": v.id, "title": v.title})
-            if len(unused_videos) >= 12:
-                break
+            unused_videos_all.append({"video_id": v.id, "title": v.title or v.id})
+        unused_videos_total = len(unused_videos_all)
+        unused_videos = unused_videos_all[:limit]
 
     return {
         "article_topics": article_topics,
+        "article_topics_total": article_topics_total,
         "reels": reels,
         "faqs": faqs,
+        "faqs_total": faqs_total,
         "unused_videos": unused_videos,
+        "unused_videos_total": unused_videos_total,
     }

@@ -101,7 +101,7 @@ function AdminShell() {
       tabs={[
         ["dashboard", "Dashboard"],
         ["search-ask", "Search / Ask"],
-        ["opportunities", "Opportunities"],
+        ["opportunities", "Content Opportunities"],
         ["articles", "Articles"],
         ["faq", "FAQ"],
         ["templates", "Templates"],

@@ -161,8 +161,7 @@ export function Status() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
                   <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
-                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
-                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Video ID</th>
+                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Video</th>
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Stage</th>
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Error</th>
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Action</th>
@@ -184,17 +183,7 @@ export function Status() {
                             rel="noopener noreferrer"
                             style={{ color: BRAND.red, fontWeight: 600, textDecoration: "none" }}
                           >
-                            {f.title ?? "▶ watch"}
-                          </a>
-                        </td>
-                        <td style={{ padding: "10px 16px" }}>
-                          <a
-                            href={f.youtube_url ?? `https://youtu.be/${f.video_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
-                          >
-                            {f.video_id}
+                            {f.title ?? "▶ watch on YouTube"}
                           </a>
                         </td>
                         <td style={{ padding: "10px 16px" }}>

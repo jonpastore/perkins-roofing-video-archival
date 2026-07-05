@@ -51,13 +51,17 @@ def test_admin_list_returns_items():
     # create one first
     create_r = client.post("/scheduling", json=ITEM_BODY, headers=ADMIN_HDR)
     assert create_r.status_code == 201
+    created_id = create_r.json()["id"]
 
     r = client.get("/scheduling", headers=ADMIN_HDR)
     assert r.status_code == 200
     items = r.json()
     assert isinstance(items, list)
     assert len(items) >= 1
-    assert items[0]["kind"] == "reel"
+    # Find the item we just created (shared DB may have other rows from parallel tests)
+    matching = [i for i in items if i["id"] == created_id]
+    assert len(matching) == 1
+    assert matching[0]["kind"] == "reel"
 
 
 def test_admin_list_filter_by_status():

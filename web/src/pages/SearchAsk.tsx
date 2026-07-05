@@ -219,8 +219,16 @@ export function SearchAsk() {
         const txt = await r.text().catch(() => r.statusText);
         throw new Error(`${r.status}: ${txt}`);
       }
-      const data = await r.json();
-      setGenerateMsg(`Draft created — see Articles (${data.slug})`);
+      const data = await r.json() as {
+        pillar_slug: string;
+        pillar: { slug: string; title: string };
+        clusters: { slug: string; title: string }[];
+        count: number;
+      };
+      setGenerateMsg(
+        `Cluster created: "${data.pillar.title}" with ${data.clusters.length} supporting articles (${data.count} total). ` +
+        `Open the Articles tab and filter by cluster "${data.pillar.title}" to view them.`
+      );
     } catch (e) {
       setGenerateMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

@@ -25,6 +25,9 @@ class Settings:
     # Retrieval / answer
     ABSTAIN_THRESHOLD = float(os.getenv("ABSTAIN_THRESHOLD", "0.71"))  # calibrated via app.eval (94% sep)
 
+    # WordPress integration
+    WP_URL = os.getenv("WP_URL", "").rstrip("/")
+
     # Cost guardrails
     MAX_VIDEOS_PER_RUN = int(os.getenv("MAX_VIDEOS_PER_RUN", "500"))
 

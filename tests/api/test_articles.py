@@ -246,3 +246,66 @@ def test_publish_no_wp_creds_still_succeeds(monkeypatch):
     r = c.post("/articles/no-wp-creds/publish", headers=AUTH)
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "published"
+
+
+# ---------------------------------------------------------------------------
+# wp_url field
+# ---------------------------------------------------------------------------
+
+def test_get_article_wp_url_null_when_no_post_id():
+    """GET /articles/{slug} returns wp_url=null when wp_post_id is not set."""
+    c = _admin_client()
+    c.post("/articles", json={"title": "No WP Post ID"}, headers=AUTH)
+    r = c.get("/articles/no-wp-post-id", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "wp_url" in data
+    assert data["wp_url"] is None
+
+
+def test_get_article_wp_url_set_when_post_id_and_wp_url(monkeypatch):
+    """GET /articles/{slug} returns full WP post URL when wp_post_id is set and WP_URL configured."""
+    import os
+    monkeypatch.setenv("WP_URL", "https://perkinsroofing.net")
+    # Reload settings so WP_URL is picked up
+    import app.config as cfg
+    cfg.settings.WP_URL = "https://perkinsroofing.net"
+
+    from app.models import Article, SessionLocal
+    with SessionLocal() as db:
+        a = db.get(Article, "wp-url-test-article")
+        if a is None:
+            a = Article(
+                slug="wp-url-test-article",
+                title="WP URL Test Article",
+                meta="",
+                content_md="content",
+                faq_json=None,
+                jsonld_json=None,
+                role="standalone",
+                pillar_slug=None,
+                wp_post_id=42,
+                status="published",
+                publish_at=None,
+            )
+            db.add(a)
+            db.commit()
+
+    c = _admin_client()
+    r = c.get("/articles/wp-url-test-article", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "wp_url" in data
+    assert data["wp_url"] == "https://perkinsroofing.net/?p=42"
+
+
+def test_list_articles_wp_url_field_present():
+    """GET /articles list includes wp_url key in every summary item."""
+    c = _admin_client()
+    c.post("/articles", json={"title": "List WP URL Check"}, headers=AUTH)
+    r = c.get("/articles", headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert len(items) > 0
+    for item in items:
+        assert "wp_url" in item

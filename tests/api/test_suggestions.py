@@ -267,6 +267,15 @@ def test_faqs_have_question_and_timecode(seeded):
     assert isinstance(faq["t"], int)
 
 
+def test_faqs_have_title(seeded):
+    """Each faq item must include the video title (not raw ID)."""
+    client = _make_client("admin")
+    data = client.get("/suggestions", headers=ADMIN_HDR).json()
+
+    faq = next(f for f in data["faqs"] if f["video_id"] == "vid_c")
+    assert faq["title"] == "Shingle Selection"
+
+
 # ---------------------------------------------------------------------------
 # unused_videos bucket
 # ---------------------------------------------------------------------------
@@ -315,6 +324,31 @@ def test_response_has_all_buckets(seeded):
     data = client.get("/suggestions", headers=ADMIN_HDR).json()
 
     assert "article_topics" in data
+    assert "article_topics_total" in data
     assert "reels" in data
     assert "faqs" in data
+    assert "faqs_total" in data
     assert "unused_videos" in data
+    assert "unused_videos_total" in data
+
+
+def test_totals_match_or_exceed_returned(seeded):
+    """*_total counts must be >= length of the returned slice."""
+    client = _make_client("admin")
+    data = client.get("/suggestions", headers=ADMIN_HDR).json()
+
+    assert data["article_topics_total"] >= len(data["article_topics"])
+    assert data["faqs_total"] >= len(data["faqs"])
+    assert data["unused_videos_total"] >= len(data["unused_videos"])
+
+
+def test_limit_param_respected(seeded):
+    """?limit=1 should return at most 1 item per bucket."""
+    client = _make_client("admin")
+    data = client.get("/suggestions?limit=1", headers=ADMIN_HDR).json()
+
+    assert len(data["article_topics"]) <= 1
+    assert len(data["faqs"]) <= 1
+    assert len(data["unused_videos"]) <= 1
+    # totals should still reflect full counts
+    assert data["faqs_total"] >= len(data["faqs"])
