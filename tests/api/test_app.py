@@ -27,3 +27,11 @@ def test_promote_calls_promoter(monkeypatch):
     monkeypatch.setattr(pj, "run", lambda: {"promoted": 3, "errored": 0})
     r = TestClient(appmod.app).post("/internal/promote")
     assert r.status_code == 200 and r.json()["promoted"] == 3
+
+
+def test_social_calls_social_job(monkeypatch):
+    # the Cloud Scheduler social target must exist and invoke social_job.run
+    import jobs.social_job as sj
+    monkeypatch.setattr(sj, "run", lambda: {"published": 2, "skipped": 0, "errored": 0})
+    r = TestClient(appmod.app).post("/internal/social")
+    assert r.status_code == 200 and r.json()["published"] == 2

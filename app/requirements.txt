@@ -1,7 +1,17 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
-pydantic>=2.6
+pydantic[email]>=2.6
 SQLAlchemy>=2.0
 numpy>=1.26
-# prod adds: psycopg[binary], pgvector, google-cloud-speech, google-cloud-storage,
-#            google-cloud-aiplatform (Vertex) or anthropic, google-api-python-client (YouTube Data API)
+firebase-admin>=6.0
+requests>=2.31
+google-cloud-storage>=2.16
+google-cloud-aiplatform>=1.51
+google-cloud-speech>=2.26
+pgvector>=0.2
+psycopg[binary]>=3.1
+cloud-sql-python-connector>=1.9
+pg8000>=1.30
+imageio-ffmpeg>=0.4
+bleach>=6.1
+markdown>=3.5

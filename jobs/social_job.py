@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 import os
 
+from sqlalchemy.exc import IntegrityError
+
 logger = logging.getLogger(__name__)
 
 _PLATFORM_CREDS: dict[str, list[str]] = {
@@ -35,12 +37,32 @@ def _creds_present(platform: str) -> bool:
 
 
 def _publisher(platform: str):
-    """Return an initialised publisher for *platform*."""
+    """Return an initialised publisher for *platform*.
+
+    For TikTok: if TIKTOK_REFRESH_TOKEN is set, refresh the access token first
+    and use the returned access_token for this publish call.  The rotated
+    refresh_token must be persisted back to Secret Manager in prod (not yet
+    wired — see TODO below).
+    """
     if platform == "instagram":
         from adapters.meta_ig import IgPublisher  # noqa: PLC0415
         return IgPublisher()
     if platform == "tiktok":
         from adapters.tiktok import TikTokPublisher  # noqa: PLC0415
+        refresh_token = os.environ.get("TIKTOK_REFRESH_TOKEN")
+        if refresh_token:
+            try:
+                from adapters.tiktok import refresh_access_token  # noqa: PLC0415
+                refreshed = refresh_access_token()
+                new_token = refreshed["access_token"]
+                logger.info("social_job: TikTok access token refreshed via refresh_token")
+                # TODO: persist refreshed["refresh_token"] back to Secret Manager in prod
+                return TikTokPublisher(access_token=new_token)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "social_job: TikTok token refresh failed (%s) — falling back to env token",
+                    exc,
+                )
         return TikTokPublisher()
     raise ValueError(f"Unknown platform: {platform!r}")
 
@@ -76,7 +98,7 @@ def run() -> dict:
                 "errored":   int,   # rows that raised an exception
             }
     """
-    from app.models import ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
+    from app.models import MiniSeries, ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
     from core.social import already_posted, build_caption  # noqa: PLC0415
 
     # Check whether any social credentials are present at all.
@@ -142,7 +164,19 @@ def run() -> dict:
                 bucket, key = _gcs_key_from_url(post.gcs_url)
                 video_url = signed_get_url(bucket, key, _SIGNED_URL_TTL)
 
-                caption = build_caption(post.platform or "", [])
+                # Resolve the real reel title from MiniSeries.parts_json
+                _title = ""
+                try:
+                    series = db.get(MiniSeries, post.series_id)
+                    if series is not None:
+                        parts = series.parts_json or []
+                        if post.part < len(parts):
+                            _title = parts[post.part].get("title") or series.title or ""
+                        else:
+                            _title = series.title or ""
+                except Exception:  # noqa: BLE001
+                    pass
+                caption = build_caption(_title or f"Perkins Roofing Part {post.part + 1}", [])
                 idempotency_key = f"series-{post.series_id}-part-{post.part}"
 
                 all_done = True
@@ -195,20 +229,38 @@ def run() -> dict:
                         .first()
                     )
                     if platform_post is None:
-                        # First time for this platform: create a dedicated row
-                        platform_post = SocialPost(
-                            series_id=post.series_id,
-                            part=post.part,
-                            platform=platform,
-                            gcs_url=post.gcs_url,
-                        )
-                        db.add(platform_post)
-                        db.flush()
+                        # First time for this platform: create a dedicated row.
+                        # If the unique constraint fires (concurrent worker), treat
+                        # it as "already claimed" and skip — do NOT re-post.
+                        try:
+                            platform_post = SocialPost(
+                                series_id=post.series_id,
+                                part=post.part,
+                                platform=platform,
+                                gcs_url=post.gcs_url,
+                            )
+                            db.add(platform_post)
+                            db.flush()
+                        except IntegrityError:
+                            db.rollback()
+                            logger.warning(
+                                "social_job: unique constraint on series=%d part=%d platform=%s "
+                                "— already claimed by concurrent worker, skipping",
+                                post.series_id,
+                                post.part,
+                                platform,
+                            )
+                            skipped += 1
+                            all_done = False
+                            continue
 
                     platform_post.external_id = external_id
                     platform_post.status = "posted"
                     db.add(platform_post)
-                    db.flush()
+                    # Commit per successful platform so external_id is durable
+                    # before the next platform is attempted — a mid-loop crash
+                    # and retry will skip already-posted platforms cleanly.
+                    db.commit()
                     published += 1
                     logger.info(
                         "social_job: posted series=%d part=%d platform=%s external_id=%s",
@@ -234,8 +286,7 @@ def run() -> dict:
                     if sc is not None:
                         sc.status = "published"
                         db.add(sc)
-
-                db.commit()
+                    db.commit()
 
             finally:
                 db.close()

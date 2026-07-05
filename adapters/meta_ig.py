@@ -57,6 +57,9 @@ class IgPublisher:
         self._token = access_token or os.environ["META_SYSTEM_USER_TOKEN"]
         self._session = session or requests.Session()
 
+    def _auth_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._token}"}
+
     # ------------------------------------------------------------------
     # SocialPublisher interface
     # ------------------------------------------------------------------
@@ -92,10 +95,8 @@ class IgPublisher:
         url = f"{_BASE}/{self._user_id}/content_publishing_limit"
         resp = self._session.get(
             url,
-            params={
-                "fields": "quota_usage",
-                "access_token": self._token,
-            },
+            params={"fields": "quota_usage"},
+            headers=self._auth_headers(),
         )
         _raise_for_status(resp)
         data = resp.json()
@@ -117,8 +118,8 @@ class IgPublisher:
                 "media_type": "REELS",
                 "video_url": video_url,
                 "caption": caption,
-                "access_token": self._token,
             },
+            headers=self._auth_headers(),
         )
         _raise_for_status(resp)
         return resp.json()["id"]
@@ -131,10 +132,8 @@ class IgPublisher:
                 time.sleep(_POLL_INTERVAL)
             resp = self._session.get(
                 url,
-                params={
-                    "fields": "status_code",
-                    "access_token": self._token,
-                },
+                params={"fields": "status_code"},
+                headers=self._auth_headers(),
             )
             _raise_for_status(resp)
             status_code = resp.json().get("status_code", "")
@@ -156,10 +155,8 @@ class IgPublisher:
         url = f"{_BASE}/{self._user_id}/media_publish"
         resp = self._session.post(
             url,
-            params={
-                "creation_id": container_id,
-                "access_token": self._token,
-            },
+            params={"creation_id": container_id},
+            headers=self._auth_headers(),
         )
         _raise_for_status(resp)
         return resp.json()["id"]

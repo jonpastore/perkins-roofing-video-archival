@@ -24,12 +24,12 @@ def _make_session(*responses):
     _queue = list(responses)
 
     class _Sess:
-        def get(self, url, **kwargs):
-            calls.append(("GET", url, kwargs))
+        def get(self, url, params=None, headers=None, **kwargs):
+            calls.append(("GET", url, {"params": params, "headers": headers, **kwargs}))
             return _queue.pop(0)
 
-        def post(self, url, **kwargs):
-            calls.append(("POST", url, kwargs))
+        def post(self, url, params=None, headers=None, **kwargs):
+            calls.append(("POST", url, {"params": params, "headers": headers, **kwargs}))
             return _queue.pop(0)
 
     return _Sess(), calls
@@ -60,15 +60,21 @@ def test_publish_happy_path():
     # First call: rate limit check
     assert calls[0][0] == "GET"
     assert "content_publishing_limit" in calls[0][1]
+    assert calls[0][2]["headers"].get("Authorization") == "Bearer tok"
+    assert "access_token" not in (calls[0][2].get("params") or {})
     # Second call: create container
     assert calls[1][0] == "POST"
     assert calls[1][1].endswith("/media")
+    assert calls[1][2]["headers"].get("Authorization") == "Bearer tok"
+    assert "access_token" not in (calls[1][2].get("params") or {})
     # Third call: poll status
     assert calls[2][0] == "GET"
     assert "container_abc" in calls[2][1]
+    assert calls[2][2]["headers"].get("Authorization") == "Bearer tok"
     # Fourth call: publish
     assert calls[3][0] == "POST"
     assert "media_publish" in calls[3][1]
+    assert calls[3][2]["headers"].get("Authorization") == "Bearer tok"
 
 
 def test_publish_polls_in_progress_then_finished():
@@ -191,6 +197,8 @@ def test_env_var_credentials_loaded(monkeypatch):
 
     result = pub.publish(video_url="https://x.com/v.mp4", caption="c", idempotency_key="k")
     assert result == "ig_env_media"
-    # Verify the token was passed in the rate-limit GET params
-    get_params = calls[0][2].get("params", {})
-    assert get_params.get("access_token") == "env_token"
+    # Verify the token was passed as Authorization header (not query param)
+    get_headers = calls[0][2].get("headers", {}) or {}
+    assert get_headers.get("Authorization") == "Bearer env_token"
+    get_params = calls[0][2].get("params") or {}
+    assert "access_token" not in get_params

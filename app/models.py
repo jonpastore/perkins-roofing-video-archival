@@ -3,7 +3,7 @@
 versioned-artifact model the council required: every derived row carries a version, and
 IngestionRun tracks per-stage status + content_hash for idempotent/resumable ingestion."""
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, JSON, DateTime, Index
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, JSON, DateTime, Index, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import settings
 
@@ -107,9 +107,12 @@ class SocialPost(Base):
     series_id = Column(Integer, index=True)
     part = Column(Integer)
     platform = Column(String)         # instagram | tiktok
-    gcs_url = Column(String)          # public rendered-reel URL
+    gcs_url = Column(String)          # gs:// URI of the private reel object
     external_id = Column(String)      # returned post id (idempotency)
     status = Column(String, default="pending")
+    __table_args__ = (
+        UniqueConstraint("series_id", "part", "platform", name="uq_social_series_part_platform"),
+    )
 
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)

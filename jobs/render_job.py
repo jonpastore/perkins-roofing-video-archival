@@ -59,19 +59,18 @@ def _gcs_object_key(series_id: int, part_index: int) -> str:
     return f"{series_id}/{part_index}.mp4"
 
 
-def _public_url(bucket: str, key: str) -> str:
-    return f"https://storage.googleapis.com/{bucket}/{key}"
+def _gs_uri(bucket: str, key: str) -> str:
+    return f"gs://{bucket}/{key}"
 
 
 def _upload_to_gcs(local_path: str, bucket_name: str, object_key: str) -> str:
-    """Upload *local_path* to GCS and return the public URL.
+    """Upload *local_path* to the private GCS bucket and return a gs:// URI.
 
-    Degrades gracefully: if google-cloud-storage is unavailable or the bucket
-    does not exist/credentials are missing, raises RuntimeError with a clear
-    message rather than surfacing a raw GCS exception.
+    The reels bucket is private; social_job mints a short-TTL signed URL at
+    publish time via adapters.storage.signed_get_url.
 
     Returns:
-        Public URL ``https://storage.googleapis.com/{bucket}/{key}``.
+        GCS URI ``gs://{bucket}/{key}``.
     """
     try:
         from google.cloud import storage  # noqa: PLC0415
@@ -87,14 +86,12 @@ def _upload_to_gcs(local_path: str, bucket_name: str, object_key: str) -> str:
         bucket = client.bucket(bucket_name)
         blob = bucket.blob(object_key)
         blob.upload_from_filename(local_path, content_type="video/mp4")
-        # Ensure the object is publicly readable.
-        blob.make_public()
     except GoogleCloudError as exc:
         raise RuntimeError(
             f"GCS upload failed (bucket={bucket_name!r}, key={object_key!r}): {exc}"
         ) from exc
 
-    return _public_url(bucket_name, object_key)
+    return _gs_uri(bucket_name, object_key)
 
 
 def render_part(
@@ -139,6 +136,8 @@ def render_part(
     db = SessionLocal()
     try:
         # ── 1. Idempotency check ─────────────────────────────────────────────
+        # Any per-platform row with a non-null gcs_url means this part was
+        # already rendered — return early using the first matching row.
         existing = (
             db.query(SocialPost)
             .filter(
@@ -234,7 +233,7 @@ def render_part(
         logger.info("fuse -> %s", reel_path)
         ffmpeg_fuse(clip_path, title_img, closing_img, reel_path)
 
-        # 8. Upload to GCS
+        # 8. Upload to GCS (private bucket — returns gs:// URI)
         bucket_name = _reels_bucket()
         object_key = _gcs_object_key(series_id, part_index)
         logger.info("uploading to gs://%s/%s", bucket_name, object_key)
@@ -245,55 +244,63 @@ def render_part(
         if _tmp_ctx:
             _tmp_ctx.cleanup()
 
-    # ── 9. Persist SocialPost + ScheduledContent ─────────────────────────────
+    # ── 9. Persist SocialPost (one row per platform) + ScheduledContent ─────────
+    # One SocialPost row per platform so social_job.already_posted works
+    # uniformly — no combined "instagram,tiktok" rows.
+    _platforms = [p.strip() for p in _DEFAULT_PLATFORM.split(",") if p.strip()]
+
     db = SessionLocal()
     try:
-        # Upsert SocialPost
-        post = (
-            db.query(SocialPost)
-            .filter(
-                SocialPost.series_id == series_id,
-                SocialPost.part == part_index,
+        first_post_id: int | None = None
+        for platform in _platforms:
+            p_post = (
+                db.query(SocialPost)
+                .filter(
+                    SocialPost.series_id == series_id,
+                    SocialPost.part == part_index,
+                    SocialPost.platform == platform,
+                )
+                .first()
             )
-            .first()
-        )
-        if post is None:
-            post = SocialPost(
-                series_id=series_id,
-                part=part_index,
-                platform=_DEFAULT_PLATFORM,
-            )
-            db.add(post)
-        post.gcs_url = gcs_url
-        post.status = "rendered"
-        db.flush()  # populate post.id before using it in ScheduledContent
+            if p_post is None:
+                p_post = SocialPost(
+                    series_id=series_id,
+                    part=part_index,
+                    platform=platform,
+                )
+                db.add(p_post)
+            p_post.gcs_url = gcs_url  # gs:// URI — signed at publish time
+            p_post.status = "rendered"
+            db.flush()
+            if first_post_id is None:
+                first_post_id = p_post.id
 
         # Insert ScheduledContent row for the Wave-4 promoter.
         # publish_at=utcnow() so scheduler.due can select it immediately;
         # target records the destination platforms.
         sched = ScheduledContent(
             kind="reel",
-            ref_id=str(post.id),
+            ref_id=str(first_post_id),
             publish_at=datetime.now(timezone.utc).replace(tzinfo=None),
             status="scheduled",
             target=_DEFAULT_PLATFORM,
         )
         db.add(sched)
         db.commit()
-        db.refresh(post)
         db.refresh(sched)
 
         logger.info(
-            "persisted SocialPost id=%d ScheduledContent id=%d",
-            post.id,
+            "persisted %d SocialPost rows ScheduledContent id=%d gcs_url=%s",
+            len(_platforms),
             sched.id,
+            gcs_url,
         )
         return {
             "skipped": False,
             "series_id": series_id,
             "part_index": part_index,
             "gcs_url": gcs_url,
-            "social_post_id": post.id,
+            "social_post_id": first_post_id,
             "scheduled_content_id": sched.id,
         }
     finally:

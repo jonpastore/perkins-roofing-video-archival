@@ -44,3 +44,11 @@ def promote():
     Promotes due scheduled_content (articles + reels)."""
     from jobs.promote_job import run
     return run()
+
+
+@app.post("/internal/social")
+def social():
+    """Cloud Scheduler target — authenticated at the Cloud Run IAM layer (scheduler-sa OIDC).
+    Publishes awaiting_social reels to IG and TikTok."""
+    from jobs.social_job import run
+    return run()

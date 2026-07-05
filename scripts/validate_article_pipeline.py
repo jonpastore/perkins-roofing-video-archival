@@ -83,9 +83,6 @@ _wp.publish = _fake_publish
 _wp.update = _fake_update
 _wp.update_status = _fake_update_status
 
-# Patch at the jobs.article_job import level too (lazy imports inside function)
-import importlib  # noqa: E402
-
 # Patch the module-level lazy import names used inside generate_article
 import unittest.mock as _mock  # noqa: E402
 

@@ -85,6 +85,23 @@ can't be Terraformed:
   yt-dlp merge). Locally it runs via the Auth Proxy with owner ADC (the vertex-dev-sa key has no
   storage perms — `run_archive.sh` unsets GOOGLE_APPLICATION_CREDENTIALS for GCS).
 
+## Deployment (Cloud Run + SPA)
+- **App image:** `scripts/deploy.sh` builds via Cloud Build → Artifact Registry (`infra/registry.tf`)
+  and points the Cloud Run `api` service + all 5 jobs at it. Re-run to ship a new revision. Until run,
+  Cloud Run serves the placeholder `gcr.io/cloudrun/hello` image.
+- **SPA:** `web/` → `npm run build` → Firebase Hosting. Custom domain **app.perkinsroofing.net** needs:
+  a Firebase Hosting site + a DNS record (A/CNAME) pointing the subdomain at Firebase (console gives the
+  exact record). Set `VITE_API_BASE` to the Cloud Run api URL + the `VITE_FIREBASE_*` values first.
+
+## TikTok reel hosting — BLOCKER (owner action, connects to the domain)
+TikTok `PULL_FROM_URL` requires the video host to be a **domain the client owns and verifies** (DNS TXT
+URL-prefix). A signed `storage.googleapis.com` URL **cannot be TikTok-verified** (Google's domain), so
+TikTok publishing will be rejected even post-audit. Instagram has no such requirement (signed URLs work).
+**Fix for TikTok:** serve reels from a client-owned domain — e.g. **media.perkinsroofing.net** fronted by
+Cloud CDN over the reels bucket (or a domain-mapped bucket) — then verify that prefix in the TikTok portal.
+This is a Monday P2/P3 task alongside the app-review creds. Recommend pairing it with the app.perkinsroofing.net
+DNS setup.
+
 ## Article engine notes
 - Articles publish as **draft** by default (human review) — pass `status="publish"` to go live.
 - Video-grounding embeds Tim's real clips (oEmbed player + `?t=` deep-links + VideoObject schema);

@@ -254,7 +254,8 @@ resource "google_secret_manager_secret_version" "db_password" {
 # ---------------------------------------------------------------------------
 # 7. GCS buckets
 #    media: private, uniform bucket-level access (raw video, audio, ffmpeg artifacts)
-#    reels: public-read, uniform bucket-level access (rendered 9:16 reels for IG/TikTok)
+#    reels: private, uniform bucket-level access (rendered 9:16 reels for IG/TikTok)
+#           IG/TikTok ingest via short-TTL V4 signed URLs minted at publish time.
 # ---------------------------------------------------------------------------
 
 resource "google_storage_bucket" "media" {
@@ -380,6 +381,25 @@ resource "google_cloud_scheduler_job" "promote_scheduled_content" {
 
   http_target {
     uri         = "${google_cloud_run_v2_service.api.uri}/internal/promote"
+    http_method = "POST"
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_scheduler_job" "publish_awaiting_social" {
+  name      = "publish-awaiting-social"
+  region    = var.region
+  schedule  = "*/15 * * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/social"
     http_method = "POST"
 
     oidc_token {

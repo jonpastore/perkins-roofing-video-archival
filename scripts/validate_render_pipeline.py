@@ -211,13 +211,18 @@ print(f"[render] {render_result}")
 assert render_result["errored"] == 0, f"render_job had errors: {render_result}"
 assert render_result["rendered"] > 0, "Expected at least one part rendered"
 
-# Verify SocialPost rows exist with non-null gcs_url
+# Verify SocialPost rows exist with non-null gcs_url — one row per platform
 db = SessionLocal()
 posts = db.query(SocialPost).filter(SocialPost.series_id == series_id).all()
 assert len(posts) > 0, "No SocialPost rows created"
+platforms_seen = set()
 for p in posts:
     assert p.gcs_url is not None, f"SocialPost id={p.id} has null gcs_url"
-    assert p.platform == "instagram,tiktok", f"SocialPost id={p.id} has wrong platform: {p.platform!r}"
+    assert p.gcs_url.startswith("gs://"), f"SocialPost id={p.id} gcs_url not a gs:// URI: {p.gcs_url!r}"
+    assert p.platform in ("instagram", "tiktok"), f"SocialPost id={p.id} unexpected platform: {p.platform!r}"
+    platforms_seen.add(p.platform)
+assert "instagram" in platforms_seen, "No instagram SocialPost row found"
+assert "tiktok" in platforms_seen, "No tiktok SocialPost row found"
 
 # Verify ScheduledContent rows with kind=reel and non-null publish_at
 scheds = db.query(ScheduledContent).filter(ScheduledContent.kind == "reel").all()
@@ -228,7 +233,7 @@ for sc in scheds:
     assert sc.status == "scheduled", f"ScheduledContent id={sc.id} wrong status: {sc.status!r}"
 
 db.close()
-print("[render] PASS — SocialPost + ScheduledContent(reel, publish_at NOT NULL) created")
+print("[render] PASS — per-platform SocialPost rows (gs:// URI) + ScheduledContent(reel, publish_at NOT NULL) created")
 
 # ── 8. Idempotency: second render run should render nothing new ───────────────
 # run() pre-filters already-rendered parts (SocialPost.gcs_url IS NOT NULL), so
