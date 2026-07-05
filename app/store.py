@@ -17,14 +17,16 @@ class _Row:
 def vector_search(query, k=8):
     q = embed([query])[0]
     if _is_pg():
-        # PROD: pgvector cosine ANN over chunks.embedding vector(3072) + HNSW index.
+        # PROD: pgvector cosine ANN. embedding is vector(3072); HNSW caps `vector` at
+        # 2000 dims, so we index+query the halfvec(3072) cast (HNSW supports 4000 dims).
         from pgvector.psycopg import register_vector
         s = SessionLocal()
         # .driver_connection is the raw psycopg3 conn (unwrap SQLAlchemy's pool proxy)
         register_vector(s.connection().connection.driver_connection)
         rows = s.execute(text(
-            'SELECT id, video_id, text, start, "end", 1 - (embedding <=> :q) AS score '
-            'FROM chunks ORDER BY embedding <=> :q LIMIT :k'),
+            'SELECT id, video_id, text, start, "end", '
+            '1 - (embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072))) AS score '
+            'FROM chunks ORDER BY embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072)) LIMIT :k'),
             {"q": np.array(q, dtype=np.float32), "k": k}).fetchall()
         s.close()
         return [(_Row(r), float(r.score)) for r in rows]

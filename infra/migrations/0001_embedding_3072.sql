@@ -5,6 +5,9 @@
 ALTER TABLE chunks ALTER COLUMN embedding TYPE vector(3072)
     USING embedding::text::vector(3072);
 
+-- HNSW indexes cap `vector` at 2000 dims, so index the halfvec(3072) cast
+-- (half-precision, HNSW-eligible up to 4000 dims). app/store.py queries the same
+-- `embedding::halfvec(3072) <=> ...::halfvec(3072)` expression so the planner uses it.
 DROP INDEX IF EXISTS chunks_embedding_hnsw;
 CREATE INDEX chunks_embedding_hnsw ON chunks
-    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+    USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops) WITH (m = 16, ef_construction = 64);
