@@ -34,7 +34,7 @@ for job in "${!JOBS[@]}"; do
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
     --service-account "jobs-sa@${PROJECT}.iam.gserviceaccount.com" \
     --set-cloudsql-instances "$CONN" \
-    --command python --args="-m,${JOBS[$job]}" \
+    --command=python --args="-m,${JOBS[$job]}" \
     --set-env-vars "$JOB_ENV"
 done
 
