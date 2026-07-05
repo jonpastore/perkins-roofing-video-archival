@@ -4,7 +4,9 @@ render_part() is the Cloud Run Job entrypoint for a single series part:
 
   1. Idempotency check — skip if a SocialPost with gcs_url already exists for
      this series_id + part_index.
-  2. Pull source video via yt-dlp (adapters.yt_dlp.pull_video).
+  2. Obtain source video via _source_video_path(): prefers the archived GCS MP4
+     (video.archive_uri) — downloads it to a temp file — and falls back to
+     yt-dlp when archive_uri is null.
   3. Enforce ≤300s clip duration (raises ValueError on violation — preserves
      editorial intent; never silently truncates).
   4. Extract the part's clip in/out range (adapters.ffmpeg.clip).
@@ -61,6 +63,63 @@ def _gcs_object_key(series_id: int, part_index: int) -> str:
 
 def _gs_uri(bucket: str, key: str) -> str:
     return f"gs://{bucket}/{key}"
+
+
+def _source_video_path(video_id: str, archive_uri: str | None, scratch: str) -> str:
+    """Return a local path to the source MP4 for *video_id*.
+
+    Prefers the archived GCS object (*archive_uri*) — streams it to a temp
+    file in *scratch* — so renders source from already-archived media rather
+    than re-downloading from YouTube.  Falls back to yt-dlp when *archive_uri*
+    is None or the GCS download fails.
+
+    Args:
+        video_id:    YouTube video ID (used for the yt-dlp fallback).
+        archive_uri: ``gs://bucket/key`` URI of the archived source MP4, or None.
+        scratch:     Directory where the downloaded file should be placed.
+
+    Returns:
+        Absolute path to the local MP4 file.
+
+    Raises:
+        FileNotFoundError / RuntimeError: propagated from adapters on hard failure.
+    """
+    if archive_uri:
+        # Parse gs://bucket/object/key
+        without_scheme = archive_uri[len("gs://"):]
+        slash = without_scheme.index("/")
+        bucket = without_scheme[:slash]
+        key = without_scheme[slash + 1:]
+
+        local_path = os.path.join(scratch, f"{video_id}_archived.mp4")
+        logger.info(
+            "_source_video_path: downloading archived media %s -> %s",
+            archive_uri,
+            local_path,
+        )
+        try:
+            from adapters.storage import open_read_stream  # noqa: PLC0415
+
+            with open_read_stream(bucket, key) as stream:
+                with open(local_path, "wb") as fh:
+                    while True:
+                        chunk = stream.read(8 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+            return local_path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "_source_video_path: GCS download failed (%s), falling back to yt-dlp: %s",
+                archive_uri,
+                exc,
+            )
+
+    # Fallback: pull via yt-dlp
+    from adapters.yt_dlp import pull_video  # noqa: PLC0415
+
+    logger.info("_source_video_path: pulling via yt-dlp video_id=%s", video_id)
+    return pull_video(video_id, scratch)
 
 
 def _upload_to_gcs(local_path: str, bucket_name: str, object_key: str) -> str:
@@ -164,6 +223,8 @@ def render_part(
             }
 
         # ── 2. Load series metadata ──────────────────────────────────────────
+        from app.models import Video  # noqa: PLC0415
+
         series = db.get(MiniSeries, series_id)
         if series is None:
             raise RuntimeError(f"MiniSeries id={series_id} not found")
@@ -183,6 +244,11 @@ def render_part(
         end = float(part["end"])
         video_id = series.video_id
         series_title = series.title or f"Series {series_id}"
+
+        # Load Video row here so we can check archive_uri in _source_video_path.
+        video_row = db.get(Video, video_id)
+        # Snapshot the archive_uri — the ORM object will be detached after db.close().
+        video_archive_uri = getattr(video_row, "archive_uri", None) if video_row else None
 
     finally:
         db.close()
@@ -205,11 +271,11 @@ def render_part(
         from adapters.ffmpeg import clip as ffmpeg_clip  # noqa: PLC0415
         from adapters.ffmpeg import fuse as ffmpeg_fuse  # noqa: PLC0415
         from adapters.ffmpeg import make_card  # noqa: PLC0415
-        from adapters.yt_dlp import pull_video  # noqa: PLC0415
 
-        # 4. Pull source video
-        logger.info("pull_video: video_id=%s -> %s", video_id, scratch)
-        src_path = pull_video(video_id, scratch)
+        # 4. Obtain source video — prefer archived GCS MP4, fall back to yt-dlp.
+        # video_archive_uri was snapshotted from the Video row in the DB block above.
+        logger.info("_source_video_path: video_id=%s archive_uri=%s -> %s", video_id, video_archive_uri, scratch)
+        src_path = _source_video_path(video_id, video_archive_uri, scratch)
 
         # 5. Extract clip
         clip_path = os.path.join(scratch, f"clip_{series_id}_{part_index}.mp4")

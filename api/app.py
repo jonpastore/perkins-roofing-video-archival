@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from api.auth import current_claims, require_role
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
+from api.routes.clips import router as clips_router
 from api.routes.config import router as config_router
 from api.routes.email import router as email_router
 from api.routes.faq import router as faq_router
@@ -38,6 +39,7 @@ app.include_router(faq_router)
 app.include_router(config_router)
 app.include_router(users_router)
 app.include_router(suggestions_router)
+app.include_router(clips_router)
 
 
 class Query(BaseModel):

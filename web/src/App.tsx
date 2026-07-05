@@ -13,6 +13,7 @@ import { Faq } from "./pages/Faq";
 import { Opportunities } from "./pages/Opportunities";
 import { Settings } from "./pages/Settings";
 import { Users } from "./pages/Users";
+import { ClipStudio } from "./pages/ClipStudio";
 import { BRAND, FONT } from "./ui";
 
 type Role = "admin" | "web_admin" | "sales" | null;
@@ -37,6 +38,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["templates", "Email Templates"],
       ["compose-email", "Compose Email"],
       ["scheduling", "Content Scheduling"],
+      ["clip-studio", "Clip Studio"],
       ["video-approval", "Video Approval"],
       ["archive", "Archive"],
     ],
@@ -55,6 +57,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["articles", "Articles"],
       ["faq", "FAQ"],
       ["scheduling", "Content Scheduling"],
+      ["clip-studio", "Clip Studio"],
       ["video-approval", "Video Approval"],
       ["archive", "Archive"],
     ],
@@ -197,6 +200,7 @@ function TabContent({ tab }: { tab: string }) {
       {tab === "templates" && <Templates />}
       {tab === "compose-email" && <ComposeEmail />}
       {tab === "scheduling" && <Scheduling />}
+      {tab === "clip-studio" && <ClipStudio />}
       {tab === "video-approval" && <VideoApproval />}
       {tab === "archive" && <Archive />}
       {tab === "users" && <Users />}
