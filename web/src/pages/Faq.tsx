@@ -31,6 +31,21 @@ interface PublishResult {
   action: "created" | "updated";
 }
 
+interface EstimateResult {
+  count: number;
+  mine_cost_usd: number;
+  answer_cost_usd: number;
+  model: string;
+  caps: { mine_max: number; answer_batch_max: number };
+}
+
+const MINE_BATCH_OPTIONS = [50, 100, 200] as const;
+const ANSWER_BATCH_OPTIONS = [25, 50, 100] as const;
+
+function fmt$( n: number): string {
+  return `$${n.toFixed(4)}`;
+}
+
 function mmss(t: number): string {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
@@ -55,6 +70,10 @@ export function Faq() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
+  const [mineBatchSize, setMineBatchSize] = useState<number>(200);
+  const [answerBatchSize, setAnswerBatchSize] = useState<number>(25);
+  const [mineEstimate, setMineEstimate] = useState<EstimateResult | null>(null);
+  const [answerEstimate, setAnswerEstimate] = useState<EstimateResult | null>(null);
   const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function loadCoverage() {
@@ -65,6 +84,16 @@ export function Faq() {
       .catch(() => setCoverage(null))
       .finally(() => setCoverageLoading(false));
   }
+
+  function fetchEstimate(count: number, setter: (e: EstimateResult) => void) {
+    apiFetch(`/faq/estimate?count=${count}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: EstimateResult | null) => { if (d) setter(d); })
+      .catch(() => {});
+  }
+
+  useEffect(() => { fetchEstimate(mineBatchSize, setMineEstimate); }, [mineBatchSize]);
+  useEffect(() => { fetchEstimate(answerBatchSize, setAnswerEstimate); }, [answerBatchSize]);
 
   function loadItems(q: string, ans: "all" | "yes" | "no", off: number) {
     setLoading(true);
@@ -91,7 +120,9 @@ export function Faq() {
   useEffect(() => {
     loadCoverage();
     loadItems("", "all", 0);
-  }, []);
+    fetchEstimate(mineBatchSize, setMineEstimate);
+    fetchEstimate(answerBatchSize, setAnswerEstimate);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleFilterChange(val: string) {
     setFilter(val);
@@ -123,7 +154,7 @@ export function Faq() {
     setMining(true);
     setActionMsg(null);
     try {
-      const r = await apiFetch("/faq/mine", { method: "POST", body: JSON.stringify({ limit: 200 }) });
+      const r = await apiFetch("/faq/mine", { method: "POST", body: JSON.stringify({ limit: mineBatchSize }) });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const d = await r.json();
       setActionMsg(`Mined ${d.mined} new questions. ${d.remaining_uncovered} content items still available.`);
@@ -141,7 +172,7 @@ export function Faq() {
     setGeneratingBatch(true);
     setActionMsg(null);
     try {
-      const r = await apiFetch("/faq/answer-batch", { method: "POST", body: JSON.stringify({ limit: 25 }) });
+      const r = await apiFetch("/faq/answer-batch", { method: "POST", body: JSON.stringify({ limit: answerBatchSize }) });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const d = await r.json();
       setActionMsg(`Generated ${d.answered} answers. ${d.remaining} still unanswered.`);
@@ -223,33 +254,85 @@ export function Faq() {
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ flex: 1 }}>
-                <span style={{ fontSize: 14, color: BRAND.ink }}>
-                  <strong style={{ color: BRAND.navyText }}>{coverage.mined}</strong> questions mined
-                  {" · "}
-                  <strong style={{ color: BRAND.navyText }}>{coverage.answered}</strong> answered
-                  {" · "}
-                  <strong style={{ color: BRAND.navyText }}>{coverage.uncovered_nodes.toLocaleString()}</strong> available to mine
-                </span>
+            <div style={{ fontSize: 14, color: BRAND.ink, marginBottom: 12 }}>
+              <strong style={{ color: BRAND.navyText }}>{coverage.mined}</strong> questions mined
+              {" · "}
+              <strong style={{ color: BRAND.navyText }}>{coverage.answered}</strong> answered
+              {" · "}
+              <strong style={{ color: BRAND.navyText }}>{coverage.uncovered_nodes.toLocaleString()}</strong> available to mine
+            </div>
+
+            {/* Mine batch controls */}
+            {coverage.uncovered_nodes > 0 && (
+              <div style={{ background: BRAND.bg, borderRadius: 8, padding: "12px 16px", marginBottom: 12 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600 }}>Mine questions:</span>
+                  {MINE_BATCH_OPTIONS.map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setMineBatchSize(n)}
+                      style={{
+                        padding: "4px 12px", borderRadius: 6, fontSize: 13, cursor: "pointer",
+                        fontWeight: mineBatchSize === n ? 700 : 400,
+                        background: mineBatchSize === n ? BRAND.navy : "#fff",
+                        color: mineBatchSize === n ? "#fff" : BRAND.navyText,
+                        border: `1px solid ${mineBatchSize === n ? BRAND.navy : BRAND.border}`,
+                      }}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <Button onClick={handleMine} disabled={mining || coverage.uncovered_nodes === 0} style={{ fontSize: 13 }}>
+                    {mining ? "Mining…" : `Mine ${mineBatchSize}`}
+                  </Button>
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: BRAND.sub }}>
+                  {mineEstimate
+                    ? <>Mining {mineBatchSize} questions ~ <strong>{fmt$(mineEstimate.mine_cost_usd)}</strong> (estimate, {mineEstimate.model})</>
+                    : "Loading estimate…"}
+                  {coverage.uncovered_nodes > 500 && mineEstimate && (
+                    <> · Mining all {coverage.uncovered_nodes.toLocaleString()} ~ <strong>{fmt$(mineEstimate.mine_cost_usd / mineBatchSize * coverage.uncovered_nodes)}</strong> (estimate)</>
+                  )}
+                </p>
               </div>
-              {coverage.mined > 0 && (
-                <Button
-                  onClick={handleMine}
-                  disabled={mining || coverage.uncovered_nodes === 0}
-                  variant="ghost"
-                  style={{ whiteSpace: "nowrap", fontSize: 13 }}
-                >
-                  {mining ? "Mining…" : `Mine more${coverage.uncovered_nodes > 0 ? ` (${coverage.uncovered_nodes.toLocaleString()})` : ""}`}
-                </Button>
-              )}
-              <Button
-                onClick={handleGenerateBatch}
-                disabled={generatingBatch || coverage.mined === coverage.answered}
-                style={{ whiteSpace: "nowrap", fontSize: 13 }}
-              >
-                {generatingBatch ? "Generating…" : "Generate answers"}
-              </Button>
+            )}
+
+            {/* Answer batch controls */}
+            {coverage.mined > coverage.answered && (
+              <div style={{ background: BRAND.bg, borderRadius: 8, padding: "12px 16px", marginBottom: 12 }}>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+                  <span style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600 }}>Generate answers:</span>
+                  {ANSWER_BATCH_OPTIONS.map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => setAnswerBatchSize(n)}
+                      style={{
+                        padding: "4px 12px", borderRadius: 6, fontSize: 13, cursor: "pointer",
+                        fontWeight: answerBatchSize === n ? 700 : 400,
+                        background: answerBatchSize === n ? BRAND.navy : "#fff",
+                        color: answerBatchSize === n ? "#fff" : BRAND.navyText,
+                        border: `1px solid ${answerBatchSize === n ? BRAND.navy : BRAND.border}`,
+                      }}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <Button onClick={handleGenerateBatch} disabled={generatingBatch} style={{ fontSize: 13 }}>
+                    {generatingBatch ? "Generating…" : `Generate ${answerBatchSize}`}
+                  </Button>
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: BRAND.sub }}>
+                  {answerEstimate
+                    ? <>Answering {answerBatchSize} questions ~ <strong>{fmt$(answerEstimate.answer_cost_usd)}</strong> (estimate, {answerEstimate.model})</>
+                    : "Loading estimate…"}
+                  {coverage.mined - coverage.answered > 100 && answerEstimate && (
+                    <> · Answering all {(coverage.mined - coverage.answered).toLocaleString()} unanswered ~ <strong>{fmt$(answerEstimate.answer_cost_usd / answerBatchSize * (coverage.mined - coverage.answered))}</strong> (estimate)</>
+                  )}
+                </p>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               {coverage.answered > 0 && (
                 <Button
                   onClick={handlePublishWordPress}

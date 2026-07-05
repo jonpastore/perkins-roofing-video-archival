@@ -706,3 +706,109 @@ def test_publish_wordpress_no_answered_entries(monkeypatch):
     r = c.post("/faq/publish-wordpress", headers=AUTH)
     assert r.status_code == 422, r.text
     assert "No answered" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Batch cap tests
+# ---------------------------------------------------------------------------
+
+def test_mine_clamps_to_max(monkeypatch):
+    """POST /faq/mine with limit > MINE_MAX is silently clamped to MINE_MAX."""
+    import api.routes.faq as faq_mod
+    from api.routes.faq import MINE_MAX
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    # We only care that the server accepts the call (no 422) and clamps internally.
+    # With only 3 nodes in the DB the response mined count will be <= 3 regardless,
+    # but the important thing is the server doesn't raise on an oversized limit.
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+
+    c = _admin_client()
+    r = c.post("/faq/mine", json={"limit": MINE_MAX + 9999}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    # mined is ≤ actual nodes in DB (3), not equal to the oversized limit
+    assert data["mined"] <= 3
+
+
+def test_answer_batch_clamps_to_max(monkeypatch):
+    """POST /faq/answer-batch with limit > ANSWER_BATCH_MAX is silently clamped."""
+    import api.routes.faq as faq_mod
+    from api.routes.faq import ANSWER_BATCH_MAX
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+    c = _admin_client()
+    c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
+
+    import app.answer as answer_mod
+    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+
+    r = c.post("/faq/answer-batch", json={"limit": ANSWER_BATCH_MAX + 9999}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["answered"] <= 3  # only 3 nodes in test DB
+
+
+# ---------------------------------------------------------------------------
+# GET /faq/estimate
+# ---------------------------------------------------------------------------
+
+def test_estimate_returns_cost_fields():
+    """GET /faq/estimate?count=10 returns all expected fields with positive costs."""
+    c = _admin_client()
+    r = c.get("/faq/estimate?count=10", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["count"] == 10
+    assert "mine_cost_usd" in data
+    assert "answer_cost_usd" in data
+    assert "model" in data
+    assert "note" in data
+    assert "caps" in data
+    assert data["mine_cost_usd"] > 0
+    assert data["answer_cost_usd"] > 0
+    assert data["caps"]["mine_max"] > 0
+    assert data["caps"]["answer_batch_max"] > 0
+
+
+def test_estimate_scales_with_count():
+    """Cost for count=100 is proportionally higher than count=10 (linear scaling).
+
+    We verify monotonicity and that the ratio is between 9x and 11x (accounts for
+    round(n, 4) rounding artifacts at small values).
+    """
+    c = _admin_client()
+    r10 = c.get("/faq/estimate?count=10", headers=AUTH).json()
+    r100 = c.get("/faq/estimate?count=100", headers=AUTH).json()
+    assert r100["mine_cost_usd"] > r10["mine_cost_usd"]
+    assert r100["answer_cost_usd"] > r10["answer_cost_usd"]
+    mine_ratio = r100["mine_cost_usd"] / r10["mine_cost_usd"]
+    answer_ratio = r100["answer_cost_usd"] / r10["answer_cost_usd"]
+    assert 9 <= mine_ratio <= 11, f"mine ratio {mine_ratio} not ~10x"
+    assert 9 <= answer_ratio <= 11, f"answer ratio {answer_ratio} not ~10x"
+
+
+def test_estimate_sales_allowed():
+    """Sales role can GET /faq/estimate (article_read)."""
+    c = _sales_client()
+    r = c.get("/faq/estimate?count=5", headers=AUTH)
+    assert r.status_code == 200, r.text
+
+
+def test_estimate_requires_auth():
+    """GET /faq/estimate without a token returns 401."""
+    c = _admin_client()
+    r = c.get("/faq/estimate?count=5")
+    assert r.status_code == 401, r.text
+
+
+def test_estimate_requires_count():
+    """GET /faq/estimate without count param returns 422."""
+    c = _admin_client()
+    r = c.get("/faq/estimate", headers=AUTH)
+    assert r.status_code == 422, r.text

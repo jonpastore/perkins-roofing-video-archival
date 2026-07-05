@@ -16,7 +16,6 @@ interface FormState {
   ref_id: string;
   publish_at: string;
   target: string;
-  status: string;
 }
 
 interface ArticleOption {
@@ -27,6 +26,7 @@ interface ArticleOption {
 interface SeriesOption {
   id: number;
   title: string;
+  label: string;
 }
 
 const emptyForm: FormState = {
@@ -34,7 +34,6 @@ const emptyForm: FormState = {
   ref_id: "",
   publish_at: "",
   target: "wordpress",
-  status: "scheduled",
 };
 
 const KIND_DISPLAY: Record<string, string> = {
@@ -81,6 +80,9 @@ export function Scheduling() {
   const [seriesList, setSeriesList] = useState<SeriesOption[]>([]);
   const [dropdownsLoading, setDropdownsLoading] = useState(false);
 
+  // edit-only: tracks the status value for PUT (not shown on create)
+  const [editStatus, setEditStatus] = useState<string>("scheduled");
+
   function load(filter?: string) {
     setLoading(true);
     setError(null);
@@ -103,7 +105,13 @@ export function Scheduling() {
     ])
       .then(([arts, series]) => {
         setArticles(arts as ArticleOption[]);
-        setSeriesList((series as Array<{ id: number; title: string }>).map((s) => ({ id: s.id, title: s.title })));
+        setSeriesList(
+          (series as Array<{ id: number; title: string; label: string }>).map((s) => ({
+            id: s.id,
+            title: s.title,
+            label: s.label ?? s.title,
+          }))
+        );
       })
       .catch(() => {})
       .finally(() => setDropdownsLoading(false));
@@ -134,8 +142,8 @@ export function Scheduling() {
       ref_id: item.ref_id,
       publish_at: dtLocal,
       target: item.target ?? "",
-      status: item.status,
     });
+    setEditStatus(item.status);
     setSaveError(null);
     setShowForm(true);
     loadDropdowns();
@@ -178,7 +186,6 @@ export function Scheduling() {
             ref_id: form.ref_id,
             publish_at: form.publish_at,
             target: form.target || null,
-            status: form.status,
           }),
         });
       } else {
@@ -186,7 +193,7 @@ export function Scheduling() {
           method: "PUT",
           body: JSON.stringify({
             publish_at: form.publish_at,
-            status: form.status,
+            status: editStatus,
             target: form.target || null,
           }),
         });
@@ -290,7 +297,7 @@ export function Scheduling() {
                     >
                       <option value="">— select a video series —</option>
                       {seriesList.map((s) => (
-                        <option key={s.id} value={String(s.id)}>{s.title}</option>
+                        <option key={s.id} value={String(s.id)}>{s.label}</option>
                       ))}
                     </select>
                   )}
@@ -340,19 +347,21 @@ export function Scheduling() {
               )}
             </div>
 
-            {/* Status */}
-            <div>
-              <label style={labelStyle}>Status</label>
-              <select
-                value={form.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                style={{ ...inputStyle, width: "100%" }}
-              >
-                <option value="scheduled">scheduled</option>
-                <option value="published">published</option>
-                <option value="error">error</option>
-              </select>
-            </div>
+            {/* Status — edit-only, read-only badge on create */}
+            {editingId !== null && (
+              <div>
+                <label style={labelStyle}>Status</label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                  style={{ ...inputStyle, width: "100%" }}
+                >
+                  <option value="scheduled">scheduled</option>
+                  <option value="published">published</option>
+                  <option value="error">error</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {saveError && <ErrorMsg>{saveError}</ErrorMsg>}

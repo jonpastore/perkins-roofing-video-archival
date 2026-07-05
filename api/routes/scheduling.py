@@ -20,12 +20,13 @@ router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 # Pydantic request models
 # ---------------------------------------------------------------------------
 
+
 class ScheduledContentIn(BaseModel):
     kind: str
     ref_id: str
     publish_at: datetime
     target: str | None = None
-    status: str | None = "scheduled"
+    # status intentionally absent — new items are always forced to 'scheduled'
 
 
 class ScheduledContentUpdate(BaseModel):
@@ -37,6 +38,7 @@ class ScheduledContentUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _row_dict(r: ScheduledContent) -> dict:
     return {
@@ -52,6 +54,7 @@ def _row_dict(r: ScheduledContent) -> dict:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("")
 def list_scheduled(
@@ -76,7 +79,7 @@ def create_scheduled(
             kind=body.kind,
             ref_id=body.ref_id,
             publish_at=body.publish_at,
-            status=body.status or "scheduled",
+            status="scheduled",
             target=body.target,
         )
         db.add(item)

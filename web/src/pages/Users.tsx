@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { BRAND, Card, Button, PageTitle, Loading, ErrorMsg, Badge } from "../ui";
+import { BRAND, Card, Button, PageTitle, Loading, ErrorMsg, Badge, inputStyle } from "../ui";
 import { getAuth } from "firebase/auth";
 
 interface FirebaseUser {
   uid: string;
   email: string;
+  display_name: string | null;
   role: string | null;
 }
 
@@ -18,6 +19,8 @@ function roleBadge(role: string | null) {
   return <Badge tone="gray">none</Badge>;
 }
 
+const INVITE_ROLES: RoleOption[] = ["admin", "web_admin", "sales"];
+
 export function Users() {
   const [users, setUsers] = useState<FirebaseUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +29,14 @@ export function Users() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saveError, setSaveError] = useState<Record<string, string>>({});
   const [myEmail, setMyEmail] = useState<string | null>(null);
+
+  // Invite form state
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState<RoleOption>("sales");
+  const [inviting, setInviting] = useState(false);
+  const [inviteOk, setInviteOk] = useState<string | null>(null);
+  const [inviteErr, setInviteErr] = useState<string | null>(null);
 
   useEffect(() => {
     const current = getAuth().currentUser;
@@ -95,6 +106,48 @@ export function Users() {
     return pending[user.uid] !== current;
   }
 
+  async function handleInvite() {
+    if (!inviteEmail.trim()) { setInviteErr("Email is required."); return; }
+    if (!inviteRole) { setInviteErr("Role is required."); return; }
+    setInviting(true);
+    setInviteErr(null);
+    setInviteOk(null);
+    try {
+      const r = await apiFetch("/admin/users/invite", {
+        method: "POST",
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          role: inviteRole,
+          display_name: inviteName.trim() || undefined,
+        }),
+      });
+      if (!r.ok) {
+        const detail = await r.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
+      }
+      const created: FirebaseUser = await r.json();
+      setInviteOk(`Invited ${created.email} as ${created.role}.`);
+      setInviteEmail("");
+      setInviteName("");
+      setInviteRole("sales");
+      // Refresh user list to show newly invited user
+      load();
+    } catch (e: unknown) {
+      setInviteErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInviting(false);
+    }
+  }
+
+  const selectStyle = {
+    padding: "6px 10px",
+    border: `1px solid ${BRAND.border}`,
+    borderRadius: 6,
+    fontSize: 13,
+    background: "#fff",
+    cursor: "pointer",
+  };
+
   return (
     <main style={{ maxWidth: 900 }}>
       <PageTitle
@@ -106,6 +159,57 @@ export function Users() {
       >
         User Management
       </PageTitle>
+
+      {/* Invite form */}
+      <Card style={{ marginBottom: 20 }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: 15, color: BRAND.navyText, fontWeight: 700 }}>
+          Invite user
+        </h3>
+        <p style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.sub }}>
+          Pre-authorize any email address before first sign-in. Org-directory autocomplete
+          requires Google Workspace admin consent and is a planned follow-up — use this form
+          for now.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>Email *</label>
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="user@example.com"
+              style={{ ...inputStyle, minWidth: 220, padding: "7px 10px", fontSize: 13 }}
+            />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>Name (optional)</label>
+            <input
+              type="text"
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              placeholder="Full name"
+              style={{ ...inputStyle, minWidth: 160, padding: "7px 10px", fontSize: 13 }}
+            />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>Role *</label>
+            <select
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value as RoleOption)}
+              style={selectStyle}
+            >
+              {INVITE_ROLES.map((r) => (
+                <option key={r} value={r}>{r === "web_admin" ? "Web Admin" : r}</option>
+              ))}
+            </select>
+          </div>
+          <Button onClick={handleInvite} disabled={inviting} style={{ padding: "7px 18px", fontSize: 13 }}>
+            {inviting ? "Inviting…" : "Invite"}
+          </Button>
+        </div>
+        {inviteOk && <p style={{ marginTop: 10, fontSize: 13, color: "#1a7f4b" }}>{inviteOk}</p>}
+        {inviteErr && <p style={{ marginTop: 10, fontSize: 13, color: BRAND.red }}>{inviteErr}</p>}
+      </Card>
 
       {loading && <Loading />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
@@ -120,7 +224,7 @@ export function Users() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Email</th>
+                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Name / Email</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Current Role</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Assign Role</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Action</th>
@@ -130,10 +234,20 @@ export function Users() {
                 {users.map((u) => (
                   <tr key={u.uid} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
                     <td style={{ padding: "10px 12px", color: BRAND.ink }}>
-                      {u.email}
-                      {u.email === myEmail && (
-                        <span style={{ marginLeft: 6, fontSize: 11, color: BRAND.sub }}>(you)</span>
+                      {u.display_name && (
+                        <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                          {u.display_name}
+                          {u.email === myEmail && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: BRAND.sub, fontWeight: 400 }}>(you)</span>
+                          )}
+                        </div>
                       )}
+                      <div style={{ color: u.display_name ? BRAND.sub : BRAND.ink, fontSize: u.display_name ? 12 : 14 }}>
+                        {u.email}
+                        {!u.display_name && u.email === myEmail && (
+                          <span style={{ marginLeft: 6, fontSize: 11, color: BRAND.sub }}>(you)</span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: "10px 12px" }}>{roleBadge(u.role)}</td>
                     <td style={{ padding: "10px 12px" }}>
@@ -142,14 +256,7 @@ export function Users() {
                         onChange={(e) =>
                           setPending((p) => ({ ...p, [u.uid]: e.target.value as RoleOption }))
                         }
-                        style={{
-                          padding: "6px 10px",
-                          border: `1px solid ${BRAND.border}`,
-                          borderRadius: 6,
-                          fontSize: 13,
-                          background: "#fff",
-                          cursor: "pointer",
-                        }}
+                        style={selectStyle}
                       >
                         <option value="">none</option>
                         <option value="admin">admin</option>

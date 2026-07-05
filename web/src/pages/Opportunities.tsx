@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
+import { hms, BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
 
 interface ArticleTopic {
   label: string;
@@ -39,10 +39,8 @@ interface Suggestions {
   unused_videos_total: number;
 }
 
-interface FaqAnswer {
-  answer: string;
-  citations: { url: string; title?: string }[];
-}
+const PAGE_SIZE = 15;
+const FETCH_LIMIT = 200;
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -56,23 +54,6 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
     >
       {children}
     </h3>
-  );
-}
-
-function TotalNote({ shown, total, onShowMore }: { shown: number; total: number; onShowMore?: () => void }) {
-  if (total <= shown) return null;
-  return (
-    <p style={{ fontSize: 12, color: BRAND.sub, margin: "6px 0 0" }}>
-      Showing {shown} of {total}.{" "}
-      {onShowMore && (
-        <button
-          onClick={onShowMore}
-          style={{ background: "none", border: "none", color: BRAND.navyText, cursor: "pointer", fontWeight: 600, padding: 0, fontSize: 12 }}
-        >
-          Show more
-        </button>
-      )}
-    </p>
   );
 }
 
@@ -99,27 +80,84 @@ function formatContentLength(chars: number): string {
   return `~${minutes} min`;
 }
 
+function Paginator({
+  page,
+  totalPages,
+  onPrev,
+  onNext,
+}: {
+  page: number;
+  totalPages: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0 4px", fontSize: 13 }}>
+      <button
+        onClick={onPrev}
+        disabled={page === 0}
+        style={{
+          background: "none",
+          border: `1px solid ${BRAND.border}`,
+          borderRadius: 6,
+          padding: "3px 12px",
+          cursor: page === 0 ? "not-allowed" : "pointer",
+          color: page === 0 ? BRAND.sub : BRAND.navyText,
+          fontWeight: 600,
+        }}
+      >
+        Prev
+      </button>
+      <span style={{ color: BRAND.sub }}>
+        Page {page + 1} of {totalPages}
+      </span>
+      <button
+        onClick={onNext}
+        disabled={page >= totalPages - 1}
+        style={{
+          background: "none",
+          border: `1px solid ${BRAND.border}`,
+          borderRadius: 6,
+          padding: "3px 12px",
+          cursor: page >= totalPages - 1 ? "not-allowed" : "pointer",
+          color: page >= totalPages - 1 ? BRAND.sub : BRAND.navyText,
+          fontWeight: 600,
+        }}
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
 export function Opportunities() {
   const [data, setData] = useState<Suggestions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
   const [genMsg, setGenMsg] = useState<Record<string, string>>({});
-  const [limit, setLimit] = useState(25);
   const [topicSort, setTopicSort] = useState<"length" | "videos">("length");
 
-  // FAQ answer state: key = `${video_id}-${t}`, value = answer payload or "loading"/"error"
-  const [faqAnswers, setFaqAnswers] = useState<Record<string, FaqAnswer | "loading" | string>>({});
+  // Pagination state per bucket (0-indexed page)
+  const [topicPage, setTopicPage] = useState(0);
+  const [faqPage, setFaqPage] = useState(0);
+  const [unusedPage, setUnusedPage] = useState(0);
 
-  function fetchSuggestions(fetchLimit = limit, fetchSort = topicSort) {
+  function fetchSuggestions(fetchSort = topicSort) {
     setLoading(true);
     setError(null);
-    apiFetch(`/suggestions?limit=${fetchLimit}&sort=${fetchSort}`)
+    apiFetch(`/suggestions?limit=${FETCH_LIMIT}&sort=${fetchSort}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((d: Suggestions) => setData(d))
+      .then((d: Suggestions) => {
+        setData(d);
+        setTopicPage(0);
+        setFaqPage(0);
+        setUnusedPage(0);
+      })
       .catch((e: unknown) =>
         setError(e instanceof Error ? e.message : String(e))
       )
@@ -130,15 +168,9 @@ export function Opportunities() {
     fetchSuggestions();
   }, []);
 
-  function handleShowMore() {
-    const next = limit + 25;
-    setLimit(next);
-    fetchSuggestions(next);
-  }
-
   function handleSortChange(s: "length" | "videos") {
     setTopicSort(s);
-    fetchSuggestions(limit, s);
+    fetchSuggestions(s);
   }
 
   function generateArticle(topic: string) {
@@ -186,53 +218,27 @@ export function Opportunities() {
       .finally(() => setGenerating(null));
   }
 
-  function buildFaqAnswer(faq: FaqItem) {
-    const key = `${faq.video_id}-${faq.t}`;
-    setFaqAnswers((prev) => ({ ...prev, [key]: "loading" }));
-    apiFetch("/faq/build", {
-      method: "POST",
-      body: JSON.stringify({ questions: [faq.question] }),
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-        return r.json();
-      })
-      .then((d: { faq: { question: string; answer: string; citations: { url: string; title?: string }[] }[] }) => {
-        const item = d.faq[0];
-        setFaqAnswers((prev) => ({
-          ...prev,
-          [key]: { answer: item?.answer ?? "", citations: item?.citations ?? [] },
-        }));
-      })
-      .catch((e: unknown) => {
-        setFaqAnswers((prev) => ({
-          ...prev,
-          [key]: `Error: ${e instanceof Error ? e.message : String(e)}`,
-        }));
-      });
-  }
+  // Compute paged slices
+  const topics = data?.article_topics ?? [];
+  const topicsTotal = data?.article_topics_total ?? 0;
+  const topicTotalPages = Math.max(1, Math.ceil(topics.length / PAGE_SIZE));
+  const topicSlice = topics.slice(topicPage * PAGE_SIZE, (topicPage + 1) * PAGE_SIZE);
 
-  function toggleFaqAnswer(faq: FaqItem) {
-    const key = `${faq.video_id}-${faq.t}`;
-    const existing = faqAnswers[key];
-    if (existing === undefined) {
-      buildFaqAnswer(faq);
-    } else if (existing === "loading") {
-      // already in flight
-    } else {
-      setFaqAnswers((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
-  }
+  const faqs = data?.faqs ?? [];
+  const faqsTotal = data?.faqs_total ?? 0;
+  const faqTotalPages = Math.max(1, Math.ceil(faqs.length / PAGE_SIZE));
+  const faqSlice = faqs.slice(faqPage * PAGE_SIZE, (faqPage + 1) * PAGE_SIZE);
+
+  const unused = data?.unused_videos ?? [];
+  const unusedTotal = data?.unused_videos_total ?? 0;
+  const unusedTotalPages = Math.max(1, Math.ceil(unused.length / PAGE_SIZE));
+  const unusedSlice = unused.slice(unusedPage * PAGE_SIZE, (unusedPage + 1) * PAGE_SIZE);
 
   return (
     <main style={{ padding: "0 4px" }}>
       <PageTitle
         right={
-          <Button onClick={() => fetchSuggestions(limit, topicSort)} disabled={loading}>
+          <Button onClick={() => fetchSuggestions(topicSort)} disabled={loading}>
             Refresh
           </Button>
         }
@@ -248,10 +254,8 @@ export function Opportunities() {
           {/* Article Topics */}
           <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "28px 0 4px" }}>
             <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
-              Suggested article topics to cover ({data.article_topics.length}
-              {data.article_topics_total > data.article_topics.length
-                ? ` of ${data.article_topics_total}`
-                : ""})
+              Suggested article topics to cover ({topics.length}
+              {topicsTotal > topics.length ? ` of ${topicsTotal}` : ""})
             </h3>
             <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: "auto" }}>
               <span style={{ fontSize: 12, color: BRAND.sub }}>Sort:</span>
@@ -290,32 +294,20 @@ export function Opportunities() {
           <ActionNote>
             Generating an article creates a cluster draft — see the Articles tab to review and publish.
           </ActionNote>
-          {data.article_topics.length === 0 ? (
+          {topics.length === 0 ? (
             <EmptyState label="All topics covered" />
           ) : (
             <>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                {data.article_topics.map((t) => (
+                {topicSlice.map((t) => (
                   <Card
                     key={t.label}
                     style={{ flex: "1 1 220px", minWidth: 220 }}
                   >
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        color: BRAND.navyText,
-                        marginBottom: 4,
-                      }}
-                    >
+                    <div style={{ fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
                       {t.label}
                     </div>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: BRAND.sub,
-                        marginBottom: 10,
-                      }}
-                    >
+                    <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 10 }}>
                       {t.num_videos} video{t.num_videos !== 1 ? "s" : ""}
                       {" · "}
                       {formatContentLength(t.total_content_length)}
@@ -330,13 +322,7 @@ export function Opportunities() {
                       </a>
                     </div>
                     {genMsg[t.label] ? (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: BRAND.sub,
-                          fontStyle: "italic",
-                        }}
-                      >
+                      <div style={{ fontSize: 12, color: BRAND.sub, fontStyle: "italic" }}>
                         {genMsg[t.label]}
                       </div>
                     ) : (
@@ -346,18 +332,17 @@ export function Opportunities() {
                         disabled={generating === t.label}
                         onClick={() => generateArticle(t.label)}
                       >
-                        {generating === t.label
-                          ? "Generating…"
-                          : "Generate cluster article"}
+                        {generating === t.label ? "Generating…" : "Generate cluster article"}
                       </Button>
                     )}
                   </Card>
                 ))}
               </div>
-              <TotalNote
-                shown={data.article_topics.length}
-                total={data.article_topics_total}
-                onShowMore={handleShowMore}
+              <Paginator
+                page={topicPage}
+                totalPages={topicTotalPages}
+                onPrev={() => setTopicPage((p) => Math.max(0, p - 1))}
+                onNext={() => setTopicPage((p) => Math.min(topicTotalPages - 1, p + 1))}
               />
             </>
           )}
@@ -379,22 +364,10 @@ export function Opportunities() {
                   key={r.series_id}
                   style={{ flex: "1 1 220px", minWidth: 220 }}
                 >
-                  <div
-                    style={{
-                      fontWeight: 600,
-                      color: BRAND.navyText,
-                      marginBottom: 4,
-                    }}
-                  >
+                  <div style={{ fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
                     {r.title}
                   </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: BRAND.sub,
-                      marginBottom: 10,
-                    }}
-                  >
+                  <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 10 }}>
                     {r.parts_count} part{r.parts_count !== 1 ? "s" : ""}
                     {" · "}
                     <a
@@ -423,13 +396,15 @@ export function Opportunities() {
 
           {/* FAQs */}
           <SectionHeader>
-            FAQs to build ({data.faqs.length}
-            {data.faqs_total > data.faqs.length ? ` of ${data.faqs_total}` : ""})
+            FAQ candidates ({faqs.length}
+            {faqsTotal > faqs.length ? ` of ${faqsTotal}` : ""})
           </SectionHeader>
           <ActionNote>
-            Build an answer here, then find it in the <strong>FAQ</strong> tab to review and publish.
+            These are candidate questions from your video content. Use the{" "}
+            <strong>FAQ tab</strong> to mine and generate answers — the full FAQ builder
+            (mine + batch answer) lives there.
           </ActionNote>
-          {data.faqs.length === 0 ? (
+          {faqs.length === 0 ? (
             <EmptyState label="No FAQ gaps found" />
           ) : (
             <>
@@ -448,13 +423,7 @@ export function Opportunities() {
                         textAlign: "left",
                       }}
                     >
-                      <th
-                        style={{
-                          padding: "10px 16px",
-                          color: BRAND.sub,
-                          fontWeight: 600,
-                        }}
-                      >
+                      <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>
                         Question
                       </th>
                       <th
@@ -465,132 +434,59 @@ export function Opportunities() {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        Source
-                      </th>
-                      <th
-                        style={{
-                          padding: "10px 16px",
-                          color: BRAND.sub,
-                          fontWeight: 600,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Answer
+                        Source clip
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.faqs.map((f, i) => {
-                      const key = `${f.video_id}-${f.t}`;
-                      const answerState = faqAnswers[key];
-                      const isLoading = answerState === "loading";
-                      const isOpen = answerState !== undefined;
-                      const isError = typeof answerState === "string" && answerState !== "loading";
-                      const answerData = typeof answerState === "object" ? answerState : null;
-                      return (
-                        <>
-                          <tr
-                            key={`${key}-${i}-row`}
-                            style={{ borderBottom: isOpen ? "none" : `1px solid ${BRAND.border}` }}
+                    {faqSlice.map((f, i) => (
+                      <tr
+                        key={`${f.video_id}-${f.t}-${i}`}
+                        style={{ borderBottom: `1px solid ${BRAND.border}` }}
+                      >
+                        <td style={{ padding: "10px 16px" }}>{f.question}</td>
+                        <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
+                          <a
+                            href={`https://youtu.be/${f.video_id}?t=${f.t}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
                           >
-                            <td style={{ padding: "10px 16px" }}>{f.question}</td>
-                            <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
-                              <a
-                                href={`https://youtu.be/${f.video_id}?t=${f.t}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                  color: BRAND.navyText,
-                                  fontWeight: 500,
-                                  textDecoration: "none",
-                                }}
-                              >
-                                {f.title} @{f.t}s
-                              </a>
-                            </td>
-                            <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
-                              <Button
-                                variant="ghost"
-                                style={{ fontSize: 12, padding: "4px 10px" }}
-                                disabled={isLoading}
-                                onClick={() => toggleFaqAnswer(f)}
-                              >
-                                {isLoading
-                                  ? "Building…"
-                                  : isOpen
-                                  ? "Hide answer"
-                                  : "Show answer / Build"}
-                              </Button>
-                            </td>
-                          </tr>
-                          {isOpen && (
-                            <tr
-                              key={`${key}-${i}-answer`}
-                              style={{ borderBottom: `1px solid ${BRAND.border}`, background: BRAND.bg }}
-                            >
-                              <td colSpan={3} style={{ padding: "12px 16px" }}>
-                                {isError && (
-                                  <p style={{ color: BRAND.red, fontSize: 13, margin: 0 }}>{answerState}</p>
-                                )}
-                                {answerData && (
-                                  <>
-                                    <p style={{ margin: "0 0 8px", fontSize: 14, color: BRAND.ink, lineHeight: 1.55 }}>
-                                      {answerData.answer}
-                                    </p>
-                                    {answerData.citations.length > 0 && (
-                                      <div style={{ fontSize: 12, color: BRAND.sub }}>
-                                        <strong>Sources:</strong>{" "}
-                                        {answerData.citations.map((c, ci) => (
-                                          <span key={ci}>
-                                            {ci > 0 && " · "}
-                                            <a
-                                              href={c.url}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              style={{ color: BRAND.navyText }}
-                                            >
-                                              {c.title || c.url}
-                                            </a>
-                                          </span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </>
-                      );
-                    })}
+                            {f.title} @{hms(f.t)}
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </Card>
-              <TotalNote
-                shown={data.faqs.length}
-                total={data.faqs_total}
-                onShowMore={handleShowMore}
+              <Paginator
+                page={faqPage}
+                totalPages={faqTotalPages}
+                onPrev={() => setFaqPage((p) => Math.max(0, p - 1))}
+                onNext={() => setFaqPage((p) => Math.min(faqTotalPages - 1, p + 1))}
               />
+              <p style={{ fontSize: 12, color: BRAND.sub, margin: "8px 0 0", fontStyle: "italic" }}>
+                Open the <strong>FAQ tab</strong> to mine questions and generate answers in bulk.
+              </p>
             </>
           )}
 
           {/* Unused Videos */}
           <SectionHeader>
-            Unused videos ({data.unused_videos.length}
-            {data.unused_videos_total > data.unused_videos.length
-              ? ` of ${data.unused_videos_total}`
-              : ""})
+            Unused videos ({unused.length}
+            {unusedTotal > unused.length ? ` of ${unusedTotal}` : ""})
           </SectionHeader>
           <p style={{ fontSize: 13, color: BRAND.sub, margin: "-6px 0 14px" }}>
             A video is "used" when it is referenced in a published or draft article, or included in a
             video mini-series. These videos have transcript or topic data but are not yet used anywhere.
           </p>
-          {data.unused_videos.length === 0 ? (
+          {unused.length === 0 ? (
             <EmptyState label="All videos used" />
           ) : (
             <>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                {data.unused_videos.map((v) => (
+                {unusedSlice.map((v) => (
                   <Card
                     key={v.video_id}
                     style={{ flex: "1 1 260px", minWidth: 260 }}
@@ -646,10 +542,11 @@ export function Opportunities() {
                   </Card>
                 ))}
               </div>
-              <TotalNote
-                shown={data.unused_videos.length}
-                total={data.unused_videos_total}
-                onShowMore={handleShowMore}
+              <Paginator
+                page={unusedPage}
+                totalPages={unusedTotalPages}
+                onPrev={() => setUnusedPage((p) => Math.max(0, p - 1))}
+                onNext={() => setUnusedPage((p) => Math.min(unusedTotalPages - 1, p + 1))}
               />
             </>
           )}

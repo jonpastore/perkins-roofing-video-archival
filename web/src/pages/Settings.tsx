@@ -396,9 +396,9 @@ export function Settings() {
     return r.json() as Promise<{ last_set: string | null; last_set_by: string | null }>;
   }
 
-  // Split settings into model vs regular
-  const modelEntries = config?.settings.filter((s) => MODEL_KEYS.has(s.key)) ?? [];
-  const regularEntries = config?.settings.filter((s) => !MODEL_KEYS.has(s.key)) ?? [];
+  // Split settings into model vs regular — defensive: treat missing arrays as empty
+  const modelEntries = (config?.settings ?? []).filter((s) => MODEL_KEYS.has(s.key));
+  const regularEntries = (config?.settings ?? []).filter((s) => !MODEL_KEYS.has(s.key));
 
   return (
     <main style={{ maxWidth: 960 }}>
@@ -521,17 +521,21 @@ export function Settings() {
       {/* ------------------------------------------------------------------ */}
       <Card style={{ borderTop: `4px solid ${BRAND.red}` }}>
         <SectionTitle>Admin Access</SectionTitle>
-        {loadingConfig ? <Loading /> : config && (
+        {loadingConfig && <Loading />}
+        {!loadingConfig && configErr && (
+          <ErrorMsg>Could not load admin config: {configErr}</ErrorMsg>
+        )}
+        {!loadingConfig && !configErr && config && (
           <>
             <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.sub }}>
-              {config.default_admins_note}
+              {config.default_admins_note ?? ""}
             </p>
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: BRAND.navyText, marginBottom: 6 }}>
                 Default admins (env config allowlist)
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {config.default_admins.map((email) => (
+                {(config.default_admins ?? []).map((email) => (
                   <span
                     key={email}
                     style={{

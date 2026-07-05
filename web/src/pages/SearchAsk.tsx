@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { apiFetch } from "../api";
-import { BRAND, Card, Button, inputStyle, Loading, ErrorMsg } from "../ui";
+import { BRAND, Card, Button, inputStyle, Loading, ErrorMsg, hms } from "../ui";
 import { ComposeEmailModal } from "../components/ComposeEmailModal";
 
 // ---- types matching the live API ----
@@ -27,7 +27,15 @@ interface SearchRow {
 interface TopicItem {
   label: string;
   count: number;
+  num_videos: number;
+  total_content_length: number;
   sample: { video_id: string; t: number };
+}
+interface TopicVideo {
+  video_id: string;
+  title: string;
+  duration: number;
+  start: number;
 }
 
 const SUGGESTIONS = [
@@ -36,13 +44,6 @@ const SUGGESTIONS = [
   "Do I need a permit to replace my roof?",
   "How long does a roof replacement take?",
 ];
-
-// seconds -> M:SS
-function mmss(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 // Pull {videoId, t} out of a youtu.be/watch deep link.
 function parseLink(url: string): { videoId: string; t: number } | null {
@@ -57,7 +58,7 @@ function parseLink(url: string): { videoId: string; t: number } | null {
 
 function TimestampLink({ url, label }: { url: string; label?: string }) {
   const p = parseLink(url);
-  const text = label ?? (p ? `▶ ${mmss(p.t)}` : "▶ watch");
+  const text = label ?? (p ? `▶ ${hms(p.t)}` : "▶ watch");
   return (
     <a href={url} target="_blank" rel="noopener noreferrer"
       style={{ color: BRAND.red, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -90,15 +91,112 @@ function renderRich(text: string): ReactNode[] {
   return out;
 }
 
+// ---- Topic videos modal ----
+function TopicVideosModal({
+  label,
+  onClose,
+}: {
+  label: string;
+  onClose: () => void;
+}) {
+  const [videos, setVideos] = useState<TopicVideo[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch(`/topics/videos?label=${encodeURIComponent(label)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((data: TopicVideo[]) => setVideos(data))
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+  }, [label]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 14, padding: 24, width: "min(640px, 94vw)",
+          maxHeight: "80vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 8px 32px rgba(16,24,40,0.18)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: 16, color: BRAND.navyText, fontWeight: 700 }}>
+            Videos: {label}
+          </h3>
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: BRAND.sub, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {!videos && !err && <Loading label="Loading videos…" />}
+          {err && <ErrorMsg>Could not load videos: {err}</ErrorMsg>}
+          {videos && videos.length === 0 && (
+            <p style={{ color: BRAND.sub, fontSize: 14 }}>No videos found for this topic.</p>
+          )}
+          {videos && videos.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {videos.map((v) => (
+                <div
+                  key={v.video_id}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 12px", border: `1px solid ${BRAND.border}`,
+                    borderRadius: 8, background: BRAND.bg,
+                  }}
+                >
+                  <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>
+                    {v.title}
+                  </span>
+                  <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
+                    {hms(v.duration)}
+                  </span>
+                  <a
+                    href={`https://youtu.be/${v.video_id}?t=${Math.floor(v.start)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: BRAND.red, fontWeight: 700, fontSize: 13,
+                      textDecoration: "none", whiteSpace: "nowrap",
+                    }}
+                  >
+                    ▶ play
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- Topic chip / row component ----
 function TopicRow({
   topic,
   onGenerate,
+  onDrillIn,
 }: {
   topic: TopicItem;
   onGenerate: (label: string) => void;
+  onDrillIn: (label: string) => void;
 }) {
   const sampleUrl = `https://youtu.be/${topic.sample.video_id}?t=${topic.sample.t}`;
+  const numVids = topic.num_videos ?? topic.count;
+  const totalSecs = topic.total_content_length ?? 0;
   return (
     <div
       style={{
@@ -115,22 +213,21 @@ function TopicRow({
       <span style={{ flex: 1, fontSize: 14, color: BRAND.ink, fontWeight: 500 }}>
         {topic.label}
       </span>
-      <span
+      <button
+        onClick={() => onDrillIn(topic.label)}
         style={{
-          fontSize: 12,
-          color: BRAND.sub,
-          whiteSpace: "nowrap",
-          minWidth: 64,
-          textAlign: "right",
+          background: "none", border: "none", cursor: "pointer", padding: 0,
+          fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap", textDecoration: "underline dotted",
         }}
+        title="Click to see all videos for this topic"
       >
-        {topic.count} video{topic.count !== 1 ? "s" : ""}
-      </span>
+        {numVids} video{numVids !== 1 ? "s" : ""} · {hms(totalSecs)}
+      </button>
       <a
         href={sampleUrl}
         target="_blank"
         rel="noopener noreferrer"
-        title={`Jump to sample timecode (${mmss(topic.sample.t)})`}
+        title={`Jump to sample timecode (${hms(topic.sample.t)})`}
         style={{
           color: BRAND.red,
           fontWeight: 600,
@@ -139,7 +236,7 @@ function TopicRow({
           whiteSpace: "nowrap",
         }}
       >
-        ▶ {mmss(topic.sample.t)}
+        ▶ {hms(topic.sample.t)}
       </a>
       <Button
         variant="ghost"
@@ -170,6 +267,8 @@ export function SearchAsk() {
   const [topicsError, setTopicsError] = useState<string | null>(null);
   const [generateMsg, setGenerateMsg] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null); // label being generated
+  const [topicSort, setTopicSort] = useState<"alpha" | "videos" | "length">("videos");
+  const [drillLabel, setDrillLabel] = useState<string | null>(null);
 
   // Fetch mined topics when entering "search" mode
   useEffect(() => {
@@ -283,10 +382,20 @@ export function SearchAsk() {
     setEmailModalBody(buildEmailBody());
   }
 
-  // Filtered topic list: if user typed a query, filter by it; otherwise show all
-  const filteredTopics = query.trim()
-    ? topics.filter((t) => t.label.toLowerCase().includes(query.toLowerCase()))
-    : topics;
+  // Filtered + sorted topic list
+  const filteredTopics = (() => {
+    let list = query.trim()
+      ? topics.filter((t) => t.label.toLowerCase().includes(query.toLowerCase()))
+      : [...topics];
+    if (topicSort === "alpha") {
+      list = [...list].sort((a, b) => a.label.localeCompare(b.label));
+    } else if (topicSort === "videos") {
+      list = [...list].sort((a, b) => (b.num_videos ?? b.count) - (a.num_videos ?? a.count));
+    } else {
+      list = [...list].sort((a, b) => (b.total_content_length ?? 0) - (a.total_content_length ?? 0));
+    }
+    return list;
+  })();
 
   return (
     <main style={{ maxWidth: 860 }}>
@@ -452,10 +561,31 @@ export function SearchAsk() {
 
           {!topicsLoading && !topicsError && topics.length > 0 && (
             <>
-              <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 10 }}>
-                {filteredTopics.length} topic{filteredTopics.length !== 1 ? "s" : ""}
-                {query.trim() ? ` matching "${query}"` : " extracted from Tim's videos"}
-                {" — click ▶ to jump to the timecode, or generate a cluster article draft"}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: BRAND.sub, flex: 1 }}>
+                  {filteredTopics.length} topic{filteredTopics.length !== 1 ? "s" : ""}
+                  {query.trim() ? ` matching "${query}"` : " extracted from Tim's videos"}
+                  {" — click the count to see all videos, ▶ to jump to a timecode"}
+                </span>
+                <div style={{ display: "inline-flex", border: `1px solid ${BRAND.border}`, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
+                  {(["alpha", "videos", "length"] as const).map((s) => {
+                    const labels = { alpha: "A–Z", videos: "# Videos", length: "Total time" };
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => setTopicSort(s)}
+                        style={{
+                          padding: "4px 10px", border: "none", cursor: "pointer",
+                          fontSize: 11, fontWeight: 600,
+                          background: topicSort === s ? BRAND.navy : "#fff",
+                          color: topicSort === s ? "#fff" : BRAND.navyText,
+                        }}
+                      >
+                        {labels[s]}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {filteredTopics.map((t) => (
@@ -463,6 +593,7 @@ export function SearchAsk() {
                     key={t.label}
                     topic={t}
                     onGenerate={generating ? () => {} : handleGenerateArticle}
+                    onDrillIn={setDrillLabel}
                   />
                 ))}
                 {filteredTopics.length === 0 && query.trim() && (
@@ -472,6 +603,9 @@ export function SearchAsk() {
                 )}
               </div>
             </>
+          )}
+          {drillLabel && (
+            <TopicVideosModal label={drillLabel} onClose={() => setDrillLabel(null)} />
           )}
         </div>
       )}

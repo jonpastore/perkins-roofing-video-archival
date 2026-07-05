@@ -15,7 +15,7 @@ _tmp.close()
 os.environ["DB_URL"] = f"sqlite:///{_tmp.name}"
 
 from api.auth import set_verifier  # noqa: E402
-from api.routes.video import router  # noqa: E402
+from api.routes.video import clean_label, router  # noqa: E402
 from app.models import Base, MiniSeries, SessionLocal, engine  # noqa: E402
 
 Base.metadata.create_all(engine)
@@ -123,4 +123,126 @@ def test_series_response_shape(two_series):
     client = _make_client("admin")
     resp = client.get("/video/series", headers=AUTH)
     item = resp.json()[0]
-    assert set(item.keys()) == {"id", "video_id", "title", "approved"}
+    assert set(item.keys()) == {"id", "video_id", "title", "approved", "label"}
+
+
+# ---------------------------------------------------------------------------
+# label field — cleaning rules
+# ---------------------------------------------------------------------------
+
+def test_series_label_strips_emoji():
+    """A title that is only emojis yields a disambiguated label (not blank or emoji)."""
+    with SessionLocal() as db:
+        row = MiniSeries(video_id="vid_emoji", title="\U0001F525\U0001F525", parts_json=[], approved=0)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        s_id = row.id
+
+    client = _make_client("admin")
+    resp = client.get("/video/series", headers=AUTH)
+    data = resp.json()
+    by_id = {item["id"]: item for item in data}
+    label = by_id[s_id]["label"]
+    # Must not contain raw emoji and must not be empty
+    assert "\U0001F525" not in label
+    assert label.strip() != ""
+
+
+def test_series_label_strips_leading_hashtags():
+    """A title starting with hashtags has them stripped in the label."""
+    with SessionLocal() as db:
+        row = MiniSeries(video_id="vid_hash", title="##RoofingTips", parts_json=[], approved=0)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        s_id = row.id
+
+    client = _make_client("admin")
+    resp = client.get("/video/series", headers=AUTH)
+    data = resp.json()
+    by_id = {item["id"]: item for item in data}
+    label = by_id[s_id]["label"]
+    assert not label.startswith("#")
+    assert "RoofingTips" in label
+
+
+def test_series_label_deduplicates_identical_cleaned_titles():
+    """Two series with identical cleaned titles get disambiguated labels."""
+    with SessionLocal() as db:
+        a = MiniSeries(video_id="vid_a1", title="Roof Repairs", parts_json=[], approved=0)
+        b = MiniSeries(video_id="vid_b1", title="Roof Repairs", parts_json=[], approved=0)
+        db.add(a)
+        db.add(b)
+        db.commit()
+        db.refresh(a)
+        db.refresh(b)
+        a_id, b_id = a.id, b.id
+
+    client = _make_client("admin")
+    resp = client.get("/video/series", headers=AUTH)
+    data = resp.json()
+    by_id = {item["id"]: item for item in data}
+    label_a = by_id[a_id]["label"]
+    label_b = by_id[b_id]["label"]
+    # Labels must differ
+    assert label_a != label_b
+    # Both must still reference the base title or an ID
+    assert "Roof Repairs" in label_a or str(a_id) in label_a
+    assert "Roof Repairs" in label_b or str(b_id) in label_b
+
+
+def test_series_label_emoji_plus_hashtag_title():
+    """A title with emoji AND leading hashtag is fully cleaned."""
+    with SessionLocal() as db:
+        row = MiniSeries(
+            video_id="vid_mixed",
+            title="\U0001F3E0 #BestRoofer",
+            parts_json=[],
+            approved=0,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        s_id = row.id
+
+    client = _make_client("admin")
+    resp = client.get("/video/series", headers=AUTH)
+    data = resp.json()
+    by_id = {item["id"]: item for item in data}
+    label = by_id[s_id]["label"]
+    assert "\U0001F3E0" not in label
+    assert not label.startswith("#")
+    assert label.strip() != ""
+
+
+# ---------------------------------------------------------------------------
+# clean_label unit tests (helper function directly)
+# ---------------------------------------------------------------------------
+
+def test_clean_label_strips_emoji():
+    assert clean_label("\U0001F525 Fire sale") == "Fire sale"
+
+
+def test_clean_label_strips_leading_hash():
+    assert clean_label("#RoofingTips") == "RoofingTips"
+
+
+def test_clean_label_strips_multiple_leading_hashes():
+    assert clean_label("##BestRoofer") == "BestRoofer"
+
+
+def test_clean_label_collapses_whitespace():
+    assert clean_label("  Roof   Repair  ") == "Roof Repair"
+
+
+def test_clean_label_empty_after_strip_returns_empty():
+    assert clean_label("\U0001F525\U0001F525") == ""
+
+
+def test_clean_label_leading_dash_stripped():
+    assert clean_label("— Gutters") == "Gutters"
+
+
+def test_clean_label_plain_title_unchanged():
+    assert clean_label("Metal Roofing") == "Metal Roofing"

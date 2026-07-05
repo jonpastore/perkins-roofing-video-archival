@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
 from api.routes.topics import router
-from app.models import GraphNode, Article, ScheduledContent, SessionLocal, init_db
+from app.models import GraphNode, Article, ScheduledContent, SessionLocal, Video, init_db
 
 
 def _make_app():
@@ -80,6 +80,10 @@ def setup_module(module):
     init_db()
     # Seed a couple of content_graph topic rows so GET /topics returns data
     with SessionLocal() as db:
+        # Seed Video rows so /topics/videos can join to them
+        db.add(Video(id="vid1", title="Flat Roof Basics", duration=620.0))
+        db.add(Video(id="vid2", title="Advanced Flat Roofing Techniques", duration=940.0))
+
         # 3 rows for "flat roofing" across 2 distinct videos
         db.add(GraphNode(video_id="vid1", kind="topics", label="flat roofing",
                          detail="", start=30.0, version="1"))
@@ -371,3 +375,87 @@ def test_generate_cluster_base_date_after_existing_scheduled():
         assert pillar_date == expected_base, (
             f"Expected pillar on {expected_base}, got {pillar_date}"
         )
+
+
+# ---------------------------------------------------------------------------
+# GET /topics/videos
+# ---------------------------------------------------------------------------
+
+def test_topics_videos_returns_shape():
+    """GET /topics/videos?label=flat+roofing returns [{video_id, title, duration, start}]."""
+    c = _admin_client()
+    r = c.get("/topics/videos", params={"label": "flat roofing"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert isinstance(items, list)
+    for item in items:
+        assert "video_id" in item
+        assert "title" in item
+        assert "duration" in item
+        assert "start" in item
+
+
+def test_topics_videos_returns_titles_not_ids():
+    """Titles come from the Video table — no raw IDs in the title field."""
+    c = _admin_client()
+    r = c.get("/topics/videos", params={"label": "flat roofing"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert len(items) == 2, f"Expected 2 distinct videos for 'flat roofing', got {len(items)}"
+    titles = {i["title"] for i in items}
+    assert "Flat Roof Basics" in titles
+    assert "Advanced Flat Roofing Techniques" in titles
+    # video_id values must not appear as title values
+    video_ids = {i["video_id"] for i in items}
+    assert not titles.intersection(video_ids), "title field must not expose raw video IDs"
+
+
+def test_topics_videos_returns_duration():
+    """Duration matches the seeded Video rows."""
+    c = _admin_client()
+    r = c.get("/topics/videos", params={"label": "flat roofing"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()
+    by_id = {i["video_id"]: i for i in items}
+    assert abs(by_id["vid1"]["duration"] - 620.0) < 0.01
+    assert abs(by_id["vid2"]["duration"] - 940.0) < 0.01
+
+
+def test_topics_videos_earliest_start_per_video():
+    """start is the earliest timecode for that video (vid2 has t=120 and t=200 → returns 120)."""
+    c = _admin_client()
+    r = c.get("/topics/videos", params={"label": "flat roofing"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()
+    by_id = {i["video_id"]: i for i in items}
+    assert by_id["vid2"]["start"] == 120.0
+
+
+def test_topics_videos_case_insensitive_label():
+    """Label matching is case-insensitive: 'Flat Roofing' resolves same as 'flat roofing'."""
+    c = _admin_client()
+    r = c.get("/topics/videos", params={"label": "Flat Roofing"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert len(r.json()) == 2
+
+
+def test_topics_videos_unknown_label_returns_empty():
+    """Unknown topic label returns an empty list, not a 404."""
+    c = _admin_client()
+    r = c.get("/topics/videos", params={"label": "nonexistent topic xyz"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json() == []
+
+
+def test_topics_videos_sales_allowed():
+    """sales role has article_read → GET /topics/videos returns 200."""
+    c = _sales_client()
+    r = c.get("/topics/videos", params={"label": "flat roofing"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+
+
+def test_topics_videos_unauthenticated():
+    """Missing bearer token → 401."""
+    c = _admin_client()
+    r = c.get("/topics/videos", params={"label": "flat roofing"})
+    assert r.status_code == 401

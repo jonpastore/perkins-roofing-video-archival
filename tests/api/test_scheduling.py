@@ -151,3 +151,30 @@ def test_sales_delete_403():
     client = _make_client("sales")
     r = client.delete("/scheduling/1", headers=SALES_HDR)
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST always forces status='scheduled' regardless of client input
+# ---------------------------------------------------------------------------
+
+def test_create_always_returns_scheduled_status():
+    """Server must ignore any client-supplied status; new items are always 'scheduled'."""
+    client = _make_client("admin")
+    # The model no longer accepts a 'status' field; extra keys are ignored by Pydantic v2
+    # by default (extra='ignore'). The returned status must always be 'scheduled'.
+    r = client.post(
+        "/scheduling",
+        json={**ITEM_BODY, "status": "published"},
+        headers=ADMIN_HDR,
+    )
+    assert r.status_code == 201
+    assert r.json()["status"] == "scheduled"
+
+
+def test_create_without_status_field_returns_scheduled():
+    """Baseline: omitting status entirely still yields status='scheduled'."""
+    client = _make_client("admin")
+    body = {k: v for k, v in ITEM_BODY.items() if k != "status"}
+    r = client.post("/scheduling", json=body, headers=ADMIN_HDR)
+    assert r.status_code == 201
+    assert r.json()["status"] == "scheduled"

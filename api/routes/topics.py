@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.auth import require_role
-from app.models import Article, GraphNode, ScheduledContent, SessionLocal
+from app.models import Article, GraphNode, ScheduledContent, SessionLocal, Video
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +83,23 @@ def list_topics(claims=Depends(require_role("article_read"))):
                 }
             groups[key]["video_ids"].add(row.video_id)
 
+        # Collect per-video durations for total_content_length
+        all_video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
+        duration_map: dict[str, float] = {}
+        if all_video_ids:
+            vids = db.query(Video).filter(Video.id.in_(list(all_video_ids))).all()
+            duration_map = {v.id: (v.duration or 0.0) for v in vids}
+
         # Sort by distinct-video count desc, cap at 150
         result = sorted(
             [
                 {
                     "label": g["label"],
                     "count": len(g["video_ids"]),
+                    "num_videos": len(g["video_ids"]),
+                    "total_content_length": sum(
+                        duration_map.get(vid, 0.0) for vid in g["video_ids"]
+                    ),
                     "sample": g["sample"],
                 }
                 for g in groups.values()
@@ -97,6 +108,55 @@ def list_topics(claims=Depends(require_role("article_read"))):
             reverse=True,
         )[:150]
 
+        return result
+
+
+@router.get("/videos")
+def list_topic_videos(label: str, claims=Depends(require_role("article_read"))):
+    """Return all source videos for a given topic label.
+
+    Joins content_graph topic nodes (matching the label, case-insensitive) to the
+    videos table so the caller gets title + duration for each distinct video, plus
+    the earliest start time for a play-from-timecode link.
+
+    Returns [{video_id, title, duration, start}] sorted by video title.
+    """
+    norm = _normalize_label(label)
+    with SessionLocal() as db:
+        rows = (
+            db.query(GraphNode)
+            .filter(GraphNode.kind == "topics")
+            .all()
+        )
+        # Collect distinct video_ids for this label, tracking earliest start
+        video_starts: dict[str, float] = {}
+        for row in rows:
+            if not row.label:
+                continue
+            if _normalize_label(row.label) != norm:
+                continue
+            vid = row.video_id
+            t = float(row.start or 0)
+            if vid not in video_starts or t < video_starts[vid]:
+                video_starts[vid] = t
+
+        if not video_starts:
+            return []
+
+        vids = db.query(Video).filter(Video.id.in_(list(video_starts.keys()))).all()
+        vid_map = {v.id: v for v in vids}
+
+        result = []
+        for vid_id, start in video_starts.items():
+            v = vid_map.get(vid_id)
+            result.append({
+                "video_id": vid_id,
+                "title": v.title if v and v.title else vid_id,
+                "duration": v.duration if v and v.duration is not None else 0.0,
+                "start": start,
+            })
+
+        result.sort(key=lambda x: x["title"].lower())
         return result
 
 

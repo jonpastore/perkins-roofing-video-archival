@@ -1,6 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Editor } from "@tinymce/tinymce-react";
+import type { Editor as TinyMCEEditor } from "tinymce";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
+
+// Detect user's local timezone once at module load
+const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** Convert a datetime-local string (YYYY-MM-DDTHH:MM) to a full ISO-8601 string
+ *  with the browser's UTC offset, so the API knows the user's intended wall-clock time. */
+function localInputToIso(localStr: string): string {
+  if (!localStr) return "";
+  // datetime-local gives "YYYY-MM-DDTHH:MM"; Date constructor treats it as local time
+  return new Date(localStr).toISOString();
+}
+
+/** Format a UTC/ISO timestamp using the browser's locale, showing both date and time. */
+function fmtLocale(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
 
 interface ArticleSummary {
   slug: string;
@@ -310,6 +328,46 @@ function computeSeoScore(article: ArticleFull): SeoResult {
 }
 
 // ---------------------------------------------------------------------------
+// WYSIWYG HTML editor (TinyMCE, self-hosted via npm tinymce package)
+// ---------------------------------------------------------------------------
+
+interface HtmlEditorProps {
+  value: string;
+  onChange: (html: string) => void;
+}
+
+function HtmlEditor({ value, onChange }: HtmlEditorProps) {
+  const editorRef = useRef<TinyMCEEditor | null>(null);
+
+  return (
+    <Editor
+      tinymceScriptSrc="/tinymce/tinymce.min.js"
+      onInit={(_evt, editor) => { editorRef.current = editor; }}
+      value={value}
+      onEditorChange={(content) => onChange(content)}
+      init={{
+        height: 400,
+        menubar: false,
+        plugins: [
+          "advlist", "autolink", "lists", "link", "image", "charmap", "preview",
+          "anchor", "searchreplace", "visualblocks", "code", "fullscreen",
+          "insertdatetime", "media", "table", "help", "wordcount",
+        ],
+        toolbar:
+          "undo redo | blocks | bold italic underline strikethrough | " +
+          "alignleft aligncenter alignright alignjustify | " +
+          "bullist numlist outdent indent | link image media table | " +
+          "removeformat code fullscreen | help",
+        content_style:
+          "body { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #1a202c; line-height: 1.7; }",
+        skin: "oxide",
+        branding: false,
+      }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Article view modal
 // ---------------------------------------------------------------------------
 
@@ -374,7 +432,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     setScheduleError(null);
     setScheduleSuccess(false);
     try {
-      const isoAt = new Date(scheduleAt).toISOString();
+      const isoAt = localInputToIso(scheduleAt);
 
       const sr = await apiFetch("/scheduling", {
         method: "POST",
@@ -514,13 +572,16 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
             <div style={{ width: 1, background: BRAND.border, alignSelf: "stretch" }} />
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <input
                   type="datetime-local"
                   value={scheduleAt}
                   onChange={(e) => { setScheduleAt(e.target.value); setScheduleSuccess(false); }}
                   style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
                 />
+                <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
+                  {USER_TZ}
+                </span>
                 <Button
                   variant="ghost"
                   onClick={handleSchedule}
@@ -878,15 +939,15 @@ function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, o
       </td>
       <td style={{ padding: "10px 12px", width: 120, color: BRAND.sub, fontSize: 13, overflow: "hidden" }}>
         {a.status === "published" && a.publish_at
-          ? new Date(a.publish_at).toLocaleDateString()
+          ? <span style={{ whiteSpace: "nowrap" }}>{fmtLocale(a.publish_at)}</span>
           : a.status === "scheduled" && a.publish_at
           ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "nowrap" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
               <Badge tone="amber">Sched</Badge>
-              <span style={{ fontSize: 12, whiteSpace: "nowrap" }}>{new Date(a.publish_at).toLocaleDateString()}</span>
+              <span style={{ fontSize: 12, whiteSpace: "nowrap" }}>{fmtLocale(a.publish_at)}</span>
             </span>
           )
-          : <span style={{ color: BRAND.border }}>—</span>}
+          : <span style={{ color: BRAND.border }}>Draft</span>}
       </td>
       <td style={{ padding: "10px 12px", width: 80 }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -1096,7 +1157,7 @@ export function Articles() {
         status: form.status,
         meta: form.meta || null,
         content_md: form.content_md || null,
-        publish_at: form.publish_at ? new Date(form.publish_at).toISOString() : null,
+        publish_at: form.publish_at ? localInputToIso(form.publish_at) : null,
       };
       const r = await apiFetch(
         editingSlug == null ? "/articles" : `/articles/${editingSlug}`,
@@ -1264,13 +1325,10 @@ export function Articles() {
               />
             </div>
             <div>
-              <label style={labelStyle}>Content (Markdown)</label>
-              <textarea
+              <label style={labelStyle}>Content (HTML)</label>
+              <HtmlEditor
                 value={form.content_md}
-                onChange={(e) => setForm((f) => ({ ...f, content_md: e.target.value }))}
-                placeholder="Article body in Markdown…"
-                rows={10}
-                style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "monospace" }}
+                onChange={(html) => setForm((f) => ({ ...f, content_md: html }))}
               />
             </div>
             {saveError && <ErrorMsg>{saveError}</ErrorMsg>}

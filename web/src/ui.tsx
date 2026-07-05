@@ -15,6 +15,17 @@ export const BRAND = {
 };
 export const FONT = "system-ui, 'Segoe UI', Roboto, sans-serif";
 
+// seconds -> H:MM:SS (or M:SS when under an hour). Use everywhere durations/timestamps show.
+export function hms(totalSeconds: number | null | undefined): string {
+  if (totalSeconds == null || !isFinite(totalSeconds)) return "—";
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
 export function PageTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>

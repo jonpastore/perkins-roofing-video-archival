@@ -4,7 +4,7 @@ Export ``router`` only; do NOT create a FastAPI app here. Mount this router onto
 main app in api/app.py with ``app.include_router(router)``.
 
 Role requirements (from core.authz):
-  - article_read    → sales or admin  (GET /faq, GET /faq/coverage)
+  - article_read    → sales or admin  (GET /faq, GET /faq/coverage, GET /faq/estimate)
   - manage_articles → admin only      (POST /faq/mine, POST /faq/{id}/answer,
                                        POST /faq/answer-batch)
 """
@@ -21,6 +21,58 @@ from app.models import FaqEntry, GraphNode, SessionLocal, Video
 
 router = APIRouter(prefix="/faq", tags=["faq"])
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Batch caps — server-side guardrails against runaway LLM spend
+# ---------------------------------------------------------------------------
+
+MINE_DEFAULT = 200
+MINE_MAX = 500          # hard cap per /faq/mine call
+
+ANSWER_BATCH_DEFAULT = 25
+ANSWER_BATCH_MAX = 100  # hard cap per /faq/answer-batch call
+
+# ---------------------------------------------------------------------------
+# Cost estimation — token budgets + pricing table
+# ---------------------------------------------------------------------------
+# Gemini 2.5 Flash pricing (approximate, as of mid-2025).
+# Labeled "estimate" everywhere — actual cost depends on prompt length, caching,
+# and Google's current rates. Source: https://cloud.google.com/vertex-ai/pricing
+#
+# Token assumptions per item (conservative/high-side estimates):
+#   Mining:   ~400 tokens in (system + batch context per item) + ~30 tokens out
+#   Answering: ~1 200 tokens in (retrieval chunks + question) + ~300 tokens out
+
+_PRICING: dict[str, dict] = {
+    "gemini-2.5-flash": {
+        "input_per_1m":  0.15,   # USD per 1M input tokens
+        "output_per_1m": 0.60,   # USD per 1M output tokens
+    },
+    # Fallback for unknown models — conservative placeholder
+    "_default": {
+        "input_per_1m":  0.50,
+        "output_per_1m": 1.50,
+    },
+}
+
+_MINE_TOKENS_IN  = 400   # per question (rephrasing prompt share)
+_MINE_TOKENS_OUT = 30    # per question (one rephrased question)
+_ANS_TOKENS_IN   = 1_200 # per question (RAG context + question)
+_ANS_TOKENS_OUT  = 300   # per question (answer paragraph)
+
+
+def _estimate_cost(count: int, model: str) -> dict:
+    """Return {mine_cost_usd, answer_cost_usd} for processing `count` items."""
+    pricing = _PRICING.get(model) or _PRICING["_default"]
+    inp = pricing["input_per_1m"] / 1_000_000
+    out = pricing["output_per_1m"] / 1_000_000
+
+    mine_cost   = count * (_MINE_TOKENS_IN * inp + _MINE_TOKENS_OUT * out)
+    answer_cost = count * (_ANS_TOKENS_IN  * inp + _ANS_TOKENS_OUT  * out)
+    return {
+        "mine_cost_usd":   round(mine_cost, 4),
+        "answer_cost_usd": round(answer_cost, 4),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +152,7 @@ def _entry_to_dict(entry: FaqEntry, video_title: Optional[str] = None) -> dict:
 # ---------------------------------------------------------------------------
 
 class MineRequest(BaseModel):
-    limit: int = 200
+    limit: int = MINE_DEFAULT
 
 
 @router.post("/mine")
@@ -108,8 +160,9 @@ def mine_faq(body: MineRequest = MineRequest(), claims=Depends(require_role("man
     """Find content_graph claims+objections not yet in faq_entries, rephrase into questions,
     and INSERT FaqEntry rows (status='mined'). Idempotent — a node is mined at most once.
     Returns {mined: N, remaining_uncovered: M}.
+    Max MINE_MAX items per call (server-enforced).
     """
-    limit = max(1, min(body.limit, 2000))
+    limit = max(1, min(body.limit, MINE_MAX))
 
     with SessionLocal() as db:
         # Find node IDs already covered
@@ -271,17 +324,18 @@ def answer_one(entry_id: int, claims=Depends(require_role("manage_articles"))):
 # ---------------------------------------------------------------------------
 
 class AnswerBatchRequest(BaseModel):
-    limit: int = 25
+    limit: int = ANSWER_BATCH_DEFAULT
 
 
 @router.post("/answer-batch")
 def answer_batch(body: AnswerBatchRequest = AnswerBatchRequest(), claims=Depends(require_role("manage_articles"))):
     """Generate + store answers for up to `limit` unanswered entries.
     Returns {answered: N, remaining: M}.
+    Max ANSWER_BATCH_MAX items per call (server-enforced).
     """
     from app.answer import ask
 
-    limit = max(1, min(body.limit, 200))
+    limit = max(1, min(body.limit, ANSWER_BATCH_MAX))
 
     with SessionLocal() as db:
         entries = (
@@ -425,6 +479,44 @@ def publish_wordpress(claims=Depends(require_role("manage_articles"))):
         "page_url": f"{wp_base}/?page_id={page_id}",
         "published": len(entries),
         "action": action,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /faq/estimate
+# ---------------------------------------------------------------------------
+
+@router.get("/estimate")
+def estimate_cost(
+    count: int = Query(..., ge=1, description="Number of questions to estimate"),
+    claims=Depends(require_role("article_read")),
+):
+    """Return an estimated LLM compute cost (USD) for mining and answering `count` questions.
+
+    Uses the configured LLM_MODEL and a conservative token-budget table.
+    All figures are labeled 'estimate' — actual cost varies by prompt length,
+    model version, caching, and provider pricing changes.
+
+    Returns {count, mine_cost_usd, answer_cost_usd, model, note, caps}.
+    """
+    from app.config import settings
+
+    model = settings.LLM_MODEL
+    costs = _estimate_cost(count, model)
+    return {
+        "count": count,
+        "mine_cost_usd": costs["mine_cost_usd"],
+        "answer_cost_usd": costs["answer_cost_usd"],
+        "model": model,
+        "note": (
+            "Estimate only. Token budgets: mining ~400 in / 30 out per question; "
+            "answering ~1200 in / 300 out per question. "
+            "Actual cost depends on prompt length, caching, and current provider rates."
+        ),
+        "caps": {
+            "mine_max": MINE_MAX,
+            "answer_batch_max": ANSWER_BATCH_MAX,
+        },
     }
 
 

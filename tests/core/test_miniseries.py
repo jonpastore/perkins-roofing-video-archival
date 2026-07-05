@@ -1,8 +1,8 @@
 """Tests for core/miniseries.py — pure mini-series planner."""
 
 import pytest
-from core.miniseries import propose_parts, rank_candidates
 
+from core.miniseries import clean_title, propose_clips, propose_parts, rank_candidates
 
 # ---------------------------------------------------------------------------
 # rank_candidates
@@ -219,6 +219,125 @@ def test_propose_parts_min_equals_max_forces_exact_count():
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# clean_title
+# ---------------------------------------------------------------------------
+
+
+def test_clean_title_strips_emoji_and_hashtags():
+    assert clean_title("\U0001F3E0 Roof Repair 101 #roofing #diy") == "Roof Repair 101"
+
+
+def test_clean_title_none_and_empty():
+    assert clean_title(None) == ""
+    assert clean_title("") == ""
+    assert clean_title("\U0001F525\U0001F525") == ""
+
+
+def test_clean_title_collapses_whitespace_and_leading_junk():
+    assert clean_title("—  Gutters   Guide  ") == "Gutters Guide"
+
+
+# ---------------------------------------------------------------------------
+# propose_clips — content-driven, REAL seconds (the fixed logic)
+# ---------------------------------------------------------------------------
+
+
+def _assert_real_second_clips(clips, duration):
+    """Every clip must be real seconds: in-bounds, positive-length, chronological, non-overlapping.
+
+    Explicitly guards against the old 0/.25/.5/.75-of-1 fraction bug.
+    """
+    assert clips, "expected at least one clip"
+    prev_end = -1.0
+    for c in clips:
+        assert c["start"] >= 0.0
+        assert c["end"] > c["start"]
+        if duration > 0:
+            assert c["end"] <= duration + 1e-6
+        # Not a degenerate fraction-of-1 window
+        assert not (c["start"] == 0.0 and c["end"] <= 1.0 and duration > 1.0)
+        assert c["start"] >= prev_end - 1e-6  # non-overlapping, chronological
+        prev_end = c["end"]
+
+
+def test_propose_clips_uses_real_node_start_times():
+    nodes = [
+        {"kind": "topics", "label": "Flashing", "start": 40.0},
+        {"kind": "ctas", "label": "Free Inspection", "start": 120.0},
+        {"kind": "claims", "label": "Warranty", "start": 200.0},
+    ]
+    clips = propose_clips("Roof Tips", 300.0, nodes)
+    _assert_real_second_clips(clips, 300.0)
+    starts = {c["start"] for c in clips}
+    # Real node anchors preserved (not fractions)
+    assert 40.0 in starts and 120.0 in starts and 200.0 in starts
+
+
+def test_propose_clips_titles_include_name_topic_and_part_n():
+    nodes = [{"kind": "topics", "label": "Flashing", "start": 30.0}]
+    clips = propose_clips("\U0001F3E0 Roof Repair #diy", 200.0, nodes)
+    t = clips[0]["title"]
+    assert "Roof Repair" in t       # cleaned source video name
+    assert "Flashing" in t          # topic
+    assert t.rstrip().endswith("(Part 1)")  # Part N at the END
+    assert "\U0001F3E0" not in t and "#" not in t
+
+
+def test_propose_clips_clip_length_bounded_20_60():
+    nodes = [{"kind": "ctas", "label": "CTA", "start": 10.0}]
+    clips = propose_clips("V", 600.0, nodes, clip_len=40.0)
+    length = clips[0]["end"] - clips[0]["start"]
+    assert 20.0 <= length <= 60.0
+
+
+def test_propose_clips_clamps_to_duration():
+    nodes = [{"kind": "ctas", "label": "End CTA", "start": 95.0}]
+    clips = propose_clips("V", 100.0, nodes, clip_len=40.0)
+    for c in clips:
+        assert c["end"] <= 100.0
+
+
+def test_propose_clips_caps_at_max_clips():
+    nodes = [{"kind": "topics", "label": f"T{i}", "start": i * 30.0} for i in range(12)]
+    clips = propose_clips("V", 1000.0, nodes, max_clips=5)
+    assert len(clips) <= 5
+
+
+def test_propose_clips_prioritizes_ctas_and_claims():
+    nodes = [
+        {"kind": "topics", "label": "Topic", "start": 10.0},
+        {"kind": "topics", "label": "Topic2", "start": 20.0},
+        {"kind": "ctas", "label": "Call Now", "start": 300.0},
+        {"kind": "claims", "label": "Big Claim", "start": 350.0},
+    ]
+    clips = propose_clips("V", 400.0, nodes, max_clips=2)
+    labels = " ".join(c["title"] for c in clips)
+    # The two highest-value nodes (cta + claim) should win over the topics.
+    assert "Call Now" in labels and "Big Claim" in labels
+
+
+def test_propose_clips_fallback_no_nodes_still_real_seconds():
+    clips = propose_clips("Roofing Basics", 300.0, [])
+    _assert_real_second_clips(clips, 300.0)
+    # No node → evenly spaced real windows, NOT 0-0.25 fractions
+    assert clips[0]["end"] > 1.0
+
+
+def test_propose_clips_zero_duration_gives_single_bounded_clip():
+    clips = propose_clips("V", 0.0, [{"kind": "topics", "label": "X", "start": 5.0}])
+    assert len(clips) == 1
+    assert clips[0]["start"] == 0.0
+    assert clips[0]["end"] > 0.0
+
+
+def test_propose_clips_regression_not_fraction_of_one():
+    """The old bug: duration defaulted to 1 → parts at 0/.25/.5/.75. Must never happen."""
+    nodes = [{"kind": "topics", "label": "A", "start": 60.0}]
+    clips = propose_clips("V", 240.0, nodes)
+    assert not any(c["end"] <= 1.0 for c in clips)
 
 
 def _assert_non_overlapping_within_duration(parts, duration):

@@ -4,8 +4,6 @@ import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
 import { apiFetch } from "./api";
 import { Archive } from "./pages/Archive";
 import { SearchAsk } from "./pages/SearchAsk";
-import { Templates } from "./pages/Templates";
-import { ComposeEmail } from "./pages/ComposeEmail";
 import { VideoApproval } from "./pages/VideoApproval";
 import { Status } from "./pages/Status";
 import { Articles } from "./pages/Articles";
@@ -15,6 +13,7 @@ import { Opportunities } from "./pages/Opportunities";
 import { Settings } from "./pages/Settings";
 import { Users } from "./pages/Users";
 import { ClipStudio } from "./pages/ClipStudio";
+import { Email } from "./pages/Email";
 import { BRAND, FONT } from "./ui";
 
 type Role = "admin" | "web_admin" | "sales" | null;
@@ -36,8 +35,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["opportunities", "Content Opportunities"],
       ["articles", "Articles"],
       ["faq", "FAQ"],
-      ["templates", "Email Templates"],
-      ["compose-email", "Compose Email"],
+      ["email", "Email"],
       ["scheduling", "Content Scheduling"],
       ["clip-studio", "Clip Studio"],
       ["video-approval", "Video Approval"],
@@ -68,8 +66,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
     title: "Perkins Sales",
     tabs: [
       ["search-ask", "Search / Ask"],
-      ["templates", "Email Templates"],
-      ["compose-email", "Compose Email"],
+      ["email", "Email"],
       ["archive", "Archive"],
     ],
     defaultTab: "search-ask",
@@ -244,8 +241,7 @@ function TabContent({ tab }: { tab: string }) {
       {tab === "opportunities" && <Opportunities />}
       {tab === "articles" && <Articles />}
       {tab === "faq" && <Faq />}
-      {tab === "templates" && <Templates />}
-      {tab === "compose-email" && <ComposeEmail />}
+      {tab === "email" && <Email />}
       {tab === "scheduling" && <Scheduling />}
       {tab === "clip-studio" && <ClipStudio />}
       {tab === "video-approval" && <VideoApproval />}

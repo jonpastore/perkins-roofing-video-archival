@@ -34,11 +34,12 @@ def sales_client():
     return TestClient(appmod.app)
 
 
-def _make_user(uid, email, role=None):
+def _make_user(uid, email, role=None, display_name=None):
     """Build a minimal fake Firebase UserRecord-like object."""
     u = types.SimpleNamespace()
     u.uid = uid
     u.email = email
+    u.display_name = display_name
     u.custom_claims = {"role": role} if role else {}
     return u
 
@@ -56,7 +57,7 @@ def _make_list_page(users):
 
 def test_list_users_admin_ok(admin_client, monkeypatch):
     fake_users = [
-        _make_user("uid1", "alice@test.com", "admin"),
+        _make_user("uid1", "alice@test.com", "admin", display_name="Alice Admin"),
         _make_user("uid2", "bob@test.com", "sales"),
         _make_user("uid3", "charlie@test.com", None),
     ]
@@ -76,9 +77,9 @@ def test_list_users_admin_ok(admin_client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert len(body) == 3
-    assert body[0] == {"uid": "uid1", "email": "alice@test.com", "role": "admin"}
-    assert body[1] == {"uid": "uid2", "email": "bob@test.com", "role": "sales"}
-    assert body[2] == {"uid": "uid3", "email": "charlie@test.com", "role": None}
+    assert body[0] == {"uid": "uid1", "email": "alice@test.com", "display_name": "Alice Admin", "role": "admin"}
+    assert body[1] == {"uid": "uid2", "email": "bob@test.com", "display_name": None, "role": "sales"}
+    assert body[2] == {"uid": "uid3", "email": "charlie@test.com", "display_name": None, "role": None}
 
 
 def test_list_users_sales_forbidden(sales_client):
@@ -202,6 +203,119 @@ def test_set_role_sales_forbidden(sales_client):
     r = sales_client.post(
         "/admin/users/role",
         json={"email": "x@test.com", "role": "sales"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/users/invite
+# ---------------------------------------------------------------------------
+
+def test_invite_creates_new_user(admin_client, monkeypatch):
+    """When the email has no Firebase record, create_user is called and role is set."""
+    created = {}
+    claims_set = {}
+    new_user = _make_user("uid_new", "external@example.com", display_name="External User")
+
+    def fake_get_by_email(email):
+        raise Exception("not found")
+
+    def fake_create_user(**kwargs):
+        created.update(kwargs)
+        return new_user
+
+    def fake_set_claims(uid, claims):
+        claims_set["uid"] = uid
+        claims_set["claims"] = claims
+
+    import api.routes.users as users_mod
+    monkeypatch.setattr(
+        users_mod,
+        "_firebase_auth",
+        lambda: types.SimpleNamespace(
+            list_users=None,
+            get_user_by_email=fake_get_by_email,
+            create_user=fake_create_user,
+            set_custom_user_claims=fake_set_claims,
+        ),
+    )
+
+    r = admin_client.post(
+        "/admin/users/invite",
+        json={"email": "external@example.com", "role": "web_admin", "display_name": "External User"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["uid"] == "uid_new"
+    assert body["email"] == "external@example.com"
+    assert body["role"] == "web_admin"
+    assert created["email"] == "external@example.com"
+    assert created["display_name"] == "External User"
+    assert claims_set["claims"] == {"role": "web_admin"}
+
+
+def test_invite_existing_user_sets_role(admin_client, monkeypatch):
+    """When the email already has a Firebase record, no create_user; just set claims."""
+    existing = _make_user("uid_existing", "existing@example.com", role=None, display_name="Existing Person")
+    claims_set = {}
+
+    def fake_set_claims(uid, claims):
+        claims_set["uid"] = uid
+        claims_set["claims"] = claims
+
+    import api.routes.users as users_mod
+    monkeypatch.setattr(
+        users_mod,
+        "_firebase_auth",
+        lambda: types.SimpleNamespace(
+            list_users=None,
+            get_user_by_email=lambda email: existing,
+            create_user=None,  # must NOT be called
+            set_custom_user_claims=fake_set_claims,
+        ),
+    )
+
+    r = admin_client.post(
+        "/admin/users/invite",
+        json={"email": "existing@example.com", "role": "sales"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["uid"] == "uid_existing"
+    assert body["role"] == "sales"
+    assert claims_set["claims"] == {"role": "sales"}
+
+
+def test_invite_invalid_role(admin_client, monkeypatch):
+    """Invalid role is rejected with 422 before any Firebase call."""
+    import api.routes.users as users_mod
+    monkeypatch.setattr(
+        users_mod,
+        "_firebase_auth",
+        lambda: types.SimpleNamespace(
+            list_users=None,
+            get_user_by_email=lambda email: _make_user("uid1", email),
+            create_user=None,
+            set_custom_user_claims=None,
+        ),
+    )
+
+    r = admin_client.post(
+        "/admin/users/invite",
+        json={"email": "x@example.com", "role": "superuser"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 422
+
+
+def test_invite_sales_forbidden(sales_client):
+    """Sales role cannot call the invite endpoint."""
+    r = sales_client.post(
+        "/admin/users/invite",
+        json={"email": "x@example.com", "role": "sales"},
         headers={"Authorization": "Bearer x"},
     )
     assert r.status_code == 403
