@@ -1,6 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
+
+// Render an FAQ answer: turn `[link n](url)` markdown citations into clickable links.
+function renderAnswer(text: string): ReactNode[] {
+  const re = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  const out: ReactNode[] = [];
+  let last = 0, m: RegExpExecArray | null, i = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(
+      <a key={i++} href={m[2]} target="_blank" rel="noopener noreferrer"
+        style={{ color: BRAND.red, fontWeight: 600, textDecoration: "none" }}>
+        {m[1]}
+      </a>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
 
 interface FaqItem {
   id: number;
@@ -157,7 +176,7 @@ export function Faq() {
       const r = await apiFetch("/faq/mine", { method: "POST", body: JSON.stringify({ limit: mineBatchSize }) });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const d = await r.json();
-      setActionMsg(`Mined ${d.mined} new questions. ${d.remaining_uncovered} content items still available.`);
+      setActionMsg(`Mined ${d.mined} new questions and answered ${d.answered ?? 0}. ${d.remaining_uncovered} content items still available.`);
       loadCoverage();
       setOffset(0);
       loadItems(filter, answeredFilter, 0);
@@ -249,7 +268,7 @@ export function Faq() {
                   from claims and objections found in the content.
                 </p>
                 <Button onClick={handleMine} disabled={mining} style={{ fontSize: 14 }}>
-                  {mining ? "Mining questions…" : `Mine ${coverage.uncovered_nodes.toLocaleString()} questions now`}
+                  {mining ? "Mining & answering…" : `Mine & answer ${mineBatchSize} questions now`}
                 </Button>
               </div>
             )}
@@ -283,7 +302,7 @@ export function Faq() {
                     </button>
                   ))}
                   <Button onClick={handleMine} disabled={mining || coverage.uncovered_nodes === 0} style={{ fontSize: 13 }}>
-                    {mining ? "Mining…" : `Mine ${mineBatchSize}`}
+                    {mining ? "Mining & answering…" : `Mine & answer ${mineBatchSize}`}
                   </Button>
                 </div>
                 <p style={{ margin: 0, fontSize: 12, color: BRAND.sub }}>
@@ -419,8 +438,8 @@ export function Faq() {
                       {item.question}
                     </p>
                     {item.answer ? (
-                      <p style={{ margin: "0 0 8px", color: BRAND.ink, fontSize: 14, lineHeight: 1.6 }}>
-                        {item.answer}
+                      <p style={{ margin: "0 0 8px", color: BRAND.ink, fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                        {renderAnswer(item.answer)}
                       </p>
                     ) : (
                       <p style={{ margin: "0 0 8px", color: BRAND.sub, fontSize: 13, fontStyle: "italic" }}>

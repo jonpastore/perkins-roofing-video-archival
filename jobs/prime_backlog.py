@@ -56,15 +56,18 @@ def _mine_faqs(limit: int) -> int:
 def _answer_faqs(limit: int) -> int:
     """Generate + store grounded answers for still-unanswered FaqEntry rows (local LLM)."""
     from app.models import FaqEntry, SessionLocal
-    from app.answer import ask
+    from app.answer import answer_faq
 
     with SessionLocal() as db:
         pending = db.query(FaqEntry).filter(FaqEntry.status == "mined").limit(limit).all()
         done = 0
         for e in pending:
             try:
-                res = ask(e.question)
-                e.answer = res.get("answer", "")
+                res = answer_faq(e.question)
+                ans = (res.get("answer") or "").strip()
+                if not ans:
+                    continue  # abstained — leave as 'mined' rather than store filler
+                e.answer = ans
                 e.status = "answered"
                 db.commit()
                 done += 1

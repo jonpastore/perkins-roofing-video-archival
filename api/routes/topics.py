@@ -104,31 +104,49 @@ def _paginate(items: list, limit: Optional[int], offset: int) -> dict:
 
 
 def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) -> dict:
-    """Build response from aggregated_topics rows."""
+    """Build response from aggregated_topics rows.
+
+    Sorts first, then resolves sample clips for ONLY the requested page — one batched
+    GraphNode query instead of one-per-topic (was an N+1 over ~2k rows, the main cause
+    of the slow Search-topics load).
+    """
     rows = db.query(AggregatedTopic).all()
 
-    items = []
-    for row in rows:
-        # Derive a sample: first node_id → look up its video_id + start via GraphNode
-        sample = {"video_id": "", "t": 0}
-        if row.node_ids:
-            first_node = db.query(GraphNode).filter(GraphNode.id == row.node_ids[0]).first()
-            if first_node:
-                sample = {"video_id": first_node.video_id, "t": int(first_node.start or 0)}
-        elif row.video_ids:
-            sample = {"video_id": row.video_ids[0], "t": 0}
-
-        items.append({
+    items = [
+        {
             "label": row.canonical_label,
             "count": row.num_videos,            # backwards-compat alias
             "num_videos": row.num_videos,
             "total_content_length": row.total_seconds,
-            "sample": sample,
-        })
+            "sample": {"video_id": "", "t": 0},
+            "_first_node_id": row.node_ids[0] if row.node_ids else None,
+            "_first_video_id": row.video_ids[0] if row.video_ids else None,
+        }
+        for row in rows
+    ]
 
     reverse = sort != "alpha"
     items.sort(key=_sort_key(sort), reverse=reverse)
-    return _paginate(items, limit, offset)
+    page = items[offset:] if limit is None else items[offset: offset + limit]
+
+    # Batch-resolve sample clips for the current page only.
+    node_ids = [it["_first_node_id"] for it in page if it["_first_node_id"] is not None]
+    node_map = {}
+    if node_ids:
+        node_map = {
+            n.id: n
+            for n in db.query(GraphNode).filter(GraphNode.id.in_(node_ids)).all()
+        }
+    for it in page:
+        node = node_map.get(it["_first_node_id"])
+        if node:
+            it["sample"] = {"video_id": node.video_id, "t": int(node.start or 0)}
+        elif it["_first_video_id"]:
+            it["sample"] = {"video_id": it["_first_video_id"], "t": 0}
+        del it["_first_node_id"]
+        del it["_first_video_id"]
+
+    return {"total": len(items), "items": page}
 
 
 def _list_topics_live(db, sort: str, limit: Optional[int], offset: int) -> dict:

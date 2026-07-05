@@ -44,6 +44,8 @@ interface TopicArticle {
   status: string;
   role: string;
   pillar_slug: string | null;
+  wp_url?: string | null;
+  wp_post_id?: number | null;
 }
 
 // Slugify matching the server _slugify so we can filter articles by pillar_slug
@@ -120,6 +122,7 @@ function TopicVideosModal({
   label: string;
   onClose: () => void;
 }) {
+  const { navigate } = useContext(NavContext);
   const [activeTab, setActiveTab] = useState<ModalTab>("videos");
   const [videos, setVideos] = useState<TopicVideo[] | null>(null);
   const [videoErr, setVideoErr] = useState<string | null>(null);
@@ -263,30 +266,55 @@ function TopicVideosModal({
                     <div
                       key={a.slug}
                       style={{
-                        display: "flex", alignItems: "center", gap: 10,
                         padding: "10px 12px", border: `1px solid ${BRAND.border}`,
                         borderRadius: 8, background: BRAND.bg,
                       }}
                     >
-                      <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>
-                        {a.title}
-                      </span>
-                      <span style={{
-                        fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                        background: a.role === "pillar" ? "#e8eefc" : "#fff3e0",
-                        color: a.role === "pillar" ? BRAND.navyText : "#b45309",
-                        whiteSpace: "nowrap",
-                      }}>
-                        {a.role}
-                      </span>
-                      <span style={{
-                        fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                        background: a.status === "published" ? "#e6f9f0" : "#eef1f5",
-                        color: a.status === "published" ? "#1a7f4b" : BRAND.sub,
-                        whiteSpace: "nowrap",
-                      }}>
-                        {a.status}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>
+                          {a.title}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                          background: a.role === "pillar" ? "#e8eefc" : "#fff3e0",
+                          color: a.role === "pillar" ? BRAND.navyText : "#b45309",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {a.role}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                          background: a.status === "published" ? "#e6f9f0" : "#eef1f5",
+                          color: a.status === "published" ? "#1a7f4b" : BRAND.sub,
+                          whiteSpace: "nowrap",
+                        }}>
+                          {a.status}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: 14, marginTop: 6 }}>
+                        <button
+                          onClick={() => { navigate("articles", { open: a.slug, cluster: a.pillar_slug ?? a.slug }); onClose(); }}
+                          style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                        >
+                          Open article
+                        </button>
+                        <button
+                          onClick={() => { navigate("scheduling"); onClose(); }}
+                          style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                        >
+                          Queue
+                        </button>
+                        {a.status === "published" && a.wp_url && (
+                          <a
+                            href={a.wp_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline" }}
+                          >
+                            WordPress ↗
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -712,7 +740,7 @@ export function SearchAsk() {
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, color: BRAND.sub, flex: 1 }}>
-                  {filteredTopics.length} topic{filteredTopics.length !== 1 ? "s" : ""}
+                  {query.trim() ? filteredTopics.length : topicTotal} topic{(query.trim() ? filteredTopics.length : topicTotal) !== 1 ? "s" : ""}
                   {query.trim() ? ` matching "${query}"` : " extracted from Tim's videos"}
                   {" — click the count to see all videos, ▶ to jump to a timecode"}
                 </span>

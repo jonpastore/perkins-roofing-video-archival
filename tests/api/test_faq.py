@@ -116,6 +116,41 @@ def _fake_ask(question):
     }
 
 
+def test_answer_html_renders_link_citations():
+    """`[link n](url)` markdown citations become anchors; other text is escaped."""
+    from api.routes.faq import _answer_html, _answer_plain
+    ans = "Two layers are required [1].\n\nSources: [link 1](https://youtu.be/abc?t=5)"
+    html = _answer_html(ans)
+    assert '<a href="https://youtu.be/abc?t=5"' in html
+    assert ">link 1</a>" in html
+    assert "[link 1]" not in html  # markdown consumed, not left raw
+    # JSON-LD text drops the Sources citation line entirely
+    assert _answer_plain(ans) == "Two layers are required [1]."
+
+
+def _fake_answer_faq(question, k=6):
+    return {
+        "answer": f"Answer for: {question}\n\nSources: [link 1](https://youtu.be/testvid1?t=42)",
+        "abstained": False,
+        "confidence": 0.9,
+        "sources": [{"n": 1, "video_id": "testvid1", "t": 42,
+                     "title": "Roof Installation Guide",
+                     "url": "https://youtu.be/testvid1?t=42"}],
+    }
+
+
+@pytest.fixture(autouse=True)
+def _stub_answer_faq(monkeypatch):
+    """Default: /faq/mine's coupled answering abstains (no network). Answer-specific
+    tests override this with _fake_answer_faq to assert stored answers."""
+    import app.answer as answer_mod
+    monkeypatch.setattr(
+        answer_mod, "answer_faq",
+        lambda question, k=6: {"answer": "", "abstained": True, "sources": []},
+        raising=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # POST /faq/mine
 # ---------------------------------------------------------------------------
@@ -384,11 +419,9 @@ def test_answer_one_stores_answer(monkeypatch):
     with SessionLocal() as db:
         entry_id = db.query(FaqEntry.id).first()[0]
 
-    # Patch app.answer.ask
+    # Patch the concise FAQ answerer used by _answer_entry
     import app.answer as answer_mod
-    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
-    # Also patch inside faq routes module scope
-    monkeypatch.setattr(faq_mod, "ask", _fake_ask, raising=False)
+    monkeypatch.setattr(answer_mod, "answer_faq", _fake_answer_faq)
 
     r = c.post(f"/faq/{entry_id}/answer", headers=AUTH)
     assert r.status_code == 200, r.text
@@ -433,7 +466,7 @@ def test_answer_batch(monkeypatch):
     c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
 
     import app.answer as answer_mod
-    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+    monkeypatch.setattr(answer_mod, "answer_faq", _fake_answer_faq)
 
     r = c.post("/faq/answer-batch", json={"limit": 25}, headers=AUTH)
     assert r.status_code == 200, r.text
@@ -458,7 +491,7 @@ def test_answer_batch_respects_limit(monkeypatch):
     c.post("/faq/mine", json={"limit": 200}, headers=AUTH)
 
     import app.answer as answer_mod
-    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+    monkeypatch.setattr(answer_mod, "answer_faq", _fake_answer_faq)
 
     r = c.post("/faq/answer-batch", json={"limit": 1}, headers=AUTH)
     assert r.status_code == 200, r.text
@@ -506,7 +539,7 @@ def test_coverage_counts(monkeypatch):
 
     # After answering all
     import app.answer as answer_mod
-    monkeypatch.setattr(answer_mod, "ask", _fake_ask)
+    monkeypatch.setattr(answer_mod, "answer_faq", _fake_answer_faq)
     c.post("/faq/answer-batch", json={"limit": 25}, headers=AUTH)
     r = c.get("/faq/coverage", headers=AUTH)
     after = r.json()

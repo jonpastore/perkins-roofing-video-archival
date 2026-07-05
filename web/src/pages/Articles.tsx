@@ -1098,6 +1098,11 @@ export function Articles() {
     }
   }, [params.cluster]);
 
+  // Auto-open a specific article when navigated with an `open` slug param.
+  useEffect(() => {
+    if (params.open) setViewingSlug(params.open);
+  }, [params.open]);
+
   function load() {
     setLoading(true);
     setError(null);

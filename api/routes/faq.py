@@ -83,6 +83,28 @@ def _yt_link(video_id: str, t: float) -> str:
     return f"https://youtu.be/{video_id}?t={int(t)}"
 
 
+def _normalize_question(q: str) -> str:
+    """Collapse a question to a dedupe key (lowercased, alphanumerics only)."""
+    return re.sub(r"[^a-z0-9]+", " ", (q or "").lower()).strip()
+
+
+def _answer_entry(entry: FaqEntry) -> bool:
+    """Generate + store a concise, cited answer for one entry. Returns True if answered.
+
+    Uses answer_faq (professional, 2-4 sentences, numbered ``link n`` citations).
+    Leaves the entry unanswered (status stays 'mined') when the model abstains.
+    """
+    from app.answer import answer_faq
+
+    res = answer_faq(entry.question)
+    ans = (res.get("answer") or "").strip()
+    if not ans:
+        return False
+    entry.answer = ans
+    entry.status = "answered"
+    return True
+
+
 def _rephrase_via_llm(statements: list[str]) -> list[str]:
     """Batch-rephrase raw claim/objection statements into natural homeowner questions.
 
@@ -202,8 +224,11 @@ def mine_faq(body: MineRequest = MineRequest(), claims=Depends(require_role("man
         rephrased = _rephrase_via_llm(raw_statements)
         use_llm = len(rephrased) == len(candidates)
 
+        # Dedupe against existing questions (normalized) so answers aren't repetitive.
+        seen_norm = {_normalize_question(row[0]) for row in db.query(FaqEntry.question).all()}
+
         now = datetime.utcnow()
-        inserted = 0
+        new_entries: list[FaqEntry] = []
         for i, node in enumerate(candidates):
             if use_llm and rephrased[i]:
                 question = rephrased[i]
@@ -213,10 +238,14 @@ def mine_faq(body: MineRequest = MineRequest(), claims=Depends(require_role("man
                 question = _to_question_heuristic(node.label or "", node.detail or "")
             if not question:
                 continue
-            # Guard against duplicates (race condition / re-run safety)
+            # Guard against duplicates (same node, or a near-identical question already mined)
             exists = db.query(FaqEntry).filter(FaqEntry.source_node_id == node.id).first()
             if exists:
                 continue
+            norm = _normalize_question(question)
+            if norm in seen_norm:
+                continue
+            seen_norm.add(norm)
             entry = FaqEntry(
                 question=question,
                 answer=None,
@@ -228,9 +257,22 @@ def mine_faq(body: MineRequest = MineRequest(), claims=Depends(require_role("man
                 created_at=now,
             )
             db.add(entry)
-            inserted += 1
+            new_entries.append(entry)
 
         db.commit()
+        inserted = len(new_entries)
+
+        # Mining and answering are coupled — answer the freshly-mined questions now so
+        # the FAQ is usable in one step (idempotent: abstained questions stay 'mined').
+        answered = 0
+        for entry in new_entries:
+            try:
+                if _answer_entry(entry):
+                    answered += 1
+                    db.commit()
+            except Exception as exc:  # noqa: BLE001 — keep going, leave unanswered
+                log.warning("mine: answer failed for entry %s: %s", entry.id, exc)
+                db.rollback()
 
         # Count remaining after this batch
         covered_ids_after = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
@@ -244,7 +286,7 @@ def mine_faq(body: MineRequest = MineRequest(), claims=Depends(require_role("man
             .count()
         )
 
-    return {"mined": inserted, "remaining_uncovered": remaining}
+    return {"mined": inserted, "answered": answered, "remaining_uncovered": remaining}
 
 
 # ---------------------------------------------------------------------------
@@ -298,17 +340,13 @@ def list_faq(
 
 @router.post("/{entry_id}/answer")
 def answer_one(entry_id: int, claims=Depends(require_role("manage_articles"))):
-    """Generate + store a grounded answer for a single FAQ entry."""
-    from app.answer import ask
-
+    """Generate + store a concise, cited answer for a single FAQ entry."""
     with SessionLocal() as db:
         entry = db.query(FaqEntry).filter(FaqEntry.id == entry_id).first()
         if not entry:
             raise HTTPException(status_code=404, detail="FAQ entry not found")
 
-        result = ask(entry.question)
-        entry.answer = result.get("answer", "")
-        entry.status = "answered"
+        _answer_entry(entry)
         db.commit()
         db.refresh(entry)
 
@@ -333,8 +371,6 @@ def answer_batch(body: AnswerBatchRequest = AnswerBatchRequest(), claims=Depends
     Returns {answered: N, remaining: M}.
     Max ANSWER_BATCH_MAX items per call (server-enforced).
     """
-    from app.answer import ask
-
     limit = max(1, min(body.limit, ANSWER_BATCH_MAX))
 
     with SessionLocal() as db:
@@ -349,14 +385,12 @@ def answer_batch(body: AnswerBatchRequest = AnswerBatchRequest(), claims=Depends
         answered = 0
         for entry in entries:
             try:
-                result = ask(entry.question)
-                entry.answer = result.get("answer", "")
-                entry.status = "answered"
-                answered += 1
+                if _answer_entry(entry):
+                    answered += 1
+                    db.commit()
             except Exception as exc:
                 log.warning("answer-batch: failed for entry %d: %s", entry.id, exc)
-
-        db.commit()
+                db.rollback()
 
         remaining = db.query(FaqEntry).filter(FaqEntry.status == "mined").count()
 
@@ -370,14 +404,33 @@ def answer_batch(body: AnswerBatchRequest = AnswerBatchRequest(), claims=Depends
 _FAQ_PAGE_TITLES = ("FAQ", "Frequently Asked Questions")
 
 
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+
+
+def _esc(s: str) -> str:
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _answer_plain(answer: str) -> str:
+    """Answer prose without the trailing 'Sources:' citation line (for JSON-LD)."""
+    return re.split(r"\n\nSources:", answer or "", maxsplit=1)[0].strip()
+
+
+def _answer_html(answer: str) -> str:
+    """Escape the answer, then render ``[link n](url)`` markdown citations as anchors."""
+    esc = _esc(answer).replace("\n", "<br>")
+    return _MD_LINK_RE.sub(
+        lambda m: f'<a href="{m.group(2)}" target="_blank" rel="noopener">{_esc(m.group(1))}</a>',
+        esc,
+    )
+
+
 def _build_faq_html(entries: list[FaqEntry]) -> str:
     """Render answered FaqEntry rows as semantic HTML (h3 + p pairs)."""
     parts: list[str] = ["<div class=\"faq-content\">"]
     for e in entries:
-        q = e.question.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        a = (e.answer or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        parts.append(f"<h3>{q}</h3>")
-        parts.append(f"<p>{a}</p>")
+        parts.append(f"<h3>{_esc(e.question)}</h3>")
+        parts.append(f"<p>{_answer_html(e.answer or '')}</p>")
     parts.append("</div>")
     return "\n".join(parts)
 
@@ -393,7 +446,7 @@ def _build_faqpage_jsonld(entries: list[FaqEntry]) -> dict:
                 "name": e.question,
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": e.answer or "",
+                    "text": _answer_plain(e.answer or ""),
                 },
             }
             for e in entries

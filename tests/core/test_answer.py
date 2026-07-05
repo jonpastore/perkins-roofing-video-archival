@@ -1,4 +1,4 @@
-from core.answer import build_answer_prompt, should_abstain
+from core.answer import build_answer_prompt, build_faq_answer_prompt, should_abstain
 
 
 def test_abstains_below_threshold():
@@ -30,3 +30,19 @@ def test_key_points_truncated_to_20():
     p = build_answer_prompt("q", contexts=[], key_points=kp)
     assert "point19" in p
     assert "point20" not in p
+
+
+def test_build_faq_answer_prompt_is_concise_and_numbered():
+    p = build_faq_answer_prompt(
+        "do i need two layers of underlayment",
+        sources=[(1, "Metal Roof Basics", "two layers required in HVHZ"),
+                 (2, "Steel Roofs", "one layer is enough for steel")],
+    )
+    assert "QUESTION: do i need two layers of underlayment" in p
+    assert "SOURCE [1] — Metal Roof Basics" in p
+    assert "SOURCE [2] — Steel Roofs" in p
+    assert "CONCISE" in p
+    assert "NO_ANSWER" in p
+    # Must instruct [n] citations and forbid inline URLs
+    assert "[1]" in p
+    assert "Do NOT write any URLs" in p
