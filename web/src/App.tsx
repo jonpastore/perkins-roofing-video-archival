@@ -3,17 +3,17 @@ import type { User } from "firebase/auth";
 import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
 import { Archive } from "./pages/Archive";
 import { SearchAsk } from "./pages/SearchAsk";
+import { Templates } from "./pages/Templates";
+import { ComposeEmail } from "./pages/ComposeEmail";
+import { VideoApproval } from "./pages/VideoApproval";
+import { Status } from "./pages/Status";
 import { BRAND, FONT } from "./ui";
 
 type Role = "admin" | "sales" | null;
 
-// Placeholder page components — filled in later waves
-function TemplatesPage() { return <main><h2>Templates</h2></main>; }
+// Placeholder page components — Articles + Scheduling filled in next
 function ArticlesPage() { return <main><h2>Articles</h2></main>; }
 function SchedulingPage() { return <main><h2>Scheduling</h2></main>; }
-function VideoApprovalPage() { return <main><h2>Video Approval</h2></main>; }
-function ConfigPage() { return <main><h2>Config</h2></main>; }
-function ComposeEmailPage() { return <main><h2>Compose Email</h2></main>; }
 
 // Shared console shell: branded sidebar + content area. Both the admin and sales
 // consoles are the same layout with different tabs, so they share this one component.
@@ -103,17 +103,17 @@ function AdminShell() {
         ["scheduling", "Scheduling"],
         ["video-approval", "Video Approval"],
         ["archive", "Archive"],
-        ["config", "Config"],
+        ["config", "Status"],
       ]}
       render={(tab) => (
         <>
           {tab === "search-ask" && <SearchAsk />}
-          {tab === "templates" && <TemplatesPage />}
+          {tab === "templates" && <Templates />}
           {tab === "articles" && <ArticlesPage />}
           {tab === "scheduling" && <SchedulingPage />}
-          {tab === "video-approval" && <VideoApprovalPage />}
+          {tab === "video-approval" && <VideoApproval />}
           {tab === "archive" && <Archive />}
-          {tab === "config" && <ConfigPage />}
+          {tab === "config" && <Status />}
         </>
       )}
     />
@@ -132,7 +132,7 @@ function SalesShell() {
       render={(tab) => (
         <>
           {tab === "search-ask" && <SearchAsk />}
-          {tab === "compose-email" && <ComposeEmailPage />}
+          {tab === "compose-email" && <ComposeEmail />}
           {tab === "archive" && <Archive />}
         </>
       )}
