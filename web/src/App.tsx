@@ -2,18 +2,10 @@ import { useState, useEffect, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
 import { Archive } from "./pages/Archive";
+import { SearchAsk } from "./pages/SearchAsk";
+import { BRAND, FONT } from "./ui";
 
 type Role = "admin" | "sales" | null;
-
-// Perkins Roofing brand palette (from perkinsroofing.net)
-const BRAND = {
-  red: "#ef3c1a",
-  redDark: "#cf2e2e",
-  navy: "#1b2a52",
-  navyActive: "#26386b",
-  navyText: "#2b3c73",
-};
-const FONT = "system-ui, 'Segoe UI', Roboto, sans-serif";
 
 // Placeholder page components — filled in later waves
 function TemplatesPage() { return <main><h2>Templates</h2></main>; }
@@ -21,7 +13,6 @@ function ArticlesPage() { return <main><h2>Articles</h2></main>; }
 function SchedulingPage() { return <main><h2>Scheduling</h2></main>; }
 function VideoApprovalPage() { return <main><h2>Video Approval</h2></main>; }
 function ConfigPage() { return <main><h2>Config</h2></main>; }
-function SearchAskPage() { return <main><h2>Search / Ask</h2></main>; }
 function ComposeEmailPage() { return <main><h2>Compose Email</h2></main>; }
 
 // Shared console shell: branded sidebar + content area. Both the admin and sales
@@ -106,6 +97,7 @@ function AdminShell() {
     <Shell
       title="Perkins Admin"
       tabs={[
+        ["search-ask", "Search / Ask"],
         ["templates", "Templates"],
         ["articles", "Articles"],
         ["scheduling", "Scheduling"],
@@ -115,6 +107,7 @@ function AdminShell() {
       ]}
       render={(tab) => (
         <>
+          {tab === "search-ask" && <SearchAsk />}
           {tab === "templates" && <TemplatesPage />}
           {tab === "articles" && <ArticlesPage />}
           {tab === "scheduling" && <SchedulingPage />}
@@ -138,7 +131,7 @@ function SalesShell() {
       ]}
       render={(tab) => (
         <>
-          {tab === "search-ask" && <SearchAskPage />}
+          {tab === "search-ask" && <SearchAsk />}
           {tab === "compose-email" && <ComposeEmailPage />}
           {tab === "archive" && <Archive />}
         </>
