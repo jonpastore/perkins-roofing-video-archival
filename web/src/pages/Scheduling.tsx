@@ -19,19 +19,34 @@ interface FormState {
   status: string;
 }
 
+interface ArticleOption {
+  slug: string;
+  title: string;
+}
+
+interface SeriesOption {
+  id: number;
+  title: string;
+}
+
 const emptyForm: FormState = {
   kind: "article",
   ref_id: "",
   publish_at: "",
-  target: "",
+  target: "wordpress",
   status: "scheduled",
+};
+
+const KIND_DISPLAY: Record<string, string> = {
+  article: "Article",
+  reel: "Social media",
 };
 
 function kindBadge(kind: string) {
   return kind === "reel" ? (
-    <Badge tone="blue">reel</Badge>
+    <Badge tone="blue">Social media</Badge>
   ) : (
-    <Badge tone="gray">article</Badge>
+    <Badge tone="gray">Article</Badge>
   );
 }
 
@@ -62,6 +77,10 @@ export function Scheduling() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  const [articles, setArticles] = useState<ArticleOption[]>([]);
+  const [seriesList, setSeriesList] = useState<SeriesOption[]>([]);
+  const [dropdownsLoading, setDropdownsLoading] = useState(false);
+
   function load(filter?: string) {
     setLoading(true);
     setError(null);
@@ -74,6 +93,20 @@ export function Scheduling() {
       .then(setItems)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
+  }
+
+  function loadDropdowns() {
+    setDropdownsLoading(true);
+    Promise.all([
+      apiFetch("/articles").then((r) => (r.ok ? r.json() : [])),
+      apiFetch("/video/series").then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([arts, series]) => {
+        setArticles(arts as ArticleOption[]);
+        setSeriesList((series as Array<{ id: number; title: string }>).map((s) => ({ id: s.id, title: s.title })));
+      })
+      .catch(() => {})
+      .finally(() => setDropdownsLoading(false));
   }
 
   useEffect(() => {
@@ -90,11 +123,11 @@ export function Scheduling() {
     setForm(emptyForm);
     setSaveError(null);
     setShowForm(true);
+    loadDropdowns();
   }
 
   function openEdit(item: ScheduledItem) {
     setEditingId(item.id);
-    // Convert ISO to datetime-local format (strip seconds/tz for input)
     const dtLocal = item.publish_at ? item.publish_at.slice(0, 16) : "";
     setForm({
       kind: item.kind,
@@ -105,6 +138,7 @@ export function Scheduling() {
     });
     setSaveError(null);
     setShowForm(true);
+    loadDropdowns();
   }
 
   function cancelForm() {
@@ -114,9 +148,22 @@ export function Scheduling() {
     setSaveError(null);
   }
 
+  function handleKindChange(newKind: string) {
+    setForm((f) => ({
+      ...f,
+      kind: newKind,
+      ref_id: "",
+      target: newKind === "article" ? "wordpress" : "",
+    }));
+  }
+
   async function handleSave() {
-    if (!form.ref_id.trim() || !form.publish_at) {
-      setSaveError("Ref ID and publish date are required.");
+    if (!form.ref_id || !form.publish_at) {
+      setSaveError("Content and publish date are required.");
+      return;
+    }
+    if (form.kind === "reel" && !form.target) {
+      setSaveError("Platform is required for Social media.");
       return;
     }
     setSaving(true);
@@ -168,6 +215,20 @@ export function Scheduling() {
     }
   }
 
+  const labelStyle = {
+    display: "block" as const,
+    fontSize: 13,
+    fontWeight: 600,
+    color: BRAND.navyText,
+    marginBottom: 4,
+  };
+
+  const hintStyle = {
+    fontSize: 11,
+    color: BRAND.sub,
+    marginTop: 3,
+  };
+
   return (
     <main style={{ maxWidth: 960 }}>
       <PageTitle
@@ -189,36 +250,60 @@ export function Scheduling() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {editingId == null && (
               <>
+                {/* Kind dropdown */}
                 <div>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                    Kind
-                  </label>
+                  <label style={labelStyle}>Kind</label>
                   <select
                     value={form.kind}
-                    onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}
+                    onChange={(e) => handleKindChange(e.target.value)}
                     style={{ ...inputStyle, width: "100%" }}
                   >
-                    <option value="article">article</option>
-                    <option value="reel">reel</option>
+                    {Object.entries(KIND_DISPLAY).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
                   </select>
                 </div>
+
+                {/* Ref ID — dropdown based on kind */}
                 <div>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                    Ref ID
+                  <label style={labelStyle}>
+                    {form.kind === "article" ? "Article" : "Video Series"}
                   </label>
-                  <input
-                    value={form.ref_id}
-                    onChange={(e) => setForm((f) => ({ ...f, ref_id: e.target.value }))}
-                    placeholder="e.g. slug or video id"
-                    style={{ ...inputStyle, width: "100%" }}
-                  />
+                  {dropdownsLoading ? (
+                    <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>Loading…</p>
+                  ) : form.kind === "article" ? (
+                    <select
+                      value={form.ref_id}
+                      onChange={(e) => setForm((f) => ({ ...f, ref_id: e.target.value }))}
+                      style={{ ...inputStyle, width: "100%" }}
+                    >
+                      <option value="">— select an article —</option>
+                      {articles.map((a) => (
+                        <option key={a.slug} value={a.slug}>{a.title}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <select
+                      value={form.ref_id}
+                      onChange={(e) => setForm((f) => ({ ...f, ref_id: e.target.value }))}
+                      style={{ ...inputStyle, width: "100%" }}
+                    >
+                      <option value="">— select a video series —</option>
+                      {seriesList.map((s) => (
+                        <option key={s.id} value={String(s.id)}>{s.title}</option>
+                      ))}
+                    </select>
+                  )}
+                  <p style={hintStyle}>
+                    The article or video series this schedule entry publishes
+                  </p>
                 </div>
               </>
             )}
+
+            {/* Publish At */}
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                Publish At
-              </label>
+              <label style={labelStyle}>Publish At</label>
               <input
                 type="datetime-local"
                 value={form.publish_at}
@@ -226,21 +311,38 @@ export function Scheduling() {
                 style={{ ...inputStyle, width: "100%" }}
               />
             </div>
+
+            {/* Target — read-only for article, platform dropdown for reel */}
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                Target
-              </label>
-              <input
-                value={form.target}
-                onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))}
-                placeholder="e.g. instagram, tiktok"
-                style={{ ...inputStyle, width: "100%" }}
-              />
+              <label style={labelStyle}>Target</label>
+              {form.kind === "article" ? (
+                <div
+                  style={{
+                    ...inputStyle,
+                    width: "100%",
+                    background: BRAND.bg,
+                    color: BRAND.sub,
+                    cursor: "default",
+                  }}
+                >
+                  wordpress
+                </div>
+              ) : (
+                <select
+                  value={form.target}
+                  onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))}
+                  style={{ ...inputStyle, width: "100%" }}
+                >
+                  <option value="">— select platform —</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="tiktok">TikTok</option>
+                </select>
+              )}
             </div>
+
+            {/* Status */}
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                Status
-              </label>
+              <label style={labelStyle}>Status</label>
               <select
                 value={form.status}
                 onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
@@ -252,6 +354,7 @@ export function Scheduling() {
               </select>
             </div>
           </div>
+
           {saveError && <ErrorMsg>{saveError}</ErrorMsg>}
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <Button onClick={handleSave} disabled={saving}>

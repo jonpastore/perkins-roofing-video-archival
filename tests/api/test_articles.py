@@ -189,3 +189,60 @@ def test_401_without_token():
     c = _admin_client()
     r = c.get("/articles")
     assert r.status_code == 401, r.text
+
+
+# ---------------------------------------------------------------------------
+# Publish endpoint
+# ---------------------------------------------------------------------------
+
+def test_publish_sets_status_and_publish_at():
+    c = _admin_client()
+    c.post("/articles", json={"title": "Publish Me"}, headers=AUTH)
+    r = c.post("/articles/publish-me/publish", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "published"
+    assert data["publish_at"] is not None
+
+
+def test_publish_returns_full_article():
+    c = _admin_client()
+    c.post(
+        "/articles",
+        json={"title": "Full Publish", "content_md": "Hello **world**", "meta": "desc"},
+        headers=AUTH,
+    )
+    r = c.post("/articles/full-publish/publish", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "content_md" in data
+    assert "faq_json" in data
+    assert data["slug"] == "full-publish"
+
+
+def test_publish_404_on_missing():
+    c = _admin_client()
+    r = c.post("/articles/no-such-slug/publish", headers=AUTH)
+    assert r.status_code == 404, r.text
+
+
+def test_publish_requires_admin():
+    admin = _admin_client()
+    admin.post("/articles", json={"title": "Auth Publish Test"}, headers=AUTH)
+
+    c = _sales_client()
+    r = c.post("/articles/auth-publish-test/publish", headers=AUTH)
+    assert r.status_code == 403, r.text
+
+
+def test_publish_no_wp_creds_still_succeeds(monkeypatch):
+    """When WP env vars are absent the endpoint sets status without external call."""
+    monkeypatch.delenv("WP_URL", raising=False)
+    monkeypatch.delenv("WP_USER", raising=False)
+    monkeypatch.delenv("WP_APP_PWD", raising=False)
+
+    c = _admin_client()
+    c.post("/articles", json={"title": "No WP Creds"}, headers=AUTH)
+    r = c.post("/articles/no-wp-creds/publish", headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "published"

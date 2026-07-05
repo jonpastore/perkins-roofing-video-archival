@@ -116,3 +116,38 @@ def status(_claims=Depends(require_role("view_status"))):
         }
     finally:
         s.close()
+
+
+class RetryRequest(BaseModel):
+    video_id: str
+    stage: str
+
+
+@app.post("/status/retry")
+def status_retry(body: RetryRequest, _claims=Depends(require_role("view_status"))):
+    """Reset a failed IngestionRun back to pending so the next ingest run reprocesses it.
+
+    Finds all IngestionRun rows matching video_id + stage with status='error',
+    clears last_error, and sets status='pending'. Returns {reset: <count>}.
+    404 if no matching error row exists.
+    """
+    from app.models import IngestionRun, SessionLocal
+
+    with SessionLocal() as s:
+        rows = (
+            s.query(IngestionRun)
+            .filter(
+                IngestionRun.video_id == body.video_id,
+                IngestionRun.stage == body.stage,
+                IngestionRun.status == "error",
+            )
+            .all()
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="No failed stage found for that video_id + stage")
+        for row in rows:
+            row.status = "pending"
+            row.last_error = None
+        s.commit()
+
+    return {"reset": len(rows)}

@@ -5,10 +5,12 @@ main app in api/app.py with ``app.include_router(router)``.
 
 Role requirements (from core.authz):
   - article_read   → sales or admin
-  - manage_articles (POST/PUT/DELETE) → admin only (covered by admin "*")
+  - manage_articles (POST/PUT/DELETE/publish) → admin only (covered by admin "*")
 """
+import logging
+import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +18,8 @@ from pydantic import BaseModel
 
 from api.auth import require_role
 from app.models import Article, SessionLocal
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/articles", tags=["articles"])
 
@@ -163,3 +167,66 @@ def delete_article(slug: str, claims=Depends(require_role("manage_articles"))):
             raise HTTPException(status_code=404, detail="article not found")
         db.delete(a)
         db.commit()
+
+
+@router.post("/{slug}/publish")
+def publish_article(slug: str, claims=Depends(require_role("manage_articles"))):
+    """Publish an article immediately.
+
+    Sets status='published' and publish_at=now. If WP credentials are present in
+    the environment (WP_URL, WP_USER, WP_APP_PWD) and the article has content,
+    publishes to WordPress and stores the returned wp_post_id. When creds are
+    absent the endpoint still succeeds — it just sets the DB status without an
+    external call.
+    """
+    with SessionLocal() as db:
+        a = db.get(Article, slug)
+        if a is None:
+            raise HTTPException(status_code=404, detail="article not found")
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # store as naive UTC
+        a.status = "published"
+        a.publish_at = now
+
+        # Attempt WordPress publish only when env creds are all present
+        wp_creds_present = all(
+            os.environ.get(k) for k in ("WP_URL", "WP_USER", "WP_APP_PWD")
+        )
+        if wp_creds_present and a.content_md:
+            try:
+                from jobs.article_job import _markdown_to_html  # noqa: PLC0415
+                from adapters.wordpress import publish, update  # noqa: PLC0415
+
+                html = _markdown_to_html(a.content_md)
+                meta_desc = a.meta or ""
+                jsonld = list(a.jsonld_json) if a.jsonld_json else []
+
+                if a.wp_post_id:
+                    update(
+                        post_id=a.wp_post_id,
+                        title=a.title,
+                        html=html,
+                        meta_description=meta_desc,
+                        jsonld=jsonld,
+                        status="publish",
+                    )
+                    logger.info("wp update post_id=%d slug=%s", a.wp_post_id, slug)
+                else:
+                    post_id = publish(
+                        title=a.title,
+                        html=html,
+                        meta_description=meta_desc,
+                        jsonld=jsonld,
+                        status="publish",
+                    )
+                    a.wp_post_id = post_id
+                    logger.info("wp publish post_id=%d slug=%s", post_id, slug)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("wp publish failed for slug=%s (status still set): %s", slug, exc)
+        else:
+            if not wp_creds_present:
+                logger.info("wp creds absent — skipping external publish for slug=%s", slug)
+
+        db.commit()
+        db.refresh(a)
+        return _article_full(a)

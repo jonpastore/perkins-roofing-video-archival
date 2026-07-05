@@ -7,6 +7,8 @@ Role requirements (from core.authz):
   - article_read    → sales or admin  (GET /faq/mined)
   - manage_articles → admin only      (POST /faq/build)
 """
+import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -16,6 +18,7 @@ from api.auth import require_role
 from app.models import GraphNode, SessionLocal
 
 router = APIRouter(prefix="/faq", tags=["faq"])
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -26,19 +29,54 @@ def _yt_link(video_id: str, t: int) -> str:
     return f"https://youtu.be/{video_id}?t={t}"
 
 
-def _to_question(label: str, detail: str) -> str:
-    """Convert a claim/objection label+detail into a natural question.
-
-    Deterministic and cheap: no LLM involved. If the label already ends with
-    '?' it's used as-is. Otherwise we try to make it a question.
-    """
+def _to_question_heuristic(label: str, detail: str) -> str:
+    """Fallback: capitalise and append '?' if not already a question."""
     text = (label or "").strip() or (detail or "").strip()
     if not text:
         return ""
     if text.endswith("?"):
         return text
-    # Capitalise and append '?'
     return text[0].upper() + text[1:] + "?"
+
+
+def _rephrase_via_llm(statements: list[str]) -> list[str]:
+    """Batch-rephrase raw claim/objection statements into natural homeowner questions.
+
+    Sends one prompt to the LLM with all statements numbered; parses the numbered
+    list back. Returns a list the same length as ``statements``. On any failure
+    returns an empty list so the caller falls back to the heuristic.
+    """
+    from app.llm import chat
+
+    numbered = "\n".join(f"{i+1}. {s}" for i, s in enumerate(statements))
+    prompt = (
+        "You are helping a roofing company build an FAQ for homeowners.\n"
+        "Rephrase each of the following statements into a natural question a homeowner might ask.\n"
+        "Return ONLY a numbered list in the exact same order, one question per line, "
+        "ending each with a question mark. No extra text.\n\n"
+        f"{numbered}"
+    )
+    try:
+        raw = chat(prompt, want_json=False)
+    except Exception as exc:
+        log.warning("LLM rephrase failed: %s", exc)
+        return []
+
+    # Parse "1. Question text?" lines
+    questions: list[str] = []
+    for line in raw.splitlines():
+        m = re.match(r"^\s*\d+\.\s*(.+)", line)
+        if m:
+            q = m.group(1).strip()
+            if q and not q.endswith("?"):
+                q += "?"
+            questions.append(q)
+
+    if len(questions) != len(statements):
+        log.warning("LLM rephrase count mismatch (%d vs %d)", len(questions), len(statements))
+        return []
+
+    return questions
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +92,9 @@ def list_mined(
     """Return candidate FAQ items derived from content_graph objections + claims.
 
     Each item has: question, video_id, t (seconds), url (deep-link).
-    Filter with ?q=<substring>. Deterministic — no LLM.
+    Statements are rephrased into natural homeowner questions via the LLM
+    (one batch call). Falls back to a heuristic if the LLM call fails.
+    Filter with ?q=<substring>.
     """
     with SessionLocal() as db:
         rows = (
@@ -64,12 +104,28 @@ def list_mined(
                 GraphNode.start.isnot(None),
             )
             .order_by(GraphNode.video_id, GraphNode.start)
+            .limit(limit)
             .all()
         )
 
+    if not rows:
+        return []
+
+    # Build raw statement list for the LLM batch call
+    raw_statements = [
+        (row.label or "").strip() or (row.detail or "").strip()
+        for row in rows
+    ]
+
+    rephrased = _rephrase_via_llm(raw_statements)
+    use_llm = len(rephrased) == len(rows)
+
     items = []
-    for row in rows:
-        question = _to_question(row.label or "", row.detail or "")
+    for i, row in enumerate(rows):
+        if use_llm:
+            question = rephrased[i] if rephrased[i] else _to_question_heuristic(row.label or "", row.detail or "")
+        else:
+            question = _to_question_heuristic(row.label or "", row.detail or "")
         if not question:
             continue
         if q and q.lower() not in question.lower():
@@ -81,8 +137,6 @@ def list_mined(
             "t": t,
             "url": _yt_link(row.video_id, t),
         })
-        if len(items) >= limit:
-            break
 
     return items
 

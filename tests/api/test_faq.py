@@ -76,10 +76,26 @@ def setup_module(module):
 
 
 # ---------------------------------------------------------------------------
+# GET /faq/mined — helpers
+# ---------------------------------------------------------------------------
+
+def _fake_rephrase(statements):
+    """LLM stub: prefix each statement with 'Rephrased: ' and append '?'."""
+    return [f"Rephrased: {s}?" for s in statements]
+
+
+def _failing_rephrase(statements):
+    """LLM stub that simulates a failure (returns empty list → fallback)."""
+    return []
+
+
+# ---------------------------------------------------------------------------
 # GET /faq/mined
 # ---------------------------------------------------------------------------
 
-def test_mined_returns_list():
+def test_mined_returns_list(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _admin_client()
     r = c.get("/faq/mined", headers=AUTH)
     assert r.status_code == 200, r.text
@@ -88,7 +104,9 @@ def test_mined_returns_list():
     assert len(items) >= 3
 
 
-def test_mined_item_shape():
+def test_mined_item_shape(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _admin_client()
     r = c.get("/faq/mined", headers=AUTH)
     assert r.status_code == 200, r.text
@@ -101,7 +119,38 @@ def test_mined_item_shape():
     assert "?t=" in item["url"]
 
 
-def test_mined_question_ends_with_questionmark():
+def test_mined_question_comes_from_rephraser(monkeypatch):
+    """Questions should come from the LLM rephraser when it succeeds."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
+    c = _admin_client()
+    r = c.get("/faq/mined", headers=AUTH)
+    items = r.json()
+    assert len(items) >= 1
+    for item in items:
+        assert item["question"].startswith("Rephrased: "), (
+            f"Expected rephrased question, got: {item['question']!r}"
+        )
+        assert item["question"].endswith("?"), f"Not a question: {item['question']!r}"
+
+
+def test_mined_fallback_when_llm_fails(monkeypatch):
+    """When the rephraser returns [], fall back to the heuristic (still ends with '?')."""
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _failing_rephrase)
+    c = _admin_client()
+    r = c.get("/faq/mined", headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert len(items) >= 1
+    for item in items:
+        assert item["question"].endswith("?"), f"Not a question: {item['question']!r}"
+        assert not item["question"].startswith("Rephrased: "), "Fallback should not use rephraser prefix"
+
+
+def test_mined_question_ends_with_questionmark(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _admin_client()
     r = c.get("/faq/mined", headers=AUTH)
     items = r.json()
@@ -109,7 +158,9 @@ def test_mined_question_ends_with_questionmark():
         assert item["question"].endswith("?"), f"Not a question: {item['question']!r}"
 
 
-def test_mined_excludes_rows_without_start():
+def test_mined_excludes_rows_without_start(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _admin_client()
     r = c.get("/faq/mined", headers=AUTH)
     questions = [i["question"] for i in r.json()]
@@ -117,7 +168,9 @@ def test_mined_excludes_rows_without_start():
     assert not any("No timestamp claim" in q for q in questions)
 
 
-def test_mined_filter_by_q():
+def test_mined_filter_by_q(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _admin_client()
     r = c.get("/faq/mined?q=noisy", headers=AUTH)
     assert r.status_code == 200, r.text
@@ -127,21 +180,27 @@ def test_mined_filter_by_q():
         assert "noisy" in item["question"].lower()
 
 
-def test_mined_filter_no_match():
+def test_mined_filter_no_match(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _admin_client()
     r = c.get("/faq/mined?q=zzznomatchzzz", headers=AUTH)
     assert r.status_code == 200, r.text
     assert r.json() == []
 
 
-def test_mined_limit():
+def test_mined_limit(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _admin_client()
     r = c.get("/faq/mined?limit=2", headers=AUTH)
     assert r.status_code == 200, r.text
     assert len(r.json()) <= 2
 
 
-def test_sales_can_get_mined():
+def test_sales_can_get_mined(monkeypatch):
+    import api.routes.faq as faq_mod
+    monkeypatch.setattr(faq_mod, "_rephrase_via_llm", _fake_rephrase)
     c = _sales_client()
     r = c.get("/faq/mined", headers=AUTH)
     assert r.status_code == 200, r.text

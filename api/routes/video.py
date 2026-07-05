@@ -56,6 +56,22 @@ def list_proposals(claims=Depends(require_role("approve_video"))):
         return [_series_to_dict(r) for r in rows]
 
 
+@router.get("/series")
+def list_series(claims=Depends(require_role("approve_video"))):
+    """Return ALL MiniSeries (approved and unapproved), ordered by id desc."""
+    with SessionLocal() as db:
+        rows = db.query(MiniSeries).order_by(MiniSeries.id.desc()).all()
+        return [
+            {
+                "id": s.id,
+                "video_id": s.video_id,
+                "title": s.title,
+                "approved": s.approved,
+            }
+            for s in rows
+        ]
+
+
 @router.get("/{series_id}")
 def get_series(series_id: int, claims=Depends(require_role("approve_video"))):
     """Return one MiniSeries by id (any approval state)."""

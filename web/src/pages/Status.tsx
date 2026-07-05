@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
 
+type ToastTone = "green" | "red";
+interface Toast { message: string; tone: ToastTone; }
+
 interface FailedStage {
   video_id: string;
   stage: string;
@@ -28,6 +31,13 @@ export function Status() {
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null); // "video_id:stage" key
+  const [toast, setToast] = useState<Toast | null>(null);
+
+  function showToast(message: string, tone: ToastTone) {
+    setToast({ message, tone });
+    setTimeout(() => setToast(null), 4000);
+  }
 
   function fetchStatus() {
     setLoading(true);
@@ -40,6 +50,25 @@ export function Status() {
       .then((d: StatusData) => setData(d))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
+  }
+
+  function retryStage(video_id: string, stage: string) {
+    const key = `${video_id}:${stage}`;
+    setRetrying(key);
+    apiFetch("/status/retry", {
+      method: "POST",
+      body: JSON.stringify({ video_id, stage }),
+    })
+      .then((r) => {
+        if (!r.ok) return r.json().then((d: { detail?: string }) => { throw new Error(d.detail ?? `${r.status}`); });
+        return r.json();
+      })
+      .then((d: { reset: number }) => {
+        showToast(`Re-queued ${d.reset} run(s) for next ingest. Refresh to confirm.`, "green");
+        fetchStatus();
+      })
+      .catch((e: unknown) => showToast(`Retry failed: ${e instanceof Error ? e.message : String(e)}`, "red"))
+      .finally(() => setRetrying(null));
   }
 
   useEffect(() => {
@@ -62,6 +91,22 @@ export function Status() {
       <PageTitle right={<Button onClick={fetchStatus} disabled={loading}>Refresh</Button>}>
         Platform Status
       </PageTitle>
+
+      {toast && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 16px",
+            borderRadius: 8,
+            background: toast.tone === "green" ? "#e6f9f0" : "#fdecea",
+            color: toast.tone === "green" ? "#1a7f4b" : BRAND.red,
+            fontSize: 14,
+            fontWeight: 500,
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
 
       {loading && <Loading />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
@@ -117,32 +162,48 @@ export function Status() {
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Video ID</th>
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Stage</th>
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Error</th>
+                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.failed_stages.map((f, i) => (
-                    <tr
-                      key={`${f.video_id}-${f.stage}-${i}`}
-                      style={{ borderBottom: `1px solid ${BRAND.border}` }}
-                    >
-                      <td style={{ padding: "10px 16px" }}>
-                        <a
-                          href={`https://youtu.be/${f.video_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
-                        >
-                          {f.video_id}
-                        </a>
-                      </td>
-                      <td style={{ padding: "10px 16px" }}>
-                        <Badge tone="amber">{f.stage}</Badge>
-                      </td>
-                      <td style={{ padding: "10px 16px", color: BRAND.red, fontSize: 13 }}>
-                        {f.error}
-                      </td>
-                    </tr>
-                  ))}
+                  {data.failed_stages.map((f, i) => {
+                    const key = `${f.video_id}:${f.stage}`;
+                    const busy = retrying === key;
+                    return (
+                      <tr
+                        key={`${f.video_id}-${f.stage}-${i}`}
+                        style={{ borderBottom: `1px solid ${BRAND.border}` }}
+                      >
+                        <td style={{ padding: "10px 16px" }}>
+                          <a
+                            href={`https://youtu.be/${f.video_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
+                          >
+                            {f.video_id}
+                          </a>
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <Badge tone="amber">{f.stage}</Badge>
+                        </td>
+                        <td style={{ padding: "10px 16px", color: BRAND.red, fontSize: 13 }}>
+                          {f.error}
+                        </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <Button
+                            variant="ghost"
+                            disabled={busy}
+                            style={{ padding: "5px 12px", fontSize: 13 }}
+                            onClick={() => retryStage(f.video_id, f.stage)}
+                            title="Re-queues this stage for the next ingest run"
+                          >
+                            {busy ? "Queuing…" : "Retry"}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </Card>
