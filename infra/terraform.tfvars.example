@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars (gitignored) and fill in after creating the OAuth Web client.
+# Console → APIs & Services → Credentials → OAuth 2.0 Client ID (Web application).
+google_idp_client_id     = "REPLACE-with-client-id.apps.googleusercontent.com"
+google_idp_client_secret = "REPLACE-with-client-secret"
