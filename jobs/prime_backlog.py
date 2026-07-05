@@ -37,16 +37,19 @@ def _mine_faqs(limit: int) -> int:
         ][:limit]
         if not nodes:
             return 0
-        questions = _rephrase_via_llm([(n.label or n.detail or "").strip() for n in nodes])
         made = 0
-        for n, q in zip(nodes, questions):
-            if not q:
-                continue
-            db.add(FaqEntry(question=q, answer=None, source_kind=n.kind,
-                            source_node_id=n.id, video_id=n.video_id, start=n.start or 0.0,
-                            status="mined"))
-            made += 1
-        db.commit()
+        # Rephrase in small batches — one giant LLM call would blow the context window.
+        for i in range(0, len(nodes), 40):
+            chunk = nodes[i:i + 40]
+            questions = _rephrase_via_llm([(n.label or n.detail or "").strip() for n in chunk])
+            for n, q in zip(chunk, questions):
+                if not q:
+                    continue
+                db.add(FaqEntry(question=q, answer=None, source_kind=n.kind,
+                                source_node_id=n.id, video_id=n.video_id, start=n.start or 0.0,
+                                status="mined"))
+                made += 1
+            db.commit()
         return made
 
 

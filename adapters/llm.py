@@ -73,11 +73,27 @@ class OllamaLLM:
         import re  # noqa: PLC0415
         from app.config import settings  # noqa: PLC0415
         from app.llm import _ollama  # noqa: PLC0415
+        # Ollama can't enforce a JSON schema (no controlled generation), so spell out the
+        # expected keys in the prompt — otherwise the model omits fields like "content".
+        if response_schema and isinstance(response_schema, dict):
+            props = response_schema.get("properties", {})
+            req = response_schema.get("required", list(props))
+            prompt = (
+                prompt
+                + f"\n\nReturn ONLY one valid JSON object with these keys: {', '.join(props)}. "
+                + f"Required: {', '.join(req)}. "
+                + 'The "content" key (if present) must hold the COMPLETE article body as HTML.'
+            )
         payload = {
             "model": settings.LLM_MODEL,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.1 if (want_json or response_schema) else 0.4, "num_ctx": 8192},
+            # num_predict raised so long article JSON isn't truncated (default cap → unparseable JSON).
+            "options": {
+                "temperature": 0.1 if (want_json or response_schema) else 0.4,
+                "num_ctx": 16384,
+                "num_predict": 8192,
+            },
         }
         if want_json or response_schema:
             payload["format"] = "json"
