@@ -114,6 +114,17 @@ class SocialPost(Base):
         UniqueConstraint("series_id", "part", "platform", name="uq_social_series_part_platform"),
     )
 
+class AggregatedTopic(Base):
+    __tablename__ = "aggregated_topics"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    canonical_label = Column(String, nullable=False, index=True)
+    num_videos = Column(Integer, nullable=False, default=0)
+    total_seconds = Column(Float, nullable=False, default=0.0)
+    video_ids = Column(JSON, nullable=False)   # list[str]
+    node_ids = Column(JSON, nullable=False)    # list[int]
+    version = Column(String, nullable=False)
+
+
 class PlatformConfig(Base):
     __tablename__ = "platform_config"
     key = Column(String, primary_key=True)

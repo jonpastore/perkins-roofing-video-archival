@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.auth import require_role
-from app.models import Article, GraphNode, ScheduledContent, SessionLocal, Video
+from app.models import AggregatedTopic, Article, GraphNode, ScheduledContent, SessionLocal, Video
 
 logger = logging.getLogger(__name__)
 
@@ -53,82 +53,183 @@ class GenerateArticleRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("")
-def list_topics(claims=Depends(require_role("article_read"))):
-    """Return the top 150 mined topics from content_graph, grouped by normalized label.
+def list_topics(
+    sort: str = "videos",
+    limit: Optional[int] = None,
+    offset: int = 0,
+    claims=Depends(require_role("article_read")),
+):
+    """Return distilled topic list — aggregated by semantic similarity when pre-computed.
 
-    Each entry includes:
-      - label: the most common casing of this topic label
-      - count: number of distinct videos that mention it
-      - sample: {video_id, t} for a jump-to-timecode link
+    When aggregated_topics is populated (run jobs/aggregate_topics.py offline),
+    returns the full aggregated set with pagination.  Falls back to live exact-match
+    grouping from content_graph when the table is empty (pre-priming safety net).
+
+    Query params:
+      - sort:   "videos" (default) | "length" | "alpha"
+      - limit:  page size (omit for all)
+      - offset: skip first N results (default 0)
+
+    Response:
+      {
+        "total": int,
+        "items": [{label, count, num_videos, total_content_length, sample}]
+      }
+
+    The shape of each item is backwards-compatible with the previous flat list so
+    the SPA continues to work without changes.
     """
     with SessionLocal() as db:
-        # Fetch all topic rows (kind='topics') — group in Python for SQLite compat
-        rows = (
-            db.query(GraphNode)
-            .filter(GraphNode.kind == "topics")
-            .all()
-        )
+        # ---- Try aggregated path first ----------------------------------
+        agg_count = db.query(AggregatedTopic).count()
+        if agg_count > 0:
+            return _list_topics_aggregated(db, sort=sort, limit=limit, offset=offset)
 
-        # Group by normalized label
-        groups: dict[str, dict] = {}
-        for row in rows:
-            if not row.label:
-                continue
-            key = _normalize_label(row.label)
-            if key not in groups:
-                groups[key] = {
-                    "label": row.label,         # keep first-seen casing
-                    "video_ids": set(),
-                    "sample": {"video_id": row.video_id, "t": int(row.start or 0)},
-                }
-            groups[key]["video_ids"].add(row.video_id)
+        # ---- Fallback: live grouping from content_graph -----------------
+        return _list_topics_live(db, sort=sort, limit=limit, offset=offset)
 
-        # Collect per-video durations for total_content_length
-        all_video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
-        duration_map: dict[str, float] = {}
-        if all_video_ids:
-            vids = db.query(Video).filter(Video.id.in_(list(all_video_ids))).all()
-            duration_map = {v.id: (v.duration or 0.0) for v in vids}
 
-        # Sort by distinct-video count desc, cap at 150
-        result = sorted(
-            [
-                {
-                    "label": g["label"],
-                    "count": len(g["video_ids"]),
-                    "num_videos": len(g["video_ids"]),
-                    "total_content_length": sum(
-                        duration_map.get(vid, 0.0) for vid in g["video_ids"]
-                    ),
-                    "sample": g["sample"],
-                }
-                for g in groups.values()
-            ],
-            key=lambda x: x["count"],
-            reverse=True,
-        )[:150]
+def _sort_key(sort: str):
+    if sort == "length":
+        return lambda x: x["total_content_length"]
+    if sort == "alpha":
+        return lambda x: x["label"].lower()
+    return lambda x: x["num_videos"]
 
-        return result
+
+def _paginate(items: list, limit: Optional[int], offset: int) -> dict:
+    total = len(items)
+    sliced = items[offset:] if limit is None else items[offset: offset + limit]
+    return {"total": total, "items": sliced}
+
+
+def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) -> dict:
+    """Build response from aggregated_topics rows."""
+    rows = db.query(AggregatedTopic).all()
+
+    items = []
+    for row in rows:
+        # Derive a sample: first node_id → look up its video_id + start via GraphNode
+        sample = {"video_id": "", "t": 0}
+        if row.node_ids:
+            first_node = db.query(GraphNode).filter(GraphNode.id == row.node_ids[0]).first()
+            if first_node:
+                sample = {"video_id": first_node.video_id, "t": int(first_node.start or 0)}
+        elif row.video_ids:
+            sample = {"video_id": row.video_ids[0], "t": 0}
+
+        items.append({
+            "label": row.canonical_label,
+            "count": row.num_videos,            # backwards-compat alias
+            "num_videos": row.num_videos,
+            "total_content_length": row.total_seconds,
+            "sample": sample,
+        })
+
+    reverse = sort != "alpha"
+    items.sort(key=_sort_key(sort), reverse=reverse)
+    return _paginate(items, limit, offset)
+
+
+def _list_topics_live(db, sort: str, limit: Optional[int], offset: int) -> dict:
+    """Live grouping from content_graph — exact-match fallback (pre-priming)."""
+    rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
+
+    groups: dict[str, dict] = {}
+    for row in rows:
+        if not row.label:
+            continue
+        key = _normalize_label(row.label)
+        if key not in groups:
+            groups[key] = {
+                "label": row.label,
+                "video_ids": set(),
+                "sample": {"video_id": row.video_id, "t": int(row.start or 0)},
+            }
+        groups[key]["video_ids"].add(row.video_id)
+
+    all_video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
+    duration_map: dict[str, float] = {}
+    if all_video_ids:
+        vids = db.query(Video).filter(Video.id.in_(list(all_video_ids))).all()
+        duration_map = {v.id: (v.duration or 0.0) for v in vids}
+
+    items = [
+        {
+            "label": g["label"],
+            "count": len(g["video_ids"]),
+            "num_videos": len(g["video_ids"]),
+            "total_content_length": sum(duration_map.get(v, 0.0) for v in g["video_ids"]),
+            "sample": g["sample"],
+        }
+        for g in groups.values()
+    ]
+
+    reverse = sort != "alpha"
+    items.sort(key=_sort_key(sort), reverse=reverse)
+    return _paginate(items, limit, offset)
 
 
 @router.get("/videos")
 def list_topic_videos(label: str, claims=Depends(require_role("article_read"))):
     """Return all source videos for a given topic label.
 
-    Joins content_graph topic nodes (matching the label, case-insensitive) to the
-    videos table so the caller gets title + duration for each distinct video, plus
-    the earliest start time for a play-from-timecode link.
+    When aggregated_topics is populated, looks up the matching aggregate row
+    (case-insensitive on canonical_label) and returns its member videos joined
+    to the Video table for title + duration.
+
+    Falls back to live content_graph scan when aggregates are absent.
 
     Returns [{video_id, title, duration, start}] sorted by video title.
     """
     norm = _normalize_label(label)
     with SessionLocal() as db:
-        rows = (
-            db.query(GraphNode)
-            .filter(GraphNode.kind == "topics")
-            .all()
-        )
-        # Collect distinct video_ids for this label, tracking earliest start
+        # ---- Try aggregated path ----------------------------------------
+        agg_count = db.query(AggregatedTopic).count()
+        if agg_count > 0:
+            # Find the best-matching aggregate row by normalised canonical_label
+            agg_rows = db.query(AggregatedTopic).all()
+            match = next(
+                (r for r in agg_rows if _normalize_label(r.canonical_label) == norm),
+                None,
+            )
+            if match is None:
+                return []
+
+            member_video_ids: list[str] = match.video_ids or []
+            if not member_video_ids:
+                return []
+
+            # Get earliest start per video_id from the member node_ids
+            video_starts: dict[str, float] = {}
+            if match.node_ids:
+                nodes = (
+                    db.query(GraphNode)
+                    .filter(GraphNode.id.in_(match.node_ids))
+                    .all()
+                )
+                for node in nodes:
+                    t = float(node.start or 0)
+                    if node.video_id not in video_starts or t < video_starts[node.video_id]:
+                        video_starts[node.video_id] = t
+
+            vids = db.query(Video).filter(Video.id.in_(member_video_ids)).all()
+            vid_map = {v.id: v for v in vids}
+
+            result = []
+            for vid_id in member_video_ids:
+                v = vid_map.get(vid_id)
+                result.append({
+                    "video_id": vid_id,
+                    "title": v.title if v and v.title else vid_id,
+                    "duration": v.duration if v and v.duration is not None else 0.0,
+                    "start": video_starts.get(vid_id, 0.0),
+                })
+            result.sort(key=lambda x: x["title"].lower())
+            return result
+
+        # ---- Fallback: live content_graph scan --------------------------
+        rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
         video_starts: dict[str, float] = {}
         for row in rows:
             if not row.label:
@@ -155,7 +256,6 @@ def list_topic_videos(label: str, claims=Depends(require_role("article_read"))):
                 "duration": v.duration if v and v.duration is not None else 0.0,
                 "start": start,
             })
-
         result.sort(key=lambda x: x["title"].lower())
         return result
 

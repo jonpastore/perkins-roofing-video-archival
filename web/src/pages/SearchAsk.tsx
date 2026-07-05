@@ -62,6 +62,8 @@ const SUGGESTIONS = [
   "How long does a roof replacement take?",
 ];
 
+const TOPIC_PAGE_SIZE = 30;
+
 // Pull {videoId, t} out of a youtu.be/watch deep link.
 function parseLink(url: string): { videoId: string; t: number } | null {
   const t = Number(/[?&]t=(\d+)/.exec(url)?.[1] ?? NaN);
@@ -402,23 +404,29 @@ export function SearchAsk() {
   const [topicStates, setTopicStates] = useState<Record<string, "generating" | "done">>({});
   const [topicSort, setTopicSort] = useState<"alpha" | "videos" | "length">("videos");
   const [drillLabel, setDrillLabel] = useState<string | null>(null);
+  const [topicOffset, setTopicOffset] = useState(0);
+  const [topicTotal, setTopicTotal] = useState(0);
 
-  // Fetch mined topics when entering "search" mode
+  // Fetch aggregated topics (paginated over ALL) when in "search" mode, on page/sort change.
   useEffect(() => {
     if (mode !== "search") return;
-    // Only fetch if we don't have them yet
-    if (topics.length > 0) return;
     setTopicsLoading(true);
     setTopicsError(null);
-    apiFetch("/topics")
+    const sortParam = topicSort === "alpha" ? "alpha" : topicSort === "videos" ? "videos" : "length";
+    apiFetch(`/topics?sort=${sortParam}&limit=${TOPIC_PAGE_SIZE}&offset=${topicOffset}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((data: TopicItem[]) => setTopics(data))
+      .then((data: { total?: number; items?: TopicItem[] } | TopicItem[]) => {
+        // Supports both the {total, items} envelope and a bare list (fallback).
+        const items = Array.isArray(data) ? data : data.items ?? [];
+        setTopics(items);
+        setTopicTotal(Array.isArray(data) ? items.length : data.total ?? items.length);
+      })
       .catch((e) => setTopicsError(e instanceof Error ? e.message : String(e)))
       .finally(() => setTopicsLoading(false));
-  }, [mode]);
+  }, [mode, topicOffset, topicSort]);
 
   async function run(q: string) {
     const question = q.trim();
@@ -714,7 +722,7 @@ export function SearchAsk() {
                     return (
                       <button
                         key={s}
-                        onClick={() => setTopicSort(s)}
+                        onClick={() => { setTopicSort(s); setTopicOffset(0); }}
                         style={{
                           padding: "4px 10px", border: "none", cursor: "pointer",
                           fontSize: 11, fontWeight: 600,
@@ -746,6 +754,17 @@ export function SearchAsk() {
                   </p>
                 )}
               </div>
+              {topicTotal > TOPIC_PAGE_SIZE && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 14 }}>
+                  <Button variant="ghost" disabled={topicOffset === 0}
+                    onClick={() => setTopicOffset(Math.max(0, topicOffset - TOPIC_PAGE_SIZE))}>← Prev</Button>
+                  <span style={{ fontSize: 13, color: BRAND.sub }}>
+                    Page {Math.floor(topicOffset / TOPIC_PAGE_SIZE) + 1} of {Math.ceil(topicTotal / TOPIC_PAGE_SIZE)} · {topicTotal} topics
+                  </span>
+                  <Button variant="ghost" disabled={topicOffset + TOPIC_PAGE_SIZE >= topicTotal}
+                    onClick={() => setTopicOffset(topicOffset + TOPIC_PAGE_SIZE)}>Next →</Button>
+                </div>
+              )}
             </>
           )}
           {drillLabel && (

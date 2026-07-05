@@ -124,12 +124,23 @@ def setup_module(module):
 # GET /topics
 # ---------------------------------------------------------------------------
 
+def _items(r):
+    """Extract the items list from a GET /topics response (supports both shapes)."""
+    body = r.json()
+    if isinstance(body, dict) and "items" in body:
+        return body["items"]
+    return body  # fallback for any unexpected shape
+
+
 def test_get_topics_returns_list_shape():
-    """GET /topics returns a list of {label, count, sample} dicts."""
+    """GET /topics returns {total, items} where items are {label, count, sample} dicts."""
     c = _admin_client()
     r = c.get("/topics", headers=AUTH)
     assert r.status_code == 200, r.text
-    items = r.json()
+    body = r.json()
+    assert "total" in body
+    assert "items" in body
+    items = body["items"]
     assert isinstance(items, list)
     # Each item must have the required keys
     for item in items:
@@ -145,7 +156,7 @@ def test_get_topics_groups_and_dedupes():
     c = _admin_client()
     r = c.get("/topics", headers=AUTH)
     assert r.status_code == 200, r.text
-    items = r.json()
+    items = _items(r)
     # Build a lookup by normalized label
     by_label = {item["label"].lower(): item for item in items}
     assert "flat roofing" in by_label
@@ -158,7 +169,7 @@ def test_get_topics_excludes_non_topic_kinds():
     """kind='claims' rows must not appear in the topic list."""
     c = _admin_client()
     r = c.get("/topics", headers=AUTH)
-    items = r.json()
+    items = _items(r)
     labels = [i["label"].lower() for i in items]
     assert "should not appear" not in labels
 
@@ -167,7 +178,7 @@ def test_get_topics_ordered_by_count_desc():
     """Topics are ordered by count descending (flat roofing before shingle repair)."""
     c = _admin_client()
     r = c.get("/topics", headers=AUTH)
-    items = r.json()
+    items = _items(r)
     counts = [i["count"] for i in items]
     assert counts == sorted(counts, reverse=True)
 
