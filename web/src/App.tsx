@@ -9,6 +9,7 @@ import { VideoApproval } from "./pages/VideoApproval";
 import { Status } from "./pages/Status";
 import { Articles } from "./pages/Articles";
 import { Scheduling } from "./pages/Scheduling";
+import { Faq } from "./pages/Faq";
 import { BRAND, FONT } from "./ui";
 
 type Role = "admin" | "sales" | null;
@@ -98,20 +99,22 @@ function AdminShell() {
         ["search-ask", "Search / Ask"],
         ["templates", "Templates"],
         ["articles", "Articles"],
+        ["faq", "FAQ"],
         ["scheduling", "Scheduling"],
         ["video-approval", "Video Approval"],
         ["archive", "Archive"],
-        ["config", "Status"],
+        ["status", "Status"],
       ]}
       render={(tab) => (
         <>
           {tab === "search-ask" && <SearchAsk />}
           {tab === "templates" && <Templates />}
           {tab === "articles" && <Articles />}
+          {tab === "faq" && <Faq />}
           {tab === "scheduling" && <Scheduling />}
           {tab === "video-approval" && <VideoApproval />}
           {tab === "archive" && <Archive />}
-          {tab === "config" && <Status />}
+          {tab === "status" && <Status />}
         </>
       )}
     />

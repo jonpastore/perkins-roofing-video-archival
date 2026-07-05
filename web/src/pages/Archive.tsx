@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
+import { BRAND, Badge, Loading, ErrorMsg } from "../ui";
 
 interface ArchiveVideo {
   id: string;
@@ -10,11 +11,175 @@ interface ArchiveVideo {
   youtube_url: string | null;
 }
 
+interface Topic {
+  label: string;
+  t: number;
+  url: string;
+}
+
+interface ArticleUsage {
+  slug: string;
+  title: string;
+  status: string;
+}
+
+interface SocialPostUsage {
+  platform: string;
+  status: string;
+  url: string | null;
+}
+
+interface VideoDetail {
+  topics: Topic[];
+  articles: ArticleUsage[];
+  social_posts: SocialPostUsage[];
+}
+
+type DetailState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "error"; msg: string }
+  | { kind: "ok"; data: VideoDetail };
+
 function formatDuration(seconds: number | null): string {
   if (seconds == null) return "—";
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// seconds -> M:SS (copied from SearchAsk.tsx)
+function mmss(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function statusTone(status: string): "green" | "amber" | "blue" | "gray" {
+  if (status === "published") return "green";
+  if (status === "scheduled") return "blue";
+  if (status === "draft") return "amber";
+  return "gray";
+}
+
+function platformTone(platform: string): "green" | "amber" | "blue" | "gray" {
+  if (platform === "instagram") return "amber";
+  if (platform === "tiktok") return "blue";
+  return "gray";
+}
+
+function DetailPanel({ videoId }: { videoId: string }) {
+  const [state, setState] = useState<DetailState>({ kind: "loading" });
+
+  useEffect(() => {
+    apiFetch(`/archive/${videoId}/detail`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((data: VideoDetail) => setState({ kind: "ok", data }))
+      .catch((e) =>
+        setState({ kind: "error", msg: e instanceof Error ? e.message : String(e) })
+      );
+  }, [videoId]);
+
+  const panelStyle = {
+    padding: "14px 16px",
+    background: BRAND.bg,
+    borderTop: `1px solid ${BRAND.border}`,
+    borderBottom: `1px solid ${BRAND.border}`,
+  };
+
+  if (state.kind === "loading") return <div style={panelStyle}><Loading label="Loading detail…" /></div>;
+  if (state.kind === "error") return <div style={panelStyle}><ErrorMsg>Error: {state.msg}</ErrorMsg></div>;
+  if (state.kind !== "ok") return null;
+
+  const { topics, articles, social_posts } = state.data;
+
+  return (
+    <div style={panelStyle}>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
+
+        {/* Topics */}
+        <div style={{ minWidth: 220, flex: "1 1 220px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            Topics
+          </div>
+          {topics.length === 0 ? (
+            <span style={{ fontSize: 13, color: BRAND.sub }}>No topics mined.</span>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
+              {topics.map((t) => (
+                <li key={t.url} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13 }}>
+                  <a
+                    href={t.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: BRAND.red, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}
+                  >
+                    ▶ {mmss(t.t)}
+                  </a>
+                  <span style={{ color: BRAND.ink }}>{t.label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Used in Articles */}
+        <div style={{ minWidth: 200, flex: "1 1 200px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            Used in Articles
+          </div>
+          {articles.length === 0 ? (
+            <span style={{ fontSize: 13, color: BRAND.sub }}>Not used in any articles.</span>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+              {articles.map((a) => (
+                <li key={a.slug} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                  <Badge tone={statusTone(a.status)}>{a.status}</Badge>
+                  <span style={{ color: BRAND.ink }}>{a.title}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Used in Social Posts */}
+        <div style={{ minWidth: 200, flex: "1 1 200px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            Used in Social Posts
+          </div>
+          {social_posts.length === 0 ? (
+            <span style={{ fontSize: 13, color: BRAND.sub }}>No social posts.</span>
+          ) : (
+            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+              {social_posts.map((p, i) => (
+                <li key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                  <Badge tone={platformTone(p.platform)}>{p.platform}</Badge>
+                  <Badge tone={statusTone(p.status)}>{p.status}</Badge>
+                  {p.url && (
+                    <a
+                      href={p.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: BRAND.red, fontWeight: 600, textDecoration: "none", fontSize: 12 }}
+                    >
+                      view ↗
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* TODO (B2): unanswered-comments count column — depends on the comments table built in B2.
+            Will show a count badge per video that, when clicked, opens the B2 comment-review queue. */}
+
+      </div>
+    </div>
+  );
 }
 
 export function Archive() {
@@ -24,6 +189,7 @@ export function Archive() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -53,6 +219,10 @@ export function Archive() {
     } finally {
       setDownloading(null);
     }
+  }
+
+  function toggleExpand(videoId: string) {
+    setExpandedId((prev) => (prev === videoId ? null : videoId));
   }
 
   return (
@@ -117,82 +287,116 @@ export function Archive() {
               </tr>
             )}
             {videos.map((v) => (
-              <tr
-                key={v.id}
-                style={{ borderBottom: "1px solid #f0f0f0" }}
-              >
-                <td style={{ padding: "10px 12px" }}>
-                  {v.youtube_url ? (
-                    <a
-                      href={v.youtube_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: "#1a1a2e", textDecoration: "none", fontWeight: 500 }}
-                    >
-                      {v.title}
-                    </a>
-                  ) : (
-                    <span style={{ fontWeight: 500 }}>{v.title}</span>
-                  )}
-                </td>
-                <td style={{ padding: "10px 12px", color: "#555" }}>
-                  {formatDuration(v.duration)}
-                </td>
-                <td style={{ padding: "10px 12px", color: "#555" }}>
-                  {v.upload_date ?? "—"}
-                </td>
-                <td style={{ padding: "10px 12px" }}>
-                  {v.archived ? (
-                    <span
-                      style={{
-                        background: "#e6f9f0",
-                        color: "#1a7f4b",
-                        padding: "2px 10px",
-                        borderRadius: 20,
-                        fontSize: 12,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Archived
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        background: "#fff3e0",
-                        color: "#b45309",
-                        padding: "2px 10px",
-                        borderRadius: 20,
-                        fontSize: 12,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Pending
-                    </span>
-                  )}
-                </td>
-                <td style={{ padding: "10px 12px" }}>
-                  {v.archived ? (
-                    <button
-                      onClick={() => handleDownload(v)}
-                      disabled={downloading === v.id}
-                      style={{
-                        padding: "6px 14px",
-                        background: downloading === v.id ? "#ccc" : "#1a1a2e",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: 6,
-                        cursor: downloading === v.id ? "not-allowed" : "pointer",
-                        fontSize: 13,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {downloading === v.id ? "..." : "Download"}
-                    </button>
-                  ) : (
-                    <span style={{ color: "#bbb", fontSize: 13 }}>—</span>
-                  )}
-                </td>
-              </tr>
+              <>
+                <tr
+                  key={v.id}
+                  style={{ borderBottom: expandedId === v.id ? "none" : "1px solid #f0f0f0" }}
+                >
+                  <td style={{ padding: "10px 12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {/* Play button — opens YouTube video */}
+                      <a
+                        href={`https://youtu.be/${v.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Play on YouTube"
+                        style={{
+                          color: BRAND.red,
+                          fontSize: 15,
+                          lineHeight: 1,
+                          textDecoration: "none",
+                          flexShrink: 0,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        ▶
+                      </a>
+                      {/* Clickable title — expand detail panel */}
+                      <span
+                        onClick={() => toggleExpand(v.id)}
+                        style={{
+                          fontWeight: 500,
+                          color: "#1a1a2e",
+                          cursor: "pointer",
+                          textDecoration: expandedId === v.id ? "underline" : "none",
+                          textUnderlineOffset: 2,
+                        }}
+                        title="Click to expand topics and usage"
+                      >
+                        {v.title}
+                      </span>
+                      {/* Chevron hint */}
+                      <span style={{ color: BRAND.sub, fontSize: 11, userSelect: "none" }}>
+                        {expandedId === v.id ? "▲" : "▼"}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ padding: "10px 12px", color: "#555" }}>
+                    {formatDuration(v.duration)}
+                  </td>
+                  <td style={{ padding: "10px 12px", color: "#555" }}>
+                    {v.upload_date ?? "—"}
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {v.archived ? (
+                      <span
+                        style={{
+                          background: "#e6f9f0",
+                          color: "#1a7f4b",
+                          padding: "2px 10px",
+                          borderRadius: 20,
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Archived
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          background: "#fff3e0",
+                          color: "#b45309",
+                          padding: "2px 10px",
+                          borderRadius: 20,
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Pending
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    {v.archived ? (
+                      <button
+                        onClick={() => handleDownload(v)}
+                        disabled={downloading === v.id}
+                        style={{
+                          padding: "6px 14px",
+                          background: downloading === v.id ? "#ccc" : "#1a1a2e",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 6,
+                          cursor: downloading === v.id ? "not-allowed" : "pointer",
+                          fontSize: 13,
+                          fontWeight: 500,
+                        }}
+                      >
+                        {downloading === v.id ? "..." : "Download"}
+                      </button>
+                    ) : (
+                      <span style={{ color: "#bbb", fontSize: 13 }}>—</span>
+                    )}
+                  </td>
+                </tr>
+                {expandedId === v.id && (
+                  <tr key={`${v.id}-detail`}>
+                    <td colSpan={5} style={{ padding: 0 }}>
+                      <DetailPanel videoId={v.id} />
+                    </td>
+                  </tr>
+                )}
+              </>
             ))}
           </tbody>
         </table>

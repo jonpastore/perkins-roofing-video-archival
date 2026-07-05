@@ -10,7 +10,9 @@ from api.auth import current_claims, require_role
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.email import router as email_router
+from api.routes.faq import router as faq_router
 from api.routes.scheduling import router as scheduling_router
+from api.routes.topics import router as topics_router
 from api.routes.video import router as video_router
 from app import answer as A
 from app import retrieval as R
@@ -28,6 +30,8 @@ app.include_router(video_router)
 app.include_router(archive_router)
 app.include_router(articles_router)
 app.include_router(scheduling_router)
+app.include_router(topics_router)
+app.include_router(faq_router)
 
 
 class Query(BaseModel):
