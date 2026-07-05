@@ -118,6 +118,20 @@ class PlatformConfig(Base):
     __tablename__ = "platform_config"
     key = Column(String, primary_key=True)
     value = Column(String)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(String)  # email from auth claims
+
+
+class SecretAudit(Base):
+    """Audit log for secret writes via PUT /config/secrets.
+
+    Records WHO last set each Secret Manager secret through the UI.
+    The secret VALUE is never stored here — only metadata.
+    """
+    __tablename__ = "secret_audit"
+    key = Column(String, primary_key=True)  # secret id (e.g. "youtube-api-key")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(String)  # email from auth claims
 
 class FaqEntry(Base):
     __tablename__ = "faq_entries"

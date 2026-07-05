@@ -155,6 +155,36 @@ resource "google_project_iam_member" "api_firebaseauth_admin" {
   member  = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+# "Render now": api-run-sa triggers the render Cloud Run job (run.jobs.run) and acts as the
+# job's executor SA. Scoped to the render job (least privilege), not project-wide run.developer.
+resource "google_cloud_run_v2_job_iam_member" "api_run_render" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.jobs["render"].name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+resource "google_service_account_iam_member" "api_actas_jobs_sa" {
+  service_account_id = google_service_account.jobs_sa.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+# Config secret updates: api-run-sa adds new Secret Manager versions + reads version metadata
+# (last-set time). The /config/secrets endpoint is admin-gated and never returns secret values.
+resource "google_project_iam_member" "api_secret_version_adder" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretVersionAdder"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+resource "google_project_iam_member" "api_secret_viewer" {
+  project = var.project_id
+  role    = "roles/secretmanager.viewer"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
 # ---------------------------------------------------------------------------
 # 4. IAM bindings — jobs-sa
 #    roles/speech.client grants Cloud Speech-to-Text access.

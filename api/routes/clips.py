@@ -8,20 +8,37 @@ Role requirements (from core.authz):
 
 Endpoints
 ---------
-POST /clips/suggest   — LLM suggests the best clippable moments from a video's transcript.
-POST /clips/save      — Upsert a curated MiniSeries (approved=1) from chosen clips.
-GET  /clips/renderable — Approved MiniSeries without a SocialPost (ready to render).
+POST /clips/suggest              — LLM suggests the best clippable moments from a video's transcript.
+POST /clips/save                 — Upsert a curated MiniSeries (approved=1) from chosen clips.
+GET  /clips/renderable           — Approved MiniSeries without a SocialPost (ready to render).
+POST /clips/{series_id}/render   — Trigger the Cloud Run render JOB for a single series.
+GET  /clips/{series_id}/render-status — Poll rendered/total part counts for a series.
+
+IAM note: the api-run-sa service account must have:
+  - roles/run.developer (or the custom run.jobs.run permission) on the render job
+  - roles/iam.serviceAccountUser (actAs) on jobs-sa@{project}.iam.gserviceaccount.com
+  A parent/operator must grant those before the trigger endpoint will work in prod.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
+
+import google.auth
+import google.auth.transport.requests
+import requests as _requests
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.auth import require_role
 from app.models import GraphNode, MiniSeries, Segment, SessionLocal, SocialPost, Video
+
+# GCP coordinates — read from env so deploy.sh / Terraform own the values.
+_GCP_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "video-archival-and-content-gen")
+_GCP_REGION = os.getenv("GCP_REGION", "us-central1")
+_RENDER_JOB_NAME = "render"
 
 logger = logging.getLogger(__name__)
 
@@ -320,3 +337,119 @@ def list_renderable(
                     "parts_count": len(s.parts_json or []),
                 })
         return result
+
+
+def _cloud_run_bearer_token() -> str:
+    """Return a fresh Bearer token using the service's own ADC credentials."""
+    creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    creds.refresh(google.auth.transport.requests.Request())
+    return creds.token
+
+
+@router.post("/{series_id}/render")
+def trigger_render(
+    series_id: int,
+    claims=Depends(require_role("approve_video")),
+):
+    """Kick off the Cloud Run render JOB for a single approved MiniSeries.
+
+    Executes the Cloud Run Job named ``render`` via the Cloud Run Admin API v2,
+    injecting ``RENDER_SERIES_ID={series_id}`` as a container env override so
+    the job processes only that series instead of doing a full sweep.
+
+    Returns 404 if the series does not exist or is not yet approved.
+    Returns 502/503 on Cloud Run API errors (no traceback leaked to the caller).
+
+    IAM (parent must grant before this works in prod):
+      - api-run-sa needs  run.jobs.run  on the render job
+        (roles/run.developer covers it, or a custom role with just run.jobs.run)
+      - api-run-sa needs  iam.serviceAccounts.actAs  on jobs-sa
+        (roles/iam.serviceAccountUser on jobs-sa@{project}.iam.gserviceaccount.com)
+    """
+    # 404 guard — series must exist and be approved.
+    with SessionLocal() as db:
+        series = db.get(MiniSeries, series_id)
+        if series is None or not series.approved:
+            raise HTTPException(status_code=404, detail="series not found or not approved")
+
+    job_parent = (
+        f"projects/{_GCP_PROJECT}/locations/{_GCP_REGION}/jobs/{_RENDER_JOB_NAME}"
+    )
+    url = f"https://run.googleapis.com/v2/{job_parent}:run"
+    body = {
+        "overrides": {
+            "containerOverrides": [
+                {
+                    "env": [
+                        {"name": "RENDER_SERIES_ID", "value": str(series_id)}
+                    ]
+                }
+            ]
+        }
+    }
+
+    try:
+        token = _cloud_run_bearer_token()
+        resp = _requests.post(
+            url,
+            json=body,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Cloud Run job trigger network error: %s", exc)
+        raise HTTPException(status_code=503, detail="could not reach Cloud Run API") from exc
+
+    if not resp.ok:
+        logger.error(
+            "Cloud Run job trigger failed: status=%s body=%s",
+            resp.status_code,
+            resp.text[:400],
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cloud Run API returned {resp.status_code}",
+        )
+
+    data = resp.json()
+    execution_name = data.get("name", "")
+    logger.info("Render job execution started: %s (series_id=%d)", execution_name, series_id)
+    return {"execution": execution_name, "status": "started"}
+
+
+@router.get("/{series_id}/render-status")
+def render_status(
+    series_id: int,
+    claims=Depends(require_role("approve_video")),
+):
+    """Return render progress for a MiniSeries.
+
+    Counts SocialPost rows (matching render_job idempotency logic) to determine
+    how many parts have been rendered vs. the total declared in parts_json.
+
+    Returns:
+        {rendered: bool, parts_total: int, parts_rendered: int}
+
+    404 if the series does not exist or is not approved.
+    """
+    with SessionLocal() as db:
+        series = db.get(MiniSeries, series_id)
+        if series is None or not series.approved:
+            raise HTTPException(status_code=404, detail="series not found or not approved")
+
+        parts_total = len(series.parts_json or [])
+        parts_rendered = (
+            db.query(SocialPost.part)
+            .filter(
+                SocialPost.series_id == series_id,
+                SocialPost.gcs_url.isnot(None),
+            )
+            .distinct()
+            .count()
+        )
+
+    return {
+        "rendered": parts_rendered >= parts_total and parts_total > 0,
+        "parts_total": parts_total,
+        "parts_rendered": parts_rendered,
+    }

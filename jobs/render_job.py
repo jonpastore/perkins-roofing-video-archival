@@ -373,14 +373,17 @@ def render_part(
         db.close()
 
 
-def run(limit: int | None = None) -> dict:
-    """Sweep all approved MiniSeries and render any unrendered parts.
+def run(limit: int | None = None, *, series_id: int | None = None) -> dict:
+    """Sweep approved MiniSeries and render any unrendered parts.
 
-    A part is considered unrendered when no SocialPost row exists for that
-    series_id + part_index with a non-null gcs_url.
+    When *series_id* is given (or the env var ``RENDER_SERIES_ID`` is set),
+    only that single series is processed — used by the Cloud Run Admin API
+    trigger so an admin can kick off a targeted render from the UI.  The
+    existing full-sweep behaviour is preserved when neither is set.
 
     Args:
-        limit: Maximum number of *series* to process.  None means no cap.
+        limit:     Maximum number of *series* to process (full-sweep only).
+        series_id: If set, render only this series (ignores *limit*).
 
     Returns:
         Dict::
@@ -391,13 +394,25 @@ def run(limit: int | None = None) -> dict:
                 "errored":  int,   # parts that raised an exception
             }
     """
+    # Env-var override (set by the Cloud Run job execution via containerOverrides).
+    _env_series_id = os.getenv("RENDER_SERIES_ID")
+    if _env_series_id and series_id is None:
+        series_id = int(_env_series_id)
+
     from app.models import MiniSeries, SessionLocal, SocialPost  # noqa: PLC0415
 
     db = SessionLocal()
     try:
-        query = db.query(MiniSeries).filter(MiniSeries.approved == 1)
-        if limit is not None:
-            query = query.limit(limit)
+        if series_id is not None:
+            # Targeted render — fetch only this series.
+            query = db.query(MiniSeries).filter(
+                MiniSeries.id == series_id,
+                MiniSeries.approved == 1,
+            )
+        else:
+            query = db.query(MiniSeries).filter(MiniSeries.approved == 1)
+            if limit is not None:
+                query = query.limit(limit)
         approved = query.all()
         # Snapshot: build list of (series_id, part_index) pairs to render
         work: list[tuple[int, int]] = []
@@ -450,5 +465,6 @@ if __name__ == "__main__":
     import sys
 
     logging.basicConfig(level=logging.INFO)
+    # RENDER_SERIES_ID env var is read inside run(); pass limit from argv only for full-sweep.
     _limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
     print(json.dumps(run(limit=_limit), indent=2))

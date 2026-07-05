@@ -31,6 +31,13 @@ interface RenderableSeries {
   video_id: string;
   title: string;
   parts: Array<{ title: string; start: number; end: number }>;
+  parts_count?: number;
+}
+
+interface RenderStatus {
+  rendered: boolean;
+  parts_total: number;
+  parts_rendered: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -248,6 +255,92 @@ function SuccessBanner({ seriesTitle }: { seriesTitle: string }) {
 
 // ── Ready-to-render panel ─────────────────────────────────────────────────────
 
+function RenderableRow({ s }: { s: RenderableSeries }) {
+  const partCount = s.parts_count ?? s.parts.length;
+  const [triggering, setTriggering] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [status, setStatus] = useState<RenderStatus | null>(null);
+  const [polling, setPolling] = useState(false);
+
+  function pollStatus(attempts = 0) {
+    if (attempts > 6) { setPolling(false); return; }
+    apiFetch(`/clips/${s.id}/render-status`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: RenderStatus | null) => {
+        if (!data) return;
+        setStatus(data);
+        if (!data.rendered) {
+          setTimeout(() => pollStatus(attempts + 1), 4000);
+        } else {
+          setPolling(false);
+        }
+      })
+      .catch(() => setPolling(false));
+  }
+
+  async function handleRender() {
+    setTriggering(true);
+    setMsg(null);
+    try {
+      const r = await apiFetch(`/clips/${s.id}/render`, { method: "POST" });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      setMsg("Rendering started…");
+      setPolling(true);
+      setTimeout(() => pollStatus(0), 5000);
+    } catch (e: unknown) {
+      setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTriggering(false);
+    }
+  }
+
+  const isRendered = status?.rendered ?? false;
+  const partsRendered = status?.parts_rendered ?? 0;
+  const partsTotal = status?.parts_total ?? partCount;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "10px 12px",
+        background: BRAND.bg,
+        borderRadius: 8,
+        gap: 12,
+        flexWrap: "wrap",
+      }}
+    >
+      <span style={{ fontWeight: 500, color: BRAND.ink, fontSize: 14, flex: 1 }}>{s.title}</span>
+
+      {isRendered ? (
+        <Badge tone="green">Rendered</Badge>
+      ) : polling ? (
+        <Badge tone="amber">Rendering {partsRendered}/{partsTotal}…</Badge>
+      ) : (
+        <Badge tone="blue">{partCount} part{partCount !== 1 ? "s" : ""}</Badge>
+      )}
+
+      {msg && !isRendered && (
+        <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
+          {msg}
+        </span>
+      )}
+
+      {!isRendered && (
+        <Button
+          variant="primary"
+          disabled={triggering || polling}
+          onClick={handleRender}
+          style={{ padding: "6px 14px", fontSize: 13 }}
+        >
+          {triggering ? "Starting…" : "Render now"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function RenderablePanel() {
   const [series, setSeries] = useState<RenderableSeries[]>([]);
   const [loading, setLoading] = useState(true);
@@ -280,21 +373,7 @@ function RenderablePanel() {
       {!loading && !error && series.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {series.map((s) => (
-            <div
-              key={s.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "8px 12px",
-                background: BRAND.bg,
-                borderRadius: 8,
-                gap: 12,
-              }}
-            >
-              <span style={{ fontWeight: 500, color: BRAND.ink, fontSize: 14, flex: 1 }}>{s.title}</span>
-              <Badge tone="blue">{s.parts.length} part{s.parts.length !== 1 ? "s" : ""}</Badge>
-            </div>
+            <RenderableRow key={s.id} s={s} />
           ))}
         </div>
       )}
