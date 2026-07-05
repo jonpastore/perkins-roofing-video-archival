@@ -42,3 +42,38 @@ keeps it within YouTube's Terms of Service. Keep that constraint as a hard requi
   cost (comment reads are quota-heavy across 841 videos), whether posting is manual-copy or a
   human-click action, and abstention policy for low-confidence drafts.
 - Depends on: Wave 1 retrieval/answer (DONE) + a new comments adapter/table + SPA queue.
+
+## B3 — Archive video detail: expandable topics, play buttons, and usage panels (Jon, 2026-07-05)
+**Idea:** Turn each Archive row into a rich per-video detail view:
+- **Play button next to the title** (opens the YouTube video).
+- **Click the title → expand** the mined **topics + time references** for that video
+  (`content_graph` kind=topics, 4,728 rows exist), each with a **play button that deep-links to
+  that topic's timestamp** (`youtu.be/{id}?t={start}`).
+- **"Used in Articles" panel** — every article whose content used this video. *Needs a
+  video↔article linkage* (parse the `?t=` embeds in `articles.content_md`, or record the link at
+  generation time in a join table). 
+- **"Used in Social posts" panel** — social posts featuring this video, with links.
+  Already queryable: `videos → mini_series.video_id → social_posts (series_id)` → `gcs_url`/
+  `external_id`. Just needs an endpoint + UI.
+- **Unanswered-comments column** — a count per video that, when clicked, opens the **B2** comment
+  queue for that video (AI-draft → human approve → post back). Ties B3 ⇆ B2.
+
+**Feasibility:** topics + social-usage + play buttons are buildable now (data + relations exist).
+Article-usage needs a linkage mechanism. Comments column depends on B2.
+**New API needed:** `GET /archive/{video_id}/detail` (topics, article-usage, social-usage,
+unanswered-comment count).
+
+## B4 — Pre-mined topic explorer → cluster-article generation (Jon, 2026-07-05)
+**Idea:** The **"Search topics"** tab should not require a query — it should **pre-load the list of
+extracted topics** we already mined (`content_graph` kind=topics), grouped/deduped with a count
+of how many videos cover each. Each topic gets a **"Generate cluster article"** action that feeds
+the topic into the existing article pipeline (`jobs/article_job.py`, seo-aio prompts) as a cluster
+piece under a pillar. This operationalizes Req 7's pillar/cluster content strategy from real data.
+**New API needed:** `GET /topics` (distinct mined topics + video counts + sample timecodes) and a
+`POST /articles/generate` (topic → run the article pipeline → draft Article).
+
+## B5 — FAQ extraction surface (Jon, 2026-07-05)
+**Idea:** Requirement to **extract questions from the content for FAQ**. The objections/claims in
+`content_graph` (3,655 claims, 1,574 objections) + `app/gen_faq.py` (FAQ JSON-LD builder) already
+support this. Surface a **FAQ builder**: mined question/answer pairs (grounded, timecoded) that
+feed each Article's `faq_json` + JSON-LD, and/or a standalone FAQ page. Ties into B4 (per-topic FAQ).
