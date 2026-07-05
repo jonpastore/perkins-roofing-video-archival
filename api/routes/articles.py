@@ -1,0 +1,165 @@
+"""Articles CRUD routes.
+
+Export ``router`` only; do NOT create a FastAPI app here. Mount this router onto the
+main app in api/app.py with ``app.include_router(router)``.
+
+Role requirements (from core.authz):
+  - article_read   → sales or admin
+  - manage_articles (POST/PUT/DELETE) → admin only (covered by admin "*")
+"""
+import re
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from api.auth import require_role
+from app.models import Article, SessionLocal
+
+router = APIRouter(prefix="/articles", tags=["articles"])
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _slugify(title: str) -> str:
+    s = title.lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = s.strip("-")
+    return s
+
+
+def _article_summary(a: Article) -> dict:
+    return {
+        "slug": a.slug,
+        "title": a.title,
+        "role": a.role,
+        "status": a.status,
+        "pillar_slug": a.pillar_slug,
+        "wp_post_id": a.wp_post_id,
+        "publish_at": a.publish_at.isoformat() if a.publish_at else None,
+    }
+
+
+def _article_full(a: Article) -> dict:
+    return {
+        "slug": a.slug,
+        "title": a.title,
+        "meta": a.meta,
+        "content_md": a.content_md,
+        "faq_json": a.faq_json,
+        "jsonld_json": a.jsonld_json,
+        "role": a.role,
+        "pillar_slug": a.pillar_slug,
+        "wp_post_id": a.wp_post_id,
+        "status": a.status,
+        "publish_at": a.publish_at.isoformat() if a.publish_at else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pydantic request models
+# ---------------------------------------------------------------------------
+
+class ArticleCreate(BaseModel):
+    title: str
+    slug: Optional[str] = None
+    content_md: Optional[str] = None
+    meta: Optional[str] = None
+    role: Optional[str] = "standalone"
+    pillar_slug: Optional[str] = None
+    status: Optional[str] = "draft"
+    publish_at: Optional[datetime] = None
+
+
+class ArticleUpdate(BaseModel):
+    title: Optional[str] = None
+    content_md: Optional[str] = None
+    meta: Optional[str] = None
+    role: Optional[str] = None
+    pillar_slug: Optional[str] = None
+    status: Optional[str] = None
+    publish_at: Optional[datetime] = None
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@router.get("")
+def list_articles(claims=Depends(require_role("article_read"))):
+    with SessionLocal() as db:
+        rows = db.query(Article).order_by(Article.title).all()
+        return [_article_summary(r) for r in rows]
+
+
+@router.get("/{slug}")
+def get_article(slug: str, claims=Depends(require_role("article_read"))):
+    with SessionLocal() as db:
+        a = db.get(Article, slug)
+        if a is None:
+            raise HTTPException(status_code=404, detail="article not found")
+        return _article_full(a)
+
+
+@router.post("", status_code=201)
+def create_article(body: ArticleCreate, claims=Depends(require_role("manage_articles"))):
+    slug = body.slug or _slugify(body.title)
+    with SessionLocal() as db:
+        if db.get(Article, slug) is not None:
+            raise HTTPException(status_code=409, detail="slug already exists")
+        a = Article(
+            slug=slug,
+            title=body.title,
+            meta=body.meta,
+            content_md=body.content_md,
+            faq_json=None,
+            jsonld_json=None,
+            role=body.role or "standalone",
+            pillar_slug=body.pillar_slug,
+            wp_post_id=None,
+            status=body.status or "draft",
+            publish_at=body.publish_at,
+        )
+        db.add(a)
+        db.commit()
+        db.refresh(a)
+        return _article_full(a)
+
+
+@router.put("/{slug}")
+def update_article(slug: str, body: ArticleUpdate,
+                   claims=Depends(require_role("manage_articles"))):
+    with SessionLocal() as db:
+        a = db.get(Article, slug)
+        if a is None:
+            raise HTTPException(status_code=404, detail="article not found")
+        if body.title is not None:
+            a.title = body.title
+        if body.content_md is not None:
+            a.content_md = body.content_md
+        if body.meta is not None:
+            a.meta = body.meta
+        if body.role is not None:
+            a.role = body.role
+        if body.pillar_slug is not None:
+            a.pillar_slug = body.pillar_slug
+        if body.status is not None:
+            a.status = body.status
+        if body.publish_at is not None:
+            a.publish_at = body.publish_at
+        db.commit()
+        db.refresh(a)
+        return _article_full(a)
+
+
+@router.delete("/{slug}", status_code=204)
+def delete_article(slug: str, claims=Depends(require_role("manage_articles"))):
+    with SessionLocal() as db:
+        a = db.get(Article, slug)
+        if a is None:
+            raise HTTPException(status_code=404, detail="article not found")
+        db.delete(a)
+        db.commit()

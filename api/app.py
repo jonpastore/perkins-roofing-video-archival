@@ -8,7 +8,9 @@ from pydantic import BaseModel
 
 from api.auth import current_claims, require_role
 from api.routes.archive import router as archive_router
+from api.routes.articles import router as articles_router
 from api.routes.email import router as email_router
+from api.routes.scheduling import router as scheduling_router
 from api.routes.video import router as video_router
 from app import answer as A
 from app import retrieval as R
@@ -24,6 +26,8 @@ app.add_middleware(
 app.include_router(email_router)
 app.include_router(video_router)
 app.include_router(archive_router)
+app.include_router(articles_router)
+app.include_router(scheduling_router)
 
 
 class Query(BaseModel):

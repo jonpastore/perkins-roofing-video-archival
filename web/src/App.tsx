@@ -7,13 +7,11 @@ import { Templates } from "./pages/Templates";
 import { ComposeEmail } from "./pages/ComposeEmail";
 import { VideoApproval } from "./pages/VideoApproval";
 import { Status } from "./pages/Status";
+import { Articles } from "./pages/Articles";
+import { Scheduling } from "./pages/Scheduling";
 import { BRAND, FONT } from "./ui";
 
 type Role = "admin" | "sales" | null;
-
-// Placeholder page components — Articles + Scheduling filled in next
-function ArticlesPage() { return <main><h2>Articles</h2></main>; }
-function SchedulingPage() { return <main><h2>Scheduling</h2></main>; }
 
 // Shared console shell: branded sidebar + content area. Both the admin and sales
 // consoles are the same layout with different tabs, so they share this one component.
@@ -109,8 +107,8 @@ function AdminShell() {
         <>
           {tab === "search-ask" && <SearchAsk />}
           {tab === "templates" && <Templates />}
-          {tab === "articles" && <ArticlesPage />}
-          {tab === "scheduling" && <SchedulingPage />}
+          {tab === "articles" && <Articles />}
+          {tab === "scheduling" && <Scheduling />}
           {tab === "video-approval" && <VideoApproval />}
           {tab === "archive" && <Archive />}
           {tab === "config" && <Status />}
