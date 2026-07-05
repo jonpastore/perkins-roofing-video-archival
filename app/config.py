@@ -28,6 +28,16 @@ class Settings:
     # Cost guardrails
     MAX_VIDEOS_PER_RUN = int(os.getenv("MAX_VIDEOS_PER_RUN", "500"))
 
+    # Emails that are admin-by-default (no per-user grant needed). Comma-separated env override.
+    DEFAULT_ADMINS = frozenset(
+        e.strip().lower()
+        for e in os.getenv(
+            "DEFAULT_ADMINS",
+            "jon@perkinsroofing.net,tim@perkinsroofing.net,amber@perkinsroofing.net",
+        ).split(",")
+        if e.strip()
+    )
+
 settings = Settings()
 
 # Prod fail-fast (tenancy guard): a prod deploy must use Vertex + Cloud SQL, never the dev

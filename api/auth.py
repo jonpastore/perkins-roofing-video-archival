@@ -3,7 +3,8 @@ matrix from core.authz. 401 for a missing/invalid token, 403 for an insufficient
 `set_verifier` allows injecting a fake verifier in tests (no live Firebase needed)."""
 from fastapi import Header, HTTPException
 
-from core.authz import can
+from app.config import settings
+from core.authz import can, effective_role
 
 _verifier = None
 
@@ -31,7 +32,8 @@ def require_role(action):
             claims = _get_verifier()(authorization[7:])
         except Exception:
             raise HTTPException(status_code=401, detail="invalid token")
-        if not can(claims.get("role", ""), action):
+        role = effective_role(claims.get("email"), claims.get("role", ""), settings.DEFAULT_ADMINS)
+        if not can(role, action):
             raise HTTPException(status_code=403, detail="forbidden")
         return claims
     return dep
