@@ -70,8 +70,15 @@ def pull_video(video_id: str, dst: str) -> str:
         "--merge-output-format", "mp4",
         "-o", output_template,
         "--no-playlist",
+        # Throttle-resilience: YouTube bot-blocks/degrades bulk downloads by IP. Authenticate
+        # with browser cookies and pace requests so a bulk archive doesn't get the IP throttled
+        # to image-only. COOKIES_FROM_BROWSER (e.g. "chrome") + YTDLP_SLEEP tune this per host.
+        "--retries", "3", "--sleep-interval", os.getenv("YTDLP_SLEEP", "0"),
         url,
     ]
+    cookies_browser = os.getenv("COOKIES_FROM_BROWSER")
+    if cookies_browser:
+        cmd += ["--cookies-from-browser", cookies_browser]
     # yt-dlp needs ffmpeg to merge separate video+audio streams into one MP4. Point it at the
     # binary from FFMPEG_BIN (or the bundled imageio-ffmpeg) so hosts without a system ffmpeg
     # (this box, minimal Cloud Run images) still produce a merged file instead of failing.

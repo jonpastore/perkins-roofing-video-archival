@@ -87,6 +87,18 @@ can't be Terraformed:
 4. **Authorized domains**: add the SPA's production domain to `extra_auth_domains` TF var when it moves
    off localhost / `<project>.web.app`.
 
+## Source-video archival — YouTube IP throttle (KNOWN LIMIT)
+The archive downloads full source MP4s via yt-dlp. YouTube progressively throttles bulk downloads
+per-IP: it served real video for ~106/841 (45 GB) then degraded this residential IP to "only images
+available" (storyboard-only) even WITH valid browser cookies + a JS runtime (deno). This is a YouTube
+anti-scraping response, not a code bug. To finish the archive:
+  - Set `COOKIES_FROM_BROWSER=chrome` (a YouTube-logged-in browser) — fixes the bot-check.
+  - Set `YTDLP_SLEEP=30`+ and run in small batches with long gaps so the IP isn't re-throttled.
+  - Let the throttle lift (hours–a day) between runs; or run from a different egress/residential IP.
+  - Datacenter IPs (Cloud Run) are usually MORE blocked, so a slow residential run is the pragmatic path.
+The transcripts/graph/embeddings (the searchable product) are unaffected — they use captions, and Whisper
+only for caption-less videos. Archival is the source-file backup and completes incrementally.
+
 ## Source-video archival notes
 - All 841 source videos are archived to the private `-media` GCS bucket (`jobs/archive_job.py`),
   browsable + downloadable from the SPA Archive section (V4 signed URLs, 1h TTL; `api-run-sa`
