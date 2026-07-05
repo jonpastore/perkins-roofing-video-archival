@@ -24,7 +24,7 @@ class ConfigEntry(BaseModel):
 
 
 @router.get("")
-def get_config(claims=Depends(require_role("view_status"))):
+def get_config(claims=Depends(require_role("manage_config"))):
     """Return all editable platform_config rows merged with read-only runtime info."""
     with SessionLocal() as db:
         rows = db.query(PlatformConfig).all()
@@ -43,7 +43,7 @@ def get_config(claims=Depends(require_role("view_status"))):
 
 
 @router.put("")
-def upsert_config(entry: ConfigEntry, claims=Depends(require_role("manage_templates"))):
+def upsert_config(entry: ConfigEntry, claims=Depends(require_role("manage_config"))):
     """Upsert a single platform_config row. Returns the stored row."""
     with SessionLocal() as db:
         row = db.get(PlatformConfig, entry.key)

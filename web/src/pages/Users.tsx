@@ -9,10 +9,11 @@ interface FirebaseUser {
   role: string | null;
 }
 
-type RoleOption = "admin" | "sales" | "";
+type RoleOption = "admin" | "web_admin" | "sales" | "";
 
 function roleBadge(role: string | null) {
   if (role === "admin") return <Badge tone="blue">admin</Badge>;
+  if (role === "web_admin") return <Badge tone="amber">web admin</Badge>;
   if (role === "sales") return <Badge tone="green">sales</Badge>;
   return <Badge tone="gray">none</Badge>;
 }
@@ -152,6 +153,7 @@ export function Users() {
                       >
                         <option value="">none</option>
                         <option value="admin">admin</option>
+                        <option value="web_admin">Web Admin</option>
                         <option value="sales">sales</option>
                       </select>
                     </td>

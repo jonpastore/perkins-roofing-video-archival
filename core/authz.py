@@ -2,13 +2,24 @@
 dependency (adapters/firebase verifies the token; this decides what the role may do)."""
 
 _MATRIX = {
-    "admin": {"*"},  # admin can do everything
+    # admin — everything, including user + platform config management.
+    "admin": {"*"},
+    # web_admin — manages site content (articles, FAQ, scheduling, video, search), sees the
+    # dashboard, but NOT email, users, or platform config (those stay admin-only).
+    "web_admin": {
+        "search", "ask",
+        "article_read", "manage_articles",
+        "manage_scheduling", "approve_video",
+        "view_status",
+    },
+    # sales — search/ask, email tools + email templates.
     "sales": {
         "search", "ask",
         "email_compose", "email_proof", "email_send",
-        "article_read",
+        "manage_templates", "article_read",
     },
 }
+# Admin-only actions (granted only via admin's "*"): manage_users, manage_config.
 
 
 def can(role, action):

@@ -14,12 +14,32 @@ def test_sales_allowed_actions():
 
 
 def test_sales_denied_admin_actions():
-    assert can("sales", "manage_templates") is False
+    assert can("sales", "manage_users") is False
 
 
 def test_unknown_role_denied():
     assert can("guest", "search") is False
     assert can("", "search") is False
+
+
+def test_web_admin_manages_content_not_email_or_admin():
+    for a in ("search", "ask", "manage_articles", "manage_scheduling", "approve_video", "view_status"):
+        assert can("web_admin", a) is True, a
+    for a in ("email_send", "manage_templates", "manage_users", "manage_config"):
+        assert can("web_admin", a) is False, a
+
+
+def test_sales_has_email_templates_not_admin():
+    assert can("sales", "manage_templates") is True
+    assert can("sales", "email_send") is True
+    for a in ("manage_users", "manage_config", "approve_video", "manage_articles"):
+        assert can("sales", a) is False, a
+
+
+def test_only_admin_manages_users_and_config():
+    assert can("admin", "manage_users") is True and can("admin", "manage_config") is True
+    for r in ("web_admin", "sales", "guest"):
+        assert can(r, "manage_users") is False and can(r, "manage_config") is False
 
 
 def test_default_admin_email_is_admin_regardless_of_claim():

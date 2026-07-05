@@ -15,20 +15,121 @@ import { Settings } from "./pages/Settings";
 import { Users } from "./pages/Users";
 import { BRAND, FONT } from "./ui";
 
-type Role = "admin" | "sales" | null;
+type Role = "admin" | "web_admin" | "sales" | null;
 
-// Shared console shell: branded sidebar + content area. Both the admin and sales
-// consoles are the same layout with different tabs, so they share this one component.
-function Shell({
-  title,
-  tabs,
-  render,
-}: {
+// Tab config: regular tabs + optional admin-only tabs rendered in a separate group.
+interface ShellConfig {
   title: string;
   tabs: [string, string][];
-  render: (tab: string) => ReactNode;
-}) {
-  const [tab, setTab] = useState<string>(tabs[0][0]);
+  adminTabs?: [string, string][];
+  defaultTab: string;
+}
+
+const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
+  admin: {
+    title: "Perkins Admin",
+    tabs: [
+      ["dashboard", "Dashboard"],
+      ["search-ask", "Search / Ask"],
+      ["opportunities", "Content Opportunities"],
+      ["articles", "Articles"],
+      ["faq", "FAQ"],
+      ["templates", "Email Templates"],
+      ["compose-email", "Compose Email"],
+      ["scheduling", "Content Scheduling"],
+      ["video-approval", "Video Approval"],
+      ["archive", "Archive"],
+    ],
+    adminTabs: [
+      ["users", "Users"],
+      ["config", "Config"],
+    ],
+    defaultTab: "dashboard",
+  },
+  web_admin: {
+    title: "Perkins Content",
+    tabs: [
+      ["dashboard", "Dashboard"],
+      ["search-ask", "Search / Ask"],
+      ["opportunities", "Content Opportunities"],
+      ["articles", "Articles"],
+      ["faq", "FAQ"],
+      ["scheduling", "Content Scheduling"],
+      ["video-approval", "Video Approval"],
+      ["archive", "Archive"],
+    ],
+    defaultTab: "dashboard",
+  },
+  sales: {
+    title: "Perkins Sales",
+    tabs: [
+      ["search-ask", "Search / Ask"],
+      ["templates", "Email Templates"],
+      ["compose-email", "Compose Email"],
+      ["archive", "Archive"],
+    ],
+    defaultTab: "search-ask",
+  },
+};
+
+function NavButton({ id, label, active, onClick }: { id: string; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      key={id}
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "11px 16px",
+        background: active ? BRAND.navyActive : "transparent",
+        color: active ? "#fff" : "#c3c9d9",
+        borderLeft: active ? `3px solid ${BRAND.red}` : "3px solid transparent",
+        cursor: "pointer",
+        fontSize: 14,
+        fontWeight: active ? 600 : 400,
+        border: "none",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function AdminSectionDivider() {
+  return (
+    <div
+      style={{
+        margin: "14px 0 4px",
+        padding: "0 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          color: "rgba(255,255,255,0.38)",
+          textTransform: "uppercase",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Admin
+      </span>
+      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
+    </div>
+  );
+}
+
+// Shared console shell: branded sidebar + content area.
+function Shell({ config }: { config: ShellConfig }) {
+  const { title, tabs, adminTabs, defaultTab } = config;
+  const [tab, setTab] = useState<string>(defaultTab);
+
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: FONT }}>
       <nav
@@ -59,25 +160,16 @@ function Shell({
           <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
         </div>
         {tabs.map(([id, label]) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            style={{
-              display: "block",
-              width: "100%",
-              textAlign: "left",
-              padding: "11px 16px",
-              background: tab === id ? BRAND.navyActive : "transparent",
-              color: tab === id ? "#fff" : "#c3c9d9",
-              borderLeft: tab === id ? `3px solid ${BRAND.red}` : "3px solid transparent",
-              cursor: "pointer",
-              fontSize: 14,
-              fontWeight: tab === id ? 600 : 400,
-            }}
-          >
-            {label}
-          </button>
+          <NavButton key={id} id={id} label={label} active={tab === id} onClick={() => setTab(id)} />
         ))}
+        {adminTabs && adminTabs.length > 0 && (
+          <>
+            <AdminSectionDivider />
+            {adminTabs.map(([id, label]) => (
+              <NavButton key={id} id={id} label={label} active={tab === id} onClick={() => setTab(id)} />
+            ))}
+          </>
+        )}
         <div style={{ marginTop: "auto", padding: "18px 16px 0" }}>
           <button
             onClick={signOutUser}
@@ -88,65 +180,28 @@ function Shell({
         </div>
       </nav>
       <div style={{ flex: 1, padding: 32, overflowY: "auto", background: "#f7f8fa" }}>
-        {render(tab)}
+        <TabContent tab={tab} />
       </div>
     </div>
   );
 }
 
-function AdminShell() {
+function TabContent({ tab }: { tab: string }) {
   return (
-    <Shell
-      title="Perkins Admin"
-      tabs={[
-        ["dashboard", "Dashboard"],
-        ["search-ask", "Search / Ask"],
-        ["opportunities", "Content Opportunities"],
-        ["articles", "Articles"],
-        ["faq", "FAQ"],
-        ["templates", "Templates"],
-        ["scheduling", "Content Scheduling"],
-        ["video-approval", "Video Approval"],
-        ["archive", "Archive"],
-        ["users", "Users"],
-        ["config", "Config"],
-      ]}
-      render={(tab) => (
-        <>
-          {tab === "dashboard" && <Status />}
-          {tab === "search-ask" && <SearchAsk />}
-          {tab === "opportunities" && <Opportunities />}
-          {tab === "articles" && <Articles />}
-          {tab === "faq" && <Faq />}
-          {tab === "templates" && <Templates />}
-          {tab === "scheduling" && <Scheduling />}
-          {tab === "video-approval" && <VideoApproval />}
-          {tab === "archive" && <Archive />}
-          {tab === "users" && <Users />}
-          {tab === "config" && <Settings />}
-        </>
-      )}
-    />
-  );
-}
-
-function SalesShell() {
-  return (
-    <Shell
-      title="Perkins Sales"
-      tabs={[
-        ["search-ask", "Search / Ask"],
-        ["compose-email", "Compose Email"],
-        ["archive", "Archive"],
-      ]}
-      render={(tab) => (
-        <>
-          {tab === "search-ask" && <SearchAsk />}
-          {tab === "compose-email" && <ComposeEmail />}
-          {tab === "archive" && <Archive />}
-        </>
-      )}
-    />
+    <>
+      {tab === "dashboard" && <Status />}
+      {tab === "search-ask" && <SearchAsk />}
+      {tab === "opportunities" && <Opportunities />}
+      {tab === "articles" && <Articles />}
+      {tab === "faq" && <Faq />}
+      {tab === "templates" && <Templates />}
+      {tab === "compose-email" && <ComposeEmail />}
+      {tab === "scheduling" && <Scheduling />}
+      {tab === "video-approval" && <VideoApproval />}
+      {tab === "archive" && <Archive />}
+      {tab === "users" && <Users />}
+      {tab === "config" && <Settings />}
+    </>
   );
 }
 
@@ -270,8 +325,7 @@ export default function App() {
   }
 
   if (!user) return <LoginScreen />;
-  if (role === "admin") return <AdminShell />;
-  if (role === "sales") return <SalesShell />;
+  if (role && role in ROLE_CONFIG) return <Shell config={ROLE_CONFIG[role as Exclude<Role, null>]} />;
 
   // Signed in but no recognized role
   return (

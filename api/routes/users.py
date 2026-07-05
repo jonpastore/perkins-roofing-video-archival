@@ -34,7 +34,7 @@ def _firebase_auth():
 
 
 @router.get("")
-def list_users(claims=Depends(require_role("manage_templates"))):
+def list_users(claims=Depends(require_role("manage_users"))):
     """List up to 200 Firebase users with their current role claim."""
     auth = _firebase_auth()
     results = []
@@ -50,7 +50,7 @@ def list_users(claims=Depends(require_role("manage_templates"))):
 
 
 @router.post("/role")
-def set_user_role(body: RoleAssignment, claims=Depends(require_role("manage_templates"))):
+def set_user_role(body: RoleAssignment, claims=Depends(require_role("manage_users"))):
     """Assign or clear the role custom claim for a Firebase user identified by email.
 
     Pass role=null or role="" to clear. Returns {uid, email, role}.

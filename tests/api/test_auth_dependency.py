@@ -8,7 +8,7 @@ def _client(role):
     set_verifier(lambda token: {"uid": "u", "email": "e@x", "role": role})
     app = FastAPI()
 
-    @app.get("/admin-only", dependencies=[Depends(require_role("manage_templates"))])
+    @app.get("/admin-only", dependencies=[Depends(require_role("manage_users"))])
     def _admin():
         return {"ok": True}
 
