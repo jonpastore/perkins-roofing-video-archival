@@ -3,11 +3,19 @@ import { apiFetch } from "../api";
 import { BRAND, Card, Button, inputStyle, Loading, ErrorMsg } from "../ui";
 
 // ---- types matching the live API ----
+interface Source {
+  url: string;
+  video_id: string;
+  t: number;
+  title: string;
+  snippet: string;
+}
 interface AskResult {
   answer: string;
   abstained: boolean;
   confidence: number;
-  citations: string[]; // bare "https://youtu.be/<id>?t=<sec>" strings
+  citations: string[]; // bare links (widget back-compat)
+  sources: Source[]; // descriptive: video title + snippet + timestamp
 }
 interface SearchRow {
   score: number;
@@ -103,9 +111,14 @@ export function SearchAsk() {
     }
   }
 
-  // de-duplicated source links from an answer's citations
-  const sources = ans && !ans.abstained
-    ? Array.from(new Set(ans.citations)).filter((u) => parseLink(u))
+  // group the descriptive sources by video so each clip is labeled with its video + topic
+  const grouped = ans && !ans.abstained
+    ? Object.values(
+        (ans.sources ?? []).reduce((acc, s) => {
+          (acc[s.video_id] ??= { video_id: s.video_id, title: s.title, clips: [] as Source[] }).clips.push(s);
+          return acc;
+        }, {} as Record<string, { video_id: string; title: string; clips: Source[] }>)
+      )
     : [];
 
   return (
@@ -167,11 +180,28 @@ export function SearchAsk() {
           <div style={{ fontSize: 15, lineHeight: 1.6, color: BRAND.ink, whiteSpace: "pre-wrap" }}>
             {renderRich(ans.answer)}
           </div>
-          {sources.length > 0 && (
+          {grouped.length > 0 && (
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${BRAND.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, marginBottom: 8 }}>WATCH THE SOURCE</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-                {sources.map((u) => <TimestampLink key={u} url={u} />)}
+              <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, marginBottom: 10 }}>
+                SOURCES — {grouped.length} video{grouped.length > 1 ? "s" : ""}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {grouped.map((g) => (
+                  <div key={g.video_id}>
+                    <a href={`https://youtu.be/${g.video_id}`} target="_blank" rel="noopener noreferrer"
+                      style={{ color: BRAND.navyText, fontWeight: 600, fontSize: 13.5, textDecoration: "none" }}>
+                      {g.title}
+                    </a>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 4, paddingLeft: 2 }}>
+                      {g.clips.map((c) => (
+                        <div key={c.url} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13 }}>
+                          <TimestampLink url={c.url} />
+                          <span style={{ color: BRAND.sub }}>{c.snippet}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
