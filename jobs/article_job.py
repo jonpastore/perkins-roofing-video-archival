@@ -27,6 +27,143 @@ from core.qa_gate import is_duplicate, verdict
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# HTML sanitizer — strips/converts residual markdown artifacts
+# ---------------------------------------------------------------------------
+
+# Matches GitHub-style admonition lines: > [!TIP], > [!NOTE], etc.
+_ADMONITION_RE = re.compile(
+    r"^>\s*\[!(TIP|WARNING|NOTE|KEY|CAUTION|IMPORTANT)\]\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+# Matches blockquote continuation lines that follow an admonition: > text
+_BLOCKQUOTE_LINE_RE = re.compile(r"^>\s?", re.MULTILINE)
+# Markdown headings: ## Heading → <h2>Heading</h2>
+_MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
+# Markdown bold: **text** or __text__
+_MD_BOLD_RE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
+# Markdown pipe tables (lines starting with |)
+_PIPE_TABLE_LINE_RE = re.compile(r"^\|.+\|$", re.MULTILINE)
+# Markdown separator rows: |---|---|
+_TABLE_SEP_RE = re.compile(r"^\|[\s\-|:]+\|$", re.MULTILINE)
+
+_ADMONITION_CLASS = {
+    "tip": "tip",
+    "warning": "warning",
+    "note": "note",
+    "key": "key",
+    "caution": "warning",
+    "important": "note",
+}
+
+
+def sanitize_article_html(content: str) -> str:
+    """Strip or convert residual markdown artifacts in article content.
+
+    Handles:
+    - GitHub-style `> [!TIP]` / `> [!NOTE]` admonition blocks → ``<aside class="...">``
+    - Markdown headings (## H2, ### H3) → ``<h2>``, ``<h3>`` etc.
+    - Markdown bold (**text**) → ``<strong>``
+    - Markdown pipe tables → plain ``<table>`` HTML
+    - Any remaining bare `[!X]` markers → stripped
+
+    Content that is already valid HTML is passed through unchanged (the regex
+    patterns only match markdown-specific syntax).
+    """
+    if not content:
+        return content
+
+    # ── 1. Convert > [!TIP] admonition blocks ────────────────────────────────
+    # Each block is: one marker line + one or more > continuation lines.
+    # We process line-by-line so we can collect multi-line callout bodies.
+    lines = content.split("\n")
+    out_lines: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = _ADMONITION_RE.match(line)
+        if m:
+            kind = m.group(1).lower()
+            css_class = _ADMONITION_CLASS.get(kind, "note")
+            # Collect following > continuation lines as the callout body
+            body_lines: list[str] = []
+            i += 1
+            while i < len(lines) and lines[i].startswith(">"):
+                body_lines.append(_BLOCKQUOTE_LINE_RE.sub("", lines[i], count=1).strip())
+                i += 1
+            body = " ".join(body_lines).strip() or ""
+            if body:
+                out_lines.append(f'<aside class="{css_class}"><p>{body}</p></aside>')
+            # else drop empty callout
+        else:
+            out_lines.append(line)
+            i += 1
+    content = "\n".join(out_lines)
+
+    # ── 2. Strip any bare [!X] markers that survived (e.g. without > prefix) ─
+    content = re.sub(r"\[!(TIP|WARNING|NOTE|KEY|CAUTION|IMPORTANT)\]", "", content, flags=re.IGNORECASE)
+
+    # ── 3. Convert markdown headings → HTML headings ──────────────────────────
+    def _heading_repl(m: re.Match) -> str:
+        level = len(m.group(1))
+        level = min(level, 6)
+        return f"<h{level}>{m.group(2).strip()}</h{level}>"
+
+    content = _MD_HEADING_RE.sub(_heading_repl, content)
+
+    # ── 4. Convert markdown bold → <strong> ──────────────────────────────────
+    def _bold_repl(m: re.Match) -> str:
+        text = m.group(1) or m.group(2)
+        return f"<strong>{text}</strong>"
+
+    content = _MD_BOLD_RE.sub(_bold_repl, content)
+
+    # ── 5. Convert markdown pipe tables → HTML <table> ───────────────────────
+    content = _convert_pipe_tables(content)
+
+    return content
+
+
+def _convert_pipe_tables(content: str) -> str:
+    """Convert markdown pipe tables to HTML <table> elements."""
+    lines = content.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        # Detect a pipe-table block: header row | sep row | data rows
+        if _PIPE_TABLE_LINE_RE.match(lines[i].strip()):
+            table_lines: list[str] = []
+            while i < len(lines) and _PIPE_TABLE_LINE_RE.match(lines[i].strip()):
+                table_lines.append(lines[i].strip())
+                i += 1
+            # Need at least header + separator
+            if len(table_lines) >= 2 and _TABLE_SEP_RE.match(table_lines[1]):
+                header_cells = [c.strip() for c in table_lines[0].strip("|").split("|")]
+                data_rows = table_lines[2:]
+                html_parts = ["<table>", "<thead><tr>"]
+                for cell in header_cells:
+                    html_parts.append(f"<th>{cell}</th>")
+                html_parts.append("</tr></thead>")
+                if data_rows:
+                    html_parts.append("<tbody>")
+                    for row in data_rows:
+                        cells = [c.strip() for c in row.strip("|").split("|")]
+                        html_parts.append("<tr>")
+                        for cell in cells:
+                            html_parts.append(f"<td>{cell}</td>")
+                        html_parts.append("</tr>")
+                    html_parts.append("</tbody>")
+                html_parts.append("</table>")
+                out.append("".join(html_parts))
+            else:
+                # Not a real table — keep as-is
+                out.extend(table_lines)
+        else:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
+
+
 # Vertex controlled-generation schema — constrains Gemini to valid JSON for every article.
 ARTICLE_SCHEMA = {
     "type": "OBJECT",
@@ -137,7 +274,7 @@ def generate_article_content(
         "title":      article.get("title") or keyword,
         "slug":       article.get("slug") or "",
         "meta":       article.get("metaDescription") or "",
-        "content_md": article.get("content") or "",
+        "content_md": sanitize_article_html(article.get("content") or ""),
         "faq_json":   faq,
     }
 
@@ -259,7 +396,7 @@ def generate_article(
         raise RuntimeError(f"LLM returned unparseable JSON for keyword '{keyword}'")
 
     title = article.get("title") or keyword
-    content = article.get("content") or ""
+    content = sanitize_article_html(article.get("content") or "")
     # Embed a real WordPress video player for the top source clip (bare URL on its own line →
     # WP oEmbed). Keeps the inline ?t= deep-links + VideoObject schema too.
     if video_chunks:
@@ -568,7 +705,7 @@ def refine_article_content(fields: dict, keyword: str, *, llm=None) -> dict:
             "title":      parsed.get("title") or fields["title"],
             "slug":       parsed.get("slug") or fields["slug"],
             "meta":       parsed.get("metaDescription") or fields["meta"],
-            "content_md": parsed.get("content") or fields["content_md"],
+            "content_md": sanitize_article_html(parsed.get("content") or fields["content_md"]),
             "faq_json":   faq or fields["faq_json"],
         }
     except Exception as exc:  # noqa: BLE001

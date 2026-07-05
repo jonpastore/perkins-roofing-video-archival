@@ -184,6 +184,54 @@ def test_article_topics_has_count_and_sample(seeded):
     assert "t" in gutters["sample"]
 
 
+def test_article_topics_has_num_videos_and_content_length(seeded):
+    """Each article_topics item must include num_videos and total_content_length."""
+    client = _make_client("admin")
+    data = client.get("/suggestions", headers=ADMIN_HDR).json()
+
+    gutters = next(t for t in data["article_topics"] if t["label"].lower() == "gutters")
+    assert "num_videos" in gutters
+    assert isinstance(gutters["num_videos"], int)
+    assert gutters["num_videos"] >= 1
+    assert "total_content_length" in gutters
+    assert isinstance(gutters["total_content_length"], int)
+    assert gutters["total_content_length"] >= 0
+
+
+def test_article_topics_sort_by_videos(seeded):
+    """?sort=videos should return topics sorted by num_videos descending."""
+    client = _make_client("admin")
+    data = client.get("/suggestions?sort=videos", headers=ADMIN_HDR).json()
+    topics = data["article_topics"]
+    # All returned items must have num_videos field
+    for t in topics:
+        assert "num_videos" in t
+    # Check ordering: each item's num_videos >= next item's
+    for i in range(len(topics) - 1):
+        assert topics[i]["num_videos"] >= topics[i + 1]["num_videos"]
+
+
+def test_article_topics_sort_by_length(seeded):
+    """?sort=length (default) should return topics sorted by total_content_length descending."""
+    client = _make_client("admin")
+    data = client.get("/suggestions?sort=length", headers=ADMIN_HDR).json()
+    topics = data["article_topics"]
+    for t in topics:
+        assert "total_content_length" in t
+    for i in range(len(topics) - 1):
+        assert topics[i]["total_content_length"] >= topics[i + 1]["total_content_length"]
+
+
+def test_article_topics_default_sort_is_length(seeded):
+    """No sort param should behave the same as sort=length."""
+    client = _make_client("admin")
+    default_data = client.get("/suggestions", headers=ADMIN_HDR).json()
+    length_data = client.get("/suggestions?sort=length", headers=ADMIN_HDR).json()
+    default_labels = [t["label"] for t in default_data["article_topics"]]
+    length_labels = [t["label"] for t in length_data["article_topics"]]
+    assert default_labels == length_labels
+
+
 # ---------------------------------------------------------------------------
 # reels bucket
 # ---------------------------------------------------------------------------
@@ -352,3 +400,54 @@ def test_limit_param_respected(seeded):
     assert len(data["unused_videos"]) <= 1
     # totals should still reflect full counts
     assert data["faqs_total"] >= len(data["faqs"])
+
+
+# ---------------------------------------------------------------------------
+# /counts endpoint
+# ---------------------------------------------------------------------------
+
+def test_counts_401_no_token():
+    client = _make_client("admin")
+    resp = client.get("/suggestions/counts")
+    assert resp.status_code == 401
+
+
+def test_counts_403_sales():
+    client = _make_client("sales")
+    resp = client.get("/suggestions/counts", headers=ADMIN_HDR)
+    assert resp.status_code == 403
+
+
+def test_counts_shape(seeded):
+    """GET /suggestions/counts must return all four bucket keys as integers."""
+    client = _make_client("admin")
+    resp = client.get("/suggestions/counts", headers=ADMIN_HDR)
+    assert resp.status_code == 200
+    data = resp.json()
+    for key in ("article_topics", "reels", "faqs", "unused_videos"):
+        assert key in data, f"missing key: {key}"
+        assert isinstance(data[key], int), f"{key} must be int"
+
+
+def test_counts_match_suggestions_totals(seeded):
+    """counts values must match the *_total fields from GET /suggestions."""
+    client = _make_client("admin")
+    counts = client.get("/suggestions/counts", headers=ADMIN_HDR).json()
+    suggestions = client.get("/suggestions", headers=ADMIN_HDR).json()
+
+    assert counts["article_topics"] == suggestions["article_topics_total"]
+    assert counts["faqs"] == suggestions["faqs_total"]
+    assert counts["unused_videos"] == suggestions["unused_videos_total"]
+    # reels has no *_total — compare length (seeded has 1 reel)
+    assert counts["reels"] == len(suggestions["reels"])
+
+
+def test_counts_empty_db():
+    """With no data, all counts must be zero."""
+    client = _make_client("admin")
+    # clean_db autouse fixture has already wiped the DB
+    data = client.get("/suggestions/counts", headers=ADMIN_HDR).json()
+    assert data["article_topics"] == 0
+    assert data["reels"] == 0
+    assert data["faqs"] == 0
+    assert data["unused_videos"] == 0

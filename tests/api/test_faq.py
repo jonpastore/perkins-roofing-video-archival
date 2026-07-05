@@ -520,3 +520,189 @@ def test_coverage_sales_allowed():
     c = _sales_client()
     r = c.get("/faq/coverage", headers=AUTH)
     assert r.status_code == 200, r.text
+
+
+# ---------------------------------------------------------------------------
+# POST /faq/publish-wordpress
+# ---------------------------------------------------------------------------
+
+def _seed_answered_entries():
+    """Insert two answered FaqEntry rows directly; return their IDs."""
+    from datetime import datetime
+    from app.models import GraphNode
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+
+        # Reuse node IDs from setup_module (or grab any existing nodes)
+        nodes = db.query(GraphNode).filter(
+            GraphNode.kind.in_(("claims", "objections")),
+            GraphNode.start.isnot(None),
+        ).limit(2).all()
+        assert nodes, "No eligible graph nodes found — run setup_module first"
+
+        entries = []
+        for i, node in enumerate(nodes):
+            e = FaqEntry(
+                question=f"Test question {i+1}?",
+                answer=f"Test answer {i+1}.",
+                source_kind="claim",
+                source_node_id=node.id,
+                video_id=node.video_id,
+                start=node.start,
+                status="answered",
+                created_at=datetime.utcnow(),
+            )
+            db.add(e)
+            entries.append(e)
+        db.commit()
+        ids = [e.id for e in entries]
+    return ids
+
+
+def test_publish_wordpress_no_creds(monkeypatch):
+    """Returns 503 with a clear message when WP creds are absent."""
+    monkeypatch.delenv("WP_URL", raising=False)
+    monkeypatch.delenv("WP_USER", raising=False)
+    monkeypatch.delenv("WP_APP_PWD", raising=False)
+
+    _seed_answered_entries()
+    c = _admin_client()
+    r = c.post("/faq/publish-wordpress", headers=AUTH)
+    assert r.status_code == 503, r.text
+    assert "WordPress credentials" in r.json()["detail"]
+
+
+def test_publish_wordpress_creates_page(monkeypatch):
+    """When no existing FAQ page, calls wp.create_page and returns page_id + url."""
+    monkeypatch.setenv("WP_URL", "https://example.com")
+    monkeypatch.setenv("WP_USER", "admin")
+    monkeypatch.setenv("WP_APP_PWD", "test-password")
+
+    _seed_answered_entries()
+
+    import adapters.wordpress as wp_mod
+    created_ids = []
+
+    def fake_find_page_by_title(title):
+        return None  # no existing page
+
+    def fake_create_page(*, title, html, meta_description, jsonld, status="publish"):
+        created_ids.append(1)
+        return 42  # fake page id
+
+    monkeypatch.setattr(wp_mod, "find_page_by_title", fake_find_page_by_title)
+    monkeypatch.setattr(wp_mod, "create_page", fake_create_page)
+
+    c = _admin_client()
+    r = c.post("/faq/publish-wordpress", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["page_id"] == 42
+    assert data["action"] == "created"
+    assert data["published"] == 2
+    assert "example.com" in data["page_url"]
+    assert created_ids == [1]
+
+
+def test_publish_wordpress_updates_existing_page(monkeypatch):
+    """When an existing FAQ page is found, calls wp.update_page instead."""
+    monkeypatch.setenv("WP_URL", "https://example.com")
+    monkeypatch.setenv("WP_USER", "admin")
+    monkeypatch.setenv("WP_APP_PWD", "test-password")
+
+    _seed_answered_entries()
+
+    import adapters.wordpress as wp_mod
+    updated_ids = []
+
+    def fake_find_page_by_title(title):
+        return 99  # existing page id
+
+    def fake_update_page(page_id, *, title, html, meta_description, jsonld, status="publish"):
+        updated_ids.append(page_id)
+
+    monkeypatch.setattr(wp_mod, "find_page_by_title", fake_find_page_by_title)
+    monkeypatch.setattr(wp_mod, "update_page", fake_update_page)
+
+    c = _admin_client()
+    r = c.post("/faq/publish-wordpress", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["page_id"] == 99
+    assert data["action"] == "updated"
+    assert data["published"] == 2
+    assert updated_ids == [99]
+
+
+def test_publish_wordpress_includes_faqpage_jsonld(monkeypatch):
+    """The page is built with FAQPage JSON-LD containing all answered entries."""
+    import json as _json
+
+    monkeypatch.setenv("WP_URL", "https://example.com")
+    monkeypatch.setenv("WP_USER", "admin")
+    monkeypatch.setenv("WP_APP_PWD", "test-password")
+
+    _seed_answered_entries()
+
+    import adapters.wordpress as wp_mod
+    captured = {}
+
+    def fake_find_page_by_title(title):
+        return None
+
+    def fake_create_page(*, title, html, meta_description, jsonld, status="publish"):
+        captured["jsonld"] = jsonld
+        captured["html"] = html
+        return 55
+
+    monkeypatch.setattr(wp_mod, "find_page_by_title", fake_find_page_by_title)
+    monkeypatch.setattr(wp_mod, "create_page", fake_create_page)
+
+    c = _admin_client()
+    r = c.post("/faq/publish-wordpress", headers=AUTH)
+    assert r.status_code == 200, r.text
+
+    # jsonld is a list with one FAQPage entry
+    assert captured.get("jsonld"), "No JSON-LD captured"
+    schema = captured["jsonld"][0]
+    assert schema["@type"] == "FAQPage"
+    entities = schema["mainEntity"]
+    assert len(entities) == 2
+    for entity in entities:
+        assert entity["@type"] == "Question"
+        assert entity["name"].endswith("?")
+        assert entity["acceptedAnswer"]["@type"] == "Answer"
+        assert entity["acceptedAnswer"]["text"]
+
+    # HTML must contain h3 tags
+    assert "<h3>" in captured["html"]
+    assert "<p>" in captured["html"]
+
+
+def test_publish_wordpress_admin_gated(monkeypatch):
+    """Sales role cannot call POST /faq/publish-wordpress."""
+    monkeypatch.setenv("WP_URL", "https://example.com")
+    monkeypatch.setenv("WP_USER", "admin")
+    monkeypatch.setenv("WP_APP_PWD", "test-password")
+
+    c = _sales_client()
+    r = c.post("/faq/publish-wordpress", headers=AUTH)
+    assert r.status_code == 403, r.text
+
+
+def test_publish_wordpress_no_answered_entries(monkeypatch):
+    """Returns 422 when there are no answered FAQ entries."""
+    monkeypatch.setenv("WP_URL", "https://example.com")
+    monkeypatch.setenv("WP_USER", "admin")
+    monkeypatch.setenv("WP_APP_PWD", "test-password")
+
+    with SessionLocal() as db:
+        db.query(FaqEntry).delete()
+        db.commit()
+
+    c = _admin_client()
+    r = c.post("/faq/publish-wordpress", headers=AUTH)
+    assert r.status_code == 422, r.text
+    assert "No answered" in r.json()["detail"]

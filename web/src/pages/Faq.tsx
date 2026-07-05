@@ -24,6 +24,13 @@ interface Coverage {
   uncovered_nodes: number;
 }
 
+interface PublishResult {
+  page_id: number;
+  page_url: string;
+  published: number;
+  action: "created" | "updated";
+}
+
 function mmss(t: number): string {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
@@ -46,6 +53,8 @@ export function Faq() {
   const [generatingBatch, setGeneratingBatch] = useState(false);
   const [answeringId, setAnsweringId] = useState<number | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function loadCoverage() {
@@ -161,6 +170,25 @@ export function Faq() {
     }
   }
 
+  async function handlePublishWordPress() {
+    setPublishing(true);
+    setPublishResult(null);
+    setActionMsg(null);
+    try {
+      const r = await apiFetch("/faq/publish-wordpress", { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
+      }
+      const d: PublishResult = await r.json();
+      setPublishResult(d);
+    } catch (e: unknown) {
+      setActionMsg(`Publish failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   const hasMore = offset + PAGE_SIZE < total;
 
   return (
@@ -172,32 +200,84 @@ export function Faq() {
         {coverageLoading ? (
           <p style={{ margin: 0, fontSize: 14, color: BRAND.sub }}>Loading coverage…</p>
         ) : coverage ? (
-          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ flex: 1 }}>
-              <span style={{ fontSize: 14, color: BRAND.ink }}>
-                <strong style={{ color: BRAND.navyText }}>{coverage.mined}</strong> questions mined
-                {" · "}
-                <strong style={{ color: BRAND.navyText }}>{coverage.answered}</strong> answered
-                {" · "}
-                <strong style={{ color: BRAND.navyText }}>{coverage.uncovered_nodes}</strong> content items still available
-              </span>
+          <>
+            {/* Empty-state: no questions mined yet but content is available */}
+            {coverage.mined === 0 && coverage.uncovered_nodes > 0 && (
+              <div style={{
+                background: "#fff8e1",
+                border: "1px solid #ffe082",
+                borderRadius: 8,
+                padding: "16px 20px",
+                marginBottom: 16,
+              }}>
+                <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: 15, color: BRAND.navyText }}>
+                  No questions mined yet — {coverage.uncovered_nodes.toLocaleString()} content items available
+                </p>
+                <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.ink }}>
+                  The content graph has been built from your videos. Click below to extract FAQ questions
+                  from claims and objections found in the content.
+                </p>
+                <Button onClick={handleMine} disabled={mining} style={{ fontSize: 14 }}>
+                  {mining ? "Mining questions…" : `Mine ${coverage.uncovered_nodes.toLocaleString()} questions now`}
+                </Button>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ flex: 1 }}>
+                <span style={{ fontSize: 14, color: BRAND.ink }}>
+                  <strong style={{ color: BRAND.navyText }}>{coverage.mined}</strong> questions mined
+                  {" · "}
+                  <strong style={{ color: BRAND.navyText }}>{coverage.answered}</strong> answered
+                  {" · "}
+                  <strong style={{ color: BRAND.navyText }}>{coverage.uncovered_nodes.toLocaleString()}</strong> available to mine
+                </span>
+              </div>
+              {coverage.mined > 0 && (
+                <Button
+                  onClick={handleMine}
+                  disabled={mining || coverage.uncovered_nodes === 0}
+                  variant="ghost"
+                  style={{ whiteSpace: "nowrap", fontSize: 13 }}
+                >
+                  {mining ? "Mining…" : `Mine more${coverage.uncovered_nodes > 0 ? ` (${coverage.uncovered_nodes.toLocaleString()})` : ""}`}
+                </Button>
+              )}
+              <Button
+                onClick={handleGenerateBatch}
+                disabled={generatingBatch || coverage.mined === coverage.answered}
+                style={{ whiteSpace: "nowrap", fontSize: 13 }}
+              >
+                {generatingBatch ? "Generating…" : "Generate answers"}
+              </Button>
+              {coverage.answered > 0 && (
+                <Button
+                  onClick={handlePublishWordPress}
+                  disabled={publishing}
+                  variant="ghost"
+                  style={{ whiteSpace: "nowrap", fontSize: 13 }}
+                >
+                  {publishing
+                    ? "Publishing…"
+                    : `Publish FAQ to website (${coverage.answered} answered)`}
+                </Button>
+              )}
             </div>
-            <Button
-              onClick={handleMine}
-              disabled={mining || coverage.uncovered_nodes === 0}
-              variant="ghost"
-              style={{ whiteSpace: "nowrap", fontSize: 13 }}
-            >
-              {mining ? "Mining…" : `Mine more${coverage.uncovered_nodes > 0 ? ` (${coverage.uncovered_nodes})` : ""}`}
-            </Button>
-            <Button
-              onClick={handleGenerateBatch}
-              disabled={generatingBatch || coverage.mined === coverage.answered}
-              style={{ whiteSpace: "nowrap", fontSize: 13 }}
-            >
-              {generatingBatch ? "Generating…" : "Generate answers"}
-            </Button>
-          </div>
+
+            {publishResult && (
+              <p style={{ margin: "10px 0 0", fontSize: 13, color: BRAND.ink }}>
+                FAQ page {publishResult.action} on WordPress ({publishResult.published} Q&amp;As).{" "}
+                <a
+                  href={publishResult.page_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: BRAND.red, fontWeight: 600 }}
+                >
+                  View page
+                </a>
+              </p>
+            )}
+          </>
         ) : (
           <p style={{ margin: 0, fontSize: 14, color: BRAND.sub }}>Coverage unavailable.</p>
         )}
@@ -236,7 +316,11 @@ export function Faq() {
       {!loading && !error && items.length === 0 && (
         <Card>
           <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
-            No questions found{filter ? ` for "${filter}"` : ""}. Use "Mine more" to generate from content.
+            {filter
+              ? `No questions found for "${filter}".`
+              : coverage && coverage.mined === 0 && coverage.uncovered_nodes > 0
+              ? `Use the "Mine questions now" button above to generate FAQ questions from your content.`
+              : "No questions found. Use \"Mine more\" to generate from content."}
           </p>
         </Card>
       )}

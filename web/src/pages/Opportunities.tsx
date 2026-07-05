@@ -4,6 +4,8 @@ import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui"
 
 interface ArticleTopic {
   label: string;
+  num_videos: number;
+  total_content_length: number;
   count: number;
   sample: { video_id: string; t: number };
 }
@@ -82,6 +84,21 @@ function EmptyState({ label }: { label: string }) {
   );
 }
 
+function ActionNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p style={{ fontSize: 12, color: BRAND.sub, margin: "2px 0 8px", fontStyle: "italic" }}>
+      {children}
+    </p>
+  );
+}
+
+function formatContentLength(chars: number): string {
+  if (chars === 0) return "no transcript";
+  const minutes = Math.round(chars / 900); // ~900 chars/min spoken word
+  if (minutes < 1) return `~${chars} chars`;
+  return `~${minutes} min`;
+}
+
 export function Opportunities() {
   const [data, setData] = useState<Suggestions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,14 +106,15 @@ export function Opportunities() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [genMsg, setGenMsg] = useState<Record<string, string>>({});
   const [limit, setLimit] = useState(25);
+  const [topicSort, setTopicSort] = useState<"length" | "videos">("length");
 
   // FAQ answer state: key = `${video_id}-${t}`, value = answer payload or "loading"/"error"
   const [faqAnswers, setFaqAnswers] = useState<Record<string, FaqAnswer | "loading" | string>>({});
 
-  function fetchSuggestions(fetchLimit = limit) {
+  function fetchSuggestions(fetchLimit = limit, fetchSort = topicSort) {
     setLoading(true);
     setError(null);
-    apiFetch(`/suggestions?limit=${fetchLimit}`)
+    apiFetch(`/suggestions?limit=${fetchLimit}&sort=${fetchSort}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
@@ -116,6 +134,11 @@ export function Opportunities() {
     const next = limit + 25;
     setLimit(next);
     fetchSuggestions(next);
+  }
+
+  function handleSortChange(s: "length" | "videos") {
+    setTopicSort(s);
+    fetchSuggestions(limit, s);
   }
 
   function generateArticle(topic: string) {
@@ -193,12 +216,10 @@ export function Opportunities() {
     const key = `${faq.video_id}-${faq.t}`;
     const existing = faqAnswers[key];
     if (existing === undefined) {
-      // Not yet fetched — build it
       buildFaqAnswer(faq);
     } else if (existing === "loading") {
-      // Already in flight, do nothing
+      // already in flight
     } else {
-      // Already have it (or errored) — toggle off by removing
       setFaqAnswers((prev) => {
         const next = { ...prev };
         delete next[key];
@@ -211,7 +232,7 @@ export function Opportunities() {
     <main style={{ padding: "0 4px" }}>
       <PageTitle
         right={
-          <Button onClick={() => fetchSuggestions(limit)} disabled={loading}>
+          <Button onClick={() => fetchSuggestions(limit, topicSort)} disabled={loading}>
             Refresh
           </Button>
         }
@@ -225,13 +246,50 @@ export function Opportunities() {
       {!loading && !error && data && (
         <>
           {/* Article Topics */}
-          <SectionHeader>
-            Article topics to cover ({data.article_topics.length}
-            {data.article_topics_total > data.article_topics.length
-              ? ` of ${data.article_topics_total}`
-              : ""}
-            ) — ranked by how many videos cover the topic
-          </SectionHeader>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "28px 0 4px" }}>
+            <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
+              Suggested article topics to cover ({data.article_topics.length}
+              {data.article_topics_total > data.article_topics.length
+                ? ` of ${data.article_topics_total}`
+                : ""})
+            </h3>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: "auto" }}>
+              <span style={{ fontSize: 12, color: BRAND.sub }}>Sort:</span>
+              <button
+                onClick={() => handleSortChange("length")}
+                style={{
+                  fontSize: 12,
+                  padding: "3px 10px",
+                  borderRadius: 6,
+                  border: `1px solid ${topicSort === "length" ? BRAND.navyText : BRAND.border}`,
+                  background: topicSort === "length" ? BRAND.navyText : "#fff",
+                  color: topicSort === "length" ? "#fff" : BRAND.sub,
+                  cursor: "pointer",
+                  fontWeight: topicSort === "length" ? 600 : 400,
+                }}
+              >
+                Total content length
+              </button>
+              <button
+                onClick={() => handleSortChange("videos")}
+                style={{
+                  fontSize: 12,
+                  padding: "3px 10px",
+                  borderRadius: 6,
+                  border: `1px solid ${topicSort === "videos" ? BRAND.navyText : BRAND.border}`,
+                  background: topicSort === "videos" ? BRAND.navyText : "#fff",
+                  color: topicSort === "videos" ? "#fff" : BRAND.sub,
+                  cursor: "pointer",
+                  fontWeight: topicSort === "videos" ? 600 : 400,
+                }}
+              >
+                Number of videos
+              </button>
+            </div>
+          </div>
+          <ActionNote>
+            Generating an article creates a cluster draft — see the Articles tab to review and publish.
+          </ActionNote>
           {data.article_topics.length === 0 ? (
             <EmptyState label="All topics covered" />
           ) : (
@@ -258,7 +316,9 @@ export function Opportunities() {
                         marginBottom: 10,
                       }}
                     >
-                      {t.count} video{t.count !== 1 ? "s" : ""}
+                      {t.num_videos} video{t.num_videos !== 1 ? "s" : ""}
+                      {" · "}
+                      {formatContentLength(t.total_content_length)}
                       {" · "}
                       <a
                         href={`https://youtu.be/${t.sample.video_id}?t=${t.sample.t}`}
@@ -306,6 +366,10 @@ export function Opportunities() {
           <SectionHeader>
             Reels ready to schedule ({data.reels.length})
           </SectionHeader>
+          <ActionNote>
+            These approved clips are ready to post — schedule them in{" "}
+            <strong>Clip Studio</strong> or submit via <strong>Video Approval</strong>.
+          </ActionNote>
           {data.reels.length === 0 ? (
             <EmptyState label="No reels pending" />
           ) : (
@@ -342,7 +406,16 @@ export function Opportunities() {
                       source video
                     </a>
                   </div>
-                  <Badge tone="blue">Approved</Badge>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <Badge tone="blue">Approved</Badge>
+                    <a
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); }}
+                      style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", cursor: "pointer" }}
+                    >
+                      Open in Clip Studio
+                    </a>
+                  </div>
                 </Card>
               ))}
             </div>
@@ -353,6 +426,9 @@ export function Opportunities() {
             FAQs to build ({data.faqs.length}
             {data.faqs_total > data.faqs.length ? ` of ${data.faqs_total}` : ""})
           </SectionHeader>
+          <ActionNote>
+            Build an answer here, then find it in the <strong>FAQ</strong> tab to review and publish.
+          </ActionNote>
           {data.faqs.length === 0 ? (
             <EmptyState label="No FAQ gaps found" />
           ) : (

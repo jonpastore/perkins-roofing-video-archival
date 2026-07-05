@@ -216,7 +216,7 @@ def template_prompt(ctx: dict) -> str:
             f'- Include a "Table of Contents" H2 near the top linking to each major section\n'
             f"- 8-12 H2 sections, each covering a distinct sub-topic\n"
             f'- Each H2 section ends with an "Learn more:" link pointing to a related cluster article\n'
-            f'- Final section: "Ready to start? Here’s your next step" CTA\n'
+            f'- Final section: "Ready to start? Here\'s your next step" CTA\n'
             f"- This page will be linked-TO by 5-10 cluster articles, so write it as the canonical reference"
         )
     elif role == "cluster":
@@ -278,7 +278,7 @@ def template_prompt(ctx: dict) -> str:
             f'Content: "{ab_answer[:400]}"\n\n'
             "Your answer-first lede (the first 2-3 sentences after the H1) must MATCH this format precisely:\n"
             "- If paragraph: write a single self-contained paragraph of 40-60 words that DIRECTLY answers "
-            "the keyword’s implicit question\n"
+            "the keyword's implicit question\n"
             "- If list: write a clean ordered or bulleted list of 5-10 items\n"
             "- If table: include a markdown table with the same column structure\n"
             "Format-matching is what makes an article eligible to displace the current snippet holder. "
@@ -309,7 +309,7 @@ def template_prompt(ctx: dict) -> str:
             "ANCHOR TEXT VARIATION (CRITICAL — affects SEO authority distribution):\n"
             "When you reference these internal links inside the article body using "
             "`[anchor text](/blog/slug)` markdown, VARY THE ANCHOR TEXT across links. "
-            "Do NOT use the linked article’s exact title for every link. Distribute roughly:\n"
+            "Do NOT use the linked article's exact title for every link. Distribute roughly:\n"
             "- 40% partial-match anchors (e.g. \"physiotherapy treatment\" not the full title)\n"
             "- 30% generic anchors that fit the prose (\"learn more here\", \"this guide\", \"our resource on X\")\n"
             "- 20% exact-match anchors only when the title fits naturally\n"
@@ -337,8 +337,8 @@ def template_prompt(ctx: dict) -> str:
             + (f", {author_creds}" if author_creds else "")
             + ("\n" + f"Bio: {author_bio}" if author_bio else "")
             + ("\n" + f"LinkedIn: {author_linkedin}" if author_linkedin else "")
-            + "\nWrite in this person’s voice. Reference their expertise naturally where appropriate. "
-            "Don’t fabricate specific anecdotes, but the article should read like THIS specific "
+            + "\nWrite in this person's voice. Reference their expertise naturally where appropriate. "
+            "Don't fabricate specific anecdotes, but the article should read like THIS specific "
             "credentialed professional wrote it, not generic content."
         )
     else:
@@ -370,19 +370,16 @@ def template_prompt(ctx: dict) -> str:
         f"{internal_guidance}\n\n"
         "═══ CALLOUT BOXES — USE 2-4 PER ARTICLE ═══\n"
         "The blog renderer supports 4 callout types. Use them where EDITORIALLY appropriate.\n"
-        "Syntax (must be exactly this format, blank line before and after):\n\n"
-        "> [!TIP]\n"
-        "> Practical shortcut or efficiency advice the reader can apply immediately.\n\n"
-        "> [!WARNING]\n"
-        "> Common mistake or danger to avoid. Use when stakes are high.\n\n"
-        "> [!NOTE]\n"
-        "> Important context, clarification, or caveat that matters for this topic.\n\n"
-        "> [!KEY]\n"
-        "> The single most important insight of this article. Use AT MOST ONCE per article.\n\n"
+        "Emit callouts as clean HTML — do NOT use GitHub-style `> [!TIP]` markers.\n\n"
+        "Syntax (must be exactly this HTML, blank line before and after):\n\n"
+        '<aside class="tip"><p>Practical shortcut or efficiency advice the reader can apply immediately.</p></aside>\n\n'
+        '<aside class="warning"><p>Common mistake or danger to avoid. Use when stakes are high.</p></aside>\n\n'
+        '<aside class="note"><p>Important context, clarification, or caveat that matters for this topic.</p></aside>\n\n'
+        '<aside class="key"><p>The single most important insight of this article. Use AT MOST ONCE per article.</p></aside>\n\n'
         "Guidelines:\n"
         "- Distribute 2-4 callouts throughout the article, not all at the top\n"
         "- Content INSIDE callouts should be 1-3 sentences, punchy, specific\n"
-        "- Don’t repeat the same callout type more than 2x per article\n"
+        "- Don't repeat the same callout type more than 2x per article\n"
         "- KEY takeaway goes near the top OR near the end, never in the middle\n"
         "- Callouts should add value, not restate what the surrounding paragraph said\n\n"
         "Return ONLY this JSON structure (no markdown fences):\n"

@@ -1,6 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
+import { apiFetch } from "./api";
 import { Archive } from "./pages/Archive";
 import { SearchAsk } from "./pages/SearchAsk";
 import { Templates } from "./pages/Templates";
@@ -75,13 +76,14 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
   },
 };
 
-function NavButton({ id, label, active, onClick }: { id: string; label: string; active: boolean; onClick: () => void }) {
+function NavButton({ id, label, active, onClick, badge }: { id: string; label: string; active: boolean; onClick: () => void; badge?: number }) {
   return (
     <button
       key={id}
       onClick={onClick}
       style={{
-        display: "block",
+        display: "flex",
+        alignItems: "center",
         width: "100%",
         textAlign: "left",
         padding: "11px 16px",
@@ -92,9 +94,28 @@ function NavButton({ id, label, active, onClick }: { id: string; label: string; 
         fontSize: 14,
         fontWeight: active ? 600 : 400,
         border: "none",
+        gap: 8,
       }}
     >
-      {label}
+      <span style={{ flex: 1 }}>{label}</span>
+      {badge != null && badge > 0 && (
+        <span
+          style={{
+            background: BRAND.red,
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 700,
+            borderRadius: 10,
+            padding: "1px 7px",
+            lineHeight: 1.6,
+            minWidth: 18,
+            textAlign: "center",
+            flexShrink: 0,
+          }}
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </button>
   );
 }
@@ -128,10 +149,29 @@ function AdminSectionDivider() {
   );
 }
 
+interface OpportunityCounts {
+  article_topics: number;
+  reels: number;
+  faqs: number;
+  unused_videos: number;
+}
+
 // Shared console shell: branded sidebar + content area.
 function Shell({ config }: { config: ShellConfig }) {
   const { title, tabs, adminTabs, defaultTab } = config;
   const [tab, setTab] = useState<string>(defaultTab);
+  const [oppCounts, setOppCounts] = useState<OpportunityCounts | null>(null);
+
+  useEffect(() => {
+    apiFetch("/suggestions/counts")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: OpportunityCounts | null) => { if (d) setOppCounts(d); })
+      .catch(() => { /* badge is best-effort */ });
+  }, []);
+
+  const oppBadge = oppCounts
+    ? oppCounts.article_topics + oppCounts.reels + oppCounts.faqs
+    : undefined;
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: FONT }}>
@@ -163,7 +203,14 @@ function Shell({ config }: { config: ShellConfig }) {
           <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
         </div>
         {tabs.map(([id, label]) => (
-          <NavButton key={id} id={id} label={label} active={tab === id} onClick={() => setTab(id)} />
+          <NavButton
+            key={id}
+            id={id}
+            label={label}
+            active={tab === id}
+            onClick={() => setTab(id)}
+            badge={id === "opportunities" ? oppBadge : undefined}
+          />
         ))}
         {adminTabs && adminTabs.length > 0 && (
           <>

@@ -4,7 +4,7 @@ Export ``router`` only; do NOT create a FastAPI app here. Mount this router onto
 main app in api/app.py with ``app.include_router(router)``.
 
 Role requirements:
-  - view_status → admin only  (GET /suggestions)
+  - view_status → admin only  (GET /suggestions, GET /suggestions/counts)
 
 Returns four proactive suggestion buckets derived from current DB state:
   - article_topics  : high-frequency mined topics not yet covered by any article
@@ -42,26 +42,141 @@ def _to_question(label: str, detail: str) -> str:
     return text[0].upper() + text[1:] + "?"
 
 
+@router.get("/counts")
+def get_suggestion_counts(
+    claims=Depends(require_role("view_status")),
+):
+    """Return cheap COUNT-only totals for each opportunity bucket.
+
+    Does NOT run the heavy suggestion computation — uses fast COUNT queries only.
+    Intended for sidebar badge display.
+
+    Returns:
+      article_topics   - total uncovered topics
+      reels            - total approved series with no schedule or social post
+      faqs             - total unbuilt FAQ items
+      unused_videos    - total unused videos with transcript/topic data
+    """
+    with SessionLocal() as db:
+        # --- article_topics count ---
+        topic_rows = (
+            db.query(GraphNode)
+            .filter(GraphNode.kind == "topics")
+            .all()
+        )
+        articles = db.query(Article).all()
+        article_titles_lower = {(a.title or "").strip().lower() for a in articles}
+
+        topic_groups: dict[str, set] = {}
+        for row in topic_rows:
+            if not row.label:
+                continue
+            key = _normalize(row.label)
+            topic_groups.setdefault(key, set()).add(row.video_id)
+
+        article_topics_count = sum(
+            1 for key in topic_groups if key not in article_titles_lower
+        )
+
+        # --- reels count ---
+        approved_ids = {
+            s.id for s in db.query(MiniSeries).filter(MiniSeries.approved == 1).all()
+        }
+        scheduled_ref_ids = {
+            sc.ref_id
+            for sc in db.query(ScheduledContent).filter(ScheduledContent.kind == "reel").all()
+            if sc.ref_id is not None
+        }
+        social_series_ids = {
+            row.series_id
+            for row in db.query(SocialPost.series_id).distinct().all()
+            if row.series_id is not None
+        }
+        reels_count = sum(
+            1 for sid in approved_ids
+            if str(sid) not in scheduled_ref_ids and sid not in social_series_ids
+        )
+
+        # --- faqs count ---
+        all_video_ids_in_db: set[str] = {row.id for row in db.query(Video.id).all()}
+        article_contents = [a.content_md or "" for a in articles]
+        article_video_ids: set[str] = set()
+        for vid_id in all_video_ids_in_db:
+            if any(vid_id in content for content in article_contents):
+                article_video_ids.add(vid_id)
+
+        faq_rows = (
+            db.query(GraphNode)
+            .filter(
+                GraphNode.kind.in_(("objections", "claims")),
+                GraphNode.start.isnot(None),
+            )
+            .all()
+        )
+        faqs_count = sum(
+            1 for row in faq_rows
+            if row.video_id not in article_video_ids
+            and bool(_to_question(row.label or "", row.detail or ""))
+        )
+
+        # --- unused_videos count ---
+        series_video_ids: set[str] = {
+            s.video_id for s in db.query(MiniSeries).all() if s.video_id
+        }
+        segment_video_ids: set[str] = {
+            row.video_id for row in db.query(Segment.video_id).distinct().all()
+        }
+        graph_video_ids: set[str] = {
+            row.video_id for row in db.query(GraphNode.video_id).distinct().all()
+        }
+        covered_video_ids = segment_video_ids | graph_video_ids
+        all_videos = db.query(Video).all()
+        unused_count = sum(
+            1 for v in all_videos
+            if v.id in covered_video_ids
+            and v.id not in article_video_ids
+            and v.id not in series_video_ids
+        )
+
+    return {
+        "article_topics": article_topics_count,
+        "reels": reels_count,
+        "faqs": faqs_count,
+        "unused_videos": unused_count,
+    }
+
+
 @router.get("")
 def get_suggestions(
     limit: int = 25,
+    sort: str = "length",
     claims=Depends(require_role("view_status")),
 ):
     """Compute proactive content opportunities from current DB state.
 
     Query params:
       limit  - max items per bucket (default 25, min 1, max 200)
+      sort   - article_topics sort order: "length" (default, by total_content_length desc)
+               or "videos" (by num_videos desc)
 
     Returns four buckets plus total counts per bucket:
-      article_topics        - high-frequency topics not yet in any article, ranked by video count
+      article_topics        - topics not yet in any article, ranked by content length or video count
       article_topics_total  - total uncovered topics (before limit)
       reels                 - approved MiniSeries with no ScheduledContent (kind=reel) or SocialPost
       faqs                  - objection/claim questions whose video has no article
       faqs_total            - total unbuilt FAQ items (before limit)
       unused_videos         - videos with transcripts/topics not used in articles or MiniSeries
       unused_videos_total   - total unused videos (before limit)
+
+    Each article_topics item includes:
+      label                 - topic label (title-cased from first occurrence)
+      num_videos            - distinct videos covering this topic
+      total_content_length  - sum of segment text length across all videos covering this topic
+      count                 - alias for num_videos (backward compat)
+      sample                - {video_id, t} for a sample clip
     """
     limit = max(1, min(limit, 200))
+    sort = sort if sort in ("length", "videos") else "length"
     with SessionLocal() as db:
         # --- Collect article coverage sets ---
         articles = db.query(Article).all()
@@ -84,7 +199,16 @@ def get_suggestions(
             .filter(GraphNode.kind == "topics")
             .all()
         )
-        # Group by normalized label, count distinct videos
+
+        # Build per-video segment text length index
+        segment_rows = db.query(Segment.video_id, Segment.text).all()
+        video_segment_length: dict[str, int] = {}
+        for row in segment_rows:
+            vid = row.video_id
+            txt = row.text or ""
+            video_segment_length[vid] = video_segment_length.get(vid, 0) + len(txt)
+
+        # Group by normalized label, track distinct videos + accumulate content length
         topic_groups: dict[str, dict] = {}
         for row in topic_rows:
             if not row.label:
@@ -98,18 +222,29 @@ def get_suggestions(
                 }
             topic_groups[key]["video_ids"].add(row.video_id)
 
+        # Compute total_content_length per topic (sum of segment lengths for its videos)
+        for g in topic_groups.values():
+            g["total_content_length"] = sum(
+                video_segment_length.get(vid, 0) for vid in g["video_ids"]
+            )
+
         # Filter out topics already covered by an article (title match)
+        # Sort by selected key
+        if sort == "videos":
+            sort_key = lambda kv: len(kv[1]["video_ids"])  # noqa: E731
+        else:
+            sort_key = lambda kv: kv[1]["total_content_length"]  # noqa: E731
+
         article_topics_all = []
-        for key, g in sorted(
-            topic_groups.items(),
-            key=lambda kv: len(kv[1]["video_ids"]),
-            reverse=True,
-        ):
+        for key, g in sorted(topic_groups.items(), key=sort_key, reverse=True):
             if key in article_titles_lower:
                 continue
+            num_videos = len(g["video_ids"])
             article_topics_all.append({
                 "label": g["label"],
-                "count": len(g["video_ids"]),
+                "num_videos": num_videos,
+                "total_content_length": g["total_content_length"],
+                "count": num_videos,  # backward compat
                 "sample": g["sample"],
             })
         article_topics_total = len(article_topics_all)

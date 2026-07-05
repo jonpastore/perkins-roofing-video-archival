@@ -219,8 +219,101 @@ function renderMarkdown(md: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// SEO / AIO score — computed client-side from article signals
+// ---------------------------------------------------------------------------
+
+interface SeoCheck {
+  label: string;
+  points: number;
+  pass: boolean;
+  detail?: string;
+}
+
+interface SeoResult {
+  score: number;
+  max: number;
+  checks: SeoCheck[];
+}
+
+function computeSeoScore(article: ArticleFull): SeoResult {
+  const checks: SeoCheck[] = [];
+
+  // 1. Meta description present (10 pts)
+  const metaPresent = Boolean(article.meta && article.meta.trim().length > 0);
+  checks.push({ label: "Meta description present", points: 10, pass: metaPresent });
+
+  // 2. Meta description length 120-160 chars (10 pts)
+  const metaLen = article.meta?.trim().length ?? 0;
+  const metaLenOk = metaLen >= 120 && metaLen <= 160;
+  checks.push({
+    label: "Meta description 120–160 chars",
+    points: 10,
+    pass: metaLenOk,
+    detail: metaLen > 0 ? `${metaLen} chars` : "no meta",
+  });
+
+  // 3. Title length 30-65 chars (10 pts)
+  const titleLen = article.title?.trim().length ?? 0;
+  const titleLenOk = titleLen >= 30 && titleLen <= 65;
+  checks.push({
+    label: "Title length 30–65 chars",
+    points: 10,
+    pass: titleLenOk,
+    detail: `${titleLen} chars`,
+  });
+
+  // 4. Has H2 or H3 headings in content_md (15 pts)
+  const hasHeadings = /^#{2,3}\s/m.test(article.content_md ?? "");
+  checks.push({ label: "Has H2/H3 headings in content", points: 15, pass: hasHeadings });
+
+  // 5. Has FAQ (faq_json non-empty array) (15 pts)
+  const faqItems = Array.isArray(article.faq_json)
+    ? (article.faq_json as FaqItem[]).filter((f) => f && typeof f.q === "string")
+    : [];
+  const hasFaq = faqItems.length > 0;
+  checks.push({
+    label: "Has FAQ schema",
+    points: 15,
+    pass: hasFaq,
+    detail: hasFaq ? `${faqItems.length} item${faqItems.length !== 1 ? "s" : ""}` : "none",
+  });
+
+  // 6. Has JSON-LD (15 pts)
+  const hasJsonLd = Boolean(
+    article.jsonld_json &&
+    (typeof article.jsonld_json === "object"
+      ? Object.keys(article.jsonld_json as object).length > 0
+      : String(article.jsonld_json).trim().length > 0)
+  );
+  checks.push({ label: "Has JSON-LD structured data", points: 15, pass: hasJsonLd });
+
+  // 7. Has embedded YouTube link in content_md (10 pts)
+  const hasVideo = /youtube\.com|youtu\.be/i.test(article.content_md ?? "");
+  checks.push({ label: "Has embedded video link", points: 10, pass: hasVideo });
+
+  // 8. Word count > 300 (15 pts)
+  const wordCount = (article.content_md ?? "")
+    .replace(/[#*>`_~\[\]]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 0).length;
+  const hasWords = wordCount > 300;
+  checks.push({
+    label: "Word count > 300",
+    points: 15,
+    pass: hasWords,
+    detail: `${wordCount} words`,
+  });
+
+  const max = checks.reduce((s, c) => s + c.points, 0);
+  const score = checks.filter((c) => c.pass).reduce((s, c) => s + c.points, 0);
+  return { score, max, checks };
+}
+
+// ---------------------------------------------------------------------------
 // Article view modal
 // ---------------------------------------------------------------------------
+
+type ModalTab = "article" | "seo";
 
 interface ArticleModalProps {
   slug: string;
@@ -238,6 +331,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
   const [scheduling, setScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleSuccess, setScheduleSuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState<ModalTab>("article");
 
   useEffect(() => {
     setLoading(true);
@@ -322,6 +416,14 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     : [];
 
   const renderedHtml = article?.content_md ? renderMarkdown(article.content_md) : "";
+  const seo = article ? computeSeoScore(article) : null;
+
+  // Score bar color
+  const scoreColor = seo
+    ? seo.score >= 80 ? "#16a34a"
+      : seo.score >= 50 ? "#d97706"
+      : "#dc2626"
+    : "#dc2626";
 
   return (
     <div
@@ -331,10 +433,9 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
         background: "rgba(0,0,0,0.45)",
         zIndex: 1000,
         display: "flex",
-        alignItems: "flex-start",
+        alignItems: "center",
         justifyContent: "center",
-        overflowY: "auto",
-        padding: "40px 16px",
+        padding: "16px",
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -344,12 +445,14 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
           borderRadius: 14,
           width: "100%",
           maxWidth: 780,
+          maxHeight: "90vh",
           boxShadow: "0 8px 40px rgba(16,24,40,0.18)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
         }}
       >
+        {/* Fixed header */}
         <div
           style={{
             display: "flex",
@@ -358,6 +461,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
             padding: "18px 24px",
             borderBottom: `1px solid ${BRAND.border}`,
             background: BRAND.navy,
+            flexShrink: 0,
           }}
         >
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>
@@ -380,11 +484,100 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
           </button>
         </div>
 
-        <div style={{ padding: 24 }}>
+        {/* Fixed action bar (publish/schedule) — only when unpublished */}
+        {article && article.status !== "published" && (
+          <div
+            style={{
+              display: "flex",
+              gap: 16,
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+              padding: "12px 24px",
+              background: BRAND.bg,
+              borderBottom: `1px solid ${BRAND.border}`,
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <Button
+                onClick={handlePublish}
+                disabled={publishing}
+                style={{ whiteSpace: "nowrap" }}
+              >
+                {publishing ? "Publishing…" : "Publish Now"}
+              </Button>
+              {publishError && (
+                <span style={{ fontSize: 12, color: BRAND.red }}>{publishError}</span>
+              )}
+            </div>
+
+            <div style={{ width: 1, background: BRAND.border, alignSelf: "stretch" }} />
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={(e) => { setScheduleAt(e.target.value); setScheduleSuccess(false); }}
+                  style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
+                />
+                <Button
+                  variant="ghost"
+                  onClick={handleSchedule}
+                  disabled={scheduling || !scheduleAt}
+                  style={{ whiteSpace: "nowrap" }}
+                >
+                  {scheduling ? "Scheduling…" : "Schedule"}
+                </Button>
+              </div>
+              {scheduleError && (
+                <span style={{ fontSize: 12, color: BRAND.red }}>{scheduleError}</span>
+              )}
+              {scheduleSuccess && (
+                <span style={{ fontSize: 12, color: "#1a7f4b" }}>Scheduled successfully.</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tabs */}
+        {article && (
+          <div
+            style={{
+              display: "flex",
+              borderBottom: `1px solid ${BRAND.border}`,
+              background: "#fff",
+              flexShrink: 0,
+            }}
+          >
+            {(["article", "seo"] as ModalTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: "10px 20px",
+                  border: "none",
+                  borderBottom: activeTab === tab ? `2px solid ${BRAND.red}` : "2px solid transparent",
+                  background: "none",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontWeight: activeTab === tab ? 700 : 500,
+                  color: activeTab === tab ? BRAND.navyText : BRAND.sub,
+                  marginBottom: -1,
+                }}
+              >
+                {tab === "article" ? "Article" : "SEO / AIO"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Scrollable content area */}
+        <div style={{ overflowY: "auto", flex: 1, padding: 24 }}>
           {loading && <Loading />}
           {error && <ErrorMsg>Failed to load article: {error}</ErrorMsg>}
 
-          {article && (
+          {article && activeTab === "article" && (
             <>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
                 {statusBadge(article.status)}
@@ -416,62 +609,6 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                 <p style={{ fontSize: 13, color: BRAND.sub, margin: "0 0 16px", fontStyle: "italic" }}>
                   {article.meta}
                 </p>
-              )}
-
-              {article.status !== "published" && (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 16,
-                    flexWrap: "wrap",
-                    alignItems: "flex-start",
-                    padding: "14px 16px",
-                    background: BRAND.bg,
-                    borderRadius: 10,
-                    marginBottom: 20,
-                    border: `1px solid ${BRAND.border}`,
-                  }}
-                >
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <Button
-                      onClick={handlePublish}
-                      disabled={publishing}
-                      style={{ whiteSpace: "nowrap" }}
-                    >
-                      {publishing ? "Publishing…" : "Publish Now"}
-                    </Button>
-                    {publishError && (
-                      <span style={{ fontSize: 12, color: BRAND.red }}>{publishError}</span>
-                    )}
-                  </div>
-
-                  <div style={{ width: 1, background: BRAND.border, alignSelf: "stretch" }} />
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <input
-                        type="datetime-local"
-                        value={scheduleAt}
-                        onChange={(e) => { setScheduleAt(e.target.value); setScheduleSuccess(false); }}
-                        style={{ ...inputStyle, fontSize: 13, padding: "8px 10px" }}
-                      />
-                      <Button
-                        variant="ghost"
-                        onClick={handleSchedule}
-                        disabled={scheduling || !scheduleAt}
-                        style={{ whiteSpace: "nowrap" }}
-                      >
-                        {scheduling ? "Scheduling…" : "Schedule"}
-                      </Button>
-                    </div>
-                    {scheduleError && (
-                      <span style={{ fontSize: 12, color: BRAND.red }}>{scheduleError}</span>
-                    )}
-                    {scheduleSuccess && (
-                      <span style={{ fontSize: 12, color: "#1a7f4b" }}>Scheduled successfully.</span>
-                    )}
-                  </div>
-                </div>
               )}
 
               {renderedHtml ? (
@@ -513,14 +650,155 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
               )}
             </>
           )}
+
+          {article && activeTab === "seo" && seo && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {/* Score summary */}
+              <div
+                style={{
+                  background: BRAND.bg,
+                  border: `1px solid ${BRAND.border}`,
+                  borderRadius: 10,
+                  padding: "16px 20px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: BRAND.navyText }}>SEO / AIO Score</span>
+                  <span style={{ fontWeight: 800, fontSize: 22, color: scoreColor }}>
+                    {seo.score}<span style={{ fontSize: 14, fontWeight: 500, color: BRAND.sub }}>/{seo.max}</span>
+                  </span>
+                </div>
+                {/* Score bar */}
+                <div style={{ height: 8, background: "#e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${(seo.score / seo.max) * 100}%`,
+                      background: scoreColor,
+                      borderRadius: 4,
+                      transition: "width 0.3s",
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                  <span style={{ fontSize: 11, color: "#dc2626" }}>Poor &lt; 50</span>
+                  <span style={{ fontSize: 11, color: "#d97706" }}>Fair &lt; 80</span>
+                  <span style={{ fontSize: 11, color: "#16a34a" }}>Good ≥ 80</span>
+                </div>
+              </div>
+
+              {/* Checklist */}
+              <div>
+                <h4 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Checks
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {seo.checks.map((check, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        background: check.pass ? "#f0fdf4" : "#fff7f7",
+                        border: `1px solid ${check.pass ? "#bbf7d0" : "#fecaca"}`,
+                      }}
+                    >
+                      <span style={{ fontSize: 15, flexShrink: 0 }}>
+                        {check.pass ? "✓" : "✗"}
+                      </span>
+                      <span style={{ flex: 1, fontSize: 14, color: BRAND.ink }}>{check.label}</span>
+                      {check.detail && (
+                        <span style={{ fontSize: 12, color: BRAND.sub }}>{check.detail}</span>
+                      )}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: check.pass ? "#16a34a" : "#dc2626",
+                          flexShrink: 0,
+                        }}
+                      >
+                        +{check.points}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Meta description */}
+              <div>
+                <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  Meta Description
+                </h4>
+                {article.meta ? (
+                  <p style={{ margin: 0, fontSize: 14, color: BRAND.ink, lineHeight: 1.6, background: BRAND.bg, padding: "10px 14px", borderRadius: 8, border: `1px solid ${BRAND.border}` }}>
+                    {article.meta}
+                  </p>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 14, color: BRAND.sub, fontStyle: "italic" }}>No meta description set.</p>
+                )}
+              </div>
+
+              {/* JSON-LD */}
+              <div>
+                <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  JSON-LD Schema
+                </h4>
+                {article.jsonld_json ? (
+                  <pre
+                    style={{
+                      margin: 0,
+                      fontSize: 12,
+                      background: "#1a202c",
+                      color: "#e2e8f0",
+                      padding: "14px 16px",
+                      borderRadius: 8,
+                      overflowX: "auto",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {JSON.stringify(article.jsonld_json, null, 2)}
+                  </pre>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 14, color: BRAND.sub, fontStyle: "italic" }}>No JSON-LD data.</p>
+                )}
+              </div>
+
+              {/* FAQ items */}
+              {faqItems.length > 0 && (
+                <div>
+                  <h4 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    FAQ ({faqItems.length} item{faqItems.length !== 1 ? "s" : ""})
+                  </h4>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {faqItems.map((item, i) => (
+                      <div key={i} style={{ background: BRAND.bg, borderRadius: 8, padding: "10px 14px", border: `1px solid ${BRAND.border}` }}>
+                        <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 14, color: BRAND.navyText }}>
+                          {item.q}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 13, color: BRAND.ink }}>
+                          {item.a}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
+        {/* Fixed footer */}
         <div
           style={{
             padding: "14px 24px",
             borderTop: `1px solid ${BRAND.border}`,
             display: "flex",
             justifyContent: "flex-end",
+            flexShrink: 0,
           }}
         >
           <Button variant="ghost" onClick={onClose}>Close</Button>
@@ -547,7 +825,7 @@ interface ArticleRowProps {
 function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, onDelete }: ArticleRowProps) {
   return (
     <tr style={{ borderBottom: `1px solid ${BRAND.border}` }}>
-      <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink, paddingLeft: indented ? 32 : 12 }}>
+      <td style={{ padding: "10px 12px", paddingLeft: indented ? 32 : 12, overflow: "hidden" }}>
         <button
           onClick={() => onView(a.slug)}
           style={{
@@ -561,48 +839,56 @@ function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, o
             textAlign: "left",
             textDecoration: "underline",
             textDecorationColor: BRAND.border,
+            width: "100%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            display: "block",
           }}
+          title={a.title}
         >
           {a.title}
         </button>
       </td>
-      <td style={{ padding: "10px 12px", fontSize: 13, color: BRAND.ink, maxWidth: 220 }}>
-        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={clusterTitle}>
+      <td style={{ padding: "10px 12px", overflow: "hidden" }}>
+        <span
+          style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, color: BRAND.ink }}
+          title={clusterTitle}
+        >
           {clusterTitle}
         </span>
       </td>
-      <td style={{ padding: "10px 12px" }}>{roleBadge(a.role)}</td>
-      <td style={{ padding: "10px 12px" }}>{statusBadge(a.status)}</td>
-      <td style={{ padding: "10px 12px", color: BRAND.sub }}>
+      <td style={{ padding: "10px 12px", width: 90 }}>{roleBadge(a.role)}</td>
+      <td style={{ padding: "10px 12px", width: 90 }}>{statusBadge(a.status)}</td>
+      <td style={{ padding: "10px 12px", width: 150, overflow: "hidden" }}>
         {a.wp_post_id && a.wp_url ? (
           <a
             href={a.wp_url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontSize: 13, color: BRAND.navyText, textDecoration: "underline" }}
+            style={{ fontSize: 13, color: BRAND.navyText, textDecoration: "underline", whiteSpace: "nowrap" }}
           >
             View on WordPress ↗
           </a>
         ) : a.wp_post_id ? (
-          <span style={{ fontSize: 13 }}>WP #{a.wp_post_id}</span>
+          <span style={{ fontSize: 13, color: BRAND.sub }}>WP #{a.wp_post_id}</span>
         ) : (
           <span style={{ color: BRAND.border }}>—</span>
         )}
       </td>
-      <td style={{ padding: "10px 12px", color: BRAND.sub, fontSize: 13 }}>
+      <td style={{ padding: "10px 12px", width: 120, color: BRAND.sub, fontSize: 13, overflow: "hidden" }}>
         {a.status === "published" && a.publish_at
           ? new Date(a.publish_at).toLocaleDateString()
           : a.status === "scheduled" && a.publish_at
           ? (
-            <span>
-              <Badge tone="amber">Scheduled</Badge>
-              {" "}
-              <span style={{ fontSize: 12 }}>{new Date(a.publish_at).toLocaleDateString()}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "nowrap" }}>
+              <Badge tone="amber">Sched</Badge>
+              <span style={{ fontSize: 12, whiteSpace: "nowrap" }}>{new Date(a.publish_at).toLocaleDateString()}</span>
             </span>
           )
           : <span style={{ color: BRAND.border }}>—</span>}
       </td>
-      <td style={{ padding: "10px 12px" }}>
+      <td style={{ padding: "10px 12px", width: 80 }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button
             onClick={() => onEdit(a)}
@@ -1094,83 +1380,111 @@ export function Articles() {
                 </span>
               </div>
 
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                <thead>
-                  <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
-                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
-                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Cluster</th>
-                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Role</th>
-                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>WP</th>
-                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Published</th>
-                    <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortMode === "date" ? (
-                    // Flat list sorted by publish_at desc
-                    sortByDate(filteredArticles).map((a) => (
-                      <ArticleRow key={a.slug} a={a} clusterTitle={clusterTitleFor(a)} {...rowProps} />
-                    ))
-                  ) : (
-                    // Cluster-grouped view
-                    groupByCluster(filteredArticles).map((group) => (
-                      <>
-                        {/* Pillar header row — blue left border */}
-                        {group.pillar ? (
-                          <tr
-                            key={`pillar-${group.pillarSlug}`}
-                            style={{ borderBottom: `1px solid ${BRAND.border}`, background: "#f0f4ff" }}
-                          >
-                            <td
-                              colSpan={7}
-                              style={{ padding: 0 }}
+              {/* Fixed-layout table — columns never shift regardless of content length */}
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: 14,
+                    tableLayout: "fixed",
+                  }}
+                >
+                  <colgroup>
+                    <col style={{ width: "30%" }} />
+                    <col style={{ width: "22%" }} />
+                    <col style={{ width: "90px" }} />
+                    <col style={{ width: "90px" }} />
+                    <col style={{ width: "150px" }} />
+                    <col style={{ width: "120px" }} />
+                    <col style={{ width: "80px" }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
+                      <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
+                      <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Cluster</th>
+                      <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Role</th>
+                      <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
+                      <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>WP</th>
+                      <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Published</th>
+                      <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortMode === "date" ? (
+                      // Flat list sorted by publish_at desc
+                      sortByDate(filteredArticles).map((a) => (
+                        <ArticleRow key={a.slug} a={a} clusterTitle={clusterTitleFor(a)} {...rowProps} />
+                      ))
+                    ) : (
+                      // Cluster-grouped view
+                      groupByCluster(filteredArticles).map((group) => (
+                        <>
+                          {/* Pillar header row — blue left border */}
+                          {group.pillar ? (
+                            <tr
+                              key={`pillar-${group.pillarSlug}`}
+                              style={{ borderBottom: `1px solid ${BRAND.border}`, background: "#f0f4ff" }}
                             >
-                              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <tbody>
-                                  <ArticleRow
-                                    a={group.pillar}
-                                    clusterTitle={group.pillar.title}
-                                    {...rowProps}
-                                  />
-                                </tbody>
-                              </table>
-                            </td>
-                          </tr>
-                        ) : (
-                          // Pillar not loaded — show a muted header with the slug
-                          <tr
-                            key={`pillar-stub-${group.pillarSlug}`}
-                            style={{ background: "#f0f4ff", borderBottom: `1px solid ${BRAND.border}` }}
-                          >
-                            <td
-                              colSpan={7}
-                              style={{
-                                padding: "8px 12px",
-                                fontSize: 13,
-                                color: BRAND.sub,
-                                fontStyle: "italic",
-                              }}
+                              <td
+                                colSpan={7}
+                                style={{ padding: 0 }}
+                              >
+                                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                                  <colgroup>
+                                    <col style={{ width: "30%" }} />
+                                    <col style={{ width: "22%" }} />
+                                    <col style={{ width: "90px" }} />
+                                    <col style={{ width: "90px" }} />
+                                    <col style={{ width: "150px" }} />
+                                    <col style={{ width: "120px" }} />
+                                    <col style={{ width: "80px" }} />
+                                  </colgroup>
+                                  <tbody>
+                                    <ArticleRow
+                                      a={group.pillar}
+                                      clusterTitle={group.pillar.title}
+                                      {...rowProps}
+                                    />
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          ) : (
+                            // Pillar not loaded — show a muted header with the slug
+                            <tr
+                              key={`pillar-stub-${group.pillarSlug}`}
+                              style={{ background: "#f0f4ff", borderBottom: `1px solid ${BRAND.border}` }}
                             >
-                              Cluster: {group.pillarSlug}
-                            </td>
-                          </tr>
-                        )}
-                        {/* Cluster articles — indented */}
-                        {group.clusters.map((c) => (
-                          <ArticleRow
-                            key={c.slug}
-                            a={c}
-                            clusterTitle={group.pillar?.title ?? c.title}
-                            indented
-                            {...rowProps}
-                          />
-                        ))}
-                      </>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                              <td
+                                colSpan={7}
+                                style={{
+                                  padding: "8px 12px",
+                                  fontSize: 13,
+                                  color: BRAND.sub,
+                                  fontStyle: "italic",
+                                }}
+                              >
+                                Cluster: {group.pillarSlug}
+                              </td>
+                            </tr>
+                          )}
+                          {/* Cluster articles — indented */}
+                          {group.clusters.map((c) => (
+                            <ArticleRow
+                              key={c.slug}
+                              a={c}
+                              clusterTitle={group.pillar?.title ?? c.title}
+                              indented
+                              {...rowProps}
+                            />
+                          ))}
+                        </>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </>

@@ -96,10 +96,10 @@ class TestTemplatePromptMinimal:
     def test_callout_boxes_section_present(self):
         result = template_prompt(self._minimal_ctx())
         assert "CALLOUT BOXES" in result
-        assert "[!TIP]" in result
-        assert "[!WARNING]" in result
-        assert "[!NOTE]" in result
-        assert "[!KEY]" in result
+        # callouts are now emitted as clean HTML <aside>, not [!TIP] markdown admonitions
+        assert "<aside" in result
+        for cls in ('class="tip"', 'class="warning"', 'class="note"', 'class="key"'):
+            assert cls in result
 
     def test_json_schema_present(self):
         result = template_prompt(self._minimal_ctx())

@@ -120,6 +120,99 @@ def update_status(post_id: int, status: str) -> None:
     resp.raise_for_status()
 
 
+def find_page_by_title(title: str) -> int | None:
+    """Search WordPress pages for one matching *title* (case-insensitive exact match).
+
+    Returns the page id if found, or None when no match exists.
+
+    Raises:
+        requests.HTTPError: if the WP REST API returns a non-2xx response.
+    """
+    url = f"{_base_url()}/wp-json/wp/v2/pages"
+    params = {"search": title, "per_page": 20, "status": "any"}
+    resp = requests.get(url, params=params, auth=_auth(), timeout=30)
+    resp.raise_for_status()
+    for page in resp.json():
+        raw = page.get("title", {}).get("rendered", "")
+        # Strip HTML entities / tags that WP may inject
+        import html as _html
+        import re as _re
+        clean = _re.sub(r"<[^>]+>", "", _html.unescape(raw)).strip()
+        if clean.lower() == title.lower():
+            return page["id"]
+    return None
+
+
+def create_page(
+    *,
+    title: str,
+    html: str,
+    meta_description: str,
+    jsonld: list[dict],
+    status: str = "publish",
+) -> int:
+    """Create a WordPress PAGE and return the new page id.
+
+    Args:
+        title:            Page title.
+        html:             Page body HTML.
+        meta_description: Short excerpt / meta description.
+        jsonld:           List of schema.org dicts stored as post-meta.
+        status:           WP post status — "draft", "publish", etc.
+
+    Returns:
+        Integer page id of the newly created page.
+
+    Raises:
+        requests.HTTPError: if the WP REST API returns a non-2xx response.
+    """
+    url = f"{_base_url()}/wp-json/wp/v2/pages"
+    payload = {
+        "title": title,
+        "content": html,
+        "status": status,
+        "excerpt": meta_description,
+        "meta": {"_perkins_jsonld": json.dumps(jsonld)},
+    }
+    resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
+    resp.raise_for_status()
+    return resp.json()["id"]
+
+
+def update_page(
+    page_id: int,
+    *,
+    title: str,
+    html: str,
+    meta_description: str,
+    jsonld: list[dict],
+    status: str = "publish",
+) -> None:
+    """Update an existing WordPress PAGE.
+
+    Args:
+        page_id:          Integer id of the page to update.
+        title:            New page title.
+        html:             New page body HTML.
+        meta_description: New meta description / excerpt.
+        jsonld:           Updated JSON-LD list for post-meta.
+        status:           New WP post status.
+
+    Raises:
+        requests.HTTPError: if the WP REST API returns a non-2xx response.
+    """
+    url = f"{_base_url()}/wp-json/wp/v2/pages/{page_id}"
+    payload = {
+        "title": title,
+        "content": html,
+        "status": status,
+        "excerpt": meta_description,
+        "meta": {"_perkins_jsonld": json.dumps(jsonld)},
+    }
+    resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
+    resp.raise_for_status()
+
+
 def trash(post_id: int) -> None:
     """Move a post to the WordPress trash (DELETE /posts/{id}).
 

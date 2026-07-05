@@ -310,6 +310,125 @@ def answer_batch(body: AnswerBatchRequest = AnswerBatchRequest(), claims=Depends
 
 
 # ---------------------------------------------------------------------------
+# POST /faq/publish-wordpress
+# ---------------------------------------------------------------------------
+
+_FAQ_PAGE_TITLES = ("FAQ", "Frequently Asked Questions")
+
+
+def _build_faq_html(entries: list[FaqEntry]) -> str:
+    """Render answered FaqEntry rows as semantic HTML (h3 + p pairs)."""
+    parts: list[str] = ["<div class=\"faq-content\">"]
+    for e in entries:
+        q = e.question.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        a = (e.answer or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        parts.append(f"<h3>{q}</h3>")
+        parts.append(f"<p>{a}</p>")
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
+def _build_faqpage_jsonld(entries: list[FaqEntry]) -> dict:
+    """Build a FAQPage JSON-LD schema dict from answered entries."""
+    return {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": e.question,
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": e.answer or "",
+                },
+            }
+            for e in entries
+        ],
+    }
+
+
+@router.post("/publish-wordpress")
+def publish_wordpress(claims=Depends(require_role("manage_articles"))):
+    """Collect all ANSWERED FaqEntry rows, build a semantic HTML FAQ page with
+    FAQPage JSON-LD, and create-or-update a WordPress PAGE titled 'FAQ'.
+
+    Requires WP_URL / WP_USER / WP_APP_PWD env vars. Returns 503 with a clear
+    message when credentials are absent.
+
+    Returns: {page_id, page_url, published, action}  (action: 'created' | 'updated')
+    """
+    import os
+    from adapters import wordpress as wp
+
+    # Guard: WP creds must be present
+    missing = [v for v in ("WP_URL", "WP_USER", "WP_APP_PWD") if not os.environ.get(v)]
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=f"WordPress credentials not configured: {', '.join(missing)}",
+        )
+
+    with SessionLocal() as db:
+        entries = (
+            db.query(FaqEntry)
+            .filter(FaqEntry.status == "answered")
+            .order_by(FaqEntry.id)
+            .all()
+        )
+
+    if not entries:
+        raise HTTPException(status_code=422, detail="No answered FAQ entries to publish.")
+
+    html_body = _build_faq_html(entries)
+    jsonld = [_build_faqpage_jsonld(entries)]
+    meta_desc = f"Frequently asked questions about roofing — {len(entries)} answers from Perkins Roofing."
+
+    # Find existing FAQ page (try both title variants)
+    existing_id: int | None = None
+    for candidate_title in _FAQ_PAGE_TITLES:
+        try:
+            existing_id = wp.find_page_by_title(candidate_title)
+        except Exception as exc:
+            log.warning("WP find_page_by_title failed: %s", exc)
+            raise HTTPException(status_code=502, detail=f"WordPress API error: {exc}") from exc
+        if existing_id is not None:
+            break
+
+    try:
+        if existing_id is not None:
+            wp.update_page(
+                existing_id,
+                title="Frequently Asked Questions",
+                html=html_body,
+                meta_description=meta_desc,
+                jsonld=jsonld,
+                status="publish",
+            )
+            page_id = existing_id
+            action = "updated"
+        else:
+            page_id = wp.create_page(
+                title="Frequently Asked Questions",
+                html=html_body,
+                meta_description=meta_desc,
+                jsonld=jsonld,
+                status="publish",
+            )
+            action = "created"
+    except Exception as exc:
+        log.error("WP publish-wordpress failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"WordPress API error: {exc}") from exc
+
+    wp_base = os.environ.get("WP_URL", "").rstrip("/")
+    return {
+        "page_id": page_id,
+        "page_url": f"{wp_base}/?page_id={page_id}",
+        "published": len(entries),
+        "action": action,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /faq/coverage
 # ---------------------------------------------------------------------------
 

@@ -182,6 +182,62 @@ def delete_article(slug: str, claims=Depends(require_role("manage_articles"))):
         db.commit()
 
 
+@router.post("/{slug}/reprocess")
+def reprocess_article(slug: str, claims=Depends(require_role("manage_articles"))):
+    """Sanitize + optionally refine an article, then sync to WordPress if published there.
+
+    Steps:
+    1. Load the article (404 if absent).
+    2. Run sanitize_article_html on content_md — converts markdown artifacts to HTML.
+    3. Persist the sanitized content.
+    4. If the article has a wp_post_id AND WP credentials are present in env,
+       push the updated content to WordPress via adapters.wordpress.update.
+
+    Role: manage_articles (admin only).
+    Returns: full article dict with updated content_md.
+    """
+    with SessionLocal() as db:
+        a = db.get(Article, slug)
+        if a is None:
+            raise HTTPException(status_code=404, detail="article not found")
+
+        # ── Sanitize ──────────────────────────────────────────────────────────
+        from jobs.article_job import sanitize_article_html  # noqa: PLC0415
+        original = a.content_md or ""
+        sanitized = sanitize_article_html(original)
+        a.content_md = sanitized
+
+        # ── WordPress sync when wp_post_id set and creds present ──────────────
+        if a.wp_post_id:
+            wp_creds_present = all(
+                os.environ.get(k) for k in ("WP_URL", "WP_USER", "WP_APP_PWD")
+            )
+            if wp_creds_present:
+                try:
+                    from jobs.article_job import _markdown_to_html  # noqa: PLC0415
+                    from adapters.wordpress import update  # noqa: PLC0415
+                    update(
+                        post_id=a.wp_post_id,
+                        title=a.title or "",
+                        html=_markdown_to_html(a.content_md or ""),
+                        meta_description=a.meta or "",
+                        jsonld=list(a.jsonld_json) if a.jsonld_json else [],
+                        status=a.status or "draft",
+                    )
+                    logger.info("wp reprocess update post_id=%d slug=%s", a.wp_post_id, slug)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "wp update failed during reprocess slug=%s (content still saved): %s",
+                        slug, exc,
+                    )
+            else:
+                logger.info("wp creds absent — skipping WP sync for slug=%s", slug)
+
+        db.commit()
+        db.refresh(a)
+        return _article_full(a)
+
+
 @router.post("/{slug}/publish")
 def publish_article(slug: str, claims=Depends(require_role("manage_articles"))):
     """Publish an article immediately.

@@ -405,10 +405,13 @@ def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str)
     Pipeline: generate (first pass) → refine (second SEO/AIO pass, fail-open).
     """
     try:
-        from jobs.article_job import generate_article_content, refine_article_content  # noqa: PLC0415
+        from jobs.article_job import generate_article_content, refine_article_content, sanitize_article_html  # noqa: PLC0415
         fields = generate_article_content(keyword, ctx)
         # Second pass: SEO/AIO refinement (fail-open — original kept on any error)
         fields = refine_article_content(fields, keyword)
+        # Sanitize after both passes so no markdown artifacts ship
+        fields = dict(fields)
+        fields["content_md"] = sanitize_article_html(fields.get("content_md") or "")
         return fields
     except Exception as exc:  # noqa: BLE001
         logger.warning("generate_article_content failed for %r, using fallback: %s", keyword, exc)
