@@ -31,7 +31,7 @@ variable "alert_email" {
 variable "extra_auth_domains" {
   type        = list(string)
   description = "Additional Firebase Auth authorized domains (e.g. app.perkinsroofing.net once the SPA is on a custom domain)"
-  default     = []
+  default     = ["perkins.degenito.ai"]
 }
 
 variable "google_idp_client_id" {

@@ -300,10 +300,16 @@ resource "google_cloud_run_v2_service" "api" {
 
   lifecycle {
     # GCP normalizes scaling counts 0->null (a perpetual provider diff), and the container
-    # image is deployed by CI/CD, not Terraform — ignore both so drift checks stay clean.
+    # image + env + cloudsql volume are deployed by CI/CD (scripts/deploy.sh), not Terraform —
+    # ignore so drift checks stay clean. client/client_version are gcloud-set metadata.
     ignore_changes = [
       scaling, # service-level scaling block GCP auto-populates with 0s (perpetual 0->null diff)
+      client,
+      client_version,
       template[0].containers[0].image,
+      template[0].containers[0].env,
+      template[0].containers[0].volume_mounts,
+      template[0].volumes,
     ]
   }
 
@@ -366,6 +372,22 @@ resource "google_cloud_run_v2_job" "jobs" {
   }
 
   depends_on = [google_project_service.apis]
+
+  lifecycle {
+    # Image, entrypoint, and env are deployed by CI/CD (scripts/deploy.sh: gcloud run
+    # jobs update --image/--command/--args/--set-env-vars), not Terraform — ignore so
+    # drift checks stay clean. client/client_version are gcloud-set metadata.
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].template[0].containers[0].image,
+      template[0].template[0].containers[0].command,
+      template[0].template[0].containers[0].args,
+      template[0].template[0].containers[0].env,
+      template[0].template[0].containers[0].volume_mounts,
+      template[0].template[0].volumes,
+    ]
+  }
 }
 
 # ---------------------------------------------------------------------------
