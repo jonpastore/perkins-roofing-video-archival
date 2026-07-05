@@ -28,6 +28,19 @@ class Settings:
     # Cost guardrails
     MAX_VIDEOS_PER_RUN = int(os.getenv("MAX_VIDEOS_PER_RUN", "500"))
 
+    # Browser origins allowed to call the API (SPA). Comma-separated env override.
+    CORS_ORIGINS = tuple(
+        o.strip()
+        for o in os.getenv(
+            "CORS_ORIGINS",
+            "https://video-archival-and-content-gen.web.app,"
+            "https://video-archival-and-content-gen.firebaseapp.com,"
+            "https://perkins.degenito.ai,"
+            "http://localhost:5173",
+        ).split(",")
+        if o.strip()
+    )
+
     # Emails that are admin-by-default (no per-user grant needed). Comma-separated env override.
     DEFAULT_ADMINS = frozenset(
         e.strip().lower()

@@ -36,10 +36,19 @@ export async function getIdToken(): Promise<string | null> {
 }
 
 export async function getRole(): Promise<string | null> {
-  const user = auth.currentUser;
-  if (!user) return null;
-  const result = await user.getIdTokenResult();
-  return (result.claims.role as string) ?? null;
+  // Ask the API for the effective role — it applies the default-admins policy, so this is
+  // the single source of truth (a raw token claim would miss default-admins with no claim set).
+  const token = await getIdToken();
+  if (!token) return null;
+  const base = import.meta.env.VITE_API_BASE as string;
+  try {
+    const r = await fetch(`${base}/me`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return (data.role as string) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function onAuthChanged(callback: (user: User | null) => void): () => void {

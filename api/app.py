@@ -3,16 +3,24 @@ This is the PROD entrypoint (replaces the unauthenticated app/api.py). Search/as
 authenticated sales|admin caller; /internal/promote is the Cloud Scheduler target, protected
 at the Cloud Run IAM layer (scheduler-sa OIDC, run.invoker)."""
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from api.auth import require_role
+from api.auth import current_claims, require_role
 from api.routes.archive import router as archive_router
 from api.routes.email import router as email_router
 from api.routes.video import router as video_router
 from app import answer as A
 from app import retrieval as R
+from app.config import settings
 
 app = FastAPI(title="Perkins Video Intelligence API", version="2.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.CORS_ORIGINS),
+    allow_methods=["*"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 app.include_router(email_router)
 app.include_router(video_router)
 app.include_router(archive_router)
@@ -26,6 +34,13 @@ class Query(BaseModel):
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
+
+
+@app.get("/me")
+def me(claims=Depends(current_claims)):
+    """Effective identity for the signed-in user — the SPA reads its role from here so
+    default-admins resolve server-side (the source of truth), not from the raw token claim."""
+    return {"email": claims.get("email"), "role": claims.get("role") or None}
 
 
 @app.post("/search")
