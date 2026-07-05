@@ -87,17 +87,17 @@ can't be Terraformed:
 4. **Authorized domains**: add the SPA's production domain to `extra_auth_domains` TF var when it moves
    off localhost / `<project>.web.app`.
 
-## Source-video archival — YouTube IP throttle (KNOWN LIMIT)
-The archive downloads full source MP4s via yt-dlp. YouTube progressively throttles bulk downloads
-per-IP: it served real video for ~106/841 (45 GB) then degraded this residential IP to "only images
-available" (storyboard-only) even WITH valid browser cookies + a JS runtime (deno). This is a YouTube
-anti-scraping response, not a code bug. To finish the archive:
-  - Set `COOKIES_FROM_BROWSER=chrome` (a YouTube-logged-in browser) — fixes the bot-check.
-  - Set `YTDLP_SLEEP=30`+ and run in small batches with long gaps so the IP isn't re-throttled.
-  - Let the throttle lift (hours–a day) between runs; or run from a different egress/residential IP.
-  - Datacenter IPs (Cloud Run) are usually MORE blocked, so a slow residential run is the pragmatic path.
-The transcripts/graph/embeddings (the searchable product) are unaffected — they use captions, and Whisper
-only for caption-less videos. Archival is the source-file backup and completes incrementally.
+## Source-video archival — yt-dlp requirements (SOLVED)
+Downloading full YouTube MP4s now requires THREE things (all wired into `adapters/yt_dlp.pull_video`
++ `scripts/run_archive.sh`):
+  1. **Up-to-date yt-dlp** (invoked as the venv module, not a stale system binary).
+  2. **A JS runtime + the EJS challenge solver** — YouTube's "n-challenge" otherwise returns only
+     storyboard images. Fixed with `deno` on PATH (`~/.deno/bin`) + `--remote-components ejs:github`.
+  3. **Browser cookies** — `COOKIES_FROM_BROWSER=chrome` clears the "confirm you're not a bot" check
+     (needs a YouTube-logged-in Chrome + the `secretstorage` python module for cookie decryption).
+`YTDLP_SLEEP` (default 5s) paces requests. On Cloud Run: bundle deno in the image + supply cookies via
+a mounted cookies.txt (browser-cookie extraction isn't available there). Locally the runner handles all
+of it. Transcripts/graph/embeddings are unaffected (captions + Whisper for caption-less only).
 
 ## Source-video archival notes
 - All 841 source videos are archived to the private `-media` GCS bucket (`jobs/archive_job.py`),

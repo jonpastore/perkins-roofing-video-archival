@@ -7,6 +7,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 set -a; source .env; set +a
 unset GOOGLE_APPLICATION_CREDENTIALS
+# deno on PATH (yt-dlp EJS n-challenge solver) + browser cookies clear YouTube's bot-check.
+export PATH="$HOME/.deno/bin:$PATH"
+export COOKIES_FROM_BROWSER="${COOKIES_FROM_BROWSER:-chrome}"
+export YTDLP_SLEEP="${YTDLP_SLEEP:-5}"
+export FFMPEG_BIN="$(.venv/bin/python -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())')"
 PW="$(gcloud secrets versions access latest --secret=db-password)"
 export DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"
 exec .venv/bin/python -m jobs.archive_job "$@"

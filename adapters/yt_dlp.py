@@ -5,12 +5,17 @@ Also provides pull_video() for downloading the best available MP4 for render job
 import json
 import os
 import subprocess
+import sys
 
 _TABS = ("videos", "shorts", "streams")
 
+# Invoke yt-dlp as the venv module so we get the up-to-date version (with --remote-components /
+# EJS n-challenge support), not whatever stale `yt-dlp` sits on PATH.
+_YTDLP = [sys.executable, "-m", "yt_dlp"]
+
 
 def _flat_list(url, limit=None):
-    cmd = ["yt-dlp", "--flat-playlist", "-J", "--ignore-errors"]
+    cmd = [*_YTDLP, "--flat-playlist", "-J", "--ignore-errors"]
     if limit:
         cmd += ["--playlist-end", str(limit)]
     cmd.append(url)
@@ -65,14 +70,16 @@ def pull_video(video_id: str, dst: str) -> str:
     url = f"https://www.youtube.com/watch?v={video_id}"
     output_template = os.path.join(dst, f"{video_id}.%(ext)s")
     cmd = [
-        "yt-dlp",
+        *_YTDLP,
         "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "--merge-output-format", "mp4",
         "-o", output_template,
         "--no-playlist",
-        # Throttle-resilience: YouTube bot-blocks/degrades bulk downloads by IP. Authenticate
-        # with browser cookies and pace requests so a bulk archive doesn't get the IP throttled
-        # to image-only. COOKIES_FROM_BROWSER (e.g. "chrome") + YTDLP_SLEEP tune this per host.
+        # YouTube's JS "n-challenge": without solving it, YouTube returns storyboard images only
+        # ("Only images are available"). yt-dlp solves it with a JS runtime (deno, on PATH) + the
+        # EJS challenge-solver script. This is the actual fix — not an IP throttle.
+        "--remote-components", "ejs:github",
+        # Auth + pacing for bulk archive (browser cookies clear the bot-check; sleep avoids re-flag).
         "--retries", "3", "--sleep-interval", os.getenv("YTDLP_SLEEP", "0"),
         url,
     ]
