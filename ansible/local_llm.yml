@@ -1,0 +1,61 @@
+---
+# IaC for repurposing cerberus (RTX 5090 mobile, 24GB) as the LOCAL LLM node used for the
+# ONE-TIME priming of the backlog (FAQ answers, article drafts, topic distillation) — far
+# cheaper than doing it on the client's cloud. Transcription is complete, so the GPU is
+# reclaimed from Whisper. Vertex/Gemini stays the LIVE/incremental backend.
+#   Converge:    ansible-playbook local_llm.yml
+#   Drift check: ansible-playbook local_llm.yml --check --diff   (changed=0 == no drift)
+#   Give the GPU back to Whisper: ansible-playbook local_llm.yml -e reclaim_gpu_from_whisper=false
+#                                  then ansible-playbook whisper.yml
+- name: Perkins local-LLM node (cerberus) — Ollama + Qwen3-30B-A3B for priming
+  hosts: stt
+  gather_facts: true
+  vars:
+    llm_model: "qwen3:30b-a3b"            # MoE, ~3B active, 4-bit ~18GB — fits 24GB
+    reclaim_gpu_from_whisper: true
+
+  tasks:
+    - name: Reclaim GPU — stop + disable the Whisper service (transcription complete)
+      become: true
+      ansible.builtin.systemd:
+        name: whisper-perkins
+        state: stopped
+        enabled: false
+      failed_when: false          # fine if the unit is already gone
+      when: reclaim_gpu_from_whisper
+
+    - name: Install Ollama (idempotent)
+      become: true
+      ansible.builtin.shell: |
+        set -e
+        command -v ollama >/dev/null 2>&1 || curl -fsSL https://ollama.com/install.sh | sh
+      register: ollama_install
+      changed_when: "'Installing' in ollama_install.stdout or 'Downloading' in ollama_install.stdout"
+
+    - name: Ensure Ollama service is running + enabled at boot
+      become: true
+      ansible.builtin.systemd:
+        name: ollama
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Wait for the Ollama API
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:11434/api/version"
+        status_code: 200
+      register: ollama_up
+      retries: 15
+      delay: 4
+      until: ollama_up.status == 200
+
+    - name: List already-pulled models
+      ansible.builtin.command: ollama list
+      register: ollama_models
+      changed_when: false
+
+    - name: Pull the priming LLM ({{ llm_model }}) — ~18GB, first run only
+      ansible.builtin.command: "ollama pull {{ llm_model }}"
+      when: llm_model.split(':')[0] not in ollama_models.stdout
+      register: model_pull
+      changed_when: "'success' in model_pull.stdout or 'pulling' in model_pull.stdout"
