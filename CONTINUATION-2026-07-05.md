@@ -1,135 +1,130 @@
-# Perkins v2 Platform — Continuation (2026-07-05)
+# Perkins v2 Platform — Continuation (2026-07-05, session 2 / afternoon)
 
-Resume handoff for the Perkins Roofing video-archival platform. Everything below is current as of
-commit `27235ce` on branch **`feat/platform-v2`** (not pushed; 18 commits ahead of `main`).
-
----
-
-## ▶️ NEXT TASKS (what to do when you resume — in order)
-
-1. **DNS + deploy the SPA on `perkins.degenito.ai`.**
-   - The SPA is live on Firebase Hosting at `https://video-archival-and-content-gen.web.app`. Point
-     the custom domain **`perkins.degenito.ai`** at it.
-   - `degenito.ai` is on **Cloudflare**. Get the DeGenito Cloudflare API token from **1Password**
-     (`op` CLI is installed) — retrieve it and, since it's a secret, prompt Jon to approve/confirm
-     via a GUI elevator (`pkexec`/`zenity` — Jon can't use `! sudo`, no TTY). Then:
-     - Add the custom domain in Firebase Hosting: `firebase hosting:sites` / console →
-       Add custom domain `perkins.degenito.ai` → Firebase gives a TXT (verification) + the target.
-     - Create the Cloudflare DNS record (CNAME `perkins` → the Firebase target, DNS-only/grey-cloud
-       so Firebase can issue the cert) via the Cloudflare API with the 1Password token.
-     - Add `perkins.degenito.ai` to `infra/variables.tf` `extra_auth_domains` (Firebase Auth
-       authorized domains) → `terraform apply`.
-     - Rebuild the SPA with `VITE_API_BASE` unchanged (Cloud Run URL) and redeploy hosting.
-
-2. **Set up OAuth (Google sign-in) so login works.** (Full steps: `docs/PRODUCTION_CHANGES.md` →
-   "ACTIVATE LOGIN".) Summary:
-   - Console → APIs & Services → **OAuth consent screen** (External, "Perkins Console", support email).
-   - **Credentials → Create OAuth client ID → Web app.** Authorized JS origins:
-     `https://video-archival-and-content-gen.web.app` AND `https://perkins.degenito.ai`.
-   - Put client id/secret into `infra/terraform.tfvars` as `google_idp_client_id` /
-     `google_idp_client_secret` → `terraform apply` (flips the count-guarded Google IdP on).
-   - NOTE: the OAuth consent screen creation may need Jon in the console (consent config isn't
-     cleanly automatable). Prompt Jon if so, or drive via API where possible.
-
-3. **Seed the default admins.** After each signs in ONCE at the SPA (creates their Firebase user):
-   ```
-   .venv/bin/python scripts/grant_role.py grant jon@perkinsroofing.net   admin
-   .venv/bin/python scripts/grant_role.py grant tim@perkinsroofing.net   admin
-   .venv/bin/python scripts/grant_role.py grant amber@perkinsroofing.net admin
-   ```
-   (grant_role uses firebase-admin + owner ADC. A user must sign in once before a role can be set —
-   deny-by-default means no-role users can't do anything.) Consider a bootstrap: if these three can't
-   pre-register, document that they sign in first, then run the grants.
-
-4. **Visual inspection of the UI.** Once login works, open `https://perkins.degenito.ai` (or the
-   `.web.app` URL), sign in as jon@perkinsroofing.net (admin), and walk the console: Search/Ask,
-   Archive (browse + download), Email compose, Articles, Scheduling, Video Approval, /status. Use the
-   `run`/screenshot skill or Playwright to capture the authed views and verify each renders + calls
-   the API (the API is `--allow-unauthenticated` at GCP IAM, Firebase-auth enforced in-app, so the
-   browser reaches it fine).
+Resume handoff after a very large build session. Branch **`feat/platform-v2`** (not pushed).
+Everything below is current as of the latest commit on that branch. The earlier morning handoff
+is archived at `docs/continuations/CONTINUATION-2026-07-05-am.md`.
 
 ---
 
-## ✅ CURRENT STATE — what's built & deployed
+## ⚡ RESUME QUICK-START (read this first)
 
-**All 5 waves + source-video archival + Firebase auth are built, architect+critic-reviewed (every
-wave, all HIGH/critical fixed), and DEPLOYED.** 433 tests, 99.78% core coverage, drift-clean.
+**1. Auth is degraded — use ADC, not the gcloud user login.**
+The interactive `gcloud auth login` (user creds) is **expired**; ADC (`gcloud auth application-default`)
+is valid. So:
+- **gcloud / deploys:** prefix with the ADC token —
+  `export CLOUDSDK_AUTH_ACCESS_TOKEN=$(gcloud auth application-default print-access-token)`
+- **DB password:** fetch via the Secret Manager REST API with the ADC token (gcloud CLI secret access
+  fails on the expired user login). Snippet:
+  ```python
+  # PW = base64-decode of secretmanager .../secrets/db-password/versions/latest:access with Bearer ADC token
+  ```
+- **Cloud SQL proxy** runs on `127.0.0.1:5432` via ADC (`/tmp/cloud-sql-proxy <conn> --port 5432`).
+- If ADC also expires, ask Jon to run `!gcloud auth application-default login` (and optionally `gcloud auth login`).
 
-| Layer | State | URL / detail |
-|---|---|---|
-| API (Cloud Run) | ✅ live | `https://api-981279422576.us-central1.run.app` (image `platform:3c29c92`) |
-| SPA (Firebase Hosting) | ✅ live | `https://video-archival-and-content-gen.web.app` |
-| Cloud SQL + pgvector | ✅ live | instance `...-pg`, db `perkins`, 3072-dim |
-| Cloud Run Jobs (ingest/render/article/social) | ✅ on real image | `python -m jobs.<mod>` |
-| Firebase Auth | ✅ provisioned | Identity Platform; **login needs OAuth client (task 2)** |
-| 4 Cloud Run jobs, buckets, secrets, IAM, schedulers | ✅ Terraform, drift-clean | `infra/` |
+**2. Deploying (IaC / R3):**
+- **API:** `export CLOUDSDK_AUTH_ACCESS_TOKEN=$(gcloud auth application-default print-access-token); bash scripts/deploy.sh`
+- **SPA:** `cd web && firebase deploy --only hosting --project video-archival-and-content-gen`
+- ⚠️ **NEVER** chain deploys with `while pgrep -f deploy.sh; do sleep; done` — the loop's own command
+  line contains "deploy.sh" so it self-matches and **never runs the deploy** (this silently no-op'd ~8
+  API deploys this session; the API sat 8 commits behind). Just run `deploy.sh` directly.
+- **DB schema:** `scripts/apply_migrations.sh` applies `infra/migrations/*.sql` (0001–0006) idempotently
+  (git → apply). Stop creating tables ad-hoc via `create_all`.
 
-**GCP project:** `video-archival-and-content-gen` (billing linked). **Region:** us-central1.
-
-### The 5 waves (all done)
-- **W0 Foundation:** core/adapters/api/jobs split, Vertex Gemini backend (`gemini-2.5-flash` +
-  `gemini-embedding-001` 3072-dim), Firebase-auth FastAPI dependency, CI (97% gate), SPA shell, Terraform.
-- **W1 Data:** full-channel enumerate, local Whisper STT (cerberus) + VAD, resumable ingest, 3072 embed.
-- **W2 Content:** email (Gemini proofread + Resend), **article engine (seo-aio prompt IP port, Vertex,
-  Serper, WordPress publish) with VIDEO-GROUNDING** (embeds Tim's real clips + VideoObject JSON-LD),
-  scheduler. Live-verified: article w/ embedded YouTube player + schema on WP staging.
-- **W3 Video:** mini-series planner, ffmpeg render (9:16 1080×1920), admin approval, reels→scheduled_content.
-- **W4 Social:** IG Reels + TikTok publishers (behind interfaces; **creds land Mon 2026-07-06**);
-  private reels served via short-TTL signed URLs.
-- **Archival (Jon-requested):** all 841 source MP4s → private media bucket; SPA Archive page + signed download.
+**3. LLM backend — SWITCH TO VERTEX (Jon's call):**
+The local-model priming had integration issues (below). For all generation use the cloud:
+`LLM_BACKEND=vertex LLM_MODEL=gemini-2.5-flash EMBED_BACKEND=vertex EMBED_MODEL=gemini-embedding-001`.
+Local Ollama (cerberus Qwen3-30B-A3B) stays provisioned but is **not** the default anymore.
 
 ---
 
-## ⏳ BACKGROUND JOBS (running locally via Cloud SQL Auth Proxy on :5432)
-- **Ingest:** ~793/841 transcripts, ~752 embedded — nearly done.
-- **Archive:** ~115/841 (climbing) — the YouTube **n-challenge was SOLVED** (`--remote-components
-  ejs:github` + deno + cookies; see `adapters/yt_dlp.pull_video` + `scripts/run_archive.sh`).
-- Check progress: `scripts/run_cloudsql_job.sh` pattern, or query Cloud SQL (see commands below).
-- **If the proxy/jobs died** (machine reboot / `/clear` doesn't kill them, but verify): restart the
-  Auth Proxy (`/tmp/cloud-sql-proxy <conn> --port 5432` in background) then re-run
-  `scripts/run_archive.sh` and the ingest worker. Both are idempotent/resumable.
-- **On ingest completion:** build the HNSW index + run the retrieval eval on the full corpus.
+## ✅ WHAT'S BUILT THIS SESSION (deployed + tested, ~750 tests, drift clean)
 
-**Check state:**
-```
-PW=$(gcloud secrets versions access latest --secret=db-password)
-DB="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"
-DBURL="$DB" .venv/bin/python -c "import os;from sqlalchemy import create_engine,text;c=create_engine(os.environ['DBURL']).connect();print('archived',c.execute(text('select count(*) from videos where archive_uri is not null')).scalar(),'| transcripts',c.execute(text(\"select count(*) from ingestion_runs where stage='transcript' and status='done'\")).scalar(),'| embedded',c.execute(text('select count(distinct video_id) from chunks')).scalar())"
-```
+**Platform is a full multi-role admin console.** Roles: **admin / web_admin / sales** (`core.authz`,
+role-aware nav, admin-only Users+Config section). Deployed: API (Cloud Run), SPA (Firebase Hosting on
+`perkins.degenito.ai`, HTTPS live), Cloud SQL + pgvector (HNSW via halfvec(3072)), Google sign-in
+(secret in Secret Manager), default-admins jon/tim/amber.
+
+Console tabs & features (all wired to live APIs):
+- **Dashboard** (default) — KPIs + failed-stages table w/ **Title link + Retry** (`/status`, `/status/retry`).
+- **Search / Ask** — grounded Q&A w/ confidence + descriptive **sources** (video title + snippet, hh:mm:ss,
+  checkboxes + "Include in email"); **Search-topics** = 2,079 distilled topics (sort alpha/videos/length,
+  paginated, per-topic video+articles modal); **Generate cluster articles** (5–7, Rendering→View nav).
+- **Content Opportunities** — hub w/ sidebar count badge; suggested topics ranked by content length; FAQs;
+  reels; unused videos; numbered pagination.
+- **Articles** — cluster-grouped, fixed table, **TinyMCE WYSIWYG (HTML, no markdown)**, content modal
+  (Article + **SEO/AIO score** tabs, YouTube embeds, viewport-locked), Publish/Schedule (tz-aware),
+  WP-post link, `POST /articles/{slug}/reprocess` (sanitize + WP sync).
+- **FAQ** — persistent (`faq_entries`): mine (capped, cost estimate shown), answer, coverage, publish to
+  a WordPress FAQ page (find-or-create + FAQPage JSON-LD).
+- **Email** — single tab (Compose | Templates), proof + Resend send.
+- **Content Scheduling** — cleaned/de-duped series labels (no emoji/hashtag), status read-only.
+- **Clip Studio** — AI clip suggestion (`/clips/suggest`) → curate → save series; **Render now**
+  (`/clips/{id}/render` triggers the render Cloud Run job, render-from-archived-GCS media).
+- **Video Approval** — content-driven parts (real second offsets — fixed the 0/.25/.5/.75 bug), meaningful
+  titles, length + hh:mm:ss, `POST /video/{id}/repropose`.
+- **Users** — list w/ display names, grant/revoke roles, **Invite** (pre-authorize external/web_admin).
+- **Config** — editable env KVs, model dropdowns, **write-only secrets** (last-set + by-who via Secret
+  Manager versionAdder), admin note → Users.
+- **Archive** — 841/841 archived; left [+]/[-] accordion, expandable detail (topics/articles/social),
+  download icon, no status column; **metadata backfilled** (all upload_date/duration/views from YouTube).
+
+Data: ingest 836/841, **841/841 archived**, HNSW index, retrieval eval 100% separation. 20 mini-series
+proposals exist (**but with the OLD equal-quarters bug — regenerate, see below**).
+
+---
+
+## ▶️ REMAINING TASKS (in order)
+
+1. **Finish FAQ answers on VERTEX** — 5,189 questions mined; a Vertex answer run is in progress
+   (`jobs/prime_backlog --answers 6000`, `LLM_BACKEND=vertex`). Verify all `faq_entries.status='answered'`;
+   re-run to finish (resumable, ~$2 total on gemini-2.5-flash). *Do NOT use LLM_BACKEND=ollama for answers.*
+2. **Regenerate the 20 bad video proposals** — they used the fraction bug. Either call
+   `POST /video/{id}/repropose` for each, or delete the unapproved MiniSeries and re-run
+   `jobs.propose_series_job` (now content-driven via `core.miniseries.propose_clips`). LLM_BACKEND=vertex.
+3. **Prime article-cluster drafts on VERTEX** for the top aggregated topics
+   (`jobs/prime_backlog --articles N`, LLM_BACKEND=vertex). The *local* article path returns empty JSON
+   (see gotchas) — use cloud.
+4. **Publish the FAQ page to WordPress** — `POST /faq/publish-wordpress` once answers exist (find-or-creates
+   the site FAQ page + FAQPage JSON-LD). Needs WP creds in env.
+5. **Visual walk** — mint a jon ID token (firebase-admin + `infra/vertex-dev-sa.json` custom token →
+   Identity Toolkit exchange), seed it into Playwright IndexedDB, walk every tab to confirm the ultrawork
+   batch renders. (Pattern used earlier this session.)
+6. **(Optional) Local article gen** — Qwen3 via Ollama returns an empty response on the large
+   schema-enforced article prompt (works for normal prompts + FAQ). Needs a non-schema Ollama prompt
+   variant / streamed gen. Low priority — articles are few and quality-sensitive, so cloud is fine.
+7. **External blockers:** org-directory user autocomplete (needs Google Workspace admin consent + domain-wide
+   delegation); Meta/TikTok social creds (Mon 2026-07-06) to flip social live; Resend domain verify.
+8. **GPU:** to return cerberus to Whisper — `ansible-playbook local_llm.yml -e reclaim_gpu_from_whisper=false`
+   then `ansible-playbook whisper.yml`.
 
 ---
 
 ## 🔑 KEY FACTS / GOTCHAS
-- **Auth model:** Google sign-in (Firebase) → ID token → API verifies → `role` custom claim (admin|sales)
-  → `core.authz` deny-by-default. Roles set via `scripts/grant_role.py`. `/internal/*` cron routes
-  guarded by `INTERNAL_SECRET` header (in Secret Manager), NOT GCP IAM.
-- **Deploy:** `scripts/deploy.sh` (Cloud Build → Artifact Registry → Cloud Run service + 4 jobs).
-  `Dockerfile` = v2 (api.app + job entrypoints + ffmpeg). SPA: `cd web && npm run build && firebase
-  deploy --only hosting`. Firebase web config in `web/.env` (gitignored; API key is public-safe).
-- **Whisper:** faster-whisper on **cerberus** (RTX 5090, dedicated via `ansible/whisper.yml`), systemd
-  `whisper-perkins`, token in `/etc/whisper-perkins.env`. WHISPER_URL in `.env`.
-- **Creds in `.env`** (gitignored): Serper ✓, WordPress ✓ (WP_APP_PWD), Resend key (domain unverified),
-  YouTube, GCP. Social (Meta/TikTok) empty until Monday. `infra/vertex-dev-sa.json` = local Vertex key.
-- **Engineering rules (BINDING — `docs/ENGINEERING_RULES.md`):** R1 ≥97% core coverage + I/O
-  validation; R2 architect+critic review every wave; R3 100% IaC (Terraform+Ansible), no manual deploys;
-  R4 per-wave `scripts/drift_check.sh`; R5 Ansible for non-Terraform. **Follow these for any new work.**
-- **Terraform ADC must be `jon@perkinsroofing.net`:** `gcloud auth application-default login` if apply
-  fails with permission errors. `provider "google"` has `user_project_override=true`.
-- **`gcloud`/`firebase` CLIs** auth via the jon@perkinsroofing.net account/ADC. `op` (1Password) installed.
 
-## 📋 PENDING (external, mostly Jon/Monday)
-- **Mon 2026-07-06:** Meta + TikTok app-review creds → flip social live. Resend domain verify (email send).
-- **TikTok media domain:** reels need `media.perkinsroofing.net` (Cloud CDN over reels bucket) — TikTok
-  can't verify `storage.googleapis.com`. IG works with signed URLs. (`docs/PRODUCTION_CHANGES.md`.)
-- **WordPress:** move from staging `jhk.14f.myftpupload.com` → `perkinsroofing.net`; install the JSON-LD
-  mu-plugin BEFORE publishing (WP drops unregistered meta writes). `wp-plugin/` is the uploadable form.
-- **Minor:** eval harness (`app/eval.py`) not CI-wired; SA-key → Workload Identity.
+- **LLM backend routing (don't reintroduce the recursion):** `adapters.llm.get_default()` = the CHAT client,
+  routed by `LLM_BACKEND` (`ollama`→`OllamaLLM`, else `VertexLLM`). `adapters.llm.get_embedder()` = a
+  **dedicated Vertex embedder**, always Vertex (embeddings must match the stored 3072-dim chunks). `app.llm.embed`
+  uses `get_embedder()`, NOT `get_default()` — otherwise `ollama` chat → embed → get_default → OllamaLLM.embed →
+  recurse ("maximum recursion depth exceeded"). Fixed; keep it that way.
+- **Local LLM node:** cerberus (RTX 5090 mobile, **24GB**) runs Ollama + **qwen3:30b-a3b** (+ nomic-embed),
+  IaC in `ansible/local_llm.yml` (GPU reclaimed from Whisper; transcription is complete). FAQ *mining*
+  worked locally (5,184 mined); *answers* + *article gen* have issues → run on Vertex.
+- **Topic aggregation:** `jobs/aggregate_topics.py` embeds distinct content_graph topic labels and greedily
+  clusters (cos 0.82) into `aggregated_topics` (4,201→2,079). `GET /topics` reads it as `{total, items}`
+  paginated; re-run the job to refresh (lower the threshold for a tighter list).
+- **New prod tables this session** (in `infra/migrations/0006_platform_faq_secrets.sql` +
+  `0005_aggregated_topics.sql`): `platform_config`, `faq_entries`, `secret_audit`, `aggregated_topics`.
+- **API SA IAM (Terraform):** firebaseauth.admin (token revocation + role claims), run.developer on the
+  render job + actAs jobs-sa (Render now), secretmanager.secretVersionAdder+viewer (Config secret updates).
+- **deploy.sh** sets the service to cpu 2 / mem 1Gi / timeout 900s (aligned in Terraform; drift clean) and
+  wires `PGPASSWORD` from the db-password secret (the API had no DB password before — every DB endpoint 500'd).
+- **Firebase custom-domain + CORS + token auto-refresh** all fixed earlier; `perkins.degenito.ai` is HTTPS-live.
 
 ## 📚 Where things live
 - Waves/specs: `docs/superpowers/{specs,plans}/`. Rules: `docs/ENGINEERING_RULES.md`. Prod steps:
-  `docs/PRODUCTION_CHANGES.md`. Backlog: `docs/BACKLOG.md` (B1 new-video monitoring, B2 ToS-safe
-  comment-answer queue). Secrets runbook: `infra/SECRETS.md`.
+  `docs/PRODUCTION_CHANGES.md`. Backlog: `docs/BACKLOG.md` (B1–B5). Archived handoffs: `docs/continuations/`.
+- Priming: `jobs/prime_backlog.py`, `jobs/aggregate_topics.py`, `jobs/backfill_metadata.py`.
 
 ---
-*Continuation-doc archive directive: this is the first top-level `CONTINUATION-*.md`; none to archive
-(keep ≤3 at top level, older ones → `docs/continuations/`). Perform on the next continuation.*
+*Continuation-doc archive directive (applied): moved the previous top-level handoff to
+`docs/continuations/CONTINUATION-2026-07-05-am.md` (≤3 kept at top level). Apply again next session.*
