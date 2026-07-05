@@ -1,0 +1,28 @@
+Resume the Perkins v2 video-archival platform. First read CONTINUATION-2026-07-05.md in full — it
+has the complete state (all 5 waves + archival + auth built, reviewed, and DEPLOYED; branch
+feat/platform-v2 @ 27235ce; API + SPA live). Follow the binding rules in docs/ENGINEERING_RULES.md
+(R1 97% core coverage + I/O validation, R2 architect+critic review per wave, R3 100% IaC no manual
+deploys, R4 drift check, R5 Ansible).
+
+Then do these, in order:
+
+1. DNS + deploy the SPA on perkins.degenito.ai. degenito.ai is on Cloudflare — get the DeGenito
+   Cloudflare API token from 1Password (op CLI is installed) and, because it's a secret, prompt me to
+   approve via a GUI elevator (pkexec/zenity; I can't use ! sudo). Add perkins.degenito.ai as a
+   Firebase Hosting custom domain, create the Cloudflare CNAME (DNS-only) to the Firebase target, add
+   the domain to infra extra_auth_domains + terraform apply, then redeploy hosting.
+
+2. Set up Google OAuth so login works (docs/PRODUCTION_CHANGES.md "ACTIVATE LOGIN"): OAuth consent
+   screen + Web OAuth client (JS origins: the .web.app URL AND perkins.degenito.ai), put client
+   id/secret in infra/terraform.tfvars, terraform apply. Prompt me for the console consent step if it
+   can't be automated.
+
+3. Make jon@perkinsroofing.net the default admin, plus tim@perkinsroofing.net and
+   amber@perkinsroofing.net (scripts/grant_role.py grant <email> admin — they each sign in once first).
+
+4. Do a visual inspection of the UI (sign in as jon@perkinsroofing.net, walk every console page,
+   verify each renders + calls the API). Use Playwright/screenshots.
+
+Background jobs (ingest ~793/841, archive ~115/841) should still be running via the Cloud SQL Auth
+Proxy — verify they're alive; both are idempotent/resumable if they died. On ingest completion, build
+the HNSW index + run the retrieval eval. Nothing is pushed; commit as you go, don't push unless I ask.
