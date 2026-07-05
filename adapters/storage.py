@@ -142,6 +142,57 @@ def signed_download_url(
     return url
 
 
+def signed_get_url(
+    bucket: str,
+    key: str,
+    ttl_seconds: int = 3600,
+) -> str:
+    """Generate a V4 signed GET URL without Content-Disposition (for platform ingestion).
+
+    Unlike signed_download_url this URL carries no ``Content-Disposition: attachment``
+    header so social platforms (Instagram, TikTok) can ingest the video directly via
+    PULL_FROM_URL without being tripped up by attachment disposition headers.
+
+    Requires the running service account to have the ``iam.serviceAccounts.signBlob``
+    permission (granted by roles/iam.serviceAccountTokenCreator on itself).
+
+    Args:
+        bucket:      GCS bucket name.
+        key:         Object key inside the bucket.
+        ttl_seconds: Signed URL validity window (default 3600 s = 1 hour).
+
+    Returns:
+        HTTPS signed URL string.
+
+    Raises:
+        RuntimeError: if google-cloud-storage is unavailable or signing fails.
+    """
+    import datetime  # noqa: PLC0415
+
+    try:
+        from google.cloud import storage  # noqa: PLC0415
+        from google.cloud.exceptions import GoogleCloudError  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "google-cloud-storage is not installed; run: pip install google-cloud-storage"
+        ) from exc
+
+    try:
+        client = storage.Client()
+        blob = client.bucket(bucket).blob(key)
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(seconds=ttl_seconds),
+            method="GET",
+        )
+    except (GoogleCloudError, Exception) as exc:
+        raise RuntimeError(
+            f"GCS signed-URL failed (bucket={bucket!r}, key={key!r}): {exc}"
+        ) from exc
+
+    return url
+
+
 def open_read_stream(bucket: str, key: str):
     """Return a file-like object for streaming *bucket*/*key* from GCS.
 

@@ -27,3 +27,22 @@ variable "alert_email" {
   description = "Email address to notify when the budget threshold is hit"
   default     = ""
 }
+
+variable "extra_auth_domains" {
+  type        = list(string)
+  description = "Additional Firebase Auth authorized domains (e.g. app.perkinsroofing.net once the SPA is on a custom domain)"
+  default     = []
+}
+
+variable "google_idp_client_id" {
+  type        = string
+  description = "OAuth client ID for Google sign-in (created by Jon in the console). Empty = Google IdP not provisioned yet."
+  default     = ""
+}
+
+variable "google_idp_client_secret" {
+  type        = string
+  description = "OAuth client secret for Google sign-in. Pair with google_idp_client_id."
+  default     = ""
+  sensitive   = true
+}

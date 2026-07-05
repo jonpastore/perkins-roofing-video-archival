@@ -72,6 +72,18 @@ def pull_video(video_id: str, dst: str) -> str:
         "--no-playlist",
         url,
     ]
+    # yt-dlp needs ffmpeg to merge separate video+audio streams into one MP4. Point it at the
+    # binary from FFMPEG_BIN (or the bundled imageio-ffmpeg) so hosts without a system ffmpeg
+    # (this box, minimal Cloud Run images) still produce a merged file instead of failing.
+    ffmpeg_bin = os.getenv("FFMPEG_BIN")
+    if not ffmpeg_bin:
+        try:
+            import imageio_ffmpeg  # noqa: PLC0415
+            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:  # noqa: BLE001 — fall back to a system ffmpeg on PATH
+            ffmpeg_bin = None
+    if ffmpeg_bin:
+        cmd += ["--ffmpeg-location", ffmpeg_bin]
     subprocess.run(cmd, check=True, capture_output=True, timeout=900)
 
     # Locate the downloaded file (ext may vary on fallback formats)

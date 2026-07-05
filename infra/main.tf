@@ -14,6 +14,10 @@ terraform {
 provider "google" {
   project = var.project_id
   region  = var.region
+  # identitytoolkit (Firebase Auth) is a quota-required API — send the billing/quota project
+  # header so ADC-authenticated applies succeed.
+  billing_project       = var.project_id
+  user_project_override = true
 }
 
 # ---------------------------------------------------------------------------
@@ -30,7 +34,42 @@ locals {
     "cloudscheduler.googleapis.com",
     "storage.googleapis.com",
     "iam.googleapis.com",
+    "identitytoolkit.googleapis.com", # Firebase Auth / Identity Platform (user sign-in)
+    "cloudresourcemanager.googleapis.com",
+    "serviceusage.googleapis.com",
   ])
+}
+
+# ---------------------------------------------------------------------------
+# Firebase Auth (Identity Platform) — Google sign-in for the admin/sales SPA.
+# Roles are Firebase custom claims (admin|sales) set via scripts/grant_role.py.
+# Access model: authorized_domains gates WHERE the app runs; deny-by-default in
+# core.authz means an authenticated user with NO role claim can do nothing — so
+# granting a role IS the allowlist. The Google IdP OAuth client + consent screen
+# are created by Jon (console) and its id/secret filled below (see PRODUCTION_CHANGES).
+# ---------------------------------------------------------------------------
+resource "google_identity_platform_config" "auth" {
+  project = var.project_id
+  authorized_domains = concat(
+    ["localhost", "${var.project_id}.firebaseapp.com", "${var.project_id}.web.app"],
+    var.extra_auth_domains,
+  )
+  depends_on = [google_project_service.apis]
+
+  lifecycle {
+    # GCP auto-populates a multi_tenant block (allow_tenants=false) → perpetual false->null diff.
+    ignore_changes = [multi_tenant]
+  }
+}
+
+resource "google_identity_platform_default_supported_idp_config" "google" {
+  count         = var.google_idp_client_id != "" ? 1 : 0
+  project       = var.project_id
+  idp_id        = "google.com"
+  client_id     = var.google_idp_client_id
+  client_secret = var.google_idp_client_secret
+  enabled       = true
+  depends_on    = [google_identity_platform_config.auth]
 }
 
 resource "google_project_service" "apis" {
@@ -156,14 +195,14 @@ resource "google_project_iam_member" "scheduler_run_invoker" {
 # ---------------------------------------------------------------------------
 
 resource "google_sql_database_instance" "pg" {
-  name             = "${var.project_id}-pg"
-  database_version = "POSTGRES_16"
-  region           = var.region
+  name                = "${var.project_id}-pg"
+  database_version    = "POSTGRES_16"
+  region              = var.region
   deletion_protection = true
 
   settings {
-    tier    = "db-custom-1-3840"   # 1 vCPU / 3.75GB
-    edition = "ENTERPRISE"          # ENTERPRISE_PLUS only accepts db-perf-optimized-* tiers
+    tier    = "db-custom-1-3840" # 1 vCPU / 3.75GB
+    edition = "ENTERPRISE"       # ENTERPRISE_PLUS only accepts db-perf-optimized-* tiers
 
     backup_configuration {
       enabled    = true
@@ -240,11 +279,13 @@ resource "google_storage_bucket" "reels" {
   uniform_bucket_level_access = true
 }
 
-# Public-read binding on reels bucket only — IG/TikTok require public video URLs.
-resource "google_storage_bucket_iam_member" "reels_public" {
-  bucket = google_storage_bucket.reels.name
-  role   = "roles/storage.objectViewer"
-  member = "allUsers"
+# Reels bucket is PRIVATE. IG/TikTok ingest via a short-TTL V4 signed URL minted at publish
+# time (jobs/social_job → adapters.storage.signed_get_url), so the client's media is never
+# left publicly exposed. jobs-sa self-signs (serviceAccountTokenCreator below).
+resource "google_service_account_iam_member" "jobs_sign" {
+  service_account_id = google_service_account.jobs_sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.jobs_sa.email}"
 }
 
 # ---------------------------------------------------------------------------

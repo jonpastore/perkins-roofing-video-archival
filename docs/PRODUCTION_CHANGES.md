@@ -57,6 +57,23 @@ Current staging = `https://jhk.14f.myftpupload.com` (GoDaddy temp domain). Produ
 - **cerberus GPU** is dedicated to Whisper for the project (`ansible/whisper.yml`, ollama disabled).
   Release with `-e dedicate_gpu=false` when done.
 
+## Authentication (Firebase Auth / Identity Platform)
+Provisioned via Terraform (Identity Platform config + identitytoolkit API). Remaining steps that
+can't be Terraformed:
+1. **Google sign-in OAuth client (Jon, console).** APIs & Services → Credentials → create an OAuth
+   2.0 Client (Web) + configure the OAuth consent screen. Put its client id/secret into
+   `google_idp_client_id` / `google_idp_client_secret` TF vars (or `terraform.tfvars`) and re-apply
+   to enable Google as a sign-in provider. Until then the Identity Platform config exists but Google
+   sign-in isn't wired.
+2. **Register a Firebase Web App** to get the SPA config: `firebase apps:create web perkins-spa`
+   (or console) → copy apiKey/authDomain/projectId into `web/.env` as `VITE_FIREBASE_API_KEY`,
+   `VITE_FIREBASE_AUTH_DOMAIN` (`<project>.firebaseapp.com`), `VITE_FIREBASE_PROJECT_ID`.
+3. **Assign roles** with `scripts/grant_role.py grant <email> admin|sales` (needs firebase-admin +
+   owner ADC). A user must sign in once (so the Firebase record exists) before a role can be granted.
+   Deny-by-default means a signed-in user with no role can do nothing — granting a role IS the allowlist.
+4. **Authorized domains**: add the SPA's production domain to `extra_auth_domains` TF var when it moves
+   off localhost / `<project>.web.app`.
+
 ## Source-video archival notes
 - All 841 source videos are archived to the private `-media` GCS bucket (`jobs/archive_job.py`),
   browsable + downloadable from the SPA Archive section (V4 signed URLs, 1h TTL; `api-run-sa`
