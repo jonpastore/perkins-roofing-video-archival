@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, createContext, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
 import { apiFetch } from "./api";
@@ -15,6 +15,25 @@ import { Users } from "./pages/Users";
 import { ClipStudio } from "./pages/ClipStudio";
 import { Email } from "./pages/Email";
 import { BRAND, FONT } from "./ui";
+
+// ---------------------------------------------------------------------------
+// NavContext — lightweight cross-tab navigation
+// ---------------------------------------------------------------------------
+
+export interface NavParams {
+  cluster?: string; // pillar_slug to pre-filter Articles tab
+  [key: string]: string | undefined;
+}
+
+export interface NavContextValue {
+  navigate: (tab: string, params?: NavParams) => void;
+  params: NavParams;
+}
+
+export const NavContext = createContext<NavContextValue>({
+  navigate: () => {},
+  params: {},
+});
 
 type Role = "admin" | "web_admin" | "sales" | null;
 
@@ -157,6 +176,7 @@ interface OpportunityCounts {
 function Shell({ config }: { config: ShellConfig }) {
   const { title, tabs, adminTabs, defaultTab } = config;
   const [tab, setTab] = useState<string>(defaultTab);
+  const [navParams, setNavParams] = useState<NavParams>({});
   const [oppCounts, setOppCounts] = useState<OpportunityCounts | null>(null);
 
   useEffect(() => {
@@ -170,66 +190,79 @@ function Shell({ config }: { config: ShellConfig }) {
     ? oppCounts.article_topics + oppCounts.reels + oppCounts.faqs
     : undefined;
 
+  function navigate(targetTab: string, params: NavParams = {}) {
+    setNavParams(params);
+    setTab(targetTab);
+  }
+
+  // Clear params when the user manually switches tabs (not via navigate())
+  function handleTabClick(id: string) {
+    setNavParams({});
+    setTab(id);
+  }
+
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: FONT }}>
-      <nav
-        style={{
-          width: 220,
-          background: BRAND.navy,
-          color: "#fff",
-          display: "flex",
-          flexDirection: "column",
-          padding: "18px 0",
-        }}
-      >
-        <div
+    <NavContext.Provider value={{ navigate, params: navParams }}>
+      <div style={{ display: "flex", height: "100vh", fontFamily: FONT }}>
+        <nav
           style={{
+            width: 220,
+            background: BRAND.navy,
+            color: "#fff",
             display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "0 16px 18px",
-            marginBottom: 10,
-            borderBottom: "1px solid rgba(255,255,255,0.12)",
+            flexDirection: "column",
+            padding: "18px 0",
           }}
         >
-          <img
-            src="/perkins-logo.png"
-            alt="Perkins Roofing"
-            style={{ height: 36, background: "#fff", borderRadius: 6, padding: "3px 5px" }}
-          />
-          <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
-        </div>
-        {tabs.map(([id, label]) => (
-          <NavButton
-            key={id}
-            id={id}
-            label={label}
-            active={tab === id}
-            onClick={() => setTab(id)}
-            badge={id === "opportunities" ? oppBadge : undefined}
-          />
-        ))}
-        {adminTabs && adminTabs.length > 0 && (
-          <>
-            <AdminSectionDivider />
-            {adminTabs.map(([id, label]) => (
-              <NavButton key={id} id={id} label={label} active={tab === id} onClick={() => setTab(id)} />
-            ))}
-          </>
-        )}
-        <div style={{ marginTop: "auto", padding: "18px 16px 0" }}>
-          <button
-            onClick={signOutUser}
-            style={{ background: "none", border: "none", color: "#9aa3ba", cursor: "pointer", fontSize: 13 }}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "0 16px 18px",
+              marginBottom: 10,
+              borderBottom: "1px solid rgba(255,255,255,0.12)",
+            }}
           >
-            Sign out
-          </button>
+            <img
+              src="/perkins-logo.png"
+              alt="Perkins Roofing"
+              style={{ height: 36, background: "#fff", borderRadius: 6, padding: "3px 5px" }}
+            />
+            <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
+          </div>
+          {tabs.map(([id, label]) => (
+            <NavButton
+              key={id}
+              id={id}
+              label={label}
+              active={tab === id}
+              onClick={() => handleTabClick(id)}
+              badge={id === "opportunities" ? oppBadge : undefined}
+            />
+          ))}
+          {adminTabs && adminTabs.length > 0 && (
+            <>
+              <AdminSectionDivider />
+              {adminTabs.map(([id, label]) => (
+                <NavButton key={id} id={id} label={label} active={tab === id} onClick={() => handleTabClick(id)} />
+              ))}
+            </>
+          )}
+          <div style={{ marginTop: "auto", padding: "18px 16px 0" }}>
+            <button
+              onClick={signOutUser}
+              style={{ background: "none", border: "none", color: "#9aa3ba", cursor: "pointer", fontSize: 13 }}
+            >
+              Sign out
+            </button>
+          </div>
+        </nav>
+        <div style={{ flex: 1, padding: 32, overflowY: "auto", background: "#f7f8fa" }}>
+          <TabContent tab={tab} />
         </div>
-      </nav>
-      <div style={{ flex: 1, padding: 32, overflowY: "auto", background: "#f7f8fa" }}>
-        <TabContent tab={tab} />
       </div>
-    </div>
+    </NavContext.Provider>
   );
 }
 

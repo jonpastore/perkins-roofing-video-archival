@@ -165,16 +165,18 @@ def generate_cluster_article(
     body: GenerateArticleRequest,
     claims=Depends(require_role("manage_articles")),
 ):
-    """Generate a content cluster: one pillar article + 3 cluster articles with REAL content.
+    """Generate a content cluster: one pillar article + 4-6 cluster articles with REAL content.
 
     Each article is generated via the LLM+retrieval pipeline (jobs.article_job.
     generate_article_content) so content_md is finished prose, never a TODO skeleton.
-    WordPress publish is skipped — articles are persisted as status='draft'.  Use
+    WordPress publish is skipped — articles are persisted as status='scheduled'.  Use
     POST /articles/{slug}/publish to push any article to WordPress when ready.
 
-    Capped at pillar + 3 cluster articles (4 LLM calls) to bound latency.  If a
-    single generation errors, a short grounded intro paragraph is substituted so
-    no article is ever left with a TODO placeholder.
+    Produces 5-7 total articles (1 pillar + 4-6 clusters).  The refine pass is
+    skipped during cluster generation to bound latency; use the reprocess endpoint
+    to refine individual articles after the fact.  If a single generation errors,
+    a short grounded intro paragraph is substituted so no article is ever left with
+    a TODO placeholder.
 
     Returns:
         {
@@ -194,8 +196,8 @@ def generate_cluster_article(
     pillar_slug = _slugify(topic)
     pillar_title = _title_case(topic)
 
-    # Derive 3 subtopic titles (cap at 3 cluster articles to bound latency)
-    subtopics = _derive_subtopics(topic, pillar_slug)[:3]
+    # Derive 4-6 subtopic titles (target 5-7 total articles including pillar)
+    subtopics = _derive_subtopics(topic, pillar_slug)
 
     with SessionLocal() as db:
         # --- Idempotency: if pillar already exists, return existing cluster ---
@@ -340,14 +342,15 @@ def _unique_slug(text: str, seen: set[str]) -> str:
 
 
 def _derive_subtopics(topic: str, pillar_slug: str) -> list[str]:
-    """Derive 3–5 cluster subtopic titles for *topic*.
+    """Derive 4–6 cluster subtopic titles for *topic* (so total = 5–7 incl. pillar).
 
     Strategy:
       1. Query content_graph for topic-kind labels that contain the topic
          keyword — these are real terms from Tim's videos.
       2. Exclude the topic itself (it becomes the pillar).
-      3. If fewer than 3 related labels found, pad with domain-specific
-         fallback subtopics so we always produce a complete cluster.
+      3. If fewer than 4 related labels found, first pad with domain-specific
+         hard-coded fallbacks; if still fewer than 4, call the LLM once to
+         generate the remaining titles so we always produce a complete cluster.
     """
     related: list[str] = []
     topic_lower = topic.lower()
@@ -371,22 +374,67 @@ def _derive_subtopics(topic: str, pillar_slug: str) -> list[str]:
                 ):
                     seen_norm.add(norm)
                     related.append(label.strip())
-                if len(related) >= 5:
+                if len(related) >= 6:
                     break
     except Exception:  # noqa: BLE001
         pass  # DB not available in all test contexts — fall through to fallbacks
 
-    # Pad with domain fallbacks if we don't have enough
-    if len(related) < 3:
+    # Pad with hard-coded domain fallbacks first (free, deterministic)
+    if len(related) < 4:
         fallbacks = _fallback_subtopics(topic)
         for fb in fallbacks:
             norm = _normalize_label(fb)
             if norm not in {_normalize_label(r) for r in related}:
                 related.append(fb)
-            if len(related) >= 4:
+            if len(related) >= 6:
                 break
 
-    return related[:5]
+    # If still fewer than 4, call the LLM once to generate remaining titles
+    if len(related) < 4:
+        needed = 6 - len(related)
+        llm_titles = _llm_subtopics(topic, related, needed)
+        seen_norm_final = {_normalize_label(r) for r in related}
+        for t in llm_titles:
+            norm = _normalize_label(t)
+            if norm not in seen_norm_final:
+                seen_norm_final.add(norm)
+                related.append(t)
+            if len(related) >= 6:
+                break
+
+    return related[:6]
+
+
+def _llm_subtopics(topic: str, existing: list[str], needed: int) -> list[str]:
+    """Ask the LLM to generate *needed* distinct cluster article titles for *topic*.
+
+    Returns a list of title strings (may be empty on any error — caller pads with
+    what it already has, so a failure here never blocks article creation).
+    """
+    try:
+        from app.llm import chat  # noqa: PLC0415
+        existing_str = "\n".join(f"- {e}" for e in existing) if existing else "(none yet)"
+        prompt = (
+            f"You are helping plan a roofing content cluster for a local roofing contractor.\n\n"
+            f"PILLAR TOPIC: {topic}\n\n"
+            f"Already have these cluster article titles:\n{existing_str}\n\n"
+            f"Generate exactly {needed} additional distinct cluster article titles that cover "
+            f"different specific angles of \"{topic}\" suitable for a roofing business blog. "
+            f"Each title should be concrete, specific, and different from the existing titles.\n\n"
+            f"Return ONLY a JSON array of {needed} title strings, no other text:\n"
+            f'["Title 1", "Title 2", ...]'
+        )
+        result = chat(prompt, want_json=False)
+        # Extract JSON array from the response
+        import json as _json  # noqa: PLC0415
+        a, b = result.find("["), result.rfind("]")
+        if a != -1 and b != -1:
+            titles = _json.loads(result[a : b + 1])
+            if isinstance(titles, list):
+                return [str(t).strip() for t in titles if t and str(t).strip()]
+    except Exception:  # noqa: BLE001
+        pass
+    return []
 
 
 # Hard-coded roofing-domain subtopic patterns keyed by common keywords.
@@ -457,19 +505,19 @@ def _fallback_subtopics(topic: str) -> list[str]:
 
 
 def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str) -> dict:
-    """Call generate_article_content then refine_article_content; on error return a short grounded intro paragraph.
+    """Call generate_article_content (single pass) and return finished prose.
+
+    The refine pass is intentionally skipped here to bound latency when generating
+    5-7 articles in one request.  Refinement remains available via the reprocess
+    endpoint for individual articles after the fact.
 
     Never returns a TODO placeholder.  The fallback is real prose derived from the
     keyword and topic so the article is at minimum a finished stub the editor can expand.
-
-    Pipeline: generate (first pass) → refine (second SEO/AIO pass, fail-open).
     """
     try:
-        from jobs.article_job import generate_article_content, refine_article_content, sanitize_article_html  # noqa: PLC0415
+        from jobs.article_job import generate_article_content, sanitize_article_html  # noqa: PLC0415
         fields = generate_article_content(keyword, ctx)
-        # Second pass: SEO/AIO refinement (fail-open — original kept on any error)
-        fields = refine_article_content(fields, keyword)
-        # Sanitize after both passes so no markdown artifacts ship
+        # Sanitize so no markdown artifacts ship
         fields = dict(fields)
         fields["content_md"] = sanitize_article_html(fields.get("content_md") or "")
         return fields

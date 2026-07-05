@@ -68,12 +68,32 @@ def _fake_refine_article_content(fields: dict, keyword: str, **kwargs) -> dict:
     return fields
 
 
+def _fake_llm_subtopics(topic: str, existing: list, needed: int) -> list[str]:
+    """Return deterministic LLM-generated subtopic titles without calling the real LLM."""
+    base = [
+        f"{topic} cost guide",
+        f"{topic} installation tips",
+        f"{topic} maintenance schedule",
+        f"{topic} repair vs replace",
+        f"{topic} materials comparison",
+        f"{topic} contractor selection",
+    ]
+    results = []
+    existing_lower = {e.lower() for e in existing}
+    for t in base:
+        if t.lower() not in existing_lower and len(results) < needed:
+            results.append(t)
+    return results
+
+
 @pytest.fixture(autouse=True)
 def patch_content_generator(monkeypatch):
-    """Monkeypatch generate_article_content and refine_article_content so no test hits the live LLM."""
+    """Monkeypatch generate_article_content, refine_article_content, and _llm_subtopics so no test hits the live LLM."""
     import jobs.article_job as job_mod
     monkeypatch.setattr(job_mod, "generate_article_content", _fake_generate_article_content)
     monkeypatch.setattr(job_mod, "refine_article_content", _fake_refine_article_content)
+    import api.routes.topics as topics_mod
+    monkeypatch.setattr(topics_mod, "_llm_subtopics", _fake_llm_subtopics)
 
 
 def setup_module(module):
@@ -171,7 +191,7 @@ def test_get_topics_unauthenticated():
 # ---------------------------------------------------------------------------
 
 def test_generate_cluster_creates_pillar_and_clusters():
-    """Admin generates a cluster: pillar + cluster drafts sharing pillar_slug."""
+    """Admin generates a cluster: 1 pillar + >=4 cluster articles (5-7 total), all sharing pillar_slug."""
     c = _admin_client()
     r = c.post("/topics/generate-article",
                json={"topic": "metal roof installation"},
@@ -182,8 +202,12 @@ def test_generate_cluster_creates_pillar_and_clusters():
     assert data["pillar_slug"] == "metal-roof-installation"
     assert data["pillar"]["slug"] == "metal-roof-installation"
     assert isinstance(data["clusters"], list)
-    assert len(data["clusters"]) >= 1
+    # Must produce at least 4 cluster articles (5-7 total including pillar)
+    assert len(data["clusters"]) >= 4, (
+        f"Expected >=4 cluster articles, got {len(data['clusters'])}: {[c['title'] for c in data['clusters']]}"
+    )
     assert data["count"] == 1 + len(data["clusters"])
+    assert 5 <= data["count"] <= 7, f"Expected 5-7 total articles, got {data['count']}"
 
 
 def test_generate_cluster_pillar_row_in_db():
@@ -216,6 +240,10 @@ def test_generate_cluster_cluster_rows_in_db():
     pillar_slug = data["pillar_slug"]
     cluster_slugs = {cl["slug"] for cl in data["clusters"]}
     assert len(cluster_slugs) >= 1
+
+    assert len(cluster_slugs) >= 4, (
+        f"Expected >=4 cluster articles (5-7 total), got {len(cluster_slugs)}"
+    )
 
     with SessionLocal() as db:
         for slug in cluster_slugs:

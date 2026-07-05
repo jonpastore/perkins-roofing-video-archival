@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useContext } from "react";
 import { Editor } from "@tinymce/tinymce-react";
 import type { Editor as TinyMCEEditor } from "tinymce";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
+import { NavContext } from "../App";
 
 // Detect user's local timezone once at module load
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1073,6 +1074,8 @@ function sortByDate(articles: ArticleSummary[]): ArticleSummary[] {
 // ---------------------------------------------------------------------------
 
 export function Articles() {
+  const { params } = useContext(NavContext);
+
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1084,9 +1087,16 @@ export function Articles() {
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [viewingSlug, setViewingSlug] = useState<string | null>(null);
 
-  // Sort + filter state
+  // Sort + filter state — seed filterCluster from nav params when navigated here
   const [sortMode, setSortMode] = useState<SortMode>("cluster");
-  const [filterCluster, setFilterCluster] = useState<string>("");
+  const [filterCluster, setFilterCluster] = useState<string>(params.cluster ?? "");
+
+  // Sync filter if nav params change (e.g. user navigates here from SearchAsk "View")
+  useEffect(() => {
+    if (params.cluster !== undefined) {
+      setFilterCluster(params.cluster);
+    }
+  }, [params.cluster]);
 
   function load() {
     setLoading(true);
