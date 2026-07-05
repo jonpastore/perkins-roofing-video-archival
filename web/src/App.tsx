@@ -10,6 +10,9 @@ import { Status } from "./pages/Status";
 import { Articles } from "./pages/Articles";
 import { Scheduling } from "./pages/Scheduling";
 import { Faq } from "./pages/Faq";
+import { Opportunities } from "./pages/Opportunities";
+import { Settings } from "./pages/Settings";
+import { Users } from "./pages/Users";
 import { BRAND, FONT } from "./ui";
 
 type Role = "admin" | "sales" | null;
@@ -96,25 +99,31 @@ function AdminShell() {
     <Shell
       title="Perkins Admin"
       tabs={[
+        ["dashboard", "Dashboard"],
         ["search-ask", "Search / Ask"],
-        ["templates", "Templates"],
+        ["opportunities", "Opportunities"],
         ["articles", "Articles"],
         ["faq", "FAQ"],
+        ["templates", "Templates"],
         ["scheduling", "Scheduling"],
         ["video-approval", "Video Approval"],
         ["archive", "Archive"],
-        ["status", "Status"],
+        ["users", "Users"],
+        ["config", "Config"],
       ]}
       render={(tab) => (
         <>
+          {tab === "dashboard" && <Status />}
           {tab === "search-ask" && <SearchAsk />}
-          {tab === "templates" && <Templates />}
+          {tab === "opportunities" && <Opportunities />}
           {tab === "articles" && <Articles />}
           {tab === "faq" && <Faq />}
+          {tab === "templates" && <Templates />}
           {tab === "scheduling" && <Scheduling />}
           {tab === "video-approval" && <VideoApproval />}
           {tab === "archive" && <Archive />}
-          {tab === "status" && <Status />}
+          {tab === "users" && <Users />}
+          {tab === "config" && <Settings />}
         </>
       )}
     />

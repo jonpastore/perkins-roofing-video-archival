@@ -9,10 +9,13 @@ from pydantic import BaseModel
 from api.auth import current_claims, require_role
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
+from api.routes.config import router as config_router
 from api.routes.email import router as email_router
 from api.routes.faq import router as faq_router
 from api.routes.scheduling import router as scheduling_router
+from api.routes.suggestions import router as suggestions_router
 from api.routes.topics import router as topics_router
+from api.routes.users import router as users_router
 from api.routes.video import router as video_router
 from app import answer as A
 from app import retrieval as R
@@ -32,6 +35,9 @@ app.include_router(articles_router)
 app.include_router(scheduling_router)
 app.include_router(topics_router)
 app.include_router(faq_router)
+app.include_router(config_router)
+app.include_router(users_router)
+app.include_router(suggestions_router)
 
 
 class Query(BaseModel):

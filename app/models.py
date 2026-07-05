@@ -114,6 +114,11 @@ class SocialPost(Base):
         UniqueConstraint("series_id", "part", "platform", name="uq_social_series_part_platform"),
     )
 
+class PlatformConfig(Base):
+    __tablename__ = "platform_config"
+    key = Column(String, primary_key=True)
+    value = Column(String)
+
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
 

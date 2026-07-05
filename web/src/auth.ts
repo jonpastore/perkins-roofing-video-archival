@@ -29,10 +29,10 @@ export async function signOutUser(): Promise<void> {
   await signOut(auth);
 }
 
-export async function getIdToken(): Promise<string | null> {
+export async function getIdToken(forceRefresh = false): Promise<string | null> {
   const user = auth.currentUser;
   if (!user) return null;
-  return user.getIdToken();
+  return user.getIdToken(forceRefresh);
 }
 
 export async function getRole(): Promise<string | null> {

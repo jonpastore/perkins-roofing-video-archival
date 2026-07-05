@@ -1,6 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, inputStyle, Loading, ErrorMsg } from "../ui";
+import { ComposeEmailModal } from "../components/ComposeEmailModal";
 
 // ---- types matching the live API ----
 interface Source {
@@ -159,6 +160,10 @@ export function SearchAsk() {
   const [ans, setAns] = useState<AskResult | null>(null);
   const [rows, setRows] = useState<SearchRow[] | null>(null);
 
+  // Email compose state
+  const [checkedUrls, setCheckedUrls] = useState<Set<string>>(new Set());
+  const [emailModalBody, setEmailModalBody] = useState<string | null>(null);
+
   // Pre-mined topics state
   const [topics, setTopics] = useState<TopicItem[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
@@ -186,7 +191,7 @@ export function SearchAsk() {
   async function run(q: string) {
     const question = q.trim();
     if (!question) return;
-    setLoading(true); setError(null); setAns(null); setRows(null);
+    setLoading(true); setError(null); setAns(null); setRows(null); setCheckedUrls(new Set());
     try {
       const r = await apiFetch(mode === "ask" ? "/ask" : "/search", {
         method: "POST",
@@ -232,6 +237,43 @@ export function SearchAsk() {
         }, {} as Record<string, { video_id: string; title: string; clips: Source[] }>)
       )
     : [];
+
+  // All source URLs from the current answer (for toggle-all logic)
+  const allSourceUrls = grouped.flatMap((g) => g.clips.map((c) => c.url));
+  const allChecked = allSourceUrls.length > 0 && allSourceUrls.every((u) => checkedUrls.has(u));
+  const someChecked = allSourceUrls.some((u) => checkedUrls.has(u));
+
+  function toggleAll() {
+    if (allChecked) {
+      setCheckedUrls(new Set());
+    } else {
+      setCheckedUrls(new Set(allSourceUrls));
+    }
+  }
+
+  function toggleUrl(url: string) {
+    setCheckedUrls((prev) => {
+      const next = new Set(prev);
+      if (next.has(url)) next.delete(url); else next.add(url);
+      return next;
+    });
+  }
+
+  function buildEmailBody(): string {
+    const lines: string[] = [];
+    for (const g of grouped) {
+      for (const c of g.clips) {
+        if (checkedUrls.has(c.url)) {
+          lines.push(`• ${g.title} — ${c.snippet} — watch: ${c.url}`);
+        }
+      }
+    }
+    return lines.join("\n");
+  }
+
+  function handleIncludeInEmail() {
+    setEmailModalBody(buildEmailBody());
+  }
 
   // Filtered topic list: if user typed a query, filter by it; otherwise show all
   const filteredTopics = query.trim()
@@ -301,9 +343,30 @@ export function SearchAsk() {
           </div>
           {grouped.length > 0 && (
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${BRAND.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, marginBottom: 10 }}>
-                SOURCES — {grouped.length} video{grouped.length > 1 ? "s" : ""}
+              {/* Sources header row: label + toggle-all + Include in email button */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" }}>
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
+                    onChange={toggleAll}
+                    style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    SOURCES — {grouped.length} video{grouped.length > 1 ? "s" : ""}
+                  </span>
+                </label>
+                {someChecked && (
+                  <Button
+                    style={{ fontSize: 12, padding: "5px 12px", marginLeft: "auto" }}
+                    onClick={handleIncludeInEmail}
+                  >
+                    Include in email ({checkedUrls.size})
+                  </Button>
+                )}
               </div>
+
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {grouped.map((g) => (
                   <div key={g.video_id}>
@@ -311,12 +374,18 @@ export function SearchAsk() {
                       style={{ color: BRAND.navyText, fontWeight: 600, fontSize: 13.5, textDecoration: "none" }}>
                       {g.title}
                     </a>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 4, paddingLeft: 2 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4, paddingLeft: 2 }}>
                       {g.clips.map((c) => (
-                        <div key={c.url} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13 }}>
+                        <label key={c.url} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, cursor: "pointer", userSelect: "none" }}>
+                          <input
+                            type="checkbox"
+                            checked={checkedUrls.has(c.url)}
+                            onChange={() => toggleUrl(c.url)}
+                            style={{ width: 14, height: 14, accentColor: BRAND.red, cursor: "pointer", flexShrink: 0, marginTop: 2 }}
+                          />
                           <TimestampLink url={c.url} />
                           <span style={{ color: BRAND.sub }}>{c.snippet}</span>
-                        </div>
+                        </label>
                       ))}
                     </div>
                   </div>
@@ -339,6 +408,14 @@ export function SearchAsk() {
             </Card>
           ))}
         </div>
+      )}
+
+      {/* ---- Compose Email Modal ---- */}
+      {emailModalBody !== null && (
+        <ComposeEmailModal
+          initialBody={emailModalBody}
+          onClose={() => setEmailModalBody(null)}
+        />
       )}
 
       {/* ---- SEARCH mode: pre-mined topic list ---- */}

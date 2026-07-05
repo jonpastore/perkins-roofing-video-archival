@@ -8,7 +8,8 @@ Role requirements (core.authz):
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.auth import require_role
-from app.models import SessionLocal, Video
+from app.models import SessionLocal, Video, GraphNode, Article, MiniSeries, SocialPost
+from core.retrieval import link
 
 router = APIRouter(prefix="/archive", tags=["archive"])
 
@@ -88,3 +89,91 @@ def download_video(
     except Exception:  # noqa: BLE001 — signing needs SignBlob; degrade without leaking a traceback
         raise HTTPException(status_code=503, detail="download temporarily unavailable")
     return {"download_url": download_url}
+
+
+# ---------------------------------------------------------------------------
+# Platform URL helpers for social posts
+# ---------------------------------------------------------------------------
+
+_PLATFORM_URL_TEMPLATES = {
+    "instagram": "https://www.instagram.com/p/{external_id}/",
+    "tiktok": "https://www.tiktok.com/@perkins/video/{external_id}",
+}
+
+
+def _social_post_url(post: SocialPost) -> str | None:
+    """Derive a public URL from the post's platform + external_id, else fall back to gcs_url."""
+    if post.external_id and post.platform in _PLATFORM_URL_TEMPLATES:
+        return _PLATFORM_URL_TEMPLATES[post.platform].format(external_id=post.external_id)
+    return post.gcs_url or None
+
+
+@router.get("/{video_id}/detail")
+def video_detail(
+    video_id: str,
+    _claims=Depends(require_role("search")),
+):
+    """Return per-video detail: topics with timecoded deep links, article usage, and social posts.
+
+    - topics:       content_graph rows (kind='topics') for this video, ordered by start.
+    - articles:     articles whose content_md contains the video_id string (usage detection).
+    - social_posts: social posts linked via mini_series.video_id → social_posts.series_id.
+
+    Returns 404 if the video does not exist.
+
+    TODO (B2): add unanswered_comments count once the comments table is built.
+    """
+    with SessionLocal() as db:
+        video = db.get(Video, video_id)
+        if video is None:
+            raise HTTPException(status_code=404, detail="video not found")
+
+        # Topics — content_graph rows, kind='topics', ordered by timecode
+        topic_rows = (
+            db.query(GraphNode)
+            .filter(GraphNode.video_id == video_id, GraphNode.kind == "topics")
+            .order_by(GraphNode.start)
+            .all()
+        )
+        topics = [
+            {
+                "label": t.label,
+                "t": int(t.start) if t.start is not None else 0,
+                "url": link(video_id, t.start if t.start is not None else 0),
+            }
+            for t in topic_rows
+        ]
+
+        # Articles — detect usage by scanning content_md for the video_id string
+        article_rows = (
+            db.query(Article)
+            .filter(Article.content_md.contains(video_id))
+            .all()
+        )
+        articles = [
+            {"slug": a.slug, "title": a.title, "status": a.status}
+            for a in article_rows
+        ]
+
+        # Social posts — join mini_series (video_id) → social_posts (series_id)
+        series_rows = (
+            db.query(MiniSeries)
+            .filter(MiniSeries.video_id == video_id)
+            .all()
+        )
+        series_ids = [s.id for s in series_rows]
+        post_rows = (
+            db.query(SocialPost)
+            .filter(SocialPost.series_id.in_(series_ids))
+            .all()
+        ) if series_ids else []
+        social_posts = [
+            {
+                "platform": p.platform,
+                "status": p.status,
+                "url": _social_post_url(p),
+            }
+            for p in post_rows
+        ]
+
+    return {"topics": topics, "articles": articles, "social_posts": social_posts}
