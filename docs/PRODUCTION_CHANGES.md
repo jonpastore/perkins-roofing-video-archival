@@ -57,6 +57,19 @@ Current staging = `https://jhk.14f.myftpupload.com` (GoDaddy temp domain). Produ
 - **cerberus GPU** is dedicated to Whisper for the project (`ansible/whisper.yml`, ollama disabled).
   Release with `-e dedicate_gpu=false` when done.
 
+## ACTIVATE LOGIN — do this to unblock visual review (≈10 min)
+The platform is deployed; login needs two console steps only you can do:
+1. **OAuth consent screen** — console → APIs & Services → OAuth consent screen → External → app name
+   "Perkins Console", support email, save. (Testing mode is fine; add your email as a test user.)
+2. **OAuth client** — APIs & Services → Credentials → Create Credentials → OAuth client ID → Web
+   application. Authorized JavaScript origins: `https://video-archival-and-content-gen.web.app`
+   (and later `https://app.perkinsroofing.net`). Copy the Client ID + secret.
+3. **Enable Google sign-in in Terraform** — set `google_idp_client_id` + `google_idp_client_secret`
+   in `infra/terraform.tfvars`, then `terraform apply`. (This flips the count-guarded Google IdP on.)
+4. **Grant yourself admin** — sign in once at the SPA (creates your Firebase user), then run
+   `.venv/bin/python scripts/grant_role.py grant you@perkinsroofing.net admin`, and re-login.
+Then the console at https://video-archival-and-content-gen.web.app is fully usable for visual review.
+
 ## Authentication (Firebase Auth / Identity Platform)
 Provisioned via Terraform (Identity Platform config + identitytoolkit API). Remaining steps that
 can't be Terraformed:
