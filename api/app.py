@@ -101,8 +101,19 @@ def status(_claims=Depends(require_role("view_status"))):
     s = SessionLocal()
     try:
         errors = [
-            {"video_id": r.video_id, "stage": r.stage, "error": (r.last_error or "")[:200]}
-            for r in s.query(IngestionRun).filter(IngestionRun.status == "error").limit(20)
+            {
+                "video_id": r.video_id,
+                "stage": r.stage,
+                "error": (r.last_error or "")[:200],
+                "title": (v.title if v else None),
+                "youtube_url": (v.url if v and v.url else f"https://youtu.be/{r.video_id}"),
+            }
+            for r, v in (
+                s.query(IngestionRun, Video)
+                .outerjoin(Video, Video.id == IngestionRun.video_id)
+                .filter(IngestionRun.status == "error")
+                .limit(20)
+            )
         ]
         return {
             "videos": s.query(func.count(Video.id)).scalar(),
