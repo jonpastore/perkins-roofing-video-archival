@@ -21,8 +21,10 @@ def embed(texts):
     if settings.EMBED_BACKEND == "ollama":
         return _ollama("/api/embed", {"model": settings.EMBED_MODEL, "input": texts})["embeddings"]
     if settings.EMBED_BACKEND == "vertex":
-        from adapters.llm import get_default
-        return get_default().embed(texts)
+        # Use the dedicated Vertex embedder — NOT get_default(), which is routed by LLM_BACKEND
+        # (an ollama chat backend must still embed via Vertex; get_default would recurse).
+        from adapters.llm import get_embedder
+        return get_embedder().embed(texts)
     raise NotImplementedError("embed backend " + settings.EMBED_BACKEND)
 
 # ---------------- chat ----------------

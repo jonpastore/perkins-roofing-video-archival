@@ -101,11 +101,28 @@ class OllamaLLM:
         return re.sub(r"<think>.*?</think>", "", out.get("response", ""), flags=re.S).strip()
 
     def embed(self, texts, batch=100):
-        from app.llm import embed as _embed  # noqa: PLC0415
-        return _embed(list(texts))
+        # Embeddings must match the stored 3072-dim Vertex vectors — always use the Vertex embedder.
+        return get_embedder().embed(texts, batch=batch)
 
 
 _default = None
+_embedder = None
+
+
+def get_embedder():
+    """Vertex embedding client — independent of LLM_BACKEND (chat). Embeddings always go to
+    Vertex so they match the stored 3072-dim chunk vectors; only the CHAT backend is swappable."""
+    global _embedder
+    if _embedder is None:
+        project = os.getenv("GOOGLE_CLOUD_PROJECT")
+        if not project:
+            raise RuntimeError("GOOGLE_CLOUD_PROJECT unset — required for the Vertex embedder")
+        _embedder = VertexLLM(
+            project=project,
+            location=os.getenv("GCP_REGION", "us-central1"),
+            embed_model=os.getenv("EMBED_MODEL", "gemini-embedding-001"),
+        )
+    return _embedder
 
 
 def get_default():
