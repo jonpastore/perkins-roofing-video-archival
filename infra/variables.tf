@@ -36,13 +36,6 @@ variable "extra_auth_domains" {
 
 variable "google_idp_client_id" {
   type        = string
-  description = "OAuth client ID for Google sign-in (created by Jon in the console). Empty = Google IdP not provisioned yet."
-  default     = ""
-}
-
-variable "google_idp_client_secret" {
-  type        = string
-  description = "OAuth client secret for Google sign-in. Pair with google_idp_client_id."
-  default     = ""
-  sensitive   = true
+  description = "OAuth client ID for Google sign-in. Public identifier (safe in git), not a secret. Empty = Google IdP not provisioned. Paired secret lives in Secret Manager (google-idp-client-secret)."
+  default     = "981279422576-afa5jspjffd447puojs40m3f6s9qcra9.apps.googleusercontent.com"
 }

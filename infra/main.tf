@@ -62,12 +62,20 @@ resource "google_identity_platform_config" "auth" {
   }
 }
 
+# Client secret lives in Secret Manager (google-idp-client-secret), never in git/tfvars.
+# Read at apply time; the value is only consumed to configure the IdP, not at request time.
+data "google_secret_manager_secret_version" "google_idp_client_secret" {
+  count   = var.google_idp_client_id != "" ? 1 : 0
+  project = var.project_id
+  secret  = "google-idp-client-secret"
+}
+
 resource "google_identity_platform_default_supported_idp_config" "google" {
   count         = var.google_idp_client_id != "" ? 1 : 0
   project       = var.project_id
   idp_id        = "google.com"
-  client_id     = var.google_idp_client_id
-  client_secret = var.google_idp_client_secret
+  client_id     = var.google_idp_client_id # OAuth client_id is a public identifier, not a secret
+  client_secret = data.google_secret_manager_secret_version.google_idp_client_secret[0].secret_data
   enabled       = true
   depends_on    = [google_identity_platform_config.auth]
 }
@@ -448,6 +456,7 @@ locals {
     "meta-system-user-token",
     "tiktok-client-secret",
     "tiktok-refresh-token",
+    "google-idp-client-secret",
   ])
 }
 
