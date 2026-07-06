@@ -6,12 +6,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Integration creds (WP / Resend / YouTube / Serper / Whisper / OAuth) come from the
-# local .env at deploy time and are injected as service env vars. The vault-backed
-# alternative (--set-secrets from Secret Manager, resettable in the Config UI) is ready
-# in code (google-cloud-secret-manager is bundled + /config/secrets writes versions) —
-# switch these to --set-secrets once the secret versions are populated (bootstrap needs a
-# refreshed `gcloud auth application-default login`; the read-only ADC/SA can't add versions).
+# Non-secret config comes from the local .env at deploy time (URLs, public client id,
+# owner channel). Sensitive creds live in Secret Manager and are injected via --set-secrets
+# below — resettable in the Config UI (which writes new secret versions); new revisions read
+# ':latest'. WP_URL/WP_USER are not secrets (a site URL + username), so they stay env vars.
 set -a; [ -f .env ] && source .env; set +a
 
 PROJECT="${GOOGLE_CLOUD_PROJECT:-video-archival-and-content-gen}"
@@ -19,10 +17,13 @@ REGION="${GCP_REGION:-us-central1}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/app/platform:$(git rev-parse --short HEAD)"
 CONN="${PROJECT}:${REGION}:${PROJECT}-pg"
 
-# Env built with a '|' delimiter (gcloud ^|^ form) so credential values with commas/@/()
-# survive intact. DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
+# Env built with a '|' delimiter (gcloud ^|^ form) so values with commas/@/() survive intact.
+# DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
 BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|EMBED_BACKEND=vertex|LLM_BACKEND=vertex|EMBED_MODEL=gemini-embedding-001|LLM_MODEL=gemini-2.5-flash|DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}"
-CRED_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|WP_APP_PWD=${WP_APP_PWD:-}|RESEND_API_KEY=${RESEND_API_KEY:-}|YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}|SERPER_API_KEY=${SERPER_API_KEY:-}|WHISPER_TOKEN=${WHISPER_TOKEN:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}"
+CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}"
+
+# Vault-backed secrets (resettable in the Config UI). One source of truth: Secret Manager.
+SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest"
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .
@@ -32,8 +33,8 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --service-account "api-run-sa@${PROJECT}.iam.gserviceaccount.com" \
   --timeout 900 --cpu 2 --memory 1Gi \
   --add-cloudsql-instances "$CONN" \
-  --set-env-vars "^|^${BASE_ENV}|${CRED_ENV}" \
-  --allow-unauthenticated --set-secrets INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest
+  --set-env-vars "^|^${BASE_ENV}|${CFG_ENV}" \
+  --allow-unauthenticated --set-secrets "$SECRETS"
 
 # Point each job at the same image with its module entrypoint.
 # Terraform defines these 4 jobs (main.tf job_names). --args uses the = form because the
@@ -48,8 +49,8 @@ for job in "${!JOBS[@]}"; do
     --service-account "jobs-sa@${PROJECT}.iam.gserviceaccount.com" \
     --set-cloudsql-instances "$CONN" \
     --command=python --args="-m,${JOBS[$job]}" \
-    --set-env-vars "^|^${BASE_ENV}|${CRED_ENV}" \
-    --set-secrets PGPASSWORD=db-password:latest
+    --set-env-vars "^|^${BASE_ENV}|${CFG_ENV}" \
+    --set-secrets "$SECRETS"
 done
 
 echo "== Done. API + jobs on image: $IMAGE =="
