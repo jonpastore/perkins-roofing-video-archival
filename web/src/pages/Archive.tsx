@@ -640,7 +640,7 @@ export function Archive() {
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, textAlign: "right", whiteSpace: "nowrap" }}>Duration</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, whiteSpace: "nowrap" }}>Upload Date</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, minWidth: 140 }}>Usage</th>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, whiteSpace: "nowrap" }}>KPIs</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, whiteSpace: "nowrap", minWidth: 210 }} title="YouTube views, likes, and comments">KPIs</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, whiteSpace: "nowrap" }}>Actions</th>
             </tr>
           </thead>
@@ -748,12 +748,12 @@ export function Archive() {
                     </div>
                   </td>
 
-                  {/* KPIs inline */}
+                  {/* KPIs inline (single row, hover explains each) */}
                   <td style={{ padding: "10px 12px", fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      <span title="Views">👁 {v.views?.toLocaleString() ?? "—"}</span>
-                      <span title="Likes">♥ {v.likes?.toLocaleString() ?? "—"}</span>
-                      <span title="Comments">💬 {v.comment_count?.toLocaleString() ?? "—"}</span>
+                    <div style={{ display: "flex", flexDirection: "row", gap: 14, alignItems: "center" }}>
+                      <span title="Total lifetime views on YouTube" style={{ cursor: "help" }}>👁 {v.views?.toLocaleString() ?? "—"}</span>
+                      <span title="Total likes on YouTube" style={{ cursor: "help" }}>♥ {v.likes?.toLocaleString() ?? "—"}</span>
+                      <span title="Total comments on YouTube" style={{ cursor: "help" }}>💬 {v.comment_count?.toLocaleString() ?? "—"}</span>
                     </div>
                   </td>
 
