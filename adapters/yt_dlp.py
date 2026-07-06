@@ -9,6 +9,13 @@ import sys
 
 _TABS = ("videos", "shorts", "streams")
 
+# Present as a current desktop Chrome so YouTube serves the full format set (and is less likely to
+# gate on "confirm you're not a bot"). Override with YTDLP_USER_AGENT if it ever needs bumping.
+_CHROME_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
 # Invoke yt-dlp as the venv module so we get the up-to-date version (with --remote-components /
 # EJS n-challenge support), not whatever stale `yt-dlp` sits on PATH.
 _YTDLP = [sys.executable, "-m", "yt_dlp"]
@@ -81,6 +88,8 @@ def pull_video(video_id: str, dst: str) -> str:
         "--remote-components", "ejs:github",
         # Auth + pacing for bulk archive (browser cookies clear the bot-check; sleep avoids re-flag).
         "--retries", "3", "--sleep-interval", os.getenv("YTDLP_SLEEP", "0"),
+        # Present as a modern Chrome so YouTube serves the full (video+audio) format set.
+        "--user-agent", os.getenv("YTDLP_USER_AGENT", _CHROME_UA),
         url,
     ]
     cookies_browser = os.getenv("COOKIES_FROM_BROWSER")

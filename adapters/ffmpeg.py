@@ -140,6 +140,23 @@ def fuse(
     return out
 
 
+def has_audio(path: str) -> bool:
+    """True if *path* contains at least one audio stream.
+
+    Parses ``ffmpeg -i`` stderr (same approach as probe(), so it works with imageio-ffmpeg
+    which ships no ffprobe). Used to reject a re-archived MP4 that is still video-only.
+    """
+    import re  # noqa: PLC0415
+
+    result = subprocess.run(
+        [_FFMPEG, "-hide_banner", "-i", path],
+        capture_output=True,
+        timeout=_PROBE_TIMEOUT,
+    )
+    text = result.stderr.decode("utf-8", errors="replace")
+    return bool(re.search(r"Stream #\d+:\d+.*: Audio:", text))
+
+
 def probe(path: str) -> dict:
     """Return video metadata by parsing ffmpeg -i stderr output.
 
