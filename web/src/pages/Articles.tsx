@@ -503,6 +503,30 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [scheduleSuccess, setScheduleSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<ModalTab>("article");
+  const [fixingKey, setFixingKey] = useState<string | null>(null);
+  const [fixMsg, setFixMsg] = useState<string | null>(null);
+
+  async function handleFixSeo(checkKey: string) {
+    setFixingKey(checkKey);
+    setFixMsg(null);
+    try {
+      const r = await apiFetch(`/articles/${slug}/fix-seo`, {
+        method: "POST",
+        body: JSON.stringify({ check_key: checkKey }),
+      });
+      if (!r.ok) {
+        const b = await r.json().catch(() => ({}));
+        throw new Error((b as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+      }
+      const updated: ArticleFull & { wp_error?: string | null } = await r.json();
+      setArticle(updated);
+      setFixMsg(updated.wp_error ? `Fixed — but WordPress update failed: ${updated.wp_error}` : null);
+    } catch (e) {
+      setFixMsg(`Fix failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setFixingKey(null);
+    }
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -1001,17 +1025,32 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                           {groupFail > 0 && <span style={{ background: "#fee2e2", color: "#dc2626", borderRadius: 8, fontSize: 11, padding: "1px 7px" }}>{groupFail} to fix</span>}
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                          {groupChecks.map((c) => (
-                            <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", borderRadius: 8, background: c.pass ? "#f0fdf4" : "#fff7f7", border: `1px solid ${c.pass ? "#bbf7d0" : "#fecaca"}` }}>
-                              <span style={{ fontSize: 14, flexShrink: 0, color: c.pass ? "#16a34a" : "#dc2626" }}>{c.pass ? "✓" : "✗"}</span>
-                              <span style={{ flex: 1, fontSize: 13, color: BRAND.ink }}>{c.label}</span>
-                              {c.detail && <span style={{ fontSize: 11, color: BRAND.sub }}>{c.detail}</span>}
-                            </div>
-                          ))}
+                          {groupChecks.map((c) => {
+                            const busy = fixingKey === c.key;
+                            const clickable = !c.pass && fixingKey === null;
+                            return (
+                              <div
+                                key={c.key}
+                                onClick={clickable ? () => handleFixSeo(c.key) : undefined}
+                                title={!c.pass ? "Click to fix this with AI (Gemini)" : undefined}
+                                style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", borderRadius: 8, background: c.pass ? "#f0fdf4" : "#fff7f7", border: `1px solid ${c.pass ? "#bbf7d0" : "#fecaca"}`, cursor: clickable ? "pointer" : busy ? "wait" : "default", opacity: fixingKey !== null && !busy ? 0.6 : 1 }}
+                              >
+                                <span style={{ fontSize: 14, flexShrink: 0, color: c.pass ? "#16a34a" : "#dc2626" }}>{c.pass ? "✓" : "✗"}</span>
+                                <span style={{ flex: 1, fontSize: 13, color: BRAND.ink }}>{c.label}</span>
+                                {c.detail && <span style={{ fontSize: 11, color: BRAND.sub }}>{c.detail}</span>}
+                                {!c.pass && (
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: busy ? BRAND.sub : "#dc2626", flexShrink: 0 }}>
+                                    {busy ? "Fixing…" : "Fix with AI →"}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
                   })}
+                  {fixMsg && <p style={{ fontSize: 12, color: BRAND.red, marginTop: 8 }}>{fixMsg}</p>}
                 </div>
               )}
 

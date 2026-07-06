@@ -268,6 +268,86 @@ def reprocess_article(slug: str, claims=Depends(require_role("manage_articles"))
         return _article_full(a)
 
 
+class FixSeoRequest(BaseModel):
+    check_key: str
+
+
+@router.post("/{slug}/fix-seo")
+def fix_seo_check(slug: str, body: FixSeoRequest, claims=Depends(require_role("manage_articles"))):
+    """Re-submit an article to Gemini to fix ONE failing Rank Math check, re-verify, and (if the
+    article is published) update WordPress. Returns the full article with refreshed seo_checks so
+    the UI can re-render the SEO/AIO panel immediately.
+    """
+    import json as _json
+
+    from app.llm import chat
+    from core.seo import rank_math_checks
+
+    with SessionLocal() as db:
+        a = db.get(Article, slug)
+        if a is None:
+            raise HTTPException(status_code=404, detail="article not found")
+        kw = (a.focus_keyword or "").strip()
+        if not kw:
+            raise HTTPException(status_code=400, detail="article has no focus keyword to fix against")
+
+        checks = rank_math_checks(a.title or "", a.meta or "", a.slug or "", a.content_md or "", kw)
+        target = next((c for c in checks if c["key"] == body.check_key), None)
+        if target is None:
+            raise HTTPException(status_code=422, detail=f"unknown check '{body.check_key}'")
+        if target["pass"]:
+            return _article_full(a)  # already passing — no-op
+
+        prompt = (
+            "You are editing a Perkins Roofing SEO article to fix EXACTLY ONE Rank Math issue, "
+            "changing as little as possible while keeping the content accurate, natural and complete.\n\n"
+            f'Focus keyword: "{kw}"\n'
+            f"Issue to fix: {target['label']}"
+            + (f" (current: {target['detail']})" if target.get("detail") else "")
+            + "\n\n"
+            f"Current SEO title:\n{a.title or ''}\n\n"
+            f"Current meta description:\n{a.meta or ''}\n\n"
+            f"Current article body (HTML):\n{a.content_md or ''}\n\n"
+            'Return ONLY JSON: {"title": <seo title>, "meta": <meta description>, '
+            '"content_md": <full revised HTML body>}. Preserve existing links, images and headings '
+            "unless the fix requires changing them; keep the focus keyword usage in title/meta/slug intact."
+        )
+        try:
+            raw = chat(prompt, want_json=True)
+            data = raw if isinstance(raw, dict) else _json.loads(raw)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("fix_seo_check LLM failed for %s (%s): %s", slug, body.check_key, exc, exc_info=True)
+            raise HTTPException(status_code=502, detail="SEO fix generation failed") from exc
+
+        from jobs.article_job import markdownish_to_html  # noqa: PLC0415
+        a.title = data.get("title") or a.title
+        a.meta = data.get("meta") or a.meta
+        a.content_md = markdownish_to_html(data.get("content_md") or a.content_md or "")
+        db.commit()
+        db.refresh(a)
+
+        wp_error = None
+        if a.wp_post_id and all(os.environ.get(k) for k in ("WP_URL", "WP_USER", "WP_APP_PWD")):
+            try:
+                from adapters.wordpress import update  # noqa: PLC0415
+                from jobs.article_job import _markdown_to_html  # noqa: PLC0415
+                update(
+                    post_id=a.wp_post_id,
+                    title=a.title,
+                    html=_markdown_to_html(a.content_md or ""),
+                    meta_description=a.meta or "",
+                    jsonld=list(a.jsonld_json) if a.jsonld_json else [],
+                    status="publish",
+                )
+            except Exception as exc:  # noqa: BLE001 — DB is source of truth; WP is best-effort
+                wp_error = str(exc)
+                logger.warning("fix_seo_check WP update failed for %s: %s", slug, exc)
+
+        result = _article_full(a)
+        result["wp_error"] = wp_error
+        return result
+
+
 @router.post("/{slug}/publish")
 def publish_article(slug: str, claims=Depends(require_role("manage_articles"))):
     """Publish an article immediately.

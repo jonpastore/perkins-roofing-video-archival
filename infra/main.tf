@@ -132,6 +132,14 @@ resource "google_project_iam_member" "api_secretmanager" {
   member  = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+# The admin Logs viewer route (api/routes/logs.py) reads Cloud Logging; the API SA needs
+# read access or "logs fail to pull".
+resource "google_project_iam_member" "api_logging_viewer" {
+  project = var.project_id
+  role    = "roles/logging.viewer"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
 resource "google_project_iam_member" "api_storage_viewer" {
   project = var.project_id
   role    = "roles/storage.objectViewer"

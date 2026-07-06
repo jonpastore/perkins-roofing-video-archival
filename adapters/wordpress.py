@@ -32,6 +32,16 @@ def _base_url() -> str:
     return os.environ["WP_URL"].rstrip("/")
 
 
+def _author_id() -> int:
+    """WordPress author id for all Perkins posts. Policy: always Tim Kanak (id 3), never the
+    API-credential user. Overridable via WP_AUTHOR_ID env if the WP user id ever changes."""
+    import os  # noqa: PLC0415
+    try:
+        return int(os.getenv("WP_AUTHOR_ID", "3"))
+    except ValueError:
+        return 3
+
+
 def publish(
     *,
     title: str,
@@ -62,6 +72,7 @@ def publish(
         "content": html,
         "status": status,
         "excerpt": meta_description,
+        "author": _author_id(),  # policy: always Tim Kanak
         "meta": {"_perkins_jsonld": json.dumps(jsonld)},
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
@@ -97,6 +108,7 @@ def update(
         "content": html,
         "status": status,
         "excerpt": meta_description,
+        "author": _author_id(),  # policy: always Tim Kanak
         "meta": {"_perkins_jsonld": json.dumps(jsonld)},
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
@@ -172,6 +184,7 @@ def create_page(
         "content": html,
         "status": status,
         "excerpt": meta_description,
+        "author": _author_id(),  # policy: always Tim Kanak
         "meta": {"_perkins_jsonld": json.dumps(jsonld)},
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
@@ -207,6 +220,7 @@ def update_page(
         "content": html,
         "status": status,
         "excerpt": meta_description,
+        "author": _author_id(),  # policy: always Tim Kanak
         "meta": {"_perkins_jsonld": json.dumps(jsonld)},
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
