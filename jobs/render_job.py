@@ -262,7 +262,9 @@ def render_part(
         part = parts[part_index]
         start = float(part["start"])
         end = float(part["end"])
-        video_id = series.video_id
+        # Per-part source video (topic-driven multi-source series carry a video_id per
+        # part); fall back to the series' single source for classic single-source series.
+        video_id = part.get("video_id") or series.video_id
         series_title = series.title or f"Series {series_id}"
 
         # Load Video row here so we can check archive_uri in _source_video_path.

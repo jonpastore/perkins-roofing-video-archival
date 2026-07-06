@@ -120,6 +120,94 @@ def propose_clips(
     return clips
 
 
+def _topic_relevance(topic: str, label: str) -> int:
+    """Cheap lexical overlap score between a topic and a node label (0 = unrelated)."""
+    t_words = {w for w in re.split(r"[^a-z0-9]+", topic.lower()) if len(w) > 3}
+    l_norm = label.lower()
+    if not t_words:
+        return 0
+    if topic.lower() in l_norm:
+        return 100
+    return sum(1 for w in t_words if w in l_norm)
+
+
+def propose_topic_clips(
+    topic: str,
+    sources: list[dict],
+    *,
+    max_clips: int = 5,
+    clip_len: float = 40.0,
+    min_clip_len: float = 20.0,
+    max_clip_len: float = 60.0,
+) -> list[dict]:
+    """Topic-driven MULTI-source reel: one best clip from each of SEVERAL videos.
+
+    For a single topic, picks the single most on-topic, highest-value Content-Graph
+    moment from each source video and assembles them into one series whose parts
+    span multiple source videos. Each returned part carries its OWN ``video_id`` (and
+    ``video_title``) so the renderer/UI use the correct source per part.
+
+    ``sources``: list of dicts, each ``{video_id, video_title, duration, graph_nodes}``
+    where ``graph_nodes`` is ``[{label, start, kind}]`` for that video.
+
+    Returns ``[{video_id, video_title, title, start, end}]`` — real second offsets,
+    ranked by (topic relevance, kind priority), best first, capped at ``max_clips``.
+    Sources with no usable on-topic anchor are skipped.
+    """
+    target_len = min(max(float(clip_len), float(min_clip_len)), float(max_clip_len))
+    topic_name = clean_title(topic) or topic
+
+    candidates: list[tuple[int, int, dict]] = []  # (relevance desc, kind prio asc, part)
+    for src in sources:
+        video_id = src.get("video_id")
+        if not video_id:
+            continue
+        duration = max(float(src.get("duration") or 0.0), 0.0)
+        vid_name = clean_title(src.get("video_title")) or video_id
+
+        best = None  # (relevance, -kind_prio, start, label)
+        for n in src.get("graph_nodes") or []:
+            start = float(n.get("start") or 0.0)
+            if start < 0 or (duration > 0 and start >= duration):
+                continue
+            label = (n.get("label") or "").strip()
+            rel = _topic_relevance(topic, label)
+            if rel <= 0:
+                continue
+            prio = _KIND_PRIORITY.get(str(n.get("kind") or "topics"), 3)
+            key = (rel, -prio, -start)  # prefer relevant, punchy, earlier
+            if best is None or key > best[0]:
+                best = (key, start, label, rel, prio)
+        if best is None:
+            continue
+
+        _key, start, label, rel, prio = best
+        eff_len = min(target_len, duration) if duration > 0 else target_len
+        end = min(start + eff_len, duration) if duration > 0 else start + eff_len
+        if end - start < min(min_clip_len, eff_len):
+            # Anchor too close to the end — pull the window back.
+            start = max(0.0, (duration - eff_len)) if duration > 0 else start
+            end = min(start + eff_len, duration) if duration > 0 else start + eff_len
+        part = {
+            "video_id": video_id,
+            "video_title": vid_name,
+            "title": _part_title(topic_name, label, 0),  # (Part N) numbered below
+            "start": round(start, 3),
+            "end": round(end, 3),
+        }
+        candidates.append((rel, prio, part))
+
+    # Best sources first (relevance desc, kind priority asc), cap, then renumber parts.
+    candidates.sort(key=lambda c: (-c[0], c[1]))
+    parts: list[dict] = []
+    for _rel, _prio, part in candidates[:max_clips]:
+        part = dict(part)
+        # Rewrite the title with the real part number and the source name for clarity.
+        part["title"] = f"{topic_name} — {part['video_title']} (Part {len(parts) + 1})"
+        parts.append(part)
+    return parts
+
+
 def _part_title(name: str, topic: str, n: int) -> str:
     """'<clean video name> — <topic> (Part N)'; degrade gracefully when parts missing."""
     topic = clean_title(topic)

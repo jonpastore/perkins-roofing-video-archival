@@ -371,3 +371,20 @@ def test_propose_parts_forced_n_cuts_with_many_nodes():
     parts = propose_parts("v1", 200.0, nodes, min_parts=4, max_parts=4)
     assert len(parts) == 4
     _assert_non_overlapping_within_duration(parts, 200.0)
+
+
+def test_propose_topic_clips_multi_source():
+    from core.miniseries import propose_topic_clips
+    sources = [
+        {"video_id": "A", "video_title": "Metal Roof Basics", "duration": 300,
+         "graph_nodes": [{"label": "underlayment for metal roofs", "start": 40, "kind": "claims"}]},
+        {"video_id": "B", "video_title": "Underlayment Layers", "duration": 120,
+         "graph_nodes": [{"label": "metal roof underlayment layers", "start": 22, "kind": "ctas"}]},
+        {"video_id": "C", "video_title": "Gutters", "duration": 200,
+         "graph_nodes": [{"label": "gutter cleaning", "start": 10, "kind": "topics"}]},
+    ]
+    parts = propose_topic_clips("Metal roof underlayment", sources, max_clips=5)
+    # C is off-topic → excluded; A and B included, each with its own video_id + real offsets
+    assert {p["video_id"] for p in parts} == {"A", "B"}
+    assert all(p["end"] > p["start"] for p in parts)
+    assert all(p["title"].endswith(f"(Part {i + 1})") for i, p in enumerate(parts))

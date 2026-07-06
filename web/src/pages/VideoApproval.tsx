@@ -6,6 +6,9 @@ interface Part {
   title: string;
   start: number;
   end: number;
+  // Topic-driven multi-source series carry a per-part source video.
+  video_id?: string | null;
+  video_title?: string | null;
 }
 
 interface Proposal {
@@ -129,14 +132,21 @@ function ProposalCard({
               borderBottom: i < parts.length - 1 ? `1px solid ${BRAND.border}` : "none",
             }}
           >
-            <input
-              type="text"
-              value={part.title}
-              onChange={(e) => updatePart(i, "title", e.target.value)}
-              style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }}
-            />
+            <div>
+              <input
+                type="text"
+                value={part.title}
+                onChange={(e) => updatePart(i, "title", e.target.value)}
+                style={{ ...inputStyle, padding: "7px 10px", fontSize: 13, width: "100%", boxSizing: "border-box" }}
+              />
+              {part.video_id && part.video_id !== proposal.video_id && (
+                <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 3 }}>
+                  Source: {part.video_title || part.video_id}
+                </div>
+              )}
+            </div>
             <a
-              href={ytLink(proposal.video_id, part.start)}
+              href={ytLink(part.video_id || proposal.video_id, part.start)}
               target="_blank"
               rel="noopener noreferrer"
               title="Play this part on YouTube at its start time"

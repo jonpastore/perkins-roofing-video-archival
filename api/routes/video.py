@@ -26,6 +26,10 @@ class Part(BaseModel):
     title: str
     start: float
     end: float
+    # Multi-source (topic-driven) series carry a per-part source video; omitted for
+    # classic single-source series (which use the MiniSeries.video_id).
+    video_id: str | None = None
+    video_title: str | None = None
 
 
 class ApproveRequest(BaseModel):
@@ -118,6 +122,25 @@ def list_proposals(claims=Depends(require_role("approve_video"))):
         rows = db.query(MiniSeries).filter(MiniSeries.approved == 0).all()
         durations = _durations_for(db, [r.video_id for r in rows])
         return [_series_to_dict(r, durations.get(r.video_id)) for r in rows]
+
+
+class ProposeTopicSeriesRequest(BaseModel):
+    topics: int = 10
+
+
+@router.post("/propose-topic-series")
+def propose_topic_series(
+    body: ProposeTopicSeriesRequest = ProposeTopicSeriesRequest(),
+    claims=Depends(require_role("manage_series")),
+):
+    """Generate topic-driven MULTI-source reel proposals across the top aggregated
+    topics — each series pulls the best on-topic clip from several source videos.
+    Returns {proposed, skipped}. Idempotent (skips topics already turned into a series).
+    """
+    from jobs.propose_topic_series import run as run_topic_series  # noqa: PLC0415
+
+    topics = max(1, min(body.topics, 30))
+    return run_topic_series(top_n=topics)
 
 
 @router.get("/series")
