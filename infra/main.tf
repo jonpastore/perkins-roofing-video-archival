@@ -327,6 +327,14 @@ resource "google_storage_bucket" "reels" {
   uniform_bucket_level_access = true
 }
 
+# The API service reads the reels bucket for the Config connectivity health check and to
+# resolve brand-scene images; grant it read on the bucket + objects.
+resource "google_storage_bucket_iam_member" "api_reels_reader" {
+  bucket = google_storage_bucket.reels.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
 # Reels bucket is PRIVATE. IG/TikTok ingest via a short-TTL V4 signed URL minted at publish
 # time (jobs/social_job → adapters.storage.signed_get_url), so the client's media is never
 # left publicly exposed. jobs-sa self-signs (serviceAccountTokenCreator below).
