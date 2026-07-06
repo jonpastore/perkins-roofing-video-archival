@@ -560,10 +560,17 @@ function ReelSettingsPanel() {
       <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
         Reel Intro / Outro
       </div>
-      <p style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
+      <p style={{ margin: "0 0 8px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
         The <strong>title card</strong> (intro) and <strong>closing card</strong> (outro) can be
         generated automatically or replaced with uploaded brand images. When "Apply brand scenes"
         is checked, uploaded images are prepended/appended to every rendered reel.
+      </p>
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
+        To use real <strong>brand intro/outro videos</strong> instead of generated cards, set
+        {" "}<strong>Brand intro video</strong> and <strong>Brand outro video</strong> in{" "}
+        <a href="/config" style={{ color: BRAND.red }}>Config</a>
+        {" "}(BRAND_INTRO_VIDEO / BRAND_OUTRO_VIDEO — gs:// paths). When both are set they take
+        precedence over the image-card settings above.
       </p>
 
       {/* Closing brand text */}

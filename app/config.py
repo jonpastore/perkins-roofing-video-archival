@@ -2,6 +2,7 @@
 Cloud SQL Postgres/pgvector + Vertex/Anthropic. cerberus is DEV-ONLY (our box)."""
 import os
 
+
 class Settings:
     # Data layer — sqlite for dev, postgresql+psycopg://… (with pgvector) for prod
     DB_URL = os.getenv("DB_URL", "sqlite:///" + os.path.join(os.path.dirname(__file__), "dev.db"))
@@ -49,6 +50,11 @@ class Settings:
         ).split(",")
         if o.strip()
     )
+
+    # Brand intro/outro videos — gs:// URIs for brand video segments prepended/appended to every
+    # rendered reel.  When either is empty the existing generated-card path is used instead.
+    BRAND_INTRO_VIDEO = os.getenv("BRAND_INTRO_VIDEO", "")
+    BRAND_OUTRO_VIDEO = os.getenv("BRAND_OUTRO_VIDEO", "")
 
     # Emails that are admin-by-default (no per-user grant needed). Comma-separated env override.
     DEFAULT_ADMINS = frozenset(

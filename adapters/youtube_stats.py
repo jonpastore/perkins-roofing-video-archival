@@ -56,6 +56,28 @@ def fetch_stats(video_ids: list[str]) -> dict[str, dict]:
     return result
 
 
+def fetch_titles(video_ids: list[str]) -> dict[str, str]:
+    """Batch-fetch the current YouTube title (snippet.title) for up to any number of ids.
+
+    Splits into pages of 50. Returns {video_id: title}. Missing/deleted videos are omitted.
+    Used to re-parse a better name from YouTube for archived videos.
+    """
+    key = _api_key()
+    result: dict[str, str] = {}
+    for offset in range(0, len(video_ids), 50):
+        batch = video_ids[offset : offset + 50]
+        params = {"part": "snippet", "id": ",".join(batch), "key": key}
+        url = _VIDEOS_API + "?" + urllib.parse.urlencode(params)
+        with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310 — fixed Google API URL
+            data = json.loads(resp.read().decode())
+        for item in data.get("items", []):
+            vid = item.get("id")
+            title = (item.get("snippet", {}) or {}).get("title")
+            if vid and title:
+                result[vid] = title
+    return result
+
+
 def latest_comment_at(video_id: str) -> str | None:
     """Return the publishedAt timestamp of the newest top-level comment, or None.
 

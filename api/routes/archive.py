@@ -7,15 +7,15 @@ Role requirements (core.authz):
   - manage_archive → admin + web_admin
 """
 import re
-from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func
 
 from api.auth import require_role
-from app.models import SessionLocal, Video, GraphNode, Article, MiniSeries, SocialPost
-from core.retrieval import link
+from app.models import Article, GraphNode, MiniSeries, SessionLocal, SocialPost, Video
 from core.ratelimit import SingleFlightGuard
+from core.retrieval import link
 
 router = APIRouter(prefix="/archive", tags=["archive"])
 
@@ -233,6 +233,84 @@ def download_video(
     except Exception:  # noqa: BLE001 — signing needs SignBlob; degrade without leaking a traceback
         raise HTTPException(status_code=503, detail="download temporarily unavailable")
     return {"download_url": download_url}
+
+
+# ---------------------------------------------------------------------------
+# Video naming — rename, re-parse from YouTube, suggest from transcript
+# ---------------------------------------------------------------------------
+
+class RenameRequest(BaseModel):
+    title: str
+
+
+@router.post("/{video_id}/rename")
+def rename_video(
+    video_id: str,
+    body: RenameRequest,
+    _claims=Depends(require_role("manage_archive")),
+):
+    """Set the stored display title for a video. Returns {id, title}. 404 if missing."""
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="title must not be empty")
+    with SessionLocal() as db:
+        v = db.get(Video, video_id)
+        if v is None:
+            raise HTTPException(status_code=404, detail="video not found")
+        v.title = title
+        db.commit()
+        db.refresh(v)
+        return {"id": v.id, "title": v.title}
+
+
+@router.get("/{video_id}/youtube-name")
+def youtube_name(video_id: str, _claims=Depends(require_role("manage_archive"))):
+    """Fetch the current title from YouTube (Data API snippet) to re-parse a better name."""
+    from adapters.youtube_stats import fetch_titles
+    try:
+        titles = fetch_titles([video_id])
+    except Exception as exc:  # noqa: BLE001 — surface as 502, don't leak a traceback
+        raise HTTPException(status_code=502, detail="YouTube title lookup failed") from exc
+    title = titles.get(video_id)
+    if not title:
+        raise HTTPException(status_code=404, detail="no YouTube title found (deleted/private?)")
+    return {"video_id": video_id, "youtube_title": title}
+
+
+@router.post("/{video_id}/suggest-name")
+def suggest_name(video_id: str, _claims=Depends(require_role("manage_archive"))):
+    """Suggest a concise, descriptive title from the video transcript via the LLM."""
+    from app.llm import chat
+    from app.models import Segment
+
+    with SessionLocal() as db:
+        v = db.get(Video, video_id)
+        if v is None:
+            raise HTTPException(status_code=404, detail="video not found")
+        segments = (
+            db.query(Segment)
+            .filter(Segment.video_id == video_id)
+            .order_by(Segment.start)
+            .limit(40)
+            .all()
+        )
+    context = " ".join(s.text for s in segments if s.text)[:2000]
+    if not context.strip():
+        raise HTTPException(status_code=400, detail="no transcript available to suggest a name")
+
+    prompt = (
+        "You are titling a Perkins Roofing video. From the transcript excerpt below, write ONE "
+        "concise, descriptive, engaging title (max 70 characters, no quotes, no emojis) that "
+        "accurately reflects the content.\n\nTranscript excerpt:\n"
+        f"{context}\n\nTitle only — no preamble."
+    )
+    try:
+        title = chat(prompt, want_json=False)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="name suggestion failed") from exc
+    if not title or not title.strip():
+        raise HTTPException(status_code=502, detail="LLM returned an empty title")
+    return {"video_id": video_id, "suggested_title": title.strip().strip('"')[:100]}
 
 
 # ---------------------------------------------------------------------------

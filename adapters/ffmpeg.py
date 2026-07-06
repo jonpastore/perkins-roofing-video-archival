@@ -140,6 +140,93 @@ def fuse(
     return out
 
 
+def fuse_videos(
+    intro_path: str,
+    clip_path: str,
+    outro_path: str,
+    out: str,
+) -> str:
+    """Concatenate intro + clip + outro into a single 1080×1920 reel MP4.
+
+    All three inputs are normalised to 1080×1920, 30 fps, yuv420p, same SAR,
+    and a consistent stereo 48 kHz audio track before concatenation.  The clip
+    audio receives EBU R128 loudnorm (-14 LUFS) matching the image-card path.
+    Segments without audio get synthesised silence so the concat filter always
+    has three consistent v+a stream pairs.
+
+    Args:
+        intro_path: Path to the brand intro video file.
+        clip_path:  Path to the extracted clip video.
+        outro_path: Path to the brand outro video file.
+        out:        Destination MP4 path (created/overwritten).
+
+    Returns:
+        *out* on success.
+
+    Raises:
+        subprocess.CalledProcessError: if ffmpeg exits non-zero.
+        subprocess.TimeoutExpired: if the call takes too long.
+    """
+    def _video_norm(input_idx: int, out_label: str) -> str:
+        """Return a scale/pad/setsar/fps filter chain for input *input_idx*."""
+        return (
+            f"[{input_idx}:v]fps=30,"
+            f"scale=1080:1920:force_original_aspect_ratio=decrease,"
+            f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,"
+            f"setsar=1[{out_label}]"
+        )
+
+    def _audio_norm(input_idx: int, out_label: str, *, is_clip: bool, has_aud: bool) -> str:
+        """Return an audio normalisation filter for segment *input_idx*.
+
+        When the input has no audio stream a silence source is generated.
+        The clip segment additionally receives loudnorm.
+        """
+        if not has_aud:
+            # Probe duration so silence matches the video length; use a generous
+            # upper bound — concat will trim at the video stream end anyway.
+            return (
+                f"aevalsrc=0:channel_layout=stereo:sample_rate=48000[{out_label}]"
+            )
+        if is_clip:
+            return (
+                f"[{input_idx}:a]loudnorm=I=-14:LRA=11:TP=-1.5,"
+                f"aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[{out_label}]"
+            )
+        return (
+            f"[{input_idx}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[{out_label}]"
+        )
+
+    intro_has_audio = has_audio(intro_path)
+    clip_has_audio = has_audio(clip_path)
+    outro_has_audio = has_audio(outro_path)
+
+    filter_parts = [
+        _video_norm(0, "v0"),
+        _audio_norm(0, "a0", is_clip=False, has_aud=intro_has_audio),
+        _video_norm(1, "v1"),
+        _audio_norm(1, "a1", is_clip=True, has_aud=clip_has_audio),
+        _video_norm(2, "v2"),
+        _audio_norm(2, "a2", is_clip=False, has_aud=outro_has_audio),
+        "[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[vout][aout]",
+    ]
+    filtergraph = ";".join(filter_parts)
+
+    cmd = [
+        _FFMPEG, "-y",
+        "-i", intro_path,
+        "-i", clip_path,
+        "-i", outro_path,
+        "-filter_complex", filtergraph,
+        "-map", "[vout]",
+        "-map", "[aout]",
+        *output_args(),
+        out,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=_ENCODE_TIMEOUT)
+    return out
+
+
 def has_audio(path: str) -> bool:
     """True if *path* contains at least one audio stream.
 

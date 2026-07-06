@@ -85,6 +85,59 @@ def dedup_jaccard(text_a: str, text_b: str, n: int = 5) -> float:
     return intersection / union if union > 0 else 0.0
 
 
+# ---------------------------------------------------------------------------
+# Rank Math SEO hard-failure check (pure)
+# ---------------------------------------------------------------------------
+
+# Checks that are HARD failures (block regeneration if ALL fail).
+# Soft checks (image alt, power word, sentiment, number) are warnings only.
+_RM_HARD_CHECKS = frozenset({
+    "rm_kw_in_title",
+    "rm_kw_in_meta",
+    "rm_kw_in_slug",
+    "rm_kw_in_intro",
+    "rm_kw_in_body",
+    "rm_kw_in_heading",
+    "rm_kw_density",
+    "rm_slug_length",
+    "rm_internal_link",
+    "rm_external_link",
+    "rm_title_kw_position",
+})
+
+
+def seo_hard_failures(
+    title: str,
+    meta: str,
+    slug: str,
+    content_md: str,
+    focus_keyword: str,
+) -> list[str]:
+    """Return list of HARD Rank Math check keys that are currently failing.
+
+    Hard checks are those that Rank Math marks as required for a passing score
+    (keyword placement, density, links, slug length). Soft checks (image alt,
+    sentiment word, power word, number in title) are omitted — they should be
+    warned about but not used to block/regenerate.
+
+    Args:
+        title:         SEO title.
+        meta:          Meta description.
+        slug:          URL slug.
+        content_md:    Article body (HTML or markdown).
+        focus_keyword: The focus keyword to validate against.
+
+    Returns:
+        List of failing check key strings (empty list = all hard checks pass).
+    """
+    from core.seo import rank_math_checks  # noqa: PLC0415
+    checks = rank_math_checks(title, meta, slug, content_md, focus_keyword)
+    return [
+        c["key"] for c in checks
+        if not c["pass"] and c["key"] in _RM_HARD_CHECKS
+    ]
+
+
 def is_duplicate(
     new_text: str,
     existing_texts: list[str],

@@ -26,14 +26,15 @@ interface ListResponse {
   items: CommentItem[];
 }
 
-type StatusFilter = "all" | "pending" | "drafted" | "ready" | "dismissed";
+type StatusFilter = "all" | "pending" | "drafted" | "ready" | "posted" | "dismissed";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
 
 const STATUS_COLORS: Record<string, string> = {
   pending:   "#f59e0b",
   drafted:   BRAND.navy,
   ready:     "#16a34a",
+  posted:    "#0ea5e9",
   dismissed: "#9ca3af",
 };
 
@@ -56,6 +57,8 @@ export function Comments() {
   const [draftingId, setDraftingId]   = useState<number | null>(null);
   const [drafts, setDrafts]           = useState<Record<number, string>>({});
   const [actionMsg, setActionMsg]     = useState<string | null>(null);
+  const [oauthConfigured, setOauthConfigured] = useState(false);
+  const [postingId, setPostingId]     = useState<number | null>(null);
 
   function loadItems(status: StatusFilter, needsOnly: boolean, off: number) {
     setLoading(true);
@@ -73,11 +76,7 @@ export function Comments() {
         return r.json();
       })
       .then((d: ListResponse) => {
-        if (off === 0) {
-          setItems(d.items);
-        } else {
-          setItems((prev) => [...prev, ...d.items]);
-        }
+        setItems(d.items); // page-based: each page replaces the list
         setTotal(d.total);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -86,6 +85,10 @@ export function Comments() {
 
   useEffect(() => {
     loadItems(statusFilter, needsReplyOnly, 0);
+    apiFetch("/comments/reply-config")
+      .then((r) => (r.ok ? r.json() : { oauth_configured: false }))
+      .then((d: { oauth_configured?: boolean }) => setOauthConfigured(!!d.oauth_configured))
+      .catch(() => setOauthConfigured(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleStatusChange(val: StatusFilter) {
@@ -100,10 +103,33 @@ export function Comments() {
     loadItems(statusFilter, val, 0);
   }
 
-  function handleLoadMore() {
-    const next = offset + PAGE_SIZE;
-    setOffset(next);
-    loadItems(statusFilter, needsReplyOnly, next);
+  function gotoPage(pageIdx: number) {
+    const off = Math.max(0, pageIdx) * PAGE_SIZE;
+    setOffset(off);
+    loadItems(statusFilter, needsReplyOnly, off);
+  }
+
+  async function handlePost(item: CommentItem) {
+    const text = draftValue(item).trim();
+    if (!text) { setActionMsg("Nothing to post — the draft is empty."); return; }
+    if (!confirm(`Post this reply to YouTube?\n\n"${text}"`)) return;
+    setPostingId(item.id);
+    setActionMsg(null);
+    try {
+      // Persist any local edits first so we post exactly what's shown.
+      await apiFetch(`/comments/${item.id}`, { method: "PUT", body: JSON.stringify({ draft_reply: text }) });
+      const r = await apiFetch(`/comments/${item.id}/post`, { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
+      }
+      const updated: CommentItem = await r.json();
+      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+    } catch (e: unknown) {
+      setActionMsg(`Post failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPostingId(null);
+    }
   }
 
   async function handleCrawl() {
@@ -183,20 +209,31 @@ export function Comments() {
     return drafts[item.id] !== undefined ? drafts[item.id] : (item.draft_reply ?? "");
   }
 
-  const hasMore = offset + PAGE_SIZE < total;
+  const pageIdx = Math.floor(offset / PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <main style={{ maxWidth: 960 }}>
       <PageTitle>Comment Reply Assistant</PageTitle>
 
-      {/* Note about posting limitation */}
-      <Card style={{ marginBottom: 20, background: "#fffbeb", borderLeft: `4px solid #f59e0b` }}>
-        <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
-          <strong>Draft-only mode:</strong> This tool prepares reply drafts for Tim to review and
-          copy-paste into YouTube. Direct posting to YouTube requires OAuth write scope not yet
-          configured. Mark a reply <em>Ready</em> when it's approved to post.
-        </p>
-      </Card>
+      {/* Posting mode note — reflects whether YouTube OAuth posting is configured */}
+      {oauthConfigured ? (
+        <Card style={{ marginBottom: 20, background: "#f0f9ff", borderLeft: `4px solid #0ea5e9` }}>
+          <p style={{ margin: 0, fontSize: 13, color: "#075985" }}>
+            <strong>Posting enabled:</strong> review or edit a draft, then <em>Post to YouTube</em> to
+            publish the reply directly (posts as the Perkins channel via authorized OAuth).
+          </p>
+        </Card>
+      ) : (
+        <Card style={{ marginBottom: 20, background: "#fffbeb", borderLeft: `4px solid #f59e0b` }}>
+          <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
+            <strong>Draft-only mode:</strong> prepares reply drafts to review and copy-paste into
+            YouTube. Direct posting needs the channel owner's YouTube OAuth (scope
+            <code> youtube.force-ssl</code>) — see docs/YOUTUBE_REPLY_OAUTH.md to enable the
+            <em> Post to YouTube</em> button. Mark a reply <em>Ready</em> when approved.
+          </p>
+        </Card>
+      )}
 
       {/* Crawl controls */}
       <Card style={{ marginBottom: 20 }}>
@@ -367,7 +404,7 @@ export function Comments() {
                       >
                         {savingId === item.id ? "Saving…" : "Save"}
                       </Button>
-                      {item.status !== "ready" && (
+                      {item.status !== "ready" && item.status !== "posted" && (
                         <Button
                           disabled={savingId === item.id}
                           onClick={() => handleSave(item, "ready")}
@@ -377,6 +414,18 @@ export function Comments() {
                           }}
                         >
                           Mark Ready
+                        </Button>
+                      )}
+                      {oauthConfigured && item.status !== "posted" && (
+                        <Button
+                          disabled={postingId === item.id || !draftValue(item).trim()}
+                          onClick={() => handlePost(item)}
+                          style={{
+                            fontSize: 12, padding: "5px 12px",
+                            background: "#0ea5e9", borderColor: "#0ea5e9",
+                          }}
+                        >
+                          {postingId === item.id ? "Posting…" : "Post to YouTube"}
                         </Button>
                       )}
                       <Button
@@ -405,10 +454,16 @@ export function Comments() {
             })}
           </div>
 
-          {hasMore && (
-            <div style={{ textAlign: "center", marginTop: 20 }}>
-              <Button variant="ghost" onClick={handleLoadMore} style={{ fontSize: 13 }}>
-                Load more ({total - offset - items.length} remaining)
+          {totalPages > 1 && (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 14, marginTop: 20 }}>
+              <Button variant="ghost" onClick={() => gotoPage(pageIdx - 1)} disabled={pageIdx <= 0} style={{ fontSize: 13 }}>
+                ‹ Prev
+              </Button>
+              <span style={{ fontSize: 13, color: BRAND.sub }}>
+                Page {pageIdx + 1} of {totalPages}
+              </span>
+              <Button variant="ghost" onClick={() => gotoPage(pageIdx + 1)} disabled={pageIdx + 1 >= totalPages} style={{ fontSize: 13 }}>
+                Next ›
               </Button>
             </div>
           )}

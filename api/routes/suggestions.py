@@ -19,8 +19,8 @@ from app.models import (
     Article,
     GraphNode,
     MiniSeries,
-    Segment,
     ScheduledContent,
+    Segment,
     SessionLocal,
     SocialPost,
     Video,
@@ -138,11 +138,29 @@ def get_suggestion_counts(
             and v.id not in series_video_ids
         )
 
+        # --- video approvals awaiting review (MiniSeries not yet approved) ---
+        pending_video_approvals = (
+            db.query(MiniSeries).filter(MiniSeries.approved == 0).count()
+        )
+
+        # --- comment drafts awaiting action (needs a reply, not yet ready/dismissed) ---
+        from app.models import CommentDraft  # local import — avoids a heavy top-level dep
+        comment_drafts = (
+            db.query(CommentDraft)
+            .filter(
+                CommentDraft.needs_reply.is_(True),
+                CommentDraft.status.in_(("pending", "drafted")),
+            )
+            .count()
+        )
+
     return {
         "article_topics": article_topics_count,
         "reels": reels_count,
         "faqs": faqs_count,
         "unused_videos": unused_count,
+        "pending_video_approvals": pending_video_approvals,
+        "comment_drafts": comment_drafts,
     }
 
 

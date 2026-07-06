@@ -374,14 +374,44 @@ def template_prompt(ctx: dict) -> str:
         "- Reference the location naturally if this is a local business\n"
         "- keywords: list of 5-8 keyword phrases this article targets"
         f"{internal_guidance}\n\n"
+        "═══ RANK MATH SEO — FOCUS KEYWORD REQUIREMENTS (ALL REQUIRED) ═══\n"
+        "Pick ONE focus keyword — the single most important phrase for this article.\n"
+        "The focus keyword MUST appear in ALL of the following:\n"
+        "  1. The SEO title — AND near the BEGINNING of the title (first half of characters)\n"
+        "  2. The meta description\n"
+        "  3. The URL slug (use hyphens, e.g. focus-keyword-here)\n"
+        "  4. The first paragraph / first ~10% of the body content\n"
+        "  5. At least one H2, H3, or H4 subheading\n"
+        "  6. The alt text of at least one <img> tag\n"
+        "  7. Throughout the body at a density of roughly 1% "
+        "(count / total-words between 0.5% and 1.5%) — do NOT keyword-stuff\n"
+        "  8. At least one relative internal link (e.g. <a href=\"/blog/slug\">anchor</a>)\n"
+        "  9. At least one external DoFollow link (no rel=\"nofollow\") to an authoritative source\n\n"
+        "TITLE READABILITY (all four required):\n"
+        "  10. Focus keyword appears in the FIRST HALF of the title\n"
+        "  11. Title contains a POSITIVE sentiment word (best, proven, easy, top, complete, "
+        "ultimate, expert, trusted, essential, fast, safe, guaranteed, smart, simple, effective, "
+        "comprehensive, perfect, free, powerful, amazing) OR a NEGATIVE sentiment word "
+        "(avoid, danger, mistake, warning, wrong, never, stop, fail, risk, costly, "
+        "shocking, beware, critical, urgent, hidden, scam, bad, worst, harmful, problem)\n"
+        "  12. Title contains a POWER WORD (secret, proven, guaranteed, instantly, exclusive, "
+        "ultimate, powerful, shocking, remarkable, incredible, essential, definitive, complete, "
+        "effortless, revolutionary, unbeatable, critical, breakthrough, surprising, unexpected, "
+        "forbidden, urgent, now, free, bonus, limited, new, discover, revealed)\n"
+        "  13. Title contains a NUMBER (e.g. '7 Tips', '3 Ways', '5 Mistakes', '$200')\n\n"
+        "Content length: ≥600 words (target 1000+).\n\n"
         "═══ CALLOUT BOXES — USE 2-4 PER ARTICLE ═══\n"
         "The blog renderer supports 4 callout types. Use them where EDITORIALLY appropriate.\n"
         "Emit callouts as clean HTML — do NOT use GitHub-style `> [!TIP]` markers.\n\n"
         "Syntax (must be exactly this HTML, blank line before and after):\n\n"
-        '<aside class="tip"><p>Practical shortcut or efficiency advice the reader can apply immediately.</p></aside>\n\n'
-        '<aside class="warning"><p>Common mistake or danger to avoid. Use when stakes are high.</p></aside>\n\n'
-        '<aside class="note"><p>Important context, clarification, or caveat that matters for this topic.</p></aside>\n\n'
-        '<aside class="key"><p>The single most important insight of this article. Use AT MOST ONCE per article.</p></aside>\n\n'
+        '<aside class="tip"><p>Practical shortcut or efficiency advice the reader can apply'
+        " immediately.</p></aside>\n\n"
+        '<aside class="warning"><p>Common mistake or danger to avoid. Use when stakes are high.'
+        "</p></aside>\n\n"
+        '<aside class="note"><p>Important context, clarification, or caveat that matters for this'
+        " topic.</p></aside>\n\n"
+        '<aside class="key"><p>The single most important insight of this article.'
+        " Use AT MOST ONCE per article.</p></aside>\n\n"
         "Guidelines:\n"
         "- Distribute 2-4 callouts throughout the article, not all at the top\n"
         "- Content INSIDE callouts should be 1-3 sentences, punchy, specific\n"
@@ -392,6 +422,7 @@ def template_prompt(ctx: dict) -> str:
         "{\n"
         '  "title": "article title",\n'
         '  "slug": "url-slug-version",\n'
+        '  "focusKeyword": "the single Rank Math focus keyword",\n'
         '  "metaDescription": "meta description text (140-155 chars MAX)",\n'
         '  "excerpt": "1-2 sentence summary for article listings",\n'
         '  "content": "# Title\\n\\nFull article in markdown...",\n'

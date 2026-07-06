@@ -68,6 +68,69 @@ def _closing_text() -> str:
     return _CLOSING_TEXT_DEFAULT
 
 
+def _brand_video_config(scratch: str) -> tuple[str | None, str | None]:
+    """Return (intro_path, outro_path) when BRAND_INTRO_VIDEO and BRAND_OUTRO_VIDEO are both set.
+
+    Reads settings.BRAND_INTRO_VIDEO / BRAND_OUTRO_VIDEO (gs:// URIs, env-driven).
+    Downloads each to *scratch* and returns their local paths.  Returns (None, None)
+    when either setting is empty or a download fails.
+
+    Security: only gs://<reels_bucket>/brand/… URIs are accepted (same policy as
+    _brand_scene_config).
+    """
+    from app.config import settings  # noqa: PLC0415
+
+    intro_uri = (settings.BRAND_INTRO_VIDEO or "").strip()
+    outro_uri = (settings.BRAND_OUTRO_VIDEO or "").strip()
+    if not intro_uri or not outro_uri:
+        return None, None
+
+    allowed_bucket = _reels_bucket()
+    _BRAND_KEY_PREFIX = "brand/"
+
+    def _download(gs_uri: str, label: str) -> str | None:
+        if not gs_uri.startswith("gs://"):
+            logger.warning("_brand_video_config: rejecting non-gs:// %s URI: %r", label, gs_uri)
+            return None
+        try:
+            without_scheme = gs_uri[len("gs://"):]
+            slash = without_scheme.index("/")
+            bucket = without_scheme[:slash]
+            key = without_scheme[slash + 1:]
+            if bucket != allowed_bucket:
+                logger.warning(
+                    "_brand_video_config: rejecting foreign bucket %r (allowed: %r) for %s",
+                    bucket, allowed_bucket, label,
+                )
+                return None
+            if not key.startswith(_BRAND_KEY_PREFIX):
+                logger.warning(
+                    "_brand_video_config: rejecting key outside brand/ prefix for %s: %r",
+                    label, gs_uri,
+                )
+                return None
+            ext = os.path.splitext(key)[-1] or ".mp4"
+            local_path = os.path.join(scratch, f"brand_{label}_{os.path.basename(key)}{'' if ext else '.mp4'}")
+            from adapters.storage import open_read_stream  # noqa: PLC0415
+            with open_read_stream(bucket, key) as stream:
+                with open(local_path, "wb") as fh:
+                    while True:
+                        chunk = stream.read(8 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+            return local_path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_brand_video_config: failed to fetch %s %s: %s", label, gs_uri, exc)
+            return None
+
+    intro_path = _download(intro_uri, "intro")
+    outro_path = _download(outro_uri, "outro")
+    if intro_path is None or outro_path is None:
+        return None, None
+    return intro_path, outro_path
+
+
 def _brand_scene_config(scratch: str) -> tuple[str | None, str | None]:
     """Return (title_img_path, closing_img_path) from platform_config when REEL_APPLY_BRAND_SCENES=true.
 
@@ -389,6 +452,7 @@ def render_part(
     try:
         from adapters.ffmpeg import clip as ffmpeg_clip  # noqa: PLC0415
         from adapters.ffmpeg import fuse as ffmpeg_fuse  # noqa: PLC0415
+        from adapters.ffmpeg import fuse_videos as ffmpeg_fuse_videos  # noqa: PLC0415
         from adapters.ffmpeg import make_card  # noqa: PLC0415
 
         # 4. Obtain source video — prefer archived GCS MP4, fall back to yt-dlp.
@@ -401,32 +465,39 @@ def render_part(
         logger.info("clip: %s [%.2f, %.2f] -> %s", src_path, start, end, clip_path)
         ffmpeg_clip(src_path, start, end, clip_path)
 
-        # 6. Generate cards if not supplied
-        part_title = part.get("title") or series_title
-
-        # Apply uploaded brand scenes when the caller did not explicitly supply images.
-        if title_img is None or closing_img is None:
-            brand_title, brand_closing = _brand_scene_config(scratch)
-            if title_img is None:
-                title_img = brand_title
-            if closing_img is None:
-                closing_img = brand_closing
-
-        if title_img is None:
-            title_img = os.path.join(scratch, f"title_{series_id}_{part_index}.png")
-            logger.info("make_card (title): %r -> %s", part_title, title_img)
-            make_card(part_title, title_img)
-
-        if closing_img is None:
-            closing_img = os.path.join(scratch, f"closing_{series_id}_{part_index}.png")
-            _ct = _closing_text()
-            logger.info("make_card (closing): %r -> %s", _ct, closing_img)
-            make_card(_ct, closing_img)
-
-        # 7. Fuse
+        # 6 + 7. Fuse — brand video path (BRAND_INTRO_VIDEO / BRAND_OUTRO_VIDEO) takes
+        # precedence over the image-card path when both are configured.
         reel_path = os.path.join(scratch, f"reel_{series_id}_{part_index}.mp4")
-        logger.info("fuse -> %s", reel_path)
-        ffmpeg_fuse(clip_path, title_img, closing_img, reel_path)
+
+        intro_video, outro_video = _brand_video_config(scratch)
+        if intro_video is not None and outro_video is not None:
+            logger.info("fuse_videos (brand intro/outro) -> %s", reel_path)
+            ffmpeg_fuse_videos(intro_video, clip_path, outro_video, reel_path)
+        else:
+            # Fallback: generated-card path (existing behaviour).
+            part_title = part.get("title") or series_title
+
+            # Apply uploaded brand scene images when the caller did not explicitly supply them.
+            if title_img is None or closing_img is None:
+                brand_title, brand_closing = _brand_scene_config(scratch)
+                if title_img is None:
+                    title_img = brand_title
+                if closing_img is None:
+                    closing_img = brand_closing
+
+            if title_img is None:
+                title_img = os.path.join(scratch, f"title_{series_id}_{part_index}.png")
+                logger.info("make_card (title): %r -> %s", part_title, title_img)
+                make_card(part_title, title_img)
+
+            if closing_img is None:
+                closing_img = os.path.join(scratch, f"closing_{series_id}_{part_index}.png")
+                _ct = _closing_text()
+                logger.info("make_card (closing): %r -> %s", _ct, closing_img)
+                make_card(_ct, closing_img)
+
+            logger.info("fuse (image cards) -> %s", reel_path)
+            ffmpeg_fuse(clip_path, title_img, closing_img, reel_path)
 
         # 8. Upload to GCS (private bucket — returns gs:// URI)
         bucket_name = _reels_bucket()

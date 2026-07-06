@@ -15,10 +15,11 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from adapters.youtube_comments import fetch_comments
-from app.llm import chat
 from sqlalchemy.exc import IntegrityError
 
+from adapters.youtube_comments import fetch_comments
+from adapters.youtube_stats import fetch_stats
+from app.llm import chat
 from app.models import CommentDraft, Segment, SessionLocal, Video, init_db
 from core.comments import needs_reply
 
@@ -195,6 +196,26 @@ def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
             # Stamp this video as crawled so the next run rotates to others.
             video.comments_crawled_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
+
+        # Refresh KPI stats (views/likes/comment_count) for the videos crawled this run. The
+        # archive shows these; a single batched videos.list call keeps them current as the crawl
+        # rotates the whole catalog. Best-effort — a stats failure must not fail the crawl.
+        crawled_ids = [v.id for v in videos]
+        if crawled_ids:
+            try:
+                stats = fetch_stats(crawled_ids)
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                for vid, s in stats.items():
+                    db.query(Video).filter(Video.id == vid).update({
+                        Video.views: s["views"],
+                        Video.likes: s["likes"],
+                        Video.comment_count: s["comments"],
+                        Video.kpis_polled_at: now,
+                    })
+                db.commit()
+                summary["kpis_updated"] = len(stats)
+            except Exception as exc:  # noqa: BLE001 — stats refresh is best-effort
+                log.warning("crawl_comments: KPI stats refresh failed: %s", exc)
 
     return summary
 

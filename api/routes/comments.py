@@ -7,7 +7,6 @@ Role requirements:
   - article_read    → sales + admin + web_admin  (GET /comments)
 """
 import logging
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -158,8 +157,8 @@ def update_comment(
     body: UpdateRequest,
     _claims=Depends(require_role("manage_articles")),
 ):
-    """Edit the draft reply text and/or set status (ready | dismissed | drafted | pending)."""
-    valid_statuses = {"pending", "drafted", "ready", "dismissed"}
+    """Edit the draft reply text and/or set status (ready | dismissed | drafted | pending | posted)."""
+    valid_statuses = {"pending", "drafted", "ready", "dismissed", "posted"}
     if body.status is not None and body.status not in valid_statuses:
         raise HTTPException(
             status_code=422,
@@ -176,6 +175,53 @@ def update_comment(
         if body.status is not None:
             row.status = body.status
 
+        db.commit()
+        db.refresh(row)
+
+        video = db.query(Video).filter(Video.id == row.video_id).first()
+        title = video.title if video else row.video_id
+
+    return _row_to_dict(row, title)
+
+
+# ---------------------------------------------------------------------------
+# YouTube reply posting (OAuth, scope youtube.force-ssl)
+# ---------------------------------------------------------------------------
+
+@router.get("/reply-config")
+def reply_config(_claims=Depends(require_role("article_read"))):
+    """Report whether direct YouTube reply posting is configured (owner OAuth token present)."""
+    from adapters.youtube_comments import reply_oauth_configured
+    return {"oauth_configured": reply_oauth_configured()}
+
+
+@router.post("/{comment_id}/post")
+def post_reply_to_youtube(comment_id: int, _claims=Depends(require_role("manage_articles"))):
+    """Post the saved draft reply to YouTube (OAuth, scope youtube.force-ssl) and mark it posted.
+
+    503 if reply OAuth isn't configured (no owner refresh token) — the UI keeps draft/copy mode.
+    400 if there is no draft to post. 502 on a YouTube API failure.
+    """
+    from adapters.youtube_comments import post_reply
+
+    with SessionLocal() as db:
+        row = db.query(CommentDraft).filter(CommentDraft.id == comment_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        reply_text = (row.draft_reply or "").strip()
+        if not reply_text:
+            raise HTTPException(status_code=400, detail="no draft reply to post")
+
+        try:
+            post_reply(row.comment_id, reply_text)
+        except RuntimeError as exc:
+            # OAuth not configured — a deliberate, recoverable state.
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception as exc:
+            log.error("post_reply_to_youtube: YouTube post failed for %d: %s", comment_id, exc, exc_info=True)
+            raise HTTPException(status_code=502, detail="posting the reply to YouTube failed") from exc
+
+        row.status = "posted"
         db.commit()
         db.refresh(row)
 

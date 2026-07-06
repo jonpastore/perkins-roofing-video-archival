@@ -175,6 +175,8 @@ interface OpportunityCounts {
   reels: number;
   faqs: number;
   unused_videos: number;
+  pending_video_approvals?: number;
+  comment_drafts?: number;
 }
 
 // Shared console shell: branded sidebar + content area.
@@ -194,6 +196,15 @@ function Shell({ config }: { config: ShellConfig }) {
   const oppBadge = oppCounts
     ? oppCounts.article_topics + oppCounts.reels + oppCounts.faqs
     : undefined;
+  const approvalBadge = oppCounts?.pending_video_approvals;
+  const commentBadge = oppCounts?.comment_drafts;
+
+  function badgeFor(id: string): number | undefined {
+    if (id === "opportunities") return oppBadge;
+    if (id === "video-approval") return approvalBadge;
+    if (id === "comments") return commentBadge;
+    return undefined;
+  }
 
   function navigate(targetTab: string, params: NavParams = {}) {
     setNavParams(params);
@@ -243,7 +254,7 @@ function Shell({ config }: { config: ShellConfig }) {
               label={label}
               active={tab === id}
               onClick={() => handleTabClick(id)}
-              badge={id === "opportunities" ? oppBadge : undefined}
+              badge={badgeFor(id)}
             />
           ))}
           {adminTabs && adminTabs.length > 0 && (

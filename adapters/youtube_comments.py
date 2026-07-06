@@ -10,12 +10,11 @@ in the thread's embedded replies (requires part=snippet,replies).  When
 owner_channel_id is None the field is always False (conservative: do not
 suppress flagging for unknown owner).
 """
+import json
 import os
 import urllib.parse
 import urllib.request
-import json
 from datetime import datetime
-
 
 _API_BASE = "https://www.googleapis.com/youtube/v3/commentThreads"
 
@@ -104,3 +103,75 @@ def fetch_comments(
             break
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Posting replies — OAuth (scope youtube.force-ssl), as the channel owner.
+#
+# API keys are read-only; inserting a comment requires an OAuth access token for the
+# Perkins YouTube channel owner with scope https://www.googleapis.com/auth/youtube.force-ssl.
+# We store a long-lived REFRESH token (obtained once via consent; see
+# scripts/youtube_oauth_setup.py + docs/YOUTUBE_REPLY_OAUTH.md) and exchange it for a
+# short-lived access token per post. Reuses the existing OAUTH_CLIENT_ID/SECRET.
+# ---------------------------------------------------------------------------
+
+YOUTUBE_REPLY_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_COMMENTS_INSERT = "https://www.googleapis.com/youtube/v3/comments"
+
+
+def reply_oauth_configured() -> bool:
+    """True when the owner refresh token + OAuth client creds are all present."""
+    return bool(
+        os.environ.get("YOUTUBE_OAUTH_REFRESH_TOKEN")
+        and os.environ.get("OAUTH_CLIENT_ID")
+        and os.environ.get("OAUTH_CLIENT_SECRET")
+    )
+
+
+def _owner_access_token() -> str:
+    """Exchange the stored owner refresh token for a fresh access token."""
+    refresh = os.environ.get("YOUTUBE_OAUTH_REFRESH_TOKEN", "")
+    client_id = os.environ.get("OAUTH_CLIENT_ID", "")
+    client_secret = os.environ.get("OAUTH_CLIENT_SECRET", "")
+    if not (refresh and client_id and client_secret):
+        raise RuntimeError(
+            "YouTube reply OAuth not configured — set YOUTUBE_OAUTH_REFRESH_TOKEN "
+            "(scope youtube.force-ssl) plus OAUTH_CLIENT_ID/OAUTH_CLIENT_SECRET"
+        )
+    data = urllib.parse.urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh,
+        "grant_type": "refresh_token",
+    }).encode()
+    req = urllib.request.Request(_TOKEN_URL, data=data, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 — fixed Google token URL
+        tok = json.loads(resp.read().decode())
+    access = tok.get("access_token")
+    if not access:
+        raise RuntimeError("YouTube OAuth token exchange returned no access_token")
+    return access
+
+
+def post_reply(parent_comment_id: str, text: str) -> dict:
+    """Post *text* as a reply to the top-level comment *parent_comment_id* on YouTube.
+
+    Uses an OAuth access token for the channel owner (scope youtube.force-ssl). The
+    CommentDraft.comment_id (a commentThread id) equals the top-level comment id, which is
+    the required parentId. Returns the created comment resource.
+
+    Raises RuntimeError('YouTube reply OAuth not configured…') when no refresh token is set,
+    so callers can surface a clear "connect YouTube" message instead of a 500.
+    """
+    access = _owner_access_token()
+    body = json.dumps({
+        "snippet": {"parentId": parent_comment_id, "textOriginal": text},
+    }).encode()
+    url = _COMMENTS_INSERT + "?" + urllib.parse.urlencode({"part": "snippet"})
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Authorization": f"Bearer {access}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 — fixed Google API URL
+        return json.loads(resp.read().decode())

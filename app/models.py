@@ -3,8 +3,22 @@
 versioned-artifact model the council required: every derived row carries a version, and
 IngestionRun tracks per-stage status + content_hash for idempotent/resumable ingestion."""
 from datetime import datetime
-from sqlalchemy import Boolean, create_engine, Column, Integer, String, Float, Text, JSON, DateTime, Index, UniqueConstraint
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+)
 from sqlalchemy.orm import declarative_base, sessionmaker
+
 from .config import settings
 
 Base = declarative_base()
@@ -93,6 +107,7 @@ class Article(Base):
     wp_post_id = Column(Integer)
     status = Column(String)           # draft | scheduled | published
     publish_at = Column(DateTime)
+    focus_keyword = Column(String)    # Rank Math SEO focus keyword
 
 class ScheduledContent(Base):
     __tablename__ = "scheduled_content"

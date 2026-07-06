@@ -76,6 +76,7 @@ def _article_full(a: Article) -> dict:
         "slug": a.slug,
         "title": a.title,
         "meta": a.meta,
+        "focus_keyword": a.focus_keyword,
         "content_md": a.content_md,
         "faq_json": a.faq_json,
         "jsonld_json": a.jsonld_json,
@@ -98,6 +99,7 @@ class ArticleCreate(BaseModel):
     slug: Optional[str] = None
     content_md: Optional[str] = None
     meta: Optional[str] = None
+    focus_keyword: Optional[str] = None
     role: Optional[str] = "standalone"
     pillar_slug: Optional[str] = None
     status: Optional[str] = "draft"
@@ -108,6 +110,7 @@ class ArticleUpdate(BaseModel):
     title: Optional[str] = None
     content_md: Optional[str] = None
     meta: Optional[str] = None
+    focus_keyword: Optional[str] = None
     role: Optional[str] = None
     pillar_slug: Optional[str] = None
     status: Optional[str] = None
@@ -145,6 +148,7 @@ def create_article(body: ArticleCreate, claims=Depends(require_role("manage_arti
             slug=slug,
             title=body.title,
             meta=body.meta,
+            focus_keyword=body.focus_keyword,
             content_md=sanitize_html(body.content_md) if body.content_md else body.content_md,
             faq_json=None,
             jsonld_json=None,
@@ -174,6 +178,8 @@ def update_article(slug: str, body: ArticleUpdate,
             a.content_md = sanitize_html(body.content_md)
         if body.meta is not None:
             a.meta = body.meta
+        if body.focus_keyword is not None:
+            a.focus_keyword = body.focus_keyword
         if body.role is not None:
             a.role = body.role
         if body.pillar_slug is not None:
@@ -229,8 +235,8 @@ def reprocess_article(slug: str, claims=Depends(require_role("manage_articles"))
             )
             if wp_creds_present:
                 try:
-                    from jobs.article_job import _markdown_to_html  # noqa: PLC0415
                     from adapters.wordpress import update  # noqa: PLC0415
+                    from jobs.article_job import _markdown_to_html  # noqa: PLC0415
                     update(
                         post_id=a.wp_post_id,
                         title=a.title or "",
@@ -280,8 +286,8 @@ def publish_article(slug: str, claims=Depends(require_role("manage_articles"))):
         wp_error: str | None = None
         if wp_creds_present and a.content_md:
             try:
-                from jobs.article_job import _markdown_to_html  # noqa: PLC0415
                 from adapters.wordpress import publish, update  # noqa: PLC0415
+                from jobs.article_job import _markdown_to_html  # noqa: PLC0415
 
                 html = _markdown_to_html(a.content_md)
                 meta_desc = a.meta or ""

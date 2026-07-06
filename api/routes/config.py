@@ -18,7 +18,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import socket
-from datetime import datetime, timezone, UTC
+from datetime import UTC, datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -130,6 +130,8 @@ EDITABLE_KEYS: dict[str, str] = {
     "REEL_TITLE_IMG": "Reel title scene image GCS path (gs://… or empty to use generated card)",
     "REEL_CLOSING_IMG": "Reel closing scene image GCS path (gs://… or empty to use generated card)",
     "REEL_APPLY_BRAND_SCENES": "Apply uploaded brand scenes to every render (true | false)",
+    "BRAND_INTRO_VIDEO": "Brand intro video GCS path (gs://… or empty to use generated title card)",
+    "BRAND_OUTRO_VIDEO": "Brand outro video GCS path (gs://… or empty to use generated closing card)",
 }
 
 # ---------------------------------------------------------------------------
@@ -484,8 +486,8 @@ def _check_db() -> tuple[bool, str]:
 
 def _check_wordpress(wp_url: str) -> tuple[bool, str]:
     """Probe WP REST API — unauthenticated /wp-json/ endpoint."""
+    import urllib.error  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
-    import urllib.error   # noqa: PLC0415
     if not wp_url:
         return False, "WP_URL not configured"
     try:
@@ -505,9 +507,9 @@ def _check_resend(api_key: str) -> tuple[bool, str]:
     Send-only (restricted) keys return 401 with name='restricted_api_key' — the key is
     valid and working, it just cannot list domains.  Any other 401 means a bad key.
     """
-    import json as _json     # noqa: PLC0415
-    import urllib.request    # noqa: PLC0415
-    import urllib.error      # noqa: PLC0415
+    import json as _json  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
     if not api_key:
         return False, "RESEND_API_KEY not configured"
     try:
@@ -534,8 +536,8 @@ def _check_resend(api_key: str) -> tuple[bool, str]:
 
 def _check_youtube(api_key: str) -> tuple[bool, str]:
     """Probe YouTube Data API v3 with a cheap quota-light call."""
+    import urllib.parse  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
-    import urllib.parse    # noqa: PLC0415
     if not api_key:
         return False, "YOUTUBE_API_KEY not configured"
     try:
@@ -552,8 +554,8 @@ def _check_youtube(api_key: str) -> tuple[bool, str]:
 
 def _check_serper(api_key: str) -> tuple[bool, str]:
     """Probe Serper by sending a minimal search request."""
+    import json as _json  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
-    import json as _json   # noqa: PLC0415
     if not api_key:
         return False, "SERPER_API_KEY not configured"
     try:

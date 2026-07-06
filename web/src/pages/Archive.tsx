@@ -330,6 +330,49 @@ export function Archive() {
   const [kpiState, setKpiState] = useState<ActionState>("idle");
   const [kpiResult, setKpiResult] = useState<{ polled: number } | null>(null);
 
+  // Inline video rename + name-suggestion state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [nameBusy, setNameBusy] = useState<"save" | "yt" | "suggest" | null>(null);
+  const [nameMsg, setNameMsg] = useState<string | null>(null);
+
+  function startRename(v: ArchiveVideo) {
+    setEditingId(v.id);
+    setEditTitle(v.title ?? "");
+    setNameMsg(null);
+  }
+  function cancelRename() {
+    setEditingId(null);
+    setEditTitle("");
+    setNameMsg(null);
+  }
+  async function saveRename(v: ArchiveVideo) {
+    const t = editTitle.trim();
+    if (!t) { setNameMsg("Title can't be empty."); return; }
+    setNameBusy("save");
+    setNameMsg(null);
+    try {
+      const r = await apiFetch(`/archive/${v.id}/rename`, { method: "POST", body: JSON.stringify({ title: t }) });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      const upd = await r.json();
+      setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, title: upd.title } : x)));
+      cancelRename();
+    } catch (e) { setNameMsg(e instanceof Error ? e.message : String(e)); }
+    finally { setNameBusy(null); }
+  }
+  async function fetchNameFrom(v: ArchiveVideo, kind: "yt" | "suggest") {
+    setNameBusy(kind);
+    setNameMsg(null);
+    try {
+      const path = kind === "yt" ? `/archive/${v.id}/youtube-name` : `/archive/${v.id}/suggest-name`;
+      const r = await apiFetch(path, { method: kind === "yt" ? "GET" : "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      const d = await r.json();
+      setEditTitle(kind === "yt" ? (d.youtube_title ?? "") : (d.suggested_title ?? ""));
+    } catch (e) { setNameMsg(e instanceof Error ? e.message : String(e)); }
+    finally { setNameBusy(null); }
+  }
+
   // Debounce timer for text/number/date inputs
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -696,21 +739,60 @@ export function Archive() {
                       >
                         ▶
                       </a>
-                      <span
-                        onClick={() => toggleExpand(v.id)}
-                        style={{
-                          fontWeight: 500,
-                          color: "#1a1a2e",
-                          cursor: "pointer",
-                          textDecoration: expandedId === v.id ? "underline" : "none",
-                          textUnderlineOffset: 2,
-                          whiteSpace: "normal",
-                          overflowWrap: "anywhere",
-                        }}
-                        title="Click to expand topics and usage"
-                      >
-                        {v.title}
-                      </span>
+                      {editingId === v.id ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 }}>
+                          <input
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            autoFocus
+                            style={{ ...inputStyle, fontSize: 13, padding: "6px 8px", width: "100%", boxSizing: "border-box" }}
+                          />
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <button onClick={() => saveRename(v)} disabled={nameBusy !== null}
+                              style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 5, border: "none", cursor: "pointer", background: BRAND.navy, color: "#fff" }}>
+                              {nameBusy === "save" ? "Saving…" : "Save"}
+                            </button>
+                            <button onClick={cancelRename} disabled={nameBusy !== null}
+                              style={{ fontSize: 11, padding: "3px 10px", borderRadius: 5, border: `1px solid ${BRAND.border}`, cursor: "pointer", background: "#fff", color: "#666" }}>
+                              Cancel
+                            </button>
+                            <button onClick={() => fetchNameFrom(v, "yt")} disabled={nameBusy !== null} title="Fetch the current title from YouTube"
+                              style={{ fontSize: 11, padding: "3px 10px", borderRadius: 5, border: `1px solid ${BRAND.border}`, cursor: "pointer", background: "#fff", color: BRAND.navy }}>
+                              {nameBusy === "yt" ? "…" : "From YouTube"}
+                            </button>
+                            <button onClick={() => fetchNameFrom(v, "suggest")} disabled={nameBusy !== null} title="Suggest a title from the transcript"
+                              style={{ fontSize: 11, padding: "3px 10px", borderRadius: 5, border: `1px solid ${BRAND.border}`, cursor: "pointer", background: "#fff", color: BRAND.navy }}>
+                              {nameBusy === "suggest" ? "…" : "Suggest from transcript"}
+                            </button>
+                          </div>
+                          {nameMsg && <span style={{ fontSize: 11, color: BRAND.red }}>{nameMsg}</span>}
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, minWidth: 0 }}>
+                          <span
+                            style={{
+                              fontWeight: 500,
+                              color: "#1a1a2e",
+                              whiteSpace: "normal",
+                              overflowWrap: "anywhere",
+                            }}
+                          >
+                            <span onClick={() => toggleExpand(v.id)} style={{ cursor: "pointer", textDecoration: expandedId === v.id ? "underline" : "none", textUnderlineOffset: 2 }} title="Click to expand topics and usage">
+                              {v.title}
+                            </span>
+                            <button onClick={(e) => { e.stopPropagation(); startRename(v); }} title="Rename this video"
+                              style={{ background: "none", border: "none", cursor: "pointer", marginLeft: 6, color: BRAND.sub, fontSize: 12, padding: 0 }}>
+                              ✏
+                            </button>
+                          </span>
+                          {v.clips_generated && (
+                            <button onClick={() => navigate("video-approval", { series: v.id })} title="Review the generated reel for approval"
+                              style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, cursor: "pointer", color: BRAND.red, fontSize: 11, fontWeight: 600 }}>
+                              🎬 Review reel →
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </td>
 
