@@ -68,13 +68,19 @@ def _closing_text() -> str:
     return _CLOSING_TEXT_DEFAULT
 
 
-def _brand_scene_config() -> tuple[str | None, str | None]:
+def _brand_scene_config(scratch: str) -> tuple[str | None, str | None]:
     """Return (title_img_path, closing_img_path) from platform_config when REEL_APPLY_BRAND_SCENES=true.
 
     Reads REEL_APPLY_BRAND_SCENES, REEL_TITLE_IMG, and REEL_CLOSING_IMG.
     Returns (None, None) when the flag is off or config is unavailable.
-    When an img key holds a gs:// URI, downloads it to a temp file and returns
-    the local path so render_part can pass it to make_card/fuse directly.
+    When an img key holds a gs:// URI, downloads it into *scratch* (the render
+    TemporaryDirectory) and returns the local path so the existing cleanup
+    reclaims it — no temp-file leak.
+
+    Security: only gs://<reels_bucket>/brand/... URIs are accepted.
+    Any other bucket, key prefix, or non-gs:// value is logged and ignored.
+    Local paths are only permitted when ALLOW_LOCAL_BRAND_PATHS=1 (dev flag,
+    default off) AND the path is under _BRAND_LOCAL_DIR.
     """
     try:
         from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
@@ -91,20 +97,58 @@ def _brand_scene_config() -> tuple[str | None, str | None]:
         logger.warning("_brand_scene_config: could not read platform_config: %s", exc)
         return None, None
 
+    allowed_bucket = _reels_bucket()
+    _BRAND_KEY_PREFIX = "brand/"
+    _ALLOW_LOCAL = os.getenv("ALLOW_LOCAL_BRAND_PATHS", "0").strip() == "1"
+    # Designated local brand dir — only used when the dev flag is on.
+    _BRAND_LOCAL_DIR = os.path.realpath(
+        os.getenv("BRAND_LOCAL_DIR", "/var/run/brand_scenes")
+    )
+
     def _resolve(gs_uri: str) -> str | None:
         if not gs_uri:
             return None
         if not gs_uri.startswith("gs://"):
-            # Plain local path (dev/test convenience) — use as-is if it exists.
-            return gs_uri if os.path.exists(gs_uri) else None
+            # Non-gs:// path: only allow when dev flag is on AND path is under designated dir.
+            if not _ALLOW_LOCAL:
+                logger.warning(
+                    "_brand_scene_config: rejecting non-gs:// path (ALLOW_LOCAL_BRAND_PATHS not set): %r",
+                    gs_uri,
+                )
+                return None
+            resolved = os.path.realpath(gs_uri)
+            if not resolved.startswith(_BRAND_LOCAL_DIR + os.sep) and resolved != _BRAND_LOCAL_DIR:
+                logger.warning(
+                    "_brand_scene_config: rejecting local path outside brand dir %r: %r",
+                    _BRAND_LOCAL_DIR,
+                    gs_uri,
+                )
+                return None
+            return resolved if os.path.exists(resolved) else None
         try:
             without_scheme = gs_uri[len("gs://"):]
             slash = without_scheme.index("/")
             bucket = without_scheme[:slash]
             key = without_scheme[slash + 1:]
+            # Security: reject any bucket other than the project reels bucket.
+            if bucket != allowed_bucket:
+                logger.warning(
+                    "_brand_scene_config: rejecting gs:// URI with foreign bucket %r (allowed: %r): %r",
+                    bucket,
+                    allowed_bucket,
+                    gs_uri,
+                )
+                return None
+            # Security: reject any key that doesn't live under brand/.
+            if not key.startswith(_BRAND_KEY_PREFIX):
+                logger.warning(
+                    "_brand_scene_config: rejecting gs:// URI with key outside brand/ prefix: %r",
+                    gs_uri,
+                )
+                return None
             ext = os.path.splitext(key)[-1] or ".png"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                local_path = tmp.name
+            # Download into the render scratch dir so TemporaryDirectory cleanup reclaims it.
+            local_path = os.path.join(scratch, f"brand_{os.path.basename(key)}{'' if ext else '.png'}")
             from adapters.storage import open_read_stream  # noqa: PLC0415
             with open_read_stream(bucket, key) as stream:
                 with open(local_path, "wb") as fh:
@@ -362,7 +406,7 @@ def render_part(
 
         # Apply uploaded brand scenes when the caller did not explicitly supply images.
         if title_img is None or closing_img is None:
-            brand_title, brand_closing = _brand_scene_config()
+            brand_title, brand_closing = _brand_scene_config(scratch)
             if title_img is None:
                 title_img = brand_title
             if closing_img is None:

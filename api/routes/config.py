@@ -503,8 +503,29 @@ def _check_serper(api_key: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _check_gcs(project: str) -> tuple[bool, str]:
+    """Cheaply verify access to the reels GCS bucket using application credentials.
+
+    Uses bucket.exists() — a single HEAD-equivalent metadata call that costs nothing
+    and confirms both ADC credentials and bucket-level IAM.
+    """
+    if not project:
+        return False, "GOOGLE_CLOUD_PROJECT not configured"
+    try:
+        from google.cloud import storage as gcs_storage  # noqa: PLC0415
+        bucket_name = f"{project}-reels"
+        client = gcs_storage.Client(project=project)
+        bucket = client.bucket(bucket_name)
+        exists = bucket.exists()
+        if exists:
+            return True, f"bucket {bucket_name} accessible"
+        return False, f"bucket {bucket_name} not found or no access"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _check_oauth(client_id: str) -> tuple[bool, str]:
-    """Confirm Google OAuth client ID is configured (cheap — no network call needed).
+    """Confirm Google OAuth client ID is configured (config format check — not a live probe).
 
     A missing or obviously-placeholder client ID means Sign-In will fail at runtime.
     The value format is <numeric-id>.apps.googleusercontent.com.
@@ -513,15 +534,15 @@ def _check_oauth(client_id: str) -> tuple[bool, str]:
         return False, "OAUTH_CLIENT_ID not configured"
     if not client_id.endswith(".apps.googleusercontent.com"):
         return False, "OAUTH_CLIENT_ID does not look like a valid Google client ID"
-    return True, f"client_id configured ({client_id[:20]}…)"
+    return True, f"config format valid (not a live probe); client_id prefix: {client_id[:20]}…"
 
 
 @router.get("/health-checks")
 def health_checks(claims=Depends(require_role("manage_config"))):
     """Run cheap live connectivity probes. Returns [{name, ok, detail}] per integration.
 
-    Checks: Vertex/GCP ADC, DB, WordPress REST, Resend API, YouTube API, Serper API,
-    Google OAuth client ID.
+    Checks: Vertex/GCP ADC, Google Cloud Storage (reels bucket), DB, WordPress REST,
+    Resend API, YouTube API, Serper API, Google OAuth client ID.
     All checks run even if earlier ones fail — results are always a full list.
     """
     project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
@@ -533,6 +554,7 @@ def health_checks(claims=Depends(require_role("manage_config"))):
 
     checks = [
         ("Vertex / GCP", *_check_vertex(project)),
+        ("Google Cloud Storage", *_check_gcs(project)),
         ("Database", *_check_db()),
         ("WordPress REST", *_check_wordpress(wp_url)),
         ("Resend", *_check_resend(resend_key)),

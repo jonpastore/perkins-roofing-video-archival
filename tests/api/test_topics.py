@@ -555,6 +555,156 @@ def test_topics_generated_true_via_pillar_slug():
         db.commit()
 
 
+# ---------------------------------------------------------------------------
+# generated query param — filter and ordering
+# ---------------------------------------------------------------------------
+
+def test_topics_generated_filter_yes():
+    """generated=yes returns only topics that have a generated article."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.add(Article(
+            slug="flat-roofing",
+            title="Flat Roofing",
+            content_md="content",
+            role="pillar",
+            status="scheduled",
+            pillar_slug="flat-roofing",
+        ))
+        db.commit()
+    c = _admin_client()
+    r = c.get("/topics?generated=yes", headers=AUTH)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    items = body["items"]
+    assert body["total"] == len(items)
+    assert all(it["generated"] for it in items), "generated=yes must return only generated topics"
+    labels = {it["label"].lower() for it in items}
+    assert "flat roofing" in labels
+    assert "shingle repair" not in labels
+    # cleanup
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+
+
+def test_topics_generated_filter_no():
+    """generated=no returns only topics without a generated article."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.add(Article(
+            slug="flat-roofing",
+            title="Flat Roofing",
+            content_md="content",
+            role="pillar",
+            status="scheduled",
+            pillar_slug="flat-roofing",
+        ))
+        db.commit()
+    c = _admin_client()
+    r = c.get("/topics?generated=no", headers=AUTH)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    items = body["items"]
+    assert body["total"] == len(items)
+    assert all(not it["generated"] for it in items), "generated=no must return only non-generated topics"
+    labels = {it["label"].lower() for it in items}
+    assert "flat roofing" not in labels
+    assert "shingle repair" in labels
+    # cleanup
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+
+
+def test_topics_generated_filter_all_counts():
+    """generated=all returns all topics; total equals yes-count + no-count."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.add(Article(
+            slug="flat-roofing",
+            title="Flat Roofing",
+            content_md="content",
+            role="pillar",
+            status="scheduled",
+            pillar_slug="flat-roofing",
+        ))
+        db.commit()
+    c = _admin_client()
+    r_all = c.get("/topics?generated=all", headers=AUTH)
+    r_yes = c.get("/topics?generated=yes", headers=AUTH)
+    r_no = c.get("/topics?generated=no", headers=AUTH)
+    assert r_all.status_code == 200
+    assert r_yes.status_code == 200
+    assert r_no.status_code == 200
+    total_all = r_all.json()["total"]
+    total_yes = r_yes.json()["total"]
+    total_no = r_no.json()["total"]
+    assert total_all == total_yes + total_no, (
+        f"all({total_all}) != yes({total_yes}) + no({total_no})"
+    )
+    # cleanup
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+
+
+def test_topics_generated_last_ordering():
+    """generated=all (default): non-generated topics appear before generated ones."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.add(Article(
+            slug="flat-roofing",
+            title="Flat Roofing",
+            content_md="content",
+            role="pillar",
+            status="scheduled",
+            pillar_slug="flat-roofing",
+        ))
+        db.commit()
+    c = _admin_client()
+    r = c.get("/topics?generated=all", headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    # Find the index of the first generated and last non-generated item
+    gen_indices = [i for i, it in enumerate(items) if it["generated"]]
+    non_gen_indices = [i for i, it in enumerate(items) if not it["generated"]]
+    if gen_indices and non_gen_indices:
+        assert max(non_gen_indices) < min(gen_indices), (
+            "All non-generated topics must appear before all generated topics"
+        )
+    # cleanup
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+
+
+def test_topics_generated_filter_yes_empty_when_none():
+    """generated=yes returns empty list and total=0 when no articles exist."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+    c = _admin_client()
+    r = c.get("/topics?generated=yes", headers=AUTH)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 0
+    assert body["items"] == []
+
+
+def test_topics_generated_filter_no_all_when_none():
+    """generated=no returns all topics when no articles exist."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+    c = _admin_client()
+    r_no = c.get("/topics?generated=no", headers=AUTH)
+    r_all = c.get("/topics?generated=all", headers=AUTH)
+    assert r_no.status_code == 200
+    assert r_all.status_code == 200
+    assert r_no.json()["total"] == r_all.json()["total"]
+
+
 def test_topics_videos_unknown_label_returns_empty():
     """Unknown topic label returns an empty list, not a 404."""
     c = _admin_client()

@@ -1,6 +1,6 @@
 // Shared Perkins-branded UI primitives + design tokens. One source of truth for the
 // brand palette so every console page is consistent.
-import type { CSSProperties, ReactNode, ButtonHTMLAttributes } from "react";
+import type { CSSProperties, ReactNode, ButtonHTMLAttributes, HTMLAttributes } from "react";
 
 export const BRAND = {
   red: "#ef3c1a",
@@ -35,9 +35,10 @@ export function PageTitle({ children, right }: { children: ReactNode; right?: Re
   );
 }
 
-export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+export function Card({ children, style, ...rest }: { children: ReactNode; style?: CSSProperties } & HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      {...rest}
       style={{
         background: "#fff",
         border: `1px solid ${BRAND.border}`,

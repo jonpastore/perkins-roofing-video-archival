@@ -408,7 +408,7 @@ export function Scheduling() {
                         onClick={() =>
                           item.kind === "article"
                             ? navigate("articles", { open: item.ref_id, cluster: item.ref_id })
-                            : navigate("video-approval")
+                            : navigate("video-approval", { series: item.ref_id })
                         }
                         style={{
                           background: "none",

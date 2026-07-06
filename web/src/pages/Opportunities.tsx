@@ -524,10 +524,11 @@ export function Opportunities() {
   const [unusedLoading, setUnusedLoading] = useState(true);
   const [unusedError, setUnusedError] = useState<string | null>(null);
 
-  const fetchTopics = useCallback((sort: "length" | "videos" | "alpha", offset: number) => {
+  const fetchTopics = useCallback((sort: "length" | "videos" | "alpha", filter: TopicFilter, offset: number) => {
     setTopicLoading(true);
     setTopicError(null);
-    apiFetch(`/topics?sort=${sort}&limit=${TOPIC_PAGE_SIZE}&offset=${offset}`)
+    const generatedParam = filter === "not_generated" ? "no" : filter === "generated" ? "yes" : "all";
+    apiFetch(`/topics?sort=${sort}&limit=${TOPIC_PAGE_SIZE}&offset=${offset}&generated=${generatedParam}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
@@ -541,8 +542,8 @@ export function Opportunities() {
   }, []);
 
   useEffect(() => {
-    fetchTopics(topicSort, topicOffset);
-  }, [fetchTopics, topicSort, topicOffset]);
+    fetchTopics(topicSort, topicFilter, topicOffset);
+  }, [fetchTopics, topicSort, topicFilter, topicOffset]);
 
   function handleTopicSortChange(s: "length" | "videos" | "alpha") {
     setTopicSort(s);
@@ -606,7 +607,7 @@ export function Opportunities() {
   useEffect(() => { fetchUnused(unusedPage); }, [fetchUnused, unusedPage]);
 
   function refreshAll() {
-    fetchTopics(topicSort, topicOffset);
+    fetchTopics(topicSort, topicFilter, topicOffset);
     fetchReels();
     fetchFaqs(faqPage);
     fetchUnused(unusedPage);
@@ -669,18 +670,8 @@ export function Opportunities() {
     }
   }
 
-  // Apply client-side filter + sort-generated-to-back on the current page of topics.
-  // The server returns sort order; we only need to re-sort within the page to push generated items back.
-  const filteredTopicItems: TopicItem[] = (() => {
-    let items = topicItems;
-    if (topicFilter === "not_generated") items = items.filter((t) => !t.generated);
-    else if (topicFilter === "generated") items = items.filter((t) => t.generated);
-    // For "all": push generated items to the back of this page
-    if (topicFilter === "all") {
-      items = [...items.filter((t) => !t.generated), ...items.filter((t) => t.generated)];
-    }
-    return items;
-  })();
+  // Server handles filter + generated-to-back ordering across all pages.
+  const filteredTopicItems: TopicItem[] = topicItems;
 
   const faqTotalPages = Math.max(1, Math.ceil(faqsTotal / BUCKET_PAGE_SIZE));
   const unusedTotalPages = Math.max(1, Math.ceil(unusedTotal / BUCKET_PAGE_SIZE));
@@ -757,7 +748,7 @@ export function Opportunities() {
       {topicLoading && <Loading label="Loading topics…" />}
       {topicError && <ErrorMsg>Could not load topics: {topicError}</ErrorMsg>}
       {!topicLoading && !topicError && filteredTopicItems.length === 0 && (
-        <EmptyState label={topicFilter === "generated" ? "No generated topics on this page" : topicFilter === "not_generated" ? "All topics on this page have been generated" : "All topics covered"} />
+        <EmptyState label={topicFilter === "generated" ? "No generated topics" : topicFilter === "not_generated" ? "All topics have been generated" : "All topics covered"} />
       )}
       {!topicLoading && !topicError && filteredTopicItems.length > 0 && (
         <>

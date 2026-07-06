@@ -119,9 +119,12 @@ export function Comments() {
         throw new Error(err.detail || r.statusText);
       }
       const d = await r.json();
+      const errorSuffix = d.errors > 0
+        ? ` Warning: ${d.errors} comment(s) failed to draft (LLM or fetch error).`
+        : "";
       setCrawlMsg(
         `Crawled ${d.videos_processed} videos — ${d.comments_upserted} new comments, ` +
-        `${d.flagged} flagged, ${d.drafted} drafted. Errors: ${d.errors}.`
+        `${d.flagged} flagged, ${d.drafted} drafted.${errorSuffix}`
       );
       setOffset(0);
       loadItems(statusFilter, needsReplyOnly, 0);
@@ -219,7 +222,10 @@ export function Comments() {
           </Button>
         </div>
         {crawlMsg && (
-          <p style={{ margin: "10px 0 0", fontSize: 13, color: BRAND.sub }}>{crawlMsg}</p>
+          <p style={{
+            margin: "10px 0 0", fontSize: 13,
+            color: crawlMsg.startsWith("Warning:") || crawlMsg.includes("Warning:") ? "#b45309" : BRAND.sub,
+          }}>{crawlMsg}</p>
         )}
       </Card>
 

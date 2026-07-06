@@ -57,6 +57,7 @@ def list_topics(
     sort: str = "videos",
     limit: Optional[int] = None,
     offset: int = 0,
+    generated: str = "all",
     claims=Depends(require_role("article_read")),
 ):
     """Return distilled topic list — aggregated by semantic similarity when pre-computed.
@@ -66,14 +67,18 @@ def list_topics(
     grouping from content_graph when the table is empty (pre-priming safety net).
 
     Query params:
-      - sort:   "videos" (default) | "length" | "alpha"
-      - limit:  page size (omit for all)
-      - offset: skip first N results (default 0)
+      - sort:      "videos" (default) | "length" | "alpha"
+      - limit:     page size (omit for all)
+      - offset:    skip first N results (default 0)
+      - generated: "all" (default) | "yes" | "no"
+                   "yes"  → only topics that have a generated article/cluster
+                   "no"   → only topics with no generated article/cluster
+                   "all"  → all topics; generated ones are pushed to the back
 
     Response:
       {
         "total": int,
-        "items": [{label, count, num_videos, total_content_length, sample}]
+        "items": [{label, count, num_videos, total_content_length, sample, generated}]
       }
 
     The shape of each item is backwards-compatible with the previous flat list so
@@ -83,10 +88,10 @@ def list_topics(
         # ---- Try aggregated path first ----------------------------------
         agg_count = db.query(AggregatedTopic).count()
         if agg_count > 0:
-            return _list_topics_aggregated(db, sort=sort, limit=limit, offset=offset)
+            return _list_topics_aggregated(db, sort=sort, limit=limit, offset=offset, generated=generated)
 
         # ---- Fallback: live grouping from content_graph -----------------
-        return _list_topics_live(db, sort=sort, limit=limit, offset=offset)
+        return _list_topics_live(db, sort=sort, limit=limit, offset=offset, generated=generated)
 
 
 def _sort_key(sort: str):
@@ -95,6 +100,30 @@ def _sort_key(sort: str):
     if sort == "alpha":
         return lambda x: x["label"].lower()
     return lambda x: x["num_videos"]
+
+
+def _apply_generated_filter_and_order(
+    items: list, generated: str, sort: str
+) -> list:
+    """Apply the `generated` filter and ordering to a fully-built items list.
+
+    - "yes": keep only generated items
+    - "no":  keep only non-generated items
+    - "all": keep all; push generated to the back, with the chosen sort key
+             applied within each group (not-generated first, generated last)
+
+    Called BEFORE pagination so the result is correct across pages.
+    """
+    if generated == "yes":
+        return [it for it in items if it["generated"]]
+    if generated == "no":
+        return [it for it in items if not it["generated"]]
+    # "all": generated-last as primary key, then sort key within each group.
+    # Items have already been sorted by sort key (desc/asc); we stable-sort by
+    # the generated flag so non-generated items stay first.
+    not_gen = [it for it in items if not it["generated"]]
+    gen = [it for it in items if it["generated"]]
+    return not_gen + gen
 
 
 def _paginate(items: list, limit: Optional[int], offset: int) -> dict:
@@ -122,12 +151,13 @@ def _build_generated_set(db) -> set[str]:
     return generated
 
 
-def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) -> dict:
+def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int, generated: str = "all") -> dict:
     """Build response from aggregated_topics rows.
 
-    Sorts first, then resolves sample clips for ONLY the requested page — one batched
-    GraphNode query instead of one-per-topic (was an N+1 over ~2k rows, the main cause
-    of the slow Search-topics load).
+    Sorts first, applies generated filter + ordering, then resolves sample clips
+    for ONLY the requested page — one batched GraphNode query instead of
+    one-per-topic (was an N+1 over ~2k rows, the main cause of the slow
+    Search-topics load).
     """
     rows = db.query(AggregatedTopic).all()
     generated_slugs = _build_generated_set(db)
@@ -148,6 +178,10 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) ->
 
     reverse = sort != "alpha"
     items.sort(key=_sort_key(sort), reverse=reverse)
+
+    # Apply generated filter + push-generated-to-back ordering BEFORE pagination.
+    items = _apply_generated_filter_and_order(items, generated, sort)
+
     page = items[offset:] if limit is None else items[offset: offset + limit]
 
     # Batch-resolve sample clips for the current page only.
@@ -170,7 +204,7 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) ->
     return {"total": len(items), "items": page}
 
 
-def _list_topics_live(db, sort: str, limit: Optional[int], offset: int) -> dict:
+def _list_topics_live(db, sort: str, limit: Optional[int], offset: int, generated: str = "all") -> dict:
     """Live grouping from content_graph — exact-match fallback (pre-priming)."""
     rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
     generated_slugs = _build_generated_set(db)
@@ -208,6 +242,10 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int) -> dict:
 
     reverse = sort != "alpha"
     items.sort(key=_sort_key(sort), reverse=reverse)
+
+    # Apply generated filter + push-generated-to-back ordering BEFORE pagination.
+    items = _apply_generated_filter_and_order(items, generated, sort)
+
     return _paginate(items, limit, offset)
 
 

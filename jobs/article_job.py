@@ -909,6 +909,125 @@ def _regen_faq(keyword: str, content_md: str, *, llm) -> list[dict]:
         return []
 
 
+def _word_count_str(content: str) -> int:
+    """Word count on a string (mirrors core.seo._word_count without import cycle)."""
+    import re as _re  # noqa: PLC0415
+    text = _re.sub(r"<[^>]+>", " ", content or "")
+    text = _re.sub(r"[#*>`_~\[\]]", " ", text)
+    return len([w for w in text.split() if w])
+
+
+def _title_case_keyword(keyword: str) -> str:
+    """Return keyword in Title Case, e.g. 'roof repair miami' → 'Roof Repair Miami'."""
+    return " ".join(w.capitalize() for w in keyword.split())
+
+
+def _ensure_title(title: str, keyword: str) -> str:
+    """Guarantee the title:
+    - contains the keyword (case-insensitive), AND
+    - is between 30 and 65 characters.
+
+    Strategy (deterministic, no LLM):
+    1. If title already satisfies both conditions, return it unchanged.
+    2. If keyword is missing from title, prepend "<Keyword Title Case>: " and trim
+       at a word boundary to ≤65 chars.
+    3. If title is too short (<30 chars), append a short descriptor.
+    4. If title is too long (>65 chars), trim at the last word boundary ≤65 chars —
+       but only AFTER the keyword is present so we never cut the keyword out.
+    """
+    if not keyword:
+        # No keyword to enforce — just enforce length.
+        title = title.strip() or "Roofing Guide"
+        if len(title) < 30:
+            title = (title + " | Expert South Florida Roofing Tips")[:65].rstrip()
+        elif len(title) > 65:
+            title = title[:65].rstrip()
+        return title
+
+    kw_lower = keyword.strip().lower()
+    title = (title or "").strip()
+
+    # Step 1: ensure keyword present
+    if kw_lower not in title.lower():
+        kw_tc = _title_case_keyword(keyword)
+        # Synthesize "<Keyword TC>: <original>" or just keyword TC if original is empty
+        if title:
+            candidate = f"{kw_tc}: {title}"
+        else:
+            candidate = kw_tc
+        title = candidate
+
+    # Step 2: enforce 30–65 char band
+    if len(title) > 65:
+        # Trim at last space ≤65 so we don't split mid-word
+        trimmed = title[:65]
+        space_pos = trimmed.rfind(" ")
+        title = trimmed[:space_pos].rstrip() if space_pos > 0 else trimmed.rstrip()
+
+    if len(title) < 30:
+        # Pad with a short descriptor; trim back to 65 if we overshoot
+        title = (title + " | South Florida Roofing Guide")[:65].rstrip()
+
+    # Final sanity: still verify keyword present after trimming
+    if kw_lower not in title.lower():
+        # Keyword got trimmed away; use bare keyword TC (may be short) + pad
+        kw_tc = _title_case_keyword(keyword)
+        title = kw_tc if len(kw_tc) >= 30 else (kw_tc + " | South Florida Roofing Guide")[:65]
+
+    return title
+
+
+def _ensure_heading(content_md: str, keyword: str) -> str:
+    """Guarantee ≥1 <h2> exists in content.  If none found, prepend a generic one."""
+    import re as _re  # noqa: PLC0415
+    if _re.search(r"<h[23][\s/>]", content_md or "", _re.IGNORECASE):
+        return content_md
+    kw_tc = _title_case_keyword(keyword) if keyword else "Overview"
+    heading = f"<h2>{kw_tc}: What You Need to Know</h2>\n"
+    return heading + (content_md or "")
+
+
+def _ensure_answer_first(content_md: str, keyword: str, faq: list) -> str:
+    """Guarantee the first ~200 plain-text chars contain a complete declarative sentence.
+
+    If the plain-text head already has a sentence-ending period with ≥4 char words, leave
+    it unchanged.  Otherwise prepend a one-sentence answer-first <p> lede derived from the
+    topic or the first FAQ answer.
+    """
+    import re as _re  # noqa: PLC0415
+    TAG_RE = _re.compile(r"<[^>]+>")
+    ANSWER_FIRST_RE = _re.compile(r"\w{4,}.*?\.", _re.DOTALL)
+
+    def _plain_head(text: str) -> str:
+        t = TAG_RE.sub(" ", text or "")
+        t = _re.sub(r"[#*>`_~\[\]]", " ", t)
+        return _re.sub(r"\s+", " ", t).strip()[:200]
+
+    if ANSWER_FIRST_RE.search(_plain_head(content_md)):
+        return content_md
+
+    # Build a lede sentence: prefer first complete sentence from FAQ answer,
+    # fall back to generic if the FAQ answer contains no sentence-ending punctuation.
+    lede_text = ""
+    if faq and isinstance(faq[0], dict) and faq[0].get("a"):
+        raw_a = faq[0]["a"].strip()
+        # Only use the FAQ answer when it contains a complete sentence (ends with . ! ?)
+        m = _re.match(r"([^.!?]+[.!?])", raw_a)
+        if m:
+            lede_text = m.group(1).strip()
+
+    if not lede_text:
+        kw_tc = _title_case_keyword(keyword) if keyword else "roofing"
+        lede_text = (
+            f"{kw_tc} is an important consideration for South Florida homeowners. "
+            f"Understanding your options helps you make confident decisions about "
+            f"your roof."
+        )
+
+    lede = f"<p>{lede_text}</p>\n"
+    return lede + (content_md or "")
+
+
 def generate_scored_article(
     keyword: str,
     ctx: dict,
@@ -975,27 +1094,63 @@ def generate_scored_article(
         jsonld = _build_article_jsonld(fields, ctx)
         result = _score(fields, jsonld)
 
-    # Final deterministic guarantees for structural checks.
+    # ── Final deterministic guarantees ──────────────────────────────────────
+    # Applied AFTER the refine loop so the returned article provably passes every
+    # fixable check regardless of LLM behaviour.
+
+    # 1. Video link (video check)
     fields["content_md"] = sanitize_article_html(
         _ensure_video_link(fields.get("content_md", ""), keyword))
+
+    # 2. Meta description (meta_present + meta_len checks)
     fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
                                  fields.get("content_md", ""))
+
+    # 3. FAQ (faq + faq_count checks): ensure ≥4 pairs
     if not fields.get("faq_json"):
         fields["faq_json"] = _fallback_faq(keyword, fields.get("content_md", ""))
     elif len(fields["faq_json"]) < 4:
-        # Ensure ≥4 FAQ pairs for faq_count check: pad with fallback items
         extra = _fallback_faq(keyword, fields.get("content_md", ""))
         existing_qs = {f["q"].lower() for f in fields["faq_json"]}
         for item in extra:
             if item["q"].lower() not in existing_qs and len(fields["faq_json"]) < 4:
                 fields["faq_json"].append(item)
+
+    # 4. Title: keyword_in_title + title_len (30–65 chars)
+    fields["title"] = _ensure_title(fields.get("title", ""), keyword)
+
+    # 5. Headings: ensure ≥1 <h2> in content_md
+    fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
+
+    # 6. Answer-first lede: first ~200 plain-text chars must contain a sentence
+    fields["content_md"] = _ensure_answer_first(
+        fields.get("content_md", ""), keyword, fields.get("faq_json") or [])
+
+    # 7. Wordcount > 300: if still short after all fixes, attempt one more refine
+    if _word_count_str(fields.get("content_md", "")) <= 300:
+        logger.warning(
+            "generate_scored_article %r: body still ≤300 words before final score; "
+            "attempting emergency refine", keyword)
+        fields = refine_article_content(fields, keyword, llm=llm)
+        fields["content_md"] = sanitize_article_html(fields.get("content_md", ""))
+        fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
+        fields["content_md"] = _ensure_answer_first(
+            fields.get("content_md", ""), keyword, fields.get("faq_json") or [])
+        if _word_count_str(fields.get("content_md", "")) <= 300:
+            logger.error(
+                "generate_scored_article %r: body still ≤300 words after emergency refine; "
+                "wordcount check will fail — content may be incomplete", keyword)
+
     jsonld = _build_article_jsonld(fields, ctx)
     result = _score(fields, jsonld)
 
     fields["jsonld_json"] = jsonld
     fields["seo_score"] = result["score"]
-    logger.info("generate_scored_article %r → score %d/100 (%d iters)",
-                keyword, result["score"], it)
+    logger.info(
+        "generate_scored_article %r → score %d/100 (%d iters) failing=%s",
+        keyword, result["score"], it,
+        [c["key"] for c in result["checks"] if not c["pass"]],
+    )
     return fields
 
 

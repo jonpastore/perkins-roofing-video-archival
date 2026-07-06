@@ -248,7 +248,7 @@ export function Faq() {
       {/* Coverage summary bar */}
       <Card style={{ marginBottom: 20 }}>
         {coverageLoading ? (
-          <p style={{ margin: 0, fontSize: 14, color: BRAND.sub }}>Loading coverage…</p>
+          <Loading label="Loading coverage…" />
         ) : coverage ? (
           <>
             {/* Empty-state: no questions mined yet but content is available */}
@@ -308,7 +308,7 @@ export function Faq() {
                 <p style={{ margin: 0, fontSize: 12, color: BRAND.sub }}>
                   {mineEstimate
                     ? <>Mining {mineBatchSize} questions ~ <strong>{fmt$(mineEstimate.mine_cost_usd)}</strong> (estimate, {mineEstimate.model})</>
-                    : "Loading estimate…"}
+                    : <Loading label="Loading estimate…" />}
                   {coverage.uncovered_nodes > 500 && mineEstimate && (
                     <> · Mining all {coverage.uncovered_nodes.toLocaleString()} ~ <strong>{fmt$(mineEstimate.mine_cost_usd / mineBatchSize * coverage.uncovered_nodes)}</strong> (estimate)</>
                   )}
@@ -351,7 +351,7 @@ export function Faq() {
                   <p style={{ margin: 0, fontSize: 12, color: BRAND.sub }}>
                     {answerEstimate
                       ? <>Answering {answerBatchSize} questions ~ <strong>{fmt$(answerEstimate.answer_cost_usd)}</strong> (estimate, {answerEstimate.model})</>
-                      : "Loading estimate…"}
+                      : <Loading label="Loading estimate…" />}
                     {coverage.mined - coverage.answered > 100 && answerEstimate && (
                       <> · All {(coverage.mined - coverage.answered).toLocaleString()} backlog ~ <strong>{fmt$(answerEstimate.answer_cost_usd / answerBatchSize * (coverage.mined - coverage.answered))}</strong> (estimate)</>
                     )}

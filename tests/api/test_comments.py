@@ -235,42 +235,23 @@ class TestUpdateComment:
 # ---------------------------------------------------------------------------
 
 class TestCrawlEndpoint:
-    def test_crawl_runs_job(self, monkeypatch):
-        mock_result = {
-            "videos_processed": 2,
-            "comments_upserted": 5,
-            "flagged": 3,
-            "drafted": 3,
-            "errors": 0,
+    def _fake_run(self, limit, max_drafts=25, **kwargs):
+        return {
+            "videos_processed": 1, "comments_upserted": 2,
+            "flagged": 1, "drafted": 1, "errors": 0,
         }
-        monkeypatch.setattr("api.routes.comments.run", lambda limit: mock_result, raising=False)
-
-        # Patch the import inside the route function
-        import jobs.crawl_comments as crawl_mod
-        monkeypatch.setattr(crawl_mod, "run", lambda limit: mock_result)
-
-        import importlib
-        import api.routes.comments as comments_mod
-        monkeypatch.setattr(comments_mod, "_crawl_run", lambda limit: mock_result, raising=False)
-
-        c = _admin_client()
-        r = c.post("/comments/crawl", json={"limit": 5}, headers=AUTH)
-        # The route imports jobs.crawl_comments.run at call time, so patch it there
-        assert r.status_code in (200, 500)  # 500 if import fails in test env is acceptable
 
     def test_crawl_mocked_fully(self, monkeypatch):
         """Patch the job module directly so the route succeeds without DB/YouTube access."""
         import jobs.crawl_comments as jmod
-        monkeypatch.setattr(jmod, "run", lambda limit: {
-            "videos_processed": 1, "comments_upserted": 2,
-            "flagged": 1, "drafted": 1, "errors": 0,
-        })
+        monkeypatch.setattr(jmod, "run", self._fake_run)
 
         c = _admin_client()
         r = c.post("/comments/crawl", json={"limit": 3}, headers=AUTH)
         assert r.status_code == 200
         data = r.json()
         assert "videos_processed" in data
+        assert "errors" in data
 
     def test_sales_cannot_crawl(self):
         c = _sales_client()
@@ -281,13 +262,92 @@ class TestCrawlEndpoint:
         """Limit > 100 is capped at 100 server-side."""
         captured = {}
         import jobs.crawl_comments as jmod
-        def fake_run(limit):
+
+        def fake_run(limit, max_drafts=25):
             captured["limit"] = limit
+            captured["max_drafts"] = max_drafts
             return {"videos_processed": 0, "comments_upserted": 0,
                     "flagged": 0, "drafted": 0, "errors": 0}
+
         monkeypatch.setattr(jmod, "run", fake_run)
 
         c = _admin_client()
         r = c.post("/comments/crawl", json={"limit": 9999}, headers=AUTH)
         assert r.status_code == 200
         assert captured.get("limit", 9999) <= 100
+
+    def test_crawl_max_drafts_passed_through(self, monkeypatch):
+        """max_drafts from request body is forwarded to the job."""
+        captured = {}
+        import jobs.crawl_comments as jmod
+
+        def fake_run(limit, max_drafts=25):
+            captured["max_drafts"] = max_drafts
+            return {"videos_processed": 0, "comments_upserted": 0,
+                    "flagged": 0, "drafted": 0, "errors": 0}
+
+        monkeypatch.setattr(jmod, "run", fake_run)
+
+        c = _admin_client()
+        r = c.post("/comments/crawl", json={"limit": 5, "max_drafts": 10}, headers=AUTH)
+        assert r.status_code == 200
+        assert captured.get("max_drafts") == 10
+
+    def test_crawl_max_drafts_capped(self, monkeypatch):
+        """max_drafts > 200 is capped at 200 server-side."""
+        captured = {}
+        import jobs.crawl_comments as jmod
+
+        def fake_run(limit, max_drafts=25):
+            captured["max_drafts"] = max_drafts
+            return {"videos_processed": 0, "comments_upserted": 0,
+                    "flagged": 0, "drafted": 0, "errors": 0}
+
+        monkeypatch.setattr(jmod, "run", fake_run)
+
+        c = _admin_client()
+        r = c.post("/comments/crawl", json={"limit": 5, "max_drafts": 9999}, headers=AUTH)
+        assert r.status_code == 200
+        assert captured.get("max_drafts", 9999) <= 200
+
+    def test_crawl_errors_in_summary(self, monkeypatch):
+        """errors count in response reflects per-comment LLM failures, not just fetch failures."""
+        import jobs.crawl_comments as jmod
+
+        monkeypatch.setattr(jmod, "run", lambda limit, max_drafts=25: {
+            "videos_processed": 2,
+            "comments_upserted": 4,
+            "flagged": 3,
+            "drafted": 1,
+            "errors": 2,  # 2 LLM draft failures
+        })
+
+        c = _admin_client()
+        r = c.post("/comments/crawl", json={"limit": 5}, headers=AUTH)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["errors"] == 2
+        assert data["drafted"] == 1  # only 1 succeeded despite 3 flagged
+
+    def test_crawl_budget_stops_at_max_drafts(self, monkeypatch):
+        """Simulate job honouring max_drafts=1: drafted <= max_drafts."""
+        import jobs.crawl_comments as jmod
+
+        def budget_run(limit, max_drafts=25):
+            # Simulate: 10 flagged comments but budget stops at max_drafts
+            drafted = min(3, max_drafts)
+            return {
+                "videos_processed": limit,
+                "comments_upserted": 10,
+                "flagged": 3,
+                "drafted": drafted,
+                "errors": 0,
+            }
+
+        monkeypatch.setattr(jmod, "run", budget_run)
+
+        c = _admin_client()
+        r = c.post("/comments/crawl", json={"limit": 5, "max_drafts": 1}, headers=AUTH)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["drafted"] <= 1

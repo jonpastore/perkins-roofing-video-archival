@@ -291,6 +291,142 @@ def test_render_status_403_sales(approved_series):
 # Unit — render_job.run() honours RENDER_SERIES_ID env var
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# POST /clips/upload-brand-scene — size cap + magic-byte validation
+# ---------------------------------------------------------------------------
+
+def test_upload_brand_scene_rejects_oversized_file(monkeypatch):
+    """Files larger than 10 MiB must be rejected with 413."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "myproject")
+
+    client = _make_client("admin")
+    # 10 MiB + 1 byte of valid-looking PNG header followed by padding
+    oversized = b"\x89PNG\r\n\x1a\n" + b"\x00" * (10 * 1024 * 1024)
+    import io
+    resp = client.post(
+        "/clips/upload-brand-scene?scene=title",
+        files={"file": ("title.png", io.BytesIO(oversized), "image/png")},
+        headers=ADMIN_HDR,
+    )
+    assert resp.status_code == 413, resp.text
+
+
+def test_upload_brand_scene_rejects_non_image(monkeypatch):
+    """Files whose magic bytes are not PNG/JPEG/WEBP must be rejected with 422."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "myproject")
+
+    client = _make_client("admin")
+    import io
+    # An ELF binary header — definitely not an image.
+    elf_header = b"\x7fELF" + b"\x00" * 64
+    resp = client.post(
+        "/clips/upload-brand-scene?scene=title",
+        files={"file": ("evil.png", io.BytesIO(elf_header), "image/png")},
+        headers=ADMIN_HDR,
+    )
+    assert resp.status_code == 422, resp.text
+    assert "image" in resp.json()["detail"].lower()
+
+
+def test_upload_brand_scene_rejects_non_image_sent_as_html(monkeypatch):
+    """HTML file with image/png content-type must be rejected by magic-byte check."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "myproject")
+
+    client = _make_client("admin")
+    import io
+    html_data = b"<html><body>not an image</body></html>" + b"\x00" * 32
+    resp = client.post(
+        "/clips/upload-brand-scene?scene=closing",
+        files={"file": ("close.png", io.BytesIO(html_data), "image/png")},
+        headers=ADMIN_HDR,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_upload_brand_scene_accepts_valid_png(monkeypatch):
+    """Valid PNG upload stores in brand/ with sniffed content_type and persists gs:// path."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "myproject")
+
+    uploaded = {}
+
+    class _FakeBlob:
+        def upload_from_filename(self, path, content_type=None):
+            import os
+            uploaded["content_type"] = content_type
+            uploaded["data"] = open(path, "rb").read()
+
+    class _FakeBucket:
+        def blob(self, key):
+            uploaded["key"] = key
+            return _FakeBlob()
+
+    class _FakeClient:
+        def bucket(self, name):
+            uploaded["bucket"] = name
+            return _FakeBucket()
+
+    monkeypatch.setattr("google.cloud.storage.Client", lambda: _FakeClient())
+
+    client = _make_client("admin")
+    import io
+    # Minimal valid PNG: header + IHDR chunk stub
+    png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+    resp = client.post(
+        "/clips/upload-brand-scene?scene=title",
+        files={"file": ("title.png", io.BytesIO(png_data), "image/png")},
+        headers=ADMIN_HDR,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["key"] == "REEL_TITLE_IMG"
+    assert data["gcs_path"].startswith("gs://myproject-reels/brand/")
+    # Sniffed type must be used — not client header
+    assert uploaded["content_type"] == "image/png"
+    assert uploaded["key"] == "brand/title_scene.png"
+
+
+def test_upload_brand_scene_sniffs_jpeg_regardless_of_client_header(monkeypatch):
+    """A JPEG file sent with a wrong content-type header is sniffed correctly."""
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "myproject")
+
+    uploaded = {}
+
+    class _FakeBlob:
+        def upload_from_filename(self, path, content_type=None):
+            uploaded["content_type"] = content_type
+
+    class _FakeBucket:
+        def blob(self, key):
+            uploaded["key"] = key
+            return _FakeBlob()
+
+    class _FakeClient:
+        def bucket(self, name):
+            return _FakeBucket()
+
+    monkeypatch.setattr("google.cloud.storage.Client", lambda: _FakeClient())
+
+    client = _make_client("admin")
+    import io
+    # JPEG magic bytes — client sends wrong content-type
+    jpeg_data = b"\xff\xd8\xff\xe0" + b"\x00" * 32
+
+    resp = client.post(
+        "/clips/upload-brand-scene?scene=closing",
+        files={"file": ("close.jpg", io.BytesIO(jpeg_data), "application/octet-stream")},
+        headers=ADMIN_HDR,
+    )
+    assert resp.status_code == 200, resp.text
+    # Must use sniffed type, not client "application/octet-stream"
+    assert uploaded["content_type"] == "image/jpeg"
+    assert uploaded["key"] == "brand/closing_scene.jpg"
+
+
+# ---------------------------------------------------------------------------
+# Unit — render_job.run() honours RENDER_SERIES_ID env var
+# ---------------------------------------------------------------------------
+
 def test_render_job_honours_render_series_id(monkeypatch):
     """When RENDER_SERIES_ID is set, run() only processes that series."""
     # Build two approved series in the DB.

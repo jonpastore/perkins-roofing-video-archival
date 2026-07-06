@@ -250,7 +250,7 @@ export function Archive() {
       </div>
 
       {/* States */}
-      {loading && <p style={{ color: "#666", fontSize: 14 }}>Loading...</p>}
+      {loading && <Loading />}
       {error && <p style={{ color: "#e94560", fontSize: 14 }}>Error: {error}</p>}
 
       {/* Table */}

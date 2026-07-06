@@ -447,29 +447,31 @@ def test_get_config_includes_prod_domain(admin_client):
 def test_health_checks_admin_ok(admin_client):
     """Health checks endpoint returns 200 with a results list."""
     with patch("api.routes.config._check_vertex", return_value=(True, "ADC valid")), \
+         patch("api.routes.config._check_gcs", return_value=(True, "bucket accessible")), \
          patch("api.routes.config._check_db", return_value=(True, "ok")), \
          patch("api.routes.config._check_wordpress", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     body = r.json()
     assert "results" in body
     assert isinstance(body["results"], list)
-    assert len(body["results"]) == 7
+    assert len(body["results"]) == 8
 
 
 def test_health_checks_result_shape(admin_client):
     """Each result has name, ok, detail fields."""
     with patch("api.routes.config._check_vertex", return_value=(True, "ADC valid")), \
+         patch("api.routes.config._check_gcs", return_value=(True, "bucket accessible")), \
          patch("api.routes.config._check_db", return_value=(True, "ok")), \
          patch("api.routes.config._check_wordpress", return_value=(False, "WP_URL not configured")), \
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     for result in r.json()["results"]:
         assert "name" in result
@@ -481,16 +483,18 @@ def test_health_checks_result_shape(admin_client):
 def test_health_checks_partial_failure(admin_client):
     """A failing probe does not prevent other probes from running."""
     with patch("api.routes.config._check_vertex", return_value=(False, "no ADC")), \
+         patch("api.routes.config._check_gcs", return_value=(False, "bucket not found")), \
          patch("api.routes.config._check_db", return_value=(True, "ok")), \
          patch("api.routes.config._check_wordpress", return_value=(False, "timeout")), \
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(False, "403 Forbidden")), \
          patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     results = {item["name"]: item for item in r.json()["results"]}
     assert results["Vertex / GCP"]["ok"] is False
+    assert results["Google Cloud Storage"]["ok"] is False
     assert results["Database"]["ok"] is True
     assert results["YouTube API"]["ok"] is False
     assert results["Serper"]["ok"] is True
@@ -598,7 +602,7 @@ def test_check_oauth_valid():
     client_id = "123456789.apps.googleusercontent.com"
     ok, detail = _check_oauth(client_id)
     assert ok is True
-    assert "configured" in detail
+    assert "config format valid" in detail
 
 
 def test_check_oauth_malformed():
@@ -611,12 +615,90 @@ def test_check_oauth_malformed():
 def test_health_checks_includes_oauth(admin_client):
     """GET /config/health-checks result list includes a Google OAuth entry."""
     with patch("api.routes.config._check_vertex", return_value=(True, "ok")), \
+         patch("api.routes.config._check_gcs", return_value=(True, "bucket accessible")), \
          patch("api.routes.config._check_db", return_value=(True, "ok")), \
          patch("api.routes.config._check_wordpress", return_value=(True, "ok")), \
          patch("api.routes.config._check_resend", return_value=(True, "ok")), \
          patch("api.routes.config._check_youtube", return_value=(True, "ok")), \
          patch("api.routes.config._check_serper", return_value=(True, "ok")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     names = [item["name"] for item in r.json()["results"]]
     assert "Google OAuth" in names
+    assert "Google Cloud Storage" in names
+
+
+# ---------------------------------------------------------------------------
+# _check_gcs unit tests
+# ---------------------------------------------------------------------------
+
+def test_check_gcs_no_project():
+    from api.routes.config import _check_gcs
+    ok, detail = _check_gcs("")
+    assert ok is False
+    assert "not configured" in detail
+
+
+def test_check_gcs_success():
+    from unittest.mock import MagicMock, patch
+    from api.routes.config import _check_gcs
+
+    mock_bucket = MagicMock()
+    mock_bucket.exists.return_value = True
+    mock_client = MagicMock()
+    mock_client.bucket.return_value = mock_bucket
+
+    with patch("google.cloud.storage.Client", return_value=mock_client):
+        ok, detail = _check_gcs("my-project")
+    assert ok is True
+    assert "my-project-reels" in detail
+    assert "accessible" in detail
+
+
+def test_check_gcs_bucket_not_found():
+    from unittest.mock import MagicMock, patch
+    from api.routes.config import _check_gcs
+
+    mock_bucket = MagicMock()
+    mock_bucket.exists.return_value = False
+    mock_client = MagicMock()
+    mock_client.bucket.return_value = mock_bucket
+
+    with patch("google.cloud.storage.Client", return_value=mock_client):
+        ok, detail = _check_gcs("my-project")
+    assert ok is False
+    assert "my-project-reels" in detail
+    assert "not found" in detail
+
+
+def test_check_gcs_exception():
+    from unittest.mock import patch
+    from api.routes.config import _check_gcs
+
+    with patch("google.cloud.storage.Client", side_effect=Exception("credentials error")):
+        ok, detail = _check_gcs("my-project")
+    assert ok is False
+    assert "credentials error" in detail
+
+
+def test_health_checks_includes_gcs(admin_client):
+    """GET /config/health-checks result list includes a Google Cloud Storage entry."""
+    with patch("api.routes.config._check_vertex", return_value=(True, "ok")), \
+         patch("api.routes.config._check_gcs", return_value=(True, "bucket my-project-reels accessible")), \
+         patch("api.routes.config._check_db", return_value=(True, "ok")), \
+         patch("api.routes.config._check_wordpress", return_value=(True, "ok")), \
+         patch("api.routes.config._check_resend", return_value=(True, "ok")), \
+         patch("api.routes.config._check_youtube", return_value=(True, "ok")), \
+         patch("api.routes.config._check_serper", return_value=(True, "ok")), \
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
+        r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
+    names = [item["name"] for item in r.json()["results"]]
+    assert "Google Cloud Storage" in names
+
+
+def test_check_oauth_detail_is_format_check():
+    """_check_oauth detail must mention 'config format valid' (not a live probe)."""
+    from api.routes.config import _check_oauth
+    ok, detail = _check_oauth("123456789.apps.googleusercontent.com")
+    assert ok is True
+    assert "config format valid" in detail

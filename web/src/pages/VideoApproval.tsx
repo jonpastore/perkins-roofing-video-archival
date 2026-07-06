@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, hms } from "../ui";
+import { NavContext } from "../App";
 
 interface Part {
   title: string;
@@ -199,6 +200,9 @@ const hdrStyle = {
 };
 
 export function VideoApproval() {
+  const { params, navigate } = useContext(NavContext);
+  const targetSeries = params.series ?? null;
+
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -224,6 +228,15 @@ export function VideoApproval() {
     setProposals((prev) => prev.map((p) => (p.id === fresh.id ? fresh : p)));
   }
 
+  // When navigated here with a series param, show only the matching proposal (by
+  // video_id matching the ref_id passed from Scheduling). Fall back to full list
+  // if no match is found so the user is never stranded on an empty page.
+  const filtered = targetSeries
+    ? proposals.filter((p) => String(p.id) === targetSeries || p.video_id === targetSeries)
+    : proposals;
+  const displayProposals = filtered.length > 0 ? filtered : proposals;
+  const isFiltered = targetSeries !== null && filtered.length > 0 && filtered.length < proposals.length;
+
   return (
     <main style={{ maxWidth: 900 }}>
       <PageTitle>Video Approval</PageTitle>
@@ -231,7 +244,19 @@ export function VideoApproval() {
       {loading && <Loading label="Loading proposals…" />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
-      {!loading && !error && proposals.length === 0 && (
+      {isFiltered && (
+        <p style={{ fontSize: 13, color: BRAND.sub, marginBottom: 12 }}>
+          Showing proposal for series <strong>{targetSeries}</strong>.{" "}
+          <button
+            onClick={() => navigate("video-approval")}
+            style={{ background: "none", border: "none", color: BRAND.navy, cursor: "pointer", fontSize: 13, padding: 0, textDecoration: "underline" }}
+          >
+            Show all
+          </button>
+        </p>
+      )}
+
+      {!loading && !error && displayProposals.length === 0 && (
         <Card>
           <p style={{ margin: 0, color: BRAND.sub, fontSize: 14, textAlign: "center" }}>
             No proposals awaiting approval.
@@ -241,7 +266,7 @@ export function VideoApproval() {
 
       {!loading &&
         !error &&
-        proposals.map((p) => (
+        displayProposals.map((p) => (
           <ProposalCard
             key={p.id}
             proposal={p}

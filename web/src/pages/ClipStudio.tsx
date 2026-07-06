@@ -522,14 +522,18 @@ function ReelSettingsPanel() {
         <label style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600, whiteSpace: "nowrap" }}>
           Closing brand text
         </label>
-        <input
-          type="text"
-          value={loaded ? closingText : "Loading…"}
-          disabled={!loaded || saving}
-          onChange={(e) => setClosingText(e.target.value)}
-          placeholder="Perkins Roofing"
-          style={{ ...inputStyle, width: 240, fontSize: 13 }}
-        />
+        {!loaded ? (
+          <Spinner small />
+        ) : (
+          <input
+            type="text"
+            value={closingText}
+            disabled={saving}
+            onChange={(e) => setClosingText(e.target.value)}
+            placeholder="Perkins Roofing"
+            style={{ ...inputStyle, width: 240, fontSize: 13 }}
+          />
+        )}
       </div>
 
       {/* Brand scene uploads */}

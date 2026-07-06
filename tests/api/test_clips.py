@@ -470,3 +470,129 @@ def test_source_video_path_falls_back_to_ytdlp_on_gcs_error(tmp_path, monkeypatc
 
     assert yt_dlp_called == ["vid_gcs_fail"]
     assert result.endswith(".mp4")
+
+
+# ---------------------------------------------------------------------------
+# Unit — _brand_scene_config: bucket/key validation (SSRF/LFI guards)
+# ---------------------------------------------------------------------------
+
+def test_brand_scene_config_rejects_foreign_bucket(tmp_path, monkeypatch):
+    """_brand_scene_config must return None for a gs:// URI pointing at a foreign bucket."""
+    import io
+    from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+
+    # Seed platform_config to enable brand scenes with a foreign-bucket URI.
+    with SessionLocal() as db:
+        db.merge(PlatformConfig(key="REEL_APPLY_BRAND_SCENES", value="true"))
+        db.merge(PlatformConfig(key="REEL_TITLE_IMG", value="gs://evil-bucket/brand/title.png"))
+        db.merge(PlatformConfig(key="REEL_CLOSING_IMG", value=""))
+        db.commit()
+
+    # Monkeypatch _reels_bucket so it returns a known allowed bucket.
+    monkeypatch.setattr("jobs.render_job._GOOGLE_CLOUD_PROJECT", "myproject")
+
+    open_read_called = []
+
+    def _spy_stream(bucket, key):
+        open_read_called.append(bucket)
+        return io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+
+    monkeypatch.setattr("adapters.storage.open_read_stream", _spy_stream)
+
+    from jobs.render_job import _brand_scene_config  # noqa: PLC0415
+
+    title_path, closing_path = _brand_scene_config(str(tmp_path))
+
+    assert title_path is None, "Foreign bucket URI must be rejected"
+    assert closing_path is None
+    assert open_read_called == [], "open_read_stream must NOT be called for a foreign bucket"
+
+
+def test_brand_scene_config_rejects_key_outside_brand_prefix(tmp_path, monkeypatch):
+    """_brand_scene_config must return None for a gs:// key that doesn't start with brand/."""
+    import io
+    from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+
+    monkeypatch.setattr("jobs.render_job._GOOGLE_CLOUD_PROJECT", "myproject")
+    allowed_bucket = "myproject-reels"
+
+    with SessionLocal() as db:
+        db.merge(PlatformConfig(key="REEL_APPLY_BRAND_SCENES", value="true"))
+        # Key is in the right bucket but wrong prefix (path traversal attempt).
+        db.merge(PlatformConfig(key="REEL_TITLE_IMG",
+                                value=f"gs://{allowed_bucket}/../../etc/passwd"))
+        db.merge(PlatformConfig(key="REEL_CLOSING_IMG", value=""))
+        db.commit()
+
+    open_read_called = []
+
+    def _spy_stream(bucket, key):
+        open_read_called.append((bucket, key))
+        return io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+
+    monkeypatch.setattr("adapters.storage.open_read_stream", _spy_stream)
+
+    from jobs.render_job import _brand_scene_config  # noqa: PLC0415
+
+    title_path, closing_path = _brand_scene_config(str(tmp_path))
+
+    assert title_path is None, "Key outside brand/ prefix must be rejected"
+    assert open_read_called == [], "open_read_stream must NOT be called for keys outside brand/"
+
+
+def test_brand_scene_config_rejects_local_path_by_default(tmp_path, monkeypatch):
+    """_brand_scene_config must return None for a local path when ALLOW_LOCAL_BRAND_PATHS is off."""
+    from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+
+    # Create a real file so the old code would have returned it.
+    local_file = tmp_path / "title.png"
+    local_file.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
+
+    monkeypatch.setattr("jobs.render_job._GOOGLE_CLOUD_PROJECT", "myproject")
+    monkeypatch.delenv("ALLOW_LOCAL_BRAND_PATHS", raising=False)
+
+    with SessionLocal() as db:
+        db.merge(PlatformConfig(key="REEL_APPLY_BRAND_SCENES", value="true"))
+        db.merge(PlatformConfig(key="REEL_TITLE_IMG", value=str(local_file)))
+        db.merge(PlatformConfig(key="REEL_CLOSING_IMG", value=""))
+        db.commit()
+
+    from jobs.render_job import _brand_scene_config  # noqa: PLC0415
+
+    title_path, closing_path = _brand_scene_config(str(tmp_path))
+
+    assert title_path is None, "Arbitrary local path must be rejected when ALLOW_LOCAL_BRAND_PATHS is unset"
+
+
+def test_brand_scene_config_accepts_valid_brand_uri(tmp_path, monkeypatch):
+    """A valid gs://<reels_bucket>/brand/... URI downloads into scratch and returns the path."""
+    import io
+    from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+
+    monkeypatch.setattr("jobs.render_job._GOOGLE_CLOUD_PROJECT", "myproject")
+    allowed_bucket = "myproject-reels"
+
+    with SessionLocal() as db:
+        db.merge(PlatformConfig(key="REEL_APPLY_BRAND_SCENES", value="true"))
+        db.merge(PlatformConfig(key="REEL_TITLE_IMG",
+                                value=f"gs://{allowed_bucket}/brand/title_scene.png"))
+        db.merge(PlatformConfig(key="REEL_CLOSING_IMG", value=""))
+        db.commit()
+
+    fake_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+
+    def _fake_stream(bucket, key):
+        assert bucket == allowed_bucket
+        assert key == "brand/title_scene.png"
+        return io.BytesIO(fake_png)
+
+    monkeypatch.setattr("adapters.storage.open_read_stream", _fake_stream)
+
+    from jobs.render_job import _brand_scene_config  # noqa: PLC0415
+
+    title_path, closing_path = _brand_scene_config(str(tmp_path))
+
+    assert title_path is not None, "Valid brand URI should be accepted"
+    assert title_path.startswith(str(tmp_path)), "Downloaded file must live inside scratch"
+    assert open(title_path, "rb").read() == fake_png
+    assert closing_path is None

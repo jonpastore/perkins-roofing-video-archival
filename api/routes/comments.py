@@ -184,7 +184,8 @@ def update_comment(
 # ---------------------------------------------------------------------------
 
 class CrawlRequest(BaseModel):
-    limit: int = 20  # max number of videos to process
+    limit: int = 20      # max number of videos to process
+    max_drafts: int = 25  # max LLM drafts to generate per run
 
 
 @router.post("/crawl")
@@ -196,9 +197,10 @@ def crawl_comments(
     Returns a summary: {videos_processed, comments_upserted, flagged, drafted, errors}.
     """
     limit = max(1, min(body.limit, 100))
+    max_drafts = max(1, min(body.max_drafts, 200))
     try:
         from jobs.crawl_comments import run
-        return run(limit=limit)
+        return run(limit=limit, max_drafts=max_drafts)
     except Exception as exc:
         log.error("crawl_comments route: job failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

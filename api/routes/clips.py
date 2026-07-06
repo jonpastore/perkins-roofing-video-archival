@@ -103,6 +103,37 @@ def _reels_bucket() -> str:
     return f"{project}-reels"
 
 
+# Hard cap on brand-scene upload size (10 MiB).
+_BRAND_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+
+# Magic-byte signatures for accepted image formats.
+# Each entry: (content_type, prefix_bytes_to_match)
+_IMAGE_MAGIC: list[tuple[str, bytes]] = [
+    ("image/png",  b"\x89PNG\r\n"),
+    ("image/jpeg", b"\xff\xd8\xff"),
+    # WEBP: "RIFF" at 0, "WEBP" at 8
+    ("image/webp", b"RIFF"),
+]
+
+
+def _sniff_image_type(data: bytes) -> str | None:
+    """Return the sniffed MIME type for *data*, or None if not a recognised image."""
+    if data[:6] == b"\x89PNG\r\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+_MIME_TO_EXT = {
+    "image/png":  "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+}
+
+
 @router.post("/upload-brand-scene")
 def upload_brand_scene(
     scene: str,
@@ -117,21 +148,46 @@ def upload_brand_scene(
     and writes the resulting ``gs://`` path to the platform_config key
     ``REEL_TITLE_IMG`` or ``REEL_CLOSING_IMG`` respectively.
 
+    Security hardening:
+    - Reads in bounded chunks; rejects files exceeding 10 MiB.
+    - Sniffs magic bytes to verify the file is PNG/JPEG/WEBP; rejects anything
+      that doesn't match regardless of the client-supplied Content-Type.
+    - Sets the GCS content_type from the sniffed type, not the client header.
+
     Returns: {key, gcs_path}
     """
     if scene not in ("title", "closing"):
         raise HTTPException(status_code=422, detail="scene must be 'title' or 'closing'")
 
-    # Validate MIME type — only accept images
-    content_type = file.content_type or ""
-    if not content_type.startswith("image/"):
-        raise HTTPException(status_code=422, detail="file must be an image (PNG or JPG)")
+    # Read in bounded chunks — hard cap at _BRAND_UPLOAD_MAX_BYTES.
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            chunk = file.file.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > _BRAND_UPLOAD_MAX_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"file exceeds maximum allowed size of {_BRAND_UPLOAD_MAX_BYTES // (1024*1024)} MiB",
+                )
+            chunks.append(chunk)
+    finally:
+        file.file.close()
 
-    ext = "png" if "png" in content_type else "jpg"
+    data = b"".join(chunks)
+
+    # Sniff magic bytes — reject non-images regardless of client Content-Type.
+    sniffed_type = _sniff_image_type(data)
+    if sniffed_type is None:
+        raise HTTPException(status_code=422, detail="file must be a valid PNG, JPEG, or WEBP image")
+
+    ext = _MIME_TO_EXT[sniffed_type]
     config_key = "REEL_TITLE_IMG" if scene == "title" else "REEL_CLOSING_IMG"
     object_key = f"brand/{scene}_scene.{ext}"
 
-    # Write upload to a temp file then push to GCS
     try:
         bucket_name = _reels_bucket()
     except RuntimeError as exc:
@@ -148,16 +204,13 @@ def upload_brand_scene(
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
         tmp_path = tmp.name
-        try:
-            data = file.file.read()
-            tmp.write(data)
-        finally:
-            file.file.close()
+        tmp.write(data)
 
     try:
         client = gcs_storage.Client()
         blob = client.bucket(bucket_name).blob(object_key)
-        blob.upload_from_filename(tmp_path, content_type=content_type)
+        # Use sniffed content_type — never trust the client header.
+        blob.upload_from_filename(tmp_path, content_type=sniffed_type)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"GCS upload failed: {exc}") from exc
     finally:
