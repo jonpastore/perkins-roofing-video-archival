@@ -15,13 +15,20 @@ ADC uses the jon@perkinsroofing.net account. Start the Cloud SQL proxy before lo
 Verify the SPA with `cd web && npm run build` (exit 0), not just tsc.
 
 PRIORITIES (full detail in the continuation §Outstanding):
-1. Task 27 — batch-regenerate all 34 articles to pass Rank Math + republish to WordPress. Job
-   jobs/regen_articles_seo.py works (validated on wall-flashings → 100/100) but the generator only
-   guarantees 14/15 checks — keyword DENSITY isn't hit. Either (a) run the batch now for the 14/15 win
-   (LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo), or (b) first add a density-targeting
-   refine step in jobs/article_job.generate_scored_article so it passes all 15, then run it. The Articles
-   SEO panel's new click-to-fix already fixes density per-article on demand. ASK before batch-modifying
-   live WordPress content.
+1. Task 27 — DECIDED: get to a clean 15/15, THEN regenerate all articles. Do it in this order:
+   a) Add a keyword-DENSITY-targeting refine step so generation passes ALL 15 Rank Math checks (today
+      it only guarantees 14/15 — the 0.5–1.5% density band isn't hit). Enforce it in the generation
+      loop: after generating, run core.seo.rank_math_failures(title, meta, slug, content_md,
+      focus_keyword); if 'rm_kw_density' (or any rm_* check) fails, refine and re-check, up to N iters —
+      i.e. make jobs/article_job.generate_scored_article (or a wrapper used by jobs/regen_articles_seo.py)
+      loop until rank_math_failures == []. Density fix = adjust focus-keyword occurrences to land in band
+      without harming readability.
+   b) Verify on one article first: LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo
+      --slug wall-flashings  → confirm still_failing == {} (all 15 pass) and WP republished.
+   c) Then batch all: LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo  (34 articles,
+      ~30-50 min; republishes the 6 published ones to WordPress as Tim Kanak). Report per-article
+      pass/fail. Needs the Cloud SQL proxy + .env WP creds + vertex creds.
+   Keep the Articles SEO panel click-to-fix (POST /articles/{slug}/fix-seo) as the per-article manual path.
 2. YouTube Post-to-YouTube: if Tim owns the channel, mint the youtube.force-ssl refresh token
    (scripts/youtube_oauth_setup.py), store as secret youtube-oauth-refresh-token, wire into deploy.sh/infra
    (docs/YOUTUBE_REPLY_OAUTH.md).

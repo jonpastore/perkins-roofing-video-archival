@@ -46,14 +46,18 @@ Cloud Scheduler crons, DB migrations, WordPress edits, terraform state on disk).
 - `CREATE TABLE user_settings (email VARCHAR PRIMARY KEY, signature TEXT)`
 
 ## Outstanding / decisions for next session
-1. **Task 27 — batch-regenerate all 34 articles + republish (the only deferred queue item).**
-   `jobs/regen_articles_seo.py` is written + validated on `wall-flashings` (→100/100, republished).
-   Caveat: the generator satisfies **14/15** Rank Math checks — **keyword density** (0.5–1.5%) isn't
-   guaranteed. Two paths: (a) run the batch now for the 14/15 win, or (b) add a density-targeting
-   refine step to the generation loop first so it truly passes all 15. Note: the new **click-to-fix**
-   in the SEO panel already fixes density per-article on demand, so a full batch is less urgent.
-   Run: `LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo [--published-only] [--limit N]`
-   (needs the proxy + `.env` WP creds + vertex creds; see the module docstring).
+1. **Task 27 — DECIDED: refine to a clean 15/15, THEN regenerate all 34 articles + republish.**
+   `jobs/regen_articles_seo.py` is written + validated on `wall-flashings` (→100/100, republished) but
+   the generator only guarantees **14/15** Rank Math checks — **keyword density** (0.5–1.5%) isn't hit.
+   Order of work:
+   (a) Make the generation loop pass ALL 15: after generating, run `core.seo.rank_math_failures(...)`
+       and refine (density-target the focus keyword into the 0.5–1.5% band) until it returns `[]` —
+       wrap `jobs/article_job.generate_scored_article` or add the loop in `regen_articles_seo.py`.
+   (b) Verify on one: `LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo --slug wall-flashings`
+       → `still_failing == {}`.
+   (c) Batch all: `LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo` (34 articles, ~30-50
+       min; republishes the 6 published ones to WordPress as Tim Kanak). Needs proxy + `.env` WP/vertex creds.
+   The SEO panel's **click-to-fix** (`POST /articles/{slug}/fix-seo`) remains the per-article manual path.
 2. **YouTube reply posting** — not yet live: needs the channel owner (Tim) to mint a
    `youtube.force-ssl` refresh token (`scripts/youtube_oauth_setup.py`) stored as
    `youtube-oauth-refresh-token` + wired into `deploy.sh`/`infra`. See `docs/YOUTUBE_REPLY_OAUTH.md`.
