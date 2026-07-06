@@ -335,6 +335,20 @@ resource "google_storage_bucket_iam_member" "api_reels_reader" {
   member = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+# Speech-to-Text v2 BatchRecognize reads its input object as the Speech SERVICE AGENT
+# (service-<projnum>@gcp-sa-speech), not as jobs-sa. The ingest job transcribes the archived
+# MP4s in place, so grant that agent read access to the media bucket. Without this, batch STT
+# fails with "does not have read permissions to object gs://…-media/videos/<id>.mp4".
+data "google_project" "this" {
+  project_id = var.project_id
+}
+
+resource "google_storage_bucket_iam_member" "speech_media_reader" {
+  bucket = google_storage_bucket.media.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-speech.iam.gserviceaccount.com"
+}
+
 # Reels bucket is PRIVATE. IG/TikTok ingest via a short-TTL V4 signed URL minted at publish
 # time (jobs/social_job → adapters.storage.signed_get_url), so the client's media is never
 # left publicly exposed. jobs-sa self-signs (serviceAccountTokenCreator below).
