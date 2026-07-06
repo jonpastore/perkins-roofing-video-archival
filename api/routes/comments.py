@@ -16,9 +16,15 @@ from pydantic import BaseModel
 from api.auth import require_role
 from app.llm import chat
 from app.models import CommentDraft, SessionLocal, Video
+from core.ratelimit import SingleFlightGuard
 
 router = APIRouter(prefix="/comments", tags=["comments"])
 log = logging.getLogger(__name__)
+
+# Single-flight + 30-second cooldown guard for the expensive crawl fan-out.
+# One guard per process; Cloud Run multi-instance is defense-in-depth only —
+# add a platform_config daily budget counter for a durable cross-instance limit.
+_crawl_guard = SingleFlightGuard(cooldown_seconds=30)
 
 
 # ---------------------------------------------------------------------------
@@ -122,8 +128,8 @@ def regenerate_draft(comment_id: int, _claims=Depends(require_role("manage_artic
         try:
             draft = chat(prompt, want_json=False)
         except Exception as exc:
-            log.error("regenerate_draft: LLM failed for comment %d: %s", comment_id, exc)
-            raise HTTPException(status_code=502, detail=f"LLM error: {exc}") from exc
+            log.error("regenerate_draft: LLM failed for comment %d: %s", comment_id, exc, exc_info=True)
+            raise HTTPException(status_code=502, detail="comment draft generation failed") from exc
 
         if not draft or not draft.strip():
             raise HTTPException(status_code=502, detail="LLM returned an empty reply")
@@ -195,12 +201,21 @@ def crawl_comments(
 ):
     """Trigger the comment crawl + draft generation job for up to ``limit`` videos.
     Returns a summary: {videos_processed, comments_upserted, flagged, drafted, errors}.
+
+    Guarded by a single-flight lock + 30-second cooldown to prevent quota abuse:
+    - 409 if a crawl is already running
+    - 429 if a crawl ran less than 30 seconds ago
     """
     limit = max(1, min(body.limit, 100))
     max_drafts = max(1, min(body.max_drafts, 200))
+    _crawl_guard.acquire_or_raise("crawl")
     try:
         from jobs.crawl_comments import run
         return run(limit=limit, max_drafts=max_drafts)
+    except HTTPException:
+        raise
     except Exception as exc:
-        log.error("crawl_comments route: job failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        log.error("crawl_comments route: job failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="comment crawl failed") from exc
+    finally:
+        _crawl_guard.release("crawl")

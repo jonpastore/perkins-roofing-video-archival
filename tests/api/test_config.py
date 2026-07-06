@@ -73,12 +73,16 @@ def test_get_config_returns_settings_list(admin_client):
 
 
 def test_get_config_db_override_shows_source(admin_client):
-    # Seed a db override
-    admin_client.put(
-        "/config",
-        json={"key": "WP_URL", "value": "https://perkins.example.com"},
-        headers={"Authorization": "Bearer x"},
-    )
+    # Seed a db override — mock DNS so SSRF guard passes in offline test env
+    import socket
+    from unittest.mock import patch
+    with patch("api.routes.config.socket.getaddrinfo",
+               return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("203.0.113.1", 0))]):
+        admin_client.put(
+            "/config",
+            json={"key": "WP_URL", "value": "https://perkins.example.com"},
+            headers={"Authorization": "Bearer x"},
+        )
     r = admin_client.get("/config", headers={"Authorization": "Bearer x"})
     body = r.json()
     wp = next(s for s in body["settings"] if s["key"] == "WP_URL")
@@ -110,11 +114,15 @@ def test_get_config_unauthenticated():
 # ---------------------------------------------------------------------------
 
 def test_put_config_upsert(admin_client):
-    r = admin_client.put(
-        "/config",
-        json={"key": "WP_URL", "value": "https://perkins.example.com"},
-        headers={"Authorization": "Bearer x"},
-    )
+    import socket
+    from unittest.mock import patch
+    with patch("api.routes.config.socket.getaddrinfo",
+               return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("203.0.113.1", 0))]):
+        r = admin_client.put(
+            "/config",
+            json={"key": "WP_URL", "value": "https://perkins.example.com"},
+            headers={"Authorization": "Bearer x"},
+        )
     assert r.status_code == 200
     body = r.json()
     assert body["key"] == "WP_URL"
@@ -423,13 +431,17 @@ def test_get_secrets_includes_whisper_token(admin_client):
 
 def test_put_config_prod_domain(admin_client):
     """PROD_DOMAIN is in the editable keys and can be persisted."""
-    r = admin_client.put(
-        "/config",
-        json={"key": "PROD_DOMAIN", "value": "perkins.degenito.ai"},
-        headers={"Authorization": "Bearer x"},
-    )
+    import socket
+    from unittest.mock import patch
+    with patch("api.routes.config.socket.getaddrinfo",
+               return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("203.0.113.1", 0))]):
+        r = admin_client.put(
+            "/config",
+            json={"key": "PROD_DOMAIN", "value": "https://perkins.degenito.ai"},
+            headers={"Authorization": "Bearer x"},
+        )
     assert r.status_code == 200
-    assert r.json()["value"] == "perkins.degenito.ai"
+    assert r.json()["value"] == "https://perkins.degenito.ai"
 
 
 def test_get_config_includes_prod_domain(admin_client):
@@ -702,3 +714,108 @@ def test_check_oauth_detail_is_format_check():
     ok, detail = _check_oauth("123456789.apps.googleusercontent.com")
     assert ok is True
     assert "config format valid" in detail
+
+
+# ---------------------------------------------------------------------------
+# SSRF guard — PUT /config WP_URL validation
+# ---------------------------------------------------------------------------
+
+def test_put_config_wp_url_rejects_http(admin_client):
+    """PUT /config with WP_URL using http:// must be rejected with 422."""
+    r = admin_client.put(
+        "/config",
+        json={"key": "WP_URL", "value": "http://example.com"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 422, r.text
+    assert "https" in r.json()["detail"].lower()
+
+
+def test_put_config_wp_url_rejects_metadata_ip(admin_client):
+    """PUT /config with WP_URL pointing to GCP metadata IP must be rejected with 422."""
+    from unittest.mock import patch
+    import socket
+
+    # Simulate DNS resolving to 169.254.169.254 (GCP metadata server)
+    def fake_getaddrinfo(host, port, *a, **kw):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", 0))]
+
+    with patch("api.routes.config.socket.getaddrinfo", side_effect=fake_getaddrinfo):
+        r = admin_client.put(
+            "/config",
+            json={"key": "WP_URL", "value": "https://metadata.example.com"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 422, r.text
+    assert "private" in r.json()["detail"].lower() or "reserved" in r.json()["detail"].lower()
+
+
+def test_put_config_wp_url_rejects_loopback(admin_client):
+    """PUT /config with WP_URL resolving to 127.0.0.1 must be rejected with 422."""
+    from unittest.mock import patch
+    import socket
+
+    def fake_getaddrinfo(host, port, *a, **kw):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))]
+
+    with patch("api.routes.config.socket.getaddrinfo", side_effect=fake_getaddrinfo):
+        r = admin_client.put(
+            "/config",
+            json={"key": "WP_URL", "value": "https://localhost"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 422, r.text
+
+
+def test_put_config_wp_url_accepts_public_https(admin_client):
+    """PUT /config with a valid public https WP_URL must succeed."""
+    from unittest.mock import patch
+    import socket
+
+    def fake_getaddrinfo(host, port, *a, **kw):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("203.0.113.1", 0))]
+
+    with patch("api.routes.config.socket.getaddrinfo", side_effect=fake_getaddrinfo):
+        r = admin_client.put(
+            "/config",
+            json={"key": "WP_URL", "value": "https://perkins-roofing.com"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 200, r.text
+
+
+# ---------------------------------------------------------------------------
+# Internal secret — constant-time compare
+# ---------------------------------------------------------------------------
+
+def test_internal_secret_correct(monkeypatch):
+    """POST /internal/promote with correct INTERNAL_SECRET must NOT return 403."""
+    import os
+    monkeypatch.setenv("INTERNAL_SECRET", "supersecret123")
+    from fastapi.testclient import TestClient
+    from api.app import app
+    from unittest.mock import patch
+    with patch("jobs.promote_job.run", return_value={"promoted": 0}):
+        c = TestClient(app)
+        r = c.post("/internal/promote", headers={"x-internal-secret": "supersecret123"})
+    assert r.status_code != 403, r.text
+
+
+def test_internal_secret_wrong_rejected(monkeypatch):
+    """POST /internal/promote with wrong secret must return 403."""
+    monkeypatch.setenv("INTERNAL_SECRET", "supersecret123")
+    from fastapi.testclient import TestClient
+    from api.app import app
+    c = TestClient(app)
+    r = c.post("/internal/promote", headers={"x-internal-secret": "wrongsecret"})
+    assert r.status_code == 403, r.text
+
+
+def test_internal_secret_empty_rejected(monkeypatch):
+    """POST /internal/promote with empty secret must return 403."""
+    monkeypatch.setenv("INTERNAL_SECRET", "supersecret123")
+    from fastapi.testclient import TestClient
+    from api.app import app
+    c = TestClient(app)
+    r = c.post("/internal/promote", headers={"x-internal-secret": ""})
+    assert r.status_code == 403, r.text

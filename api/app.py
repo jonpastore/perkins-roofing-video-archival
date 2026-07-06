@@ -77,9 +77,10 @@ def _require_internal(x_internal_secret: str = Header(default="")):
     """Guard for /internal/* cron targets. The service is GCP-IAM-open so the browser SPA can
     reach the Firebase-authed routes; the internal cron routes are protected here by a shared
     secret (INTERNAL_SECRET env, set on the scheduler headers). Denies if unset/mismatched."""
+    import hmac
     import os
     expected = os.getenv("INTERNAL_SECRET", "")
-    if not expected or x_internal_secret != expected:
+    if not expected or not hmac.compare_digest(x_internal_secret or "", expected):
         raise HTTPException(status_code=403, detail="forbidden")
 
 

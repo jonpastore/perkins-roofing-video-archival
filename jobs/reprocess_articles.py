@@ -48,7 +48,7 @@ def run(
             }
     """
     from app.models import Article, SessionLocal  # noqa: PLC0415
-    from jobs.article_job import sanitize_article_html  # noqa: PLC0415
+    from jobs.article_job import markdownish_to_html  # noqa: PLC0415
 
     processed = 0
     updated = 0
@@ -85,7 +85,7 @@ def run(
                         logger.warning("refine pass failed for slug=%s (keeping original): %s", article.slug, exc)
 
                 # ── Sanitize ──────────────────────────────────────────────────
-                sanitized = sanitize_article_html(content)
+                sanitized = markdownish_to_html(content)
 
                 # ── Persist if changed ────────────────────────────────────────
                 if sanitized != original:

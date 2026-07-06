@@ -17,7 +17,7 @@ _STUB_MARK = "projects throughout the region. This page covers"
 
 def run() -> dict:
     from app.models import Article, SessionLocal
-    from jobs.article_job import generate_article_content, sanitize_article_html
+    from jobs.article_job import generate_article_content, markdownish_to_html
 
     with SessionLocal() as db:
         stubs = db.query(Article).filter(Article.content_md.like(f"%{_STUB_MARK}%")).all()
@@ -34,7 +34,7 @@ def run() -> dict:
                    "pillar_slug": a.pillar_slug or "", "topic": kw}
             try:
                 f = generate_article_content(kw, ctx)
-                md = sanitize_article_html(f.get("content_md") or "")
+                md = markdownish_to_html(f.get("content_md") or "")
                 if not md or _STUB_MARK in md:
                     raise RuntimeError("still stub")
                 a.content_md = md

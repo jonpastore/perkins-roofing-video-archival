@@ -15,8 +15,18 @@ from sqlalchemy import func
 from api.auth import require_role
 from app.models import SessionLocal, Video, GraphNode, Article, MiniSeries, SocialPost
 from core.retrieval import link
+from core.ratelimit import SingleFlightGuard
 
 router = APIRouter(prefix="/archive", tags=["archive"])
+
+# Per-process single-flight guards for expensive YouTube/LLM fan-out endpoints.
+# Cloud Run may run multiple instances — these are defense-in-depth per-instance
+# guards. Add a platform_config-backed daily counter for a durable cross-instance
+# quota budget.
+_backfill_guard = SingleFlightGuard(cooldown_seconds=30)
+_poll_kpis_guard = SingleFlightGuard(cooldown_seconds=30)
+# check-new is read-only (no writes/LLM) — lock only, no cooldown.
+_check_new_guard = SingleFlightGuard(cooldown_seconds=0)
 
 
 def _video_to_dict(
@@ -324,10 +334,18 @@ def backfill(
     """Enumerate the YouTube channel and insert missing Video rows.
 
     Returns {added, checked}.
+
+    Guarded: 409 if already running, 429 if ran < 30s ago.
     """
-    import jobs.backfill_archive as _job  # lazy — avoids importing yt-dlp at startup
-    result = _job.run()
-    return {"added": result["added"], "checked": result["checked"]}
+    _backfill_guard.acquire_or_raise("backfill")
+    try:
+        import jobs.backfill_archive as _job  # lazy — avoids importing yt-dlp at startup
+        result = _job.run()
+        return {"added": result["added"], "checked": result["checked"]}
+    except HTTPException:
+        raise
+    finally:
+        _backfill_guard.release("backfill")
 
 
 @router.get("/check-new")
@@ -337,9 +355,17 @@ def check_new(
     """Enumerate the channel and return count of videos not yet in the DB.
 
     Does not insert anything. Returns {new_count, last_pulled_at}.
+
+    Guarded: 409 if already running (no cooldown — read-only, no LLM).
     """
-    import jobs.backfill_archive as _job  # lazy
-    return _job.check_new()
+    _check_new_guard.acquire_or_raise("check-new")
+    try:
+        import jobs.backfill_archive as _job  # lazy
+        return _job.check_new()
+    except HTTPException:
+        raise
+    finally:
+        _check_new_guard.release("check-new")
 
 
 @router.post("/poll-kpis")
@@ -351,6 +377,14 @@ def poll_kpis(
 
     Optional body: {"limit": N}
     Returns {polled}.
+
+    Guarded: 409 if already running, 429 if ran < 30s ago.
     """
-    import jobs.poll_archive_kpis as _job  # lazy
-    return _job.run(limit=limit)
+    _poll_kpis_guard.acquire_or_raise("poll-kpis")
+    try:
+        import jobs.poll_archive_kpis as _job  # lazy
+        return _job.run(limit=limit)
+    except HTTPException:
+        raise
+    finally:
+        _poll_kpis_guard.release("poll-kpis")

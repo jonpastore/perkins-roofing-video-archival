@@ -17,7 +17,23 @@ import firebase_admin
 from firebase_admin import auth as admin_auth, credentials
 from playwright.sync_api import sync_playwright
 
-API_KEY = "AIzaSyAUybRX1XK6thj4hQDWLKEcZwpH1Uxi0CQ"
+def _firebase_web_api_key() -> str:
+    """The Firebase Web API key (public by design — it also ships in the SPA bundle as
+    VITE_FIREBASE_API_KEY). Read it from the env or web/.env rather than hardcoding it,
+    and keep it API-restricted (Identity Toolkit only) in the GCP console."""
+    key = os.environ.get("FIREBASE_WEB_API_KEY")
+    if key:
+        return key
+    import pathlib
+    env = pathlib.Path(__file__).resolve().parent.parent / "web" / ".env"
+    if env.exists():
+        for line in env.read_text().splitlines():
+            if line.startswith("VITE_FIREBASE_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"')
+    raise RuntimeError("Set FIREBASE_WEB_API_KEY or web/.env VITE_FIREBASE_API_KEY")
+
+
+API_KEY = _firebase_web_api_key()
 PROJECT = "video-archival-and-content-gen"
 APP_URL = os.environ.get("WALK_URL", "https://video-archival-and-content-gen.web.app")
 EMAIL = "jon@perkinsroofing.net"

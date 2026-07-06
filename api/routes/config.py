@@ -15,9 +15,12 @@ Parent Terraform adds these bindings; no manual IAM needed.
 """
 from __future__ import annotations
 
+import ipaddress
 import os
+import socket
 from datetime import datetime, timezone, UTC
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -27,6 +30,70 @@ from app.config import settings
 from app.models import PlatformConfig, SecretAudit, SessionLocal
 
 router = APIRouter(prefix="/config", tags=["config"])
+
+# ---------------------------------------------------------------------------
+# SSRF guard — private/loopback/link-local/metadata ranges
+# ---------------------------------------------------------------------------
+
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),   # link-local / GCP metadata
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),          # ULA
+    ipaddress.ip_network("fe80::/10"),         # IPv6 link-local
+]
+
+
+def _validate_public_https_url(url: str) -> None:
+    """Raise HTTPException(422) if url is not a public https:// URL.
+
+    Checks:
+    - scheme must be https
+    - hostname must resolve to at least one address
+    - no resolved address may fall in private/loopback/link-local/metadata ranges
+      (prevents SSRF against 169.254.169.254, internal hosts, etc.)
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise HTTPException(
+            status_code=422,
+            detail="URL must use the https:// scheme.",
+        )
+    hostname = parsed.hostname
+    if not hostname:
+        raise HTTPException(status_code=422, detail="URL must include a valid hostname.")
+
+    # Reject *.internal / GCP-style metadata hostnames by name
+    if hostname.endswith(".internal") or hostname == "metadata.google.internal":
+        raise HTTPException(status_code=422, detail="URL hostname is not a public host.")
+
+    try:
+        results = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        raise HTTPException(
+            status_code=422,
+            detail=f"URL hostname {hostname!r} could not be resolved.",
+        )
+
+    for _family, _type, _proto, _canonname, sockaddr in results:
+        addr_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(addr_str)
+        except ValueError:
+            continue
+        for net in _PRIVATE_NETWORKS:
+            if addr in net:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"URL resolves to a private/reserved address ({addr_str}); "
+                        "only publicly routable hosts are allowed."
+                    ),
+                )
+
 
 # ---------------------------------------------------------------------------
 # Known-good model option lists returned to the UI for dropdowns.
@@ -246,6 +313,10 @@ def upsert_config(entry: ConfigEntry, claims=Depends(require_role("manage_config
             detail=f"Key {entry.key!r} is not in the editable settings list.",
         )
 
+    # SSRF guard: WP_URL and PROD_DOMAIN are fetched server-side; restrict to public https.
+    if entry.key in ("WP_URL", "PROD_DOMAIN") and entry.value:
+        _validate_public_https_url(entry.value)
+
     email = claims.get("email", "unknown")
     now = datetime.now(UTC).replace(tzinfo=None)
 
@@ -359,7 +430,9 @@ def upsert_secret(entry: SecretEntry, claims=Depends(require_role("manage_config
             detail="Secret Manager client library not available in this environment.",
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Secret Manager error: {exc}")
+        import logging as _logging
+        _logging.getLogger(__name__).error("secret update failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="secret update failed")
 
     # Record audit (upsert — one row per secret key).
     with SessionLocal() as db:

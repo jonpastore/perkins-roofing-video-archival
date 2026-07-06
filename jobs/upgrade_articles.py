@@ -36,7 +36,7 @@ def run() -> dict:
     from core.seo import score_article
     from jobs.article_job import (
         _build_article_jsonld, _clamp_meta, _fallback_faq, _regen_faq,
-        generate_scored_article, sanitize_article_html,
+        generate_scored_article, markdownish_to_html,
     )
 
     llm = get_default()
@@ -75,7 +75,7 @@ def run() -> dict:
                 try:
                     f = generate_scored_article(title, ctx, llm=llm)
                     title = f.get("title") or title
-                    a.content_md = sanitize_article_html(f.get("content_md") or a.content_md)
+                    a.content_md = markdownish_to_html(f.get("content_md") or a.content_md)
                     meta = f.get("meta") or meta
                     faq = f.get("faq_json") or faq
                     jsonld = f.get("jsonld_json") or jsonld

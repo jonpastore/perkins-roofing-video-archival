@@ -8,8 +8,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
-from api.routes.comments import router
+from api.routes.comments import router, _crawl_guard
 from app.models import CommentDraft, SessionLocal, Video, init_db
+
+
+@pytest.fixture(autouse=True)
+def reset_crawl_guard():
+    """Reset single-flight guard state before each test so cooldown doesn't bleed."""
+    _crawl_guard._reset_for_testing()
+    yield
 
 
 # ---------------------------------------------------------------------------

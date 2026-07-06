@@ -4,7 +4,7 @@ and JSON-LD completeness helpers in jobs/article_job.py."""
 from jobs.article_job import (
     has_placeholder,
     has_residual_markdown,
-    sanitize_article_html,
+    markdownish_to_html,
 )
 from core.jsonld import build_breadcrumb_list
 
@@ -103,49 +103,49 @@ class TestHasResidualMarkdown:
 
 
 # ---------------------------------------------------------------------------
-# sanitize_article_html — markdown completeness
+# markdownish_to_html — markdown completeness
 # ---------------------------------------------------------------------------
 
 class TestSanitizeArticleHtml:
     def test_converts_h2_heading(self):
-        result = sanitize_article_html("## My Section\nContent here.")
+        result = markdownish_to_html("## My Section\nContent here.")
         assert "<h2>My Section</h2>" in result
         assert "##" not in result
 
     def test_converts_h3_heading(self):
-        result = sanitize_article_html("### Sub Section\nContent.")
+        result = markdownish_to_html("### Sub Section\nContent.")
         assert "<h3>Sub Section</h3>" in result
 
     def test_converts_bold(self):
-        result = sanitize_article_html("This is **bold text** here.")
+        result = markdownish_to_html("This is **bold text** here.")
         assert "<strong>bold text</strong>" in result
         assert "**" not in result
 
     def test_converts_italic(self):
-        result = sanitize_article_html("This is *italic* text.")
+        result = markdownish_to_html("This is *italic* text.")
         assert "<em>italic</em>" in result
         assert result.count("*") == 0 or "<em>" in result
 
     def test_converts_link(self):
-        result = sanitize_article_html("[Watch video](https://youtu.be/abc)")
+        result = markdownish_to_html("[Watch video](https://youtu.be/abc)")
         assert '<a href="https://youtu.be/abc">Watch video</a>' in result
 
     def test_converts_bullets(self):
-        result = sanitize_article_html("- First item\n- Second item")
+        result = markdownish_to_html("- First item\n- Second item")
         assert "<ul>" in result
         assert "<li>First item</li>" in result
         assert "<li>Second item</li>" in result
 
     def test_converts_pipe_table(self):
         md = "| Name | Cost |\n|---|---|\n| Repair | $200 |"
-        result = sanitize_article_html(md)
+        result = markdownish_to_html(md)
         assert "<table>" in result
         assert "<th>Name</th>" in result
         assert "<td>Repair</td>" in result
 
     def test_converts_admonition(self):
         md = "> [!TIP]\n> Check your roof annually."
-        result = sanitize_article_html(md)
+        result = markdownish_to_html(md)
         assert "<aside" in result
         assert "Check your roof annually." in result
 
@@ -157,12 +157,12 @@ class TestSanitizeArticleHtml:
             "[Link](https://example.com/page)\n"
             "| A | B |\n|---|---|\n| 1 | 2 |"
         )
-        result = sanitize_article_html(md)
+        result = markdownish_to_html(md)
         assert not has_residual_markdown(result), f"Residual markdown in: {result!r}"
 
     def test_html_passthrough(self):
         html = "<h2>Already HTML</h2><p>Content here.</p>"
-        result = sanitize_article_html(html)
+        result = markdownish_to_html(html)
         assert result == html
 
 

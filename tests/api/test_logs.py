@@ -61,12 +61,12 @@ def test_logs_admin_ok():
     assert "log_name" in entry
 
 
-def test_logs_web_admin_ok():
-    """web_admin has view_status — should also reach the logs endpoint."""
+def test_logs_web_admin_403():
+    """web_admin does NOT have manage_config — logs endpoint must return 403."""
     with patch("adapters.gcp_logging.recent_errors", return_value=_FAKE_ENTRIES):
         c = _web_admin_client()
         r = c.get("/logs", headers=AUTH)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 403, r.text
 
 
 def test_logs_sales_403():
@@ -95,12 +95,13 @@ def test_logs_empty_entries():
 
 
 def test_logs_503_on_runtime_error():
-    """RuntimeError from adapter (lib missing / no creds) becomes 503."""
+    """RuntimeError from adapter (lib missing / no creds) becomes 503 with generic message."""
     with patch("adapters.gcp_logging.recent_errors", side_effect=RuntimeError("no creds")):
         c = _admin_client()
         r = c.get("/logs", headers=AUTH)
     assert r.status_code == 503, r.text
-    assert "no creds" in r.json()["detail"]
+    # Must NOT leak the raw exception string to the client
+    assert r.json()["detail"] == "log query failed"
 
 
 def test_logs_query_params_forwarded():
@@ -176,3 +177,33 @@ def test_adapter_no_gcp_project(monkeypatch):
         from adapters.gcp_logging import _gcp_project
         with pytest.raises(RuntimeError, match="Cannot determine GCP project"):
             _gcp_project()
+
+
+# ---------------------------------------------------------------------------
+# Severity pattern validation
+# ---------------------------------------------------------------------------
+
+def test_logs_severity_invalid_422():
+    """Non-allowlist severity value must be rejected with 422."""
+    with patch("adapters.gcp_logging.recent_errors", return_value=[]):
+        c = _admin_client()
+        r = c.get("/logs?severity=GARBAGE", headers=AUTH)
+    assert r.status_code == 422, r.text
+
+
+def test_logs_severity_injection_422():
+    """Attempted injection via severity param must be rejected with 422."""
+    with patch("adapters.gcp_logging.recent_errors", return_value=[]):
+        c = _admin_client()
+        r = c.get("/logs?severity=ERROR%20OR%201%3D1", headers=AUTH)
+    assert r.status_code == 422, r.text
+
+
+def test_logs_severity_valid_values():
+    """All valid severity values must be accepted."""
+    valid = ["DEFAULT", "DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL", "ALERT", "EMERGENCY"]
+    for sev in valid:
+        with patch("adapters.gcp_logging.recent_errors", return_value=[]):
+            c = _admin_client()
+            r = c.get(f"/logs?severity={sev}", headers=AUTH)
+        assert r.status_code == 200, f"Expected 200 for severity={sev}, got {r.status_code}"

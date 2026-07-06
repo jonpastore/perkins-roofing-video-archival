@@ -140,11 +140,12 @@ def create_article(body: ArticleCreate, claims=Depends(require_role("manage_arti
     with SessionLocal() as db:
         if db.get(Article, slug) is not None:
             raise HTTPException(status_code=409, detail="slug already exists")
+        from jobs.article_job import sanitize_html  # noqa: PLC0415
         a = Article(
             slug=slug,
             title=body.title,
             meta=body.meta,
-            content_md=body.content_md,
+            content_md=sanitize_html(body.content_md) if body.content_md else body.content_md,
             faq_json=None,
             jsonld_json=None,
             role=body.role or "standalone",
@@ -169,7 +170,8 @@ def update_article(slug: str, body: ArticleUpdate,
         if body.title is not None:
             a.title = body.title
         if body.content_md is not None:
-            a.content_md = body.content_md
+            from jobs.article_job import sanitize_html  # noqa: PLC0415
+            a.content_md = sanitize_html(body.content_md)
         if body.meta is not None:
             a.meta = body.meta
         if body.role is not None:
@@ -201,7 +203,7 @@ def reprocess_article(slug: str, claims=Depends(require_role("manage_articles"))
 
     Steps:
     1. Load the article (404 if absent).
-    2. Run sanitize_article_html on content_md — converts markdown artifacts to HTML.
+    2. Run markdownish_to_html + sanitize_html on content_md — converts markdown artifacts to HTML and strips unsafe tags.
     3. Persist the sanitized content.
     4. If the article has a wp_post_id AND WP credentials are present in env,
        push the updated content to WordPress via adapters.wordpress.update.
@@ -215,9 +217,9 @@ def reprocess_article(slug: str, claims=Depends(require_role("manage_articles"))
             raise HTTPException(status_code=404, detail="article not found")
 
         # ── Sanitize ──────────────────────────────────────────────────────────
-        from jobs.article_job import sanitize_article_html  # noqa: PLC0415
+        from jobs.article_job import markdownish_to_html, sanitize_html  # noqa: PLC0415
         original = a.content_md or ""
-        sanitized = sanitize_article_html(original)
+        sanitized = sanitize_html(markdownish_to_html(original))
         a.content_md = sanitized
 
         # ── WordPress sync when wp_post_id set and creds present ──────────────

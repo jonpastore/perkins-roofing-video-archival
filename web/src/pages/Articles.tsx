@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useContext } from "react";
 import { Editor } from "@tinymce/tinymce-react";
 import type { Editor as TinyMCEEditor } from "tinymce";
+import DOMPurify from "dompurify";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
@@ -150,6 +151,32 @@ function renderYouTubeEmbed(id: string, start: number): string {
     `allowfullscreen loading="lazy" title="YouTube video"></iframe>` +
     `</div>`
   );
+}
+
+// DOMPurify config: allow structural article tags + YouTube iframes (https only).
+// Strips <script>, on* event handlers, javascript: URIs, and any unknown tags/attrs.
+const _PURIFY_CONFIG = {
+  ALLOWED_TAGS: [
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "ul", "ol", "li", "strong", "em", "b", "i",
+    "a", "br", "hr",
+    "table", "thead", "tbody", "tr", "td", "th",
+    "blockquote", "code", "pre",
+    "aside", "div", "span", "img", "iframe",
+  ],
+  ALLOWED_ATTR: [
+    "href", "title", "rel", "target",
+    "style", "class",
+    "src", "alt", "width", "height",
+    "allow", "allowfullscreen", "loading", "frameborder",
+  ],
+  ALLOWED_URI_REGEXP: /^(https?:|\/|#|mailto:)/i,
+  ADD_TAGS: ["iframe"],
+  ADD_ATTR: ["allow", "allowfullscreen"],
+};
+
+function purifyHtml(html: string): string {
+  return String(DOMPurify.sanitize(html, _PURIFY_CONFIG));
 }
 
 // Admonition types for GitHub-style callouts: [!TIP], [!NOTE], [!WARNING], [!IMPORTANT]
@@ -548,7 +575,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     : [];
 
   const renderedHtml = article?.content_md
-    ? (looksLikeHtml(article.content_md) ? article.content_md : renderMarkdown(article.content_md))
+    ? purifyHtml(looksLikeHtml(article.content_md) ? article.content_md : renderMarkdown(article.content_md))
     : "";
   const seo = article ? computeSeoScore(article) : null;
 
@@ -826,7 +853,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                     paddingTop: 20,
                     marginTop: 4,
                   }}
-                  // Safe: renderedHtml is built from escaped text + limited structural tags only
+                  // Safe: renderedHtml is DOMPurify-sanitized before use (strips script/on*/javascript:)
                   // eslint-disable-next-line react/no-danger
                   dangerouslySetInnerHTML={{ __html: renderedHtml }}
                 />

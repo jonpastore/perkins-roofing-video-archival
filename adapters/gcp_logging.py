@@ -16,9 +16,27 @@ Raises RuntimeError (turned into 503 by the route) when:
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 _SEVERITY_ORDER = ["DEFAULT", "DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL", "ALERT", "EMERGENCY"]
+
+# Patterns that may indicate embedded secrets/credentials in log messages.
+_SECRET_PATTERNS = [
+    re.compile(r'postgres(?:ql)?://\S+', re.IGNORECASE),
+    re.compile(r'Bearer\s+\S+', re.IGNORECASE),
+    re.compile(r'AIza[0-9A-Za-z_\-]{20,}'),
+    re.compile(r'key=\S+', re.IGNORECASE),
+    # long base64 or hex secrets (32+ chars of base64url or hex)
+    re.compile(r'[A-Za-z0-9+/\-_]{32,}={0,2}(?=\s|$|["\'])'),
+]
+
+
+def _redact_message(message: str) -> str:
+    """Replace patterns that look like embedded secrets with '***'."""
+    for pattern in _SECRET_PATTERNS:
+        message = pattern.sub("***", message)
+    return message
 
 
 def _gcp_project() -> str:
@@ -116,7 +134,7 @@ def recent_errors(
                 "timestamp": timestamp_iso,
                 "severity": entry.severity or sev_upper,
                 "resource": resource_name,
-                "message": message,
+                "message": _redact_message(message),
                 "log_name": entry.log_name or "",
             })
     except Exception as exc:

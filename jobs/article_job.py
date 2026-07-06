@@ -57,8 +57,8 @@ _ADMONITION_CLASS = {
 }
 
 
-def sanitize_article_html(content: str) -> str:
-    """Strip or convert residual markdown artifacts in article content.
+def markdownish_to_html(content: str) -> str:
+    """Convert residual markdown artifacts in article content to HTML.
 
     Handles:
     - GitHub-style `> [!TIP]` / `> [!NOTE]` admonition blocks → ``<aside class="...">``
@@ -69,6 +69,9 @@ def sanitize_article_html(content: str) -> str:
 
     Content that is already valid HTML is passed through unchanged (the regex
     patterns only match markdown-specific syntax).
+
+    NOTE: This is a markdown→HTML converter, NOT a security sanitizer. Use
+    ``sanitize_html()`` (bleach-based) to strip unsafe tags/attributes.
     """
     if not content:
         return content
@@ -132,6 +135,82 @@ def sanitize_article_html(content: str) -> str:
     content = _convert_pipe_tables(content)
 
     return content
+
+
+# ---------------------------------------------------------------------------
+# HTML security sanitizer (bleach-based) — strips unsafe tags/attributes.
+# Applied on write to prevent stored-XSS from admin-supplied content_md.
+# ---------------------------------------------------------------------------
+
+_BLEACH_ALLOWED_TAGS = [
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "ul", "ol", "li", "strong", "em", "b", "i",
+    "a", "br", "hr",
+    "table", "thead", "tbody", "tr", "td", "th",
+    "blockquote", "code", "pre",
+    "aside", "div", "span", "img", "iframe",
+]
+
+_BLEACH_ALLOWED_ATTRS: dict = {
+    "*": ["class"],
+    "a": ["href", "title", "rel", "target"],
+    "img": ["src", "alt", "title", "width", "height", "loading"],
+    "iframe": ["src", "allow", "allowfullscreen", "loading", "frameborder",
+               "width", "height", "title"],
+}
+
+_SAFE_URI_RE = re.compile(r"^(https?:|/|#|mailto:)", re.IGNORECASE)
+
+# Tags whose entire content (inner text + children) should be dropped, not just the tag.
+_STRIP_CONTENT_RE = re.compile(
+    r"<(script|style|noscript|object|embed|applet|base|meta|link)"
+    r"(\s[^>]*)?>.*?</\1>",
+    re.IGNORECASE | re.DOTALL,
+)
+# Also drop self-closing / unclosed script/style tags that may lack a close tag
+_STRIP_CONTENT_OPEN_RE = re.compile(
+    r"<(script|style|noscript|object|embed|applet|base|meta|link)(\s[^>]*)?/?>",
+    re.IGNORECASE,
+)
+
+
+def _allow_safe_attrs(tag: str, name: str, value: str) -> bool:
+    """Bleach attribute callback: block on* handlers and unsafe URI schemes."""
+    if name.lower().startswith("on"):
+        return False
+    if name.lower() in ("href", "src", "action", "data"):
+        return bool(_SAFE_URI_RE.match(value.strip()))
+    return True
+
+
+def sanitize_html(content: str) -> str:
+    """Bleach-clean HTML to the article allow-list, stripping script/on*/javascript:.
+
+    Safe for storage: legitimate article HTML (headings, lists, links, tables,
+    YouTube iframes with https src) survives unchanged; <script>, onerror=,
+    javascript: URLs, and any on* event handler are stripped.
+
+    Two-pass approach:
+    1. Regex-strip entire <script>/<style>/… blocks including their inner text
+       (bleach strip=True only removes the tag wrapper, keeping inner text).
+    2. bleach.clean with a URI+on* callback to catch remaining attribute attacks.
+    """
+    if not content:
+        return content
+    import bleach  # noqa: PLC0415
+
+    # Pass 1: drop entire content of script/style/etc. blocks
+    content = _STRIP_CONTENT_RE.sub("", content)
+    content = _STRIP_CONTENT_OPEN_RE.sub("", content)
+
+    # Pass 2: bleach allow-list + attribute callback
+    return bleach.clean(
+        content,
+        tags=_BLEACH_ALLOWED_TAGS,
+        attributes=_allow_safe_attrs,
+        strip=True,
+        strip_comments=True,
+    )
 
 
 # Markdown links: [text](http… or /path) — not images (no leading !)
@@ -356,7 +435,7 @@ def generate_article_content(
         "title":      article.get("title") or keyword,
         "slug":       article.get("slug") or "",
         "meta":       article.get("metaDescription") or "",
-        "content_md": sanitize_article_html(article.get("content") or ""),
+        "content_md": markdownish_to_html(article.get("content") or ""),
         "faq_json":   faq,
     }
 
@@ -478,7 +557,7 @@ def generate_article(
         raise RuntimeError(f"LLM returned unparseable JSON for keyword '{keyword}'")
 
     title = article.get("title") or keyword
-    content = sanitize_article_html(article.get("content") or "")
+    content = markdownish_to_html(article.get("content") or "")
     # Embed a real WordPress video player for the top source clip (bare URL on its own line →
     # WP oEmbed). Keeps the inline ?t= deep-links + VideoObject schema too.
     if video_chunks:
@@ -787,7 +866,7 @@ def refine_article_content(fields: dict, keyword: str, *, llm=None) -> dict:
             "title":      parsed.get("title") or fields["title"],
             "slug":       parsed.get("slug") or fields["slug"],
             "meta":       parsed.get("metaDescription") or fields["meta"],
-            "content_md": sanitize_article_html(parsed.get("content") or fields["content_md"]),
+            "content_md": markdownish_to_html(parsed.get("content") or fields["content_md"]),
             "faq_json":   faq or fields["faq_json"],
         }
     except Exception as exc:  # noqa: BLE001
@@ -1052,7 +1131,7 @@ def generate_scored_article(
         llm = get_default()
 
     fields = generate_article_content(keyword, ctx, llm=llm)
-    fields["content_md"] = sanitize_article_html(fields.get("content_md", ""))
+    fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
 
     def _score(f: dict, jl: list) -> dict:
         return score_article(f.get("title", ""), f.get("meta", ""),
@@ -1090,7 +1169,7 @@ def generate_scored_article(
             fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
                                          fields.get("content_md", ""))
         # Deterministically strip any Markdown the refine pass emitted.
-        fields["content_md"] = sanitize_article_html(fields.get("content_md", ""))
+        fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
         jsonld = _build_article_jsonld(fields, ctx)
         result = _score(fields, jsonld)
 
@@ -1099,7 +1178,7 @@ def generate_scored_article(
     # fixable check regardless of LLM behaviour.
 
     # 1. Video link (video check)
-    fields["content_md"] = sanitize_article_html(
+    fields["content_md"] = markdownish_to_html(
         _ensure_video_link(fields.get("content_md", ""), keyword))
 
     # 2. Meta description (meta_present + meta_len checks)
@@ -1132,7 +1211,7 @@ def generate_scored_article(
             "generate_scored_article %r: body still ≤300 words before final score; "
             "attempting emergency refine", keyword)
         fields = refine_article_content(fields, keyword, llm=llm)
-        fields["content_md"] = sanitize_article_html(fields.get("content_md", ""))
+        fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
         fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
         fields["content_md"] = _ensure_answer_first(
             fields.get("content_md", ""), keyword, fields.get("faq_json") or [])

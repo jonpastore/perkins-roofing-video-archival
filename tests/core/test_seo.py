@@ -234,11 +234,11 @@ class TestDeterministicGuaranteesScore100:
             _ensure_title,
             _ensure_video_link,
             _fallback_faq,
-            sanitize_article_html,
+            markdownish_to_html,
         )
 
         # Mirror the exact sequence in generate_scored_article's guarantee block
-        fields["content_md"] = sanitize_article_html(
+        fields["content_md"] = markdownish_to_html(
             _ensure_video_link(fields.get("content_md", ""), keyword)
         )
         fields["meta"] = _clamp_meta(

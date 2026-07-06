@@ -17,12 +17,21 @@ _tmp.close()
 os.environ.setdefault("DB_URL", f"sqlite:///{_tmp.name}")
 
 from api.auth import set_verifier  # noqa: E402
-from api.routes.archive import router  # noqa: E402
+from api.routes.archive import router, _backfill_guard, _poll_kpis_guard, _check_new_guard  # noqa: E402
 from app.models import Base, SessionLocal, Video, MiniSeries, SocialPost, Article, engine  # noqa: E402
 
 Base.metadata.create_all(engine)
 
 AUTH = {"Authorization": "Bearer tok"}
+
+
+@pytest.fixture(autouse=True)
+def reset_archive_guards():
+    """Reset single-flight guard state before each test so cooldown doesn't bleed."""
+    _backfill_guard._reset_for_testing()
+    _poll_kpis_guard._reset_for_testing()
+    _check_new_guard._reset_for_testing()
+    yield
 
 # ---------------------------------------------------------------------------
 # Fixtures

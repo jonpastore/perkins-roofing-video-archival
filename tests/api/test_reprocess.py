@@ -1,6 +1,6 @@
 """Behavioral tests for POST /articles/{slug}/reprocess and jobs/reprocess_articles.py.
 
-- Verifies sanitize_article_html converts markdown artifacts to clean HTML.
+- Verifies markdownish_to_html converts markdown artifacts to clean HTML.
 - Verifies the API endpoint sanitizes and persists content.
 - Verifies WordPress update is called when wp_post_id is set and creds are present.
 - Verifies WP update is skipped when creds are absent.
@@ -73,116 +73,116 @@ def setup_module(module):
 
 
 # ---------------------------------------------------------------------------
-# sanitize_article_html unit tests
+# markdownish_to_html unit tests
 # ---------------------------------------------------------------------------
 
 class TestSanitizeArticleHtml:
     def test_admonition_tip_converted(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = "> [!TIP]\n> Use a rubber mallet.\n"
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         assert "[!" not in result
         assert '<aside class="tip">' in result
         assert "rubber mallet" in result
 
     def test_admonition_warning_converted(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = "> [!WARNING]\n> Watch out for loose nails.\n"
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         assert "[!" not in result
         assert '<aside class="warning">' in result
 
     def test_admonition_note_converted(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = "> [!NOTE]\n> Check local building codes.\n"
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         assert "[!" not in result
         assert '<aside class="note">' in result
 
     def test_admonition_key_converted(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = "> [!KEY]\n> This is the key insight.\n"
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         assert "[!" not in result
         assert '<aside class="key">' in result
 
     def test_admonition_caution_maps_to_warning(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = "> [!CAUTION]\n> Be careful with moisture.\n"
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         assert '[!' not in result
         assert '<aside class="warning">' in result
 
     def test_bare_admonition_marker_stripped(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = "Some text [!TIP] more text"
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         assert "[!" not in result
 
     def test_markdown_h2_converted(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html("## Cost Guide\n\nSome text.")
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html("## Cost Guide\n\nSome text.")
         assert "<h2>Cost Guide</h2>" in result
         assert "##" not in result
 
     def test_markdown_h3_converted(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html("### Installation Steps\n\nText.")
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html("### Installation Steps\n\nText.")
         assert "<h3>Installation Steps</h3>" in result
 
     def test_markdown_h1_converted(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html("# Main Title\n\nText.")
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html("# Main Title\n\nText.")
         assert "<h1>Main Title</h1>" in result
 
     def test_markdown_bold_converted(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html("**Important:** Do this first.")
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html("**Important:** Do this first.")
         assert "<strong>Important:</strong>" in result
         assert "**" not in result
 
     def test_pipe_table_converted_to_html(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = "| Material | Cost |\n|----------|------|\n| Asphalt  | $150 |\n"
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         assert "<table>" in result
         assert "<th>Material</th>" in result
         assert "<td>Asphalt</td>" in result
         assert "|-------" not in result
 
     def test_empty_content_returns_empty(self):
-        from jobs.article_job import sanitize_article_html
-        assert sanitize_article_html("") == ""
-        assert sanitize_article_html(None) is None  # type: ignore[arg-type]
+        from jobs.article_job import markdownish_to_html
+        assert markdownish_to_html("") == ""
+        assert markdownish_to_html(None) is None  # type: ignore[arg-type]
 
     def test_already_clean_html_unchanged(self):
-        from jobs.article_job import sanitize_article_html
+        from jobs.article_job import markdownish_to_html
         content = '<h2>Cost</h2>\n<p>Some <strong>text</strong>.</p>\n<aside class="tip"><p>Tip.</p></aside>'
-        result = sanitize_article_html(content)
+        result = markdownish_to_html(content)
         # Should pass through without double-converting
         assert "<h2>Cost</h2>" in result
         assert '<aside class="tip">' in result
 
     def test_dirty_content_has_no_admonition_markers(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html(_DIRTY_CONTENT)
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html(_DIRTY_CONTENT)
         assert "[!" not in result
 
     def test_dirty_content_has_no_pipe_tables(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html(_DIRTY_CONTENT)
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html(_DIRTY_CONTENT)
         assert "|-------" not in result
         assert "<table>" in result
 
     def test_dirty_content_has_html_headings(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html(_DIRTY_CONTENT)
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html(_DIRTY_CONTENT)
         assert "<h2>" in result
         assert "<h3>" in result
 
     def test_dirty_content_has_aside_callouts(self):
-        from jobs.article_job import sanitize_article_html
-        result = sanitize_article_html(_DIRTY_CONTENT)
+        from jobs.article_job import markdownish_to_html
+        result = markdownish_to_html(_DIRTY_CONTENT)
         assert "<aside" in result
 
 

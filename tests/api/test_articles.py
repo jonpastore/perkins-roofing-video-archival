@@ -249,6 +249,130 @@ def test_publish_no_wp_creds_still_succeeds(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# XSS sanitization: stored content_md must survive bleach on write
+# ---------------------------------------------------------------------------
+
+_XSS_PAYLOADS = [
+    '<script>alert("xss")</script>',
+    '<img src=x onerror=alert(1)>',
+    '<a href="javascript:alert(1)">click</a>',
+    '<iframe src="javascript:alert(1)"></iframe>',
+    '<div onmouseover="evil()">hover</div>',
+]
+
+_SAFE_HTML = (
+    "<h2>Roof Repair Guide</h2>"
+    "<p>Perkins Roofing serves <strong>Columbus, OH</strong>.</p>"
+    "<ul><li>Shingles</li><li>Flashing</li></ul>"
+    '<a href="https://example.com">Learn more</a>'
+    '<iframe src="https://www.youtube.com/embed/abc123" allowfullscreen></iframe>'
+)
+
+
+def test_xss_script_stripped_on_create():
+    """<script> payload in content_md must be stripped before storage."""
+    c = _admin_client()
+    payload = '<script>alert("xss")</script><p>Legit content</p>'
+    r = c.post("/articles", json={"title": "XSS Create Test", "content_md": payload}, headers=AUTH)
+    assert r.status_code == 201, r.text
+    stored = r.json()["content_md"]
+    assert "<script>" not in stored
+    assert "alert" not in stored
+    assert "Legit content" in stored
+
+
+def test_xss_onerror_stripped_on_create():
+    """onerror= event handler must be stripped on create."""
+    c = _admin_client()
+    payload = '<img src=x onerror=alert(1)><p>Text</p>'
+    r = c.post("/articles", json={"title": "XSS Onerror Create", "content_md": payload}, headers=AUTH)
+    assert r.status_code == 201, r.text
+    stored = r.json()["content_md"]
+    assert "onerror" not in stored
+
+
+def test_xss_javascript_href_stripped_on_create():
+    """javascript: href must be stripped on create."""
+    c = _admin_client()
+    payload = '<a href="javascript:alert(1)">click me</a>'
+    r = c.post("/articles", json={"title": "XSS JS Href Create", "content_md": payload}, headers=AUTH)
+    assert r.status_code == 201, r.text
+    stored = r.json()["content_md"]
+    assert "javascript:" not in stored
+
+
+def test_xss_script_stripped_on_update():
+    """<script> payload in content_md must be stripped on update."""
+    c = _admin_client()
+    c.post("/articles", json={"title": "XSS Update Test"}, headers=AUTH)
+    payload = '<script>steal(document.cookie)</script><h2>Real Content</h2>'
+    r = c.put("/articles/xss-update-test", json={"content_md": payload}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    stored = r.json()["content_md"]
+    assert "<script>" not in stored
+    assert "steal" not in stored
+    assert "<h2>" in stored
+
+
+def test_xss_on_event_handler_stripped_on_update():
+    """on* event handlers must be stripped on update."""
+    c = _admin_client()
+    c.post("/articles", json={"title": "XSS OnEvent Update"}, headers=AUTH)
+    payload = '<div onmouseover="evil()">hover me</div><p>Safe</p>'
+    r = c.put("/articles/xss-onevent-update", json={"content_md": payload}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    stored = r.json()["content_md"]
+    assert "onmouseover" not in stored
+    assert "evil()" not in stored
+
+
+def test_safe_html_survives_sanitization():
+    """Legitimate article HTML (headings, lists, links, YouTube iframes) must not be stripped."""
+    c = _admin_client()
+    r = c.post("/articles", json={"title": "Safe HTML Survives", "content_md": _SAFE_HTML}, headers=AUTH)
+    assert r.status_code == 201, r.text
+    stored = r.json()["content_md"]
+    assert "<h2>" in stored
+    assert "<strong>" in stored
+    assert "<ul>" in stored
+    assert 'href="https://example.com"' in stored
+    assert "<iframe" in stored
+    assert "youtube.com" in stored
+
+
+def test_sanitize_html_unit_script():
+    """Unit test: sanitize_html strips <script> from raw content_md."""
+    from jobs.article_job import sanitize_html
+    result = sanitize_html('<script>alert("xss")</script><p>Clean</p>')
+    assert "<script>" not in result
+    assert "alert" not in result
+    assert "Clean" in result
+
+
+def test_sanitize_html_unit_onerror():
+    """Unit test: sanitize_html strips onerror= event handler."""
+    from jobs.article_job import sanitize_html
+    result = sanitize_html('<img src=x onerror=alert(1)><p>Safe</p>')
+    assert "onerror" not in result
+
+
+def test_sanitize_html_unit_javascript_href():
+    """Unit test: sanitize_html strips javascript: URI from href."""
+    from jobs.article_job import sanitize_html
+    result = sanitize_html('<a href="javascript:alert(1)">link</a>')
+    assert "javascript:" not in result
+
+
+def test_sanitize_html_unit_youtube_iframe_survives():
+    """Unit test: sanitize_html preserves https YouTube iframes."""
+    from jobs.article_job import sanitize_html
+    iframe = '<iframe src="https://www.youtube.com/embed/abc123" allowfullscreen></iframe>'
+    result = sanitize_html(iframe)
+    assert "<iframe" in result
+    assert "youtube.com" in result
+
+
+# ---------------------------------------------------------------------------
 # wp_url field
 # ---------------------------------------------------------------------------
 

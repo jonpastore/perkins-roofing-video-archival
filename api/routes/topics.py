@@ -700,11 +700,11 @@ def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str)
     keyword and topic so the article is at minimum a finished stub the editor can expand.
     """
     try:
-        from jobs.article_job import generate_scored_article, sanitize_article_html  # noqa: PLC0415
+        from jobs.article_job import generate_scored_article, markdownish_to_html  # noqa: PLC0415
         # Generative loop with SEO/AIO verification — refines until the score hits 100
         # (or max iters), and always returns finished JSON-LD.
         fields = dict(generate_scored_article(keyword, ctx))
-        fields["content_md"] = sanitize_article_html(fields.get("content_md") or "")
+        fields["content_md"] = markdownish_to_html(fields.get("content_md") or "")
         return fields
     except Exception as exc:  # noqa: BLE001
         logger.warning("generate_scored_article failed for %r, using fallback: %s", keyword, exc)
