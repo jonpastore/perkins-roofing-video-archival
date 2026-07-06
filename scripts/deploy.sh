@@ -6,6 +6,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# R3-ENFORCE: no direct deploy. The image is tagged with the git SHA (below), so deploying a dirty
+# tree would ship code that isn't in git. Refuse — commit first. (Infra changes go via terraform,
+# never gcloud-by-hand; see docs/ENGINEERING_RULES.md R3.)
+if [ -n "$(git status --porcelain)" ]; then
+  echo "ERROR: working tree is dirty. Commit (or stash) before deploying — the image is tagged" >&2
+  echo "       with the git SHA, so a deploy must correspond to committed code (R3-ENFORCE)." >&2
+  git status --short >&2
+  exit 1
+fi
+
 # Non-secret config comes from the local .env at deploy time (URLs, public client id,
 # owner channel). Sensitive creds live in Secret Manager and are injected via --set-secrets
 # below — resettable in the Config UI (which writes new secret versions); new revisions read

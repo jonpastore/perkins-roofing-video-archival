@@ -28,6 +28,19 @@ every change must satisfy these. CI enforces what it can; the rest is a manual p
 - Terraform state is authoritative for cloud; keep it consistent (migrate to a remote GCS
   backend before multi-operator use — tracked as hardening).
 
+### R3-ENFORCE — no direct deploy, ever (owner directive 2026-07-06)
+- **Infrastructure changes (Cloud Scheduler jobs, Secret Manager secrets/IAM bindings, buckets,
+  Cloud SQL, Cloud Run service/job *definitions*, service accounts) go ONLY through
+  `terraform apply` from committed code.** NEVER `gcloud ... create/update/delete` or the console
+  for anything Terraform owns — that is exactly what caused the 2026-07-06 drift (an out-of-band
+  `crawl-comments` scheduler + secrets created by hand, invisible to state).
+- The ONLY gcloud allowed is **read-only / operational**: `... describe|list|logging read`,
+  `run jobs execute`, `scheduler jobs run|pause|resume`. These do not define infrastructure.
+- **Always commit before deploy.** The app image is tagged with the git SHA, so a deploy from a
+  dirty tree ships code that isn't in git. `scripts/deploy.sh` hard-refuses a dirty working tree.
+- Any new infra need → add the resource to `infra/*.tf`, commit, `terraform apply`, `drift_check`.
+  If you find drift, reconcile it via `terraform import` + apply (codify reality), never by hand.
+
 ## R4 — Drift check (per wave)
 - Every wave must run `scripts/drift_check.sh` and show **no drift**:
   - `terraform plan -detailed-exitcode` → exit 0 (no changes) after the wave's apply.
