@@ -1,36 +1,40 @@
-Resume the Perkins v2 video-archival platform after /clear. FIRST read CONTINUATION-2026-07-05.md in
-full — it has the complete state (huge multi-role console built + deployed on feat/platform-v2) and the
-resume quick-start (auth is degraded: use the ADC token for gcloud/deploys/DB; NEVER chain deploys with a
-`while pgrep deploy.sh` loop — it self-matches and no-ops). Follow the binding rules in
-docs/ENGINEERING_RULES.md (R1 core coverage, R2 architect+critic review, R3 100% IaC git→apply — Terraform
-for GCP, Ansible for cerberus, scripts/apply_migrations.sh for schema, scripts/deploy.sh for the image;
-NO ad-hoc gcloud/create_all changes).
+Resume the Perkins v2 video-archival platform after /clear. FIRST read CONTINUATION-2026-07-06.md in
+full — it has the complete state (huge build+harden session; branch feat/platform-v2; live API+SPA on
+commit 2ff19cb) and the resume quick-start. Follow docs/ENGINEERING_RULES.md (R1 core coverage ≥97% +
+behavioral tests, R2 architect+critic review per wave, R3 100% IaC git→apply — Terraform for GCP,
+scripts/deploy.sh for the image, scripts/apply_migrations.sh for schema, R4 no drift).
 
-IMPORTANT — switch all generation to the CLOUD (Vertex): use
-  LLM_BACKEND=vertex LLM_MODEL=gemini-2.5-flash EMBED_BACKEND=vertex EMBED_MODEL=gemini-embedding-001
-for every job/run. The local cerberus Qwen path had integration issues (empty structured-JSON on articles;
-embed recursion — now fixed) and Jon asked to move off it. Do NOT set LLM_BACKEND=ollama.
+AUTH GOTCHAS (critical): the `.env` sets GOOGLE_APPLICATION_CREDENTIALS=infra/vertex-dev-sa.json (a
+READ-ONLY SA). For ANY gcloud / Secret Manager / Cloud Scheduler / deploy command you MUST
+`unset GOOGLE_APPLICATION_CREDENTIALS` first (else 403), then
+`export CLOUDSDK_AUTH_ACCESS_TOKEN=$(gcloud auth application-default print-access-token)`. Keep that env
+var SET (to vertex-dev-sa.json) only for Vertex/DB jobs. ADC expires mid-session — if gcloud says
+"Reauthentication failed", ask Jon to run `!gcloud auth application-default login` (that also drops the
+cloud-sql-proxy → restart it: `env -u GOOGLE_APPLICATION_CREDENTIALS /tmp/cloud-sql-proxy
+video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432` in background).
+DB_URL is in /tmp/perkins_dburl.txt. DEPLOY GATE: verify the SPA with `npm run build` (exit 0), NOT just
+`tsc --noEmit` — a failing build silently keeps a stale bundle live.
 
-Then finish the remaining tasks, in order (details + snippets in the continuation):
+TOP TASK — fix the ingest QUEUE trigger. Re-queuing a video (Dashboard Retry → ingestion_runs
+status='pending') never processes because NOTHING auto-executes the `ingest` Cloud Run Job
+(jobs.ingest_worker) — there's no scheduler for it (empty `gcloud run jobs executions list --job=ingest`).
+Stuck: WLX7kUWleto (stage transcript, pending since 03:13). Add an automatic trigger: simplest is an
+`/internal/ingest` endpoint (INTERNAL_SECRET-gated, bounded batch — mirror `/internal/crawl-comments` in
+api/app.py) + a Cloud Scheduler job (mirror the crawl-comments block in infra/main.tf; every 15–30 min);
+consider render/article queues too. CAVEAT: stage `transcript` needs Whisper on cerberus — verify it's up
+(`ansible-playbook local_llm.yml -e reclaim_gpu_from_whisper=false && ansible-playbook whisper.yml`;
+WHISPER_URL=http://cerberus-ai:9000/asr) or ingest will trigger but fail transcription.
 
-1. Finish the FAQ answers on Vertex. 5,189 questions are mined; a Vertex answer run
-   (`python -m jobs.prime_backlog --answers 6000`, LLM_BACKEND=vertex) is in flight — verify all
-   faq_entries are status='answered' and re-run to completion (resumable, ~$2 total). Confirm counts.
+THEN, as capacity allows (details + status in the continuation):
+- FAQ answer backlog is grinding on Vertex (~3,930/4,541 answered, resumable: LLM_BACKEND=vertex
+  `python -m jobs.prime_backlog --answers 6000`). When done, re-run POST /faq/publish-wordpress (page 7895)
+  to refresh the site FAQ with the consolidated set.
+- Reconcile R4 drift: secret versions, reels-bucket IAM, and the 3 Cloud Scheduler jobs were applied via
+  gcloud AND written to infra/main.tf — a terraform plan may need a one-time import of the crawl-comments
+  scheduler. Run scripts/drift_check.sh.
+- Jon action (external): API-restrict the Firebase web key to Identity Toolkit in the GCP console.
 
-2. Regenerate the 20 bad Video-Approval proposals (they used the fixed 0/.25/.5/.75 fraction bug). Either
-   POST /video/{id}/repropose for each, or delete the unapproved MiniSeries and re-run
-   jobs.propose_series_job (now content-driven). Verify parts have real second offsets + good titles.
-
-3. Prime article-cluster drafts for the top aggregated topics ON VERTEX
-   (`python -m jobs.prime_backlog --articles N`, LLM_BACKEND=vertex). Verify real (non-stub) HTML content.
-
-4. Publish the FAQ page to WordPress (POST /faq/publish-wordpress) once answers exist (needs WP creds).
-
-5. Do a Playwright visual walk as jon@perkinsroofing.net (mint a custom token via infra/vertex-dev-sa.json →
-   Identity Toolkit exchange → seed IndexedDB) across every console tab to confirm the big UI batch renders.
-
-Deploy as you go (SPA: firebase deploy --only hosting; API: CLOUDSDK_AUTH_ACCESS_TOKEN=$(gcloud auth
-application-default print-access-token) bash scripts/deploy.sh). Commit as you go; don't push unless asked.
-External blockers (not yours to unblock): Meta/TikTok social creds (Mon), Workspace admin consent for
-org-directory user invites, Resend domain verify. To give the GPU back to Whisper:
-ansible-playbook local_llm.yml -e reclaim_gpu_from_whisper=false && ansible-playbook whisper.yml.
+VERIFIED WORKING (don't redo): comment-crawl cron (every 2h, HTTP 200 confirmed, rotates all 841 videos);
+vault-backed secrets + all 8 Config health checks green; publishing (WP creds live); all 34 articles at
+SEO/AIO 100; FAQ semantic consolidation (4,541); the whole console UI is finally deployed (hard-refresh).
+Commit/deploy as you go; don't push unless asked.
