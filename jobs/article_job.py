@@ -118,10 +118,64 @@ def sanitize_article_html(content: str) -> str:
 
     content = _MD_BOLD_RE.sub(_bold_repl, content)
 
+    # ── 4b. Convert markdown links [text](url) → <a href> ────────────────────
+    content = _MD_LINK_RE.sub(
+        lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>', content)
+
+    # ── 4c. Convert leftover markdown italics *text* → <em> (bold already done) ─
+    content = _MD_ITALIC_RE.sub(lambda m: f"<em>{m.group(1)}</em>", content)
+
+    # ── 4d. Convert markdown bullet lines (- / *) → <ul><li> ─────────────────
+    content = _convert_bullets(content)
+
     # ── 5. Convert markdown pipe tables → HTML <table> ───────────────────────
     content = _convert_pipe_tables(content)
 
     return content
+
+
+# Markdown links: [text](http… or /path) — not images (no leading !)
+_MD_LINK_RE = re.compile(r"(?<!\!)\[([^\]]+)\]\(((?:https?:|/|#)[^)\s]+)\)")
+# Single-asterisk italics (bold ** already handled): *text*
+_MD_ITALIC_RE = re.compile(r"(?<!\*)\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\*)")
+# Markdown bullet line: "- item" or "* item" at line start
+_MD_BULLET_RE = re.compile(r"^\s*[-*]\s+(.+)$")
+
+
+def _convert_bullets(content: str) -> str:
+    """Wrap consecutive markdown bullet lines in <ul><li>…</li></ul>."""
+    out, buf = [], []
+
+    def flush():
+        if buf:
+            out.append("<ul>" + "".join(f"<li>{x}</li>" for x in buf) + "</ul>")
+            buf.clear()
+
+    for line in content.split("\n"):
+        m = _MD_BULLET_RE.match(line)
+        # Skip lines that are already HTML list items or contain block tags
+        if m and "<li" not in line and "<td" not in line:
+            buf.append(m.group(1).strip())
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return "\n".join(out)
+
+
+# Residual-markdown detector: headings, bold, links, bullets, or pipe tables.
+_MD_RESIDUAL = [
+    re.compile(r"^#{1,6}\s", re.MULTILINE),
+    re.compile(r"\*\*[^*]+\*\*"),
+    re.compile(r"(?<!\!)\[[^\]]+\]\((?:https?:|/|#)[^)\s]+\)"),
+    re.compile(r"^\s*[-*]\s+\S", re.MULTILINE),
+    re.compile(r"^\s*\|.+\|\s*$", re.MULTILINE),
+]
+
+
+def has_residual_markdown(content: str) -> bool:
+    """True if any Markdown syntax remains (used to gate the generation loop)."""
+    return any(rx.search(content or "") for rx in _MD_RESIDUAL)
 
 
 def _convert_pipe_tables(content: str) -> str:
@@ -836,19 +890,25 @@ def generate_scored_article(
         llm = get_default()
 
     fields = generate_article_content(keyword, ctx, llm=llm)
+    fields["content_md"] = sanitize_article_html(fields.get("content_md", ""))
 
     def _score(f: dict, jl: list) -> dict:
         return score_article(f.get("title", ""), f.get("meta", ""),
                              f.get("content_md", ""), f.get("faq_json"), bool(jl))
 
+    def _done(res: dict, f: dict) -> bool:
+        # Not done until the score hits target AND no Markdown remains in the body.
+        return res["score"] >= target and not has_residual_markdown(f.get("content_md", ""))
+
     jsonld = _build_article_jsonld(fields, ctx)
     result = _score(fields, jsonld)
     it = 0
-    while result["score"] < target and it < max_iters:
+    while not _done(result, fields) and it < max_iters:
         it += 1
         fails = set(failing_keys(result))
-        # Content-quality gaps (headings, length, video, title) → full refine pass
-        if fails & {"headings", "wordcount", "video", "title_len"}:
+        # Content-quality gaps (headings, length, video, title) OR leftover markdown → refine
+        if (fails & {"headings", "wordcount", "video", "title_len"}) or \
+                has_residual_markdown(fields.get("content_md", "")):
             fields = refine_article_content(fields, keyword, llm=llm)
         # FAQ gap → one targeted FAQ generation
         if "faq" in fails and not fields.get("faq_json"):
@@ -857,11 +917,14 @@ def generate_scored_article(
         if fails & {"meta_present", "meta_len"}:
             fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
                                          fields.get("content_md", ""))
+        # Deterministically strip any Markdown the refine pass emitted.
+        fields["content_md"] = sanitize_article_html(fields.get("content_md", ""))
         jsonld = _build_article_jsonld(fields, ctx)
         result = _score(fields, jsonld)
 
     # Final deterministic guarantees for structural checks.
-    fields["content_md"] = _ensure_video_link(fields.get("content_md", ""), keyword)
+    fields["content_md"] = sanitize_article_html(
+        _ensure_video_link(fields.get("content_md", ""), keyword))
     fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
                                  fields.get("content_md", ""))
     if not fields.get("faq_json"):

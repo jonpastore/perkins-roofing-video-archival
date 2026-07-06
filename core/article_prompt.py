@@ -65,10 +65,16 @@ def system_prompt() -> str:
         "AI systems heavily cite FAQ content.\n"
         "- Fact density: include specific numbers, dates, prices, timeframes. "
         "\"Costs $150-300\" beats \"varies by project\".\n"
-        "- Comparison tables: if comparing options, use a markdown table. "
+        "- Comparison tables: if comparing options, use an HTML <table>. "
         "AI systems extract tabular data.\n"
         "- Each H2 section should be a self-contained answer that makes sense if extracted alone.\n"
-        "- Meta description should be a complete answer/summary, not a teaser."
+        "- Meta description should be a complete answer/summary, not a teaser.\n"
+        "\n"
+        "OUTPUT FORMAT (CRITICAL — the body is rendered as raw HTML): the \"content\" field MUST be "
+        "valid HTML ONLY. Use <h2>/<h3> for headings, <p> for paragraphs, <ul>/<ol>/<li> for lists, "
+        "<strong>/<em> for emphasis, <a href=\"...\"> for links, and <table>/<tr>/<th>/<td> for tables. "
+        "NEVER use Markdown syntax — no #/##, no **bold**, no - or * bullets, no [text](url) links, and "
+        "no | pipe | tables. Any Markdown in the output is a defect."
     )
 
 
@@ -308,7 +314,7 @@ def template_prompt(ctx: dict) -> str:
             "Pick the ones MOST topically relevant. These will be linked from within the article body.\n\n"
             "ANCHOR TEXT VARIATION (CRITICAL — affects SEO authority distribution):\n"
             "When you reference these internal links inside the article body using "
-            "`[anchor text](/blog/slug)` markdown, VARY THE ANCHOR TEXT across links. "
+            "HTML anchors `<a href=\"/blog/slug\">anchor text</a>` (NOT markdown), VARY THE ANCHOR TEXT across links. "
             "Do NOT use the linked article's exact title for every link. Distribute roughly:\n"
             "- 40% partial-match anchors (e.g. \"physiotherapy treatment\" not the full title)\n"
             "- 30% generic anchors that fit the prose (\"learn more here\", \"this guide\", \"our resource on X\")\n"

@@ -318,17 +318,17 @@ def generate_cluster_article(
     subtopics = _derive_subtopics(topic, pillar_slug)
 
     with SessionLocal() as db:
-        # --- Idempotency: if pillar already exists, return existing cluster ---
+        # --- Idempotency: only short-circuit when a FULL cluster already exists ---
+        # A bare standalone article with the pillar slug (e.g. from priming) is NOT a
+        # complete cluster — in that case we promote it to pillar and generate the
+        # 4-6 supporting cluster articles rather than returning "0 supporting articles".
         existing_pillar = db.get(Article, pillar_slug)
-        if existing_pillar is not None:
-            existing_clusters = (
-                db.query(Article)
-                .filter(
-                    Article.pillar_slug == pillar_slug,
-                    Article.role == "cluster",
-                )
-                .all()
-            )
+        existing_clusters = (
+            db.query(Article)
+            .filter(Article.pillar_slug == pillar_slug, Article.role == "cluster")
+            .all()
+        )
+        if existing_pillar is not None and len(existing_clusters) >= 4:
             return {
                 "pillar_slug": pillar_slug,
                 "pillar": {"slug": existing_pillar.slug, "title": existing_pillar.title},
@@ -339,42 +339,48 @@ def generate_cluster_article(
         # --- Compute base publish date before generating articles ---
         base_date = _compute_base_publish_date(db)
 
-        # --- Generate pillar content via LLM ---
-        pillar_ctx = {
-            "keyword": topic,
-            "role": "pillar",
-            "pillar_slug": pillar_slug,
-            "topic": topic,
-        }
-        pillar_content = _generate_content_with_fallback(topic, pillar_ctx, pillar_title)
-
         pillar_publish_at = datetime(
             base_date.year, base_date.month, base_date.day, tzinfo=timezone.utc
         ).replace(tzinfo=None)  # store as naive UTC
 
-        pillar_article = Article(
-            slug=pillar_slug,
-            title=pillar_content["title"],
-            meta=pillar_content["meta"] or f"Complete guide to {topic} from Perkins Roofing.",
-            content_md=pillar_content["content_md"],
-            faq_json=pillar_content["faq_json"] or None,
-            jsonld_json=pillar_content.get("jsonld_json"),
-            role="pillar",
-            pillar_slug=pillar_slug,
-            wp_post_id=None,
-            status="scheduled",
-            publish_at=pillar_publish_at,
-        )
-        db.add(pillar_article)
+        if existing_pillar is not None:
+            # Reuse the existing article as the pillar (promote it) and generate clusters.
+            existing_pillar.role = "pillar"
+            existing_pillar.pillar_slug = pillar_slug
+            pillar_article = existing_pillar
+        else:
+            # --- Generate pillar content via LLM ---
+            pillar_ctx = {
+                "keyword": topic,
+                "role": "pillar",
+                "pillar_slug": pillar_slug,
+                "topic": topic,
+            }
+            pillar_content = _generate_content_with_fallback(topic, pillar_ctx, pillar_title)
 
-        pillar_sched = ScheduledContent(
-            kind="article",
-            ref_id=pillar_slug,
-            publish_at=pillar_publish_at,
-            status="scheduled",
-            target="wordpress",
-        )
-        db.add(pillar_sched)
+            pillar_article = Article(
+                slug=pillar_slug,
+                title=pillar_content["title"],
+                meta=pillar_content["meta"] or f"Complete guide to {topic} from Perkins Roofing.",
+                content_md=pillar_content["content_md"],
+                faq_json=pillar_content["faq_json"] or None,
+                jsonld_json=pillar_content.get("jsonld_json"),
+                role="pillar",
+                pillar_slug=pillar_slug,
+                wp_post_id=None,
+                status="scheduled",
+                publish_at=pillar_publish_at,
+            )
+            db.add(pillar_article)
+
+            # Only schedule a NEW pillar (a promoted existing one keeps its schedule).
+            db.add(ScheduledContent(
+                kind="article",
+                ref_id=pillar_slug,
+                publish_at=pillar_publish_at,
+                status="scheduled",
+                target="wordpress",
+            ))
 
         # --- Generate cluster articles ---
         created_clusters: list[Article] = []

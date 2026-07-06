@@ -261,6 +261,8 @@ def publish_article(slug: str, claims=Depends(require_role("manage_articles"))):
         wp_creds_present = all(
             os.environ.get(k) for k in ("WP_URL", "WP_USER", "WP_APP_PWD")
         )
+        wp_published = False
+        wp_error: str | None = None
         if wp_creds_present and a.content_md:
             try:
                 from jobs.article_job import _markdown_to_html  # noqa: PLC0415
@@ -290,12 +292,18 @@ def publish_article(slug: str, claims=Depends(require_role("manage_articles"))):
                     )
                     a.wp_post_id = post_id
                     logger.info("wp publish post_id=%d slug=%s", post_id, slug)
+                wp_published = True
             except Exception as exc:  # noqa: BLE001
+                wp_error = str(exc)
                 logger.warning("wp publish failed for slug=%s (status still set): %s", slug, exc)
-        else:
-            if not wp_creds_present:
-                logger.info("wp creds absent — skipping external publish for slug=%s", slug)
+        elif not wp_creds_present:
+            wp_error = "WordPress credentials not configured on the server."
+            logger.info("wp creds absent — skipping external publish for slug=%s", slug)
+        elif not a.content_md:
+            wp_error = "Article has no content to publish."
 
         db.commit()
         db.refresh(a)
-        return _article_full(a)
+        # Report the TRUE WordPress outcome so the console can confirm (or warn):
+        # status flips to 'published' regardless, but wp_published tells the real story.
+        return {**_article_full(a), "wp_published": wp_published, "wp_error": wp_error}

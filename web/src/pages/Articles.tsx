@@ -422,6 +422,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishResult, setPublishResult] = useState<{ wp_published: boolean; wp_url: string | null; wp_error: string | null } | null>(null);
   const [scheduleAt, setScheduleAt] = useState("");
   const [scheduleTz, setScheduleTz] = useState(USER_TZ);
   const [scheduling, setScheduling] = useState(false);
@@ -445,14 +446,20 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
   async function handlePublish() {
     setPublishing(true);
     setPublishError(null);
+    setPublishResult(null);
     try {
       const r = await apiFetch(`/articles/${slug}/publish`, { method: "POST" });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
         throw new Error((body as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
       }
-      const updated: ArticleFull = await r.json();
+      const updated: ArticleFull & { wp_published?: boolean; wp_error?: string | null } = await r.json();
       setArticle(updated);
+      setPublishResult({
+        wp_published: Boolean(updated.wp_published),
+        wp_url: updated.wp_url ?? null,
+        wp_error: updated.wp_error ?? null,
+      });
       onRefresh();
     } catch (e: unknown) {
       setPublishError(e instanceof Error ? e.message : String(e));
@@ -712,6 +719,35 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                   </span>
                 )}
               </div>
+
+              {/* Publish confirmation banner */}
+              {publishResult && (
+                publishResult.wp_published ? (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                    background: "#e6f9f0", border: "1px solid #bbf7d0", color: "#166534",
+                    borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 14,
+                  }}>
+                    <strong>✓ Published to WordPress.</strong>
+                    {publishResult.wp_url && (
+                      <a href={publishResult.wp_url} target="_blank" rel="noopener noreferrer"
+                        style={{ color: "#166534", fontWeight: 700 }}>
+                        View published article ↗
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{
+                    background: "#fff8e1", border: "1px solid #ffe082", color: "#8a6d3b",
+                    borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 14,
+                  }}>
+                    <strong>⚠ Marked as published, but not live on WordPress.</strong>
+                    {" "}{publishResult.wp_error ?? "The WordPress push did not complete."} The
+                    article status is set to <em>published</em> in the console, but it was not pushed
+                    to the site — resolve the issue and re-publish to make it live.
+                  </div>
+                )
+              )}
 
               {article.meta && (
                 <p style={{ fontSize: 13, color: BRAND.sub, margin: "0 0 16px", fontStyle: "italic" }}>
