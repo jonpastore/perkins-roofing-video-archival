@@ -87,6 +87,52 @@ def object_size(bucket: str, key: str) -> int:
         ) from exc
 
 
+def download_file(bucket: str, key: str, local_path: str) -> str:
+    """Download *bucket*/*key* to *local_path*. Returns *local_path*.
+
+    Raises RuntimeError if google-cloud-storage is unavailable or the download fails.
+    """
+    try:
+        from google.cloud import storage  # noqa: PLC0415
+        from google.cloud.exceptions import GoogleCloudError  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "google-cloud-storage is not installed; run: pip install google-cloud-storage"
+        ) from exc
+
+    try:
+        client = storage.Client()
+        client.bucket(bucket).blob(key).download_to_filename(local_path)
+    except GoogleCloudError as exc:
+        raise RuntimeError(
+            f"GCS download failed (bucket={bucket!r}, key={key!r}): {exc}"
+        ) from exc
+    return local_path
+
+
+def delete_object(bucket: str, key: str) -> None:
+    """Delete *bucket*/*key*. No-op if the object is already absent.
+
+    Raises RuntimeError if google-cloud-storage is unavailable or the delete fails for a
+    reason other than the object not existing.
+    """
+    try:
+        from google.cloud import storage  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "google-cloud-storage is not installed; run: pip install google-cloud-storage"
+        ) from exc
+
+    try:
+        storage.Client().bucket(bucket).blob(key).delete()
+    except Exception as exc:  # NotFound is fine — the object is already gone
+        if exc.__class__.__name__ == "NotFound":
+            return
+        raise RuntimeError(
+            f"GCS delete failed (bucket={bucket!r}, key={key!r}): {exc}"
+        ) from exc
+
+
 def _iam_sign_kwargs() -> dict:
     """V4 signing kwargs. On Cloud Run the ADC are compute-engine credentials with no local
     private key, so signing must go through the IAM signBlob API — pass the SA email + a fresh
