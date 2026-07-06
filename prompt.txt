@@ -1,40 +1,36 @@
-Resume the Perkins v2 video-archival platform after /clear. FIRST read CONTINUATION-2026-07-06.md in
-full — it has the complete state (huge build+harden session; branch feat/platform-v2; live API+SPA on
-commit 2ff19cb) and the resume quick-start. Follow docs/ENGINEERING_RULES.md (R1 core coverage ≥97% +
-behavioral tests, R2 architect+critic review per wave, R3 100% IaC git→apply — Terraform for GCP,
-scripts/deploy.sh for the image, scripts/apply_migrations.sh for schema, R4 no drift).
+Resume the Perkins v2 platform build. FIRST read CONTINUATION-2026-07-06-pm.md in full — it has the
+complete state, deployed status, outstanding items, commands, and gotchas. Everything is committed on
+branch feat/platform-v2 (HEAD 41c13e5) and DEPLOYED (Cloud Run API image 41c13e5, SPA on Firebase);
+terraform is drift-clean. Prod migrations (articles.focus_keyword, user_settings) already applied.
 
-AUTH GOTCHAS (critical): the `.env` sets GOOGLE_APPLICATION_CREDENTIALS=infra/vertex-dev-sa.json (a
-READ-ONLY SA). For ANY gcloud / Secret Manager / Cloud Scheduler / deploy command you MUST
-`unset GOOGLE_APPLICATION_CREDENTIALS` first (else 403), then
-`export CLOUDSDK_AUTH_ACCESS_TOKEN=$(gcloud auth application-default print-access-token)`. Keep that env
-var SET (to vertex-dev-sa.json) only for Vertex/DB jobs. ADC expires mid-session — if gcloud says
-"Reauthentication failed", ask Jon to run `!gcloud auth application-default login` (that also drops the
-cloud-sql-proxy → restart it: `env -u GOOGLE_APPLICATION_CREDENTIALS /tmp/cloud-sql-proxy
-video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432` in background).
-DB_URL is in /tmp/perkins_dburl.txt. DEPLOY GATE: verify the SPA with `npm run build` (exit 0), NOT just
-`tsc --noEmit` — a failing build silently keeps a stale bundle live.
+Follow docs/ENGINEERING_RULES.md — especially R3-ENFORCE: NO direct deploy. Commit first (scripts/deploy.sh
+refuses a dirty tree), deploy via scripts/deploy.sh (API+jobs) + `firebase deploy` (SPA) + `terraform apply`
+(infra). Run scripts/drift_check.sh and reconcile any drift via `terraform import` + apply, never by hand.
 
-TOP TASK — fix the ingest QUEUE trigger. Re-queuing a video (Dashboard Retry → ingestion_runs
-status='pending') never processes because NOTHING auto-executes the `ingest` Cloud Run Job
-(jobs.ingest_worker) — there's no scheduler for it (empty `gcloud run jobs executions list --job=ingest`).
-Stuck: WLX7kUWleto (stage transcript, pending since 03:13). Add an automatic trigger: simplest is an
-`/internal/ingest` endpoint (INTERNAL_SECRET-gated, bounded batch — mirror `/internal/crawl-comments` in
-api/app.py) + a Cloud Scheduler job (mirror the crawl-comments block in infra/main.tf; every 15–30 min);
-consider render/article queues too. CAVEAT: stage `transcript` needs Whisper on cerberus — verify it's up
-(`ansible-playbook local_llm.yml -e reclaim_gpu_from_whisper=false && ansible-playbook whisper.yml`;
-WHISPER_URL=http://cerberus-ai:9000/asr) or ingest will trigger but fail transcription.
+AUTH: `.env` sets GOOGLE_APPLICATION_CREDENTIALS=infra/vertex-dev-sa.json (read-only SA, for Vertex/DB jobs).
+For gcloud / Secret Manager / Scheduler / storage commands, run in a shell WITHOUT that var (unset it) so
+ADC uses the jon@perkinsroofing.net account. Start the Cloud SQL proxy before local DB/job work:
+  /tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
+  export DB_URL="postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins"
+Verify the SPA with `cd web && npm run build` (exit 0), not just tsc.
 
-THEN, as capacity allows (details + status in the continuation):
-- FAQ answer backlog is grinding on Vertex (~3,930/4,541 answered, resumable: LLM_BACKEND=vertex
-  `python -m jobs.prime_backlog --answers 6000`). When done, re-run POST /faq/publish-wordpress (page 7895)
-  to refresh the site FAQ with the consolidated set.
-- Reconcile R4 drift: secret versions, reels-bucket IAM, and the 3 Cloud Scheduler jobs were applied via
-  gcloud AND written to infra/main.tf — a terraform plan may need a one-time import of the crawl-comments
-  scheduler. Run scripts/drift_check.sh.
-- Jon action (external): API-restrict the Firebase web key to Identity Toolkit in the GCP console.
+PRIORITIES (full detail in the continuation §Outstanding):
+1. Task 27 — batch-regenerate all 34 articles to pass Rank Math + republish to WordPress. Job
+   jobs/regen_articles_seo.py works (validated on wall-flashings → 100/100) but the generator only
+   guarantees 14/15 checks — keyword DENSITY isn't hit. Either (a) run the batch now for the 14/15 win
+   (LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo), or (b) first add a density-targeting
+   refine step in jobs/article_job.generate_scored_article so it passes all 15, then run it. The Articles
+   SEO panel's new click-to-fix already fixes density per-article on demand. ASK before batch-modifying
+   live WordPress content.
+2. YouTube Post-to-YouTube: if Tim owns the channel, mint the youtube.force-ssl refresh token
+   (scripts/youtube_oauth_setup.py), store as secret youtube-oauth-refresh-token, wire into deploy.sh/infra
+   (docs/YOUTUBE_REPLY_OAUTH.md).
+3. GSuite invite dropdown: if the Workspace super-admin grant landed, finish domain-wide delegation
+   (docs/GSUITE_DIRECTORY_SETUP.md).
+4. Retire the cerberus Whisper node in ansible/whisper.yml (STT is fully cloud) so drift_check is fully green.
 
-VERIFIED WORKING (don't redo): comment-crawl cron (every 2h, HTTP 200 confirmed, rotates all 841 videos);
-vault-backed secrets + all 8 Config health checks green; publishing (WP creds live); all 34 articles at
-SEO/AIO 100; FAQ semantic consolidation (4,541); the whole console UI is finally deployed (hard-refresh).
-Commit/deploy as you go; don't push unless asked.
+VERIFIED THIS SESSION (don't redo): cloud STT via GCS-output batch (97-min podcast = 362 segs); auto-drain
+ingest cron; comment-crawl cron (populates comment_count); email suite (WYSIWYG/templates/signatures/header/
+AI-draft loop); ClipStudio intro/outro videos; Articles 15 Rank Math checks + click-to-fix; WP author policy
+(Tim Kanak, 6 posts reassigned); scheduling WP links; search-topics toggle fix; logs IAM fix; IaC drift
+reconciled. Commit/deploy as you go; don't push unless asked.
