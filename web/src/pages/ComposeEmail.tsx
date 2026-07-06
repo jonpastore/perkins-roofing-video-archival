@@ -1,4 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Editor } from "@tinymce/tinymce-react";
+import "tinymce/tinymce";
+import "tinymce/models/dom/model";
+import "tinymce/themes/silver";
+import "tinymce/icons/default";
+import "tinymce/plugins/lists";
+import "tinymce/plugins/link";
+import "tinymce/plugins/image";
+import "tinymce/plugins/code";
+import "tinymce/plugins/table";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
 
@@ -23,6 +33,8 @@ export function ComposeEmail() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
 
+  const [signature, setSignature] = useState<string | null>(null);
+
   const [proofLoading, setProofLoading] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
   const [proofResult, setProofResult] = useState<ProofResult | null>(null);
@@ -30,6 +42,11 @@ export function ComposeEmail() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sentId, setSentId] = useState<string | null>(null);
+
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [saveTemplateError, setSaveTemplateError] = useState<string | null>(null);
+
+  const editorRef = useRef<unknown>(null);
 
   useEffect(() => {
     apiFetch("/email/templates")
@@ -40,6 +57,13 @@ export function ComposeEmail() {
       .then((data: EmailTemplate[]) => setTemplates(data))
       .catch((e) => setTemplatesError(e instanceof Error ? e.message : String(e)))
       .finally(() => setTemplatesLoading(false));
+
+    apiFetch("/me/signature")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { signature?: string | null } | null) => {
+        if (data?.signature) setSignature(data.signature);
+      })
+      .catch(() => null);
   }, []);
 
   function handleTemplateChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -53,6 +77,31 @@ export function ComposeEmail() {
       setSentId(null);
       setSendError(null);
     }
+  }
+
+  async function handleSaveTemplate() {
+    const name = prompt("Template name:");
+    if (!name?.trim()) return;
+    setSavingTemplate(true);
+    setSaveTemplateError(null);
+    try {
+      const r = await apiFetch("/email/templates", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim(), subject, body }),
+      });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const created: EmailTemplate = await r.json();
+      setTemplates((prev) => [...prev, created]);
+    } catch (e) {
+      setSaveTemplateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingTemplate(false);
+    }
+  }
+
+  function handleInsertSignature() {
+    if (!signature) return;
+    setBody((prev) => prev + "<br><br>" + signature);
   }
 
   async function handleProofread() {
@@ -157,16 +206,42 @@ export function ComposeEmail() {
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: BRAND.navyText, marginBottom: 6 }}>
               Body
             </label>
-            <textarea
+            <Editor
+              licenseKey="gpl"
+              onInit={(_evt, editor) => { editorRef.current = editor; }}
               value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Write your email here…"
-              rows={10}
-              style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "inherit" }}
+              onEditorChange={(content) => setBody(content)}
+              init={{
+                skin: false,
+                content_css: false,
+                menubar: false,
+                plugins: "lists link image code table",
+                toolbar: "undo redo | bold italic | bullist numlist | link image | code",
+                height: 320,
+                branding: false,
+              }}
             />
           </div>
 
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+            {saveTemplateError && (
+              <span style={{ fontSize: 12, color: BRAND.red, marginRight: "auto" }}>
+                Save failed: {saveTemplateError}
+              </span>
+            )}
+            {signature && (
+              <Button variant="ghost" onClick={handleInsertSignature} style={{ fontSize: 13 }}>
+                Insert signature
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              onClick={handleSaveTemplate}
+              disabled={savingTemplate || body.trim() === "" || subject.trim() === ""}
+              style={{ fontSize: 13 }}
+            >
+              {savingTemplate ? "Saving…" : "Save as template"}
+            </Button>
             <Button
               variant="ghost"
               onClick={handleProofread}

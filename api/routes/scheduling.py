@@ -62,6 +62,19 @@ def _resolve_display_name(db, kind: str, ref_id: str) -> str:
         return ref_id
 
 
+def _published_url(db, kind: str, ref_id: str) -> str | None:
+    """For a published article, the live WordPress post URL (else None)."""
+    if db is None or kind != "article":
+        return None
+    row = db.query(Article.wp_post_id).filter(Article.slug == ref_id).first()
+    wp_post_id = row[0] if row else None
+    if not wp_post_id:
+        return None
+    import os
+    base = (os.environ.get("WP_URL") or "").rstrip("/")
+    return f"{base}/?p={wp_post_id}" if base else None
+
+
 def _row_dict(r: ScheduledContent, db=None) -> dict:
     display_name = _resolve_display_name(db, r.kind, r.ref_id) if db is not None else r.ref_id
     return {
@@ -72,6 +85,8 @@ def _row_dict(r: ScheduledContent, db=None) -> dict:
         "publish_at": r.publish_at.isoformat() if r.publish_at else None,
         "status": r.status,
         "target": r.target,
+        # Live link to where it was published (WordPress) — shown on published rows.
+        "published_url": _published_url(db, r.kind, r.ref_id),
     }
 
 

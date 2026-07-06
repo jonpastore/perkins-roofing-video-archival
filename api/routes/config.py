@@ -132,6 +132,7 @@ EDITABLE_KEYS: dict[str, str] = {
     "REEL_APPLY_BRAND_SCENES": "Apply uploaded brand scenes to every render (true | false)",
     "BRAND_INTRO_VIDEO": "Brand intro video GCS path (gs://… or empty to use generated title card)",
     "BRAND_OUTRO_VIDEO": "Brand outro video GCS path (gs://… or empty to use generated closing card)",
+    "EMAIL_HTML_HEADER": "Global email header HTML (prepended to every outgoing email body)",
 }
 
 # ---------------------------------------------------------------------------

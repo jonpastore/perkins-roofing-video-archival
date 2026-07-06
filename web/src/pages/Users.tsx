@@ -8,6 +8,7 @@ interface FirebaseUser {
   email: string;
   display_name: string | null;
   role: string | null;
+  signature: string | null;
 }
 
 interface DirectoryUser {
@@ -35,6 +36,9 @@ export function Users() {
   const [saveError, setSaveError] = useState<Record<string, string>>({});
   const [myEmail, setMyEmail] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Record<string, boolean>>({});
+  const [sigDraft, setSigDraft] = useState<Record<string, string>>({});
+  const [sigSaving, setSigSaving] = useState<Record<string, boolean>>({});
+  const [sigError, setSigError] = useState<Record<string, string>>({});
 
   // Google Workspace directory (for the invite dropdown). Empty until domain-wide delegation
   // is configured on the API (WORKSPACE_ADMIN_SUBJECT); the free-text email invite works either way.
@@ -69,12 +73,15 @@ export function Users() {
       })
       .then((data: FirebaseUser[]) => {
         setUsers(data);
-        // Seed pending state with current roles
+        // Seed pending state with current roles and signatures
         const initial: Record<string, RoleOption> = {};
+        const initialSigs: Record<string, string> = {};
         for (const u of data) {
           initial[u.uid] = (u.role as RoleOption) ?? "";
+          initialSigs[u.uid] = u.signature ?? "";
         }
         setPending(initial);
+        setSigDraft(initialSigs);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -129,6 +136,32 @@ export function Users() {
   function isDirty(user: FirebaseUser): boolean {
     const current = (user.role as RoleOption) ?? "";
     return pending[user.uid] !== current;
+  }
+
+  async function handleSaveSignature(user: FirebaseUser) {
+    setSigSaving((s) => ({ ...s, [user.uid]: true }));
+    setSigError((e) => { const n = { ...e }; delete n[user.uid]; return n; });
+    try {
+      const r = await apiFetch("/admin/users/signature", {
+        method: "PUT",
+        body: JSON.stringify({ email: user.email, signature: sigDraft[user.uid] || null }),
+      });
+      if (!r.ok) {
+        const detail = await r.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
+      }
+      const updated: { email: string; signature: string | null } = await r.json();
+      setUsers((prev) =>
+        prev.map((u) => (u.email === updated.email ? { ...u, signature: updated.signature } : u))
+      );
+    } catch (e: unknown) {
+      setSigError((prev) => ({
+        ...prev,
+        [user.uid]: e instanceof Error ? e.message : String(e),
+      }));
+    } finally {
+      setSigSaving((s) => ({ ...s, [user.uid]: false }));
+    }
   }
 
   async function handleInvite() {
@@ -301,6 +334,7 @@ export function Users() {
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Name / Email</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Current Role</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Assign Role</th>
+                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Signature</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Action</th>
                 </tr>
               </thead>
@@ -337,6 +371,30 @@ export function Users() {
                         <option value="web_admin">Web Admin</option>
                         <option value="sales">sales</option>
                       </select>
+                    </td>
+                    <td style={{ padding: "10px 12px", minWidth: 200 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <textarea
+                          value={sigDraft[u.uid] ?? ""}
+                          onChange={(e) =>
+                            setSigDraft((d) => ({ ...d, [u.uid]: e.target.value }))
+                          }
+                          placeholder="Email signature…"
+                          rows={2}
+                          style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "inherit", fontSize: 12 }}
+                        />
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleSaveSignature(u)}
+                          disabled={sigSaving[u.uid]}
+                          style={{ padding: "4px 10px", fontSize: 12, alignSelf: "flex-start" }}
+                        >
+                          {sigSaving[u.uid] ? "Saving…" : "Save signature"}
+                        </Button>
+                        {sigError[u.uid] && (
+                          <span style={{ color: BRAND.red, fontSize: 11 }}>{sigError[u.uid]}</span>
+                        )}
+                      </div>
                     </td>
                     <td style={{ padding: "10px 12px" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>

@@ -184,6 +184,13 @@ class CommentDraft(Base):
     __table_args__ = (UniqueConstraint("comment_id", name="uq_comment_drafts_comment_id"),)
 
 
+class UserSetting(Base):
+    """Per-user settings (email signature, etc.). email is the PK."""
+    __tablename__ = "user_settings"
+    email = Column(String, primary_key=True)
+    signature = Column(Text, nullable=True)
+
+
 class FaqEntry(Base):
     __tablename__ = "faq_entries"
     id = Column(Integer, primary_key=True, autoincrement=True)

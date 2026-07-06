@@ -8,6 +8,7 @@ interface ScheduledItem {
   kind: string;
   ref_id: string;
   display_name: string;
+  published_url?: string | null;
   publish_at: string;
   status: string;
   target: string | null;
@@ -425,6 +426,19 @@ export function Scheduling() {
                       >
                         {item.display_name}
                       </button>
+                      {item.published_url && (
+                        <div style={{ marginTop: 3 }}>
+                          <a
+                            href={item.published_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 11, color: BRAND.red, fontWeight: 600, textDecoration: "none" }}
+                            title="View the published post on WordPress"
+                          >
+                            ↗ View on WordPress
+                          </a>
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "10px 12px", color: BRAND.sub }}>{fmtDate(item.publish_at)}</td>
                     <td style={{ padding: "10px 12px" }}>{statusBadge(item.status)}</td>

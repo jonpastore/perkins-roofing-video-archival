@@ -544,6 +544,14 @@ export function SearchAsk() {
   }
 
   function buildEmailBody(): string {
+    // Emit HTML (not markdown/plain text) so links are real clickable anchors — this flows into
+    // the WYSIWYG editor and the html send path directly.
+    const esc = (s: string) =>
+      (s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     const clips: { title: string; snippet: string; url: string }[] = [];
     for (const g of grouped) {
       for (const c of g.clips) {
@@ -552,20 +560,20 @@ export function SearchAsk() {
         }
       }
     }
-    const clipsText = clips
-      .map((c) => `• ${c.title}\n  ${c.snippet}\n  Watch: ${c.url}`)
-      .join("\n\n");
+    const items = clips
+      .map(
+        (c) =>
+          `<li style="margin-bottom:12px;"><strong>${esc(c.title)}</strong><br>` +
+          `${esc(c.snippet)}<br>` +
+          `<a href="${esc(c.url)}">▶ Watch the clip</a></li>`
+      )
+      .join("\n");
     return [
-      "Hi,",
-      "",
-      "I wanted to share some relevant clips from Tim Perkins' roofing knowledge base that may be helpful:",
-      "",
-      clipsText,
-      "",
-      "Let me know if you have any questions!",
-      "",
-      "Best,",
-      "Tim Perkins Roofing",
+      "<p>Hi,</p>",
+      "<p>I wanted to share some relevant clips from Tim Perkins' roofing knowledge base that may be helpful:</p>",
+      `<ul>${items}</ul>`,
+      "<p>Let me know if you have any questions!</p>",
+      "<p>Best,<br>Tim Perkins Roofing</p>",
     ].join("\n");
   }
 
@@ -637,8 +645,8 @@ export function SearchAsk() {
       {loading && <Loading label={mode === "ask" ? "Searching Tim's videos…" : "Searching topics…"} />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
-      {/* ---- ASK result ---- */}
-      {ans && (
+      {/* ---- ASK result (only in ask mode — switching to Search topics must hide it) ---- */}
+      {mode === "ask" && ans && (
         <Card style={{ borderTop: `4px solid ${ans.abstained ? BRAND.sub : BRAND.red}` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5 }}>

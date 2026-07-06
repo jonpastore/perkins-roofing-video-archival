@@ -12,10 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from api.auth import require_role
+from api.auth import require_role, current_claims
 from app.config import settings
+from app.models import UserSetting, SessionLocal
 
 router = APIRouter(prefix="/admin/users", tags=["users"])
+me_router = APIRouter(prefix="/me", tags=["me"])
 
 _VALID_ROLES = {"admin", "web_admin", "sales"}
 
@@ -33,6 +35,15 @@ class InviteRequest(BaseModel):
 
 class DeleteRequest(BaseModel):
     email: str
+
+
+class SignatureRequest(BaseModel):
+    signature: Optional[str] = None
+
+
+class AdminSignatureRequest(BaseModel):
+    email: str
+    signature: Optional[str] = None
 
 
 def _firebase_auth():
@@ -56,6 +67,10 @@ def list_users(claims=Depends(require_role("manage_users"))):
     results = []
     seen_emails: set[str] = set()
 
+    # Load all signatures in one query for efficiency.
+    with SessionLocal() as db:
+        sigs = {r.email.lower(): r.signature for r in db.query(UserSetting).all()}
+
     page = auth.list_users(max_results=200)
     for user in page.iterate_all():
         email = (user.email or "").strip()
@@ -68,6 +83,7 @@ def list_users(claims=Depends(require_role("manage_users"))):
             "email": email,
             "display_name": user.display_name or None,
             "role": role,
+            "signature": sigs.get(email.lower()),
         })
         seen_emails.add(email.lower())
 
@@ -79,6 +95,7 @@ def list_users(claims=Depends(require_role("manage_users"))):
                 "email": admin_email,
                 "display_name": None,
                 "role": "admin",
+                "signature": sigs.get(admin_email.lower()),
             })
 
     return results
@@ -174,6 +191,46 @@ def delete_user(body: DeleteRequest, claims=Depends(require_role("manage_users")
     auth.revoke_refresh_tokens(user.uid)
     auth.delete_user(user.uid)
     return {"deleted": body.email}
+
+
+@router.put("/signature")
+def set_user_signature_admin(body: AdminSignatureRequest, claims=Depends(require_role("manage_users"))):
+    """Set or clear the email signature for any user (admin only)."""
+    with SessionLocal() as db:
+        row = db.get(UserSetting, body.email.lower())
+        if row is None:
+            row = UserSetting(email=body.email.lower(), signature=body.signature or None)
+            db.add(row)
+        else:
+            row.signature = body.signature or None
+        db.commit()
+    return {"email": body.email, "signature": body.signature or None}
+
+
+# ---------------------------------------------------------------------------
+# /me/signature — current user's own signature
+# ---------------------------------------------------------------------------
+
+@me_router.get("/signature")
+def get_my_signature(claims=Depends(current_claims)):
+    email = (claims.get("email") or "").lower()
+    with SessionLocal() as db:
+        row = db.get(UserSetting, email)
+    return {"email": email, "signature": row.signature if row else None}
+
+
+@me_router.put("/signature")
+def set_my_signature(body: SignatureRequest, claims=Depends(current_claims)):
+    email = (claims.get("email") or "").lower()
+    with SessionLocal() as db:
+        row = db.get(UserSetting, email)
+        if row is None:
+            row = UserSetting(email=email, signature=body.signature or None)
+            db.add(row)
+        else:
+            row.signature = body.signature or None
+        db.commit()
+    return {"email": email, "signature": body.signature or None}
 
 
 @router.get("/directory")

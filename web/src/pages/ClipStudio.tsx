@@ -435,14 +435,17 @@ function SuccessBanner({ seriesTitle }: { seriesTitle: string }) {
 
 // ── Reel settings panel ───────────────────────────────────────────────────────
 
-interface BrandSceneUploadProps {
+interface BrandVideoUploadProps {
   label: string;
-  scene: "title" | "closing";
+  scene: "intro" | "outro";
+  configKey: string;
   currentPath: string;
+  onCleared: () => void;
 }
 
-function BrandSceneUpload({ label, scene, currentPath }: BrandSceneUploadProps) {
+function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: BrandVideoUploadProps) {
   const [uploading, setUploading] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [path, setPath] = useState(currentPath);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -453,8 +456,7 @@ function BrandSceneUpload({ label, scene, currentPath }: BrandSceneUploadProps) 
     try {
       const form = new FormData();
       form.append("file", file);
-      // Use apiFetchMultipart — no Content-Type so browser sets the multipart boundary.
-      const r = await apiFetchMultipart(`/clips/upload-brand-scene?scene=${scene}`, {
+      const r = await apiFetchMultipart(`/clips/upload-brand-video?scene=${scene}`, {
         method: "POST",
         body: form,
       });
@@ -464,7 +466,7 @@ function BrandSceneUpload({ label, scene, currentPath }: BrandSceneUploadProps) 
       }
       const data = await r.json() as { gcs_path: string };
       setPath(data.gcs_path);
-      setMsg("Uploaded.");
+      setMsg("Set.");
     } catch (e: unknown) {
       setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -472,30 +474,76 @@ function BrandSceneUpload({ label, scene, currentPath }: BrandSceneUploadProps) 
     }
   }
 
+  async function handleClear() {
+    setClearing(true);
+    setMsg(null);
+    try {
+      const r = await apiFetch("/config", {
+        method: "PUT",
+        body: JSON.stringify({ key: configKey, value: "" }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+      }
+      setPath("");
+      onCleared();
+      setMsg("Cleared.");
+    } catch (e: unknown) {
+      setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  // Derive a short display name from the gs:// path (last segment).
+  const displayName = path ? path.split("/").pop() ?? path : null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.ink }}>{label}</span>
-      {path && (
-        <span style={{ fontSize: 11, color: BRAND.sub, fontFamily: "monospace", wordBreak: "break-all" }}>
-          {path}
+      {displayName ? (
+        <span style={{ fontSize: 11, color: "#1a7f4b", fontFamily: "monospace", wordBreak: "break-all" }}>
+          ✓ {displayName}
+        </span>
+      ) : (
+        <span style={{ fontSize: 11, color: BRAND.sub, fontStyle: "italic" }}>
+          Not set — generated card used as fallback
         </span>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <input
           ref={inputRef}
           type="file"
-          accept="image/png,image/jpeg"
+          accept="video/mp4"
           style={{ display: "none" }}
           onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
         />
         <Button
           variant="ghost"
-          disabled={uploading}
+          disabled={uploading || clearing}
           onClick={() => inputRef.current?.click()}
           style={{ padding: "4px 12px", fontSize: 12 }}
         >
-          {uploading ? "Uploading…" : (path ? "Replace" : "Upload")}
+          {uploading ? "Uploading…" : (displayName ? "Replace" : "Upload MP4")}
         </Button>
+        {displayName && (
+          <button
+            disabled={clearing}
+            onClick={handleClear}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 12,
+              color: BRAND.sub,
+              padding: 0,
+              textDecoration: "underline",
+            }}
+          >
+            {clearing ? "Clearing…" : "Clear"}
+          </button>
+        )}
         {msg && (
           <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
             {msg}
@@ -509,8 +557,8 @@ function BrandSceneUpload({ label, scene, currentPath }: BrandSceneUploadProps) 
 function ReelSettingsPanel() {
   const [closingText, setClosingText] = useState("");
   const [applyBrandScenes, setApplyBrandScenes] = useState(false);
-  const [titleImgPath, setTitleImgPath] = useState("");
-  const [closingImgPath, setClosingImgPath] = useState("");
+  const [introVideoPath, setIntroVideoPath] = useState("");
+  const [outroVideoPath, setOutroVideoPath] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -523,8 +571,8 @@ function ReelSettingsPanel() {
         const find = (k: string) => (data.settings ?? []).find((s) => s.key === k)?.value ?? "";
         setClosingText(find("REEL_CLOSING_TEXT") || "Perkins Roofing");
         setApplyBrandScenes(find("REEL_APPLY_BRAND_SCENES").toLowerCase() === "true");
-        setTitleImgPath(find("REEL_TITLE_IMG"));
-        setClosingImgPath(find("REEL_CLOSING_IMG"));
+        setIntroVideoPath(find("BRAND_INTRO_VIDEO"));
+        setOutroVideoPath(find("BRAND_OUTRO_VIDEO"));
         setLoaded(true);
       })
       .catch(() => { setLoaded(true); });
@@ -560,18 +608,33 @@ function ReelSettingsPanel() {
       <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
         Reel Intro / Outro
       </div>
-      <p style={{ margin: "0 0 8px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
-        The <strong>title card</strong> (intro) and <strong>closing card</strong> (outro) can be
-        generated automatically or replaced with uploaded brand images. When "Apply brand scenes"
-        is checked, uploaded images are prepended/appended to every rendered reel.
-      </p>
       <p style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
-        To use real <strong>brand intro/outro videos</strong> instead of generated cards, set
-        {" "}<strong>Brand intro video</strong> and <strong>Brand outro video</strong> in{" "}
-        <a href="/config" style={{ color: BRAND.red }}>Config</a>
-        {" "}(BRAND_INTRO_VIDEO / BRAND_OUTRO_VIDEO — gs:// paths). When both are set they take
-        precedence over the image-card settings above.
+        Upload an <strong>intro video</strong> and <strong>outro video</strong> (MP4) to be
+        concatenated with every rendered reel. When set, these videos are merged directly
+        into each clip — the intro is prepended and the outro is appended. Falls back to
+        auto-generated title and closing cards when no videos are set.
       </p>
+
+      {/* Brand video uploads */}
+      {loaded && (
+        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 14 }}>
+          <BrandVideoUpload
+            label="Intro video"
+            scene="intro"
+            configKey="BRAND_INTRO_VIDEO"
+            currentPath={introVideoPath}
+            onCleared={() => setIntroVideoPath("")}
+          />
+          <BrandVideoUpload
+            label="Outro video"
+            scene="outro"
+            configKey="BRAND_OUTRO_VIDEO"
+            currentPath={outroVideoPath}
+            onCleared={() => setOutroVideoPath("")}
+          />
+        </div>
+      )}
+      {!loaded && <Spinner small />}
 
       {/* Closing brand text */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
@@ -592,14 +655,6 @@ function ReelSettingsPanel() {
         )}
       </div>
 
-      {/* Brand scene uploads */}
-      {loaded && (
-        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 14 }}>
-          <BrandSceneUpload label="Title scene image" scene="title" currentPath={titleImgPath} />
-          <BrandSceneUpload label="Closing scene image" scene="closing" currentPath={closingImgPath} />
-        </div>
-      )}
-
       {/* Apply checkbox */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <input
@@ -614,7 +669,7 @@ function ReelSettingsPanel() {
           htmlFor="apply-brand-scenes"
           style={{ fontSize: 13, color: BRAND.ink, cursor: "pointer" }}
         >
-          Apply brand scenes to every render (uses uploaded images instead of generated cards)
+          Apply brand scenes to every render (used when no intro/outro videos are set)
         </label>
       </div>
 

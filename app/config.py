@@ -51,6 +51,9 @@ class Settings:
         if o.strip()
     )
 
+    # Global email header HTML — prepended to every outgoing email body when set.
+    EMAIL_HTML_HEADER = os.getenv("EMAIL_HTML_HEADER", "")
+
     # Brand intro/outro videos — gs:// URIs for brand video segments prepended/appended to every
     # rendered reel.  When either is empty the existing generated-card path is used instead.
     BRAND_INTRO_VIDEO = os.getenv("BRAND_INTRO_VIDEO", "")

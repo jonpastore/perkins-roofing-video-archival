@@ -106,6 +106,9 @@ def _reels_bucket() -> str:
 # Hard cap on brand-scene upload size (10 MiB).
 _BRAND_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 
+# Hard cap on brand video upload size (200 MiB).
+_BRAND_VIDEO_MAX_BYTES = 200 * 1024 * 1024
+
 # Magic-byte signatures for accepted image formats.
 # Each entry: (content_type, prefix_bytes_to_match)
 _IMAGE_MAGIC: list[tuple[str, bytes]] = [
@@ -132,6 +135,27 @@ _MIME_TO_EXT = {
     "image/jpeg": "jpg",
     "image/webp": "webp",
 }
+
+
+def _sniff_mp4(data: bytes) -> bool:
+    """Return True if *data* looks like an MP4/MOV container.
+
+    Checks for the ftyp ISO Base Media File Format box which is present in
+    virtually all MP4/M4V/MOV files.  The box starts at byte 4 with the ASCII
+    tag ``ftyp``; major brands checked include ``isom``, ``mp41``, ``mp42``,
+    ``M4V ``, ``M4A ``, ``qt  `` (QuickTime).  We accept any brand because
+    ffmpeg can transcode non-standard flavours.
+    """
+    if len(data) < 12:
+        return False
+    # ftyp box: bytes 4-7 == b"ftyp"
+    if data[4:8] == b"ftyp":
+        return True
+    # Some files have a free/skip/wide box before ftyp; scan the first 64 bytes.
+    for offset in range(0, min(64, len(data) - 8)):
+        if data[offset:offset + 4] == b"ftyp":
+            return True
+    return False
 
 
 @router.post("/upload-brand-scene")
@@ -238,6 +262,110 @@ def upload_brand_scene(
         db.commit()
 
     logger.info("Brand scene uploaded: %s -> %s", config_key, gcs_path)
+    return {"key": config_key, "gcs_path": gcs_path}
+
+
+@router.post("/upload-brand-video")
+def upload_brand_video(
+    scene: str,
+    file: UploadFile = File(...),
+    claims=Depends(require_role("approve_video")),
+):
+    """Upload a brand intro or outro VIDEO and persist its GCS path to platform config.
+
+    ``scene`` must be ``"intro"`` or ``"outro"``.
+
+    Stores the file in the reels GCS bucket under ``brand/{scene}_video.mp4``
+    and writes the resulting ``gs://`` path to ``BRAND_INTRO_VIDEO`` or
+    ``BRAND_OUTRO_VIDEO`` in platform_config so render_job picks it up.
+
+    Security hardening:
+    - Reads in bounded chunks; rejects files exceeding 200 MiB.
+    - Sniffs the ftyp ISO Base Media box to verify the file is MP4; rejects
+      anything that doesn't match regardless of client-supplied Content-Type.
+
+    Returns: {key, gcs_path}
+    """
+    if scene not in ("intro", "outro"):
+        raise HTTPException(status_code=422, detail="scene must be 'intro' or 'outro'")
+
+    # Read first chunk to sniff magic bytes, then continue bounded read.
+    chunks: list[bytes] = []
+    total = 0
+    first_chunk: bytes = b""
+    try:
+        while True:
+            chunk = file.file.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > _BRAND_VIDEO_MAX_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"file exceeds maximum allowed size of {_BRAND_VIDEO_MAX_BYTES // (1024 * 1024)} MiB",
+                )
+            chunks.append(chunk)
+            if not first_chunk:
+                first_chunk = chunk
+    finally:
+        file.file.close()
+
+    # Sniff magic bytes — reject non-MP4 regardless of client Content-Type.
+    if not _sniff_mp4(first_chunk):
+        raise HTTPException(status_code=422, detail="file must be a valid MP4 video")
+
+    config_key = "BRAND_INTRO_VIDEO" if scene == "intro" else "BRAND_OUTRO_VIDEO"
+    object_key = f"brand/{scene}_video.mp4"
+
+    try:
+        bucket_name = _reels_bucket()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    try:
+        from google.cloud import storage as gcs_storage  # noqa: PLC0415
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="google-cloud-storage not installed",
+        ) from exc
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        tmp_path = tmp.name
+        for chunk in chunks:
+            tmp.write(chunk)
+
+    try:
+        client = gcs_storage.Client()
+        blob = client.bucket(bucket_name).blob(object_key)
+        blob.upload_from_filename(tmp_path, content_type="video/mp4")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"GCS upload failed: {exc}") from exc
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    gcs_path = f"gs://{bucket_name}/{object_key}"
+
+    # Persist to platform_config
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    email = claims.get("email", "unknown")
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with SessionLocal() as db:
+        row = db.get(PlatformConfig, config_key)
+        if row is None:
+            row = PlatformConfig(key=config_key, value=gcs_path, updated_at=now, updated_by=email)
+            db.add(row)
+        else:
+            row.value = gcs_path
+            row.updated_at = now
+            row.updated_by = email
+        db.commit()
+
+    logger.info("Brand video uploaded: %s -> %s", config_key, gcs_path)
     return {"key": config_key, "gcs_path": gcs_path}
 
 

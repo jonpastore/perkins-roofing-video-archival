@@ -80,9 +80,9 @@ def test_list_users_admin_ok(admin_client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert len(body) == 3
-    assert body[0] == {"uid": "uid1", "email": "alice@test.com", "display_name": "Alice Admin", "role": "admin"}
-    assert body[1] == {"uid": "uid2", "email": "bob@test.com", "display_name": None, "role": "sales"}
-    assert body[2] == {"uid": "uid3", "email": "charlie@test.com", "display_name": None, "role": None}
+    assert body[0] == {"uid": "uid1", "email": "alice@test.com", "display_name": "Alice Admin", "role": "admin", "signature": None}
+    assert body[1] == {"uid": "uid2", "email": "bob@test.com", "display_name": None, "role": "sales", "signature": None}
+    assert body[2] == {"uid": "uid3", "email": "charlie@test.com", "display_name": None, "role": None, "signature": None}
 
 
 def test_list_users_filters_blank_email(admin_client, monkeypatch):
