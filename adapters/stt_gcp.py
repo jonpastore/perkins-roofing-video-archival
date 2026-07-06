@@ -1,19 +1,17 @@
 """Google Cloud Speech-to-Text v2 adapter (I/O, coverage-omitted).
 
-Fully-cloud replacement for the cerberus Whisper node — nothing runs on a local GPU.
-Flow: yt-dlp bestaudio -> GCS temp object -> Speech-to-Text v2 BatchRecognize (auto-decoding,
-word-level timestamps + confidence) -> the normalized transcript schema.
+Fully-cloud transcription — nothing runs on a local GPU and nothing is downloaded from YouTube.
+Every source video is already archived to GCS (Video.archive_uri, the {project}-media bucket);
+Speech-to-Text v2 auto-decodes that MP4/AAC object directly, so transcription reads the archived
+bytes in place. Word-level timestamps + confidence are returned.
 
-Same contract as adapters.stt_whisper.transcribe(video_id):
+Contract matches adapters.stt_whisper.transcribe:
     {"source": "gcp_stt",
      "segments": [{"text", "start", "end"}],
      "words":    [{"word", "start", "confidence"}],
      "speech_ratio": float}
 """
 import os
-import tempfile
-
-from adapters import storage, yt_dlp
 
 
 def _project():
@@ -21,11 +19,6 @@ def _project():
     if not p:
         raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for GCP STT")
     return p
-
-
-def _bucket():
-    # Reuse the private media bucket ({project}-media) unless STT_BUCKET overrides it.
-    return os.getenv("STT_BUCKET") or f"{_project()}-media"
 
 
 def _secs(d):
@@ -80,53 +73,46 @@ def _normalize(transcript):
             "speech_ratio": _speech_ratio(segments)}
 
 
-def transcribe(video_id, language_codes=("en-US",), model="long"):
-    """Transcribe a YouTube video id via GCP Speech-to-Text v2. Returns the normalized schema."""
+def transcribe(video_id, gcs_uri, language_codes=("en-US",), model="long"):
+    """Transcribe the archived MP4 at *gcs_uri* via GCP Speech-to-Text v2, returning the
+    normalized schema. Reads the GCS bytes in place (auto-decoded MP4/AAC) — no YouTube download.
+    Raises if *gcs_uri* is missing: archive the video (jobs.archive_job) before transcribing."""
+    if not gcs_uri:
+        raise RuntimeError(f"no archive_uri for {video_id}; run archive_job before STT")
+
     from google.api_core.client_options import ClientOptions
     from google.cloud.speech_v2 import SpeechClient
     from google.cloud.speech_v2.types import cloud_speech
 
     project = _project()
     region = os.getenv("GCP_REGION", "us-central1")
-    bucket = _bucket()
-    key = f"stt-tmp/{video_id}.m4a"
 
-    with tempfile.TemporaryDirectory() as tmp:
-        audio_path = yt_dlp.pull_audio(video_id, tmp)
-        gs_uri = storage.upload_file(audio_path, bucket, key, content_type="audio/mp4")
-
-    try:
-        client = SpeechClient(
-            client_options=ClientOptions(api_endpoint=f"{region}-speech.googleapis.com")
-        )
-        config = cloud_speech.RecognitionConfig(
-            auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
-            language_codes=list(language_codes),
-            model=model,
-            features=cloud_speech.RecognitionFeatures(
-                enable_word_time_offsets=True,
-                enable_word_confidence=True,
-                enable_automatic_punctuation=True,
-            ),
-        )
-        request = cloud_speech.BatchRecognizeRequest(
-            recognizer=f"projects/{project}/locations/{region}/recognizers/_",
-            config=config,
-            files=[cloud_speech.BatchRecognizeFileMetadata(uri=gs_uri)],
-            recognition_output_config=cloud_speech.RecognitionOutputConfig(
-                inline_response_config=cloud_speech.InlineOutputConfig(),
-            ),
-        )
-        op = client.batch_recognize(request=request)
-        response = op.result(timeout=float(os.getenv("STT_TIMEOUT", "1800")))
-        file_result = response.results[gs_uri]
-        # Batch reports per-file errors (e.g. audio too long for an inline response) here rather
-        # than raising — surface them so ingest records the stage as retryable, never silent-empty.
-        if file_result.error and file_result.error.code:
-            raise RuntimeError(f"gcp stt error: {file_result.error.message}")
-        return _normalize(file_result.transcript)
-    finally:
-        try:
-            storage.delete_object(bucket, key)
-        except Exception:  # noqa: BLE001 — temp-object cleanup is best-effort
-            pass
+    client = SpeechClient(
+        client_options=ClientOptions(api_endpoint=f"{region}-speech.googleapis.com")
+    )
+    config = cloud_speech.RecognitionConfig(
+        auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+        language_codes=list(language_codes),
+        model=model,
+        features=cloud_speech.RecognitionFeatures(
+            enable_word_time_offsets=True,
+            enable_word_confidence=True,
+            enable_automatic_punctuation=True,
+        ),
+    )
+    request = cloud_speech.BatchRecognizeRequest(
+        recognizer=f"projects/{project}/locations/{region}/recognizers/_",
+        config=config,
+        files=[cloud_speech.BatchRecognizeFileMetadata(uri=gcs_uri)],
+        recognition_output_config=cloud_speech.RecognitionOutputConfig(
+            inline_response_config=cloud_speech.InlineOutputConfig(),
+        ),
+    )
+    op = client.batch_recognize(request=request)
+    response = op.result(timeout=float(os.getenv("STT_TIMEOUT", "1800")))
+    file_result = response.results[gcs_uri]
+    # Batch reports per-file errors (e.g. audio too long for an inline response) here rather than
+    # raising — surface them so ingest records the stage as retryable, never silent-empty.
+    if file_result.error and file_result.error.code:
+        raise RuntimeError(f"gcp stt error: {file_result.error.message}")
+    return _normalize(file_result.transcript)

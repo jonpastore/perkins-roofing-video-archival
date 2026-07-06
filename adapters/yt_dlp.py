@@ -108,39 +108,3 @@ def pull_video(video_id: str, dst: str) -> str:
     raise FileNotFoundError(
         f"pull_video: no MP4 found in {dst!r} after downloading {video_id!r}"
     )
-
-
-def pull_audio(video_id: str, dst: str) -> str:
-    """Download the best audio-only track for *video_id* into *dst* (for cloud STT).
-
-    Audio-only keeps the transfer small vs. pull_video's full MP4 — GCP Speech-to-Text v2
-    auto-decodes the m4a/webm container, so no local transcode is needed. Same yt-dlp
-    hardening (EJS n-challenge solver, optional browser cookies) as pull_video.
-
-    Returns the path to the downloaded audio file. Raises subprocess errors on yt-dlp failure
-    or FileNotFoundError if nothing landed in *dst*.
-    """
-    os.makedirs(dst, exist_ok=True)
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    output_template = os.path.join(dst, f"{video_id}.%(ext)s")
-    cmd = [
-        *_YTDLP,
-        "-f", "bestaudio[ext=m4a]/bestaudio",
-        "-o", output_template,
-        "--no-playlist",
-        "--remote-components", "ejs:github",
-        "--retries", "3", "--sleep-interval", os.getenv("YTDLP_SLEEP", "0"),
-        url,
-    ]
-    cookies_browser = os.getenv("COOKIES_FROM_BROWSER")
-    if cookies_browser:
-        cmd += ["--cookies-from-browser", cookies_browser]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=900)
-
-    for fname in sorted(os.listdir(dst)):
-        if fname.startswith(video_id):
-            return os.path.join(dst, fname)
-
-    raise FileNotFoundError(
-        f"pull_audio: no audio found in {dst!r} after downloading {video_id!r}"
-    )

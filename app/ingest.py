@@ -51,7 +51,7 @@ def ingest_video(vid, meta=None, force=False, transcript=None):
         tr = transcript
     elif force or not already:
         try:
-            tr = T.get_transcript(vid)
+            tr = T.get_transcript(vid, gcs_uri=v.archive_uri)
         except Exception as e:                       # record the failure so it's queryable
             s.rollback(); _set(s, vid, "transcript", "error", err=str(e)[:200])
             s.close(); return status(vid)

@@ -32,28 +32,29 @@ def from_youtube_caption(vid):
         segs.append({"text": line, "start": t0, "end": t0 + dur})
     return {"source": "youtube_caption", "segments": segs, "words": words}
 
-def from_gcp_stt(vid):
-    """Fully-cloud STT (GCP Speech-to-Text v2, word-level ts + confidence) — no local GPU."""
+def from_gcp_stt(vid, gcs_uri=None):
+    """Fully-cloud STT (GCP Speech-to-Text v2, word-level ts + confidence) — no local GPU, no
+    YouTube download. Transcribes the archived MP4 at *gcs_uri* (Video.archive_uri) in place."""
     from adapters.stt_gcp import transcribe
-    return transcribe(vid)
+    return transcribe(vid, gcs_uri)
 
 def from_whisper(vid):
     """Local Whisper STT (free, on cerberus) — dev-only fallback, returns the same schema."""
     from adapters.stt_whisper import transcribe
     return transcribe(vid)
 
-def _stt(vid):
+def _stt(vid, gcs_uri=None):
     """Dispatch to the configured STT backend. Defaults to GCP (cloud); opt into local Whisper
     only when STT_BACKEND=whisper AND WHISPER_URL is set (dev on cerberus)."""
     if settings.STT_BACKEND == "whisper" and os.getenv("WHISPER_URL"):
         return from_whisper(vid)
-    return from_gcp_stt(vid)
+    return from_gcp_stt(vid, gcs_uri)
 
 
-def get_transcript(vid):
+def get_transcript(vid, gcs_uri=None):
     if settings.TRANSCRIPT_POLICY == "stt_only":
-        return _stt(vid)
+        return _stt(vid, gcs_uri)
     try:
         return from_youtube_caption(vid)
     except FileNotFoundError:
-        return _stt(vid)
+        return _stt(vid, gcs_uri)
