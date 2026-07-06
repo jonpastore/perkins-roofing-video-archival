@@ -6,10 +6,23 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Integration creds (WP / Resend / YouTube / Serper / Whisper / OAuth) come from the
+# local .env at deploy time and are injected as service env vars. The vault-backed
+# alternative (--set-secrets from Secret Manager, resettable in the Config UI) is ready
+# in code (google-cloud-secret-manager is bundled + /config/secrets writes versions) —
+# switch these to --set-secrets once the secret versions are populated (bootstrap needs a
+# refreshed `gcloud auth application-default login`; the read-only ADC/SA can't add versions).
+set -a; [ -f .env ] && source .env; set +a
+
 PROJECT="${GOOGLE_CLOUD_PROJECT:-video-archival-and-content-gen}"
 REGION="${GCP_REGION:-us-central1}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/app/platform:$(git rev-parse --short HEAD)"
 CONN="${PROJECT}:${REGION}:${PROJECT}-pg"
+
+# Env built with a '|' delimiter (gcloud ^|^ form) so credential values with commas/@/()
+# survive intact. DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
+BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|EMBED_BACKEND=vertex|LLM_BACKEND=vertex|EMBED_MODEL=gemini-embedding-001|LLM_MODEL=gemini-2.5-flash|DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}"
+CRED_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|WP_APP_PWD=${WP_APP_PWD:-}|RESEND_API_KEY=${RESEND_API_KEY:-}|YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}|SERPER_API_KEY=${SERPER_API_KEY:-}|WHISPER_TOKEN=${WHISPER_TOKEN:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}"
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .
@@ -19,7 +32,7 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --service-account "api-run-sa@${PROJECT}.iam.gserviceaccount.com" \
   --timeout 900 --cpu 2 --memory 1Gi \
   --add-cloudsql-instances "$CONN" \
-  --set-env-vars "PERKINS_ENV=prod,GOOGLE_CLOUD_PROJECT=${PROJECT},GCP_REGION=${REGION},EMBED_BACKEND=vertex,LLM_BACKEND=vertex,EMBED_MODEL=gemini-embedding-001,LLM_MODEL=gemini-2.5-flash,DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}" \
+  --set-env-vars "^|^${BASE_ENV}|${CRED_ENV}" \
   --allow-unauthenticated --set-secrets INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest
 
 # Point each job at the same image with its module entrypoint.
@@ -29,14 +42,13 @@ declare -A JOBS=(
   [ingest]="jobs.ingest_worker" [render]="jobs.render_job"
   [article]="jobs.article_job" [social]="jobs.social_job"
 )
-JOB_ENV="PERKINS_ENV=prod,GOOGLE_CLOUD_PROJECT=${PROJECT},GCP_REGION=${REGION},EMBED_BACKEND=vertex,LLM_BACKEND=vertex,EMBED_MODEL=gemini-embedding-001,LLM_MODEL=gemini-2.5-flash,DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}"
 for job in "${!JOBS[@]}"; do
   echo "== Deploy job: $job (${JOBS[$job]}) =="
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
     --service-account "jobs-sa@${PROJECT}.iam.gserviceaccount.com" \
     --set-cloudsql-instances "$CONN" \
     --command=python --args="-m,${JOBS[$job]}" \
-    --set-env-vars "$JOB_ENV" \
+    --set-env-vars "^|^${BASE_ENV}|${CRED_ENV}" \
     --set-secrets PGPASSWORD=db-password:latest
 done
 

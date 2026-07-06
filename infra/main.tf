@@ -499,6 +499,7 @@ locals {
     "tiktok-client-secret",
     "tiktok-refresh-token",
     "google-idp-client-secret",
+    "whisper-token",
   ])
 }
 
