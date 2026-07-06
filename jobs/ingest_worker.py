@@ -51,7 +51,12 @@ def _single_flight():
 
 def _pending_video_ids(s, limit=None):
     """Video ids that are NOT fully done at the current pipeline version (missing a stage,
-    errored, or stamped with an older pipeline_version). Oldest-id-first for stable rotation."""
+    errored, or stamped with an older pipeline_version). Oldest-id-first for stable rotation.
+
+    Videos whose transcript stage has errored MAX_TRANSCRIPT_ATTEMPTS times are given up on and
+    excluded — otherwise a permanently-failing video (e.g. a defective archive with no audio
+    track) would be re-downloaded and re-attempted on every cron run forever. A manual
+    /status/retry (which sets status back to 'pending') clears the give-up state."""
     done = (
         s.query(IngestionRun.video_id)
         .filter(
@@ -62,7 +67,20 @@ def _pending_video_ids(s, limit=None):
         .group_by(IngestionRun.video_id)
         .having(func.count(func.distinct(IngestionRun.stage)) == len(STAGES))
     )
-    q = s.query(Video.id).filter(~Video.id.in_(done)).order_by(Video.id)
+    max_attempts = int(os.getenv("MAX_TRANSCRIPT_ATTEMPTS", "5"))
+    giveup = (
+        s.query(IngestionRun.video_id)
+        .filter(
+            IngestionRun.stage == "transcript",
+            IngestionRun.status == "error",
+            IngestionRun.attempts >= max_attempts,
+        )
+    )
+    q = (
+        s.query(Video.id)
+        .filter(~Video.id.in_(done), ~Video.id.in_(giveup))
+        .order_by(Video.id)
+    )
     if limit:
         q = q.limit(limit)
     return [row[0] for row in q.all()]

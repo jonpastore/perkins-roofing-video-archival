@@ -119,11 +119,17 @@ def transcribe(video_id, gcs_uri, language_codes=("en-US",), model="long"):
         src = os.path.join(tmp, "src")
         flac = os.path.join(tmp, "audio.flac")
         storage.download_file(bucket, key, src)
-        subprocess.run(
-            [_ffmpeg_bin(), "-y", "-i", src, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "flac", flac],
-            check=True, capture_output=True,
-            timeout=int(os.getenv("STT_FFMPEG_TIMEOUT", "1800")),
-        )
+        try:
+            subprocess.run(
+                [_ffmpeg_bin(), "-y", "-i", src, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "flac", flac],
+                check=True, capture_output=True,
+                timeout=int(os.getenv("STT_FFMPEG_TIMEOUT", "1800")),
+            )
+        except subprocess.CalledProcessError as e:
+            # str(CalledProcessError) is just the command; the real reason (e.g. "Output file does
+            # not contain any stream" = the archived MP4 has no audio track) is in stderr. Surface it.
+            tail = (e.stderr or b"").decode("utf-8", "replace").strip().splitlines()[-2:]
+            raise RuntimeError(f"ffmpeg audio-demux failed for {video_id}: {' | '.join(tail)}") from e
         audio_uri = storage.upload_file(flac, bucket, tmp_key, content_type="audio/flac")
 
     try:
