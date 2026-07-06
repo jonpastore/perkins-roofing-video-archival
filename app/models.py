@@ -32,6 +32,8 @@ class Video(Base):
     last_pulled_at = Column(DateTime)
     # Clip-generation timestamp (set when MiniSeries rows are produced)
     clips_generated_at = Column(DateTime)
+    # Comment-crawl rotation timestamp (jobs/crawl_comments.py; cron rotates least-recent first)
+    comments_crawled_at = Column(DateTime)
 
 class IngestionRun(Base):
     __tablename__ = "ingestion_runs"

@@ -462,6 +462,7 @@ resource "google_cloud_scheduler_job" "promote_scheduled_content" {
   http_target {
     uri         = "${google_cloud_run_v2_service.api.uri}/internal/promote"
     http_method = "POST"
+    headers     = { "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_secret.secret_data }
 
     oidc_token {
       service_account_email = google_service_account.scheduler_sa.email
@@ -481,6 +482,35 @@ resource "google_cloud_scheduler_job" "publish_awaiting_social" {
   http_target {
     uri         = "${google_cloud_run_v2_service.api.uri}/internal/social"
     http_method = "POST"
+    headers     = { "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_secret.secret_data }
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# The /internal/* cron endpoints are guarded by INTERNAL_SECRET (X-Internal-Secret header);
+# the scheduler reads the value from Secret Manager and sends it on each request.
+data "google_secret_manager_secret_version" "internal_secret" {
+  secret = "internal-secret"
+}
+
+# Crawl YouTube comments on a rotating cron — each run takes the least-recently-crawled
+# batch, so the whole catalog is covered over successive runs. Every 2 hours.
+resource "google_cloud_scheduler_job" "crawl_comments" {
+  name      = "crawl-comments"
+  region    = var.region
+  schedule  = "0 */2 * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/crawl-comments"
+    http_method = "POST"
+    headers     = { "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_secret.secret_data }
 
     oidc_token {
       service_account_email = google_service_account.scheduler_sa.email

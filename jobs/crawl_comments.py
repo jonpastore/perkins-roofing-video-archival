@@ -83,9 +83,11 @@ def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
     drafts_this_run = 0
 
     with SessionLocal() as db:
+        # Rotate through the whole catalog over successive (cron) runs: least-recently-
+        # crawled first — never-crawled (NULL) videos, then the oldest comments_crawled_at.
         videos = (
             db.query(Video)
-            .order_by(Video.upload_date.desc().nullslast())
+            .order_by(Video.comments_crawled_at.asc().nullsfirst())
             .limit(limit)
             .all()
         )
@@ -105,6 +107,9 @@ def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
             except Exception as exc:
                 log.warning("crawl_comments: fetch failed for %s: %s", video.id, exc)
                 summary["errors"] += 1
+                # Stamp anyway so a persistently-failing video doesn't block the rotation.
+                video.comments_crawled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                db.commit()
                 continue
 
             for item in comments:
@@ -173,6 +178,8 @@ def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
                         )
                         summary["errors"] += 1
 
+            # Stamp this video as crawled so the next run rotates to others.
+            video.comments_crawled_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
 
     return summary
