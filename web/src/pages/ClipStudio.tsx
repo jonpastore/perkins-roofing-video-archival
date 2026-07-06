@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { apiFetch, apiFetchMultipart } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, Spinner } from "../ui";
+import { NavContext } from "../App";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,8 @@ interface ArchiveVideo {
   upload_date: string | null;
   archived: boolean;
   youtube_url: string | null;
+  clips_generated?: boolean;
+  clips_generated_at?: string | null;
 }
 
 interface SuggestedClip {
@@ -113,26 +116,47 @@ function AnalyzingDots() {
 
 // ── Step 1: Video picker ───────────────────────────────────────────────────────
 
-function VideoPicker({ onSelect }: { onSelect: (v: ArchiveVideo) => void }) {
+function formatClipDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+interface VideoPickerProps {
+  onSelect: (v: ArchiveVideo) => void;
+  /** If set, the picker will expose a ref-callback to let the parent auto-select by id. */
+  onVideosLoaded?: (videos: ArchiveVideo[]) => void;
+}
+
+function VideoPicker({ onSelect, onVideosLoaded }: VideoPickerProps) {
   const [search, setSearch] = useState("");
   const [videos, setVideos] = useState<ArchiveVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hideWithClips, setHideWithClips] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams();
-    if (search) params.set("q", search);
-    apiFetch(`/archive/videos?${params}`)
+    const qs = new URLSearchParams();
+    if (search) qs.set("q", search);
+    apiFetch(`/archive/videos?${qs}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then(setVideos)
+      .then((data: ArchiveVideo[]) => {
+        setVideos(data);
+        onVideosLoaded?.(data);
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [search]);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const withClipsCount = videos.filter((v) => v.clips_generated).length;
+  const displayed = hideWithClips ? videos.filter((v) => !v.clips_generated) : videos;
 
   return (
     <Card>
@@ -144,19 +168,37 @@ function VideoPicker({ onSelect }: { onSelect: (v: ArchiveVideo) => void }) {
         placeholder="Search by title…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ ...inputStyle, width: "100%", marginBottom: 14, boxSizing: "border-box" }}
+        style={{ ...inputStyle, width: "100%", marginBottom: 10, boxSizing: "border-box" }}
       />
+
+      {/* Hide-with-clips toggle */}
+      {!loading && !error && withClipsCount > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <input
+            type="checkbox"
+            id="hide-with-clips"
+            checked={hideWithClips}
+            onChange={(e) => setHideWithClips(e.target.checked)}
+            style={{ width: 14, height: 14, accentColor: BRAND.red, cursor: "pointer" }}
+          />
+          <label htmlFor="hide-with-clips" style={{ fontSize: 13, color: BRAND.sub, cursor: "pointer" }}>
+            Hide videos with clips already ({withClipsCount})
+          </label>
+        </div>
+      )}
 
       {loading && <Loading label="Loading videos…" />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
-      {!loading && !error && videos.length === 0 && (
-        <p style={{ color: BRAND.sub, fontSize: 14, margin: 0 }}>No videos found.</p>
+      {!loading && !error && displayed.length === 0 && (
+        <p style={{ color: BRAND.sub, fontSize: 14, margin: 0 }}>
+          {hideWithClips && withClipsCount > 0 ? "All videos already have clips." : "No videos found."}
+        </p>
       )}
 
-      {!loading && !error && videos.length > 0 && (
+      {!loading && !error && displayed.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 400, overflowY: "auto" }}>
-          {videos.map((v) => (
+          {displayed.map((v) => (
             <button
               key={v.id}
               onClick={() => onSelect(v)}
@@ -174,6 +216,13 @@ function VideoPicker({ onSelect }: { onSelect: (v: ArchiveVideo) => void }) {
               }}
             >
               <span style={{ fontWeight: 500, color: BRAND.ink, fontSize: 14, flex: 1 }}>{v.title}</span>
+              {v.clips_generated && (
+                <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+                  <Badge tone="green">
+                    Clips {v.clips_generated_at ? formatClipDate(v.clips_generated_at) : "generated"}
+                  </Badge>
+                </span>
+              )}
               <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
                 {formatDuration(v.duration)}
               </span>
@@ -710,6 +759,65 @@ function RenderablePanel() {
   );
 }
 
+// ── Generated clips list ──────────────────────────────────────────────────────
+
+function GeneratedClipsList({
+  videos,
+  onRevisit,
+}: {
+  videos: ArchiveVideo[];
+  onRevisit: (v: ArchiveVideo) => void;
+}) {
+  const withClips = videos.filter((v) => v.clips_generated);
+  if (withClips.length === 0) return null;
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        Videos with generated clips
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {withClips.map((v) => (
+          <div
+            key={v.id}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "8px 12px",
+              background: BRAND.bg,
+              borderRadius: 8,
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontWeight: 500, color: BRAND.ink, fontSize: 14, flex: 1 }}>{v.title}</span>
+            {v.clips_generated_at && (
+              <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
+                {formatClipDate(v.clips_generated_at)}
+              </span>
+            )}
+            <button
+              onClick={() => onRevisit(v)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 13,
+                color: BRAND.red,
+                fontWeight: 600,
+                padding: 0,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Re-generate →
+            </button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type Step =
@@ -719,11 +827,31 @@ type Step =
   | { kind: "saved"; seriesTitle: string };
 
 export function ClipStudio() {
+  const { params, navigate: navNavigate } = useContext(NavContext);
   const [step, setStep] = useState<Step>({ kind: "pick" });
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // All videos loaded by the picker — used for GeneratedClipsList and preselect.
+  const [allVideos, setAllVideos] = useState<ArchiveVideo[]>([]);
+  // Track whether we've consumed the incoming nav param.
+  const preselectedRef = useRef(false);
+
+  // When videos are loaded by the picker, check if there's a pending preselect param.
+  function handleVideosLoaded(videos: ArchiveVideo[]) {
+    setAllVideos(videos);
+    if (!preselectedRef.current && params.video) {
+      const target = videos.find((v) => v.id === params.video);
+      if (target) {
+        preselectedRef.current = true;
+        // Clear the param so a manual "start over" doesn't re-trigger.
+        navNavigate("clip-studio", {});
+        setStep({ kind: "suggest", video: target });
+        setSuggestError(null);
+      }
+    }
+  }
 
   // Step 1 → 2: video selected
   function handleVideoSelect(video: ArchiveVideo) {
@@ -812,16 +940,22 @@ export function ClipStudio() {
         <>
           <SuccessBanner seriesTitle={step.seriesTitle} />
           <div style={{ marginTop: 16 }}>
-            <Button variant="ghost" onClick={() => setStep({ kind: "pick" })}>
+            <Button variant="ghost" onClick={() => { preselectedRef.current = false; setStep({ kind: "pick" }); }}>
               Start another
             </Button>
           </div>
         </>
       )}
 
-      {/* Step: pick */}
+      {/* Step: pick — show generated list + picker */}
       {step.kind === "pick" && (
-        <VideoPicker onSelect={handleVideoSelect} />
+        <>
+          <GeneratedClipsList
+            videos={allVideos}
+            onRevisit={(v) => { setStep({ kind: "suggest", video: v }); setSuggestError(null); }}
+          />
+          <VideoPicker onSelect={handleVideoSelect} onVideosLoaded={handleVideosLoaded} />
+        </>
       )}
 
       {/* Step: suggest (video selected, not yet fetched) */}
