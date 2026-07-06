@@ -75,6 +75,21 @@ def _speech_ratio(segments):
     return merged / span if span > 0 else 0.0
 
 
+def _load_gcs_results(uri):
+    """Download + parse a Speech-to-Text v2 batch GCS-output object into BatchRecognizeResults."""
+    from google.cloud.speech_v2.types import cloud_speech
+
+    from adapters import storage
+
+    bucket, key = _parse_gs(uri)
+    with tempfile.TemporaryDirectory() as tmp:
+        local = os.path.join(tmp, "out.json")
+        storage.download_file(bucket, key, local)
+        with open(local, encoding="utf-8") as f:
+            payload = f.read()
+    return cloud_speech.BatchRecognizeResults.from_json(payload, ignore_unknown_fields=True)
+
+
 def _normalize(transcript):
     segments, words = [], []
     for res in transcript.results:
@@ -132,6 +147,7 @@ def transcribe(video_id, gcs_uri, language_codes=("en-US",), model="long"):
             raise RuntimeError(f"ffmpeg audio-demux failed for {video_id}: {' | '.join(tail)}") from e
         audio_uri = storage.upload_file(flac, bucket, tmp_key, content_type="audio/flac")
 
+    out_prefix = f"stt-out/{video_id}/"
     try:
         client = SpeechClient(
             client_options=ClientOptions(api_endpoint=f"{region}-speech.googleapis.com")
@@ -150,18 +166,29 @@ def transcribe(video_id, gcs_uri, language_codes=("en-US",), model="long"):
             recognizer=f"projects/{project}/locations/{region}/recognizers/_",
             config=config,
             files=[cloud_speech.BatchRecognizeFileMetadata(uri=audio_uri)],
+            # Write results to GCS, not inline: inline is capped and only for small single-file
+            # results, so a long video (up to STT's 8h limit) would overflow it. This path is
+            # length-agnostic and is the fallback for ANY caption-less video, short or long.
             recognition_output_config=cloud_speech.RecognitionOutputConfig(
-                inline_response_config=cloud_speech.InlineOutputConfig(),
+                gcs_output_config=cloud_speech.GcsOutputConfig(uri=f"gs://{bucket}/{out_prefix}"),
             ),
         )
         op = client.batch_recognize(request=request)
-        response = op.result(timeout=float(os.getenv("STT_TIMEOUT", "1800")))
+        # A long batch (a 97-min video takes ~40 min) legitimately runs a while; poll generously
+        # but stay under the ingest job's 2h timeout so the process records an error, not a kill.
+        response = op.result(timeout=float(os.getenv("STT_TIMEOUT", "5400")))
         file_result = response.results[audio_uri]
-        # Batch reports per-file errors (e.g. audio too long for an inline response) here rather
-        # than raising — surface them so ingest records the stage as retryable, never silent-empty.
+        # Batch reports per-file errors here rather than raising — surface them so ingest records
+        # the stage as retryable, never silent-empty.
         if file_result.error and file_result.error.code:
             raise RuntimeError(f"gcp stt error: {file_result.error.message}")
-        return _normalize(file_result.transcript)
+        out_bucket, out_key = _parse_gs(file_result.uri)
+        results = _load_gcs_results(file_result.uri)
+        try:
+            storage.delete_object(out_bucket, out_key)
+        except Exception:  # noqa: BLE001 — output cleanup is best-effort
+            pass
+        return _normalize(results)
     finally:
         try:
             storage.delete_object(bucket, tmp_key)

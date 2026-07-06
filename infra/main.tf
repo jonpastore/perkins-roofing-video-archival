@@ -349,6 +349,15 @@ resource "google_storage_bucket_iam_member" "speech_media_reader" {
   member = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-speech.iam.gserviceaccount.com"
 }
 
+# Batch STT for long audio writes its transcript to GCS (gcs_output_config) rather than inline —
+# inline is only for small single-file results. The Speech service agent needs to CREATE those
+# output objects. objectCreator (not objectAdmin) so it can't overwrite/delete the archives.
+resource "google_storage_bucket_iam_member" "speech_media_writer" {
+  bucket = google_storage_bucket.media.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-speech.iam.gserviceaccount.com"
+}
+
 # Reels bucket is PRIVATE. IG/TikTok ingest via a short-TTL V4 signed URL minted at publish
 # time (jobs/social_job → adapters.storage.signed_get_url), so the client's media is never
 # left publicly exposed. jobs-sa self-signs (serviceAccountTokenCreator below).
@@ -425,6 +434,14 @@ locals {
     article = "2Gi"
     social  = "2Gi"
   }
+  # ingest may run a long-form batch STT (a caption-less 97-min podcast's batch takes ~40 min);
+  # give it (and render) 2h so a legit long job finishes instead of being killed mid-transcript.
+  job_timeout = {
+    ingest  = "7200s"
+    render  = "7200s"
+    article = "3600s"
+    social  = "3600s"
+  }
 }
 
 resource "google_cloud_run_v2_job" "jobs" {
@@ -437,7 +454,7 @@ resource "google_cloud_run_v2_job" "jobs" {
     template {
       service_account = google_service_account.jobs_sa.email
       max_retries     = 3
-      timeout         = "3600s"
+      timeout         = local.job_timeout[each.value]
 
       containers {
         image = "gcr.io/cloudrun/hello"
