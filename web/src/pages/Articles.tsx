@@ -49,6 +49,7 @@ interface ArticleSummary {
   pillar_slug: string | null;
   wp_post_id: number | null;
   wp_url: string | null;
+  wp_admin_url: string | null;
   publish_at: string | null;
 }
 
@@ -762,17 +763,18 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                     {new Date(article.publish_at).toLocaleString()}
                   </span>
                 )}
-                {article.wp_post_id && article.wp_url && (
+                {article.wp_post_id && (article.status === "published" ? article.wp_url : (article.wp_admin_url ?? article.wp_url)) && (
                   <a
-                    href={article.wp_url}
+                    href={(article.status === "published" ? article.wp_url : (article.wp_admin_url ?? article.wp_url)) ?? "#"}
                     target="_blank"
                     rel="noopener noreferrer"
+                    title={article.status === "published" ? "View live WordPress post" : "Open the draft in the WordPress editor"}
                     style={{ fontSize: 13, color: BRAND.navyText, alignSelf: "center", textDecoration: "underline" }}
                   >
-                    WP #{article.wp_post_id} ↗
+                    {article.status === "published" ? `WP #${article.wp_post_id} ↗` : `Edit WP #${article.wp_post_id} ↗`}
                   </a>
                 )}
-                {article.wp_post_id && !article.wp_url && (
+                {article.wp_post_id && !(article.status === "published" ? article.wp_url : (article.wp_admin_url ?? article.wp_url)) && (
                   <span style={{ fontSize: 13, color: BRAND.sub, alignSelf: "center" }}>
                     WP #{article.wp_post_id}
                   </span>
@@ -1064,11 +1066,12 @@ function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, o
       <td style={{ padding: "10px 12px", width: 90 }}>{roleBadge(a.role)}</td>
       <td style={{ padding: "10px 12px", width: 90 }}>{statusBadge(a.status)}</td>
       <td style={{ padding: "10px 12px", width: 150, overflow: "hidden" }}>
-        {a.wp_post_id && a.wp_url ? (
+        {a.wp_post_id && (a.status === "published" ? a.wp_url : (a.wp_admin_url ?? a.wp_url)) ? (
           <a
-            href={a.wp_url}
+            href={(a.status === "published" ? a.wp_url : (a.wp_admin_url ?? a.wp_url)) ?? "#"}
             target="_blank"
             rel="noopener noreferrer"
+            title={a.status === "published" ? "View live WordPress post" : "Open the draft in the WordPress editor"}
             style={{
               fontSize: 13,
               fontWeight: a.status === "published" ? 700 : 400,
@@ -1080,7 +1083,7 @@ function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, o
               borderRadius: a.status === "published" ? 4 : 0,
             }}
           >
-            {a.status === "published" ? "View on WP ↗" : `WP #${a.wp_post_id} ↗`}
+            {a.status === "published" ? "View on WP ↗" : `Edit WP #${a.wp_post_id} ↗`}
           </a>
         ) : a.wp_post_id ? (
           <span style={{ fontSize: 13, color: BRAND.sub }}>WP #{a.wp_post_id}</span>

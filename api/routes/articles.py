@@ -36,14 +36,25 @@ def _slugify(title: str) -> str:
     return s
 
 
+def _wp_base() -> str:
+    return (settings.WP_URL or os.environ.get("WP_URL", "")).rstrip("/")
+
+
 def _wp_url_for(wp_post_id: int | None) -> str | None:
-    """Return the full WordPress post URL when wp_post_id and WP_URL are set; else None."""
+    """Public WordPress post URL when wp_post_id and WP_URL are set; else None."""
     if not wp_post_id:
         return None
-    wp_base = settings.WP_URL or os.environ.get("WP_URL", "").rstrip("/")
-    if not wp_base:
+    base = _wp_base()
+    return f"{base}/?p={wp_post_id}" if base else None
+
+
+def _wp_admin_url_for(wp_post_id: int | None) -> str | None:
+    """WordPress editor URL for the post — the useful link for drafts (the public
+    ?p= URL 404s for logged-out visitors while a draft isn't live yet)."""
+    if not wp_post_id:
         return None
-    return f"{wp_base}/?p={wp_post_id}"
+    base = _wp_base()
+    return f"{base}/wp-admin/post.php?post={wp_post_id}&action=edit" if base else None
 
 
 def _article_summary(a: Article) -> dict:
@@ -55,6 +66,7 @@ def _article_summary(a: Article) -> dict:
         "pillar_slug": a.pillar_slug,
         "wp_post_id": a.wp_post_id,
         "wp_url": _wp_url_for(a.wp_post_id),
+        "wp_admin_url": _wp_admin_url_for(a.wp_post_id),
         "publish_at": a.publish_at.isoformat() if a.publish_at else None,
     }
 
@@ -71,6 +83,7 @@ def _article_full(a: Article) -> dict:
         "pillar_slug": a.pillar_slug,
         "wp_post_id": a.wp_post_id,
         "wp_url": _wp_url_for(a.wp_post_id),
+        "wp_admin_url": _wp_admin_url_for(a.wp_post_id),
         "status": a.status,
         "publish_at": a.publish_at.isoformat() if a.publish_at else None,
     }
