@@ -411,9 +411,17 @@ export function ClipStudio() {
         method: "POST",
         body: JSON.stringify({ video_id: video.id }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const data: { video_title: string; clips: SuggestedClip[] } = await r.json();
-      const editable: EditableClip[] = data.clips.map((c) => ({ ...c, included: true }));
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        const detail = (body as { detail?: string }).detail;
+        if (r.status === 404 && detail?.includes("transcript")) {
+          throw new Error("This video has no transcript, so clips can't be suggested. Pick a different video.");
+        }
+        throw new Error(detail ?? `${r.status} ${r.statusText}`);
+      }
+      // Backend returns { video_id, video_title, suggestions: [...] }
+      const data: { video_title: string; suggestions: SuggestedClip[] } = await r.json();
+      const editable: EditableClip[] = (data.suggestions ?? []).map((c) => ({ ...c, included: true }));
       setStep({ kind: "clips", video, clips: editable });
     } catch (e: unknown) {
       setSuggestError(e instanceof Error ? e.message : String(e));
