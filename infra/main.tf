@@ -416,6 +416,15 @@ resource "google_cloud_run_v2_service" "api" {
 
 locals {
   job_names = toset(["ingest", "render", "article", "social"])
+  # ingest (STT audio demux) and render both download full source MP4s to a memory-backed /tmp;
+  # the largest Perkins video is ~2 GB, so they need real headroom or the container OOM-kills
+  # (SIGKILL) mid-batch. article/social are lightweight (LLM/HTTP only).
+  job_memory = {
+    ingest  = "8Gi"
+    render  = "8Gi"
+    article = "2Gi"
+    social  = "2Gi"
+  }
 }
 
 resource "google_cloud_run_v2_job" "jobs" {
@@ -436,7 +445,7 @@ resource "google_cloud_run_v2_job" "jobs" {
         resources {
           limits = {
             cpu    = "2"
-            memory = "2Gi"
+            memory = local.job_memory[each.value]
           }
         }
       }
