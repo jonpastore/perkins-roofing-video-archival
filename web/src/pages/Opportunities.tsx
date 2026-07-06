@@ -3,14 +3,6 @@ import { apiFetch } from "../api";
 import { hms, BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
 
-interface ArticleTopic {
-  label: string;
-  num_videos: number;
-  total_content_length: number;
-  count: number;
-  sample: { video_id: string; t: number };
-}
-
 interface Reel {
   series_id: number;
   video_id: string;
@@ -628,7 +620,7 @@ export function Opportunities() {
       setTopicStates((s) => ({ ...s, [topic]: { state: "done", result: d } }));
       setClusterModal({ topic, result: d });
       // Refresh topics so the generated flag updates
-      fetchTopics(topicSort, topicOffset);
+      fetchTopics(topicSort, topicFilter, topicOffset);
     } catch (e: unknown) {
       setTopicStates((s) => {
         const next = { ...s };

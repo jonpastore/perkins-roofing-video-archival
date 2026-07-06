@@ -10,6 +10,7 @@ _MATRIX = {
         "search", "ask",
         "article_read", "manage_articles",
         "manage_scheduling", "approve_video",
+        "manage_archive",
         "view_status",
     },
     # sales — search/ask, email tools + email templates.
@@ -20,6 +21,7 @@ _MATRIX = {
     },
 }
 # Admin-only actions (granted only via admin's "*"): manage_users, manage_config.
+# manage_archive: backfill channel, poll KPIs — admin + web_admin.
 
 
 def can(role, action):

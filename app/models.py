@@ -24,6 +24,14 @@ class Video(Base):
     views = Column(Integer); likes = Column(Integer); comments = Column(Integer)
     url = Column(String)
     archive_uri = Column(String)      # gs:// URI of the archived source MP4 in the media bucket
+    # KPI columns (populated by jobs/poll_archive_kpis.py)
+    comment_count = Column(Integer)
+    last_comment_at = Column(DateTime)
+    kpis_polled_at = Column(DateTime)
+    # Pull-tracking columns (populated by jobs/backfill_archive.py)
+    last_pulled_at = Column(DateTime)
+    # Clip-generation timestamp (set when MiniSeries rows are produced)
+    clips_generated_at = Column(DateTime)
 
 class IngestionRun(Base):
     __tablename__ = "ingestion_runs"

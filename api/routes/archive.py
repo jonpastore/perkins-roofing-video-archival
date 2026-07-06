@@ -4,8 +4,12 @@ Export ``router`` only; mounted onto the main app in api/app.py.
 
 Role requirements (core.authz):
   - search → admin (via "*") + sales
+  - manage_archive → admin + web_admin
 """
-from fastapi import APIRouter, Depends, HTTPException
+import re
+from datetime import datetime
+
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import func
 
 from api.auth import require_role
@@ -15,17 +19,36 @@ from core.retrieval import link
 router = APIRouter(prefix="/archive", tags=["archive"])
 
 
-def _video_to_dict(v: Video, topic_count: int = 0, article_count: int = 0, social_post_count: int = 0) -> dict:
+def _video_to_dict(
+    v: Video,
+    topic_count: int = 0,
+    article_count: int = 0,
+    social_post_count: int = 0,
+    clips_generated: bool = False,
+    articles_generated: bool = False,
+    social_generated: bool = False,
+) -> dict:
     return {
         "id": v.id,
         "title": v.title,
         "duration": v.duration,
+        "content_length": int(v.duration) if v.duration is not None else None,
         "upload_date": v.upload_date,
         "archived": bool(v.archive_uri),
         "youtube_url": v.url,
         "topic_count": topic_count,
         "article_count": article_count,
         "social_post_count": social_post_count,
+        "clips_generated": clips_generated,
+        "articles_generated": articles_generated,
+        "social_generated": social_generated,
+        "clips_generated_at": v.clips_generated_at.isoformat() if v.clips_generated_at else None,
+        "views": v.views,
+        "likes": v.likes,
+        "comment_count": v.comment_count,
+        "last_comment_at": v.last_comment_at.isoformat() if v.last_comment_at else None,
+        "kpis_polled_at": v.kpis_polled_at.isoformat() if v.kpis_polled_at else None,
+        "last_pulled_at": v.last_pulled_at.isoformat() if v.last_pulled_at else None,
     }
 
 
@@ -33,6 +56,13 @@ def _video_to_dict(v: Video, topic_count: int = 0, article_count: int = 0, socia
 def list_videos(
     q: str | None = None,
     archived_only: bool = False,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    uploaded_after: str | None = None,
+    uploaded_before: str | None = None,
+    clips: str = "all",
+    articles: str = "all",
+    social: str = "all",
     _claims=Depends(require_role("search")),
 ):
     """Return all Video rows ordered by upload_date desc.
@@ -40,11 +70,20 @@ def list_videos(
     Optional filters:
       ?q=<title substring>        case-insensitive title search
       ?archived_only=true         only rows with a non-null archive_uri
+      ?min_length=<seconds>       minimum duration (inclusive)
+      ?max_length=<seconds>       maximum duration (inclusive)
+      ?uploaded_after=<ISO date>  upload_date >= date (YYYY-MM-DD)
+      ?uploaded_before=<ISO date> upload_date <= date (YYYY-MM-DD)
+      ?clips=all|yes|no           filter by whether MiniSeries rows exist
+      ?articles=all|yes|no        filter by whether articles reference this video
+      ?social=all|yes|no          filter by whether SocialPost rows exist
 
-    Each row includes usage counts:
-      topic_count        content_graph nodes (kind='topics') for this video
-      article_count      articles whose content_md references this video_id
-      social_post_count  social posts linked via mini_series → social_posts
+    Each row includes usage counts and KPI fields:
+      topic_count, article_count, social_post_count
+      clips_generated, articles_generated, social_generated
+      clips_generated_at, views, likes, comment_count,
+      last_comment_at, kpis_polled_at, last_pulled_at
+      content_length (= duration as int seconds)
     """
     with SessionLocal() as db:
         query = db.query(Video)
@@ -52,6 +91,15 @@ def list_videos(
             query = query.filter(Video.archive_uri.isnot(None))
         if q:
             query = query.filter(Video.title.ilike(f"%{q}%"))
+        if min_length is not None:
+            query = query.filter(Video.duration >= min_length)
+        if max_length is not None:
+            query = query.filter(Video.duration <= max_length)
+        if uploaded_after:
+            query = query.filter(Video.upload_date >= uploaded_after)
+        if uploaded_before:
+            query = query.filter(Video.upload_date <= uploaded_before)
+
         rows = query.order_by(Video.upload_date.desc()).all()
 
         if not rows:
@@ -76,7 +124,7 @@ def list_videos(
                 .scalar() or 0
             )
 
-        # social post counts: mini_series.video_id → social_posts.series_id
+        # social post counts + presence: mini_series.video_id → social_posts.series_id
         series_map: dict[str, list[int]] = {}  # video_id -> [series_id]
         for s in db.query(MiniSeries.id, MiniSeries.video_id).filter(MiniSeries.video_id.in_(video_ids)).all():
             series_map.setdefault(s.video_id, []).append(s.id)
@@ -94,15 +142,44 @@ def list_videos(
             for vid, sids in series_map.items()
         }
 
-        return [
-            _video_to_dict(
-                v,
-                topic_count=topic_counts.get(v.id, 0),
-                article_count=article_counts.get(v.id, 0),
-                social_post_count=social_post_counts.get(v.id, 0),
+        # Derived booleans
+        clips_generated_map: dict[str, bool] = {
+            vid: bool(sids) for vid, sids in series_map.items()
+        }
+        articles_generated_map: dict[str, bool] = {
+            vid: cnt > 0 for vid, cnt in article_counts.items()
+        }
+        social_generated_map: dict[str, bool] = {
+            vid: cnt > 0 for vid, cnt in social_post_counts.items()
+        }
+
+        # Apply boolean filters (post-query, derived from join results)
+        def _bool_filter(vid: str, param: str, generated_map: dict[str, bool]) -> bool:
+            if param == "all":
+                return True
+            val = generated_map.get(vid, False)
+            return val if param == "yes" else not val
+
+        result = []
+        for v in rows:
+            if not _bool_filter(v.id, clips, clips_generated_map):
+                continue
+            if not _bool_filter(v.id, articles, articles_generated_map):
+                continue
+            if not _bool_filter(v.id, social, social_generated_map):
+                continue
+            result.append(
+                _video_to_dict(
+                    v,
+                    topic_count=topic_counts.get(v.id, 0),
+                    article_count=article_counts.get(v.id, 0),
+                    social_post_count=social_post_counts.get(v.id, 0),
+                    clips_generated=clips_generated_map.get(v.id, False),
+                    articles_generated=articles_generated_map.get(v.id, False),
+                    social_generated=social_generated_map.get(v.id, False),
+                )
             )
-            for v in rows
-        ]
+        return result
 
 
 @router.get("/{video_id}/download")
@@ -134,7 +211,6 @@ def download_video(
 
     # Sanitize the title before it goes into the Content-Disposition filename (it comes from
     # YouTube — avoid quotes/CRLF producing a malformed disposition header).
-    import re  # noqa: PLC0415
     safe_name = re.sub(r'[^\w\-. ]', "_", (video.title or video_id)).strip() or video_id
 
     import adapters.storage as _storage  # lazy — monkeypatchable in tests
@@ -235,3 +311,46 @@ def video_detail(
         ]
 
     return {"topics": topics, "articles": articles, "social_posts": social_posts}
+
+
+# ---------------------------------------------------------------------------
+# Backfill + KPI poll endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/backfill")
+def backfill(
+    _claims=Depends(require_role("manage_archive")),
+):
+    """Enumerate the YouTube channel and insert missing Video rows.
+
+    Returns {added, checked}.
+    """
+    import jobs.backfill_archive as _job  # lazy — avoids importing yt-dlp at startup
+    result = _job.run()
+    return {"added": result["added"], "checked": result["checked"]}
+
+
+@router.get("/check-new")
+def check_new(
+    _claims=Depends(require_role("manage_archive")),
+):
+    """Enumerate the channel and return count of videos not yet in the DB.
+
+    Does not insert anything. Returns {new_count, last_pulled_at}.
+    """
+    import jobs.backfill_archive as _job  # lazy
+    return _job.check_new()
+
+
+@router.post("/poll-kpis")
+def poll_kpis(
+    limit: int | None = Body(default=None, embed=True),
+    _claims=Depends(require_role("manage_archive")),
+):
+    """Fetch YouTube KPIs for archived videos and update the DB.
+
+    Optional body: {"limit": N}
+    Returns {polled}.
+    """
+    import jobs.poll_archive_kpis as _job  # lazy
+    return _job.run(limit=limit)

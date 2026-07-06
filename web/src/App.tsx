@@ -14,6 +14,7 @@ import { Settings } from "./pages/Settings";
 import { Users } from "./pages/Users";
 import { ClipStudio } from "./pages/ClipStudio";
 import { Comments } from "./pages/Comments";
+import { Logs } from "./pages/Logs";
 import { Email } from "./pages/Email";
 import { BRAND, FONT, Spinner } from "./ui";
 
@@ -65,6 +66,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
     adminTabs: [
       ["users", "Users"],
       ["config", "Config"],
+      ["logs", "Logs"],
     ],
     defaultTab: "dashboard",
   },
@@ -285,6 +287,7 @@ function TabContent({ tab }: { tab: string }) {
       {tab === "archive" && <Archive />}
       {tab === "users" && <Users />}
       {tab === "config" && <Settings />}
+      {tab === "logs" && <Logs />}
     </>
   );
 }
