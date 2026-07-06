@@ -102,9 +102,11 @@ def social():
 def crawl_comments_cron():
     """Cloud Scheduler target (guarded by INTERNAL_SECRET). Crawls YouTube comments for a
     bounded batch of the least-recently-crawled videos and drafts replies — the cron rotates
-    through the whole catalog over successive runs (see jobs/crawl_comments rotation)."""
+    through the whole catalog over successive runs (see jobs/crawl_comments rotation).
+
+    Bounded (15 videos / 15 drafts) and INTERNAL_SECRET-gated (not user-reachable); the upsert
+    is race-safe (per-comment SAVEPOINT) so an overlapping run can't corrupt the batch."""
     from jobs.crawl_comments import run
-    # Small per-run batch keeps YouTube quota + Vertex spend bounded across frequent runs.
     return run(limit=15, max_drafts=15)
 
 

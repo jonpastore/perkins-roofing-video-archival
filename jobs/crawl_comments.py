@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 
 from adapters.youtube_comments import fetch_comments
 from app.llm import chat
+from sqlalchemy.exc import IntegrityError
+
 from app.models import CommentDraft, Segment, SessionLocal, Video, init_db
 from core.comments import needs_reply
 
@@ -142,11 +144,23 @@ def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
                         status="pending",
                         created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     )
-                    db.add(row)
-                    db.flush()  # get row.id
-                    summary["comments_upserted"] += 1
-                    if flag:
-                        summary["flagged"] += 1
+                    try:
+                        # SAVEPOINT so a lost insert race doesn't poison the whole batch.
+                        with db.begin_nested():
+                            db.add(row)
+                            db.flush()  # get row.id
+                        summary["comments_upserted"] += 1
+                        if flag:
+                            summary["flagged"] += 1
+                    except IntegrityError:
+                        # Another concurrent run inserted this comment first — use theirs.
+                        row = (
+                            db.query(CommentDraft)
+                            .filter(CommentDraft.comment_id == item["comment_id"])
+                            .first()
+                        )
+                        if row is None:
+                            continue
                 else:
                     row = existing
                     # Update needs_reply flag if it changed (e.g. owner replied externally)
