@@ -710,7 +710,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                     rel="noopener noreferrer"
                     style={{ fontSize: 13, color: BRAND.navyText, alignSelf: "center", textDecoration: "underline" }}
                   >
-                    View on WordPress ↗
+                    WP #{article.wp_post_id} ↗
                   </a>
                 )}
                 {article.wp_post_id && !article.wp_url && (
@@ -1012,7 +1012,7 @@ function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, o
             rel="noopener noreferrer"
             style={{ fontSize: 13, color: BRAND.navyText, textDecoration: "underline", whiteSpace: "nowrap" }}
           >
-            View on WordPress ↗
+            WP #{a.wp_post_id} ↗
           </a>
         ) : a.wp_post_id ? (
           <span style={{ fontSize: 13, color: BRAND.sub }}>WP #{a.wp_post_id}</span>

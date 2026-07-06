@@ -20,6 +20,7 @@ interface SuggestedClip {
   caption: string;
   hook: string;
   reason: string;
+  summary?: string;
 }
 
 interface EditableClip extends SuggestedClip {
@@ -139,6 +140,12 @@ function VideoPicker({ onSelect }: { onSelect: (v: ArchiveVideo) => void }) {
 
 // ── Step 2: Clip suggestions ───────────────────────────────────────────────────
 
+interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
 function ClipCard({
   clip,
   index,
@@ -150,11 +157,39 @@ function ClipCard({
   videoId: string;
   onChange: (index: number, updated: EditableClip) => void;
 }) {
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [transcriptSegs, setTranscriptSegs] = useState<TranscriptSegment[] | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+
   function update(field: keyof EditableClip, value: string | number | boolean) {
     onChange(index, { ...clip, [field]: value });
   }
 
+  function handleToggleTranscript() {
+    if (!transcriptOpen && transcriptSegs === null) {
+      setTranscriptLoading(true);
+      setTranscriptError(null);
+      apiFetch(
+        `/clips/transcript?video_id=${encodeURIComponent(videoId)}&start=${clip.start}&end=${clip.end}`
+      )
+        .then((r) => {
+          if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+          return r.json();
+        })
+        .then((data: { segments: TranscriptSegment[] }) => {
+          setTranscriptSegs(data.segments ?? []);
+        })
+        .catch((e: unknown) => {
+          setTranscriptError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => setTranscriptLoading(false));
+    }
+    setTranscriptOpen((o) => !o);
+  }
+
   const previewUrl = `https://youtu.be/${videoId}?t=${Math.floor(clip.start)}`;
+  const hasSummary = clip.summary && clip.summary.trim().length > 0;
 
   return (
     <Card style={{ opacity: clip.included ? 1 : 0.55, transition: "opacity 0.15s" }}>
@@ -178,13 +213,21 @@ function ClipCard({
       {/* Hook */}
       <div style={{ marginBottom: 8, padding: "8px 12px", background: BRAND.bg, borderRadius: 8, borderLeft: `3px solid ${BRAND.red}` }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Hook </span>
-        <span style={{ fontSize: 13, color: BRAND.ink }}>{clip.hook}</span>
+        <span style={{ fontSize: 13, color: BRAND.ink }}>{clip.hook || <em style={{ color: BRAND.sub }}>—</em>}</span>
       </div>
+
+      {/* Summary */}
+      {hasSummary && (
+        <div style={{ marginBottom: 8, fontSize: 13, color: BRAND.ink, lineHeight: 1.5 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 6 }}>Summary</span>
+          {clip.summary}
+        </div>
+      )}
 
       {/* Caption */}
       <div style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Caption </span>
-        <span style={{ fontSize: 13, color: BRAND.ink }}>{clip.caption}</span>
+        <span style={{ fontSize: 13, color: BRAND.ink }}>{clip.caption || <em style={{ color: BRAND.sub }}>—</em>}</span>
       </div>
 
       {/* Time range + preview */}
@@ -220,14 +263,53 @@ function ClipCard({
           rel="noopener noreferrer"
           style={{ fontSize: 13, color: BRAND.red, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}
         >
-          ▶ Preview on YouTube
+          Preview on YouTube
         </a>
       </div>
 
-      {/* Reason */}
-      <div style={{ fontSize: 12, color: BRAND.sub, fontStyle: "italic" }}>
-        {clip.reason}
+      {/* Expandable transcript */}
+      <div style={{ marginBottom: 6 }}>
+        <button
+          onClick={handleToggleTranscript}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 12,
+            color: BRAND.sub,
+            fontWeight: 600,
+            padding: 0,
+            textDecoration: "underline",
+          }}
+        >
+          {transcriptOpen ? "Hide transcript" : "Show transcript"}
+        </button>
+        {transcriptOpen && (
+          <div style={{ marginTop: 8, padding: "8px 12px", background: BRAND.bg, borderRadius: 6, fontSize: 13, color: BRAND.ink, lineHeight: 1.6 }}>
+            {transcriptLoading && <span style={{ color: BRAND.sub }}>Loading…</span>}
+            {transcriptError && <span style={{ color: BRAND.red }}>Error: {transcriptError}</span>}
+            {!transcriptLoading && !transcriptError && transcriptSegs !== null && (
+              transcriptSegs.length === 0
+                ? <em style={{ color: BRAND.sub }}>No transcript available for this clip.</em>
+                : transcriptSegs.map((seg, i) => (
+                    <span key={i} style={{ display: "block", marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: BRAND.sub, marginRight: 6, fontVariantNumeric: "tabular-nums" }}>
+                        {mmss(seg.start)}
+                      </span>
+                      {seg.text}
+                    </span>
+                  ))
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Reason */}
+      {clip.reason && (
+        <div style={{ fontSize: 12, color: BRAND.sub, fontStyle: "italic" }}>
+          {clip.reason}
+        </div>
+      )}
     </Card>
   );
 }
@@ -248,6 +330,87 @@ function SuccessBanner({ seriesTitle }: { seriesTitle: string }) {
         <span style={{ fontSize: 13, color: "#1a7f4b" }}>
           Go to <strong>Video Approval</strong> to review parts, then <strong>Content Scheduling</strong> to publish.
         </span>
+      </div>
+    </Card>
+  );
+}
+
+// ── Reel settings panel ───────────────────────────────────────────────────────
+
+function ReelSettingsPanel() {
+  const [closingText, setClosingText] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch("/config")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { settings?: Array<{ key: string; value: string }> } | null) => {
+        if (!data) return;
+        const row = (data.settings ?? []).find((s) => s.key === "REEL_CLOSING_TEXT");
+        setClosingText(row?.value ?? "Perkins Roofing");
+        setLoaded(true);
+      })
+      .catch(() => { setLoaded(true); });
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const r = await apiFetch("/config", {
+        method: "PUT",
+        body: JSON.stringify({ key: "REEL_CLOSING_TEXT", value: closingText }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+      }
+      setMsg("Saved.");
+    } catch (e: unknown) {
+      setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        Reel Intro / Outro
+      </div>
+      <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
+        The <strong>title card</strong> (intro) is generated automatically from each clip's title.
+        The <strong>closing card</strong> (outro) shows the brand text below, held for 3 seconds.
+        Upload a custom title or closing image by contacting your administrator — image paths are
+        set via the platform config <code>REEL_TITLE_IMG</code> / <code>REEL_CLOSING_IMG</code> keys.
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600, whiteSpace: "nowrap" }}>
+          Closing brand text
+        </label>
+        <input
+          type="text"
+          value={loaded ? closingText : "Loading…"}
+          disabled={!loaded || saving}
+          onChange={(e) => setClosingText(e.target.value)}
+          placeholder="Perkins Roofing"
+          style={{ ...inputStyle, width: 240, fontSize: 13 }}
+        />
+        <Button
+          variant="primary"
+          disabled={!loaded || saving}
+          onClick={handleSave}
+          style={{ padding: "6px 14px", fontSize: 13 }}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+        {msg && (
+          <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
+            {msg}
+          </span>
+        )}
       </div>
     </Card>
   );
@@ -474,6 +637,9 @@ export function ClipStudio() {
 
       {/* Ready-to-render panel — always visible */}
       <RenderablePanel />
+
+      {/* Reel intro/outro settings — always visible */}
+      <ReelSettingsPanel />
 
       {/* Step: saved */}
       {step.kind === "saved" && (

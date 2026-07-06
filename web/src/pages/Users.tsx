@@ -68,6 +68,16 @@ export function Users() {
   async function handleSave(user: FirebaseUser) {
     const newRole = pending[user.uid] ?? "";
 
+    // Synthetic default-admin entries (uid="default:...") have no Firebase record yet.
+    // Direct them to use Invite instead.
+    if (user.uid.startsWith("default:")) {
+      setSaveError((prev) => ({
+        ...prev,
+        [user.uid]: "This admin has not signed in yet. Use Invite to create their account first.",
+      }));
+      return;
+    }
+
     // Confirm if changing own role
     if (user.email === myEmail) {
       if (!confirm("You are changing your own role. This will affect your access immediately on next login. Continue?")) {

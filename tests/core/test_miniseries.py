@@ -170,9 +170,10 @@ def test_propose_parts_titles_from_labels():
     ]
     parts = propose_parts("v1", 120.0, nodes, min_parts=4, max_parts=7)
     titles = [p["title"] for p in parts]
-    # At least some part titles should come from node labels
+    # At least some part titles should contain a node label (now embedded in composite
+    # titles like "Flashing (Part 2)" or "Metal Roof — Flashing (Part 2)")
     label_set = {n["label"] for n in nodes}
-    assert any(t in label_set for t in titles)
+    assert any(any(lbl in t for lbl in label_set) for t in titles)
 
 
 def test_propose_parts_fallback_title_when_no_label():

@@ -28,6 +28,10 @@ class Settings:
     # WordPress integration
     WP_URL = os.getenv("WP_URL", "").rstrip("/")
 
+    # Production site domain — used for canonical URLs and OpenGraph tags.
+    # Default matches the Firebase Hosting / Cloud Run production domain.
+    PROD_DOMAIN = os.getenv("PROD_DOMAIN", "perkins.degenito.ai")
+
     # Cost guardrails
     MAX_VIDEOS_PER_RUN = int(os.getenv("MAX_VIDEOS_PER_RUN", "500"))
 

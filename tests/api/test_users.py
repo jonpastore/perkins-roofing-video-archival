@@ -63,6 +63,9 @@ def test_list_users_admin_ok(admin_client, monkeypatch):
     ]
 
     import api.routes.users as users_mod
+    from app.config import settings
+    # Isolate from the real DEFAULT_ADMINS so this test is deterministic.
+    monkeypatch.setattr(settings, "DEFAULT_ADMINS", frozenset())
     monkeypatch.setattr(
         users_mod,
         "_firebase_auth",
@@ -80,6 +83,83 @@ def test_list_users_admin_ok(admin_client, monkeypatch):
     assert body[0] == {"uid": "uid1", "email": "alice@test.com", "display_name": "Alice Admin", "role": "admin"}
     assert body[1] == {"uid": "uid2", "email": "bob@test.com", "display_name": None, "role": "sales"}
     assert body[2] == {"uid": "uid3", "email": "charlie@test.com", "display_name": None, "role": None}
+
+
+def test_list_users_filters_blank_email(admin_client, monkeypatch):
+    """Users with a blank/null email (anonymous accounts) must be excluded from results."""
+    fake_users = [
+        _make_user("uid1", "alice@test.com", "admin"),
+        _make_user("uid_anon", "", None),    # blank email — should be filtered
+        _make_user("uid_none", None, None),  # None email — should be filtered
+    ]
+
+    import api.routes.users as users_mod
+    from app.config import settings
+    monkeypatch.setattr(settings, "DEFAULT_ADMINS", frozenset())
+    monkeypatch.setattr(
+        users_mod,
+        "_firebase_auth",
+        lambda: types.SimpleNamespace(
+            list_users=lambda max_results=200: _make_list_page(fake_users),
+            get_user_by_email=None,
+            set_custom_user_claims=None,
+        ),
+    )
+
+    r = admin_client.get("/admin/users", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["email"] == "alice@test.com"
+
+
+def test_list_users_merges_default_admins(admin_client, monkeypatch):
+    """DEFAULT_ADMINS not present in Firebase appear as synthetic admin entries."""
+    # Firebase has jon (signed in) but not tim or amber
+    fake_users = [
+        _make_user("uid_jon", "jon@perkinsroofing.net", "admin", display_name="Jon"),
+    ]
+
+    import api.routes.users as users_mod
+    from app.config import settings
+    monkeypatch.setattr(
+        settings,
+        "DEFAULT_ADMINS",
+        frozenset({"jon@perkinsroofing.net", "tim@perkinsroofing.net", "amber@perkinsroofing.net"}),
+    )
+    monkeypatch.setattr(
+        users_mod,
+        "_firebase_auth",
+        lambda: types.SimpleNamespace(
+            list_users=lambda max_results=200: _make_list_page(fake_users),
+            get_user_by_email=None,
+            set_custom_user_claims=None,
+        ),
+    )
+
+    r = admin_client.get("/admin/users", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    body = r.json()
+
+    emails = {u["email"] for u in body}
+    assert "jon@perkinsroofing.net" in emails
+    assert "tim@perkinsroofing.net" in emails
+    assert "amber@perkinsroofing.net" in emails
+
+    # jon should appear only once (no duplicate)
+    assert sum(1 for u in body if u["email"] == "jon@perkinsroofing.net") == 1
+
+    # synthetic entries for tim and amber have uid prefix and role=admin
+    for u in body:
+        if u["email"] in {"tim@perkinsroofing.net", "amber@perkinsroofing.net"}:
+            assert u["uid"].startswith("default:")
+            assert u["role"] == "admin"
+            assert u["display_name"] is None
+
+    # jon's real Firebase entry is preserved
+    jon = next(u for u in body if u["email"] == "jon@perkinsroofing.net")
+    assert jon["uid"] == "uid_jon"
+    assert jon["display_name"] == "Jon"
 
 
 def test_list_users_sales_forbidden(sales_client):

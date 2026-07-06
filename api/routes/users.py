@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from api.auth import require_role
+from app.config import settings
 
 router = APIRouter(prefix="/admin/users", tags=["users"])
 
@@ -41,18 +42,41 @@ def _firebase_auth():
 
 @router.get("")
 def list_users(claims=Depends(require_role("manage_users"))):
-    """List up to 200 Firebase users with their current role claim and display name."""
+    """List up to 200 Firebase users with their current role claim and display name.
+
+    - Filters out rows with a blank/missing email (anonymous or phone-only accounts).
+    - Merges DEFAULT_ADMINS: any admin email not present in Firebase gets a synthetic
+      entry (uid="default:<email>", role="admin") so the UI always shows all admins.
+    """
     auth = _firebase_auth()
     results = []
+    seen_emails: set[str] = set()
+
     page = auth.list_users(max_results=200)
     for user in page.iterate_all():
+        email = (user.email or "").strip()
+        if not email:
+            # Skip blank/anonymous accounts — they produce empty rows in the UI.
+            continue
         role = (user.custom_claims or {}).get("role") or None
         results.append({
             "uid": user.uid,
-            "email": user.email or "",
+            "email": email,
             "display_name": user.display_name or None,
             "role": role,
         })
+        seen_emails.add(email.lower())
+
+    # Ensure all DEFAULT_ADMINS appear even if they have never signed in.
+    for admin_email in sorted(settings.DEFAULT_ADMINS):
+        if admin_email.lower() not in seen_emails:
+            results.append({
+                "uid": f"default:{admin_email}",
+                "email": admin_email,
+                "display_name": None,
+                "role": "admin",
+            })
+
     return results
 
 

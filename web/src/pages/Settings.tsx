@@ -23,9 +23,9 @@ interface KnownModels {
 
 interface ConfigData {
   settings: SettingEntry[];
-  known_models: KnownModels;
-  default_admins: string[];
-  default_admins_note: string;
+  known_models: KnownModels | null;
+  default_admins: string[] | null;
+  default_admins_note: string | null;
 }
 
 interface SecretMeta {
@@ -33,10 +33,17 @@ interface SecretMeta {
   last_set: string | null;
   last_set_by: string | null;
   ui_updated_at: string | null;
+  provisioned: boolean;
 }
 
 interface SecretsData {
-  secrets: SecretMeta[];
+  secrets: SecretMeta[] | null;
+}
+
+interface HealthResult {
+  name: string;
+  ok: boolean;
+  detail: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,13 +280,25 @@ function SecretRow({
     }
   }
 
+  const notProvisioned = !localMeta.provisioned;
+
   return (
-    <tr style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+    <tr style={{ borderBottom: `1px solid ${BRAND.border}`, opacity: notProvisioned ? 0.6 : 1 }}>
       <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: BRAND.ink, fontWeight: 500 }}>
         {meta.key}
+        {notProvisioned && (
+          <span style={{ marginLeft: 8, fontSize: 11, color: BRAND.sub, fontFamily: "system-ui", fontWeight: 400 }}>
+            (not provisioned)
+          </span>
+        )}
       </td>
       <td style={{ padding: "10px 12px", fontSize: 13, color: BRAND.sub }}>
-        {localMeta.last_set ? fmtDate(localMeta.last_set) : <em>never set</em>}
+        {notProvisioned
+          ? <em style={{ color: BRAND.sub }}>not set</em>
+          : localMeta.last_set
+            ? fmtDate(localMeta.last_set)
+            : <em>never set via UI</em>
+        }
       </td>
       <td style={{ padding: "10px 12px", fontSize: 13, color: BRAND.sub }}>
         {localMeta.last_set_by || <em>—</em>}
@@ -294,7 +313,7 @@ function SecretRow({
             style={{ padding: "4px 12px", fontSize: 12 }}
             onClick={() => { setOpen(true); setOk(false); }}
           >
-            Update key
+            {notProvisioned ? "Set key" : "Update key"}
           </Button>
         ) : (
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -341,6 +360,11 @@ export function Settings() {
   const [secretsErr, setSecretsErr] = useState<string | null>(null);
   const [globalSaving, setGlobalSaving] = useState(false);
 
+  // Health checks state
+  const [healthResults, setHealthResults] = useState<HealthResult[] | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthErr, setHealthErr] = useState<string | null>(null);
+
   function loadConfig() {
     setLoadingConfig(true);
     setConfigErr(null);
@@ -361,6 +385,16 @@ export function Settings() {
       .finally(() => setLoadingSecrets(false));
   }
 
+  function runHealthChecks() {
+    setHealthLoading(true);
+    setHealthErr(null);
+    apiFetch("/config/health-checks")
+      .then((r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); })
+      .then((d: { results: HealthResult[] }) => setHealthResults(d.results ?? []))
+      .catch((e: unknown) => setHealthErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setHealthLoading(false));
+  }
+
   useEffect(() => {
     loadConfig();
     loadSecrets();
@@ -375,7 +409,7 @@ export function Settings() {
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
-        throw new Error(body?.detail ?? `${r.status} ${r.statusText}`);
+        throw new Error((body as { detail?: string })?.detail ?? `${r.status} ${r.statusText}`);
       }
       // Refresh config data to reflect updated source/updated_by
       loadConfig();
@@ -391,7 +425,7 @@ export function Settings() {
     });
     if (!r.ok) {
       const body = await r.json().catch(() => ({}));
-      throw new Error(body?.detail ?? `${r.status} ${r.statusText}`);
+      throw new Error((body as { detail?: string })?.detail ?? `${r.status} ${r.statusText}`);
     }
     return r.json() as Promise<{ last_set: string | null; last_set_by: string | null }>;
   }
@@ -399,6 +433,13 @@ export function Settings() {
   // Split settings into model vs regular — defensive: treat missing arrays as empty
   const modelEntries = (config?.settings ?? []).filter((s) => MODEL_KEYS.has(s.key));
   const regularEntries = (config?.settings ?? []).filter((s) => !MODEL_KEYS.has(s.key));
+
+  // Defensive: known_models may be absent from API response
+  const knownLlm: string[] = config?.known_models?.llm ?? [];
+  const knownEmbed: string[] = config?.known_models?.embed ?? [];
+
+  // Defensive: secrets.secrets may be null if API response is malformed
+  const secretsList: SecretMeta[] = secrets?.secrets ?? [];
 
   return (
     <main style={{ maxWidth: 960 }}>
@@ -469,11 +510,7 @@ export function Settings() {
                     <ModelField
                       settingKey={entry.key}
                       entry={entry}
-                      knownOptions={
-                        entry.key === "LLM_MODEL"
-                          ? config.known_models.llm
-                          : config.known_models.embed
-                      }
+                      knownOptions={entry.key === "LLM_MODEL" ? knownLlm : knownEmbed}
                       onSave={saveSetting}
                       saving={globalSaving}
                     />
@@ -493,7 +530,8 @@ export function Settings() {
         <p style={{ margin: "0 0 16px", fontSize: 13, color: BRAND.sub }}>
           Secret values are write-only — they are stored in GCP Secret Manager and never
           returned by this UI. Only metadata (last set time and who) is shown.
-          Use "Update key" to add a new secret version.
+          Use "Update key" to add a new secret version. Dimmed rows are not yet provisioned
+          (social/IG/TikTok — pending API review).
         </p>
         {loadingSecrets && <Loading />}
         {secretsErr && <ErrorMsg>Error loading secrets: {secretsErr}</ErrorMsg>}
@@ -502,13 +540,13 @@ export function Settings() {
             <thead>
               <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
                 <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "24%" }}>Secret ID</th>
-                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "18%" }}>Last Set (GCP)</th>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "20%" }}>Last Set (GCP)</th>
                 <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "16%" }}>Set By</th>
                 <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600 }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {secrets.secrets.map((s) => (
+              {secretsList.map((s) => (
                 <SecretRow key={s.key} meta={s} onSave={saveSecret} />
               ))}
             </tbody>
@@ -517,7 +555,50 @@ export function Settings() {
       </Card>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Section 4: Admin / role management note                             */}
+      {/* Section 4: Connectivity checks                                      */}
+      {/* ------------------------------------------------------------------ */}
+      <Card style={{ marginBottom: 24, borderTop: `4px solid ${BRAND.navyText}` }}>
+        <SectionTitle>Connectivity Tests</SectionTitle>
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: BRAND.sub }}>
+          Run live checks against each configured integration. Results are not cached —
+          each click makes real outbound requests.
+        </p>
+        <Button
+          onClick={runHealthChecks}
+          disabled={healthLoading}
+          style={{ padding: "9px 20px", fontSize: 14, marginBottom: 16 }}
+        >
+          {healthLoading ? "Running checks…" : "Test connections"}
+        </Button>
+        {healthErr && <ErrorMsg>Check failed: {healthErr}</ErrorMsg>}
+        {healthResults && (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "26%" }}>Integration</th>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "14%" }}>Status</th>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600 }}>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {healthResults.map((r) => (
+                <tr key={r.name} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                  <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink }}>{r.name}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <Badge tone={r.ok ? "green" : "amber"}>{r.ok ? "pass" : "fail"}</Badge>
+                  </td>
+                  <td style={{ padding: "10px 12px", fontSize: 12, color: BRAND.sub, fontFamily: "monospace" }}>
+                    {r.detail}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Section 5: Admin / role management note                             */}
       {/* ------------------------------------------------------------------ */}
       <Card style={{ borderTop: `4px solid ${BRAND.red}` }}>
         <SectionTitle>Admin Access</SectionTitle>

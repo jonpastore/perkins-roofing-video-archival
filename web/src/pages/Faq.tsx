@@ -316,39 +316,48 @@ export function Faq() {
               </div>
             )}
 
-            {/* Answer batch controls */}
+            {/* Backlog answer controls — secondary, collapsed by default */}
             {coverage.mined > coverage.answered && (
-              <div style={{ background: BRAND.bg, borderRadius: 8, padding: "12px 16px", marginBottom: 12 }}>
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600 }}>Generate answers:</span>
-                  {ANSWER_BATCH_OPTIONS.map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => setAnswerBatchSize(n)}
-                      style={{
-                        padding: "4px 12px", borderRadius: 6, fontSize: 13, cursor: "pointer",
-                        fontWeight: answerBatchSize === n ? 700 : 400,
-                        background: answerBatchSize === n ? BRAND.navy : "#fff",
-                        color: answerBatchSize === n ? "#fff" : BRAND.navyText,
-                        border: `1px solid ${answerBatchSize === n ? BRAND.navy : BRAND.border}`,
-                      }}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  <Button onClick={handleGenerateBatch} disabled={generatingBatch} style={{ fontSize: 13 }}>
-                    {generatingBatch ? "Generating…" : `Generate ${answerBatchSize}`}
-                  </Button>
+              <details style={{ marginBottom: 12 }}>
+                <summary style={{
+                  fontSize: 13, color: BRAND.sub, cursor: "pointer", userSelect: "none",
+                  padding: "6px 0", listStyle: "none", display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  <span style={{ fontSize: 11, color: BRAND.sub }}>&#9654;</span>
+                  Clear answer backlog ({(coverage.mined - coverage.answered).toLocaleString()} already-mined questions without answers)
+                </summary>
+                <div style={{ background: BRAND.bg, borderRadius: 8, padding: "12px 16px", marginTop: 6 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600 }}>Backlog batch size:</span>
+                    {ANSWER_BATCH_OPTIONS.map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setAnswerBatchSize(n)}
+                        style={{
+                          padding: "4px 12px", borderRadius: 6, fontSize: 13, cursor: "pointer",
+                          fontWeight: answerBatchSize === n ? 700 : 400,
+                          background: answerBatchSize === n ? BRAND.navy : "#fff",
+                          color: answerBatchSize === n ? "#fff" : BRAND.navyText,
+                          border: `1px solid ${answerBatchSize === n ? BRAND.navy : BRAND.border}`,
+                        }}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <Button onClick={handleGenerateBatch} disabled={generatingBatch} variant="ghost" style={{ fontSize: 13 }}>
+                      {generatingBatch ? "Generating…" : `Generate answers for ${answerBatchSize} backlog questions`}
+                    </Button>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12, color: BRAND.sub }}>
+                    {answerEstimate
+                      ? <>Answering {answerBatchSize} questions ~ <strong>{fmt$(answerEstimate.answer_cost_usd)}</strong> (estimate, {answerEstimate.model})</>
+                      : "Loading estimate…"}
+                    {coverage.mined - coverage.answered > 100 && answerEstimate && (
+                      <> · All {(coverage.mined - coverage.answered).toLocaleString()} backlog ~ <strong>{fmt$(answerEstimate.answer_cost_usd / answerBatchSize * (coverage.mined - coverage.answered))}</strong> (estimate)</>
+                    )}
+                  </p>
                 </div>
-                <p style={{ margin: 0, fontSize: 12, color: BRAND.sub }}>
-                  {answerEstimate
-                    ? <>Answering {answerBatchSize} questions ~ <strong>{fmt$(answerEstimate.answer_cost_usd)}</strong> (estimate, {answerEstimate.model})</>
-                    : "Loading estimate…"}
-                  {coverage.mined - coverage.answered > 100 && answerEstimate && (
-                    <> · Answering all {(coverage.mined - coverage.answered).toLocaleString()} unanswered ~ <strong>{fmt$(answerEstimate.answer_cost_usd / answerBatchSize * (coverage.mined - coverage.answered))}</strong> (estimate)</>
-                  )}
-                </p>
-              </div>
+              </details>
             )}
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>

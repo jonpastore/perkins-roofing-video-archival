@@ -544,15 +544,29 @@ export function SearchAsk() {
   }
 
   function buildEmailBody(): string {
-    const lines: string[] = [];
+    const clips: { title: string; snippet: string; url: string }[] = [];
     for (const g of grouped) {
       for (const c of g.clips) {
         if (checkedUrls.has(c.url)) {
-          lines.push(`• ${g.title} — ${c.snippet} — watch: ${c.url}`);
+          clips.push({ title: g.title, snippet: c.snippet, url: c.url });
         }
       }
     }
-    return lines.join("\n");
+    const clipsText = clips
+      .map((c) => `• ${c.title}\n  ${c.snippet}\n  Watch: ${c.url}`)
+      .join("\n\n");
+    return [
+      "Hi,",
+      "",
+      "I wanted to share some relevant clips from Tim Perkins' roofing knowledge base that may be helpful:",
+      "",
+      clipsText,
+      "",
+      "Let me know if you have any questions!",
+      "",
+      "Best,",
+      "Tim Perkins Roofing",
+    ].join("\n");
   }
 
   function handleIncludeInEmail() {

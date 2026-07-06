@@ -54,10 +54,12 @@ EDITABLE_KEYS: dict[str, str] = {
     "TRANSCRIPT_POLICY": "Transcript policy (caption_first | stt_only)",
     "ABSTAIN_THRESHOLD": "Abstain threshold (0–1 float)",
     "WP_URL": "WordPress site URL",
+    "PROD_DOMAIN": "Production site domain (canonical URL base)",
     "MAX_VIDEOS_PER_RUN": "Max videos per ingestion run",
     "PIPELINE_VERSION": "Pipeline version tag",
     "GRAPH_VERSION": "Graph version tag",
     "CHUNK_SIZE": "Chunk size (segments per chunk)",
+    "REEL_CLOSING_TEXT": "Reel outro brand text (shown on closing card — default: Perkins Roofing)",
 }
 
 # ---------------------------------------------------------------------------
@@ -76,6 +78,20 @@ ALLOWED_SECRET_IDS: frozenset[str] = frozenset([
     "google-idp-client-secret",
     "db-password",
     "internal-secret",
+    "whisper-token",
+])
+
+# Subset of ALLOWED_SECRET_IDS that we expect to be provisioned in GCP.
+# Secrets NOT in this set (social/IG/TikTok) are shown as "not provisioned yet".
+_PROVISIONED_SECRET_IDS: frozenset[str] = frozenset([
+    "youtube-api-key",
+    "serper-api-key",
+    "resend-api-key",
+    "wordpress-app-password",
+    "google-idp-client-secret",
+    "db-password",
+    "internal-secret",
+    "whisper-token",
 ])
 
 
@@ -261,7 +277,8 @@ def get_secrets(claims=Depends(require_role("manage_config"))):
     NEVER returns the secret value. For each secret:
       - last_set: ISO timestamp of the latest ENABLED version create_time (from GCP)
       - last_set_by: email of who last wrote it via this UI (from SecretAudit table)
-      - gcp_last_set: ISO timestamp from GCP (may differ if written outside the UI)
+      - ui_updated_at: ISO timestamp from the local audit table
+      - provisioned: true if this secret is expected to be set in GCP (false = not provisioned yet)
 
     If GCP Secret Manager is unavailable (dev), last_set falls back to None.
     """
@@ -280,15 +297,17 @@ def get_secrets(claims=Depends(require_role("manage_config"))):
     results = []
     for secret_id in sorted(ALLOWED_SECRET_IDS):
         audit = audits.get(secret_id)
+        provisioned = secret_id in _PROVISIONED_SECRET_IDS
         gcp_last_set = (
             _secret_latest_create_time(client, project, secret_id)
-            if use_gcp else None
+            if (use_gcp and provisioned) else None
         )
         results.append({
             "key": secret_id,
             "last_set": gcp_last_set,
             "last_set_by": audit.updated_by if audit else None,
             "ui_updated_at": audit.updated_at.isoformat() if (audit and audit.updated_at) else None,
+            "provisioned": provisioned,
         })
 
     return {"secrets": results}
@@ -354,4 +373,144 @@ def upsert_secret(entry: SecretEntry, claims=Depends(require_role("manage_config
         "key": entry.key,
         "last_set": gcp_last_set,
         "last_set_by": email,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /config/health-checks — live connectivity probes
+# ---------------------------------------------------------------------------
+
+def _check_vertex(project: str) -> tuple[bool, str]:
+    """Probe Vertex AI / GCP access by listing models or using ADC."""
+    try:
+        import google.auth  # noqa: PLC0415
+        import google.auth.transport.requests  # noqa: PLC0415
+        creds, detected_project = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        req = google.auth.transport.requests.Request()
+        creds.refresh(req)
+        used_project = detected_project or project
+        return True, f"ADC valid; project={used_project}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _check_db() -> tuple[bool, str]:
+    """Probe DB by opening a session and running a trivial query."""
+    try:
+        with SessionLocal() as db:
+            db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        return True, "ok"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _check_wordpress(wp_url: str) -> tuple[bool, str]:
+    """Probe WP REST API — unauthenticated /wp-json/ endpoint."""
+    import urllib.request  # noqa: PLC0415
+    import urllib.error   # noqa: PLC0415
+    if not wp_url:
+        return False, "WP_URL not configured"
+    try:
+        probe = wp_url.rstrip("/") + "/wp-json/"
+        req = urllib.request.Request(probe, headers={"User-Agent": "perkins-healthcheck/1"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if resp.status < 400:
+                return True, f"HTTP {resp.status}"
+            return False, f"HTTP {resp.status}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _check_resend(api_key: str) -> tuple[bool, str]:
+    """Probe Resend by calling /domains (read-only, cheap)."""
+    import urllib.request  # noqa: PLC0415
+    import urllib.error   # noqa: PLC0415
+    if not api_key:
+        return False, "RESEND_API_KEY not configured"
+    try:
+        req = urllib.request.Request(
+            "https://api.resend.com/domains",
+            headers={"Authorization": f"Bearer {api_key}", "User-Agent": "perkins-healthcheck/1"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if resp.status < 400:
+                return True, f"HTTP {resp.status}"
+            return False, f"HTTP {resp.status}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _check_youtube(api_key: str) -> tuple[bool, str]:
+    """Probe YouTube Data API v3 with a cheap quota-light call."""
+    import urllib.request  # noqa: PLC0415
+    import urllib.parse    # noqa: PLC0415
+    if not api_key:
+        return False, "YOUTUBE_API_KEY not configured"
+    try:
+        params = urllib.parse.urlencode({"part": "id", "id": "UC_x5XG1OV2P6uZZ5FSM9Ttw", "key": api_key})
+        url = f"https://www.googleapis.com/youtube/v3/channels?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "perkins-healthcheck/1"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if resp.status < 400:
+                return True, f"HTTP {resp.status}"
+            return False, f"HTTP {resp.status}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _check_serper(api_key: str) -> tuple[bool, str]:
+    """Probe Serper by sending a minimal search request."""
+    import urllib.request  # noqa: PLC0415
+    import json as _json   # noqa: PLC0415
+    if not api_key:
+        return False, "SERPER_API_KEY not configured"
+    try:
+        body = _json.dumps({"q": "perkins roofing", "num": 1}).encode()
+        req = urllib.request.Request(
+            "https://google.serper.dev/search",
+            data=body,
+            headers={
+                "X-API-KEY": api_key,
+                "Content-Type": "application/json",
+                "User-Agent": "perkins-healthcheck/1",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if resp.status < 400:
+                return True, f"HTTP {resp.status}"
+            return False, f"HTTP {resp.status}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+@router.get("/health-checks")
+def health_checks(claims=Depends(require_role("manage_config"))):
+    """Run cheap live connectivity probes. Returns [{name, ok, detail}] per integration.
+
+    Checks: Vertex/GCP ADC, DB, WordPress REST, Resend API, YouTube API, Serper API.
+    All checks run even if earlier ones fail — results are always a full list.
+    """
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    wp_url = _env_value("WP_URL")
+    resend_key = os.getenv("RESEND_API_KEY", "")
+    youtube_key = os.getenv("YOUTUBE_API_KEY", "")
+    serper_key = os.getenv("SERPER_API_KEY", "")
+
+    checks = [
+        ("Vertex / GCP", *_check_vertex(project)),
+        ("Database", *_check_db()),
+        ("WordPress REST", *_check_wordpress(wp_url)),
+        ("Resend", *_check_resend(resend_key)),
+        ("YouTube API", *_check_youtube(youtube_key)),
+        ("Serper", *_check_serper(serper_key)),
+    ]
+
+    return {
+        "results": [
+            {"name": name, "ok": ok, "detail": detail}
+            for name, ok, detail in checks
+        ]
     }

@@ -60,6 +60,7 @@ class ClipSuggestion(BaseModel):
     caption: str
     hook: str
     reason: str
+    summary: str = ""
 
 
 class SuggestResponse(BaseModel):
@@ -130,14 +131,17 @@ Return ONLY valid JSON — a single object with a "clips" array. Each clip:
   "end":   <float seconds, must match a real transcript timestamp>,
   "title": "<short clip title>",
   "caption": "<Instagram/TikTok caption with hashtags>",
-  "hook":  "<opening hook sentence for the clip>",
-  "reason": "<why this is a strong clip>"
+  "hook":  "<the actual opening line/sentence spoken in the clip that works as a scroll-stopping hook — quote or closely paraphrase the transcript>",
+  "summary": "<2-3 sentence plain-English summary of what happens in this specific clip, grounded in the transcript text for that timespan>",
+  "reason": "<why this specific moment is a strong clip — reference the content, not a generic explanation>"
 }}
 
 Rules:
 - start and end must be real timestamps from the transcript above (do NOT invent times)
 - end - start must be between 20 and 60 seconds
 - do not overlap clips
+- hook must be specific to this clip's content — never a generic phrase like "Did you know?" or "Watch this"
+- summary must describe what is actually said/shown in this clip's timespan
 - return exactly {count} clips
 - return ONLY the JSON object, no markdown fences
 """
@@ -168,6 +172,7 @@ def _llm_suggestions(
                     "caption": str(c.get("caption", "")),
                     "hook": str(c.get("hook", "")),
                     "reason": str(c.get("reason", "")),
+                    "summary": str(c.get("summary", "")),
                 })
             if validated:
                 return validated[:count]
@@ -178,8 +183,23 @@ def _llm_suggestions(
     return _fallback_suggestions(segments, nodes, count)
 
 
+def _segments_in_range(segments: list, start: float, end: float) -> str:
+    """Return transcript text for segments overlapping [start, end]."""
+    texts = [
+        (s.text or "").strip()
+        for s in segments
+        if s.end > start and s.start < end and (s.text or "").strip()
+    ]
+    return " ".join(texts)
+
+
 def _fallback_suggestions(segments: list, nodes: list, count: int) -> list[dict]:
-    """Derive clip suggestions from propose_parts when LLM is unavailable."""
+    """Derive clip suggestions from propose_parts when LLM is unavailable.
+
+    Unlike the old version, this populates hook and summary from the actual
+    transcript text for each clip's timespan so the fallback output is not
+    generic boilerplate.
+    """
     import core.miniseries as miniseries  # noqa: PLC0415
 
     if not segments:
@@ -195,17 +215,29 @@ def _fallback_suggestions(segments: list, nodes: list, count: int) -> list[dict]
         min_parts=min(count, 4),
         max_parts=count,
     )
-    return [
-        {
+    results = []
+    for p in parts:
+        transcript_text = _segments_in_range(segments, p["start"], p["end"])
+        # Hook: first ~100 chars of transcript text, trimmed to a sentence boundary.
+        hook = ""
+        if transcript_text:
+            hook_raw = transcript_text[:120].strip()
+            # Trim to last complete word if cut mid-word
+            if len(transcript_text) > 120 and " " in hook_raw:
+                hook_raw = hook_raw.rsplit(" ", 1)[0]
+            hook = hook_raw.rstrip(",;") + ("…" if len(transcript_text) > 120 else "")
+        # Summary: up to 300 chars of the transcript window, describing the clip content.
+        summary = transcript_text[:300].rstrip() + ("…" if len(transcript_text) > 300 else "")
+        results.append({
             "start": p["start"],
             "end": p["end"],
             "title": p["title"],
             "caption": "",
-            "hook": "",
-            "reason": "auto-derived from content graph",
-        }
-        for p in parts
-    ]
+            "hook": hook,
+            "summary": summary,
+            "reason": f"Content graph segment: {p['title']}",
+        })
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +369,61 @@ def list_renderable(
                     "parts_count": len(s.parts_json or []),
                 })
         return result
+
+
+@router.get("/transcript")
+def clip_transcript(
+    video_id: str,
+    start: float,
+    end: float,
+    claims=Depends(require_role("approve_video")),
+):
+    """Return transcript segments that overlap the given [start, end] window.
+
+    Response::
+
+        {
+            "video_id": str,
+            "start": float,
+            "end": float,
+            "text": str,           # all matching segment text joined by space
+            "segments": [          # individual segments for fine-grained display
+                {"start": float, "end": float, "text": str}
+            ]
+        }
+
+    Returns 404 if the video does not exist.
+    Returns an empty segments list (not 404) if the video has no transcript in range.
+    """
+    with SessionLocal() as db:
+        video = db.get(Video, video_id)
+        if video is None:
+            raise HTTPException(status_code=404, detail="video not found")
+
+        segs = (
+            db.query(Segment)
+            .filter(
+                Segment.video_id == video_id,
+                Segment.end > start,
+                Segment.start < end,
+            )
+            .order_by(Segment.start)
+            .all()
+        )
+
+        segments_out = [
+            {"start": s.start, "end": s.end, "text": (s.text or "").strip()}
+            for s in segs
+            if (s.text or "").strip()
+        ]
+
+    return {
+        "video_id": video_id,
+        "start": start,
+        "end": end,
+        "text": " ".join(s["text"] for s in segments_out),
+        "segments": segments_out,
+    }
 
 
 def _cloud_run_bearer_token() -> str:

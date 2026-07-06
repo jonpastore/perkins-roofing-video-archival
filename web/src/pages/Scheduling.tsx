@@ -6,6 +6,7 @@ interface ScheduledItem {
   id: number;
   kind: string;
   ref_id: string;
+  display_name: string;
   publish_at: string;
   status: string;
   target: string | null;
@@ -80,9 +81,6 @@ export function Scheduling() {
   const [seriesList, setSeriesList] = useState<SeriesOption[]>([]);
   const [dropdownsLoading, setDropdownsLoading] = useState(false);
 
-  // edit-only: tracks the status value for PUT (not shown on create)
-  const [editStatus, setEditStatus] = useState<string>("scheduled");
-
   function load(filter?: string) {
     setLoading(true);
     setError(null);
@@ -143,7 +141,6 @@ export function Scheduling() {
       publish_at: dtLocal,
       target: item.target ?? "",
     });
-    setEditStatus(item.status);
     setSaveError(null);
     setShowForm(true);
     loadDropdowns();
@@ -193,7 +190,6 @@ export function Scheduling() {
           method: "PUT",
           body: JSON.stringify({
             publish_at: form.publish_at,
-            status: editStatus,
             target: form.target || null,
           }),
         });
@@ -209,7 +205,7 @@ export function Scheduling() {
   }
 
   async function handleDelete(item: ScheduledItem) {
-    if (!confirm(`Cancel scheduled item "${item.ref_id}"? This cannot be undone.`)) return;
+    if (!confirm(`Cancel scheduled item "${item.display_name}"? This cannot be undone.`)) return;
     setDeletingId(item.id);
     try {
       const r = await apiFetch(`/scheduling/${item.id}`, { method: "DELETE" });
@@ -347,21 +343,6 @@ export function Scheduling() {
               )}
             </div>
 
-            {/* Status — edit-only, read-only badge on create */}
-            {editingId !== null && (
-              <div>
-                <label style={labelStyle}>Status</label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  style={{ ...inputStyle, width: "100%" }}
-                >
-                  <option value="scheduled">scheduled</option>
-                  <option value="published">published</option>
-                  <option value="error">error</option>
-                </select>
-              </div>
-            )}
           </div>
 
           {saveError && <ErrorMsg>{saveError}</ErrorMsg>}
@@ -409,7 +390,7 @@ export function Scheduling() {
               <thead>
                 <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Kind</th>
-                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Ref ID</th>
+                  <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Content</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Publish At</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
                   <th style={{ padding: "8px 12px", color: BRAND.sub, fontWeight: 600 }}>Target</th>
@@ -420,7 +401,7 @@ export function Scheduling() {
                 {items.map((item) => (
                   <tr key={item.id} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
                     <td style={{ padding: "10px 12px" }}>{kindBadge(item.kind)}</td>
-                    <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink }}>{item.ref_id}</td>
+                    <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink }}>{item.display_name}</td>
                     <td style={{ padding: "10px 12px", color: BRAND.sub }}>{fmtDate(item.publish_at)}</td>
                     <td style={{ padding: "10px 12px" }}>{statusBadge(item.status)}</td>
                     <td style={{ padding: "10px 12px", color: BRAND.sub }}>{item.target ?? "—"}</td>

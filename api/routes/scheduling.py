@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.auth import require_role
-from app.models import ScheduledContent, SessionLocal
+from app.models import Article, MiniSeries, ScheduledContent, SessionLocal
+from api.routes.video import clean_label
 
 router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 
@@ -31,8 +32,8 @@ class ScheduledContentIn(BaseModel):
 
 class ScheduledContentUpdate(BaseModel):
     publish_at: datetime | None = None
-    status: str | None = None
     target: str | None = None
+    # status intentionally absent from update — status is derived from outcome, not set manually
 
 
 # ---------------------------------------------------------------------------
@@ -40,11 +41,34 @@ class ScheduledContentUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _row_dict(r: ScheduledContent) -> dict:
+def _resolve_display_name(db, kind: str, ref_id: str) -> str:
+    """Return a clean human-readable title for a scheduled item.
+
+    - article → Article.title (falls back to ref_id slug)
+    - reel/series → MiniSeries.title cleaned via clean_label; falls back to ref_id
+    """
+    if kind == "article":
+        row = db.query(Article.title).filter(Article.slug == ref_id).first()
+        return row[0] if row and row[0] else ref_id
+    else:
+        # ref_id is the mini_series integer id stored as string
+        try:
+            series_id = int(ref_id)
+        except (ValueError, TypeError):
+            return ref_id
+        row = db.query(MiniSeries.title).filter(MiniSeries.id == series_id).first()
+        if row and row[0]:
+            return clean_label(row[0]) or ref_id
+        return ref_id
+
+
+def _row_dict(r: ScheduledContent, db=None) -> dict:
+    display_name = _resolve_display_name(db, r.kind, r.ref_id) if db is not None else r.ref_id
     return {
         "id": r.id,
         "kind": r.kind,
         "ref_id": r.ref_id,
+        "display_name": display_name,
         "publish_at": r.publish_at.isoformat() if r.publish_at else None,
         "status": r.status,
         "target": r.target,
@@ -66,7 +90,7 @@ def list_scheduled(
         if status is not None:
             q = q.filter(ScheduledContent.status == status)
         rows = q.order_by(ScheduledContent.publish_at).all()
-        return [_row_dict(r) for r in rows]
+        return [_row_dict(r, db) for r in rows]
 
 
 @router.post("", status_code=201)
@@ -85,7 +109,7 @@ def create_scheduled(
         db.add(item)
         db.commit()
         db.refresh(item)
-        return _row_dict(item)
+        return _row_dict(item, db)
 
 
 @router.put("/{item_id}")
@@ -100,13 +124,11 @@ def update_scheduled(
             raise HTTPException(status_code=404, detail="scheduled item not found")
         if body.publish_at is not None:
             item.publish_at = body.publish_at
-        if body.status is not None:
-            item.status = body.status
         if body.target is not None:
             item.target = body.target
         db.commit()
         db.refresh(item)
-        return _row_dict(item)
+        return _row_dict(item, db)
 
 
 @router.delete("/{item_id}", status_code=204)

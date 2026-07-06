@@ -44,8 +44,28 @@ _MAX_CLIP_SECS = 300
 # Default platform recorded on SocialPost rows created by this job.
 _DEFAULT_PLATFORM = "instagram,tiktok"
 
-# Closing card text used when no closing_img is supplied.
-_CLOSING_TEXT = "Perkins Roofing"
+# Default closing card text used when no closing_img is supplied and the
+# platform_config "REEL_CLOSING_TEXT" key is not set.
+_CLOSING_TEXT_DEFAULT = "Perkins Roofing"
+
+
+def _closing_text() -> str:
+    """Return the configured reel closing brand text.
+
+    Reads the REEL_CLOSING_TEXT key from platform_config (set via the Clip
+    Studio settings panel / PUT /config).  Falls back to _CLOSING_TEXT_DEFAULT
+    when the key is absent or empty.
+    """
+    try:
+        from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+
+        with SessionLocal() as db:
+            row = db.get(PlatformConfig, "REEL_CLOSING_TEXT")
+            if row and row.value and row.value.strip():
+                return row.value.strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_closing_text: could not read platform_config: %s", exc)
+    return _CLOSING_TEXT_DEFAULT
 
 
 def _reels_bucket() -> str:
@@ -291,8 +311,9 @@ def render_part(
 
         if closing_img is None:
             closing_img = os.path.join(scratch, f"closing_{series_id}_{part_index}.png")
-            logger.info("make_card (closing): %r -> %s", _CLOSING_TEXT, closing_img)
-            make_card(_CLOSING_TEXT, closing_img)
+            _ct = _closing_text()
+            logger.info("make_card (closing): %r -> %s", _ct, closing_img)
+            make_card(_ct, closing_img)
 
         # 7. Fuse
         reel_path = os.path.join(scratch, f"reel_{series_id}_{part_index}.mp4")

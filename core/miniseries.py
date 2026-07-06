@@ -176,6 +176,7 @@ def propose_parts(
     *,
     min_parts: int = 4,
     max_parts: int = 7,
+    video_title: str | None = None,
 ) -> list[dict]:
     """Derive 4-7 sequential parts from Content-Graph node timestamps.
 
@@ -185,16 +186,25 @@ def propose_parts(
     If there are fewer than min_parts nodes (or fewer than min_parts usable interior
     boundaries), the duration is split evenly into min_parts.
 
+    ``video_title`` is used to build descriptive part titles via ``_part_title``
+    (e.g. "Metal Roof Installation — Fastener Spacing — Part 2"); pass it whenever
+    the source video title is available.
+
     Returns list of {"title": str, "start": float, "end": float}.
+
+    NOTE (future work): topic-driven MULTI-source series — one series pulling the
+    best parts across several source videos — would plug in here by accepting a list
+    of (video_title, graph_nodes) pairs and merging them before the cut-point logic.
     """
     duration = float(duration)
+    name = clean_title(video_title)
     nodes_sorted = sorted(graph_nodes, key=lambda n: float(n["start"]))
 
     def _even_split() -> list[dict]:
         step = duration / min_parts
         return [
             {
-                "title": f"Part {i + 1}",
+                "title": _part_title(name, "", i + 1),
                 "start": round(i * step, 6),
                 "end": round(min((i + 1) * step, duration), 6),
             }
@@ -249,7 +259,6 @@ def propose_parts(
             label = nearest_label(endpoints[i + 1])
         else:
             label = nearest_label(start)
-        title = label if label else f"Part {i + 1}"
-        parts.append({"title": title, "start": start, "end": end})
+        parts.append({"title": _part_title(name, label, i + 1), "start": start, "end": end})
 
     return parts

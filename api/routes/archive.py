@@ -6,6 +6,7 @@ Role requirements (core.authz):
   - search → admin (via "*") + sales
 """
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 
 from api.auth import require_role
 from app.models import SessionLocal, Video, GraphNode, Article, MiniSeries, SocialPost
@@ -14,7 +15,7 @@ from core.retrieval import link
 router = APIRouter(prefix="/archive", tags=["archive"])
 
 
-def _video_to_dict(v: Video) -> dict:
+def _video_to_dict(v: Video, topic_count: int = 0, article_count: int = 0, social_post_count: int = 0) -> dict:
     return {
         "id": v.id,
         "title": v.title,
@@ -22,6 +23,9 @@ def _video_to_dict(v: Video) -> dict:
         "upload_date": v.upload_date,
         "archived": bool(v.archive_uri),
         "youtube_url": v.url,
+        "topic_count": topic_count,
+        "article_count": article_count,
+        "social_post_count": social_post_count,
     }
 
 
@@ -36,6 +40,11 @@ def list_videos(
     Optional filters:
       ?q=<title substring>        case-insensitive title search
       ?archived_only=true         only rows with a non-null archive_uri
+
+    Each row includes usage counts:
+      topic_count        content_graph nodes (kind='topics') for this video
+      article_count      articles whose content_md references this video_id
+      social_post_count  social posts linked via mini_series → social_posts
     """
     with SessionLocal() as db:
         query = db.query(Video)
@@ -44,7 +53,56 @@ def list_videos(
         if q:
             query = query.filter(Video.title.ilike(f"%{q}%"))
         rows = query.order_by(Video.upload_date.desc()).all()
-        return [_video_to_dict(v) for v in rows]
+
+        if not rows:
+            return []
+
+        video_ids = [v.id for v in rows]
+
+        # topic counts: one query, group by video_id
+        topic_counts: dict[str, int] = dict(
+            db.query(GraphNode.video_id, func.count(GraphNode.id))
+            .filter(GraphNode.video_id.in_(video_ids), GraphNode.kind == "topics")
+            .group_by(GraphNode.video_id)
+            .all()
+        )
+
+        # article counts: per video_id, count articles whose content_md contains it
+        article_counts: dict[str, int] = {}
+        for vid in video_ids:
+            article_counts[vid] = (
+                db.query(func.count(Article.slug))
+                .filter(Article.content_md.contains(vid))
+                .scalar() or 0
+            )
+
+        # social post counts: mini_series.video_id → social_posts.series_id
+        series_map: dict[str, list[int]] = {}  # video_id -> [series_id]
+        for s in db.query(MiniSeries.id, MiniSeries.video_id).filter(MiniSeries.video_id.in_(video_ids)).all():
+            series_map.setdefault(s.video_id, []).append(s.id)
+        all_series_ids = [sid for sids in series_map.values() for sid in sids]
+        post_counts_by_series: dict[int, int] = {}
+        if all_series_ids:
+            post_counts_by_series = dict(
+                db.query(SocialPost.series_id, func.count(SocialPost.id))
+                .filter(SocialPost.series_id.in_(all_series_ids))
+                .group_by(SocialPost.series_id)
+                .all()
+            )
+        social_post_counts: dict[str, int] = {
+            vid: sum(post_counts_by_series.get(sid, 0) for sid in sids)
+            for vid, sids in series_map.items()
+        }
+
+        return [
+            _video_to_dict(
+                v,
+                topic_count=topic_counts.get(v.id, 0),
+                article_count=article_counts.get(v.id, 0),
+                social_post_count=social_post_counts.get(v.id, 0),
+            )
+            for v in rows
+        ]
 
 
 @router.get("/{video_id}/download")

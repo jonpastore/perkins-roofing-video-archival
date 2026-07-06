@@ -178,7 +178,9 @@ def compute_series(db, video_id: str, *, max_clips: int = 5) -> tuple[str, list[
         for n in nodes
     ]
 
-    title = miniseries.clean_title(video.title) or video_id
+    # When the video title is all hashtags/emojis (clean_title returns ""), fall back
+    # to "Perkins Roofing" rather than exposing the raw YouTube video_id in the UI.
+    title = miniseries.clean_title(video.title) or "Perkins Roofing"
     parts = build_parts(
         video.title,
         float(video.duration or 0.0),

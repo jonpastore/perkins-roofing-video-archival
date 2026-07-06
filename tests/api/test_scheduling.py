@@ -79,18 +79,20 @@ def test_admin_list_filter_by_status():
 
 
 def test_admin_update_item():
+    """PUT can update publish_at and target; status is read-only and stays 'scheduled'."""
     client = _make_client("admin")
     created = client.post("/scheduling", json=ITEM_BODY, headers=ADMIN_HDR).json()
     item_id = created["id"]
 
     r = client.put(
         f"/scheduling/{item_id}",
-        json={"status": "published", "target": "tiktok"},
+        json={"publish_at": "2026-09-15T12:00:00", "target": "tiktok"},
         headers=ADMIN_HDR,
     )
     assert r.status_code == 200
     data = r.json()
-    assert data["status"] == "published"
+    # status is not settable via PUT — remains 'scheduled'
+    assert data["status"] == "scheduled"
     assert data["target"] == "tiktok"
     assert data["id"] == item_id
 

@@ -376,3 +376,129 @@ def test_put_secrets_unauthenticated():
     client = TestClient(appmod.app)
     r = client.put("/config/secrets", json={"key": "youtube-api-key", "value": "val"})
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /config/secrets — provisioned flag
+# ---------------------------------------------------------------------------
+
+def test_get_secrets_provisioned_flag(admin_client):
+    """Provisioned secrets have provisioned=True; social/unprovisioned have False."""
+    from api.routes.config import _PROVISIONED_SECRET_IDS
+    mock_client = _mock_sm_client()
+    with patch("api.routes.config._secret_manager_client", return_value=mock_client), \
+         patch("api.routes.config._gcp_project", return_value="test-project"):
+        r = admin_client.get("/config/secrets", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    secrets_map = {s["key"]: s for s in r.json()["secrets"]}
+    for key, meta in secrets_map.items():
+        assert "provisioned" in meta
+        assert meta["provisioned"] == (key in _PROVISIONED_SECRET_IDS)
+
+
+def test_get_secrets_unprovisioned_last_set_is_none(admin_client):
+    """Unprovisioned secrets must have last_set=None even if GCP is available."""
+    mock_client = _mock_sm_client()
+    with patch("api.routes.config._secret_manager_client", return_value=mock_client), \
+         patch("api.routes.config._gcp_project", return_value="test-project"):
+        r = admin_client.get("/config/secrets", headers={"Authorization": "Bearer x"})
+    for s in r.json()["secrets"]:
+        if not s["provisioned"]:
+            assert s["last_set"] is None, f"{s['key']} should have last_set=None"
+
+
+def test_get_secrets_includes_whisper_token(admin_client):
+    """whisper-token must appear in the secrets list."""
+    mock_client = _mock_sm_client()
+    with patch("api.routes.config._secret_manager_client", return_value=mock_client), \
+         patch("api.routes.config._gcp_project", return_value="test-project"):
+        r = admin_client.get("/config/secrets", headers={"Authorization": "Bearer x"})
+    keys = {s["key"] for s in r.json()["secrets"]}
+    assert "whisper-token" in keys
+
+
+# ---------------------------------------------------------------------------
+# PUT /config — PROD_DOMAIN editable key
+# ---------------------------------------------------------------------------
+
+def test_put_config_prod_domain(admin_client):
+    """PROD_DOMAIN is in the editable keys and can be persisted."""
+    r = admin_client.put(
+        "/config",
+        json={"key": "PROD_DOMAIN", "value": "perkins.degenito.ai"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 200
+    assert r.json()["value"] == "perkins.degenito.ai"
+
+
+def test_get_config_includes_prod_domain(admin_client):
+    """GET /config must include PROD_DOMAIN in the settings list."""
+    r = admin_client.get("/config", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    keys = [s["key"] for s in r.json()["settings"]]
+    assert "PROD_DOMAIN" in keys
+
+
+# ---------------------------------------------------------------------------
+# GET /config/health-checks
+# ---------------------------------------------------------------------------
+
+def test_health_checks_admin_ok(admin_client):
+    """Health checks endpoint returns 200 with a results list."""
+    with patch("api.routes.config._check_vertex", return_value=(True, "ADC valid")), \
+         patch("api.routes.config._check_db", return_value=(True, "ok")), \
+         patch("api.routes.config._check_wordpress", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")):
+        r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    body = r.json()
+    assert "results" in body
+    assert isinstance(body["results"], list)
+    assert len(body["results"]) == 6
+
+
+def test_health_checks_result_shape(admin_client):
+    """Each result has name, ok, detail fields."""
+    with patch("api.routes.config._check_vertex", return_value=(True, "ADC valid")), \
+         patch("api.routes.config._check_db", return_value=(True, "ok")), \
+         patch("api.routes.config._check_wordpress", return_value=(False, "WP_URL not configured")), \
+         patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")):
+        r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
+    for result in r.json()["results"]:
+        assert "name" in result
+        assert "ok" in result
+        assert "detail" in result
+        assert isinstance(result["ok"], bool)
+
+
+def test_health_checks_partial_failure(admin_client):
+    """A failing probe does not prevent other probes from running."""
+    with patch("api.routes.config._check_vertex", return_value=(False, "no ADC")), \
+         patch("api.routes.config._check_db", return_value=(True, "ok")), \
+         patch("api.routes.config._check_wordpress", return_value=(False, "timeout")), \
+         patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_youtube", return_value=(False, "403 Forbidden")), \
+         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")):
+        r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    results = {item["name"]: item for item in r.json()["results"]}
+    assert results["Vertex / GCP"]["ok"] is False
+    assert results["Database"]["ok"] is True
+    assert results["YouTube API"]["ok"] is False
+    assert results["Serper"]["ok"] is True
+
+
+def test_health_checks_sales_forbidden(sales_client):
+    r = sales_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 403
+
+
+def test_health_checks_unauthenticated():
+    client = TestClient(appmod.app)
+    r = client.get("/config/health-checks")
+    assert r.status_code == 401

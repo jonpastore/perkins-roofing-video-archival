@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useContext } from "react";
 import { apiFetch } from "../api";
 import { hms, BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
+import { NavContext } from "../App";
 
 interface ArticleTopic {
   label: string;
@@ -54,6 +55,24 @@ interface TopicVideo {
   start: number;
 }
 
+interface TopicArticle {
+  slug: string;
+  title: string;
+  status: string;
+  role: string;
+  pillar_slug: string | null;
+  wp_url?: string | null;
+}
+
+// Matches server _slugify: lowercase, non-alphanumerics→"-", trim, slice(0,80)
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
 const PAGE_SIZE = 15;
 const TOPIC_PAGE_SIZE = 24;
 const FETCH_LIMIT = 200;
@@ -89,6 +108,8 @@ function ActionNote({ children }: { children: React.ReactNode }) {
   );
 }
 
+type ModalTab = "videos" | "articles";
+
 function TopicVideoModal({
   label,
   onClose,
@@ -96,8 +117,14 @@ function TopicVideoModal({
   label: string;
   onClose: () => void;
 }) {
+  const { navigate } = useContext(NavContext);
+  const [activeTab, setActiveTab] = useState<ModalTab>("videos");
   const [videos, setVideos] = useState<TopicVideo[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [videoErr, setVideoErr] = useState<string | null>(null);
+  const [articles, setArticles] = useState<TopicArticle[] | null>(null);
+  const [articleErr, setArticleErr] = useState<string | null>(null);
+
+  const pillarSlug = slugify(label);
 
   useEffect(() => {
     apiFetch(`/topics/videos?label=${encodeURIComponent(label)}`)
@@ -106,8 +133,35 @@ function TopicVideoModal({
         return r.json();
       })
       .then((data: TopicVideo[]) => setVideos(data))
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setVideoErr(e instanceof Error ? e.message : String(e)));
   }, [label]);
+
+  useEffect(() => {
+    apiFetch("/articles")
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((data: TopicArticle[]) => {
+        const related = data.filter(
+          (a) => a.slug === pillarSlug || a.pillar_slug === pillarSlug
+        );
+        setArticles(related);
+      })
+      .catch((e: unknown) => setArticleErr(e instanceof Error ? e.message : String(e)));
+  }, [pillarSlug]);
+
+  const tabStyle = (t: ModalTab): React.CSSProperties => ({
+    padding: "8px 18px",
+    border: "none",
+    borderBottom: activeTab === t ? `2px solid ${BRAND.red}` : "2px solid transparent",
+    background: "none",
+    cursor: "pointer",
+    fontSize: 14,
+    fontWeight: activeTab === t ? 700 : 500,
+    color: activeTab === t ? BRAND.navyText : BRAND.sub,
+    marginBottom: -1,
+  });
 
   return (
     <div
@@ -121,12 +175,13 @@ function TopicVideoModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#fff", borderRadius: 14, width: "min(600px, 94vw)",
+          background: "#fff", borderRadius: 14, width: "min(640px, 94vw)",
           maxHeight: "80vh", display: "flex", flexDirection: "column",
           boxShadow: "0 8px 32px rgba(16,24,40,0.18)",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "18px 24px 12px" }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "18px 24px 0" }}>
           <h3 style={{ margin: 0, fontSize: 16, color: BRAND.navyText, fontWeight: 700 }}>{label}</h3>
           <button
             onClick={onClose}
@@ -135,36 +190,115 @@ function TopicVideoModal({
             ×
           </button>
         </div>
-        <div style={{ overflowY: "auto", flex: 1, padding: "0 24px 20px" }}>
-          {!videos && !err && <Loading label="Loading videos…" />}
-          {err && <ErrorMsg>Could not load videos: {err}</ErrorMsg>}
-          {videos && videos.length === 0 && (
-            <p style={{ color: BRAND.sub, fontSize: 14 }}>No videos found for this topic.</p>
-          )}
-          {videos && videos.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {videos.map((v) => (
-                <div
-                  key={v.video_id}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "10px 12px", border: `1px solid ${BRAND.border}`,
-                    borderRadius: 8, background: BRAND.bg,
-                  }}
-                >
-                  <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>{v.title}</span>
-                  <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>{hms(v.duration)}</span>
-                  <a
-                    href={`https://youtu.be/${v.video_id}?t=${Math.floor(v.start)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: BRAND.red, fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}
-                  >
-                    ▶ play
-                  </a>
+
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${BRAND.border}`, padding: "0 24px", marginTop: 8 }}>
+          <button style={tabStyle("videos")} onClick={() => setActiveTab("videos")}>Videos</button>
+          <button style={tabStyle("articles")} onClick={() => setActiveTab("articles")}>
+            Articles{articles && articles.length > 0 ? ` (${articles.length})` : ""}
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{ overflowY: "auto", flex: 1, padding: "16px 24px 20px" }}>
+          {activeTab === "videos" && (
+            <>
+              {!videos && !videoErr && <Loading label="Loading videos…" />}
+              {videoErr && <ErrorMsg>Could not load videos: {videoErr}</ErrorMsg>}
+              {videos && videos.length === 0 && (
+                <p style={{ color: BRAND.sub, fontSize: 14 }}>No videos found for this topic.</p>
+              )}
+              {videos && videos.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {videos.map((v) => (
+                    <div
+                      key={v.video_id}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "10px 12px", border: `1px solid ${BRAND.border}`,
+                        borderRadius: 8, background: BRAND.bg,
+                      }}
+                    >
+                      <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>{v.title}</span>
+                      <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>{hms(v.duration)}</span>
+                      <a
+                        href={`https://youtu.be/${v.video_id}?t=${Math.floor(v.start)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: BRAND.red, fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}
+                      >
+                        ▶ play
+                      </a>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
+          )}
+
+          {activeTab === "articles" && (
+            <>
+              {!articles && !articleErr && <Loading label="Loading articles…" />}
+              {articleErr && <ErrorMsg>Could not load articles: {articleErr}</ErrorMsg>}
+              {articles && articles.length === 0 && (
+                <p style={{ color: BRAND.sub, fontSize: 14 }}>
+                  No articles generated for this topic yet. Use "Generate cluster articles" to create them.
+                </p>
+              )}
+              {articles && articles.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {articles.map((a) => (
+                    <div
+                      key={a.slug}
+                      style={{
+                        padding: "10px 12px", border: `1px solid ${BRAND.border}`,
+                        borderRadius: 8, background: BRAND.bg,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>
+                          {a.title}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                          background: a.role === "pillar" ? "#e8eefc" : "#fff3e0",
+                          color: a.role === "pillar" ? BRAND.navyText : "#b45309",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {a.role}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
+                          background: a.status === "published" ? "#e6f9f0" : "#eef1f5",
+                          color: a.status === "published" ? "#1a7f4b" : BRAND.sub,
+                          whiteSpace: "nowrap",
+                        }}>
+                          {a.status}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: 14, marginTop: 6 }}>
+                        <button
+                          onClick={() => { navigate("articles", { open: a.slug, cluster: a.pillar_slug ?? a.slug }); onClose(); }}
+                          style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                        >
+                          Open article
+                        </button>
+                        {a.status === "published" && a.wp_url && (
+                          <a
+                            href={a.wp_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline" }}
+                          >
+                            WordPress ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -224,10 +358,12 @@ function Paginator({
 }
 
 export function Opportunities() {
+  const { navigate } = useContext(NavContext);
   const [data, setData] = useState<Suggestions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [generating, setGenerating] = useState<string | null>(null);
+  // Per-topic state: label -> { state: "generating"|"done", pillar_slug?: string }
+  const [topicStates, setTopicStates] = useState<Record<string, { state: "generating" | "done"; pillar_slug?: string }>>({});
   const [genMsg, setGenMsg] = useState<Record<string, string>>({});
 
   // Server-paginated topics section
@@ -291,49 +427,75 @@ export function Opportunities() {
     fetchSuggestions();
   }, []);
 
-  function generateArticle(topic: string) {
-    setGenerating(topic);
-    apiFetch("/topics/generate-article", {
-      method: "POST",
-      body: JSON.stringify({ topic }),
-    })
-      .then((r) => r.json())
-      .then((d: { slug: string; status: string }) => {
-        setGenMsg((prev) => ({
-          ...prev,
-          [topic]: `Draft created: ${d.slug} (${d.status})`,
-        }));
-      })
-      .catch((e: unknown) => {
-        setGenMsg((prev) => ({
-          ...prev,
-          [topic]: `Error: ${e instanceof Error ? e.message : String(e)}`,
-        }));
-      })
-      .finally(() => setGenerating(null));
+  async function generateArticle(topic: string) {
+    setTopicStates((s) => ({ ...s, [topic]: { state: "generating" } }));
+    try {
+      const r = await apiFetch("/topics/generate-article", {
+        method: "POST",
+        body: JSON.stringify({ topic }),
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => r.statusText);
+        throw new Error(`${r.status}: ${txt}`);
+      }
+      const d = await r.json() as {
+        pillar_slug: string;
+        pillar: { slug: string; title: string };
+        clusters: { slug: string; title: string }[];
+        count: number;
+      };
+      setTopicStates((s) => ({ ...s, [topic]: { state: "done", pillar_slug: d.pillar_slug } }));
+      setGenMsg((prev) => ({
+        ...prev,
+        [topic]: `Cluster created: "${d.pillar.title}" — ${d.clusters.length} supporting articles.`,
+      }));
+    } catch (e: unknown) {
+      setTopicStates((s) => {
+        const next = { ...s };
+        delete next[topic];
+        return next;
+      });
+      setGenMsg((prev) => ({
+        ...prev,
+        [topic]: `Error: ${e instanceof Error ? e.message : String(e)}`,
+      }));
+    }
   }
 
-  function generateUnusedArticle(video: UnusedVideo) {
+  async function generateUnusedArticle(video: UnusedVideo) {
     const key = video.video_id;
-    setGenerating(key);
-    apiFetch("/topics/generate-article", {
-      method: "POST",
-      body: JSON.stringify({ topic: video.title }),
-    })
-      .then((r) => r.json())
-      .then((d: { slug: string; status: string }) => {
-        setGenMsg((prev) => ({
-          ...prev,
-          [key]: `Draft created: ${d.slug} (${d.status})`,
-        }));
-      })
-      .catch((e: unknown) => {
-        setGenMsg((prev) => ({
-          ...prev,
-          [key]: `Error: ${e instanceof Error ? e.message : String(e)}`,
-        }));
-      })
-      .finally(() => setGenerating(null));
+    setTopicStates((s) => ({ ...s, [key]: { state: "generating" } }));
+    try {
+      const r = await apiFetch("/topics/generate-article", {
+        method: "POST",
+        body: JSON.stringify({ topic: video.title }),
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => r.statusText);
+        throw new Error(`${r.status}: ${txt}`);
+      }
+      const d = await r.json() as {
+        pillar_slug: string;
+        pillar: { slug: string; title: string };
+        clusters: { slug: string; title: string }[];
+        count: number;
+      };
+      setTopicStates((s) => ({ ...s, [key]: { state: "done", pillar_slug: d.pillar_slug } }));
+      setGenMsg((prev) => ({
+        ...prev,
+        [key]: `Cluster created: "${d.pillar.title}" — ${d.clusters.length} supporting articles.`,
+      }));
+    } catch (e: unknown) {
+      setTopicStates((s) => {
+        const next = { ...s };
+        delete next[key];
+        return next;
+      });
+      setGenMsg((prev) => ({
+        ...prev,
+        [key]: `Error: ${e instanceof Error ? e.message : String(e)}`,
+      }));
+    }
   }
 
   // Compute paged slices for other buckets
@@ -400,48 +562,60 @@ export function Opportunities() {
       {!topicLoading && !topicError && topicItems.length > 0 && (
         <>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {topicItems.map((t) => (
-              <Card key={t.label} style={{ flex: "1 1 220px", minWidth: 220 }}>
-                <div style={{ fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                  {t.label}
-                </div>
-                <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 6 }}>
-                  {t.num_videos} video{t.num_videos !== 1 ? "s" : ""}
-                  {" · "}
-                  {hms(t.total_content_length)}
-                </div>
-                <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <button
-                    onClick={() => setVideoModalLabel(t.label)}
-                    style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-                  >
-                    View videos
-                  </button>
-                  <a
-                    href={`https://youtu.be/${t.sample.video_id}?t=${t.sample.t}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline" }}
-                  >
-                    sample clip
-                  </a>
-                </div>
-                {genMsg[t.label] ? (
-                  <div style={{ fontSize: 12, color: BRAND.sub, fontStyle: "italic" }}>
-                    {genMsg[t.label]}
+            {topicItems.map((t) => {
+              const ts = topicStates[t.label];
+              return (
+                <Card key={t.label} style={{ flex: "1 1 220px", minWidth: 220 }}>
+                  <div style={{ fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
+                    {t.label}
                   </div>
-                ) : (
-                  <Button
-                    variant="primary"
-                    style={{ fontSize: 13, padding: "6px 14px" }}
-                    disabled={generating === t.label}
-                    onClick={() => generateArticle(t.label)}
-                  >
-                    {generating === t.label ? "Generating…" : "Generate cluster article"}
-                  </Button>
-                )}
-              </Card>
-            ))}
+                  <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 6 }}>
+                    {t.num_videos} video{t.num_videos !== 1 ? "s" : ""}
+                    {" · "}
+                    {hms(t.total_content_length)}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      onClick={() => setVideoModalLabel(t.label)}
+                      style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                    >
+                      View videos
+                    </button>
+                    <a
+                      href={`https://youtu.be/${t.sample.video_id}?t=${t.sample.t}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline" }}
+                    >
+                      sample clip
+                    </a>
+                  </div>
+                  {genMsg[t.label] && ts?.state !== "done" && (
+                    <div style={{ fontSize: 12, color: genMsg[t.label].startsWith("Error") ? BRAND.red : BRAND.sub, fontStyle: "italic", marginBottom: 6 }}>
+                      {genMsg[t.label]}
+                    </div>
+                  )}
+                  {ts?.state === "done" ? (
+                    <Button
+                      variant="primary"
+                      style={{ fontSize: 13, padding: "6px 14px" }}
+                      onClick={() => navigate("articles", { cluster: ts.pillar_slug ?? slugify(t.label) })}
+                    >
+                      View
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      style={{ fontSize: 13, padding: "6px 14px" }}
+                      disabled={ts?.state === "generating"}
+                      onClick={() => generateArticle(t.label)}
+                    >
+                      {ts?.state === "generating" ? "Rendering…" : "Generate cluster articles"}
+                    </Button>
+                  )}
+                </Card>
+              );
+            })}
           </div>
           {/* Server pagination for topics */}
           {topicTotal > TOPIC_PAGE_SIZE && (
@@ -643,19 +817,28 @@ export function Opportunities() {
                         {v.title}
                       </a>
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                      {genMsg[v.video_id] ? (
-                        <div style={{ fontSize: 12, color: BRAND.sub, fontStyle: "italic" }}>
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      {genMsg[v.video_id] && topicStates[v.video_id]?.state !== "done" && (
+                        <div style={{ fontSize: 12, color: genMsg[v.video_id].startsWith("Error") ? BRAND.red : BRAND.sub, fontStyle: "italic", width: "100%" }}>
                           {genMsg[v.video_id]}
                         </div>
+                      )}
+                      {topicStates[v.video_id]?.state === "done" ? (
+                        <Button
+                          variant="primary"
+                          style={{ fontSize: 12, padding: "5px 12px" }}
+                          onClick={() => navigate("articles", { cluster: topicStates[v.video_id].pillar_slug ?? slugify(v.title) })}
+                        >
+                          View
+                        </Button>
                       ) : (
                         <Button
                           variant="primary"
                           style={{ fontSize: 12, padding: "5px 12px" }}
-                          disabled={generating === v.video_id}
+                          disabled={topicStates[v.video_id]?.state === "generating"}
                           onClick={() => generateUnusedArticle(v)}
                         >
-                          {generating === v.video_id ? "Generating…" : "Generate cluster article"}
+                          {topicStates[v.video_id]?.state === "generating" ? "Rendering…" : "Generate cluster articles"}
                         </Button>
                       )}
                       <a

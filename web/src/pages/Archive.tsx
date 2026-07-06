@@ -9,6 +9,9 @@ interface ArchiveVideo {
   upload_date: string | null;
   archived: boolean;
   youtube_url: string | null;
+  topic_count: number;
+  article_count: number;
+  social_post_count: number;
 }
 
 interface Topic {
@@ -264,13 +267,14 @@ export function Archive() {
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Title</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Duration</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Upload Date</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Usage</th>
               <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Download</th>
             </tr>
           </thead>
           <tbody>
             {videos.length === 0 && (
               <tr>
-                <td colSpan={4} style={{ padding: "24px 12px", color: "#888", textAlign: "center" }}>
+                <td colSpan={5} style={{ padding: "24px 12px", color: "#888", textAlign: "center" }}>
                   No videos found.
                 </td>
               </tr>
@@ -343,6 +347,28 @@ export function Archive() {
                     {v.upload_date ?? "—"}
                   </td>
                   <td style={{ padding: "10px 12px" }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {v.topic_count > 0 && (
+                        <span title="Topics" style={{ fontSize: 11, fontWeight: 600, background: "#eef2ff", color: "#4338ca", borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>
+                          {v.topic_count} topics
+                        </span>
+                      )}
+                      {v.article_count > 0 && (
+                        <span title="Articles referencing this video" style={{ fontSize: 11, fontWeight: 600, background: "#f0fdf4", color: "#166534", borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>
+                          {v.article_count} {v.article_count === 1 ? "article" : "articles"}
+                        </span>
+                      )}
+                      {v.social_post_count > 0 && (
+                        <span title="Social posts" style={{ fontSize: 11, fontWeight: 600, background: "#fff7ed", color: "#c2410c", borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>
+                          {v.social_post_count} {v.social_post_count === 1 ? "post" : "posts"}
+                        </span>
+                      )}
+                      {v.topic_count === 0 && v.article_count === 0 && v.social_post_count === 0 && (
+                        <span style={{ fontSize: 11, color: "#bbb" }}>—</span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
                     <button
                       onClick={() => handleDownload(v)}
                       disabled={downloading === v.id}
@@ -366,7 +392,7 @@ export function Archive() {
                 </tr>
                 {expandedId === v.id && (
                   <tr key={`${v.id}-detail`}>
-                    <td colSpan={4} style={{ padding: 0 }}>
+                    <td colSpan={5} style={{ padding: 0 }}>
                       <DetailPanel videoId={v.id} />
                     </td>
                   </tr>
