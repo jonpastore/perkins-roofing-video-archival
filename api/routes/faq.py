@@ -305,7 +305,8 @@ def list_faq(
     Returns {total, items: [{id, question, answer, status, video_id, video_title, url, start}]}.
     """
     with SessionLocal() as db:
-        query = db.query(FaqEntry)
+        # Consolidated near-duplicates (status='duplicate') are hidden from the builder.
+        query = db.query(FaqEntry).filter(FaqEntry.status != "duplicate")
 
         if answered == "yes":
             query = query.filter(FaqEntry.status == "answered")
@@ -581,8 +582,11 @@ def estimate_cost(
 def coverage(claims=Depends(require_role("article_read"))):
     """Return coverage stats: mined, answered, uncovered_nodes."""
     with SessionLocal() as db:
-        mined_count = db.query(FaqEntry).count()
+        # 'mined' total excludes consolidated near-duplicates so the count reflects the
+        # curated set the operator actually works with.
+        mined_count = db.query(FaqEntry).filter(FaqEntry.status != "duplicate").count()
         answered_count = db.query(FaqEntry).filter(FaqEntry.status == "answered").count()
+        duplicate_count = db.query(FaqEntry).filter(FaqEntry.status == "duplicate").count()
 
         covered_ids = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
         uncovered_nodes = (
@@ -598,5 +602,6 @@ def coverage(claims=Depends(require_role("article_read"))):
     return {
         "mined": mined_count,
         "answered": answered_count,
+        "duplicates": duplicate_count,
         "uncovered_nodes": uncovered_nodes,
     }
