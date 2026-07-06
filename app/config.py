@@ -15,6 +15,8 @@ class Settings:
 
     # Transcript source policy — 'caption_first' (use YouTube captions, STT fallback) | 'stt_only'
     TRANSCRIPT_POLICY = os.getenv("TRANSCRIPT_POLICY", "caption_first")
+    # STT backend — 'gcp' (Cloud Speech-to-Text v2, fully cloud, default) | 'whisper' (dev cerberus)
+    STT_BACKEND = os.getenv("STT_BACKEND", "gcp")
     DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "poc", "data"))
 
     # Pipeline versioning (stamped on every derived artifact for resumability/audit)

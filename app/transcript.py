@@ -33,21 +33,27 @@ def from_youtube_caption(vid):
     return {"source": "youtube_caption", "segments": segs, "words": words}
 
 def from_gcp_stt(vid):
-    # PROD: download audio to GCS, call Speech-to-Text v2 (word-level + confidence), normalize.
-    raise NotImplementedError("GCP STT v2 backend — implement for production (word ts + confidence)")
+    """Fully-cloud STT (GCP Speech-to-Text v2, word-level ts + confidence) — no local GPU."""
+    from adapters.stt_gcp import transcribe
+    return transcribe(vid)
 
 def from_whisper(vid):
-    """Local Whisper STT (free, on cerberus) — returns the normalized transcript schema."""
+    """Local Whisper STT (free, on cerberus) — dev-only fallback, returns the same schema."""
     from adapters.stt_whisper import transcribe
     return transcribe(vid)
+
+def _stt(vid):
+    """Dispatch to the configured STT backend. Defaults to GCP (cloud); opt into local Whisper
+    only when STT_BACKEND=whisper AND WHISPER_URL is set (dev on cerberus)."""
+    if settings.STT_BACKEND == "whisper" and os.getenv("WHISPER_URL"):
+        return from_whisper(vid)
+    return from_gcp_stt(vid)
 
 
 def get_transcript(vid):
     if settings.TRANSCRIPT_POLICY == "stt_only":
-        return from_whisper(vid) if os.getenv("WHISPER_URL") else from_gcp_stt(vid)
+        return _stt(vid)
     try:
         return from_youtube_caption(vid)
     except FileNotFoundError:
-        if os.getenv("WHISPER_URL"):
-            return from_whisper(vid)
-        return from_gcp_stt(vid)
+        return _stt(vid)

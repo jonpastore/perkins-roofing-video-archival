@@ -521,6 +521,30 @@ resource "google_cloud_scheduler_job" "crawl_comments" {
   depends_on = [google_project_service.apis]
 }
 
+# Drain the ingest queue every minute by triggering the `ingest` Cloud Run Job (runs as jobs-sa:
+# has speech.client + media-bucket access + a 3600s timeout — the STT-heavy work does NOT belong
+# in the user-facing API request). The job itself is single-flight (Postgres advisory lock), so a
+# per-minute cadence can never overlap — a second execution grabs no lock and exits immediately.
+# scheduler_sa already holds project-wide roles/run.invoker (see scheduler_run_invoker), so no
+# extra IAM is needed to start the execution.
+resource "google_cloud_scheduler_job" "run_ingest" {
+  name      = "run-ingest"
+  region    = var.region
+  schedule  = "* * * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/ingest:run"
+    http_method = "POST"
+
+    oauth_token {
+      service_account_email = google_service_account.scheduler_sa.email
+    }
+  }
+
+  depends_on = [google_project_service.apis, google_cloud_run_v2_job.jobs]
+}
+
 # ---------------------------------------------------------------------------
 # 11. Secret Manager — secret containers only (no versions)
 #     Populate secret values via bootstrap.sh after billing is confirmed.

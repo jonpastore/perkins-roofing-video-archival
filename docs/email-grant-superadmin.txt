@@ -1,0 +1,63 @@
+Subject: Quick 5-minute favor — grant my account admin access
+
+Hi,
+
+I need to set up a piece of the Perkins video system, and to do that my account
+needs temporary Super Admin access in our Google Workspace. You're one of the
+people who can grant it. It takes about 5 minutes. Below are the exact steps.
+
+You'll be granting access to: jon@perkinsroofing.net
+
+Please note: you must be signed in with YOUR OWN Google Workspace admin account
+for this to work.
+
+----------------------------------------------------------------
+PART 1 — GRANT ACCESS
+----------------------------------------------------------------
+
+1. Go to https://admin.google.com and sign in with your admin account.
+
+2. On the left, click the menu (three lines) and choose "Directory," then "Users."
+
+3. In the list, click my name (Jon). If you don't see it, type "jon" in the
+   search box at the top and click my account to open it.
+
+4. On my account page, scroll down and click "Admin roles and privileges."
+
+5. Find the row labeled "Super Admin" and click it.
+
+6. Next to "Super Admin," click the slider/toggle so it changes to "Assigned."
+
+7. Click "Save."
+
+That's it. It usually takes effect within a few minutes (occasionally up to 24
+hours). Once you've clicked Save, please reply to this email to let me know it's
+done. Thank you!
+
+----------------------------------------------------------------
+PART 2 — REMOVE ACCESS (after I confirm I'm finished)
+----------------------------------------------------------------
+
+I'll email you when the setup is complete — usually within a day or two. When I
+do, please remove the access the same way you added it:
+
+1. Go to https://admin.google.com and sign in with your admin account.
+
+2. Click the menu, choose "Directory," then "Users."
+
+3. Click my name (Jon), or search "jon" and open my account.
+
+4. Scroll down and click "Admin roles and privileges."
+
+5. Click the "Super Admin" row.
+
+6. Next to "Super Admin," click the slider/toggle so it changes to "Unassigned"
+   (turning it off).
+
+7. Click "Save."
+
+That removes the access. A quick reply to confirm would be great.
+
+Thanks so much for the help!
+
+Jon

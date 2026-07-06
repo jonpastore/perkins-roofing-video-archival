@@ -636,12 +636,12 @@ export function Archive() {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>
             <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Title</th>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Duration</th>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Upload Date</th>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Usage</th>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>KPIs</th>
-              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Actions</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, width: "34%" }}>Title</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, textAlign: "right", whiteSpace: "nowrap" }}>Duration</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, whiteSpace: "nowrap" }}>Upload Date</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, minWidth: 140 }}>Usage</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, whiteSpace: "nowrap" }}>KPIs</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, whiteSpace: "nowrap" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -659,8 +659,8 @@ export function Archive() {
                   style={{ borderBottom: expandedId === v.id ? "none" : "1px solid #f0f0f0" }}
                 >
                   {/* Title cell */}
-                  <td style={{ padding: "10px 12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <td style={{ padding: "10px 12px", maxWidth: 340 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                       <button
                         onClick={() => toggleExpand(v.id)}
                         aria-label={expandedId === v.id ? "Collapse" : "Expand"}
@@ -704,6 +704,8 @@ export function Archive() {
                           cursor: "pointer",
                           textDecoration: expandedId === v.id ? "underline" : "none",
                           textUnderlineOffset: 2,
+                          whiteSpace: "normal",
+                          overflowWrap: "anywhere",
                         }}
                         title="Click to expand topics and usage"
                       >
@@ -713,7 +715,7 @@ export function Archive() {
                   </td>
 
                   {/* Duration */}
-                  <td style={{ padding: "10px 12px", color: "#555", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "10px 12px", color: "#555", whiteSpace: "nowrap", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                     {hms(v.content_length ?? v.duration)}
                   </td>
 
@@ -755,9 +757,27 @@ export function Archive() {
                     </div>
                   </td>
 
-                  {/* Download + Clip Studio */}
+                  {/* Clip Studio (edit) + Download — icons swapped per request */}
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <button
+                        onClick={() => navigate("clip-studio", { video: v.id })}
+                        title="Open in Clip Studio"
+                        aria-label="Open in Clip Studio"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          padding: "4px 6px",
+                          fontSize: 16,
+                          lineHeight: 1,
+                          color: BRAND.navy,
+                          display: "flex",
+                          alignItems: "center",
+                        }}
+                      >
+                        ✎
+                      </button>
                       <button
                         onClick={() => handleDownload(v)}
                         disabled={downloading === v.id}
@@ -776,24 +796,6 @@ export function Archive() {
                         }}
                       >
                         {downloading === v.id ? "…" : "⬇"}
-                      </button>
-                      <button
-                        onClick={() => navigate("clip-studio", { video: v.id })}
-                        title="Open in Clip Studio"
-                        aria-label="Open in Clip Studio"
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          padding: "4px 6px",
-                          fontSize: 16,
-                          lineHeight: 1,
-                          color: BRAND.navy,
-                          display: "flex",
-                          alignItems: "center",
-                        }}
-                      >
-                        ✎
                       </button>
                     </div>
                   </td>

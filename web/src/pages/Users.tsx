@@ -10,6 +10,11 @@ interface FirebaseUser {
   role: string | null;
 }
 
+interface DirectoryUser {
+  email: string;
+  display_name: string | null;
+}
+
 type RoleOption = "admin" | "web_admin" | "sales" | "";
 
 function roleBadge(role: string | null) {
@@ -29,6 +34,11 @@ export function Users() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [saveError, setSaveError] = useState<Record<string, string>>({});
   const [myEmail, setMyEmail] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Record<string, boolean>>({});
+
+  // Google Workspace directory (for the invite dropdown). Empty until domain-wide delegation
+  // is configured on the API (WORKSPACE_ADMIN_SUBJECT); the free-text email invite works either way.
+  const [directory, setDirectory] = useState<DirectoryUser[]>([]);
 
   // Invite form state
   const [inviteEmail, setInviteEmail] = useState("");
@@ -42,6 +52,11 @@ export function Users() {
     const current = getAuth().currentUser;
     setMyEmail(current?.email ?? null);
     load();
+    // Load the Workspace directory for the invite dropdown (best-effort).
+    apiFetch("/admin/users/directory")
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((d: { users?: DirectoryUser[] }) => setDirectory(d.users ?? []))
+      .catch(() => setDirectory([]));
   }, []);
 
   function load() {
@@ -149,6 +164,45 @@ export function Users() {
     }
   }
 
+  async function handleRemove(user: FirebaseUser) {
+    if (user.uid.startsWith("default:")) {
+      setSaveError((prev) => ({
+        ...prev,
+        [user.uid]: "Default admins can't be removed here — change the DEFAULT_ADMINS env.",
+      }));
+      return;
+    }
+    if (!confirm(`Remove ${user.email}? This deletes their account and signs them out.`)) return;
+
+    setRemoving((s) => ({ ...s, [user.uid]: true }));
+    setSaveError((e) => { const n = { ...e }; delete n[user.uid]; return n; });
+    try {
+      const r = await apiFetch("/admin/users", {
+        method: "DELETE",
+        body: JSON.stringify({ email: user.email }),
+      });
+      if (!r.ok) {
+        const detail = await r.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
+      }
+      setUsers((prev) => prev.filter((u) => u.uid !== user.uid));
+    } catch (e: unknown) {
+      setSaveError((prev) => ({
+        ...prev,
+        [user.uid]: e instanceof Error ? e.message : String(e),
+      }));
+    } finally {
+      setRemoving((s) => ({ ...s, [user.uid]: false }));
+    }
+  }
+
+  // When an invite email matches a directory user, autofill their name.
+  function onInviteEmailChange(email: string) {
+    setInviteEmail(email);
+    const match = directory.find((d) => d.email.toLowerCase() === email.trim().toLowerCase());
+    if (match?.display_name) setInviteName(match.display_name);
+  }
+
   const selectStyle = {
     padding: "6px 10px",
     border: `1px solid ${BRAND.border}`,
@@ -176,20 +230,30 @@ export function Users() {
           Invite user
         </h3>
         <p style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.sub }}>
-          Pre-authorize any email address before first sign-in. Org-directory autocomplete
-          requires Google Workspace admin consent and is a planned follow-up — use this form
-          for now.
+          {directory.length > 0
+            ? "Pick a Perkins Workspace user from the dropdown, or type any external email to invite them. Assign a role and send."
+            : "Pre-authorize any email address (internal or external) before first sign-in, then assign a role."}
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>Email *</label>
+            <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>
+              Email * {directory.length > 0 && <span style={{ fontWeight: 400 }}>(pick or type)</span>}
+            </label>
             <input
               type="email"
+              list="gsuite-users"
               value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="user@example.com"
+              onChange={(e) => onInviteEmailChange(e.target.value)}
+              placeholder="user@perkinsroofing.net or external"
               style={{ ...inputStyle, minWidth: 220, padding: "7px 10px", fontSize: 13 }}
             />
+            <datalist id="gsuite-users">
+              {directory.map((d) => (
+                <option key={d.email} value={d.email}>
+                  {d.display_name ?? d.email}
+                </option>
+              ))}
+            </datalist>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>Name (optional)</label>
@@ -276,13 +340,25 @@ export function Users() {
                     </td>
                     <td style={{ padding: "10px 12px" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-                        <Button
-                          onClick={() => handleSave(u)}
-                          disabled={saving[u.uid] || !isDirty(u)}
-                          style={{ padding: "6px 16px", fontSize: 13 }}
-                        >
-                          {saving[u.uid] ? "Saving…" : "Save"}
-                        </Button>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <Button
+                            onClick={() => handleSave(u)}
+                            disabled={saving[u.uid] || !isDirty(u)}
+                            style={{ padding: "6px 16px", fontSize: 13 }}
+                          >
+                            {saving[u.uid] ? "Saving…" : "Save"}
+                          </Button>
+                          {!u.uid.startsWith("default:") && u.email !== myEmail && (
+                            <Button
+                              variant="ghost"
+                              onClick={() => handleRemove(u)}
+                              disabled={removing[u.uid]}
+                              style={{ padding: "6px 12px", fontSize: 13, color: BRAND.red }}
+                            >
+                              {removing[u.uid] ? "Removing…" : "Remove"}
+                            </Button>
+                          )}
+                        </div>
                         {saveError[u.uid] && (
                           <span style={{ color: BRAND.red, fontSize: 12 }}>{saveError[u.uid]}</span>
                         )}
