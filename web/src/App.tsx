@@ -13,8 +13,9 @@ import { Opportunities } from "./pages/Opportunities";
 import { Settings } from "./pages/Settings";
 import { Users } from "./pages/Users";
 import { ClipStudio } from "./pages/ClipStudio";
+import { Comments } from "./pages/Comments";
 import { Email } from "./pages/Email";
-import { BRAND, FONT } from "./ui";
+import { BRAND, FONT, Spinner } from "./ui";
 
 // ---------------------------------------------------------------------------
 // NavContext — lightweight cross-tab navigation
@@ -57,6 +58,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["email", "Email"],
       ["scheduling", "Content Scheduling"],
       ["clip-studio", "Clip Studio"],
+      ["comments", "Comments"],
       ["video-approval", "Video Approval"],
       ["archive", "Archive"],
     ],
@@ -76,6 +78,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["faq", "FAQ"],
       ["scheduling", "Content Scheduling"],
       ["clip-studio", "Clip Studio"],
+      ["comments", "Comments"],
       ["video-approval", "Video Approval"],
       ["archive", "Archive"],
     ],
@@ -277,6 +280,7 @@ function TabContent({ tab }: { tab: string }) {
       {tab === "email" && <Email />}
       {tab === "scheduling" && <Scheduling />}
       {tab === "clip-studio" && <ClipStudio />}
+      {tab === "comments" && <Comments />}
       {tab === "video-approval" && <VideoApproval />}
       {tab === "archive" && <Archive />}
       {tab === "users" && <Users />}
@@ -394,11 +398,13 @@ export default function App() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          gap: 10,
           height: "100vh",
           fontFamily: FONT,
           color: BRAND.navyText,
         }}
       >
+        <Spinner />
         Loading…
       </div>
     );

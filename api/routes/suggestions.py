@@ -148,14 +148,18 @@ def get_suggestion_counts(
 
 @router.get("")
 def get_suggestions(
-    limit: int = 25,
+    limit: int = 50,
+    offset: int = 0,
+    bucket: str = "all",
     sort: str = "length",
     claims=Depends(require_role("view_status")),
 ):
     """Compute proactive content opportunities from current DB state.
 
     Query params:
-      limit  - max items per bucket (default 25, min 1, max 200)
+      limit  - max items per bucket page (default 50, min 1, max 200)
+      offset - skip first N items for faqs and unused_videos buckets (default 0)
+      bucket - "all" (default) | "faqs" | "unused" — fetch only one bucket for pagination
       sort   - article_topics sort order: "length" (default, by total_content_length desc)
                or "videos" (by num_videos desc)
 
@@ -174,8 +178,12 @@ def get_suggestions(
       total_content_length  - sum of segment text length across all videos covering this topic
       count                 - alias for num_videos (backward compat)
       sample                - {video_id, t} for a sample clip
+
+    Each unused_videos item includes:
+      video_id, title, duration  (duration in seconds as float)
     """
     limit = max(1, min(limit, 200))
+    offset = max(0, offset)
     sort = sort if sort in ("length", "videos") else "length"
     with SessionLocal() as db:
         # --- Collect article coverage sets ---
@@ -315,7 +323,7 @@ def get_suggestions(
                 "t": int(row.start),
             })
         faqs_total = len(faqs_all)
-        faqs = faqs_all[:limit]
+        faqs = faqs_all[offset: offset + limit]
 
         # --- unused_videos bucket ---
         # Videos that have at least one Segment (transcript) or GraphNode (topics)
@@ -344,9 +352,13 @@ def get_suggestions(
                 continue
             if v.id in series_video_ids:
                 continue
-            unused_videos_all.append({"video_id": v.id, "title": v.title or v.id})
+            unused_videos_all.append({
+                "video_id": v.id,
+                "title": v.title or v.id,
+                "duration": v.duration or 0.0,
+            })
         unused_videos_total = len(unused_videos_all)
-        unused_videos = unused_videos_all[:limit]
+        unused_videos = unused_videos_all[offset: offset + limit]
 
     return {
         "article_topics": article_topics,

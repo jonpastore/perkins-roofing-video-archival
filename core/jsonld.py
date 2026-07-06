@@ -70,6 +70,39 @@ def build_faq_page(faq: list[dict]) -> dict:
     }
 
 
+def build_breadcrumb_list(items: list[dict]) -> dict:
+    """Build a schema.org BreadcrumbList dict.
+
+    Args:
+        items: List of dicts with keys "name" (str) and "url" (str).
+               Items should be in order from root to current page.
+
+    Returns:
+        dict with @context / @type and itemListElement list.
+
+    Example::
+
+        build_breadcrumb_list([
+            {"name": "Home", "url": "https://perkinsroofing.net/"},
+            {"name": "Blog", "url": "https://perkinsroofing.net/blog/"},
+            {"name": "Article Title", "url": "https://perkinsroofing.net/blog/slug"},
+        ])
+    """
+    return {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": pos,
+                "name": item["name"],
+                "item": item["url"],
+            }
+            for pos, item in enumerate(items, start=1)
+        ],
+    }
+
+
 def build_article(
     headline: str,
     description: str,

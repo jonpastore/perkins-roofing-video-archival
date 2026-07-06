@@ -10,6 +10,7 @@ from api.auth import current_claims, require_role
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
+from api.routes.comments import router as comments_router
 from api.routes.config import router as config_router
 from api.routes.email import router as email_router
 from api.routes.faq import router as faq_router
@@ -40,6 +41,7 @@ app.include_router(config_router)
 app.include_router(users_router)
 app.include_router(suggestions_router)
 app.include_router(clips_router)
+app.include_router(comments_router)
 
 
 class Query(BaseModel):
@@ -98,8 +100,8 @@ def status(_claims=Depends(require_role("view_status"))):
     """Admin observability (Req 6): corpus + pipeline + content counts, last errors."""
     from sqlalchemy import func
 
-    from app.models import (Article, Chunk, IngestionRun, ScheduledContent,
-                            SessionLocal, Video)
+    from app.models import (Article, Chunk, FaqEntry, IngestionRun,
+                            ScheduledContent, SessionLocal, Video)
     s = SessionLocal()
     try:
         errors = [
@@ -117,6 +119,21 @@ def status(_claims=Depends(require_role("view_status"))):
                 .limit(20)
             )
         ]
+        queue = [
+            {
+                "video_id": r.video_id,
+                "title": (v.title if v else None),
+                "stage": r.stage,
+                "status": r.status,
+            }
+            for r, v in (
+                s.query(IngestionRun, Video)
+                .outerjoin(Video, Video.id == IngestionRun.video_id)
+                .filter(IngestionRun.status.in_(["pending", "running"]))
+                .order_by(IngestionRun.updated_at.desc())
+                .limit(50)
+            )
+        ]
         return {
             "videos": s.query(func.count(Video.id)).scalar(),
             "videos_embedded": s.query(func.count(func.distinct(Chunk.video_id))).scalar(),
@@ -124,8 +141,10 @@ def status(_claims=Depends(require_role("view_status"))):
             "transcripts_done": s.query(func.count(IngestionRun.id)).filter(
                 IngestionRun.stage == "transcript", IngestionRun.status == "done").scalar(),
             "articles": s.query(func.count(Article.slug)).scalar(),
+            "faq_count": s.query(func.count(FaqEntry.id)).scalar(),
             "scheduled_content": s.query(func.count(ScheduledContent.id)).scalar(),
             "failed_stages": errors,
+            "queue": queue,
         }
     finally:
         s.close()

@@ -162,7 +162,6 @@ function ProposalCard({
                 onChange={(e) => updatePart(i, "start", Number(e.target.value))}
                 style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }}
               />
-              <span style={{ fontSize: 11, color: BRAND.sub, textAlign: "center" }}>{hms(part.start)}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <input
@@ -172,7 +171,6 @@ function ProposalCard({
                 onChange={(e) => updatePart(i, "end", Number(e.target.value))}
                 style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }}
               />
-              <span style={{ fontSize: 11, color: BRAND.sub, textAlign: "center" }}>{hms(part.end)}</span>
             </div>
           </div>
         ))}

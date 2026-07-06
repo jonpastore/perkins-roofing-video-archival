@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
+import { NavContext } from "../App";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
 
 type ToastTone = "green" | "red";
@@ -13,23 +14,34 @@ interface FailedStage {
   youtube_url?: string;
 }
 
+interface QueueItem {
+  video_id: string;
+  title?: string | null;
+  stage: string;
+  status: string;
+}
+
 interface StatusData {
   videos: number;
   videos_embedded: number;
   videos_archived: number;
   transcripts_done: number;
   articles: number;
+  faq_count: number;
   scheduled_content: number;
   failed_stages: FailedStage[];
+  queue: QueueItem[];
 }
 
 interface KpiCard {
   label: string;
   value: number;
   color?: string;
+  navTarget?: string;
 }
 
 export function Status() {
+  const { navigate } = useContext(NavContext);
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,12 +91,15 @@ export function Status() {
 
   const kpis: KpiCard[] = data
     ? [
-        { label: "Total Videos", value: data.videos, color: BRAND.navyText },
-        { label: "Embedded", value: data.videos_embedded, color: BRAND.navyText },
-        { label: "Archived", value: data.videos_archived, color: BRAND.navyText },
-        { label: "Transcripts Done", value: data.transcripts_done, color: BRAND.navyText },
-        { label: "Articles", value: data.articles, color: BRAND.navyText },
-        { label: "Scheduled Content", value: data.scheduled_content, color: BRAND.navyText },
+        { label: "Total Videos", value: data.videos, color: BRAND.navyText, navTarget: "archive" },
+        { label: "Embedded", value: data.videos_embedded, color: BRAND.navyText, navTarget: "archive" },
+        { label: "Archived", value: data.videos_archived, color: BRAND.navyText, navTarget: "archive" },
+        { label: "Transcripts Done", value: data.transcripts_done, color: BRAND.navyText, navTarget: "archive" },
+        { label: "Articles", value: data.articles, color: BRAND.navyText, navTarget: "articles" },
+        { label: "FAQ Entries", value: data.faq_count, color: BRAND.navyText, navTarget: "faq" },
+        { label: "Scheduled Content", value: data.scheduled_content, color: BRAND.navyText, navTarget: "scheduling" },
+        { label: "Failed Stages", value: data.failed_stages.length, color: data.failed_stages.length > 0 ? BRAND.red : BRAND.navyText },
+        { label: "In Queue", value: data.queue.length, color: data.queue.length > 0 ? "#b45309" : BRAND.navyText },
       ]
     : [];
 
@@ -127,7 +142,16 @@ export function Status() {
             {kpis.map((kpi) => (
               <Card
                 key={kpi.label}
-                style={{ flex: "1 1 140px", minWidth: 140, textAlign: "center" }}
+                onClick={kpi.navTarget ? () => navigate(kpi.navTarget!) : undefined}
+                style={{
+                  flex: "1 1 140px",
+                  minWidth: 140,
+                  textAlign: "center",
+                  cursor: kpi.navTarget ? "pointer" : "default",
+                  transition: "box-shadow 0.15s",
+                }}
+                onMouseEnter={kpi.navTarget ? (e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(0,0,0,0.10)"; } : undefined}
+                onMouseLeave={kpi.navTarget ? (e) => { (e.currentTarget as HTMLElement).style.boxShadow = ""; } : undefined}
               >
                 <div
                   style={{
@@ -206,6 +230,54 @@ export function Status() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </Card>
+          )}
+
+          {/* Processing / Queue */}
+          <h3 style={{ margin: "32px 0 14px", color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
+            Processing / Queue
+          </h3>
+
+          {data.queue.length === 0 ? (
+            <div style={{ marginBottom: 8 }}>
+              <Badge tone="green">Queue empty</Badge>
+            </div>
+          ) : (
+            <Card style={{ padding: 0, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
+                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Video</th>
+                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Stage</th>
+                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.queue.map((q, i) => (
+                    <tr
+                      key={`${q.video_id}-${q.stage}-${i}`}
+                      style={{ borderBottom: `1px solid ${BRAND.border}` }}
+                    >
+                      <td style={{ padding: "10px 16px" }}>
+                        <a
+                          href={`https://youtu.be/${q.video_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: BRAND.navyText, fontWeight: 600, textDecoration: "none" }}
+                        >
+                          {q.title ?? q.video_id}
+                        </a>
+                      </td>
+                      <td style={{ padding: "10px 16px" }}>
+                        <Badge tone="amber">{q.stage}</Badge>
+                      </td>
+                      <td style={{ padding: "10px 16px" }}>
+                        <Badge tone={q.status === "running" ? "green" : "amber"}>{q.status}</Badge>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </Card>

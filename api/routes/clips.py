@@ -24,16 +24,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 
 import google.auth
 import google.auth.transport.requests
 import requests as _requests
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from api.auth import require_role
-from app.models import GraphNode, MiniSeries, Segment, SessionLocal, SocialPost, Video
+from app.models import GraphNode, MiniSeries, PlatformConfig, Segment, SessionLocal, SocialPost, Video
 
 # GCP coordinates — read from env so deploy.sh / Terraform own the values.
 _GCP_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "video-archival-and-content-gen")
@@ -93,6 +94,98 @@ def _series_to_dict(s: MiniSeries) -> dict:
         "parts": s.parts_json or [],
         "approved": s.approved,
     }
+
+
+def _reels_bucket() -> str:
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    if not project:
+        raise RuntimeError("GOOGLE_CLOUD_PROJECT env var is required")
+    return f"{project}-reels"
+
+
+@router.post("/upload-brand-scene")
+def upload_brand_scene(
+    scene: str,
+    file: UploadFile = File(...),
+    claims=Depends(require_role("approve_video")),
+):
+    """Upload a title or closing brand-scene image and persist its GCS path.
+
+    ``scene`` must be ``"title"`` or ``"closing"``.
+
+    Stores the image in the reels GCS bucket under ``brand/{scene}_scene.<ext>``
+    and writes the resulting ``gs://`` path to the platform_config key
+    ``REEL_TITLE_IMG`` or ``REEL_CLOSING_IMG`` respectively.
+
+    Returns: {key, gcs_path}
+    """
+    if scene not in ("title", "closing"):
+        raise HTTPException(status_code=422, detail="scene must be 'title' or 'closing'")
+
+    # Validate MIME type — only accept images
+    content_type = file.content_type or ""
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=422, detail="file must be an image (PNG or JPG)")
+
+    ext = "png" if "png" in content_type else "jpg"
+    config_key = "REEL_TITLE_IMG" if scene == "title" else "REEL_CLOSING_IMG"
+    object_key = f"brand/{scene}_scene.{ext}"
+
+    # Write upload to a temp file then push to GCS
+    try:
+        bucket_name = _reels_bucket()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    try:
+        from google.cloud import storage as gcs_storage  # noqa: PLC0415
+        from google.cloud.exceptions import GoogleCloudError  # noqa: PLC0415
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="google-cloud-storage not installed",
+        ) from exc
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
+        tmp_path = tmp.name
+        try:
+            data = file.file.read()
+            tmp.write(data)
+        finally:
+            file.file.close()
+
+    try:
+        client = gcs_storage.Client()
+        blob = client.bucket(bucket_name).blob(object_key)
+        blob.upload_from_filename(tmp_path, content_type=content_type)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"GCS upload failed: {exc}") from exc
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    gcs_path = f"gs://{bucket_name}/{object_key}"
+
+    # Persist to platform_config
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    email = claims.get("email", "unknown")
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with SessionLocal() as db:
+        row = db.get(PlatformConfig, config_key)
+        if row is None:
+            row = PlatformConfig(key=config_key, value=gcs_path, updated_at=now, updated_by=email)
+            db.add(row)
+        else:
+            row.value = gcs_path
+            row.updated_at = now
+            row.updated_by = email
+        db.commit()
+
+    logger.info("Brand scene uploaded: %s -> %s", config_key, gcs_path)
+    return {"key": config_key, "gcs_path": gcs_path}
 
 
 def _build_suggest_prompt(

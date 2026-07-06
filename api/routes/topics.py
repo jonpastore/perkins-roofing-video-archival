@@ -103,6 +103,25 @@ def _paginate(items: list, limit: Optional[int], offset: int) -> dict:
     return {"total": total, "items": sliced}
 
 
+def _build_generated_set(db) -> set[str]:
+    """Return set of pillar_slugs that have at least one Article (pillar or cluster).
+
+    A topic is "generated" when an Article row exists where:
+      - slug == slugify(label)   (the pillar itself exists), OR
+      - pillar_slug == slugify(label)  (a cluster was generated under it)
+    We collect all distinct pillar_slugs that appear in the articles table.
+    """
+    from sqlalchemy import or_  # noqa: PLC0415
+    rows = db.query(Article.slug, Article.pillar_slug).all()
+    generated: set[str] = set()
+    for slug, ps in rows:
+        if slug:
+            generated.add(slug)
+        if ps:
+            generated.add(ps)
+    return generated
+
+
 def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) -> dict:
     """Build response from aggregated_topics rows.
 
@@ -111,6 +130,7 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) ->
     of the slow Search-topics load).
     """
     rows = db.query(AggregatedTopic).all()
+    generated_slugs = _build_generated_set(db)
 
     items = [
         {
@@ -119,6 +139,7 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) ->
             "num_videos": row.num_videos,
             "total_content_length": row.total_seconds,
             "sample": {"video_id": "", "t": 0},
+            "generated": _slugify(row.canonical_label) in generated_slugs,
             "_first_node_id": row.node_ids[0] if row.node_ids else None,
             "_first_video_id": row.video_ids[0] if row.video_ids else None,
         }
@@ -152,6 +173,7 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int) ->
 def _list_topics_live(db, sort: str, limit: Optional[int], offset: int) -> dict:
     """Live grouping from content_graph — exact-match fallback (pre-priming)."""
     rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
+    generated_slugs = _build_generated_set(db)
 
     groups: dict[str, dict] = {}
     for row in rows:
@@ -179,6 +201,7 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int) -> dict:
             "num_videos": len(g["video_ids"]),
             "total_content_length": sum(duration_map.get(v, 0.0) for v in g["video_ids"]),
             "sample": g["sample"],
+            "generated": _slugify(g["label"]) in generated_slugs,
         }
         for g in groups.values()
     ]

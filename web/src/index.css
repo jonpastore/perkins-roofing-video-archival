@@ -47,6 +47,29 @@ body {
   margin: 0;
 }
 
+/* Animated spinner — used by Loading and Spinner components in ui.tsx */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.spinner-ring {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(239, 60, 26, 0.2);
+  border-top-color: #ef3c1a;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.spinner-ring--sm {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+}
+
 h1,
 h2 {
   font-family: var(--heading);

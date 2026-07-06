@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { apiFetch } from "../api";
-import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge } from "../ui";
+import { useEffect, useRef, useState } from "react";
+import { apiFetch, apiFetchMultipart } from "../api";
+import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, Spinner } from "../ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,61 @@ function formatDuration(seconds: number | null): string {
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/** Mirror of core.miniseries.clean_title: strip emojis, hashtags, leading junk. */
+function cleanTitle(text: string): string {
+  // Remove emoji ranges
+  let s = text.replace(/[☀-➿ἰ0-ᾯF︀-️←-⇿⬀-⯿]/gu, "");
+  // Remove hashtag tokens
+  s = s.replace(/(?:^|\s)#\w+/g, " ");
+  // Strip leading/trailing junk
+  s = s.replace(/^[\s#@*•\-–—|]+/, "").replace(/[\s#@*•\-–—|]+$/, "");
+  // Collapse whitespace
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/** Produce a concise clip-series title: clean + truncate at word boundary ≤50 chars. */
+function seriesTitle(videoTitle: string): string {
+  const cleaned = cleanTitle(videoTitle);
+  if (!cleaned) return "Clips";
+  const MAX = 50;
+  const truncated = cleaned.length > MAX
+    ? cleaned.slice(0, MAX).replace(/\s+\S*$/, "").trim()
+    : cleaned;
+  return `${truncated} — Clips`;
+}
+
+// ── Analyzing animation ───────────────────────────────────────────────────────
+
+const ANALYZING_STEPS = [
+  "Reading transcript segments…",
+  "Identifying high-value moments…",
+  "Scoring hooks and CTAs…",
+  "Composing clip suggestions…",
+];
+
+function AnalyzingDots() {
+  const [step, setStep] = useState(0);
+  const ref = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    ref.current = setInterval(() => setStep((s) => (s + 1) % ANALYZING_STEPS.length), 1800);
+    return () => { if (ref.current) clearInterval(ref.current); };
+  }, []);
+  return (
+    <span
+      style={{
+        fontSize: 13,
+        color: BRAND.sub,
+        fontStyle: "italic",
+        transition: "opacity 0.3s",
+        minWidth: 260,
+        display: "inline-block",
+      }}
+    >
+      {ANALYZING_STEPS[step]}
+    </span>
+  );
 }
 
 // ── Step 1: Video picker ───────────────────────────────────────────────────────
@@ -233,27 +288,21 @@ function ClipCard({
       {/* Time range + preview */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
-            <input
-              type="number"
-              value={clip.start}
-              min={0}
-              onChange={(e) => update("start", Number(e.target.value))}
-              style={{ ...inputStyle, width: 90, padding: "6px 8px", fontSize: 13 }}
-            />
-            <span style={{ fontSize: 11, color: BRAND.sub }}>{mmss(clip.start)}</span>
-          </div>
+          <input
+            type="number"
+            value={clip.start}
+            min={0}
+            onChange={(e) => update("start", Number(e.target.value))}
+            style={{ ...inputStyle, width: 90, padding: "6px 8px", fontSize: 13 }}
+          />
           <span style={{ color: BRAND.sub, fontSize: 14 }}>→</span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}>
-            <input
-              type="number"
-              value={clip.end}
-              min={0}
-              onChange={(e) => update("end", Number(e.target.value))}
-              style={{ ...inputStyle, width: 90, padding: "6px 8px", fontSize: 13 }}
-            />
-            <span style={{ fontSize: 11, color: BRAND.sub }}>{mmss(clip.end)}</span>
-          </div>
+          <input
+            type="number"
+            value={clip.end}
+            min={0}
+            onChange={(e) => update("end", Number(e.target.value))}
+            style={{ ...inputStyle, width: 90, padding: "6px 8px", fontSize: 13 }}
+          />
           <Badge tone="gray">{mmss(clip.start)}–{mmss(clip.end)}</Badge>
         </div>
 
@@ -286,7 +335,7 @@ function ClipCard({
         </button>
         {transcriptOpen && (
           <div style={{ marginTop: 8, padding: "8px 12px", background: BRAND.bg, borderRadius: 6, fontSize: 13, color: BRAND.ink, lineHeight: 1.6 }}>
-            {transcriptLoading && <span style={{ color: BRAND.sub }}>Loading…</span>}
+            {transcriptLoading && <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: BRAND.sub, fontSize: 13 }}><Spinner small />Loading…</span>}
             {transcriptError && <span style={{ color: BRAND.red }}>Error: {transcriptError}</span>}
             {!transcriptLoading && !transcriptError && transcriptSegs !== null && (
               transcriptSegs.length === 0
@@ -337,8 +386,82 @@ function SuccessBanner({ seriesTitle }: { seriesTitle: string }) {
 
 // ── Reel settings panel ───────────────────────────────────────────────────────
 
+interface BrandSceneUploadProps {
+  label: string;
+  scene: "title" | "closing";
+  currentPath: string;
+}
+
+function BrandSceneUpload({ label, scene, currentPath }: BrandSceneUploadProps) {
+  const [uploading, setUploading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [path, setPath] = useState(currentPath);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFile(file: File) {
+    setUploading(true);
+    setMsg(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      // Use apiFetchMultipart — no Content-Type so browser sets the multipart boundary.
+      const r = await apiFetchMultipart(`/clips/upload-brand-scene?scene=${scene}`, {
+        method: "POST",
+        body: form,
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+      }
+      const data = await r.json() as { gcs_path: string };
+      setPath(data.gcs_path);
+      setMsg("Uploaded.");
+    } catch (e: unknown) {
+      setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.ink }}>{label}</span>
+      {path && (
+        <span style={{ fontSize: 11, color: BRAND.sub, fontFamily: "monospace", wordBreak: "break-all" }}>
+          {path}
+        </span>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          style={{ display: "none" }}
+          onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
+        />
+        <Button
+          variant="ghost"
+          disabled={uploading}
+          onClick={() => inputRef.current?.click()}
+          style={{ padding: "4px 12px", fontSize: 12 }}
+        >
+          {uploading ? "Uploading…" : (path ? "Replace" : "Upload")}
+        </Button>
+        {msg && (
+          <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
+            {msg}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ReelSettingsPanel() {
   const [closingText, setClosingText] = useState("");
+  const [applyBrandScenes, setApplyBrandScenes] = useState(false);
+  const [titleImgPath, setTitleImgPath] = useState("");
+  const [closingImgPath, setClosingImgPath] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -348,25 +471,33 @@ function ReelSettingsPanel() {
       .then((r) => r.ok ? r.json() : null)
       .then((data: { settings?: Array<{ key: string; value: string }> } | null) => {
         if (!data) return;
-        const row = (data.settings ?? []).find((s) => s.key === "REEL_CLOSING_TEXT");
-        setClosingText(row?.value ?? "Perkins Roofing");
+        const find = (k: string) => (data.settings ?? []).find((s) => s.key === k)?.value ?? "";
+        setClosingText(find("REEL_CLOSING_TEXT") || "Perkins Roofing");
+        setApplyBrandScenes(find("REEL_APPLY_BRAND_SCENES").toLowerCase() === "true");
+        setTitleImgPath(find("REEL_TITLE_IMG"));
+        setClosingImgPath(find("REEL_CLOSING_IMG"));
         setLoaded(true);
       })
       .catch(() => { setLoaded(true); });
   }, []);
 
+  async function saveKey(key: string, value: string) {
+    const r = await apiFetch("/config", {
+      method: "PUT",
+      body: JSON.stringify({ key, value }),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     setMsg(null);
     try {
-      const r = await apiFetch("/config", {
-        method: "PUT",
-        body: JSON.stringify({ key: "REEL_CLOSING_TEXT", value: closingText }),
-      });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
-      }
+      await saveKey("REEL_CLOSING_TEXT", closingText);
+      await saveKey("REEL_APPLY_BRAND_SCENES", applyBrandScenes ? "true" : "false");
       setMsg("Saved.");
     } catch (e: unknown) {
       setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
@@ -380,13 +511,14 @@ function ReelSettingsPanel() {
       <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
         Reel Intro / Outro
       </div>
-      <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
-        The <strong>title card</strong> (intro) is generated automatically from each clip's title.
-        The <strong>closing card</strong> (outro) shows the brand text below, held for 3 seconds.
-        Upload a custom title or closing image by contacting your administrator — image paths are
-        set via the platform config <code>REEL_TITLE_IMG</code> / <code>REEL_CLOSING_IMG</code> keys.
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
+        The <strong>title card</strong> (intro) and <strong>closing card</strong> (outro) can be
+        generated automatically or replaced with uploaded brand images. When "Apply brand scenes"
+        is checked, uploaded images are prepended/appended to every rendered reel.
       </p>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+
+      {/* Closing brand text */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <label style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600, whiteSpace: "nowrap" }}>
           Closing brand text
         </label>
@@ -398,6 +530,36 @@ function ReelSettingsPanel() {
           placeholder="Perkins Roofing"
           style={{ ...inputStyle, width: 240, fontSize: 13 }}
         />
+      </div>
+
+      {/* Brand scene uploads */}
+      {loaded && (
+        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 14 }}>
+          <BrandSceneUpload label="Title scene image" scene="title" currentPath={titleImgPath} />
+          <BrandSceneUpload label="Closing scene image" scene="closing" currentPath={closingImgPath} />
+        </div>
+      )}
+
+      {/* Apply checkbox */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <input
+          type="checkbox"
+          id="apply-brand-scenes"
+          checked={applyBrandScenes}
+          disabled={!loaded || saving}
+          onChange={(e) => setApplyBrandScenes(e.target.checked)}
+          style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+        />
+        <label
+          htmlFor="apply-brand-scenes"
+          style={{ fontSize: 13, color: BRAND.ink, cursor: "pointer" }}
+        >
+          Apply brand scenes to every render (uses uploaded images instead of generated cards)
+        </label>
+      </div>
+
+      {/* Save */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Button
           variant="primary"
           disabled={!loaded || saving}
@@ -610,18 +772,18 @@ export function ClipStudio() {
     }
     setSaving(true);
     setSaveError(null);
-    const seriesTitle = `${step.video.title} — Clips`;
+    const title = seriesTitle(step.video.title);
     try {
       const r = await apiFetch("/clips/save", {
         method: "POST",
         body: JSON.stringify({
           video_id: step.video.id,
-          title: seriesTitle,
-          parts: selected.map(({ title, start, end }) => ({ title, start, end })),
+          title: title,
+          parts: selected.map(({ title: partTitle, start, end }) => ({ title: partTitle, start, end })),
         }),
       });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      setStep({ kind: "saved", seriesTitle });
+      setStep({ kind: "saved", seriesTitle: title });
     } catch (e: unknown) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -685,8 +847,12 @@ export function ClipStudio() {
           </div>
 
           {suggesting && (
-            <div style={{ marginTop: 16 }}>
-              <Loading label="AI is identifying the best clip moments… this may take up to 30 seconds." />
+            <div style={{ marginTop: 16, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Spinner />
+                <span style={{ fontSize: 14, fontWeight: 600, color: BRAND.navyText }}>Analyzing transcript…</span>
+              </div>
+              <AnalyzingDots />
             </div>
           )}
         </Card>
@@ -738,7 +904,7 @@ export function ClipStudio() {
             </div>
             <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 12 }}>
               {step.clips.filter((c) => c.included).length} of {step.clips.length} clips selected.
-              Series will be saved as: <strong style={{ color: BRAND.ink }}>{step.video.title} — Clips</strong>
+              Series will be saved as: <strong style={{ color: BRAND.ink }}>{seriesTitle(step.video.title)}</strong>
             </div>
 
             {saveError && <ErrorMsg>Error: {saveError}</ErrorMsg>}

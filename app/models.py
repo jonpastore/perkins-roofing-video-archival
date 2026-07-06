@@ -3,7 +3,7 @@
 versioned-artifact model the council required: every derived row carries a version, and
 IngestionRun tracks per-stage status + content_hash for idempotent/resumable ingestion."""
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, JSON, DateTime, Index, UniqueConstraint
+from sqlalchemy import Boolean, create_engine, Column, Integer, String, Float, Text, JSON, DateTime, Index, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import settings
 
@@ -143,6 +143,21 @@ class SecretAudit(Base):
     key = Column(String, primary_key=True)  # secret id (e.g. "youtube-api-key")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = Column(String)  # email from auth claims
+
+class CommentDraft(Base):
+    __tablename__ = "comment_drafts"
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    video_id     = Column(String, nullable=False, index=True)
+    comment_id   = Column(String, nullable=False)  # YouTube comment ID — unique
+    author       = Column(String)
+    comment_text = Column(Text, nullable=False)
+    published_at = Column(DateTime)
+    needs_reply  = Column(Boolean, nullable=False, default=False)
+    draft_reply  = Column(Text)
+    status       = Column(String, nullable=False, default="pending")  # pending|drafted|ready|dismissed
+    created_at   = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("comment_id", name="uq_comment_drafts_comment_id"),)
+
 
 class FaqEntry(Base):
     __tablename__ = "faq_entries"

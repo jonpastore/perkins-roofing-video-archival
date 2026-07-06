@@ -28,14 +28,19 @@ interface FaqItem {
 interface UnusedVideo {
   video_id: string;
   title: string;
+  duration: number;
 }
 
-interface Suggestions {
-  article_topics: ArticleTopic[];
-  article_topics_total: number;
+interface ReelsBucket {
   reels: Reel[];
+}
+
+interface FaqBucket {
   faqs: FaqItem[];
   faqs_total: number;
+}
+
+interface UnusedBucket {
   unused_videos: UnusedVideo[];
   unused_videos_total: number;
 }
@@ -46,6 +51,7 @@ interface TopicItem {
   num_videos: number;
   total_content_length: number;
   sample: { video_id: string; t: number };
+  generated: boolean;
 }
 
 interface TopicVideo {
@@ -64,6 +70,13 @@ interface TopicArticle {
   wp_url?: string | null;
 }
 
+interface GenerateResult {
+  pillar_slug: string;
+  pillar: { slug: string; title: string };
+  clusters: { slug: string; title: string }[];
+  count: number;
+}
+
 // Matches server _slugify: lowercase, non-alphanumerics→"-", trim, slice(0,80)
 function slugify(text: string): string {
   return text
@@ -73,9 +86,8 @@ function slugify(text: string): string {
     .slice(0, 80);
 }
 
-const PAGE_SIZE = 15;
 const TOPIC_PAGE_SIZE = 24;
-const FETCH_LIMIT = 200;
+const BUCKET_PAGE_SIZE = 50;
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -306,6 +318,121 @@ function TopicVideoModal({
   );
 }
 
+function ClusterResultModal({
+  topic,
+  result,
+  onClose,
+}: {
+  topic: string;
+  result: GenerateResult;
+  onClose: () => void;
+}) {
+  const { navigate } = useContext(NavContext);
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 1100,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 14, width: "min(600px, 94vw)",
+          maxHeight: "80vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 8px 32px rgba(16,24,40,0.18)",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "18px 24px 12px" }}>
+          <div>
+            <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 4, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Cluster created
+            </div>
+            <h3 style={{ margin: 0, fontSize: 16, color: BRAND.navyText, fontWeight: 700 }}>{topic}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: BRAND.sub, lineHeight: 1, marginTop: 2 }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, padding: "0 24px 20px" }}>
+          {/* Pillar article */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+              Pillar article
+            </div>
+            <div
+              style={{
+                padding: "10px 14px", border: `2px solid ${BRAND.navyText}`,
+                borderRadius: 8, background: "#f0f4ff",
+                display: "flex", alignItems: "center", gap: 10,
+              }}
+            >
+              <span style={{ flex: 1, fontSize: 14, color: BRAND.navyText, fontWeight: 600 }}>
+                {result.pillar.title}
+              </span>
+              <button
+                onClick={() => { navigate("articles", { open: result.pillar.slug, cluster: result.pillar_slug }); onClose(); }}
+                style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
+              >
+                Open →
+              </button>
+            </div>
+          </div>
+
+          {/* Cluster articles */}
+          {result.clusters.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
+                Cluster articles ({result.clusters.length})
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {result.clusters.map((c) => (
+                  <div
+                    key={c.slug}
+                    style={{
+                      padding: "9px 14px", border: `1px solid ${BRAND.border}`,
+                      borderRadius: 8, background: BRAND.bg,
+                      display: "flex", alignItems: "center", gap: 10,
+                    }}
+                  >
+                    <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>
+                      {c.title}
+                    </span>
+                    <button
+                      onClick={() => { navigate("articles", { open: c.slug, cluster: result.pillar_slug }); onClose(); }}
+                      style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
+                    >
+                      Open →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 24px 16px", borderTop: `1px solid ${BRAND.border}`, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Button
+            variant="primary"
+            onClick={() => { navigate("articles", { cluster: result.pillar_slug }); onClose(); }}
+          >
+            View all in Articles
+          </Button>
+          <Button onClick={onClose}>Close</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Paginator({
   page,
   totalPages,
@@ -357,17 +484,20 @@ function Paginator({
   );
 }
 
+type TopicFilter = "all" | "not_generated" | "generated";
+
 export function Opportunities() {
   const { navigate } = useContext(NavContext);
-  const [data, setData] = useState<Suggestions | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Per-topic state: label -> { state: "generating"|"done", pillar_slug?: string }
-  const [topicStates, setTopicStates] = useState<Record<string, { state: "generating" | "done"; pillar_slug?: string }>>({});
+
+  // Per-topic state: label -> { state: "generating"|"done", result?: GenerateResult }
+  const [topicStates, setTopicStates] = useState<Record<string, { state: "generating" | "done"; result?: GenerateResult }>>({});
   const [genMsg, setGenMsg] = useState<Record<string, string>>({});
+  // Modal for post-generation cluster result
+  const [clusterModal, setClusterModal] = useState<{ topic: string; result: GenerateResult } | null>(null);
 
   // Server-paginated topics section
   const [topicSort, setTopicSort] = useState<"length" | "videos" | "alpha">("length");
+  const [topicFilter, setTopicFilter] = useState<TopicFilter>("all");
   const [topicOffset, setTopicOffset] = useState(0);
   const [topicItems, setTopicItems] = useState<TopicItem[]>([]);
   const [topicTotal, setTopicTotal] = useState(0);
@@ -375,9 +505,24 @@ export function Opportunities() {
   const [topicError, setTopicError] = useState<string | null>(null);
   const [videoModalLabel, setVideoModalLabel] = useState<string | null>(null);
 
-  // Pagination state for other buckets (0-indexed page)
+  // Reels — fetched once
+  const [reels, setReels] = useState<Reel[]>([]);
+  const [reelsLoading, setReelsLoading] = useState(true);
+  const [reelsError, setReelsError] = useState<string | null>(null);
+
+  // FAQ — server-paginated
+  const [faqs, setFaqs] = useState<FaqItem[]>([]);
+  const [faqsTotal, setFaqsTotal] = useState(0);
   const [faqPage, setFaqPage] = useState(0);
+  const [faqLoading, setFaqLoading] = useState(true);
+  const [faqError, setFaqError] = useState<string | null>(null);
+
+  // Unused videos — server-paginated
+  const [unused, setUnused] = useState<UnusedVideo[]>([]);
+  const [unusedTotal, setUnusedTotal] = useState(0);
   const [unusedPage, setUnusedPage] = useState(0);
+  const [unusedLoading, setUnusedLoading] = useState(true);
+  const [unusedError, setUnusedError] = useState<string | null>(null);
 
   const fetchTopics = useCallback((sort: "length" | "videos" | "alpha", offset: number) => {
     setTopicLoading(true);
@@ -404,28 +549,68 @@ export function Opportunities() {
     setTopicOffset(0);
   }
 
-  function fetchSuggestions() {
-    setLoading(true);
-    setError(null);
-    apiFetch(`/suggestions?limit=${FETCH_LIMIT}`)
+  function handleTopicFilterChange(f: TopicFilter) {
+    setTopicFilter(f);
+    setTopicOffset(0);
+  }
+
+  const fetchReels = useCallback(() => {
+    setReelsLoading(true);
+    setReelsError(null);
+    apiFetch(`/suggestions?limit=200&bucket=reels`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((d: Suggestions) => {
-        setData(d);
-        setFaqPage(0);
-        setUnusedPage(0);
-      })
-      .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : String(e))
-      )
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => {
-    fetchSuggestions();
+      .then((d: ReelsBucket) => setReels(d.reels ?? []))
+      .catch((e: unknown) => setReelsError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setReelsLoading(false));
   }, []);
+
+  const fetchFaqs = useCallback((page: number) => {
+    setFaqLoading(true);
+    setFaqError(null);
+    const offset = page * BUCKET_PAGE_SIZE;
+    apiFetch(`/suggestions?limit=${BUCKET_PAGE_SIZE}&offset=${offset}&bucket=faqs`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((d: FaqBucket) => {
+        setFaqs(d.faqs ?? []);
+        setFaqsTotal(d.faqs_total ?? 0);
+      })
+      .catch((e: unknown) => setFaqError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setFaqLoading(false));
+  }, []);
+
+  const fetchUnused = useCallback((page: number) => {
+    setUnusedLoading(true);
+    setUnusedError(null);
+    const offset = page * BUCKET_PAGE_SIZE;
+    apiFetch(`/suggestions?limit=${BUCKET_PAGE_SIZE}&offset=${offset}&bucket=unused`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((d: UnusedBucket) => {
+        setUnused(d.unused_videos ?? []);
+        setUnusedTotal(d.unused_videos_total ?? 0);
+      })
+      .catch((e: unknown) => setUnusedError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setUnusedLoading(false));
+  }, []);
+
+  useEffect(() => { fetchReels(); }, [fetchReels]);
+  useEffect(() => { fetchFaqs(faqPage); }, [fetchFaqs, faqPage]);
+  useEffect(() => { fetchUnused(unusedPage); }, [fetchUnused, unusedPage]);
+
+  function refreshAll() {
+    fetchTopics(topicSort, topicOffset);
+    fetchReels();
+    fetchFaqs(faqPage);
+    fetchUnused(unusedPage);
+  }
 
   async function generateArticle(topic: string) {
     setTopicStates((s) => ({ ...s, [topic]: { state: "generating" } }));
@@ -438,17 +623,11 @@ export function Opportunities() {
         const txt = await r.text().catch(() => r.statusText);
         throw new Error(`${r.status}: ${txt}`);
       }
-      const d = await r.json() as {
-        pillar_slug: string;
-        pillar: { slug: string; title: string };
-        clusters: { slug: string; title: string }[];
-        count: number;
-      };
-      setTopicStates((s) => ({ ...s, [topic]: { state: "done", pillar_slug: d.pillar_slug } }));
-      setGenMsg((prev) => ({
-        ...prev,
-        [topic]: `Cluster created: "${d.pillar.title}" — ${d.clusters.length} supporting articles.`,
-      }));
+      const d = await r.json() as GenerateResult;
+      setTopicStates((s) => ({ ...s, [topic]: { state: "done", result: d } }));
+      setClusterModal({ topic, result: d });
+      // Refresh topics so the generated flag updates
+      fetchTopics(topicSort, topicOffset);
     } catch (e: unknown) {
       setTopicStates((s) => {
         const next = { ...s };
@@ -474,17 +653,9 @@ export function Opportunities() {
         const txt = await r.text().catch(() => r.statusText);
         throw new Error(`${r.status}: ${txt}`);
       }
-      const d = await r.json() as {
-        pillar_slug: string;
-        pillar: { slug: string; title: string };
-        clusters: { slug: string; title: string }[];
-        count: number;
-      };
-      setTopicStates((s) => ({ ...s, [key]: { state: "done", pillar_slug: d.pillar_slug } }));
-      setGenMsg((prev) => ({
-        ...prev,
-        [key]: `Cluster created: "${d.pillar.title}" — ${d.clusters.length} supporting articles.`,
-      }));
+      const d = await r.json() as GenerateResult;
+      setTopicStates((s) => ({ ...s, [key]: { state: "done", result: d } }));
+      setClusterModal({ topic: video.title, result: d });
     } catch (e: unknown) {
       setTopicStates((s) => {
         const next = { ...s };
@@ -498,22 +669,29 @@ export function Opportunities() {
     }
   }
 
-  // Compute paged slices for other buckets
-  const faqs = data?.faqs ?? [];
-  const faqsTotal = data?.faqs_total ?? 0;
-  const faqTotalPages = Math.max(1, Math.ceil(faqs.length / PAGE_SIZE));
-  const faqSlice = faqs.slice(faqPage * PAGE_SIZE, (faqPage + 1) * PAGE_SIZE);
+  // Apply client-side filter + sort-generated-to-back on the current page of topics.
+  // The server returns sort order; we only need to re-sort within the page to push generated items back.
+  const filteredTopicItems: TopicItem[] = (() => {
+    let items = topicItems;
+    if (topicFilter === "not_generated") items = items.filter((t) => !t.generated);
+    else if (topicFilter === "generated") items = items.filter((t) => t.generated);
+    // For "all": push generated items to the back of this page
+    if (topicFilter === "all") {
+      items = [...items.filter((t) => !t.generated), ...items.filter((t) => t.generated)];
+    }
+    return items;
+  })();
 
-  const unused = data?.unused_videos ?? [];
-  const unusedTotal = data?.unused_videos_total ?? 0;
-  const unusedTotalPages = Math.max(1, Math.ceil(unused.length / PAGE_SIZE));
-  const unusedSlice = unused.slice(unusedPage * PAGE_SIZE, (unusedPage + 1) * PAGE_SIZE);
+  const faqTotalPages = Math.max(1, Math.ceil(faqsTotal / BUCKET_PAGE_SIZE));
+  const unusedTotalPages = Math.max(1, Math.ceil(unusedTotal / BUCKET_PAGE_SIZE));
+
+  const anyLoading = reelsLoading || faqLoading || unusedLoading || topicLoading;
 
   return (
     <main style={{ padding: "0 4px" }}>
       <PageTitle
         right={
-          <Button onClick={() => { fetchSuggestions(); fetchTopics(topicSort, topicOffset); }} disabled={loading}>
+          <Button onClick={refreshAll} disabled={anyLoading}>
             Refresh
           </Button>
         }
@@ -521,16 +699,38 @@ export function Opportunities() {
         Content Opportunities
       </PageTitle>
 
-      {loading && <Loading />}
-      {error && <ErrorMsg>Error: {error}</ErrorMsg>}
+      {/* Cluster result modal */}
+      {clusterModal && (
+        <ClusterResultModal
+          topic={clusterModal.topic}
+          result={clusterModal.result}
+          onClose={() => setClusterModal(null)}
+        />
+      )}
 
       {/* Article Topics — server-paginated from /topics */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "28px 0 4px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "28px 0 4px", flexWrap: "wrap" }}>
         <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
           Suggested article topics to cover ({topicTotal > 0 ? topicTotal : "…"})
         </h3>
-        <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: "auto" }}>
-          <span style={{ fontSize: 12, color: BRAND.sub }}>Sort:</span>
+        <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: "auto", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, color: BRAND.sub }}>Filter:</span>
+          {([["all", "All"], ["not_generated", "Not generated"], ["generated", "Generated"]] as [TopicFilter, string][]).map(([f, label]) => (
+            <button
+              key={f}
+              onClick={() => handleTopicFilterChange(f)}
+              style={{
+                fontSize: 12, padding: "3px 10px", borderRadius: 6,
+                border: `1px solid ${topicFilter === f ? BRAND.navyText : BRAND.border}`,
+                background: topicFilter === f ? BRAND.navyText : "#fff",
+                color: topicFilter === f ? "#fff" : BRAND.sub,
+                cursor: "pointer", fontWeight: topicFilter === f ? 600 : 400,
+              }}
+            >
+              {label}
+            </button>
+          ))}
+          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 8 }}>Sort:</span>
           {(["length", "videos", "alpha"] as const).map((s) => {
             const label = s === "length" ? "Total content length" : s === "videos" ? "Number of videos" : "A–Z";
             return (
@@ -556,18 +756,38 @@ export function Opportunities() {
       </ActionNote>
       {topicLoading && <Loading label="Loading topics…" />}
       {topicError && <ErrorMsg>Could not load topics: {topicError}</ErrorMsg>}
-      {!topicLoading && !topicError && topicItems.length === 0 && (
-        <EmptyState label="All topics covered" />
+      {!topicLoading && !topicError && filteredTopicItems.length === 0 && (
+        <EmptyState label={topicFilter === "generated" ? "No generated topics on this page" : topicFilter === "not_generated" ? "All topics on this page have been generated" : "All topics covered"} />
       )}
-      {!topicLoading && !topicError && topicItems.length > 0 && (
+      {!topicLoading && !topicError && filteredTopicItems.length > 0 && (
         <>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {topicItems.map((t) => {
+            {filteredTopicItems.map((t) => {
               const ts = topicStates[t.label];
+              const isGenerated = t.generated || ts?.state === "done";
+              const genResult = ts?.result;
+              const pillarSlug = genResult?.pillar_slug ?? slugify(t.label);
               return (
-                <Card key={t.label} style={{ flex: "1 1 220px", minWidth: 220 }}>
-                  <div style={{ fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                    {t.label}
+                <Card
+                  key={t.label}
+                  style={{
+                    flex: "1 1 220px", minWidth: 220,
+                    opacity: isGenerated && topicFilter !== "generated" ? 0.75 : 1,
+                    borderColor: isGenerated ? BRAND.border : undefined,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
+                    <div style={{ fontWeight: 600, color: isGenerated ? BRAND.sub : BRAND.navyText, flex: 1 }}>
+                      {t.label}
+                    </div>
+                    {isGenerated && (
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 10,
+                        background: "#e6f9f0", color: "#1a7f4b", whiteSpace: "nowrap",
+                      }}>
+                        Generated
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 6 }}>
                     {t.num_videos} video{t.num_videos !== 1 ? "s" : ""}
@@ -589,21 +809,21 @@ export function Opportunities() {
                     >
                       sample clip
                     </a>
+                    {isGenerated && (
+                      <button
+                        onClick={() => navigate("articles", { cluster: pillarSlug })}
+                        style={{ fontSize: 12, color: "#1a7f4b", fontWeight: 700, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                      >
+                        View cluster →
+                      </button>
+                    )}
                   </div>
                   {genMsg[t.label] && ts?.state !== "done" && (
                     <div style={{ fontSize: 12, color: genMsg[t.label].startsWith("Error") ? BRAND.red : BRAND.sub, fontStyle: "italic", marginBottom: 6 }}>
                       {genMsg[t.label]}
                     </div>
                   )}
-                  {ts?.state === "done" ? (
-                    <Button
-                      variant="primary"
-                      style={{ fontSize: 13, padding: "6px 14px" }}
-                      onClick={() => navigate("articles", { cluster: ts.pillar_slug ?? slugify(t.label) })}
-                    >
-                      View
-                    </Button>
-                  ) : (
+                  {!isGenerated && (
                     <Button
                       variant="primary"
                       style={{ fontSize: 13, padding: "6px 14px" }}
@@ -654,220 +874,228 @@ export function Opportunities() {
         <TopicVideoModal label={videoModalLabel} onClose={() => setVideoModalLabel(null)} />
       )}
 
-      {!loading && !error && data && (
-        <>
-          {/* Reels */}
-          <SectionHeader>
-            Reels ready to schedule ({data.reels.length})
-          </SectionHeader>
-          <ActionNote>
-            These approved clips are ready to post — schedule them in{" "}
-            <strong>Clip Studio</strong> or submit via <strong>Video Approval</strong>.
-          </ActionNote>
-          {data.reels.length === 0 ? (
-            <EmptyState label="No reels pending" />
-          ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-              {data.reels.map((r) => (
-                <Card
-                  key={r.series_id}
-                  style={{ flex: "1 1 220px", minWidth: 220 }}
+      {/* Reels */}
+      <SectionHeader>
+        Reels ready to schedule ({reels.length})
+      </SectionHeader>
+      <ActionNote>
+        These approved clips are ready to post — schedule them in{" "}
+        <strong>Clip Studio</strong> or submit via <strong>Video Approval</strong>.
+      </ActionNote>
+      {reelsLoading && <Loading label="Loading reels…" />}
+      {reelsError && <ErrorMsg>Could not load reels: {reelsError}</ErrorMsg>}
+      {!reelsLoading && !reelsError && reels.length === 0 && (
+        <EmptyState label="No reels pending" />
+      )}
+      {!reelsLoading && !reelsError && reels.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+          {reels.map((r) => (
+            <Card
+              key={r.series_id}
+              style={{ flex: "1 1 220px", minWidth: 220 }}
+            >
+              <div style={{ fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
+                {r.title}
+              </div>
+              <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 10 }}>
+                {r.parts_count} part{r.parts_count !== 1 ? "s" : ""}
+                {" · "}
+                <a
+                  href={`https://youtu.be/${r.video_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: BRAND.navyText }}
                 >
-                  <div style={{ fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>
-                    {r.title}
-                  </div>
-                  <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 10 }}>
-                    {r.parts_count} part{r.parts_count !== 1 ? "s" : ""}
-                    {" · "}
-                    <a
-                      href={`https://youtu.be/${r.video_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: BRAND.navyText }}
-                    >
-                      source video
-                    </a>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <Badge tone="blue">Approved</Badge>
-                    <a
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); }}
-                      style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", cursor: "pointer" }}
-                    >
-                      Open in Clip Studio
-                    </a>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
+                  source video
+                </a>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <Badge tone="blue">Approved</Badge>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); }}
+                  style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", cursor: "pointer" }}
+                >
+                  Open in Clip Studio
+                </a>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
-          {/* FAQs */}
-          <SectionHeader>
-            FAQ candidates ({faqs.length}
-            {faqsTotal > faqs.length ? ` of ${faqsTotal}` : ""})
-          </SectionHeader>
-          <ActionNote>
-            These are candidate questions from your video content. Use the{" "}
-            <strong>FAQ tab</strong> to mine and generate answers — the full FAQ builder
-            (mine + batch answer) lives there.
-          </ActionNote>
-          {faqs.length === 0 ? (
-            <EmptyState label="No FAQ gaps found" />
-          ) : (
-            <>
-              <Card style={{ padding: 0, overflow: "hidden" }}>
-                <table
+      {/* FAQs */}
+      <SectionHeader>
+        FAQ candidates ({faqsTotal > 0 ? faqsTotal : faqLoading ? "…" : faqs.length})
+      </SectionHeader>
+      <ActionNote>
+        These are candidate questions from your video content. Use the{" "}
+        <strong>FAQ tab</strong> to mine and generate answers — the full FAQ builder
+        (mine + batch answer) lives there.
+      </ActionNote>
+      {faqLoading && <Loading label="Loading FAQ candidates…" />}
+      {faqError && <ErrorMsg>Could not load FAQ candidates: {faqError}</ErrorMsg>}
+      {!faqLoading && !faqError && faqs.length === 0 && (
+        <EmptyState label="No FAQ gaps found" />
+      )}
+      {!faqLoading && !faqError && faqs.length > 0 && (
+        <>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 14,
+              }}
+            >
+              <thead>
+                <tr
                   style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
+                    borderBottom: `2px solid ${BRAND.border}`,
+                    textAlign: "left",
+                  }}
+                >
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>
+                    Question
+                  </th>
+                  <th
+                    style={{
+                      padding: "10px 16px",
+                      color: BRAND.sub,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Source clip
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {faqs.map((f, i) => (
+                  <tr
+                    key={`${f.video_id}-${f.t}-${i}`}
+                    style={{ borderBottom: `1px solid ${BRAND.border}` }}
+                  >
+                    <td style={{ padding: "10px 16px" }}>{f.question}</td>
+                    <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
+                      <a
+                        href={`https://youtu.be/${f.video_id}?t=${f.t}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
+                      >
+                        {f.title} @{hms(f.t)}
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          <Paginator
+            page={faqPage}
+            totalPages={faqTotalPages}
+            onPrev={() => setFaqPage((p) => Math.max(0, p - 1))}
+            onNext={() => setFaqPage((p) => Math.min(faqTotalPages - 1, p + 1))}
+          />
+          <p style={{ fontSize: 12, color: BRAND.sub, margin: "8px 0 0", fontStyle: "italic" }}>
+            Open the <strong>FAQ tab</strong> to mine questions and generate answers in bulk.
+          </p>
+        </>
+      )}
+
+      {/* Unused Videos */}
+      <SectionHeader>
+        Unused videos ({unusedTotal > 0 ? unusedTotal : unusedLoading ? "…" : unused.length})
+      </SectionHeader>
+      <p style={{ fontSize: 13, color: BRAND.sub, margin: "-6px 0 14px" }}>
+        A video is "used" when it is referenced in a published or draft article, or included in a
+        video mini-series. These videos have transcript or topic data but are not yet used anywhere.
+      </p>
+      {unusedLoading && <Loading label="Loading unused videos…" />}
+      {unusedError && <ErrorMsg>Could not load unused videos: {unusedError}</ErrorMsg>}
+      {!unusedLoading && !unusedError && unused.length === 0 && (
+        <EmptyState label="All videos used" />
+      )}
+      {!unusedLoading && !unusedError && unused.length > 0 && (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+            {unused.map((v) => (
+              <Card
+                key={v.video_id}
+                style={{ flex: "1 1 260px", minWidth: 260 }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: BRAND.navyText,
+                    marginBottom: 2,
                     fontSize: 14,
                   }}
                 >
-                  <thead>
-                    <tr
-                      style={{
-                        borderBottom: `2px solid ${BRAND.border}`,
-                        textAlign: "left",
-                      }}
-                    >
-                      <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>
-                        Question
-                      </th>
-                      <th
-                        style={{
-                          padding: "10px 16px",
-                          color: BRAND.sub,
-                          fontWeight: 600,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        Source clip
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {faqSlice.map((f, i) => (
-                      <tr
-                        key={`${f.video_id}-${f.t}-${i}`}
-                        style={{ borderBottom: `1px solid ${BRAND.border}` }}
-                      >
-                        <td style={{ padding: "10px 16px" }}>{f.question}</td>
-                        <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
-                          <a
-                            href={`https://youtu.be/${f.video_id}?t=${f.t}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
-                          >
-                            {f.title} @{hms(f.t)}
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Card>
-              <Paginator
-                page={faqPage}
-                totalPages={faqTotalPages}
-                onPrev={() => setFaqPage((p) => Math.max(0, p - 1))}
-                onNext={() => setFaqPage((p) => Math.min(faqTotalPages - 1, p + 1))}
-              />
-              <p style={{ fontSize: 12, color: BRAND.sub, margin: "8px 0 0", fontStyle: "italic" }}>
-                Open the <strong>FAQ tab</strong> to mine questions and generate answers in bulk.
-              </p>
-            </>
-          )}
-
-          {/* Unused Videos */}
-          <SectionHeader>
-            Unused videos ({unused.length}
-            {unusedTotal > unused.length ? ` of ${unusedTotal}` : ""})
-          </SectionHeader>
-          <p style={{ fontSize: 13, color: BRAND.sub, margin: "-6px 0 14px" }}>
-            A video is "used" when it is referenced in a published or draft article, or included in a
-            video mini-series. These videos have transcript or topic data but are not yet used anywhere.
-          </p>
-          {unused.length === 0 ? (
-            <EmptyState label="All videos used" />
-          ) : (
-            <>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                {unusedSlice.map((v) => (
-                  <Card
-                    key={v.video_id}
-                    style={{ flex: "1 1 260px", minWidth: 260 }}
+                  <a
+                    href={`https://youtu.be/${v.video_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: BRAND.navyText, textDecoration: "none" }}
                   >
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        color: BRAND.navyText,
-                        marginBottom: 4,
-                        fontSize: 14,
-                      }}
+                    {v.title}
+                  </a>
+                </div>
+                {v.duration > 0 && (
+                  <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 8 }}>
+                    {hms(v.duration)}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  {genMsg[v.video_id] && topicStates[v.video_id]?.state !== "done" && (
+                    <div style={{ fontSize: 12, color: genMsg[v.video_id].startsWith("Error") ? BRAND.red : BRAND.sub, fontStyle: "italic", width: "100%" }}>
+                      {genMsg[v.video_id]}
+                    </div>
+                  )}
+                  {topicStates[v.video_id]?.state === "done" ? (
+                    <Button
+                      variant="primary"
+                      style={{ fontSize: 12, padding: "5px 12px" }}
+                      onClick={() => navigate("articles", { cluster: topicStates[v.video_id].result?.pillar_slug ?? slugify(v.title) })}
                     >
-                      <a
-                        href={`https://youtu.be/${v.video_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: BRAND.navyText, textDecoration: "none" }}
-                      >
-                        {v.title}
-                      </a>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-                      {genMsg[v.video_id] && topicStates[v.video_id]?.state !== "done" && (
-                        <div style={{ fontSize: 12, color: genMsg[v.video_id].startsWith("Error") ? BRAND.red : BRAND.sub, fontStyle: "italic", width: "100%" }}>
-                          {genMsg[v.video_id]}
-                        </div>
-                      )}
-                      {topicStates[v.video_id]?.state === "done" ? (
-                        <Button
-                          variant="primary"
-                          style={{ fontSize: 12, padding: "5px 12px" }}
-                          onClick={() => navigate("articles", { cluster: topicStates[v.video_id].pillar_slug ?? slugify(v.title) })}
-                        >
-                          View
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="primary"
-                          style={{ fontSize: 12, padding: "5px 12px" }}
-                          disabled={topicStates[v.video_id]?.state === "generating"}
-                          onClick={() => generateUnusedArticle(v)}
-                        >
-                          {topicStates[v.video_id]?.state === "generating" ? "Rendering…" : "Generate cluster articles"}
-                        </Button>
-                      )}
-                      <a
-                        href={`/video/proposals?video_id=${v.video_id}`}
-                        style={{
-                          fontSize: 12,
-                          padding: "5px 12px",
-                          borderRadius: 8,
-                          border: `1px solid ${BRAND.border}`,
-                          color: BRAND.navyText,
-                          textDecoration: "none",
-                          fontWeight: 600,
-                          display: "inline-block",
-                        }}
-                      >
-                        Propose mini-series
-                      </a>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-              <Paginator
-                page={unusedPage}
-                totalPages={unusedTotalPages}
-                onPrev={() => setUnusedPage((p) => Math.max(0, p - 1))}
-                onNext={() => setUnusedPage((p) => Math.min(unusedTotalPages - 1, p + 1))}
-              />
-            </>
-          )}
+                      View
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      style={{ fontSize: 12, padding: "5px 12px" }}
+                      disabled={topicStates[v.video_id]?.state === "generating"}
+                      onClick={() => generateUnusedArticle(v)}
+                    >
+                      {topicStates[v.video_id]?.state === "generating" ? "Rendering…" : "Generate cluster articles"}
+                    </Button>
+                  )}
+                  <a
+                    href={`/video/proposals?video_id=${v.video_id}`}
+                    style={{
+                      fontSize: 12,
+                      padding: "5px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${BRAND.border}`,
+                      color: BRAND.navyText,
+                      textDecoration: "none",
+                      fontWeight: 600,
+                      display: "inline-block",
+                    }}
+                  >
+                    Propose mini-series
+                  </a>
+                </div>
+              </Card>
+            ))}
+          </div>
+          <Paginator
+            page={unusedPage}
+            totalPages={unusedTotalPages}
+            onPrev={() => setUnusedPage((p) => Math.max(0, p - 1))}
+            onNext={() => setUnusedPage((p) => Math.min(unusedTotalPages - 1, p + 1))}
+          />
         </>
       )}
     </main>

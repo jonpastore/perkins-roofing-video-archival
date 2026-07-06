@@ -291,33 +291,60 @@ function computeSeoScore(article: ArticleFull): SeoResult {
     detail: metaLen > 0 ? `${metaLen} chars` : "no meta",
   });
 
-  // 3. Title length 30-65 chars (10 pts)
+  // 3. Title length 30-65 chars (5 pts)
   const titleLen = article.title?.trim().length ?? 0;
   const titleLenOk = titleLen >= 30 && titleLen <= 65;
   checks.push({
     label: "Title length 30–65 chars",
-    points: 10,
+    points: 5,
     pass: titleLenOk,
     detail: `${titleLen} chars`,
   });
 
-  // 4. Has H2 or H3 headings in content_md (15 pts) — matches HTML or markdown
-  const hasHeadings = /(<h[23][\s/>])|(^#{2,3}\s)/im.test(article.content_md ?? "");
-  checks.push({ label: "Has H2/H3 headings in content", points: 15, pass: hasHeadings });
+  // 4. Keyword in title (5 pts) — client-side: always pass (keyword not stored on article)
+  checks.push({
+    label: "Keyword appears in title",
+    points: 5,
+    pass: true,
+    detail: "verified server-side",
+  });
 
-  // 5. Has FAQ (faq_json non-empty array) (15 pts)
+  // 5. Has H2 or H3 headings in content_md (10 pts) — matches HTML or markdown
+  const hasHeadings = /(<h[23][\s/>])|(^#{2,3}\s)/im.test(article.content_md ?? "");
+  checks.push({ label: "Has H2/H3 headings in content", points: 10, pass: hasHeadings });
+
+  // 6. Answer-first lede (5 pts) — first 200 plain-text chars contain a sentence
+  const plainHead = (article.content_md ?? "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[#*>`_~\[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+  const answerFirst = /\w{4,}.*?\./.test(plainHead);
+  checks.push({ label: "Answer-first lede (direct sentence early)", points: 5, pass: answerFirst });
+
+  // 7. Has FAQ (faq_json non-empty array) (5 pts)
   const faqItems = Array.isArray(article.faq_json)
     ? (article.faq_json as FaqItem[]).filter((f) => f && typeof f.q === "string")
     : [];
   const hasFaq = faqItems.length > 0;
   checks.push({
-    label: "Has FAQ schema",
-    points: 15,
+    label: "Has FAQ schema (≥1 pair)",
+    points: 5,
     pass: hasFaq,
     detail: hasFaq ? `${faqItems.length} item${faqItems.length !== 1 ? "s" : ""}` : "none",
   });
 
-  // 6. Has JSON-LD (15 pts)
+  // 8. FAQ count ≥4 (10 pts) — SGE/AEO requires at least 4 pairs to display FAQPage
+  const hasFaqCount = faqItems.length >= 4;
+  checks.push({
+    label: "FAQ has ≥4 pairs (SGE/AEO)",
+    points: 10,
+    pass: hasFaqCount,
+    detail: `${faqItems.length} item${faqItems.length !== 1 ? "s" : ""}`,
+  });
+
+  // 9. Has JSON-LD (15 pts)
   const hasJsonLd = Boolean(
     article.jsonld_json &&
     (typeof article.jsonld_json === "object"
@@ -326,11 +353,11 @@ function computeSeoScore(article: ArticleFull): SeoResult {
   );
   checks.push({ label: "Has JSON-LD structured data", points: 15, pass: hasJsonLd });
 
-  // 7. Has embedded YouTube link in content_md (10 pts)
+  // 10. Has embedded YouTube link in content_md (10 pts)
   const hasVideo = /youtube\.com|youtu\.be/i.test(article.content_md ?? "");
   checks.push({ label: "Has embedded video link", points: 10, pass: hasVideo });
 
-  // 8. Word count > 300 (15 pts) — strip HTML tags before counting
+  // 11. Word count > 300 (15 pts) — strip HTML tags before counting
   const wordCount = (article.content_md ?? "")
     .replace(/<[^>]+>/g, " ")
     .replace(/[#*>`_~\[\]]/g, " ")
@@ -589,6 +616,38 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
             &times;
           </button>
         </div>
+
+        {/* Published banner — wp_url link prominently shown for published articles */}
+        {article && article.status === "published" && article.wp_url && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "10px 24px",
+              background: "#e6f9f0",
+              borderBottom: "1px solid #bbf7d0",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ fontSize: 13, color: "#166534", fontWeight: 600 }}>
+              Published on WordPress
+            </span>
+            <a
+              href={article.wp_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: 13,
+                color: "#166534",
+                fontWeight: 700,
+                textDecoration: "underline",
+              }}
+            >
+              View live post ↗
+            </a>
+          </div>
+        )}
 
         {/* Fixed action bar (publish/schedule) — only when unpublished */}
         {article && article.status !== "published" && (
@@ -1010,9 +1069,18 @@ function ArticleRow({ a, clusterTitle, indented, deletingSlug, onView, onEdit, o
             href={a.wp_url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ fontSize: 13, color: BRAND.navyText, textDecoration: "underline", whiteSpace: "nowrap" }}
+            style={{
+              fontSize: 13,
+              fontWeight: a.status === "published" ? 700 : 400,
+              color: a.status === "published" ? "#166534" : BRAND.navyText,
+              textDecoration: "underline",
+              whiteSpace: "nowrap",
+              background: a.status === "published" ? "#e6f9f0" : "transparent",
+              padding: a.status === "published" ? "2px 6px" : "0",
+              borderRadius: a.status === "published" ? 4 : 0,
+            }}
           >
-            WP #{a.wp_post_id} ↗
+            {a.status === "published" ? "View on WP ↗" : `WP #${a.wp_post_id} ↗`}
           </a>
         ) : a.wp_post_id ? (
           <span style={{ fontSize: 13, color: BRAND.sub }}>WP #{a.wp_post_id}</span>

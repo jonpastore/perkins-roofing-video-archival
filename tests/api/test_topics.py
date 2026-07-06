@@ -478,6 +478,83 @@ def test_topics_videos_case_insensitive_label():
     assert len(r.json()) == 2
 
 
+# ---------------------------------------------------------------------------
+# generated flag
+# ---------------------------------------------------------------------------
+
+def test_topics_generated_field_present():
+    """Each item in GET /topics must include a boolean 'generated' field."""
+    c = _admin_client()
+    r = c.get("/topics", headers=AUTH)
+    assert r.status_code == 200, r.text
+    items = _items(r)
+    for item in items:
+        assert "generated" in item, f"'generated' missing from {item}"
+        assert isinstance(item["generated"], bool)
+
+
+def test_topics_generated_false_when_no_article():
+    """Topics with no matching article must have generated=False."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+    c = _admin_client()
+    r = c.get("/topics", headers=AUTH)
+    items = _items(r)
+    for item in items:
+        assert item["generated"] is False, f"expected False for {item['label']}, got True"
+
+
+def test_topics_generated_true_when_pillar_exists():
+    """Topics whose slugified label matches an Article slug must have generated=True."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.add(Article(
+            slug="flat-roofing",
+            title="Flat Roofing",
+            content_md="content",
+            role="pillar",
+            status="scheduled",
+            pillar_slug="flat-roofing",
+        ))
+        db.commit()
+    c = _admin_client()
+    r = c.get("/topics", headers=AUTH)
+    items = _items(r)
+    flat = next((it for it in items if it["label"].lower() == "flat roofing"), None)
+    assert flat is not None, "flat roofing topic not found"
+    assert flat["generated"] is True
+    # cleanup
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+
+
+def test_topics_generated_true_via_pillar_slug():
+    """generated=True when a cluster article's pillar_slug matches the topic slug."""
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.add(Article(
+            slug="flat-roofing-cost-guide",
+            title="Flat Roofing Cost Guide",
+            content_md="content",
+            role="cluster",
+            status="scheduled",
+            pillar_slug="flat-roofing",
+        ))
+        db.commit()
+    c = _admin_client()
+    r = c.get("/topics", headers=AUTH)
+    items = _items(r)
+    flat = next((it for it in items if it["label"].lower() == "flat roofing"), None)
+    assert flat is not None
+    assert flat["generated"] is True
+    # cleanup
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
+
+
 def test_topics_videos_unknown_label_returns_empty():
     """Unknown topic label returns an empty list, not a 404."""
     c = _admin_client()

@@ -68,6 +68,59 @@ def _closing_text() -> str:
     return _CLOSING_TEXT_DEFAULT
 
 
+def _brand_scene_config() -> tuple[str | None, str | None]:
+    """Return (title_img_path, closing_img_path) from platform_config when REEL_APPLY_BRAND_SCENES=true.
+
+    Reads REEL_APPLY_BRAND_SCENES, REEL_TITLE_IMG, and REEL_CLOSING_IMG.
+    Returns (None, None) when the flag is off or config is unavailable.
+    When an img key holds a gs:// URI, downloads it to a temp file and returns
+    the local path so render_part can pass it to make_card/fuse directly.
+    """
+    try:
+        from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+
+        with SessionLocal() as db:
+            apply_row = db.get(PlatformConfig, "REEL_APPLY_BRAND_SCENES")
+            if not (apply_row and apply_row.value and apply_row.value.strip().lower() == "true"):
+                return None, None
+            title_row = db.get(PlatformConfig, "REEL_TITLE_IMG")
+            closing_row = db.get(PlatformConfig, "REEL_CLOSING_IMG")
+            title_val = (title_row.value or "").strip() if title_row else ""
+            closing_val = (closing_row.value or "").strip() if closing_row else ""
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_brand_scene_config: could not read platform_config: %s", exc)
+        return None, None
+
+    def _resolve(gs_uri: str) -> str | None:
+        if not gs_uri:
+            return None
+        if not gs_uri.startswith("gs://"):
+            # Plain local path (dev/test convenience) — use as-is if it exists.
+            return gs_uri if os.path.exists(gs_uri) else None
+        try:
+            without_scheme = gs_uri[len("gs://"):]
+            slash = without_scheme.index("/")
+            bucket = without_scheme[:slash]
+            key = without_scheme[slash + 1:]
+            ext = os.path.splitext(key)[-1] or ".png"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                local_path = tmp.name
+            from adapters.storage import open_read_stream  # noqa: PLC0415
+            with open_read_stream(bucket, key) as stream:
+                with open(local_path, "wb") as fh:
+                    while True:
+                        chunk = stream.read(8 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        fh.write(chunk)
+            return local_path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_brand_scene_config: failed to fetch %s: %s", gs_uri, exc)
+            return None
+
+    return _resolve(title_val), _resolve(closing_val)
+
+
 def _reels_bucket() -> str:
     project = _GOOGLE_CLOUD_PROJECT or os.getenv("GOOGLE_CLOUD_PROJECT", "")
     if not project:
@@ -306,6 +359,15 @@ def render_part(
 
         # 6. Generate cards if not supplied
         part_title = part.get("title") or series_title
+
+        # Apply uploaded brand scenes when the caller did not explicitly supply images.
+        if title_img is None or closing_img is None:
+            brand_title, brand_closing = _brand_scene_config()
+            if title_img is None:
+                title_img = brand_title
+            if closing_img is None:
+                closing_img = brand_closing
+
         if title_img is None:
             title_img = os.path.join(scratch, f"title_{series_id}_{part_index}.png")
             logger.info("make_card (title): %r -> %s", part_title, title_img)

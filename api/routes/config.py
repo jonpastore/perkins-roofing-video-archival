@@ -60,6 +60,9 @@ EDITABLE_KEYS: dict[str, str] = {
     "GRAPH_VERSION": "Graph version tag",
     "CHUNK_SIZE": "Chunk size (segments per chunk)",
     "REEL_CLOSING_TEXT": "Reel outro brand text (shown on closing card — default: Perkins Roofing)",
+    "REEL_TITLE_IMG": "Reel title scene image GCS path (gs://… or empty to use generated card)",
+    "REEL_CLOSING_IMG": "Reel closing scene image GCS path (gs://… or empty to use generated card)",
+    "REEL_APPLY_BRAND_SCENES": "Apply uploaded brand scenes to every render (true | false)",
 }
 
 # ---------------------------------------------------------------------------
@@ -424,9 +427,14 @@ def _check_wordpress(wp_url: str) -> tuple[bool, str]:
 
 
 def _check_resend(api_key: str) -> tuple[bool, str]:
-    """Probe Resend by calling /domains (read-only, cheap)."""
-    import urllib.request  # noqa: PLC0415
-    import urllib.error   # noqa: PLC0415
+    """Probe Resend by calling GET /domains.
+
+    Send-only (restricted) keys return 401 with name='restricted_api_key' — the key is
+    valid and working, it just cannot list domains.  Any other 401 means a bad key.
+    """
+    import json as _json     # noqa: PLC0415
+    import urllib.request    # noqa: PLC0415
+    import urllib.error      # noqa: PLC0415
     if not api_key:
         return False, "RESEND_API_KEY not configured"
     try:
@@ -438,6 +446,15 @@ def _check_resend(api_key: str) -> tuple[bool, str]:
             if resp.status < 400:
                 return True, f"HTTP {resp.status}"
             return False, f"HTTP {resp.status}"
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            try:
+                body = _json.loads(exc.read())
+                if body.get("name") == "restricted_api_key":
+                    return True, "send-only key (valid)"
+            except Exception:
+                pass
+        return False, f"HTTP {exc.code} {exc.reason}"
     except Exception as exc:
         return False, str(exc)
 
@@ -486,11 +503,25 @@ def _check_serper(api_key: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _check_oauth(client_id: str) -> tuple[bool, str]:
+    """Confirm Google OAuth client ID is configured (cheap — no network call needed).
+
+    A missing or obviously-placeholder client ID means Sign-In will fail at runtime.
+    The value format is <numeric-id>.apps.googleusercontent.com.
+    """
+    if not client_id:
+        return False, "OAUTH_CLIENT_ID not configured"
+    if not client_id.endswith(".apps.googleusercontent.com"):
+        return False, "OAUTH_CLIENT_ID does not look like a valid Google client ID"
+    return True, f"client_id configured ({client_id[:20]}…)"
+
+
 @router.get("/health-checks")
 def health_checks(claims=Depends(require_role("manage_config"))):
     """Run cheap live connectivity probes. Returns [{name, ok, detail}] per integration.
 
-    Checks: Vertex/GCP ADC, DB, WordPress REST, Resend API, YouTube API, Serper API.
+    Checks: Vertex/GCP ADC, DB, WordPress REST, Resend API, YouTube API, Serper API,
+    Google OAuth client ID.
     All checks run even if earlier ones fail — results are always a full list.
     """
     project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
@@ -498,6 +529,7 @@ def health_checks(claims=Depends(require_role("manage_config"))):
     resend_key = os.getenv("RESEND_API_KEY", "")
     youtube_key = os.getenv("YOUTUBE_API_KEY", "")
     serper_key = os.getenv("SERPER_API_KEY", "")
+    oauth_client_id = os.getenv("OAUTH_CLIENT_ID", "")
 
     checks = [
         ("Vertex / GCP", *_check_vertex(project)),
@@ -506,6 +538,7 @@ def health_checks(claims=Depends(require_role("manage_config"))):
         ("Resend", *_check_resend(resend_key)),
         ("YouTube API", *_check_youtube(youtube_key)),
         ("Serper", *_check_serper(serper_key)),
+        ("Google OAuth", *_check_oauth(oauth_client_id)),
     ]
 
     return {

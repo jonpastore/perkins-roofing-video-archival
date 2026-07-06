@@ -363,6 +363,55 @@ def test_unused_videos_has_title(seeded):
     assert vid_c["title"] == "Shingle Selection"
 
 
+def test_unused_videos_has_duration(seeded):
+    """Each unused_videos item must include a numeric 'duration' field."""
+    client = _make_client("admin")
+    data = client.get("/suggestions", headers=ADMIN_HDR).json()
+
+    for v in data["unused_videos"]:
+        assert "duration" in v, f"'duration' missing from {v}"
+        assert isinstance(v["duration"], (int, float))
+
+
+def test_unused_videos_duration_defaults_zero_when_null(seeded):
+    """Videos with no duration set must return duration=0.0, not null."""
+    client = _make_client("admin")
+    data = client.get("/suggestions", headers=ADMIN_HDR).json()
+    # seeded videos have no duration set — must be 0.0
+    for v in data["unused_videos"]:
+        assert v["duration"] is not None
+        assert v["duration"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# offset pagination for faqs and unused_videos
+# ---------------------------------------------------------------------------
+
+def test_faqs_offset_pagination(seeded):
+    """?offset= should skip items from the faqs bucket."""
+    client = _make_client("admin")
+    all_data = client.get("/suggestions?limit=200", headers=ADMIN_HDR).json()
+    total_faqs = len(all_data["faqs"])
+    if total_faqs < 1:
+        pytest.skip("no faqs to paginate")
+    # offset=total should return empty list but preserve total
+    data = client.get(f"/suggestions?offset={total_faqs}&limit=50", headers=ADMIN_HDR).json()
+    assert data["faqs"] == []
+    assert data["faqs_total"] == total_faqs
+
+
+def test_unused_offset_pagination(seeded):
+    """?offset= should skip items from the unused_videos bucket."""
+    client = _make_client("admin")
+    all_data = client.get("/suggestions?limit=200", headers=ADMIN_HDR).json()
+    total_unused = len(all_data["unused_videos"])
+    if total_unused < 1:
+        pytest.skip("no unused videos to paginate")
+    data = client.get(f"/suggestions?offset={total_unused}&limit=50", headers=ADMIN_HDR).json()
+    assert data["unused_videos"] == []
+    assert data["unused_videos_total"] == total_unused
+
+
 # ---------------------------------------------------------------------------
 # Response shape
 # ---------------------------------------------------------------------------

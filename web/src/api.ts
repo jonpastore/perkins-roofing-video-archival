@@ -22,3 +22,23 @@ export async function apiFetch(
   if (res.status === 401) res = await call(true); // token likely expired — refresh + retry
   return res;
 }
+
+/** Like apiFetch but does NOT set Content-Type — required for multipart/form-data uploads
+ *  so the browser can set the boundary automatically. */
+export async function apiFetchMultipart(
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const call = async (forceRefresh: boolean) => {
+    const token = await getIdToken(forceRefresh);
+    const headers: Record<string, string> = {
+      ...(options.headers as Record<string, string>),
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(`${BASE}${path}`, { ...options, headers });
+  };
+
+  let res = await call(false);
+  if (res.status === 401) res = await call(true);
+  return res;
+}

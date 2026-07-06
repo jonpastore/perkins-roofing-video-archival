@@ -89,8 +89,17 @@ export const inputStyle: CSSProperties = {
   boxSizing: "border-box",
 };
 
+export function Spinner({ small }: { small?: boolean }) {
+  return <span className={small ? "spinner-ring spinner-ring--sm" : "spinner-ring"} />;
+}
+
 export function Loading({ label = "Loading…" }: { label?: string }) {
-  return <p style={{ color: BRAND.sub, fontSize: 14 }}>{label}</p>;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: BRAND.sub, fontSize: 14 }}>
+      <Spinner />
+      {label}
+    </span>
+  );
 }
 
 export function ErrorMsg({ children }: { children: ReactNode }) {

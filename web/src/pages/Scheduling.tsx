@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
+import { NavContext } from "../App";
 
 interface ScheduledItem {
   id: number;
@@ -66,6 +67,7 @@ function fmtDate(iso: string | null) {
 }
 
 export function Scheduling() {
+  const { navigate } = useContext(NavContext);
   const [items, setItems] = useState<ScheduledItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -273,7 +275,7 @@ export function Scheduling() {
                     {form.kind === "article" ? "Article" : "Video Series"}
                   </label>
                   {dropdownsLoading ? (
-                    <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>Loading…</p>
+                    <Loading label="Loading…" />
                   ) : form.kind === "article" ? (
                     <select
                       value={form.ref_id}
@@ -401,7 +403,29 @@ export function Scheduling() {
                 {items.map((item) => (
                   <tr key={item.id} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
                     <td style={{ padding: "10px 12px" }}>{kindBadge(item.kind)}</td>
-                    <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink }}>{item.display_name}</td>
+                    <td style={{ padding: "10px 12px", fontWeight: 500 }}>
+                      <button
+                        onClick={() =>
+                          item.kind === "article"
+                            ? navigate("articles", { open: item.ref_id, cluster: item.ref_id })
+                            : navigate("video-approval")
+                        }
+                        style={{
+                          background: "none",
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                          color: BRAND.navy,
+                          fontWeight: 500,
+                          fontSize: "inherit",
+                          textDecoration: "none",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                        onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
+                      >
+                        {item.display_name}
+                      </button>
+                    </td>
                     <td style={{ padding: "10px 12px", color: BRAND.sub }}>{fmtDate(item.publish_at)}</td>
                     <td style={{ padding: "10px 12px" }}>{statusBadge(item.status)}</td>
                     <td style={{ padding: "10px 12px", color: BRAND.sub }}>{item.target ?? "—"}</td>

@@ -451,13 +451,14 @@ def test_health_checks_admin_ok(admin_client):
          patch("api.routes.config._check_wordpress", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")):
+         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     body = r.json()
     assert "results" in body
     assert isinstance(body["results"], list)
-    assert len(body["results"]) == 6
+    assert len(body["results"]) == 7
 
 
 def test_health_checks_result_shape(admin_client):
@@ -467,7 +468,8 @@ def test_health_checks_result_shape(admin_client):
          patch("api.routes.config._check_wordpress", return_value=(False, "WP_URL not configured")), \
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")):
+         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     for result in r.json()["results"]:
         assert "name" in result
@@ -483,7 +485,8 @@ def test_health_checks_partial_failure(admin_client):
          patch("api.routes.config._check_wordpress", return_value=(False, "timeout")), \
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(False, "403 Forbidden")), \
-         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")):
+         patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
+         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     results = {item["name"]: item for item in r.json()["results"]}
@@ -502,3 +505,118 @@ def test_health_checks_unauthenticated():
     client = TestClient(appmod.app)
     r = client.get("/config/health-checks")
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# _check_resend unit tests
+# ---------------------------------------------------------------------------
+
+def test_check_resend_no_key():
+    from api.routes.config import _check_resend
+    ok, detail = _check_resend("")
+    assert ok is False
+    assert "not configured" in detail
+
+
+def test_check_resend_success():
+    import urllib.error
+    from unittest.mock import MagicMock, patch
+    from api.routes.config import _check_resend
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        ok, detail = _check_resend("re_validkey")
+    assert ok is True
+    assert "200" in detail
+
+
+def test_check_resend_restricted_key_ok():
+    """A send-only (restricted) key returns 401 with name=restricted_api_key — treat as ok=True."""
+    import json
+    import urllib.error
+    from unittest.mock import patch, MagicMock
+    from api.routes.config import _check_resend
+
+    body = json.dumps({"statusCode": 401, "name": "restricted_api_key",
+                       "message": "restricted to only send emails"}).encode()
+    http_err = urllib.error.HTTPError(
+        url="https://api.resend.com/domains", code=401, msg="Unauthorized",
+        hdrs=MagicMock(), fp=MagicMock(read=MagicMock(return_value=body)),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        ok, detail = _check_resend("re_sendonly")
+    assert ok is True
+    assert "send-only" in detail
+
+
+def test_check_resend_bad_key_401():
+    """A genuinely invalid key returns 401 without restricted_api_key name — ok=False."""
+    import json
+    import urllib.error
+    from unittest.mock import patch, MagicMock
+    from api.routes.config import _check_resend
+
+    body = json.dumps({"statusCode": 401, "name": "invalid_api_key",
+                       "message": "Invalid API key"}).encode()
+    http_err = urllib.error.HTTPError(
+        url="https://api.resend.com/domains", code=401, msg="Unauthorized",
+        hdrs=MagicMock(), fp=MagicMock(read=MagicMock(return_value=body)),
+    )
+    with patch("urllib.request.urlopen", side_effect=http_err):
+        ok, detail = _check_resend("re_badkey")
+    assert ok is False
+    assert "401" in detail
+
+
+def test_check_resend_network_error():
+    from unittest.mock import patch
+    from api.routes.config import _check_resend
+
+    with patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+        ok, detail = _check_resend("re_somekey")
+    assert ok is False
+    assert "connection refused" in detail
+
+
+# ---------------------------------------------------------------------------
+# _check_oauth unit tests
+# ---------------------------------------------------------------------------
+
+def test_check_oauth_no_key():
+    from api.routes.config import _check_oauth
+    ok, detail = _check_oauth("")
+    assert ok is False
+    assert "not configured" in detail
+
+
+def test_check_oauth_valid():
+    from api.routes.config import _check_oauth
+    client_id = "123456789.apps.googleusercontent.com"
+    ok, detail = _check_oauth(client_id)
+    assert ok is True
+    assert "configured" in detail
+
+
+def test_check_oauth_malformed():
+    from api.routes.config import _check_oauth
+    ok, detail = _check_oauth("not-a-real-client-id")
+    assert ok is False
+    assert "does not look like" in detail
+
+
+def test_health_checks_includes_oauth(admin_client):
+    """GET /config/health-checks result list includes a Google OAuth entry."""
+    with patch("api.routes.config._check_vertex", return_value=(True, "ok")), \
+         patch("api.routes.config._check_db", return_value=(True, "ok")), \
+         patch("api.routes.config._check_wordpress", return_value=(True, "ok")), \
+         patch("api.routes.config._check_resend", return_value=(True, "ok")), \
+         patch("api.routes.config._check_youtube", return_value=(True, "ok")), \
+         patch("api.routes.config._check_serper", return_value=(True, "ok")), \
+         patch("api.routes.config._check_oauth", return_value=(True, "client_id configured")):
+        r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
+    names = [item["name"] for item in r.json()["results"]]
+    assert "Google OAuth" in names
