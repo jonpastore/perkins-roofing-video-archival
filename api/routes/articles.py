@@ -72,6 +72,11 @@ def _article_summary(a: Article) -> dict:
 
 
 def _article_full(a: Article) -> dict:
+    from core.seo import rank_math_checks  # local import — pure, cheap, avoids import churn
+    checks = rank_math_checks(
+        a.title or "", a.meta or "", a.slug or "", a.content_md or "", a.focus_keyword or ""
+    )
+    passed = sum(1 for c in checks if c["pass"])
     return {
         "slug": a.slug,
         "title": a.title,
@@ -87,6 +92,10 @@ def _article_full(a: Article) -> dict:
         "wp_admin_url": _wp_admin_url_for(a.wp_post_id),
         "status": a.status,
         "publish_at": a.publish_at.isoformat() if a.publish_at else None,
+        # Rank Math SEO / AIO checks — surfaced in the Articles UI to stay ahead of gaps.
+        "seo_checks": checks,
+        "seo_passed": passed,
+        "seo_total": len(checks),
     }
 
 

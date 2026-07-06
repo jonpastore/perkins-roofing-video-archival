@@ -54,13 +54,32 @@ interface ArticleSummary {
   publish_at: string | null;
 }
 
+interface RankMathCheck {
+  key: string;
+  label: string;
+  pass: boolean;
+  detail?: string;
+}
+
 interface ArticleFull extends ArticleSummary {
   meta: string | null;
+  focus_keyword: string | null;
   content_md: string | null;
   faq_json: unknown;
   jsonld_json: unknown;
+  // Rank Math SEO checks computed server-side (core/seo.rank_math_checks)
+  seo_checks?: RankMathCheck[];
+  seo_passed?: number;
+  seo_total?: number;
   // wp_url is already on ArticleSummary via extends
 }
+
+// Rank Math check keys grouped into the panels the customer sees in Rank Math.
+const RANK_MATH_GROUPS: { title: string; keys: string[] }[] = [
+  { title: "Basic SEO", keys: ["rm_kw_in_title", "rm_kw_in_meta", "rm_kw_in_slug", "rm_kw_in_intro", "rm_kw_in_body"] },
+  { title: "Additional", keys: ["rm_kw_in_heading", "rm_kw_in_img_alt", "rm_kw_density", "rm_slug_length", "rm_internal_link", "rm_external_link"] },
+  { title: "Title Readability", keys: ["rm_title_kw_position", "rm_title_sentiment", "rm_title_power_word", "rm_title_number"] },
+];
 
 interface FaqItem {
   q: string;
@@ -959,6 +978,42 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                   ))}
                 </div>
               </div>
+
+              {/* Rank Math SEO checks — server-computed, mirrors the customer's Rank Math panel */}
+              {article.seo_checks && article.seo_checks.length > 0 && (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      Rank Math SEO
+                    </h4>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: (article.seo_passed ?? 0) === (article.seo_total ?? 0) ? "#16a34a" : "#d97706" }}>
+                      {article.seo_passed}/{article.seo_total} passed
+                    </span>
+                  </div>
+                  {RANK_MATH_GROUPS.map((group) => {
+                    const groupChecks = article.seo_checks!.filter((c) => group.keys.includes(c.key));
+                    if (groupChecks.length === 0) return null;
+                    const groupFail = groupChecks.filter((c) => !c.pass).length;
+                    return (
+                      <div key={group.title} style={{ marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, margin: "6px 0", display: "flex", gap: 8, alignItems: "center" }}>
+                          {group.title}
+                          {groupFail > 0 && <span style={{ background: "#fee2e2", color: "#dc2626", borderRadius: 8, fontSize: 11, padding: "1px 7px" }}>{groupFail} to fix</span>}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                          {groupChecks.map((c) => (
+                            <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", borderRadius: 8, background: c.pass ? "#f0fdf4" : "#fff7f7", border: `1px solid ${c.pass ? "#bbf7d0" : "#fecaca"}` }}>
+                              <span style={{ fontSize: 14, flexShrink: 0, color: c.pass ? "#16a34a" : "#dc2626" }}>{c.pass ? "✓" : "✗"}</span>
+                              <span style={{ flex: 1, fontSize: 13, color: BRAND.ink }}>{c.label}</span>
+                              {c.detail && <span style={{ fontSize: 11, color: BRAND.sub }}>{c.detail}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Meta description */}
               <div>
