@@ -2,6 +2,8 @@
 
 Ideas captured for future scoping. Not yet planned into a wave.
 
+> **North-star maturity plan:** [MATURITY-ROADMAP.md](MATURITY-ROADMAP.md) — the tiered path from strong engineering hygiene to a cutting-edge AI product (eval harness, observability, test-quality, supply-chain). Start with Tier 0 (AI evaluation).
+
 ## B1 — Continuous new-video monitoring → auto-ingest + content pipeline
 **Idea (2026-07-04):** Monitor the channel for newly published videos and automatically run
 them through the full pipeline: ingest (transcript → graph → embed) and then the
