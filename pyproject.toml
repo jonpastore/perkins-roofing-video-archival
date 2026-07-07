@@ -5,6 +5,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 
+[tool.ruff.lint.per-file-ignores]
+# These modules embed long LLM prompt strings that legitimately exceed the line
+# length; reflowing them would alter prompt content. Correctness lints still apply.
+"api/routes/clips.py" = ["E501"]
+"jobs/crawl_comments.py" = ["E501"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

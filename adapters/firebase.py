@@ -21,5 +21,6 @@ def verify_token(id_token):
     return {
         "uid": decoded.get("uid"),
         "email": decoded.get("email"),
+        "email_verified": bool(decoded.get("email_verified", False)),
         "role": decoded.get("role", ""),
     }

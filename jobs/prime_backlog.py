@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 def _mine_faqs(limit: int) -> int:
     """Turn uncovered content_graph claims/objections into stored FaqEntry questions."""
     from sqlalchemy import select
-    from app.models import GraphNode, FaqEntry, SessionLocal
+
     from api.routes.faq import _rephrase_via_llm
+    from app.models import FaqEntry, GraphNode, SessionLocal
 
     with SessionLocal() as db:
         covered = {r[0] for r in db.execute(select(FaqEntry.source_node_id)).all()}
@@ -55,8 +56,8 @@ def _mine_faqs(limit: int) -> int:
 
 def _answer_faqs(limit: int) -> int:
     """Generate + store grounded answers for still-unanswered FaqEntry rows (local LLM)."""
-    from app.models import FaqEntry, SessionLocal
     from app.answer import answer_faq
+    from app.models import FaqEntry, SessionLocal
 
     with SessionLocal() as db:
         pending = db.query(FaqEntry).filter(FaqEntry.status == "mined").limit(limit).all()
@@ -79,8 +80,8 @@ def _answer_faqs(limit: int) -> int:
 
 def _prime_articles(top_n: int) -> int:
     """Generate a cluster draft for the top-N aggregated topics not yet turned into a pillar."""
+    from api.routes.topics import GenerateArticleRequest, _slugify, generate_cluster_article
     from app.models import AggregatedTopic, Article, SessionLocal
-    from api.routes.topics import _slugify, generate_cluster_article, GenerateArticleRequest
 
     with SessionLocal() as db:
         topics = (db.query(AggregatedTopic)

@@ -17,16 +17,18 @@ def run(channel_id=CHANNEL_ID, limit=None):
     entries, failed = list_channel(channel_id, limit=limit)
     rows = to_video_rows(entries)
     s = SessionLocal()
-    for r in rows:
-        v = s.get(Video, r["id"]) or Video(id=r["id"])
-        v.title = r["title"] or v.title
-        if r["duration"] is not None:
-            v.duration = r["duration"]
-        v.url = r["url"]
-        s.add(v)
-    s.commit()
-    total = s.query(Video).count()
-    s.close()
+    try:
+        for r in rows:
+            v = s.get(Video, r["id"]) or Video(id=r["id"])
+            v.title = r["title"] or v.title
+            if r["duration"] is not None:
+                v.duration = r["duration"]
+            v.url = r["url"]
+            s.add(v)
+        s.commit()
+        total = s.query(Video).count()
+    finally:
+        s.close()
     # A dropped videos/shorts tab means the enumeration is incomplete — surface it, don't hide it.
     incomplete = any(t in ("videos", "shorts") for t in failed)
     if failed:

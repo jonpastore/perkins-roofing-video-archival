@@ -12,9 +12,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install deps
-        run: pip install -r app/requirements.txt pytest pytest-cov ruff
+        run: pip install -r app/requirements.txt pytest pytest-cov ruff bandit pip-audit
       - name: Lint gate
         run: ruff check core adapters api jobs
+      - name: SAST gate (bandit — fail on HIGH)
+        run: bandit -r core adapters api jobs app -lll -q
+      - name: SCA gate (pip-audit — known CVEs)
+        run: pip-audit -r app/requirements.txt
       - name: Test + coverage gate (core >= 97%)
         run: pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
 

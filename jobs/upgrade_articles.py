@@ -35,8 +35,12 @@ def run() -> dict:
     from app.models import Article, SessionLocal
     from core.seo import score_article
     from jobs.article_job import (
-        _build_article_jsonld, _clamp_meta, _fallback_faq, _regen_faq,
-        generate_scored_article, markdownish_to_html,
+        _build_article_jsonld,
+        _clamp_meta,
+        _fallback_faq,
+        _regen_faq,
+        generate_scored_article,
+        markdownish_to_html,
     )
 
     llm = get_default()

@@ -30,10 +30,16 @@ def can(role, action):
     return "*" in perms or action in perms
 
 
-def effective_role(email, role, default_admins):
+def effective_role(email, role, default_admins, email_verified=False):
     """Resolve the caller's effective role. Emails in ``default_admins`` are admin by
     default — no per-user grant needed — so the core team is admin the instant they
-    sign in. Everyone else falls back to their assigned custom-claim ``role``."""
-    if email and email.lower() in default_admins:
+    sign in. Everyone else falls back to their assigned custom-claim ``role``.
+
+    SECURITY: email-based elevation requires a VERIFIED email. `verify_id_token` proves the
+    token was minted by our Firebase project but NOT that the email is verified, so without
+    this gate anyone who could self-register a `*@perkinsroofing.net` address (if a
+    password/email-link provider were enabled) would be promoted to admin. An explicit
+    custom-claim ``role`` is a trusted server-side grant and is always honored."""
+    if email_verified and email and email.lower() in default_admins:
         return "admin"
     return role

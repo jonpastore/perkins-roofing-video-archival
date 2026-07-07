@@ -10,11 +10,13 @@ from .store import vector_search
 def hybrid_search(query, k=8):
     vec = vector_search(query, k=k * 2)
     s = SessionLocal()
-    kw = "%" + query.lower() + "%"
-    lex = s.query(Chunk).filter(Chunk.text.ilike(kw)).limit(k).all()
-    gnodes = s.query(GraphNode).filter(
-        (GraphNode.label.ilike(kw)) | (GraphNode.detail.ilike(kw))).limit(k).all()
-    s.close()
+    try:
+        kw = "%" + query.lower() + "%"
+        lex = s.query(Chunk).filter(Chunk.text.ilike(kw)).limit(k).all()
+        gnodes = s.query(GraphNode).filter(
+            (GraphNode.label.ilike(kw)) | (GraphNode.detail.ilike(kw))).limit(k).all()
+    finally:
+        s.close()   # never leak the pooled connection on a query error (every /ask hits this)
     gvids = {g.video_id for g in gnodes}
     return {"chunks": rank(vec, lex, gvids, k), "graph": gnodes}
 

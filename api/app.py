@@ -11,18 +11,20 @@ from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
 from api.routes.comments import router as comments_router
-from api.routes.logs import router as logs_router
 from api.routes.config import router as config_router
 from api.routes.email import router as email_router
 from api.routes.faq import router as faq_router
+from api.routes.logs import router as logs_router
 from api.routes.scheduling import router as scheduling_router
 from api.routes.suggestions import router as suggestions_router
 from api.routes.topics import router as topics_router
-from api.routes.users import router as users_router, me_router
+from api.routes.users import me_router
+from api.routes.users import router as users_router
 from api.routes.video import router as video_router
 from app import answer as A
 from app import retrieval as R
 from app.config import settings
+from app.observability import Cost
 
 app = FastAPI(title="Perkins Video Intelligence API", version="2.0")
 app.add_middleware(
@@ -31,6 +33,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def _reset_cost_per_request(request, call_next):
+    # The llm.py per-run guardrail counts against a process-global Cost counter. Cloud Run Jobs
+    # are fresh processes (one run each), but this long-lived API would accumulate forever and
+    # eventually trip the cap on EVERY request — a self-DoS. Scope the counter to one request.
+    Cost.reset()
+    return await call_next(request)
 app.include_router(email_router)
 app.include_router(video_router)
 app.include_router(archive_router)
@@ -116,8 +127,7 @@ def status(_claims=Depends(require_role("view_status"))):
     """Admin observability (Req 6): corpus + pipeline + content counts, last errors."""
     from sqlalchemy import func
 
-    from app.models import (Article, Chunk, FaqEntry, IngestionRun,
-                            ScheduledContent, SessionLocal, Video)
+    from app.models import Article, Chunk, FaqEntry, IngestionRun, ScheduledContent, SessionLocal, Video
     s = SessionLocal()
     try:
         errors = [

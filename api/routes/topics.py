@@ -140,7 +140,6 @@ def _build_generated_set(db) -> set[str]:
       - pillar_slug == slugify(label)  (a cluster was generated under it)
     We collect all distinct pillar_slugs that appear in the articles table.
     """
-    from sqlalchemy import or_  # noqa: PLC0415
     rows = db.query(Article.slug, Article.pillar_slug).all()
     generated: set[str] = set()
     for slug, ps in rows:

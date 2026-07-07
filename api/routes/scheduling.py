@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.auth import require_role
-from app.models import Article, MiniSeries, ScheduledContent, SessionLocal
 from api.routes.video import clean_label
+from app.models import Article, MiniSeries, ScheduledContent, SessionLocal
 
 router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 

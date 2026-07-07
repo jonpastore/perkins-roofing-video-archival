@@ -8,13 +8,14 @@ NOTE: setting custom claims requires the runtime Service Account to have the
 Firebase Authentication Admin role (roles/firebaseauth.admin) in IAM. The
 endpoint is written correctly; the parent must grant that IAM binding.
 """
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from typing import Optional
 
-from api.auth import require_role, current_claims
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from api.auth import current_claims, require_role
 from app.config import settings
-from app.models import UserSetting, SessionLocal
+from app.models import SessionLocal, UserSetting
 
 router = APIRouter(prefix="/admin/users", tags=["users"])
 me_router = APIRouter(prefix="/me", tags=["me"])

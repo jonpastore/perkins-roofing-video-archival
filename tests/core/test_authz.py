@@ -42,12 +42,21 @@ def test_only_admin_manages_users_and_config():
         assert can(r, "manage_users") is False and can(r, "manage_config") is False
 
 
-def test_default_admin_email_is_admin_regardless_of_claim():
-    assert effective_role("jon@perkinsroofing.net", "", _ADMINS) == "admin"
-    assert effective_role("TIM@PerkinsRoofing.net", "sales", _ADMINS) == "admin"  # case-insensitive
+def test_default_admin_email_is_admin_when_verified():
+    assert effective_role("jon@perkinsroofing.net", "", _ADMINS, email_verified=True) == "admin"
+    # case-insensitive
+    assert effective_role("TIM@PerkinsRoofing.net", "sales", _ADMINS, email_verified=True) == "admin"
+
+
+def test_default_admin_email_NOT_elevated_when_unverified():
+    # security: an unverified email must never be promoted to admin (self-registration guard)
+    assert effective_role("jon@perkinsroofing.net", "", _ADMINS, email_verified=False) == ""
+    assert effective_role("jon@perkinsroofing.net", "sales", _ADMINS) == "sales"   # default is unverified
+    # an explicit custom-claim role is still honored regardless of verification
+    assert effective_role("jon@perkinsroofing.net", "web_admin", _ADMINS, email_verified=False) == "web_admin"
 
 
 def test_non_default_admin_keeps_assigned_role():
-    assert effective_role("stranger@example.com", "sales", _ADMINS) == "sales"
-    assert effective_role("stranger@example.com", "", _ADMINS) == ""
-    assert effective_role(None, "sales", _ADMINS) == "sales"
+    assert effective_role("stranger@example.com", "sales", _ADMINS, email_verified=True) == "sales"
+    assert effective_role("stranger@example.com", "", _ADMINS, email_verified=True) == ""
+    assert effective_role(None, "sales", _ADMINS, email_verified=True) == "sales"

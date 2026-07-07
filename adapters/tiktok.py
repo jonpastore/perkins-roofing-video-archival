@@ -29,6 +29,7 @@ import requests
 _BASE = "https://open.tiktokapis.com"
 _POLL_INTERVAL = 10   # seconds between status polls
 _POLL_MAX = 30        # maximum polls (5 min total at 10s interval)
+_HTTP_TIMEOUT = 30    # per-request (connect+read) timeout — never hang the social cron
 
 
 class PublishFailed(Exception):
@@ -105,7 +106,7 @@ class TikTokPublisher:
                 "video_url": video_url,
             },
         }
-        resp = self._session.post(url, json=body, headers=self._auth_headers())
+        resp = self._session.post(url, json=body, headers=self._auth_headers(), timeout=_HTTP_TIMEOUT)
         _raise_for_status(resp)
         data = resp.json()
         return data["data"]["publish_id"]
@@ -120,6 +121,7 @@ class TikTokPublisher:
                 url,
                 json={"publish_id": publish_id},
                 headers=self._auth_headers(),
+                timeout=_HTTP_TIMEOUT,
             )
             _raise_for_status(resp)
             data = resp.json().get("data", {})
@@ -176,6 +178,7 @@ def refresh_access_token(
             "grant_type": "refresh_token",
             "refresh_token": token,
         },
+        timeout=_HTTP_TIMEOUT,
     )
     _raise_for_status(resp)
     return resp.json()

@@ -5,10 +5,10 @@ fills what the API returns. Requires YOUTUBE_API_KEY.
 
 Run: python -m jobs.backfill_metadata
 """
-import os
-import re
 import json
 import logging
+import os
+import re
 import urllib.request
 
 from app.models import SessionLocal, Video
@@ -31,7 +31,8 @@ def _fetch_batch(ids: list[str], key: str) -> dict:
         "https://www.googleapis.com/youtube/v3/videos"
         f"?part=snippet,contentDetails,statistics&id={','.join(ids)}&key={key}"
     )
-    data = json.load(urllib.request.urlopen(url, timeout=30))
+    with urllib.request.urlopen(url, timeout=30) as r:   # noqa: S310 - fixed https host; close the socket
+        data = json.load(r)
     out = {}
     for it in data.get("items", []):
         sn, cd, st = it.get("snippet", {}), it.get("contentDetails", {}), it.get("statistics", {})
@@ -55,7 +56,11 @@ def run() -> dict:
         updated = 0
         for i in range(0, len(ids), 50):
             batch = ids[i : i + 50]
-            meta = _fetch_batch(batch, key)
+            try:
+                meta = _fetch_batch(batch, key)
+            except Exception as e:  # noqa: BLE001 — isolate a batch failure; keep prior progress + continue
+                logger.warning("batch %d failed, skipping: %s", i // 50, str(e)[:160])
+                continue
             for vid, m in meta.items():
                 v = db.get(Video, vid)
                 if not v:

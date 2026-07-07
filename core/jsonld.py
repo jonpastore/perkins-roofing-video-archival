@@ -52,17 +52,20 @@ def build_faq_page(faq: list[dict]) -> dict:
     Returns:
         dict with @context / @type and mainEntity list of Questions.
     """
-    main_entity = [
-        {
+    # Defensive: LLM-generated FAQ items sometimes arrive shaped {"question","answer"} or
+    # with a missing key. Normalize and skip entries with no question rather than KeyError
+    # (which upstream catches and discards the WHOLE generated article, see topics.py).
+    main_entity = []
+    for item in faq:
+        q = (item.get("q") or item.get("question") or "").strip()
+        a = item.get("a") or item.get("answer") or ""
+        if not q:
+            continue
+        main_entity.append({
             "@type": "Question",
-            "name": item["q"],
-            "acceptedAnswer": {
-                "@type": "Answer",
-                "text": item["a"],
-            },
-        }
-        for item in faq
-    ]
+            "name": q,
+            "acceptedAnswer": {"@type": "Answer", "text": a},
+        })
     return {
         "@context": "https://schema.org",
         "@type": "FAQPage",

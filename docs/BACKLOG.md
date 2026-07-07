@@ -77,3 +77,71 @@ piece under a pillar. This operationalizes Req 7's pillar/cluster content strate
 `content_graph` (3,655 claims, 1,574 objections) + `app/gen_faq.py` (FAQ JSON-LD builder) already
 support this. Surface a **FAQ builder**: mined question/answer pairs (grounded, timecoded) that
 feed each Article's `faq_json` + JSON-LD, and/or a standalone FAQ page. Ties into B4 (per-topic FAQ).
+
+## B6 — Hardening backlog from the 2026-07-07 deep review
+See [reviews/2026-07-07-deep-review.md](reviews/2026-07-07-deep-review.md) for the full pass.
+These need a `terraform plan` / owner sign-off (infra was actively being edited), so they were
+logged rather than hand-patched. Prioritized:
+
+**Infra / IaC (fresh-apply + R3/R4):**
+- `google-idp-client-secret`: seed a version + `depends_on` so a fresh `terraform apply`
+  doesn't fail NOT_FOUND (or default `google_idp_client_id=""` until the secret is loaded).
+- Move public access into Terraform: `google_cloud_run_v2_service_iam_member` `allUsers` →
+  `roles/run.invoker`; drop `--allow-unauthenticated` from `scripts/deploy.sh` (R3-ENFORCE).
+- `scripts/drift_check.sh`: pass the same `-var billing_account=…` as apply, and make the host
+  playbook (`whisper.yml` vs `local_llm.yml`) a parameter so R4 can actually show changed=0.
+- Scope `jobs-sa` `roles/storage.objectAdmin` to the `media` + `reels` buckets (least privilege).
+- Add a `google_monitoring_notification_channel` (from `alert_email`), wire it into the billing
+  budget `all_updates_rule`, and add a Cloud Run 5xx / job-failure log-based alert.
+- Cloud SQL: enable `point_in_time_recovery_enabled` (+ retention); consider `REGIONAL` HA; then
+  reconcile the "private IP only" docs with the actual public-IP+SSL config.
+- Dockerfile: add a non-root `USER` and pin the base image by digest.
+
+**Wiring / cost (jobs):**
+- Wire `aggregate_topics` to a Cloud Scheduler → `/internal/aggregate-topics` (its table is
+  consumed by topics/prime_backlog but nothing refreshes it).
+- Fix or remove the `article` Cloud Run Job — its `__main__` needs topic+keyword args it isn't
+  given, so any execution exits non-zero.
+- Add a per-run cap to `poll_archive_kpis` (per-video comment API calls).
+
+**R1 validations (behavioral checks for I/O jobs):**
+- Add `scripts/validate_crawl_comments.py` and `scripts/validate_aggregate_topics.py` (and for
+  `embed_job`, `backfill_metadata`, `enumerate_channel`, `consolidate_faqs`).
+
+**Correctness / config:**
+- `EMBED_MODEL` split-brain: config default `nomic-embed-text` vs adapter default
+  `gemini-embedding-001` — make config fail-fast when `EMBED_BACKEND=vertex` with a non-Vertex
+  model, and stamp `chunks.embed_model` from the embedder actually used.
+- Recalibrate `ABSTAIN_THRESHOLD` against Vertex embeddings before go-live (0.71 is Ollama-tuned).
+- `scheduling.py`: validate `kind ∈ {article, reel}` (currently a free string).
+- `email.py`: strip single-quoted `href` in `_html_compliant` (only double-quoted handled).
+
+## B7 — Comprehensive review round-2 (2026-07-07) deferred items
+See [reviews/2026-07-07-comprehensive-review.md](reviews/2026-07-07-comprehensive-review.md).
+
+**Frontend (web/):**
+- Route-level `React.lazy()` + `Suspense` + Vite `manualChunks`; defer TinyMCE/Firebase — the
+  SPA ships as one 1.7MB (563KB gzip) bundle to every role.
+- Global 401/403 handling in `apiFetch` (re-login on refresh failure) + a top-level ErrorBoundary.
+- `Scheduling.tsx` sends a timezone-naive `publish_at` → reels fire at UTC wall-time (use
+  `localInputToIso` like the Articles modal).
+- `Faq.tsx` "load more" has no `!r.ok`/`.catch` guard → unhandled rejection + skipped page on 500.
+- Broken nav links: `Opportunities.tsx` `<a href="/video/proposals?...">` (hits the API route),
+  `Settings.tsx` `<a href="/users">`, dead `href="#"` "Open in Clip Studio".
+- Modal a11y: `role="dialog"`/`aria-modal`, focus trap, Escape-to-close, focus restore (Compose,
+  Article, Topic modals); associate form `<label>`s with `htmlFor`/`id`.
+- Paginate/virtualize the Archive + Articles lists (currently load the whole table).
+- DOMPurify allow-list permits arbitrary `iframe`/`style` — restrict iframes to youtube.com/embed.
+
+**Backend / infra:**
+- `embed()` has no cost cap (only `chat()` does) — add an embed-item budget + query-embedding LRU.
+- Inconsistent retry/backoff across HTTP adapters (only Vertex retries) — add a shared helper for
+  idempotent GETs + guarded WordPress writes.
+- Overlapping-cron double-publish risk in `promote_job`/`social_job` — `with_for_update(skip_locked)`
+  or an advisory lock.
+- `suggestions.py` O(videos × articles × content) substring scan — extract referenced ids via one
+  regex pass per article.
+- R1 gap: 12/20 jobs + 8/16 adapters have no behavioral test (highest-risk: archive_job,
+  ingest_worker, consolidate_faqs).
+- Reproducible builds: generate a hashed `requirements.lock` (deps are now bumped to latest floors
+  but still `>=` ranges).

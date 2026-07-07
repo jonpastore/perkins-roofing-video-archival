@@ -11,7 +11,12 @@ class Settings:
     EMBED_BACKEND = os.getenv("EMBED_BACKEND", "ollama")
     LLM_BACKEND   = os.getenv("LLM_BACKEND", "ollama")
     OLLAMA_URL    = os.getenv("OLLAMA_URL", "http://cerberus-ai:11434")  # DEV ONLY
-    EMBED_MODEL   = os.getenv("EMBED_MODEL", "nomic-embed-text")
+    # EMBED_MODEL default is BACKEND-AWARE so it matches the embedder actually used: vertex →
+    # gemini-embedding-001 (3072-dim, same default as adapters.llm.get_embedder), ollama → nomic.
+    # A single shared default previously caused embed_job to stamp/skip with the wrong model,
+    # silently no-op'ing the nomic→gemini re-embed under `EMBED_BACKEND=vertex` with EMBED_MODEL unset.
+    EMBED_MODEL   = os.getenv("EMBED_MODEL",
+                              "gemini-embedding-001" if EMBED_BACKEND == "vertex" else "nomic-embed-text")
     LLM_MODEL     = os.getenv("LLM_MODEL", "mistral-small3.2:24b")
 
     # Transcript source policy — 'caption_first' (use YouTube captions, STT fallback) | 'stt_only'

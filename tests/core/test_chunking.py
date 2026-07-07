@@ -34,3 +34,11 @@ def test_single_segment():
 
 def test_empty():
     assert chunk_segments([], 6) == []
+
+
+def test_zero_chunk_size_does_not_crash():
+    # CHUNK_SIZE is operator-editable; 0/negative must be clamped, not raise ValueError
+    out = chunk_segments(_segs(3), 0)
+    assert len(out) == 3          # clamped to 1 → one window per segment
+    out2 = chunk_segments(_segs(3), -5)
+    assert len(out2) == 3

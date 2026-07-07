@@ -218,7 +218,8 @@ def reprocess_article(slug: str, claims=Depends(require_role("manage_articles"))
 
     Steps:
     1. Load the article (404 if absent).
-    2. Run markdownish_to_html + sanitize_html on content_md — converts markdown artifacts to HTML and strips unsafe tags.
+    2. Run markdownish_to_html + sanitize_html on content_md — converts markdown
+       artifacts to HTML and strips unsafe tags.
     3. Persist the sanitized content.
     4. If the article has a wp_post_id AND WP credentials are present in env,
        push the updated content to WordPress via adapters.wordpress.update.

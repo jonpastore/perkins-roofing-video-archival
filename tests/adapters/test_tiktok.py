@@ -229,3 +229,16 @@ def test_refresh_access_token_reads_env_vars(monkeypatch):
     body = calls[0][2].get("data", {})
     assert body["client_key"] == "env_ck"
     assert body["refresh_token"] == "env_rt"
+
+
+def test_every_request_sets_a_timeout():
+    """Regression: the social cron must never hang — every HTTP call passes a timeout."""
+    sess, calls = _make_session(
+        _MockResponse({"data": {"publish_id": "p1"}}),
+        _MockResponse({"data": {"status": "PUBLISH_COMPLETE"}}),
+    )
+    TikTokPublisher(access_token="t", open_id="o", session=sess).publish(
+        video_url="https://x/r.mp4", caption="c", idempotency_key="k")
+    assert calls, "no HTTP calls captured"
+    for method, url, kwargs in calls:
+        assert kwargs.get("timeout") is not None, f"{method} {url} has no timeout"

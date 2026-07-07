@@ -2,7 +2,7 @@
 (swap Chunk.embedding to Vector(3072) + HNSW index via migration). The canonical
 versioned-artifact model the council required: every derived row carries a version, and
 IngestionRun tracks per-stage status + content_hash for idempotent/resumable ingestion."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
@@ -22,6 +22,12 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import settings
 
 Base = declarative_base()
+
+
+def _utcnow():
+    # naive UTC — datetime.utcnow() is deprecated (removed in a future Python) and returns a
+    # naive value inconsistently; this matches the naive-UTC convention used elsewhere.
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # Embedding column is dialect-conditional: real pgvector Vector(3072) on Postgres (prod),
 # JSON list on SQLite (dev). gemini-embedding-001 is 3072-dim — never mixed with other models.
@@ -59,7 +65,7 @@ class IngestionRun(Base):
     pipeline_version = Column(String)
     attempts = Column(Integer, default=0)
     last_error = Column(Text)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     __table_args__ = (Index("ix_run_video_stage", "video_id", "stage"),)
 
 class Segment(Base):
@@ -154,7 +160,7 @@ class PlatformConfig(Base):
     __tablename__ = "platform_config"
     key = Column(String, primary_key=True)
     value = Column(String)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     updated_by = Column(String)  # email from auth claims
 
 
@@ -166,7 +172,7 @@ class SecretAudit(Base):
     """
     __tablename__ = "secret_audit"
     key = Column(String, primary_key=True)  # secret id (e.g. "youtube-api-key")
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     updated_by = Column(String)  # email from auth claims
 
 class CommentDraft(Base):
@@ -180,7 +186,7 @@ class CommentDraft(Base):
     needs_reply  = Column(Boolean, nullable=False, default=False)
     draft_reply  = Column(Text)
     status       = Column(String, nullable=False, default="pending")  # pending|drafted|ready|dismissed
-    created_at   = Column(DateTime, default=datetime.utcnow)
+    created_at   = Column(DateTime, default=_utcnow)
     __table_args__ = (UniqueConstraint("comment_id", name="uq_comment_drafts_comment_id"),)
 
 
@@ -201,7 +207,7 @@ class FaqEntry(Base):
     video_id = Column(String, nullable=False, index=True)
     start = Column(Float, nullable=False)
     status = Column(String, nullable=False, default="mined")  # mined | answered
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
     __table_args__ = (Index("ix_faq_source_node", "source_node_id"),)
 
 engine = create_engine(settings.DB_URL, future=True)

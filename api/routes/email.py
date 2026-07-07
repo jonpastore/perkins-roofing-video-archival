@@ -8,15 +8,16 @@ Role requirements (from core.authz):
   - manage_templates (POST/PUT/DELETE templates) → admin only
 """
 import re
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
-from typing import Optional
 
 import adapters.resend as resend_adapter
 from api.auth import require_role
+from app.config import settings
 from app.llm import chat
 from app.models import EmailTemplate, PlatformConfig, SessionLocal
-from app.config import settings
 from core.email_proof import build_proof_prompt, diff_suggestions
 
 router = APIRouter(prefix="/email", tags=["email"])

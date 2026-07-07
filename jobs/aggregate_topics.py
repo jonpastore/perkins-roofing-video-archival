@@ -23,6 +23,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 _EMBED_BATCH = 64          # labels per embed() call
@@ -36,7 +38,6 @@ _VERSION_FMT = "%Y%m%dT%H%M%SZ"
 
 def _embed_in_batches(texts: list[str]) -> "np.ndarray":
     """Embed *texts* in batches of _EMBED_BATCH; returns float32 ndarray (N, D)."""
-    import numpy as np
     from app.llm import embed
 
     all_vecs: list[list[float]] = []
@@ -69,8 +70,6 @@ def _greedy_cluster(
     Centroids are the mean of member normalised vectors (re-normalised after
     each merge so the dot-product comparison remains a cosine sim estimate).
     """
-    import numpy as np
-
     n = len(labels)
     if n == 0:
         return []

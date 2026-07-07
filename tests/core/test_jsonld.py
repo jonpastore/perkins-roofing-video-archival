@@ -245,3 +245,19 @@ class TestBuildArticle:
         assert obj["author"]["name"] == "A"
         assert obj["datePublished"] == "2020-01-01"
         assert obj["url"] == "https://example.com"
+
+
+class TestFaqPageDefensive:
+    def test_accepts_question_answer_keys(self):
+        page = build_faq_page([{"question": "Q1?", "answer": "A1"}])
+        assert page["mainEntity"][0]["name"] == "Q1?"
+        assert page["mainEntity"][0]["acceptedAnswer"]["text"] == "A1"
+
+    def test_skips_items_with_no_question(self):
+        page = build_faq_page([{"a": "orphan answer"}, {"q": "Q?", "a": "A"}])
+        assert len(page["mainEntity"]) == 1
+        assert page["mainEntity"][0]["name"] == "Q?"
+
+    def test_standard_q_a_still_works(self):
+        page = build_faq_page([{"q": "Q?", "a": "A"}])
+        assert page["mainEntity"][0]["name"] == "Q?"

@@ -21,17 +21,23 @@ def vector_search(query, k=8):
         # 2000 dims, so we index+query the halfvec(3072) cast (HNSW supports 4000 dims).
         from pgvector.psycopg import register_vector
         s = SessionLocal()
-        # .driver_connection is the raw psycopg3 conn (unwrap SQLAlchemy's pool proxy)
-        register_vector(s.connection().connection.driver_connection)
-        rows = s.execute(text(
-            'SELECT id, video_id, text, start, "end", '
-            '1 - (embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072))) AS score '
-            'FROM chunks ORDER BY embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072)) LIMIT :k'),
-            {"q": np.array(q, dtype=np.float32), "k": k}).fetchall()
-        s.close()
+        try:
+            # .driver_connection is the raw psycopg3 conn (unwrap SQLAlchemy's pool proxy)
+            register_vector(s.connection().connection.driver_connection)
+            rows = s.execute(text(
+                'SELECT id, video_id, text, start, "end", '
+                '1 - (embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072))) AS score '
+                'FROM chunks ORDER BY embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072)) LIMIT :k'),
+                {"q": np.array(q, dtype=np.float32), "k": k}).fetchall()
+        finally:
+            s.close()   # never leak the pooled connection on a query error (hot path)
         return [(_Row(r), float(r.score)) for r in rows]
     # DEV: numpy cosine
-    s = SessionLocal(); rows = s.query(Chunk).all(); s.close()
+    s = SessionLocal()
+    try:
+        rows = s.query(Chunk).all()
+    finally:
+        s.close()
     if not rows:
         return []
     M = np.array([r.embedding for r in rows], dtype=np.float32)

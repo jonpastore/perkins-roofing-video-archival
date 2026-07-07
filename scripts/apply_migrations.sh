@@ -21,6 +21,12 @@ DB_URL="$DB_URL" .venv/bin/python - "$@" <<'PY'
 import glob, os
 from sqlalchemy import create_engine, text
 
+# Create the base tables FIRST (the ORM owns them; no migration issues their CREATE TABLE).
+# Without this, the ALTER-only migrations (0001 ALTER chunks, 0002/0008/0009 ALTER videos)
+# fail with "relation does not exist" on a fresh DB. create_all is idempotent.
+import app.models as _m
+_m.init_db()
+
 engine = create_engine(os.environ["DB_URL"])
 files = sorted(glob.glob("infra/migrations/*.sql"))
 for f in files:

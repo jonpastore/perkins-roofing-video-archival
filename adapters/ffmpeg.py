@@ -41,10 +41,15 @@ def make_card(text: str, out: str, *, seconds: float = 3, bg: str = "black", fg:
         subprocess.CalledProcessError: if ffmpeg exits non-zero.
         subprocess.TimeoutExpired: if the call takes too long.
     """
-    # Escape special characters that ffmpeg drawtext would misinterpret.
-    escaped = text.replace("'", "\\'").replace(":", "\\:")
+    # Card text is partly derived from external YouTube video titles, so it must be safely
+    # embedded in ffmpeg's filtergraph. Single-quoting the value makes filtergraph specials
+    # (: , ; [ ]) literal; the ONE char that can't appear inside single quotes is the
+    # apostrophe, written as the shell-style '\'' sequence (close-quote, literal quote,
+    # reopen) — a plain \' would TERMINATE the quote early and garble titles like "Tim's".
+    # expansion=none disables drawtext's % / \ expansion so those are literal too.
+    escaped = text.replace("'", "'\\''")
     drawtext = (
-        f"drawtext=text='{escaped}'"
+        f"drawtext=text='{escaped}':expansion=none"
         f":fontcolor={fg}:fontsize=72"
         f":x=(w-text_w)/2:y=(h-text_h)/2"
         f":line_spacing=10"

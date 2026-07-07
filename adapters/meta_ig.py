@@ -27,6 +27,7 @@ import requests
 _BASE = "https://graph.instagram.com/v21.0"
 _POLL_INTERVAL = 60   # seconds between status polls
 _POLL_MAX = 5         # maximum polls before giving up (~5 min)
+_HTTP_TIMEOUT = 30    # per-request (connect+read) timeout — never hang the social cron
 
 
 class RateLimited(Exception):
@@ -97,6 +98,7 @@ class IgPublisher:
             url,
             params={"fields": "quota_usage"},
             headers=self._auth_headers(),
+            timeout=_HTTP_TIMEOUT,
         )
         _raise_for_status(resp)
         data = resp.json()
@@ -120,6 +122,7 @@ class IgPublisher:
                 "caption": caption,
             },
             headers=self._auth_headers(),
+            timeout=_HTTP_TIMEOUT,
         )
         _raise_for_status(resp)
         return resp.json()["id"]
@@ -134,6 +137,7 @@ class IgPublisher:
                 url,
                 params={"fields": "status_code"},
                 headers=self._auth_headers(),
+                timeout=_HTTP_TIMEOUT,
             )
             _raise_for_status(resp)
             status_code = resp.json().get("status_code", "")
@@ -157,6 +161,7 @@ class IgPublisher:
             url,
             params={"creation_id": container_id},
             headers=self._auth_headers(),
+            timeout=_HTTP_TIMEOUT,
         )
         _raise_for_status(resp)
         return resp.json()["id"]

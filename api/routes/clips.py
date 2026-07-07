@@ -21,7 +21,6 @@ IAM note: the api-run-sa service account must have:
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import tempfile
@@ -29,8 +28,7 @@ import tempfile
 import google.auth
 import google.auth.transport.requests
 import requests as _requests
-
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from api.auth import require_role
@@ -219,7 +217,6 @@ def upload_brand_scene(
 
     try:
         from google.cloud import storage as gcs_storage  # noqa: PLC0415
-        from google.cloud.exceptions import GoogleCloudError  # noqa: PLC0415
     except ImportError as exc:
         raise HTTPException(
             status_code=503,

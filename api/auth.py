@@ -32,7 +32,8 @@ def _verify(authorization):
         claims = dict(_get_verifier()(authorization[7:]))
     except Exception:
         raise HTTPException(status_code=401, detail="invalid token")
-    claims["role"] = effective_role(claims.get("email"), claims.get("role", ""), settings.DEFAULT_ADMINS)
+    claims["role"] = effective_role(claims.get("email"), claims.get("role", ""),
+                                    settings.DEFAULT_ADMINS, claims.get("email_verified", False))
     return claims
 
 

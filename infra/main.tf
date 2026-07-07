@@ -510,7 +510,7 @@ resource "google_cloud_scheduler_job" "promote_scheduled_content" {
   http_target {
     uri         = "${google_cloud_run_v2_service.api.uri}/internal/promote"
     http_method = "POST"
-    headers     = { "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_secret.secret_data }
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
 
     oidc_token {
       service_account_email = google_service_account.scheduler_sa.email
@@ -530,7 +530,7 @@ resource "google_cloud_scheduler_job" "publish_awaiting_social" {
   http_target {
     uri         = "${google_cloud_run_v2_service.api.uri}/internal/social"
     http_method = "POST"
-    headers     = { "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_secret.secret_data }
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
 
     oidc_token {
       service_account_email = google_service_account.scheduler_sa.email
@@ -542,9 +542,25 @@ resource "google_cloud_scheduler_job" "publish_awaiting_social" {
 }
 
 # The /internal/* cron endpoints are guarded by INTERNAL_SECRET (X-Internal-Secret header);
-# the scheduler reads the value from Secret Manager and sends it on each request.
-data "google_secret_manager_secret_version" "internal_secret" {
-  secret = "internal-secret"
+# the scheduler reads the value from Secret Manager and sends it on each request. Created in
+# IaC (was hand-made in the 2026-07-06 drift; a bare `data` source made `terraform plan` fail
+# with NOT_FOUND on a fresh project). Mirrors the db_password pattern.
+resource "random_password" "internal" {
+  length  = 48
+  special = false
+}
+
+resource "google_secret_manager_secret" "internal_secret" {
+  secret_id = "internal-secret"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "internal_secret" {
+  secret      = google_secret_manager_secret.internal_secret.id
+  secret_data = random_password.internal.result
 }
 
 # Crawl YouTube comments on a rotating cron — each run takes the least-recently-crawled
@@ -558,7 +574,7 @@ resource "google_cloud_scheduler_job" "crawl_comments" {
   http_target {
     uri         = "${google_cloud_run_v2_service.api.uri}/internal/crawl-comments"
     http_method = "POST"
-    headers     = { "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_secret.secret_data }
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
 
     oidc_token {
       service_account_email = google_service_account.scheduler_sa.email

@@ -5,6 +5,7 @@ Groups consecutive segments into fixed-size windows for embedding."""
 def chunk_segments(segments, chunk_size):
     """Window ``segments`` (objects with .text/.start/.end) into groups of ``chunk_size``.
     Returns [(joined_text, start, end)] preserving the first/last timecodes of each window."""
+    chunk_size = max(1, int(chunk_size))   # CHUNK_SIZE is operator-editable; 0/neg → range() ValueError
     chunks = []
     for i in range(0, len(segments), chunk_size):
         grp = segments[i:i + chunk_size]

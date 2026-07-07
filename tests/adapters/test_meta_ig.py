@@ -202,3 +202,18 @@ def test_env_var_credentials_loaded(monkeypatch):
     assert get_headers.get("Authorization") == "Bearer env_token"
     get_params = calls[0][2].get("params") or {}
     assert "access_token" not in get_params
+
+
+def test_every_request_sets_a_timeout():
+    """Regression: the social cron must never hang — every HTTP call passes a timeout."""
+    sess, calls = _make_session(
+        _MockResponse({"data": [{"quota_usage": 5}]}),
+        _MockResponse({"id": "c1"}),
+        _MockResponse({"status_code": "FINISHED", "id": "c1"}),
+        _MockResponse({"id": "ig_1"}),
+    )
+    IgPublisher(ig_user_id="u", access_token="t", session=sess).publish(
+        video_url="https://x/r.mp4", caption="c", idempotency_key="k")
+    assert calls, "no HTTP calls captured"
+    for method, url, kwargs in calls:
+        assert kwargs.get("timeout") is not None, f"{method} {url} has no timeout"

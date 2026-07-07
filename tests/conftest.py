@@ -11,3 +11,18 @@ import tempfile
 _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp.close()
 os.environ["DB_URL"] = f"sqlite:///{_tmp.name}"
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_verifier():
+    """Reset the injected auth verifier after every test so a file that sets it can't leak
+    into another (a hidden ordering dependency the audit flagged)."""
+    yield
+    try:
+        from api.auth import set_verifier
+        set_verifier(None)
+    except Exception:
+        pass

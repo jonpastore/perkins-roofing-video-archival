@@ -1,0 +1,37 @@
+# Keep secrets, local state, and junk out of the Cloud Build context (`gcloud builds submit .`
+# uploads the whole tree). The Dockerfile only COPYs core/adapters/api/jobs/app + requirements,
+# but everything below still leaves the machine and slows builds if not excluded.
+.git
+.github
+.venv
+venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.coverage
+htmlcov
+
+# Secrets / credentials — must never enter a build image
+.env
+.env.*
+*.env
+infra/vertex-dev-sa.json
+**/*serviceaccount*.json
+**/*-sa.json
+
+# Local databases / data
+*.db
+poc/data
+
+# Frontend build inputs (SPA is built + hosted separately via Firebase Hosting)
+web/node_modules
+web/dist
+
+# Docs / infra / scripts not needed at runtime
+docs
+infra
+ansible
+scripts
+tests
+mockup
+*.md

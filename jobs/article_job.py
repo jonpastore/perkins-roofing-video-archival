@@ -888,7 +888,8 @@ def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
     """Deterministic JSON-LD: Article + FAQPage + BreadcrumbList (always present)
     + VideoObject entries when video grounding exists."""
     from datetime import datetime, timezone  # noqa: PLC0415
-    from core.jsonld import build_article, build_breadcrumb_list, build_faq_page  # noqa: PLC0415
+
+    from core.jsonld import build_article, build_faq_page  # noqa: PLC0415
 
     slug = ctx.get("pillar_slug") or fields.get("slug") or ""
     wp_base = _wp_base_url()

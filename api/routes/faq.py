@@ -466,6 +466,7 @@ def publish_wordpress(claims=Depends(require_role("manage_articles"))):
     Returns: {page_id, page_url, published, action}  (action: 'created' | 'updated')
     """
     import os
+
     from adapters import wordpress as wp
 
     # Guard: WP creds must be present

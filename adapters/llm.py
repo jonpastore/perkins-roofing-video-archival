@@ -71,6 +71,7 @@ class OllamaLLM:
 
     def chat(self, prompt, want_json=False, response_schema=None):
         import re  # noqa: PLC0415
+
         from app.config import settings  # noqa: PLC0415
         from app.llm import _ollama  # noqa: PLC0415
         # Ollama can't enforce a JSON schema (no controlled generation), so spell out the
