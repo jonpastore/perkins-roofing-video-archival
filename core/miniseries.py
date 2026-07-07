@@ -235,7 +235,7 @@ def _even_clips(name: str, duration: float, clip_len: float, max_clips: int) -> 
     for i in range(n):
         s = max(round(i * step, 3), prev_end)
         e = min(s + clip_len, duration)
-        if e - s <= 0:
+        if e - s <= 0:  # pragma: no cover — defensive: n=floor(dur/clip_len) ⟹ step≥clip_len ⟹ clips never collapse
             break
         clips.append({"title": _part_title(name, "", len(clips) + 1), "start": round(s, 3), "end": round(e, 3)})
         prev_end = e
