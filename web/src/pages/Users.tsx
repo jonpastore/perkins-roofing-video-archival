@@ -261,7 +261,7 @@ export function Users() {
   const [directory, setDirectory] = useState<DirectoryUser[]>([]);
 
   // Invite form state
-  const [inviteType, setInviteType] = useState<InviteType>("external");
+  const [inviteType, setInviteType] = useState<InviteType>("internal");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteRole, setInviteRole] = useState<RoleOption>("sales");
@@ -495,7 +495,7 @@ export function Users() {
           display: "grid",
           gridTemplateColumns: "auto minmax(200px, 1.3fr) minmax(150px, 1fr) auto auto",
           gap: 12,
-          alignItems: "end",
+          alignItems: "start",
         }}>
           {/* User type segmented toggle */}
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

@@ -35,6 +35,7 @@ locals {
     "storage.googleapis.com",
     "iam.googleapis.com",
     "identitytoolkit.googleapis.com", # Firebase Auth / Identity Platform (user sign-in)
+    "admin.googleapis.com",           # Admin SDK Directory API (Workspace user dropdown, via DWD)
     "cloudresourcemanager.googleapis.com",
     "serviceusage.googleapis.com",
   ])
