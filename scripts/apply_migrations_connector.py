@@ -29,10 +29,17 @@ def _password() -> str:
 
 
 def _statements(sql: str):
-    """Split a .sql file into executable statements, dropping comment-only chunks."""
-    for chunk in sql.split(";"):
-        body = "\n".join(ln for ln in chunk.splitlines() if not ln.strip().startswith("--")).strip()
-        if body:
+    """Split a .sql file into executable statements.
+
+    Strip -- comments (line AND inline) BEFORE splitting on ';', so a ';' inside a comment
+    can't cut a statement in half. Safe for these migrations (no '--' inside string literals).
+    """
+    stripped = []
+    for ln in sql.splitlines():
+        i = ln.find("--")
+        stripped.append(ln if i == -1 else ln[:i])
+    for chunk in "\n".join(stripped).split(";"):
+        if chunk.strip():
             yield chunk.strip()
 
 
