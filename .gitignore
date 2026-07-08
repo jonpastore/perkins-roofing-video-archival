@@ -38,3 +38,6 @@ infra/.terraform/
 # Terraform var files with secrets (OAuth client secret, etc.)
 infra/terraform.tfvars
 infra/*.auto.tfvars
+
+# Firebase Hosting deploy cache (regenerated on every deploy)
+web/.firebase/
