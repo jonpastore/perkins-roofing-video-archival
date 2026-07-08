@@ -234,6 +234,73 @@ def set_my_signature(body: SignatureRequest, claims=Depends(current_claims)):
     return {"email": email, "signature": body.signature or None}
 
 
+def _directory_access_token(subject: str, scope: str, key_file: str) -> str:
+    """Mint an access token for the Workspace Directory API, impersonating ``subject`` via
+    domain-wide delegation.
+
+    KEYLESS by default: Cloud Run compute credentials do NOT support ``.with_subject``, so we
+    build a delegated JWT (iss=run SA, sub=subject) and sign it with the IAM Credentials
+    ``signJwt`` API — the run SA already holds ``roles/iam.serviceAccountTokenCreator`` on itself
+    — then exchange it at the OAuth token endpoint. No downloaded key. A delegated SA JSON key is
+    used instead only when ``key_file`` is set.
+    """
+    import json
+    import time
+    import urllib.parse
+    import urllib.request
+
+    import google.auth
+    from google.auth.transport.requests import Request as GRequest
+
+    if key_file:
+        from google.oauth2 import service_account
+        creds = service_account.Credentials.from_service_account_file(
+            key_file, scopes=[scope], subject=subject
+        )
+        creds.refresh(GRequest())
+        return creds.token
+
+    # Keyless domain-wide delegation via IAM signJwt.
+    adc, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    adc.refresh(GRequest())
+    sa_email = getattr(adc, "service_account_email", "") or ""
+    if not sa_email or sa_email == "default":
+        meta = urllib.request.Request(
+            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email",
+            headers={"Metadata-Flavor": "Google"},
+        )
+        with urllib.request.urlopen(meta, timeout=5) as r:  # noqa: S310 — fixed metadata URL
+            sa_email = r.read().decode()
+
+    now = int(time.time())
+    claims = {
+        "iss": sa_email, "sub": subject, "scope": scope,
+        "aud": "https://oauth2.googleapis.com/token", "iat": now, "exp": now + 3600,
+    }
+    sign_url = (
+        "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+        f"{sa_email}:signJwt"
+    )
+    sign_req = urllib.request.Request(
+        sign_url, method="POST",
+        data=json.dumps({"payload": json.dumps(claims)}).encode(),
+        headers={"Authorization": f"Bearer {adc.token}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(sign_req, timeout=10) as r:  # noqa: S310 — fixed google URL
+        signed_jwt = json.loads(r.read().decode())["signedJwt"]
+
+    token_req = urllib.request.Request(
+        "https://oauth2.googleapis.com/token", method="POST",
+        data=urllib.parse.urlencode({
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": signed_jwt,
+        }).encode(),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(token_req, timeout=10) as r:  # noqa: S310 — fixed google URL
+        return json.loads(r.read().decode())["access_token"]
+
+
 @router.get("/directory")
 def directory_users(claims=Depends(require_role("manage_users"))):
     """List Google Workspace users in the org domain, to populate the invite dropdown.
@@ -266,18 +333,7 @@ def directory_users(claims=Depends(require_role("manage_users"))):
 
     scope = "https://www.googleapis.com/auth/admin.directory.user.readonly"
     try:
-        import google.auth
-        from google.auth.transport.requests import Request as GRequest
-        if key_file:
-            from google.oauth2 import service_account
-            creds = service_account.Credentials.from_service_account_file(
-                key_file, scopes=[scope], subject=subject
-            )
-        else:
-            creds, _ = google.auth.default(scopes=[scope])
-            creds = creds.with_subject(subject)  # delegation-capable SA required
-        creds.refresh(GRequest())
-        token = creds.token
+        token = _directory_access_token(subject, scope, key_file)
 
         out, page = [], None
         while True:
