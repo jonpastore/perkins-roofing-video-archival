@@ -10,6 +10,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -103,17 +104,29 @@ class EmailTemplate(Base):
     name = Column(String); subject = Column(String); body = Column(Text)
     created_by = Column(String)
 
+class Cluster(Base):
+    __tablename__ = "clusters"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    pillar_topic = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending")  # pending | active | complete
+    position = Column(Integer, nullable=False)  # activation order (ascending)
+
+
 class Article(Base):
     __tablename__ = "articles"
     slug = Column(String, primary_key=True)
     title = Column(String); meta = Column(Text)
     content_md = Column(Text); faq_json = Column(JSON); jsonld_json = Column(JSON)
-    role = Column(String)             # pillar | cluster | standalone
+    role = Column(String)             # pillar | support | cluster | standalone
     pillar_slug = Column(String)
     wp_post_id = Column(Integer)
-    status = Column(String)           # draft | scheduled | published
+    status = Column(String)           # draft | scheduled | published | blocked
     publish_at = Column(DateTime)
     focus_keyword = Column(String)    # Rank Math SEO focus keyword
+    # Publish-pipeline columns (Track D)
+    cluster_id = Column(Integer, ForeignKey("clusters.id"), nullable=True)
+    priority = Column(Integer, nullable=True)   # lower = higher priority within cluster
+    scheduled_at = Column(DateTime, nullable=True)  # when to drip this article
 
 class ScheduledContent(Base):
     __tablename__ = "scheduled_content"
