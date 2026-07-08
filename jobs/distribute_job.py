@@ -140,9 +140,9 @@ def distribute(
     # license) short-circuits the whole fan-out; the parsed caption then replaces the template.
     fixed_caption: str | None = None
     if raw_caption_output is not None:
-        from core.caption_output import BLOCKED, gate_caption_flags, parse_caption_output  # noqa: PLC0415
+        from core.caption_output import BLOCKED, gate_caption, parse_caption_output  # noqa: PLC0415
         parts = parse_caption_output(raw_caption_output)
-        decision, reason = gate_caption_flags(parts.flags, require_license=require_license)
+        decision, reason = gate_caption(parts, require_license=require_license)
         if decision == BLOCKED:
             logger.warning("distribute_job: caption flag-gate BLOCKED: %s", reason)
             return [DistributeResult(platform=p, status="FAILED", error=f"blocked: {reason}")
