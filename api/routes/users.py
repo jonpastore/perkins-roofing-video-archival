@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from api.auth import current_claims, require_role
 from app.config import settings
 from app.models import SessionLocal, UserSetting
+from app.observability import log
 
 router = APIRouter(prefix="/admin/users", tags=["users"])
 me_router = APIRouter(prefix="/me", tags=["me"])
@@ -358,6 +359,8 @@ def directory_users(claims=Depends(require_role("manage_users"))):
             page = data.get("nextPageToken")
             if not page:
                 break
+        log("directory_lookup", configured=True, count=len(out), domain=domain)
         return {"users": out, "configured": True}
     except Exception as e:  # noqa: BLE001 — directory is best-effort; invite-by-email still works
+        log("directory_lookup", configured=False, reason=str(e)[:300])
         return {"users": [], "configured": False, "reason": str(e)[:300]}
