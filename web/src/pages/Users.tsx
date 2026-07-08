@@ -18,6 +18,7 @@ interface FirebaseUser {
   email: string;
   display_name: string | null;
   role: string | null;
+  is_default_admin?: boolean;
   signature: string | null;
 }
 
@@ -691,7 +692,7 @@ export function Users() {
                               <SaveIcon />
                             )}
                           </IconButton>
-                          {!u.uid.startsWith("default:") && u.email !== myEmail && (
+                          {!u.is_default_admin && !u.uid.startsWith("default:") && u.email !== myEmail && (
                             <IconButton
                               title="Remove user"
                               onClick={() => handleRemove(u)}

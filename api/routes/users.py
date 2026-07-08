@@ -86,6 +86,9 @@ def list_users(claims=Depends(require_role("manage_users"))):
             "display_name": user.display_name or None,
             "role": role,
             "signature": sigs.get(email.lower()),
+            # Default admins are protected from deletion (the delete endpoint 403s them). Flag it
+            # so the UI hides the trash for a signed-in default admin too — not just synthetic ones.
+            "is_default_admin": email.lower() in settings.DEFAULT_ADMINS,
         })
         seen_emails.add(email.lower())
 
@@ -98,6 +101,7 @@ def list_users(claims=Depends(require_role("manage_users"))):
                 "display_name": None,
                 "role": "admin",
                 "signature": sigs.get(admin_email.lower()),
+                "is_default_admin": True,
             })
 
     return results
