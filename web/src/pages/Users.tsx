@@ -491,7 +491,12 @@ export function Users() {
           Pre-authorize an email address before first sign-in, then assign a role.
         </p>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "auto minmax(200px, 1.3fr) minmax(150px, 1fr) auto auto",
+          gap: 12,
+          alignItems: "end",
+        }}>
           {/* User type segmented toggle */}
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>User type</label>
@@ -525,7 +530,7 @@ export function Users() {
           </div>
 
           {/* Email input — switches based on user type */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
             <label style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>Email *</label>
             {inviteType === "external" ? (
               <input
@@ -533,14 +538,14 @@ export function Users() {
                 value={inviteEmail}
                 onChange={(e) => onInviteEmailChange(e.target.value)}
                 placeholder="user@example.com"
-                style={{ ...inputStyle, minWidth: 220, padding: "7px 10px", fontSize: 13 }}
+                style={{ ...inputStyle, width: "100%", padding: "7px 10px", fontSize: 13 }}
               />
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <select
                   value={inviteEmail}
                   onChange={(e) => onInternalSelect(e.target.value)}
-                  style={{ ...selectStyle, minWidth: 220, padding: "7px 10px" }}
+                  style={{ ...selectStyle, width: "100%", padding: "7px 10px" }}
                   disabled={directory.length === 0}
                 >
                   <option value="">— select Workspace user —</option>
@@ -566,7 +571,7 @@ export function Users() {
               value={inviteName}
               onChange={(e) => setInviteName(e.target.value)}
               placeholder="Full name"
-              style={{ ...inputStyle, minWidth: 160, padding: "7px 10px", fontSize: 13 }}
+              style={{ ...inputStyle, width: "100%", padding: "7px 10px", fontSize: 13 }}
             />
           </div>
 
@@ -575,7 +580,7 @@ export function Users() {
             <select
               value={inviteRole}
               onChange={(e) => setInviteRole(e.target.value as RoleOption)}
-              style={selectStyle}
+              style={{ ...selectStyle, width: "100%" }}
             >
               {INVITE_ROLES.map((r) => (
                 <option key={r} value={r}>{r === "web_admin" ? "Web Admin" : r}</option>
