@@ -96,12 +96,14 @@ def _load_adapter(platform: str) -> Any:
 def distribute(
     *,
     video_url: str,
-    caption_template: str,
-    caption_vars: dict[str, str],
+    caption_template: str = "",
+    caption_vars: dict[str, str] | None = None,
     destinations: list[str],
     account_id: str = "default",
     max_attempts: int = _DEFAULT_MAX_ATTEMPTS,
     oauth_store: Any = None,
+    raw_caption_output: str | None = None,
+    require_license: bool = False,
     _sleep_fn: Any = None,
 ) -> list[DistributeResult]:
     """Fan-out a finished clip to all selected destination platforms.
@@ -114,6 +116,11 @@ def distribute(
         account_id:       Account identifier for the OAuth store lookup (default ``"default"``).
         max_attempts:     Maximum publish attempts per platform before giving up (default 3).
         oauth_store:      OAuthStore instance (defaults to the module-level singleton).
+        raw_caption_output: Optional raw v3 caption-prompt output (with FLAGS/CAPTION/HASHTAGS).
+                          When given, it is parsed and flag-gated before fan-out; a BLOCKED
+                          decision fails every destination and the parsed caption replaces the
+                          template. See docs/prompts/social-caption-v3.md + core.caption_output.
+        require_license:  If True, a MISSING_LICENSE flag blocks the post (FL ad compliance).
         _sleep_fn:        Override ``time.sleep`` for testing.
 
     Returns:
@@ -124,8 +131,23 @@ def distribute(
     if oauth_store is None:
         oauth_store = get_default_store()
     sleep = _sleep_fn if _sleep_fn is not None else time.sleep
+    caption_vars = caption_vars or {}
 
     results: list[DistributeResult] = []
+
+    # If a raw v3 caption output is supplied, parse it and gate on its self-reported FLAGS
+    # (compliance/completeness) BEFORE any platform work. BLOCKED (e.g. required-but-missing
+    # license) short-circuits the whole fan-out; the parsed caption then replaces the template.
+    fixed_caption: str | None = None
+    if raw_caption_output is not None:
+        from core.caption_output import BLOCKED, gate_caption_flags, parse_caption_output  # noqa: PLC0415
+        parts = parse_caption_output(raw_caption_output)
+        decision, reason = gate_caption_flags(parts.flags, require_license=require_license)
+        if decision == BLOCKED:
+            logger.warning("distribute_job: caption flag-gate BLOCKED: %s", reason)
+            return [DistributeResult(platform=p, status="FAILED", error=f"blocked: {reason}")
+                    for p in destinations]
+        fixed_caption = parts.caption  # REVIEW still publishes; caller can inspect flags upstream
 
     for platform in destinations:
         # Resolve transcode spec (pure — always succeeds for known platforms)
@@ -136,8 +158,8 @@ def distribute(
             results.append(DistributeResult(platform=platform, status="FAILED", error=str(exc)))
             continue
 
-        # Render caption for this platform
-        caption = render_caption(caption_template, caption_vars)
+        # Caption source: a parsed v3 output (already flag-gated) wins; else render the template.
+        caption = fixed_caption if fixed_caption is not None else render_caption(caption_template, caption_vars)
 
         # Content-safety gate (Track E) — the caption is a generated artifact and MUST pass
         # BEFORE it reaches any platform. Run per-platform because interpolation above can
