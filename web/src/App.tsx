@@ -16,6 +16,7 @@ import { ClipStudio } from "./pages/ClipStudio";
 import { Comments } from "./pages/Comments";
 import { Logs } from "./pages/Logs";
 import { Email } from "./pages/Email";
+import { Estimator } from "./pages/Estimator";
 import { BRAND, FONT, Spinner } from "./ui";
 
 // ---------------------------------------------------------------------------
@@ -64,6 +65,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["archive", "Archive"],
     ],
     adminTabs: [
+      ["estimator", "Estimator"],
       ["users", "Users"],
       ["config", "Config"],
       ["logs", "Logs"],
@@ -84,6 +86,9 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["video-approval", "Video Approval"],
       ["archive", "Archive"],
     ],
+    adminTabs: [
+      ["estimator", "Estimator"],
+    ],
     defaultTab: "dashboard",
   },
   sales: {
@@ -92,6 +97,7 @@ const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
       ["search-ask", "Search / Ask"],
       ["email", "Email"],
       ["archive", "Archive"],
+      ["estimator", "Estimator"],
     ],
     defaultTab: "search-ask",
   },
@@ -296,6 +302,7 @@ function TabContent({ tab }: { tab: string }) {
       {tab === "comments" && <Comments />}
       {tab === "video-approval" && <VideoApproval />}
       {tab === "archive" && <Archive />}
+      {tab === "estimator" && <Estimator />}
       {tab === "users" && <Users />}
       {tab === "config" && <Settings />}
       {tab === "logs" && <Logs />}
