@@ -13,6 +13,7 @@ from api.routes.clips import router as clips_router
 from api.routes.comments import router as comments_router
 from api.routes.config import router as config_router
 from api.routes.email import router as email_router
+from api.routes.estimator import router as estimator_router
 from api.routes.faq import router as faq_router
 from api.routes.logs import router as logs_router
 from api.routes.scheduling import router as scheduling_router
@@ -48,6 +49,7 @@ app.include_router(archive_router)
 app.include_router(articles_router)
 app.include_router(scheduling_router)
 app.include_router(topics_router)
+app.include_router(estimator_router)
 app.include_router(faq_router)
 app.include_router(config_router)
 app.include_router(users_router)

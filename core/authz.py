@@ -12,12 +12,14 @@ _MATRIX = {
         "manage_scheduling", "approve_video",
         "manage_archive",
         "view_status",
+        "manage_estimates",
     },
-    # sales — search/ask, email tools + email templates.
+    # sales — search/ask, email tools + email templates, bid estimator.
     "sales": {
         "search", "ask",
         "email_compose", "email_proof", "email_send",
         "manage_templates", "article_read",
+        "manage_estimates",
     },
 }
 # Admin-only actions (granted only via admin's "*"): manage_users, manage_config.
