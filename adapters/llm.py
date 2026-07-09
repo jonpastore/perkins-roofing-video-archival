@@ -6,6 +6,8 @@ vertex-dev-sa key (GOOGLE_APPLICATION_CREDENTIALS)."""
 import os
 import time
 
+from core import metering
+
 
 def _with_retry(fn, *, tries=6, base=2.0):
     """Exponential backoff on Vertex rate-limit/transient errors — required for the 841-video
@@ -47,7 +49,25 @@ class VertexLLM:
             # Controlled generation — Gemini is constrained to valid JSON matching the schema,
             # eliminating the intermittent unescaped-newline parse failures on long article content.
             cfg["response_schema"] = response_schema
-        return _with_retry(lambda: self._model.generate_content(prompt, generation_config=cfg).text)
+        response = _with_retry(lambda: self._model.generate_content(prompt, generation_config=cfg))
+        # Emit token usage to the per-tenant metering counter (no-op outside a tenant context).
+        # Prefer the SDK's usage_metadata when available; fall back to a character-based estimate
+        # (~4 chars/token) so the counter is always non-zero after a real LLM call.
+        try:
+            usage = getattr(response, "usage_metadata", None)
+            if usage is not None:
+                total = getattr(usage, "total_token_count", None) or (
+                    getattr(usage, "prompt_token_count", 0)
+                    + getattr(usage, "candidates_token_count", 0)
+                )
+            else:
+                total = None
+            if not total:
+                total = max(1, len(prompt) // 4)
+            metering.add("llm_tokens", int(total))
+        except Exception:  # noqa: BLE001 — metering must never break the adapter
+            pass
+        return response.text
 
     def embed(self, texts, batch=100):
         import vertexai

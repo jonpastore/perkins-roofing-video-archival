@@ -30,11 +30,12 @@ def _fix_title(title: str) -> str:
     return cut or t[:65].rstrip()
 
 
-def run() -> dict:
-    from adapters.llm import get_default
-    from app.models import Article, SessionLocal
-    from core.seo import score_article
-    from jobs.article_job import (
+def _run_for_tenant(db, tenant_id: int) -> dict:
+    """Per-tenant article upgrade body. Called by for_each_tenant via run()."""
+    from adapters.llm import get_default  # noqa: PLC0415
+    from app.models import Article, SessionLocal  # noqa: PLC0415
+    from core.seo import score_article  # noqa: PLC0415
+    from jobs.article_job import (  # noqa: PLC0415
         _build_article_jsonld,
         _clamp_meta,
         _fallback_faq,
@@ -44,13 +45,13 @@ def run() -> dict:
     )
 
     llm = get_default()
+    slugs = [a.slug for a in db.query(Article).all()]
     upgraded, already, regenerated = 0, 0, 0
-    with SessionLocal() as db:
-        slugs = [a.slug for a in db.query(Article).all()]
 
     for slug in slugs:
-        with SessionLocal() as db:
-            a = db.get(Article, slug)
+        with SessionLocal() as sdb:
+            sdb.info["tenant_id"] = tenant_id
+            a = sdb.get(Article, slug)
             if a is None:
                 continue
             before = score_article(a.title or "", a.meta or "", a.content_md or "",
@@ -59,7 +60,6 @@ def run() -> dict:
                 already += 1
                 continue
 
-            # --- Cheap pass: fix meta / faq / jsonld / title without touching content ---
             title = _fix_title(a.title or slug)
             faq = a.faq_json or []
             if not faq:
@@ -73,7 +73,6 @@ def run() -> dict:
             after = score_article(title, meta, a.content_md or "", faq, bool(jsonld))["score"]
 
             if after < 100:
-                # Content-quality gaps (headings/wordcount/video) → full scored regen.
                 ctx = {"keyword": title, "role": a.role or "standalone",
                        "pillar_slug": a.pillar_slug or a.slug, "topic": title}
                 try:
@@ -89,12 +88,28 @@ def run() -> dict:
                     logger.warning("regen failed for %s: %s", slug, exc)
 
             a.title, a.meta, a.faq_json, a.jsonld_json = title, meta, faq, jsonld
-            db.commit()
+            sdb.commit()
             upgraded += 1
             logger.info("upgraded %s: %d -> %d", slug, before, after)
 
     return {"upgraded": upgraded, "regenerated": regenerated,
             "already_100": already, "total": len(slugs)}
+
+
+def run() -> dict:
+    """Iterate active tenants and upgrade articles for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"upgraded": 0, "regenerated": 0, "already_100": 0, "total": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

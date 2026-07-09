@@ -427,12 +427,14 @@ Font and color settings are passed into the caption overlay and title-card rende
 | `core/music_mix.py` | Background music mix | music catalog picker + volume |
 | `core/clip_fx.py` | Transitions, color grade, text overlays | FX preset selector |
 
-### 7.2 Data model: `render_spec` JSONB on `mini_series`
+### 7.2 Data model: `render_spec` on `mini_series`
 
-Add column to `mini_series`:
-```sql
-ALTER TABLE mini_series ADD COLUMN render_spec JSONB DEFAULT '{}';
-```
+**SUPERSEDED (2026-07-09):** the #320 carry-over (commit `c0a12c9`) already stores
+`render_spec` inside the existing `parts_json` JSON column as an envelope
+(`core/render_spec.py`; read live in `jobs/render_job.py`). Migration 0019 does
+**not** add a `render_spec` column — a second store would be dead code. The
+envelope is the single source of truth. (Original plan, no longer applied:
+`ALTER TABLE mini_series ADD COLUMN render_spec JSONB DEFAULT '{}';`)
 
 `render_spec` captures UI selections:
 ```jsonc

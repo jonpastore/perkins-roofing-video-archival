@@ -220,6 +220,18 @@ def require_role(action):
     return dep
 
 
+def require_role_db(action):
+    """Like require_role, but resolves claims through the F4 DB path so
+    claims["tenant_id"] reflects GCIP tenant resolution (not the legacy _verify
+    default of 1). Use for any tenant-scoped endpoint that reads/writes data
+    keyed by the caller's own tenant (e.g. /admin/tenant/settings)."""
+    def dep(claims: dict = Depends(current_claims_with_db)):
+        if not can(claims["role"], action):
+            raise HTTPException(status_code=403, detail="forbidden")
+        return claims
+    return dep
+
+
 # ---------------------------------------------------------------------------
 # Tenant-scoped session dependency (TRD-F4 §3.2) — the authoritative F4 path
 # ---------------------------------------------------------------------------

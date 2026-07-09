@@ -3,6 +3,8 @@ import { BRAND, FONT } from "../ui";
 import { Users } from "./Users";
 import { Settings } from "./Settings";
 import { EstimatingConfig } from "./EstimatingConfig";
+import { MarketingConfig } from "./MarketingConfig";
+import { KbConfig } from "./KbConfig";
 
 type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
 
@@ -91,12 +93,8 @@ export function AdminConfig({ role }: AdminConfigProps) {
       </div>
 
       {/* Sub-tab content */}
-      {activeSubTab === "kb" && (
-        <PlaceholderCard message="Knowledge Base config — coming in F5 (corpus sources, ingest controls, abstain threshold, FAQ policy)" />
-      )}
-      {activeSubTab === "marketing" && (
-        <PlaceholderCard message="Marketing config — coming in F5 (brand kit, voice samples, caption prompts, social accounts, safety-gate denylist)" />
-      )}
+      {activeSubTab === "kb" && <KbConfig role={role} />}
+      {activeSubTab === "marketing" && <MarketingConfig role={role} />}
       {activeSubTab === "estimating" && <EstimatingConfig role={role} />}
       {activeSubTab === "quoting" && (
         <PlaceholderCard message="Quoting config — coming in F3 (proposal templates, T&C library, deposit policy, reminder cadence)" />

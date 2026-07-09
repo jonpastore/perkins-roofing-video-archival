@@ -34,7 +34,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def run(
+def _run_for_tenant(
+    db,
+    tenant_id: int,
     topic: str,
     *,
     retrieval_k: int = 8,
@@ -42,33 +44,19 @@ def run(
     avatar_id: str | None = None,
     llm=None,
 ) -> dict:
-    """Generate a Tim avatar video for *topic*.
-
-    # SCAFFOLD: mocked end to end — real render blocked on API keys.
+    """Per-tenant avatar generation body. Called by for_each_tenant via run().
 
     Args:
-        topic:        The subject for the avatar video (e.g. "roof-age insurance
-                      nonrenewal in Florida").
-        retrieval_k:  Number of corpus chunks to retrieve for grounding.
-        voice_id:     Optional pre-existing ElevenLabs voice ID.  When omitted,
-                      falls back to ELEVENLABS_VOICE_ID env var, then mock.
-        avatar_id:    Optional HeyGen avatar ID.  When omitted, falls back to
-                      HEYGEN_AVATAR_ID env var, then mock default.
-        llm:          Optional LLM instance (VertexLLM or compatible).
-                      Falls back to adapters.llm.get_default().
+        db:          Session with tenant_id stamped (for_each_tenant contract).
+        tenant_id:   Active tenant being processed.
+        topic:       The subject for the avatar video.
+        retrieval_k: Number of corpus chunks to retrieve for grounding.
+        voice_id:    Optional pre-existing ElevenLabs voice ID.
+        avatar_id:   Optional HeyGen avatar ID.
+        llm:         Optional LLM instance; falls back to adapters.llm.get_default().
 
     Returns:
-        Dict::
-
-            {
-                "topic":       str,
-                "title":       str,
-                "script_text": str,
-                "est_seconds": int,
-                "gate_passed": bool,
-                "job_id":      str,   # HeyGen job ID (mock in scaffold)
-                "url":         str,   # final video URL (mock in scaffold)
-            }
+        Dict with topic, title, script_text, est_seconds, gate_passed, job_id, url.
 
     Raises:
         RuntimeError: if the content-safety gate blocks the script.
@@ -166,3 +154,50 @@ def run(
         "job_id": render_result.get("job_id", ""),
         "url": render_result.get("url", ""),
     }
+
+
+def run(
+    topic: str,
+    *,
+    retrieval_k: int = 8,
+    voice_id: str | None = None,
+    avatar_id: str | None = None,
+    llm=None,
+) -> dict:
+    """Iterate active tenants and generate a Tim avatar video for *topic* for each.
+
+    # SCAFFOLD: mocked end to end — real render blocked on API keys.
+
+    Args:
+        topic:        The subject for the avatar video (e.g. "roof-age insurance
+                      nonrenewal in Florida").
+        retrieval_k:  Number of corpus chunks to retrieve for grounding.
+        voice_id:     Optional pre-existing ElevenLabs voice ID.  When omitted,
+                      falls back to ELEVENLABS_VOICE_ID env var, then mock.
+        avatar_id:    Optional HeyGen avatar ID.  When omitted, falls back to
+                      HEYGEN_AVATAR_ID env var, then mock default.
+        llm:          Optional LLM instance (VertexLLM or compatible).
+                      Falls back to adapters.llm.get_default().
+
+    Returns:
+        Result dict from the last tenant processed (single-tenant reality);
+        keys: topic, title, script_text, est_seconds, gate_passed, job_id, url.
+
+    Raises:
+        RuntimeError: if the content-safety gate blocks the script.
+        RuntimeError: if the LLM returns an unrecoverable script.
+    """
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    results: list[dict] = []
+
+    def _fn(db, tenant_id: int) -> None:
+        results.append(_run_for_tenant(db, tenant_id, topic,
+                                       retrieval_k=retrieval_k,
+                                       voice_id=voice_id,
+                                       avatar_id=avatar_id,
+                                       llm=llm))
+
+    for_each_tenant(SessionLocal, _fn)
+    return results[-1] if results else {}

@@ -450,6 +450,7 @@ def generate_article(
     llm=None,
     ground_videos: bool = True,
     persist: bool = True,
+    tenant_id: int | None = None,
 ) -> dict:
     """Generate a single SEO article and publish it to WordPress as a draft.
 
@@ -535,7 +536,7 @@ def generate_article(
             video_chunks = result.get("chunks") or []
             if video_chunks:
                 user_prompt = _append_video_grounding(user_prompt, video_chunks)
-                jsonld_video_list = _build_video_jsonld(video_chunks)
+                jsonld_video_list = _build_video_jsonld(video_chunks, tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("video grounding failed, continuing without it: %s", exc)
 
@@ -646,6 +647,8 @@ def generate_article(
         from app.models import Article as ArticleModel  # noqa: PLC0415
         from app.models import SessionLocal
         _db = SessionLocal()
+        if tenant_id is not None:
+            _db.info["tenant_id"] = tenant_id
         try:
             existing_article = _db.get(ArticleModel, slug)
         finally:
@@ -687,6 +690,8 @@ def generate_article(
                 publish_at_val = None
 
         _db = SessionLocal()
+        if tenant_id is not None:
+            _db.info["tenant_id"] = tenant_id
         try:
             row = _db.get(ArticleModel, slug)
             if row is None:
@@ -717,33 +722,18 @@ def generate_article(
     }
 
 
-def run(
+def _run_for_tenant(
+    db,
+    tenant_id: int,
     topic: str,
     keyword_serps: list[tuple[str, dict]],
     *,
     max_articles: int = 12,
     status: str = "draft",
 ) -> dict:
-    """Orchestrate a full pillar + cluster article campaign.
-
-    Args:
-        topic:          Broad topic label (e.g. "roof repair").
-        keyword_serps:  List of (keyword_string, serp_dict) tuples — the raw
-                        keyword/SERP pairs to build the plan from.
-        max_articles:   Cap on how many articles to generate.  Default 12.
-        status:         WordPress post status passed to each generate_article call.
-
-    Returns:
-        Dict::
-
-            {
-                "generated": int,
-                "articles":  [list of generate_article return dicts],
-            }
-    """
+    """Per-tenant article campaign body. Called by for_each_tenant via run()."""
     from core.article_plan import build_plan  # noqa: PLC0415
 
-    # Build keyword dicts for plan — infer intent as "informational" by default
     keywords = [
         {"keyword": kw, "intent": "informational", "topic": topic}
         for kw, _ in keyword_serps
@@ -752,7 +742,6 @@ def run(
 
     plan = build_plan(keywords, serps_map)
 
-    # Collect all planned keywords (pillar + clusters), capped at max_articles
     planned: list[dict] = [plan["pillar"]] + plan["clusters"]
     planned = planned[:max_articles]
 
@@ -779,6 +768,7 @@ def run(
                 serp,
                 existing_texts=list(existing_texts),
                 status=status,
+                tenant_id=tenant_id,
             )
             generated_articles.append(result)
             content = result["article"].get("content") or ""
@@ -788,6 +778,45 @@ def run(
             logger.error("generate_article failed for keyword=%r: %s", kw, exc)
 
     return {"generated": len(generated_articles), "articles": generated_articles}
+
+
+def run(
+    topic: str,
+    keyword_serps: list[tuple[str, dict]],
+    *,
+    max_articles: int = 12,
+    status: str = "draft",
+) -> dict:
+    """Iterate active tenants and orchestrate a full pillar + cluster article campaign for each.
+
+    Args:
+        topic:          Broad topic label (e.g. "roof repair").
+        keyword_serps:  List of (keyword_string, serp_dict) tuples — the raw
+                        keyword/SERP pairs to build the plan from.
+        max_articles:   Cap on how many articles to generate.  Default 12.
+        status:         WordPress post status passed to each generate_article call.
+
+    Returns:
+        Dict::
+
+            {
+                "generated": int,
+                "articles":  [list of generate_article return dicts],
+            }
+    """
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"generated": 0, "articles": []}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, topic, keyword_serps,
+                            max_articles=max_articles, status=status)
+        totals["generated"] += r.get("generated", 0)
+        totals["articles"].extend(r.get("articles", []))
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":
@@ -1304,7 +1333,7 @@ def _inject_oembed(content: str, chunks: list[tuple]) -> str:
     return f"{url}\n\n{content}"
 
 
-def _build_video_jsonld(chunks: list[tuple]) -> list[dict]:
+def _build_video_jsonld(chunks: list[tuple], tenant_id: int | None = None) -> list[dict]:
     """Build VideoObject JSON-LD entries for distinct source videos in chunks."""
     from app.models import SessionLocal, Video  # noqa: PLC0415
     from core.retrieval import link as video_link  # noqa: PLC0415
@@ -1313,6 +1342,8 @@ def _build_video_jsonld(chunks: list[tuple]) -> list[dict]:
     result: list[dict] = []
 
     _db = SessionLocal()
+    if tenant_id is not None:
+        _db.info["tenant_id"] = tenant_id
     try:
         for chunk, _score in chunks:
             vid_id = chunk.video_id

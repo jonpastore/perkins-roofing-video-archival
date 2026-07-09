@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from api.auth import current_claims, require_internal_tenants, require_role
+from api.auth import current_claims, require_internal_tenants, require_role, require_role_db
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
@@ -104,6 +104,81 @@ def me(claims=Depends(current_claims)):
     """Effective identity for the signed-in user — the SPA reads its role from here so
     default-admins resolve server-side (the source of truth), not from the raw token claim."""
     return {"email": claims.get("email"), "role": claims.get("role") or None}
+
+
+# ── F5: per-tenant settings (Marketing + KB) + brand-kit upload URL ──────────
+# tenants.settings is a PLATFORM-level table (RLS-exempt), so these use a
+# platform-scoped session + the caller's resolved tenant_id from verified claims.
+# Merge is Python-side (read dict → update sub-key → write back) so it works on
+# both SQLite (tests) and Postgres, preserving all other keys (F3 deposit etc.).
+# Authz: marketing_articles / kb_archive_manage are held by admin(*) + web_admin
+# and NOT by sales — the correct gate without inventing new §11 actions (R2: bless).
+
+def _tenant_settings_read(tenant_id: int) -> dict:
+    from app.models import PlatformSessionLocal, Tenant
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        row = db.get(Tenant, tenant_id)
+        return dict(row.settings or {}) if row else {}
+
+
+def _tenant_settings_merge(tenant_id: int, sub_key: str, sub_value: dict) -> dict:
+    from app.models import PlatformSessionLocal, Tenant
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        row = db.get(Tenant, tenant_id)
+        if row is None:
+            raise HTTPException(404, "tenant not found")
+        merged = dict(row.settings or {})
+        merged[sub_key] = {**(merged.get(sub_key) or {}), **sub_value}
+        row.settings = merged
+        db.commit()
+        return merged
+
+
+@app.get("/admin/tenant/settings")
+def get_tenant_settings(claims=Depends(require_role_db("marketing_articles"))):
+    from core.tenant_settings import TenantSettings
+    raw = _tenant_settings_read(claims.get("tenant_id") or 1)
+    return TenantSettings.load(raw).model_dump()
+
+
+@app.put("/admin/tenant/settings/marketing")
+def put_marketing_settings(body: dict, claims=Depends(require_role_db("marketing_articles"))):
+    # social_accounts is read-only via this path (OAuth tokens live in Secret Manager).
+    body.pop("social_accounts", None)
+    merged = _tenant_settings_merge(claims.get("tenant_id") or 1, "marketing", body)
+    return {"marketing": merged.get("marketing", {})}
+
+
+@app.put("/admin/tenant/settings/kb")
+def put_kb_settings(body: dict, claims=Depends(require_role_db("kb_archive_manage"))):
+    merged = _tenant_settings_merge(claims.get("tenant_id") or 1, "kb", body)
+    return {"kb": merged.get("kb", {})}
+
+
+@app.post("/admin/tenant/brand/upload-url")
+def brand_upload_url(body: dict, claims=Depends(require_role_db("marketing_articles"))):
+    """Issue a V4 pre-signed GCS PUT URL so the browser uploads brand assets directly
+    to GCS (never through Cloud Run). The client separately PUTs the returned gcs_uri
+    into settings.brand via /admin/tenant/settings/marketing."""
+    import os
+
+    from core.brand_kit import brand_upload_signed_url
+    asset_name = body.get("asset_name")
+    content_type = body.get("content_type", "application/octet-stream")
+    if not asset_name:
+        raise HTTPException(422, "asset_name required")
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    if not project:
+        raise HTTPException(503, "GCS not configured (GOOGLE_CLOUD_PROJECT unset)")
+    from google.cloud import storage  # noqa: PLC0415 — heavy import, endpoint-local
+    url = brand_upload_signed_url(
+        claims.get("tenant_id") or 1, asset_name, content_type,
+        storage.Client(), f"{project}-media",
+    )
+    gcs_uri = f"gs://{project}-media/tenants/{claims.get('tenant_id') or 1}/brand/{asset_name}"
+    return {"upload_url": url, "gcs_uri": gcs_uri}
 
 
 @app.post("/search")

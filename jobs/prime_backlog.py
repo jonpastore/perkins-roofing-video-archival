@@ -20,7 +20,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _mine_faqs(limit: int) -> int:
+def _mine_faqs(limit: int, tenant_id: int | None = None) -> int:
     """Turn uncovered content_graph claims/objections into stored FaqEntry questions."""
     from sqlalchemy import select
 
@@ -28,6 +28,8 @@ def _mine_faqs(limit: int) -> int:
     from app.models import FaqEntry, GraphNode, SessionLocal
 
     with SessionLocal() as db:
+        if tenant_id is not None:
+            db.info["tenant_id"] = tenant_id
         covered = {r[0] for r in db.execute(select(FaqEntry.source_node_id)).all()}
         nodes = [
             n for n in db.query(GraphNode)
@@ -54,12 +56,14 @@ def _mine_faqs(limit: int) -> int:
         return made
 
 
-def _answer_faqs(limit: int) -> int:
+def _answer_faqs(limit: int, tenant_id: int | None = None) -> int:
     """Generate + store grounded answers for still-unanswered FaqEntry rows (local LLM)."""
     from app.answer import answer_faq
     from app.models import FaqEntry, SessionLocal
 
     with SessionLocal() as db:
+        if tenant_id is not None:
+            db.info["tenant_id"] = tenant_id
         pending = db.query(FaqEntry).filter(FaqEntry.status == "mined").limit(limit).all()
         done = 0
         for e in pending:
@@ -78,12 +82,14 @@ def _answer_faqs(limit: int) -> int:
         return done
 
 
-def _prime_articles(top_n: int) -> int:
+def _prime_articles(top_n: int, tenant_id: int | None = None) -> int:
     """Generate a cluster draft for the top-N aggregated topics not yet turned into a pillar."""
     from api.routes.topics import GenerateArticleRequest, _slugify, generate_cluster_article
     from app.models import AggregatedTopic, Article, SessionLocal
 
     with SessionLocal() as db:
+        if tenant_id is not None:
+            db.info["tenant_id"] = tenant_id
         topics = (db.query(AggregatedTopic)
                   .order_by(AggregatedTopic.num_videos.desc())
                   .limit(top_n * 2).all())
@@ -104,11 +110,34 @@ def _prime_articles(top_n: int) -> int:
         return made
 
 
-def run(faqs: int = 0, answers: int = 0, articles: int = 0) -> dict:
-    mined = _mine_faqs(faqs) if faqs else 0
-    answered = _answer_faqs(answers) if answers else 0
-    primed = _prime_articles(articles) if articles else 0
+def _run_for_tenant(db, tenant_id: int, faqs: int = 0, answers: int = 0, articles: int = 0) -> dict:
+    """Per-tenant backlog priming body. Called by for_each_tenant via run().
+
+    Note: internal helpers (_mine_faqs, _answer_faqs, _prime_articles) manage
+    their own sessions for transaction isolation. tenant_id is threaded into each
+    helper and stamped on session.info so the F4 after_begin event issues the
+    correct SET LOCAL app.tenant_id on Postgres.
+    """
+    mined = _mine_faqs(faqs, tenant_id=tenant_id) if faqs else 0
+    answered = _answer_faqs(answers, tenant_id=tenant_id) if answers else 0
+    primed = _prime_articles(articles, tenant_id=tenant_id) if articles else 0
     return {"faqs_mined": mined, "faqs_answered": answered, "articles_primed": primed}
+
+
+def run(faqs: int = 0, answers: int = 0, articles: int = 0) -> dict:
+    """Iterate active tenants and prime the backlog for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"faqs_mined": 0, "faqs_answered": 0, "articles_primed": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, faqs=faqs, answers=answers, articles=articles)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

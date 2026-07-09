@@ -39,6 +39,10 @@ _APPROVED_PREFIXES = (
     "api/routes/config.py",     # health-check SELECT 1 probe
     "app/models.py",            # seed helper (_seed_perkins_tenant) uses raw helpers
     "jobs/ingest_worker.py",    # pg_try_advisory_lock requires raw SQL
+    "core/tenant_loop.py",      # F5: active-tenant enumeration on the platform tenants table
+    "core/brand_kit.py",        # F5: reads tenants.settings (platform table, RLS-exempt)
+    "core/offboard.py",         # F5: cross-tenant cascade DELETE by design (TRD-F5 §9)
+    "jobs/enumerate_channel.py",  # F5-M2: reads tenants.settings for channel_sources (platform table, RLS-exempt)
     "scripts/",
     "infra/migrations/",
     "tests/",

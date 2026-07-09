@@ -16,6 +16,8 @@ import os
 import subprocess
 import tempfile
 
+from core import metering
+
 
 def _ffmpeg_bin():
     b = os.getenv("FFMPEG_BIN")
@@ -107,6 +109,12 @@ def _normalize(transcript):
         start = w[0]["start"] if w else 0.0
         segments.append({"text": text, "start": start, "end": _secs(res.result_end_offset)})
         words.extend(w)
+    # Emit STT duration to per-tenant metering (no-op outside a tenant context).
+    # Audio duration = end of the last segment; convert seconds → minutes.
+    if segments:
+        duration_secs = segments[-1]["end"]
+        if duration_secs > 0:
+            metering.add("stt_minutes", duration_secs / 60.0)
     return {"source": "gcp_stt", "segments": segments, "words": words,
             "speech_ratio": _speech_ratio(segments)}
 

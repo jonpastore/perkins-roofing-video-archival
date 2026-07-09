@@ -292,8 +292,16 @@ class TestAvatarJobGateBlocks:
             def chat(self, prompt, want_json=False, **kw):
                 return json.dumps(crude_script)
 
+        # Fail-closed is guaranteed at the per-tenant unit (_run_for_tenant), which
+        # RAISES on a gate block. run() wraps it in for_each_tenant, which logs and
+        # isolates per-tenant failures (a batch cron must not let one tenant's block
+        # abort the others) — so the block is logged there, not re-raised. Asserting
+        # at the unit level proves the safety gate still hard-fails.
+        from unittest.mock import MagicMock  # noqa: PLC0415
+        db = MagicMock()
+        db.info = {"tenant_id": 1}
         with pytest.raises(RuntimeError, match="content-safety gate BLOCKED"):
-            avatar_job.run("test topic", llm=FakeLLM())
+            avatar_job._run_for_tenant(db, 1, "test topic", llm=FakeLLM())
 
     def test_gate_passes_professional_script(self, monkeypatch):
         """A clean script passes the gate and returns render output."""

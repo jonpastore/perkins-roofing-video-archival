@@ -11,24 +11,16 @@ from app.models import Article, ScheduledContent, SessionLocal
 from core.scheduler import due
 
 
-def run(now=None):
-    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
-    s = SessionLocal()
-    rows = s.query(ScheduledContent).all()
+def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
+    """Per-tenant promotion body. Called by for_each_tenant via run()."""
+    rows = db.query(ScheduledContent).all()
     promoted, errored = 0, 0
     for r in due(rows, now):
-        # Commit PER ROW: a failure on one row must not roll back rows already promoted in
-        # this run (a single trailing s.commit() + mid-loop s.rollback() would revert every
-        # prior row's status, inflate `promoted`, and re-publish them next tick).
         try:
             if r.kind == "reel":
-                # Wave-4 social publisher does not exist yet. Move the reel to a distinct
-                # terminal-for-now state that core.scheduler.due() does NOT select, so it is
-                # NOT re-picked every cron tick (avoids an inflated count + a double-publish
-                # trap). The future Wave-4 publisher selects on status == "awaiting_social".
                 r.status = "awaiting_social"
-                s.add(r)
-                s.commit()
+                db.add(r)
+                db.commit()
                 print(
                     f"[promote] scheduled_content {r.id} kind=reel: "
                     "reel ready, moved to awaiting_social (Wave-4 will publish)"
@@ -36,23 +28,37 @@ def run(now=None):
                 promoted += 1
                 continue
 
-            # article branch — resolve by slug (ref_id == Article.slug)
-            article = s.get(Article, r.ref_id) if r.kind == "article" else None
+            article = db.get(Article, r.ref_id) if r.kind == "article" else None
             if article and article.wp_post_id:
                 wordpress.update_status(article.wp_post_id, "publish")
             r.status = "published"
-            s.add(r)
-            s.commit()
+            db.add(r)
+            db.commit()
             promoted += 1
         except Exception as e:  # noqa: BLE001
-            s.rollback()                 # unwinds only THIS row's pending change
+            db.rollback()
             r.status = "error"
-            s.add(r)
-            s.commit()
+            db.add(r)
+            db.commit()
             errored += 1
             print(f"[error] scheduled_content {r.id}: {str(e)[:120]}")
-    s.close()
     return {"promoted": promoted, "errored": errored}
+
+
+def run(now=None):
+    """Iterate active tenants and promote due scheduled content for each."""
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals = {"promoted": 0, "errored": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, now=now)
+        totals["promoted"] += r["promoted"]
+        totals["errored"] += r["errored"]
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

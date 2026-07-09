@@ -264,6 +264,21 @@ class PlatformAuditLog(Base):
     __table_args__       = (Index("ix_platform_audit_log_admin", "platform_admin_email"),)
 
 
+class TenantOffboardLog(Base):
+    """Audit trail for tenant offboarding (F5 §9). Platform-level: no tenant_id FK
+    (the tenant row may be deleted), no RLS. Created by migration 0019 (F4's 0018
+    documented ownership but never shipped the table)."""
+    __tablename__ = "tenant_offboard_log"
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id     = Column(Integer, nullable=False)
+    offboarded_at = Column(DateTime, nullable=False, default=_utcnow)
+    offboarded_by = Column(String, nullable=False)
+    gcs_prefix    = Column(String, nullable=False)
+    row_counts    = Column(JSON, nullable=False)
+    status        = Column(String, nullable=False, default="pending")
+    __table_args__ = (Index("ix_tenant_offboard_log_tenant_id", "tenant_id"),)
+
+
 class CommentDraft(Base):
     __tablename__ = "comment_drafts"
     id           = Column(Integer, primary_key=True, autoincrement=True)

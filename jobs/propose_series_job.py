@@ -191,50 +191,30 @@ def compute_series(db, video_id: str, *, max_clips: int = 5) -> tuple[str, list[
     return title, parts
 
 
-def run(limit: int | None = None) -> dict:
-    """Propose MiniSeries for the top-ranked candidate videos.
-
-    Args:
-        limit: Cap on the number of candidates to process.  Defaults to
-               ``_DEFAULT_LIMIT`` when None.
-
-    Returns:
-        Dict::
-
-            {
-                "proposed":  int,  # new MiniSeries rows inserted
-                "skipped":   int,  # videos that already had a MiniSeries
-                "errored":   int,  # videos where processing raised an exception
-            }
-    """
-    from app.models import GraphNode, MiniSeries, SessionLocal, Video  # noqa: PLC0415
+def _run_for_tenant(db, tenant_id: int, limit: int | None = None) -> dict:
+    """Per-tenant series proposal body. Called by for_each_tenant via run()."""
+    from app.models import GraphNode, MiniSeries, Video  # noqa: PLC0415
 
     if limit is None:
         limit = _DEFAULT_LIMIT
 
-    db = SessionLocal()
-    try:
-        videos = db.query(Video).all()
+    videos = db.query(Video).all()
 
-        # Build candidate list: {video_id, duration, graph_nodes}
-        candidates_raw: list[dict] = []
-        for v in videos:
-            count = (
-                db.query(GraphNode)
-                .filter(GraphNode.video_id == v.id)
-                .count()
-            )
-            candidates_raw.append({
-                "video_id": v.id,
-                "duration": float(v.duration or 1),
-                "graph_nodes": count,
-            })
+    candidates_raw: list[dict] = []
+    for v in videos:
+        count = (
+            db.query(GraphNode)
+            .filter(GraphNode.video_id == v.id)
+            .count()
+        )
+        candidates_raw.append({
+            "video_id": v.id,
+            "duration": float(v.duration or 1),
+            "graph_nodes": count,
+        })
 
-        ranked = miniseries.rank_candidates(candidates_raw)
-        top = ranked[:limit]
-
-    finally:
-        db.close()
+    ranked = miniseries.rank_candidates(candidates_raw)
+    top = ranked[:limit]
 
     proposed = 0
     skipped = 0
@@ -242,9 +222,7 @@ def run(limit: int | None = None) -> dict:
 
     for candidate in top:
         video_id = candidate["video_id"]
-        db = SessionLocal()
         try:
-            # Idempotency: skip if MiniSeries already exists for this video
             existing = (
                 db.query(MiniSeries)
                 .filter(MiniSeries.video_id == video_id)
@@ -282,10 +260,24 @@ def run(limit: int | None = None) -> dict:
             db.rollback()
             logger.error("propose_series error video_id=%s: %s", video_id, exc)
             errored += 1
-        finally:
-            db.close()
 
     return {"proposed": proposed, "skipped": skipped, "errored": errored}
+
+
+def run(limit: int | None = None) -> dict:
+    """Iterate active tenants and propose MiniSeries for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"proposed": 0, "skipped": 0, "errored": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, limit=limit)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

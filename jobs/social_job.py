@@ -86,39 +86,24 @@ def _gcs_key_from_url(gcs_url: str) -> tuple[str, str]:
     return bucket, key
 
 
-def run() -> dict:
-    """Publish all due reels to their target social platforms.
-
-    Returns:
-        Dict::
-
-            {
-                "published": int,   # platform posts successfully created
-                "skipped":   int,   # already posted (idempotency) or no-creds
-                "errored":   int,   # rows that raised an exception
-            }
-    """
+def _run_for_tenant(db, tenant_id: int) -> dict:
+    """Per-tenant social publish body. Called by for_each_tenant via run()."""
     from app.models import MiniSeries, ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
     from core.social import already_posted, build_caption  # noqa: PLC0415
 
-    # Check whether any social credentials are present at all.
     any_creds = any(_creds_present(p) for p in _PLATFORM_CREDS)
     if not any_creds:
         logger.warning("social creds not configured — skipping")
         return {"published": 0, "skipped": 0, "errored": 0}
 
-    db = SessionLocal()
-    try:
-        due_rows = (
-            db.query(ScheduledContent)
-            .filter(
-                ScheduledContent.kind == "reel",
-                ScheduledContent.status == "awaiting_social",
-            )
-            .all()
+    due_rows = (
+        db.query(ScheduledContent)
+        .filter(
+            ScheduledContent.kind == "reel",
+            ScheduledContent.status == "awaiting_social",
         )
-    finally:
-        db.close()
+        .all()
+    )
 
     published = 0
     skipped = 0
@@ -127,6 +112,7 @@ def run() -> dict:
     for sched in due_rows:
         try:
             db = SessionLocal()
+            db.info["tenant_id"] = tenant_id
             try:
                 # Resolve the SocialPost (ref_id is the social_post pk as a string)
                 post = db.get(SocialPost, int(sched.ref_id))
@@ -300,6 +286,22 @@ def run() -> dict:
             errored += 1
 
     return {"published": published, "skipped": skipped, "errored": errored}
+
+
+def run() -> dict:
+    """Iterate active tenants and publish due reels for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"published": 0, "skipped": 0, "errored": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

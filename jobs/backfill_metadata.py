@@ -46,40 +46,52 @@ def _fetch_batch(ids: list[str], key: str) -> dict:
     return out
 
 
-def run() -> dict:
+def _run_for_tenant(db, tenant_id: int) -> dict:
+    """Per-tenant metadata backfill body. Called by for_each_tenant via run()."""
     key = os.getenv("YOUTUBE_API_KEY", "")
     if not key:
         raise RuntimeError("YOUTUBE_API_KEY not set")
-    db = SessionLocal()
-    try:
-        ids = [v.id for v in db.query(Video.id).all()]
-        updated = 0
-        for i in range(0, len(ids), 50):
-            batch = ids[i : i + 50]
-            try:
-                meta = _fetch_batch(batch, key)
-            except Exception as e:  # noqa: BLE001 — isolate a batch failure; keep prior progress + continue
-                logger.warning("batch %d failed, skipping: %s", i // 50, str(e)[:160])
+    ids = [v.id for v in db.query(Video.id).all()]
+    updated = 0
+    for i in range(0, len(ids), 50):
+        batch = ids[i : i + 50]
+        try:
+            meta = _fetch_batch(batch, key)
+        except Exception as e:  # noqa: BLE001 — isolate a batch failure; keep prior progress + continue
+            logger.warning("batch %d failed, skipping: %s", i // 50, str(e)[:160])
+            continue
+        for vid, m in meta.items():
+            v = db.get(Video, vid)
+            if not v:
                 continue
-            for vid, m in meta.items():
-                v = db.get(Video, vid)
-                if not v:
-                    continue
-                # only fill missing / refresh stats
-                if m["upload_date"]:
-                    v.upload_date = m["upload_date"]
-                if m["duration"] is not None:
-                    v.duration = m["duration"]
-                if m["views"] is not None:
-                    v.views = m["views"]
-                    v.likes = m["likes"]
-                    v.comments = m["comments"]
-                updated += 1
-            db.commit()
-            logger.info("backfilled %d/%d", min(i + 50, len(ids)), len(ids))
-        return {"total": len(ids), "updated": updated}
-    finally:
-        db.close()
+            # only fill missing / refresh stats
+            if m["upload_date"]:
+                v.upload_date = m["upload_date"]
+            if m["duration"] is not None:
+                v.duration = m["duration"]
+            if m["views"] is not None:
+                v.views = m["views"]
+                v.likes = m["likes"]
+                v.comments = m["comments"]
+            updated += 1
+        db.commit()
+        logger.info("backfilled %d/%d", min(i + 50, len(ids)), len(ids))
+    return {"total": len(ids), "updated": updated}
+
+
+def run() -> dict:
+    """Iterate active tenants and backfill video metadata for each."""
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"total": 0, "updated": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id)
+        totals["total"] += r.get("total", 0)
+        totals["updated"] += r.get("updated", 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

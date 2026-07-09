@@ -249,13 +249,11 @@ def distribute(
     return results
 
 
-def run() -> dict:
-    """Smoke-test entry point using mock adapters and an in-memory token store.
+def _run_for_tenant(db, tenant_id: int) -> dict:
+    """Per-tenant distribution smoke-test body. Called by for_each_tenant via run().
 
     SCAFFOLD: mocked end-to-end — real posting blocked on app-review/creds.
-
-    Returns:
-        Summary dict: ``{"total": int, "published": int, "failed": int}``.
+    Real implementation will resolve per-tenant social accounts from db.
     """
     from adapters.distribution.oauth_store import OAuthStore  # noqa: PLC0415
 
@@ -278,6 +276,22 @@ def run() -> dict:
         logger.info("  %s → %s (post_id=%s)", r.platform, r.status, r.post_id)
 
     return {"total": len(results), "published": published, "failed": failed}
+
+
+def run() -> dict:
+    """Iterate active tenants and distribute clips for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"total": 0, "published": 0, "failed": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

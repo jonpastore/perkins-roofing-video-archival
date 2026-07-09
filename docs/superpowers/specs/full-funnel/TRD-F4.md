@@ -453,7 +453,7 @@ File: `infra/migrations/0018_rls_gcip.sql`
 
 **Important:** this file must be `.sql` — `scripts/apply_migrations_connector.py` globs `*.sql` only. A `.py` file at this path would be silently skipped by the migration runner.
 
-**Ownership:** migration 0018 is the single owner of `tenant_offboard_log` (created here) and the `platform_admins` seed. F5/F6 references to these objects must be idempotent no-ops (e.g. `CREATE TABLE IF NOT EXISTS` guards or explicit dependency notes).
+**Ownership:** migration 0018 owns the `platform_admins` seed. **CORRECTION (2026-07-09):** 0018 as implemented created `tenant_gcip_map`, `tenant_default_admins`, `platform_admins`, and `platform_audit_log` but did NOT ship `tenant_offboard_log` (the doc intended it here but the code omitted it). Migration **0019** (F5) is therefore the actual creator of `tenant_offboard_log` (`CREATE TABLE IF NOT EXISTS`, idempotent). F6 references to it must remain idempotent no-ops.
 
 Steps (in order, idempotent):
 1. `CREATE TABLE IF NOT EXISTS tenant_gcip_map`

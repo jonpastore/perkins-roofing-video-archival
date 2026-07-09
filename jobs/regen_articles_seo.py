@@ -40,27 +40,34 @@ def _keyword_from_slug(slug: str, title: str, llm) -> str:
     return fallback
 
 
-def run(published_only: bool = False, limit: int | None = None, only_slug: str | None = None) -> dict:
-    from adapters.llm import get_default
-    from app.models import Article, SessionLocal
-    from core.seo import rank_math_failures
-    from jobs.article_job import generate_scored_article
+def _run_for_tenant(
+    db,
+    tenant_id: int,
+    published_only: bool = False,
+    limit: int | None = None,
+    only_slug: str | None = None,
+) -> dict:
+    """Per-tenant SEO regen body. Called by for_each_tenant via run()."""
+    from adapters.llm import get_default  # noqa: PLC0415
+    from app.models import Article, SessionLocal  # noqa: PLC0415
+    from core.seo import rank_math_failures  # noqa: PLC0415
+    from jobs.article_job import generate_scored_article  # noqa: PLC0415
 
     llm = get_default()
-    with SessionLocal() as db:
-        q = db.query(Article)
-        if published_only:
-            q = q.filter(Article.wp_post_id.isnot(None))
-        if only_slug:
-            q = q.filter(Article.slug == only_slug)
-        slugs = [a.slug for a in q.all()]
+    q = db.query(Article)
+    if published_only:
+        q = q.filter(Article.wp_post_id.isnot(None))
+    if only_slug:
+        q = q.filter(Article.slug == only_slug)
+    slugs = [a.slug for a in q.all()]
     if limit:
         slugs = slugs[:limit]
 
-    out = {"processed": 0, "passing": 0, "republished": 0, "still_failing": {}}
+    out: dict = {"processed": 0, "passing": 0, "republished": 0, "still_failing": {}}
     for slug in slugs:
-        with SessionLocal() as db:
-            a = db.get(Article, slug)
+        with SessionLocal() as sdb:
+            sdb.info["tenant_id"] = tenant_id
+            a = sdb.get(Article, slug)
             if a is None:
                 continue
             kw = _keyword_from_slug(slug, a.title or slug, llm)
@@ -93,7 +100,7 @@ def run(published_only: bool = False, limit: int | None = None, only_slug: str |
                 a.faq_json = best["faq_json"]
             if best.get("jsonld_json"):
                 a.jsonld_json = best["jsonld_json"]
-            db.commit()
+            sdb.commit()
             out["processed"] += 1
             if not best_fails:
                 out["passing"] += 1
@@ -102,11 +109,10 @@ def run(published_only: bool = False, limit: int | None = None, only_slug: str |
             wp_post_id = a.wp_post_id
             title, meta, content, jsonld_out = a.title, a.meta, a.content_md, (a.jsonld_json or [])
 
-        # Republish to WordPress (outside the session) if it was published.
         if wp_post_id:
             try:
-                from adapters.wordpress import update as wp_update
-                from jobs.article_job import _markdown_to_html
+                from adapters.wordpress import update as wp_update  # noqa: PLC0415
+                from jobs.article_job import _markdown_to_html  # noqa: PLC0415
                 wp_update(
                     wp_post_id,
                     title=title or slug,
@@ -116,11 +122,30 @@ def run(published_only: bool = False, limit: int | None = None, only_slug: str |
                     status="publish",
                 )
                 out["republished"] += 1
-            except Exception as exc:  # noqa: BLE001 — WP is best-effort; DB is source of truth
+            except Exception as exc:  # noqa: BLE001
                 logger.warning("WP republish failed for %s (post %s): %s", slug, wp_post_id, exc)
         logger.info("regen %s: kw=%r fails=%s", slug, kw, best_fails)
 
     return out
+
+
+def run(published_only: bool = False, limit: int | None = None, only_slug: str | None = None) -> dict:
+    """Iterate active tenants and regenerate articles for SEO for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"processed": 0, "passing": 0, "republished": 0, "still_failing": {}}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, published_only=published_only,
+                            limit=limit, only_slug=only_slug)
+        totals["processed"] += r.get("processed", 0)
+        totals["passing"] += r.get("passing", 0)
+        totals["republished"] += r.get("republished", 0)
+        totals["still_failing"].update(r.get("still_failing", {}))
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

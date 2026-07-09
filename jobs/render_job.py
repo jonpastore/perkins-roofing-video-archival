@@ -32,6 +32,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
+from core import metering
 from core.render_spec import ClipRenderSpec, get_clips, get_render_spec
 
 logger = logging.getLogger(__name__)
@@ -239,8 +240,9 @@ def _reels_bucket() -> str:
     return f"{project}-reels"
 
 
-def _gcs_object_key(series_id: int, part_index: int) -> str:
-    return f"{series_id}/{part_index}.mp4"
+def _gcs_object_key(series_id: int, part_index: int, tenant_id: int = 1) -> str:
+    from core.gcs_path import tenant_object_path  # noqa: PLC0415
+    return tenant_object_path(tenant_id, f"renders/{series_id}/{part_index}.mp4")
 
 
 def _gs_uri(bucket: str, key: str) -> str:
@@ -571,6 +573,7 @@ def render_part(
     title_img: str | None = None,
     closing_img: str | None = None,
     work_dir: str | None = None,
+    tenant_id: int | None = None,
 ) -> dict:
     """Render one part of a MiniSeries and publish it to GCS.
 
@@ -604,6 +607,8 @@ def render_part(
     from app.models import MiniSeries, ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
 
     db = SessionLocal()
+    if tenant_id is not None:
+        db.info["tenant_id"] = tenant_id
     try:
         # ── 1. Idempotency check ─────────────────────────────────────────────
         # Any per-platform row with a non-null gcs_url means this part was
@@ -738,9 +743,13 @@ def render_part(
             logger.info("fuse (image cards) -> %s", reel_path)
             ffmpeg_fuse(clip_path, title_img, closing_img, reel_path)
 
+        # Emit render duration to per-tenant metering (no-op outside a tenant context).
+        # clip_duration is the part's wall-clock length; convert seconds → minutes.
+        metering.add("render_minutes", clip_duration / 60.0)
+
         # 8. Upload to GCS (private bucket — returns gs:// URI)
         bucket_name = _reels_bucket()
-        object_key = _gcs_object_key(series_id, part_index)
+        object_key = _gcs_object_key(series_id, part_index, tenant_id=tenant_id or 1)
         logger.info("uploading to gs://%s/%s", bucket_name, object_key)
         gcs_url = _upload_to_gcs(reel_path, bucket_name, object_key)
         logger.info("upload complete: %s", gcs_url)
@@ -755,6 +764,8 @@ def render_part(
     _platforms = [p.strip() for p in _DEFAULT_PLATFORM.split(",") if p.strip()]
 
     db = SessionLocal()
+    if tenant_id is not None:
+        db.info["tenant_id"] = tenant_id
     try:
         first_post_id: int | None = None
         for platform in _platforms:
@@ -812,16 +823,73 @@ def render_part(
         db.close()
 
 
+def _run_for_tenant(
+    db,
+    tenant_id: int,
+    limit: int | None = None,
+    *,
+    series_id: int | None = None,
+) -> dict:
+    """Per-tenant render sweep body. Called by for_each_tenant via run()."""
+    from app.models import MiniSeries, SocialPost  # noqa: PLC0415
+    from core.brand_kit import load_brand_kit  # noqa: PLC0415
+
+    bk = load_brand_kit(tenant_id, db)
+    logger.info("render: loaded brand kit for tenant %d (logo=%s)", tenant_id, bool(bk))
+
+    if series_id is not None:
+        query = db.query(MiniSeries).filter(
+            MiniSeries.id == series_id,
+            MiniSeries.approved == 1,
+        )
+    else:
+        query = db.query(MiniSeries).filter(MiniSeries.approved == 1)
+        if limit is not None:
+            query = query.limit(limit)
+    approved = query.all()
+
+    work: list[tuple[int, int]] = []
+    for series in approved:
+        parts = get_clips(series.parts_json)
+        for part_index in range(len(parts)):
+            rendered = (
+                db.query(SocialPost)
+                .filter(
+                    SocialPost.series_id == series.id,
+                    SocialPost.part == part_index,
+                    SocialPost.gcs_url.isnot(None),
+                )
+                .first()
+            )
+            if not rendered:
+                work.append((series.id, part_index))
+
+    rendered_count = 0
+    skipped_count = 0
+    errored_count = 0
+
+    for sid, part_index in work:
+        try:
+            result = render_part(sid, part_index, tenant_id=tenant_id)
+            if result["skipped"]:
+                skipped_count += 1
+            else:
+                rendered_count += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.error("render_part error series=%d part=%d: %s", sid, part_index, exc)
+            errored_count += 1
+
+    return {"rendered": rendered_count, "skipped": skipped_count, "errored": errored_count}
+
+
 def run(limit: int | None = None, *, series_id: int | None = None) -> dict:
-    """Sweep approved MiniSeries and render any unrendered parts.
+    """Iterate active tenants and render approved MiniSeries parts for each.
 
     When *series_id* is given (or the env var ``RENDER_SERIES_ID`` is set),
-    only that single series is processed — used by the Cloud Run Admin API
-    trigger so an admin can kick off a targeted render from the UI.  The
-    existing full-sweep behaviour is preserved when neither is set.
+    only that single series is processed per tenant.
 
     Args:
-        limit:     Maximum number of *series* to process (full-sweep only).
+        limit:     Maximum number of *series* to process per tenant (full-sweep only).
         series_id: If set, render only this series (ignores *limit*).
 
     Returns:
@@ -833,70 +901,22 @@ def run(limit: int | None = None, *, series_id: int | None = None) -> dict:
                 "errored":  int,   # parts that raised an exception
             }
     """
-    # Env-var override (set by the Cloud Run job execution via containerOverrides).
     _env_series_id = os.getenv("RENDER_SERIES_ID")
     if _env_series_id and series_id is None:
         series_id = int(_env_series_id)
 
-    from app.models import MiniSeries, SessionLocal, SocialPost  # noqa: PLC0415
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
 
-    db = SessionLocal()
-    try:
-        if series_id is not None:
-            # Targeted render — fetch only this series.
-            query = db.query(MiniSeries).filter(
-                MiniSeries.id == series_id,
-                MiniSeries.approved == 1,
-            )
-        else:
-            query = db.query(MiniSeries).filter(MiniSeries.approved == 1)
-            if limit is not None:
-                query = query.limit(limit)
-        approved = query.all()
-        # Snapshot: build list of (series_id, part_index) pairs to render
-        work: list[tuple[int, int]] = []
-        for series in approved:
-            parts = get_clips(series.parts_json)
-            for part_index in range(len(parts)):
-                rendered = (
-                    db.query(SocialPost)
-                    .filter(
-                        SocialPost.series_id == series.id,
-                        SocialPost.part == part_index,
-                        SocialPost.gcs_url.isnot(None),
-                    )
-                    .first()
-                )
-                if not rendered:
-                    work.append((series.id, part_index))
-    finally:
-        db.close()
+    totals: dict = {"rendered": 0, "skipped": 0, "errored": 0}
 
-    rendered_count = 0
-    skipped_count = 0
-    errored_count = 0
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, limit=limit, series_id=series_id)
+        for k in totals:
+            totals[k] += r.get(k, 0)
 
-    for series_id, part_index in work:
-        try:
-            result = render_part(series_id, part_index)
-            if result["skipped"]:
-                skipped_count += 1
-            else:
-                rendered_count += 1
-        except Exception as exc:  # noqa: BLE001
-            logger.error(
-                "render_part error series=%d part=%d: %s",
-                series_id,
-                part_index,
-                exc,
-            )
-            errored_count += 1
-
-    return {
-        "rendered": rendered_count,
-        "skipped": skipped_count,
-        "errored": errored_count,
-    }
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

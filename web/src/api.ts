@@ -196,3 +196,102 @@ export async function submitDecline(
   if (!res.ok) throw new Error(`decline ${res.status}`);
   return res.json();
 }
+
+// ── F5: Brand kit + Marketing + KB tenant settings ──────────────────────────
+
+export interface BrandKit {
+  logo_gcs_uri?: string;
+  primary_color?: string;
+  accent_color?: string;
+  font_heading?: string;
+  font_body?: string;
+  intro_gcs_uri?: string;
+  outro_gcs_uri?: string;
+  voice_sample_gcs_uri?: string;
+}
+
+export interface SocialAccountStatus {
+  connected: boolean;
+  account_id?: string;
+}
+
+export interface MarketingSettings {
+  brand?: BrandKit;
+  caption_prompt_version?: string;
+  publish_cadence_days?: number;
+  seed_pct?: number;
+  royalty_free_music_catalog?: string;
+  social_accounts?: Record<string, SocialAccountStatus>;
+  safety_denylist?: string[];
+}
+
+export interface KbSettings {
+  ingest_enabled?: boolean;
+  abstain_threshold?: number;
+  faq_policy?: "auto" | "manual";
+  channel_sources?: string[];
+}
+
+export async function getAdminTenantSettings(): Promise<Record<string, unknown>> {
+  const res = await apiFetch("/admin/tenant/settings");
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export async function getMarketingSettings(): Promise<MarketingSettings> {
+  const data = await getAdminTenantSettings();
+  return { ...(data["marketing"] as object ?? {}), brand: data["brand"] } as MarketingSettings;
+}
+
+export async function putMarketingSettings(settings: MarketingSettings): Promise<MarketingSettings> {
+  const res = await apiFetch("/admin/tenant/settings/marketing", { method: "PUT", body: JSON.stringify(settings) });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+  }
+  const data = await res.json();
+  return (data["marketing"] ?? data) as MarketingSettings;
+}
+
+export async function getKbSettings(): Promise<KbSettings> {
+  const data = await getAdminTenantSettings();
+  return (data["kb"] ?? {}) as KbSettings;
+}
+
+export async function putKbSettings(settings: KbSettings): Promise<KbSettings> {
+  const res = await apiFetch("/admin/tenant/settings/kb", { method: "PUT", body: JSON.stringify(settings) });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+  }
+  const data = await res.json();
+  return (data["kb"] ?? data) as KbSettings;
+}
+
+const _CONTENT_TYPE: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", svg: "image/svg+xml",
+  mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm",
+  wav: "audio/wav", mp3: "audio/mpeg", m4a: "audio/mp4",
+};
+
+/** Presigned brand-asset upload. UI passes a BrandKit field key + file extension;
+ *  this adapts to the backend contract ({asset_name, content_type} → {upload_url,
+ *  gcs_uri}) and returns the UI shape {url, gcs_path}. */
+export async function getBrandUploadUrl(
+  assetKey: keyof BrandKit,
+  ext: string,
+): Promise<{ url: string; gcs_path: string }> {
+  const base = String(assetKey).replace(/_gcs_uri$/, "");
+  const asset_name = `${base}.${ext}`;
+  const content_type = _CONTENT_TYPE[ext.toLowerCase()] ?? "application/octet-stream";
+  const res = await apiFetch("/admin/tenant/brand/upload-url", {
+    method: "POST",
+    body: JSON.stringify({ asset_name, content_type }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+  }
+  const data = await res.json();
+  return { url: data.upload_url, gcs_path: data.gcs_uri };
+}

@@ -52,55 +52,69 @@ def _sources_for_topic(db, video_ids: list[str]) -> list[dict]:
     ]
 
 
-def run(top_n: int = 15, max_clips: int = 5) -> dict:
-    from app.models import AggregatedTopic, MiniSeries, SessionLocal  # noqa: PLC0415
+def _run_for_tenant(db, tenant_id: int, top_n: int = 15, max_clips: int = 5) -> dict:
+    """Per-tenant topic series proposal body. Called by for_each_tenant via run()."""
+    from app.models import AggregatedTopic, MiniSeries  # noqa: PLC0415
 
-    with SessionLocal() as db:
-        topics = (
-            db.query(AggregatedTopic)
-            .order_by(AggregatedTopic.num_videos.desc())
-            .limit(top_n * 2)
-            .all()
-        )
-        existing = {
-            s.title for s in db.query(MiniSeries).filter(MiniSeries.title.like(f"%{_SERIES_SUFFIX}%")).all()
-        }
+    topics = (
+        db.query(AggregatedTopic)
+        .order_by(AggregatedTopic.num_videos.desc())
+        .limit(top_n * 2)
+        .all()
+    )
+    existing = {
+        s.title for s in db.query(MiniSeries).filter(MiniSeries.title.like(f"%{_SERIES_SUFFIX}%")).all()
+    }
 
-        proposed, skipped = 0, 0
-        for t in topics:
-            if proposed >= top_n:
-                break
-            label = miniseries.clean_title(t.canonical_label) or t.canonical_label
-            title = f"{label} {_SERIES_SUFFIX}"
-            if title in existing:
-                skipped += 1
-                continue
+    proposed, skipped = 0, 0
+    for t in topics:
+        if proposed >= top_n:
+            break
+        label = miniseries.clean_title(t.canonical_label) or t.canonical_label
+        title = f"{label} {_SERIES_SUFFIX}"
+        if title in existing:
+            skipped += 1
+            continue
 
-            video_ids = list(t.video_ids or [])
-            if len(video_ids) < _MIN_SOURCES:
-                skipped += 1
-                continue
+        video_ids = list(t.video_ids or [])
+        if len(video_ids) < _MIN_SOURCES:
+            skipped += 1
+            continue
 
-            sources = _sources_for_topic(db, video_ids)
-            parts = miniseries.propose_topic_clips(t.canonical_label, sources, max_clips=max_clips)
-            # Require genuinely multi-source output (≥2 distinct videos).
-            if len({p["video_id"] for p in parts}) < _MIN_SOURCES:
-                skipped += 1
-                continue
+        sources = _sources_for_topic(db, video_ids)
+        parts = miniseries.propose_topic_clips(t.canonical_label, sources, max_clips=max_clips)
+        if len({p["video_id"] for p in parts}) < _MIN_SOURCES:
+            skipped += 1
+            continue
 
-            db.add(MiniSeries(
-                video_id=parts[0]["video_id"],   # primary source (back-compat field)
-                title=title,
-                parts_json=parts,
-                approved=0,
-            ))
-            existing.add(title)
-            proposed += 1
-            logger.info("topic series %r: %d parts across %d videos",
-                        title, len(parts), len({p["video_id"] for p in parts}))
-        db.commit()
-
+        db.add(MiniSeries(
+            video_id=parts[0]["video_id"],
+            title=title,
+            parts_json=parts,
+            approved=0,
+        ))
+        existing.add(title)
+        proposed += 1
+        logger.info("topic series %r: %d parts across %d videos",
+                    title, len(parts), len({p["video_id"] for p in parts}))
+    db.commit()
     return {"proposed": proposed, "skipped": skipped}
+
+
+def run(top_n: int = 15, max_clips: int = 5) -> dict:
+    """Iterate active tenants and propose topic series for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"proposed": 0, "skipped": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, top_n=top_n, max_clips=max_clips)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

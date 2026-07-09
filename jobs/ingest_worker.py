@@ -34,6 +34,7 @@ def _single_flight():
     execution already holds it (skip). Session-scoped: if the process dies the connection drops
     and the lock auto-releases. No-op lock on sqlite (dev) — always yields True."""
     s = SessionLocal()
+    s.info["platform_scope"] = True  # advisory lock is platform-level; no tenant GUC needed
     is_pg = s.bind.dialect.name == "postgresql"
     held = True
     try:
@@ -86,8 +87,22 @@ def _pending_video_ids(s, limit=None):
     return [row[0] for row in q.all()]
 
 
+def _run_for_tenant(db, tenant_id: int, limit=None) -> dict:
+    """Per-tenant ingest body. Called by for_each_tenant via run()."""
+    vids = _pending_video_ids(db, limit)
+    ingested, errored = 0, 0
+    for vid in vids:
+        try:
+            ingest.ingest_video(vid)
+            ingested += 1
+        except Exception as e:  # noqa: BLE001 — one bad video must not stop the batch
+            errored += 1
+            print(f"[error] {vid}: {str(e)[:160]}")
+    return {"ingested": ingested, "errored": errored, "total": len(vids)}
+
+
 def run(limit=None):
-    """Drain up to *limit* pending videos, single-flight. limit=None -> INGEST_CRON_LIMIT (25)."""
+    """Iterate active tenants and drain pending ingest for each, single-flight."""
     if limit is None:
         limit = int(os.getenv("INGEST_CRON_LIMIT", "25"))
 
@@ -95,21 +110,18 @@ def run(limit=None):
         if not ok:
             return {"skipped": "ingest already running"}
 
-        s = SessionLocal()
-        try:
-            vids = _pending_video_ids(s, limit)
-        finally:
-            s.close()
+        from core.tenant_loop import for_each_tenant  # noqa: PLC0415
 
-        ingested, errored = 0, 0
-        for vid in vids:
-            try:
-                ingest.ingest_video(vid)  # resumable; VAD-skips + empty clips complete terminally
-                ingested += 1
-            except Exception as e:  # noqa: BLE001 — one bad video must not stop the batch
-                errored += 1
-                print(f"[error] {vid}: {str(e)[:160]}")
-        return {"ingested": ingested, "errored": errored, "total": len(vids)}
+        totals: dict = {"ingested": 0, "errored": 0, "total": 0}
+
+        def _fn(db, tenant_id: int) -> None:
+            r = _run_for_tenant(db, tenant_id, limit=limit)
+            totals["ingested"] += r.get("ingested", 0)
+            totals["errored"] += r.get("errored", 0)
+            totals["total"] += r.get("total", 0)
+
+        for_each_tenant(SessionLocal, _fn)
+        return totals
 
 
 if __name__ == "__main__":

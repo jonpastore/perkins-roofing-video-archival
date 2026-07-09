@@ -34,22 +34,22 @@ def _cosine_matrix(vecs):
     return (arr @ arr.T).tolist()
 
 
-def run(threshold: float = 0.9, dry_run: bool = False) -> dict:
+def _run_for_tenant(db, tenant_id: int, threshold: float = 0.9, dry_run: bool = False) -> dict:
+    """Per-tenant FAQ consolidation body. Called by for_each_tenant via run()."""
     from app.llm import embed  # noqa: PLC0415
-    from app.models import FaqEntry, SessionLocal  # noqa: PLC0415
+    from app.models import FaqEntry  # noqa: PLC0415
 
-    with SessionLocal() as db:
-        rows = (
-            db.query(FaqEntry)
-            .filter(FaqEntry.status != "duplicate")
-            .order_by(FaqEntry.id)
-            .all()
-        )
-        entries = [
-            {"id": r.id, "question": r.question or "", "answer": r.answer or "",
-             "status": r.status, "video_id": r.video_id, "start": r.start}
-            for r in rows
-        ]
+    rows = (
+        db.query(FaqEntry)
+        .filter(FaqEntry.status != "duplicate")
+        .order_by(FaqEntry.id)
+        .all()
+    )
+    entries = [
+        {"id": r.id, "question": r.question or "", "answer": r.answer or "",
+         "status": r.status, "video_id": r.video_id, "start": r.start}
+        for r in rows
+    ]
 
     if len(entries) < 2:
         return {"total": len(entries), "clusters": 0, "duplicates": 0, "merged": 0}
@@ -60,7 +60,7 @@ def run(threshold: float = 0.9, dry_run: bool = False) -> dict:
     clusters = fc.greedy_cluster(sim, threshold)
 
     dupes, merged, multi = [], 0, 0
-    updates: dict[int, str] = {}  # canonical id -> new answer
+    updates: dict[int, str] = {}
     for members in clusters:
         if len(members) < 2:
             continue
@@ -68,7 +68,6 @@ def run(threshold: float = 0.9, dry_run: bool = False) -> dict:
         group = [entries[m] for m in members]
         ci = fc.choose_canonical(group)
         canonical = group[ci]
-        # Gather every source URL across the cluster (from answers + each entry's own clip).
         extra = []
         for e in group:
             extra.extend(fc.links_in(e["answer"]))
@@ -88,19 +87,34 @@ def run(threshold: float = 0.9, dry_run: bool = False) -> dict:
         return {"total": len(entries), "clusters": multi, "duplicates": len(dupes),
                 "merged": merged, "dry_run": True}
 
-    with SessionLocal() as db:
-        for cid, ans in updates.items():
-            e = db.get(FaqEntry, cid)
-            if e:
-                e.answer = ans
-        for did in dupes:
-            e = db.get(FaqEntry, did)
-            if e:
-                e.status = "duplicate"
-        db.commit()
+    for cid, ans in updates.items():
+        e = db.get(FaqEntry, cid)
+        if e:
+            e.answer = ans
+    for did in dupes:
+        e = db.get(FaqEntry, did)
+        if e:
+            e.status = "duplicate"
+    db.commit()
 
     return {"total": len(entries), "clusters": multi, "duplicates": len(dupes),
             "merged": merged, "remaining": len(entries) - len(dupes)}
+
+
+def run(threshold: float = 0.9, dry_run: bool = False) -> dict:
+    """Iterate active tenants and consolidate FAQs for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"total": 0, "clusters": 0, "duplicates": 0, "merged": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, threshold=threshold, dry_run=dry_run)
+        for k in ("total", "clusters", "duplicates", "merged"):
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 if __name__ == "__main__":

@@ -105,142 +105,137 @@ def _greedy_cluster(
 # Main run() — the public API for this job
 # ---------------------------------------------------------------------------
 
-def run(sim_threshold: float = _SIM_THRESHOLD) -> dict[str, Any]:
-    """Cluster all content_graph topic labels and upsert into aggregated_topics.
-
-    Returns a summary dict:
-        {
-            "version": str,
-            "num_raw_labels": int,
-            "num_clusters": int,
-            "clusters": [{"canonical_label": str, "num_videos": int,
-                          "total_seconds": float, "video_ids": [...],
-                          "node_ids": [...]}]
-        }
-    """
-    from app.models import AggregatedTopic, GraphNode, SessionLocal, Video
+def _run_for_tenant(db, tenant_id: int, sim_threshold: float = _SIM_THRESHOLD) -> dict[str, Any]:
+    """Per-tenant topic aggregation body. Called by for_each_tenant via run()."""
+    from app.models import AggregatedTopic, GraphNode, Video  # noqa: PLC0415
 
     version = datetime.now(timezone.utc).strftime(_VERSION_FMT)
 
-    with SessionLocal() as db:
-        # ---- Load all topic nodes ----------------------------------------
-        rows = (
-            db.query(GraphNode.id, GraphNode.label, GraphNode.video_id)
-            .filter(GraphNode.kind == "topics")
-            .all()
-        )
-        if not rows:
-            logger.info("aggregate_topics: no topic nodes found, clearing table")
-            db.query(AggregatedTopic).delete()
-            db.commit()
-            return {"version": version, "num_raw_labels": 0, "num_clusters": 0, "clusters": []}
-
-        # ---- Build label-level stats before clustering -------------------
-        # label_index: distinct (lowercased) labels → list index in `distinct_labels`
-        # label_counts: normalised label → frequency count across all nodes
-        label_counts: dict[str, int] = defaultdict(int)
-        # raw_label_for: normalised → most-frequent raw form (resolved after counting)
-        raw_label_map: dict[str, list[str]] = defaultdict(list)
-
-        # Per node: which (norm_label, video_id, node_id)
-        node_data: list[tuple[str, str, int]] = []  # (norm_label, video_id, node_id)
-        for node_id, label, video_id in rows:
-            if not label:
-                continue
-            norm = label.strip().lower()
-            label_counts[norm] += 1
-            raw_label_map[norm].append(label.strip())
-            node_data.append((norm, video_id, node_id))
-
-        if not label_counts:
-            db.query(AggregatedTopic).delete()
-            db.commit()
-            return {"version": version, "num_raw_labels": 0, "num_clusters": 0, "clusters": []}
-
-        distinct_norm_labels = list(label_counts.keys())
-        # Choose the most frequent raw form as canonical; ties → alphabetically first
-        canonical_for: dict[str, str] = {}
-        for norm, raw_list in raw_label_map.items():
-            freq: dict[str, int] = defaultdict(int)
-            for r in raw_list:
-                freq[r] += 1
-            max_freq = max(freq.values())
-            candidates = sorted(r for r, c in freq.items() if c == max_freq)
-            canonical_for[norm] = candidates[0]
-
-        # ---- Embed -------------------------------------------------------
-        logger.info("aggregate_topics: embedding %d distinct labels", len(distinct_norm_labels))
-        norm_vecs = _embed_in_batches(distinct_norm_labels)
-
-        # ---- Cluster -----------------------------------------------------
-        clusters = _greedy_cluster(distinct_norm_labels, norm_vecs, threshold=sim_threshold)
-        logger.info("aggregate_topics: %d labels → %d clusters", len(distinct_norm_labels), len(clusters))
-
-        # ---- Build cluster metadata -------------------------------------
-        # Map norm_label → cluster index for fast lookup
-        norm_to_cluster: dict[str, int] = {}
-        for ci, member_indices in enumerate(clusters):
-            for idx in member_indices:
-                norm_to_cluster[distinct_norm_labels[idx]] = ci
-
-        # Accumulate video_ids and node_ids per cluster
-        cluster_video_ids: list[set[str]] = [set() for _ in clusters]
-        cluster_node_ids: list[list[int]] = [[] for _ in clusters]
-        for norm, video_id, node_id in node_data:
-            ci = norm_to_cluster.get(norm)
-            if ci is None:
-                continue
-            cluster_video_ids[ci].add(video_id)
-            cluster_node_ids[ci].append(node_id)
-
-        # Choose canonical label per cluster: most frequent label among members
-        cluster_canonical: list[str] = []
-        for ci, member_indices in enumerate(clusters):
-            best_norm = max(
-                (distinct_norm_labels[idx] for idx in member_indices),
-                key=lambda n: label_counts[n],
-            )
-            cluster_canonical.append(canonical_for[best_norm])
-
-        # Fetch video durations in one query
-        all_video_ids = {vid for s in cluster_video_ids for vid in s}
-        duration_map: dict[str, float] = {}
-        if all_video_ids:
-            vids = db.query(Video).filter(Video.id.in_(list(all_video_ids))).all()
-            duration_map = {v.id: float(v.duration or 0.0) for v in vids}
-
-        # ---- Upsert: clear + insert -------------------------------------
+    # ---- Load all topic nodes ----------------------------------------
+    rows = (
+        db.query(GraphNode.id, GraphNode.label, GraphNode.video_id)
+        .filter(GraphNode.kind == "topics")
+        .all()
+    )
+    if not rows:
+        logger.info("aggregate_topics: no topic nodes found, clearing table")
         db.query(AggregatedTopic).delete()
-        result_clusters = []
-        for ci in range(len(clusters)):
-            vid_list = sorted(cluster_video_ids[ci])
-            nid_list = sorted(cluster_node_ids[ci])
-            total_sec = sum(duration_map.get(v, 0.0) for v in vid_list)
-            rec = AggregatedTopic(
-                canonical_label=cluster_canonical[ci],
-                num_videos=len(vid_list),
-                total_seconds=total_sec,
-                video_ids=vid_list,
-                node_ids=nid_list,
-                version=version,
-            )
-            db.add(rec)
-            result_clusters.append({
-                "canonical_label": cluster_canonical[ci],
-                "num_videos": len(vid_list),
-                "total_seconds": total_sec,
-                "video_ids": vid_list,
-                "node_ids": nid_list,
-            })
-
         db.commit()
+        return {"version": version, "num_raw_labels": 0, "num_clusters": 0, "clusters": []}
 
+    # ---- Build label-level stats before clustering -------------------
+    label_counts: dict[str, int] = defaultdict(int)
+    raw_label_map: dict[str, list[str]] = defaultdict(list)
+    node_data: list[tuple[str, str, int]] = []
+    for node_id, label, video_id in rows:
+        if not label:
+            continue
+        norm = label.strip().lower()
+        label_counts[norm] += 1
+        raw_label_map[norm].append(label.strip())
+        node_data.append((norm, video_id, node_id))
+
+    if not label_counts:
+        db.query(AggregatedTopic).delete()
+        db.commit()
+        return {"version": version, "num_raw_labels": 0, "num_clusters": 0, "clusters": []}
+
+    distinct_norm_labels = list(label_counts.keys())
+    canonical_for: dict[str, str] = {}
+    for norm, raw_list in raw_label_map.items():
+        freq: dict[str, int] = defaultdict(int)
+        for r in raw_list:
+            freq[r] += 1
+        max_freq = max(freq.values())
+        candidates = sorted(r for r, c in freq.items() if c == max_freq)
+        canonical_for[norm] = candidates[0]
+
+    # ---- Embed -------------------------------------------------------
+    logger.info("aggregate_topics: embedding %d distinct labels", len(distinct_norm_labels))
+    norm_vecs = _embed_in_batches(distinct_norm_labels)
+
+    # ---- Cluster -----------------------------------------------------
+    clusters = _greedy_cluster(distinct_norm_labels, norm_vecs, threshold=sim_threshold)
+    logger.info("aggregate_topics: %d labels → %d clusters", len(distinct_norm_labels), len(clusters))
+
+    # ---- Build cluster metadata --------------------------------------
+    norm_to_cluster: dict[str, int] = {}
+    for ci, member_indices in enumerate(clusters):
+        for idx in member_indices:
+            norm_to_cluster[distinct_norm_labels[idx]] = ci
+
+    cluster_video_ids: list[set[str]] = [set() for _ in clusters]
+    cluster_node_ids: list[list[int]] = [[] for _ in clusters]
+    for norm, video_id, node_id in node_data:
+        ci = norm_to_cluster.get(norm)
+        if ci is None:
+            continue
+        cluster_video_ids[ci].add(video_id)
+        cluster_node_ids[ci].append(node_id)
+
+    cluster_canonical: list[str] = []
+    for ci, member_indices in enumerate(clusters):
+        best_norm = max(
+            (distinct_norm_labels[idx] for idx in member_indices),
+            key=lambda n: label_counts[n],
+        )
+        cluster_canonical.append(canonical_for[best_norm])
+
+    all_video_ids = {vid for s in cluster_video_ids for vid in s}
+    duration_map: dict[str, float] = {}
+    if all_video_ids:
+        vids = db.query(Video).filter(Video.id.in_(list(all_video_ids))).all()
+        duration_map = {v.id: float(v.duration or 0.0) for v in vids}
+
+    # ---- Upsert: clear + insert --------------------------------------
+    db.query(AggregatedTopic).delete()
+    result_clusters = []
+    for ci in range(len(clusters)):
+        vid_list = sorted(cluster_video_ids[ci])
+        nid_list = sorted(cluster_node_ids[ci])
+        total_sec = sum(duration_map.get(v, 0.0) for v in vid_list)
+        rec = AggregatedTopic(
+            canonical_label=cluster_canonical[ci],
+            num_videos=len(vid_list),
+            total_seconds=total_sec,
+            video_ids=vid_list,
+            node_ids=nid_list,
+            version=version,
+        )
+        db.add(rec)
+        result_clusters.append({
+            "canonical_label": cluster_canonical[ci],
+            "num_videos": len(vid_list),
+            "total_seconds": total_sec,
+            "video_ids": vid_list,
+            "node_ids": nid_list,
+        })
+
+    db.commit()
     return {
         "version": version,
         "num_raw_labels": len(distinct_norm_labels),
         "num_clusters": len(clusters),
         "clusters": result_clusters,
     }
+
+
+def run(sim_threshold: float = _SIM_THRESHOLD) -> dict[str, Any]:
+    """Iterate active tenants and aggregate topics for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    results: list[dict] = []
+
+    def _fn(db, tenant_id: int) -> None:
+        results.append(_run_for_tenant(db, tenant_id, sim_threshold=sim_threshold))
+
+    for_each_tenant(SessionLocal, _fn)
+
+    if not results:
+        version = datetime.now(timezone.utc).strftime(_VERSION_FMT)
+        return {"version": version, "num_raw_labels": 0, "num_clusters": 0, "clusters": []}
+    return results[-1]
 
 
 if __name__ == "__main__":

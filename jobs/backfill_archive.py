@@ -18,48 +18,62 @@ from core.enumerate import to_video_rows
 from jobs.enumerate_channel import CHANNEL_ID
 
 
-def run(channel_id: str = CHANNEL_ID) -> dict:
-    """Enumerate channel, insert missing Video rows, stamp last_pulled_at.
-
-    Returns:
-        {"added": int, "checked": int, "failed_tabs": list[str]}
-    """
-    init_db()
+def _run_for_tenant(db, tenant_id: int, channel_id: str = CHANNEL_ID) -> dict:
+    """Per-tenant backfill body. Called by for_each_tenant via run()."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     entries, failed = list_channel(channel_id)
     rows = to_video_rows(entries)
 
-    with SessionLocal() as db:
-        existing_ids: set[str] = {vid for (vid,) in db.query(Video.id).all()}
+    existing_ids: set[str] = {vid for (vid,) in db.query(Video.id).all()}
 
-        added = 0
-        for r in rows:
-            vid_id = r["id"]
-            if vid_id not in existing_ids:
-                v = Video(
-                    id=vid_id,
-                    title=r["title"],
-                    duration=r["duration"],
-                    url=r["url"],
-                    last_pulled_at=now,
-                )
-                db.add(v)
-                added += 1
-            else:
-                # Stamp last_pulled_at on existing rows too so check_new() works
-                row = db.get(Video, vid_id)
-                if row:
-                    row.last_pulled_at = now
-                    db.add(row)
+    added = 0
+    for r in rows:
+        vid_id = r["id"]
+        if vid_id not in existing_ids:
+            v = Video(
+                id=vid_id,
+                title=r["title"],
+                duration=r["duration"],
+                url=r["url"],
+                last_pulled_at=now,
+            )
+            db.add(v)
+            added += 1
+        else:
+            # Stamp last_pulled_at on existing rows too so check_new() works
+            row = db.get(Video, vid_id)
+            if row:
+                row.last_pulled_at = now
+                db.add(row)
 
-        db.commit()
+    db.commit()
 
     incomplete = any(t in ("videos", "shorts") for t in failed)
     if failed:
         print(f"[warn] tabs failed: {failed} (incomplete={incomplete})")
 
     return {"added": added, "checked": len(rows), "failed_tabs": failed}
+
+
+def run(channel_id: str = CHANNEL_ID) -> dict:
+    """Iterate active tenants and backfill missing Video rows for each."""
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    init_db()
+    results: list[dict] = []
+
+    def _fn(db, tenant_id: int) -> None:
+        results.append(_run_for_tenant(db, tenant_id, channel_id=channel_id))
+
+    for_each_tenant(SessionLocal, _fn)
+
+    totals: dict = {"added": 0, "checked": 0, "failed_tabs": []}
+    for r in results:
+        totals["added"] += r.get("added", 0)
+        totals["checked"] += r.get("checked", 0)
+        totals["failed_tabs"].extend(r.get("failed_tabs", []))
+    return totals
 
 
 def check_new(channel_id: str = CHANNEL_ID) -> dict:

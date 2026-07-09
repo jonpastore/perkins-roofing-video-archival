@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from adapters.youtube_comments import fetch_comments
 from adapters.youtube_stats import fetch_stats
 from app.llm import chat
-from app.models import CommentDraft, Segment, SessionLocal, Video, init_db
+from app.models import CommentDraft, Segment, Video, init_db
 from core.comments import needs_reply
 
 log = logging.getLogger(__name__)
@@ -60,19 +60,8 @@ def _get_transcript_context(db, video_id: str) -> str:
     return text[:_CONTEXT_CHARS] if text else "(transcript not available)"
 
 
-def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
-    """Crawl comments for up to ``limit`` recent videos, upsert, and draft replies.
-
-    Stops generating new drafts once ``max_drafts`` have been created in this
-    run (existing drafts are never overwritten — idempotent).
-
-    Comments authored by YT_OWNER_CHANNEL_ID are skipped entirely.
-    has_channel_reply is True only when the owner channel has replied in-thread.
-
-    Returns a summary dict: {videos_processed, comments_upserted, flagged, drafted, errors}.
-    """
-    init_db()
-
+def _run_for_tenant(db, tenant_id: int, limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
+    """Per-tenant comment crawl body. Called by for_each_tenant via run()."""
     owner_channel_id: str | None = os.environ.get("YT_OWNER_CHANNEL_ID") or None
 
     summary = {
@@ -85,139 +74,158 @@ def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
 
     drafts_this_run = 0
 
-    with SessionLocal() as db:
-        # Rotate through the whole catalog over successive (cron) runs: least-recently-
-        # crawled first — never-crawled (NULL) videos, then the oldest comments_crawled_at.
-        videos = (
-            db.query(Video)
-            .order_by(Video.comments_crawled_at.asc().nullsfirst())
-            .limit(limit)
-            .all()
-        )
+    # Rotate through the whole catalog over successive (cron) runs: least-recently-
+    # crawled first — never-crawled (NULL) videos, then the oldest comments_crawled_at.
+    videos = (
+        db.query(Video)
+        .order_by(Video.comments_crawled_at.asc().nullsfirst())
+        .limit(limit)
+        .all()
+    )
 
-        for video in videos:
-            if drafts_this_run >= max_drafts:
-                log.info("crawl_comments: max_drafts=%d reached, stopping early", max_drafts)
-                break
+    for video in videos:
+        if drafts_this_run >= max_drafts:
+            log.info("crawl_comments: max_drafts=%d reached, stopping early", max_drafts)
+            break
 
-            summary["videos_processed"] += 1
-            try:
-                comments = fetch_comments(
-                    video.id,
-                    max_results=_FETCH_MAX_PER_VIDEO,
-                    owner_channel_id=owner_channel_id,
-                )
-            except Exception as exc:
-                log.warning("crawl_comments: fetch failed for %s: %s", video.id, exc)
-                summary["errors"] += 1
-                # Stamp anyway so a persistently-failing video doesn't block the rotation.
-                video.comments_crawled_at = datetime.now(timezone.utc).replace(tzinfo=None)
-                db.commit()
-                continue
-
-            for item in comments:
-                if drafts_this_run >= max_drafts:
-                    break
-
-                # Skip comments posted by the channel owner (never draft a reply to ourselves)
-                if owner_channel_id and item["author_channel_id"] == owner_channel_id:
-                    continue
-
-                # Use real owner-reply detection (not reply_count proxy)
-                has_reply = item["has_owner_reply"]
-                flag = needs_reply(item["text"], has_reply)
-
-                # Upsert: skip if this comment_id already exists
-                existing = (
-                    db.query(CommentDraft)
-                    .filter(CommentDraft.comment_id == item["comment_id"])
-                    .first()
-                )
-                if existing is None:
-                    row = CommentDraft(
-                        video_id=video.id,
-                        comment_id=item["comment_id"],
-                        author=item["author"],
-                        comment_text=item["text"],
-                        published_at=item["published_at"],
-                        needs_reply=flag,
-                        draft_reply=None,
-                        status="pending",
-                        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
-                    )
-                    try:
-                        # SAVEPOINT so a lost insert race doesn't poison the whole batch.
-                        with db.begin_nested():
-                            db.add(row)
-                            db.flush()  # get row.id
-                        summary["comments_upserted"] += 1
-                        if flag:
-                            summary["flagged"] += 1
-                    except IntegrityError:
-                        # Another concurrent run inserted this comment first — use theirs.
-                        row = (
-                            db.query(CommentDraft)
-                            .filter(CommentDraft.comment_id == item["comment_id"])
-                            .first()
-                        )
-                        if row is None:
-                            continue
-                else:
-                    row = existing
-                    # Update needs_reply flag if it changed (e.g. owner replied externally)
-                    if existing.needs_reply != flag:
-                        existing.needs_reply = flag
-
-                # Generate draft only for flagged comments without a draft yet,
-                # and only while under the max_drafts budget
-                if flag and row.status == "pending" and not row.draft_reply:
-                    if drafts_this_run >= max_drafts:
-                        break
-                    context = _get_transcript_context(db, video.id)
-                    prompt = _DRAFT_PROMPT_TEMPLATE.format(
-                        title=video.title or video.id,
-                        comment=item["text"],
-                        context=context,
-                    )
-                    try:
-                        draft = chat(prompt, want_json=False)
-                        if draft and draft.strip():
-                            row.draft_reply = draft.strip()
-                            row.status = "drafted"
-                            summary["drafted"] += 1
-                            drafts_this_run += 1
-                    except Exception as exc:
-                        log.warning(
-                            "crawl_comments: LLM draft failed for comment %s: %s",
-                            item["comment_id"], exc,
-                        )
-                        summary["errors"] += 1
-
-            # Stamp this video as crawled so the next run rotates to others.
+        summary["videos_processed"] += 1
+        try:
+            comments = fetch_comments(
+                video.id,
+                max_results=_FETCH_MAX_PER_VIDEO,
+                owner_channel_id=owner_channel_id,
+            )
+        except Exception as exc:
+            log.warning("crawl_comments: fetch failed for %s: %s", video.id, exc)
+            summary["errors"] += 1
+            # Stamp anyway so a persistently-failing video doesn't block the rotation.
             video.comments_crawled_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db.commit()
+            continue
 
-        # Refresh KPI stats (views/likes/comment_count) for the videos crawled this run. The
-        # archive shows these; a single batched videos.list call keeps them current as the crawl
-        # rotates the whole catalog. Best-effort — a stats failure must not fail the crawl.
-        crawled_ids = [v.id for v in videos]
-        if crawled_ids:
-            try:
-                stats = fetch_stats(crawled_ids)
-                now = datetime.now(timezone.utc).replace(tzinfo=None)
-                for vid, s in stats.items():
-                    db.query(Video).filter(Video.id == vid).update({
-                        Video.views: s["views"],
-                        Video.likes: s["likes"],
-                        Video.comment_count: s["comments"],
-                        Video.kpis_polled_at: now,
-                    })
-                db.commit()
-                summary["kpis_updated"] = len(stats)
-            except Exception as exc:  # noqa: BLE001 — stats refresh is best-effort
-                log.warning("crawl_comments: KPI stats refresh failed: %s", exc)
+        for item in comments:
+            if drafts_this_run >= max_drafts:
+                break
+
+            # Skip comments posted by the channel owner (never draft a reply to ourselves)
+            if owner_channel_id and item["author_channel_id"] == owner_channel_id:
+                continue
+
+            # Use real owner-reply detection (not reply_count proxy)
+            has_reply = item["has_owner_reply"]
+            flag = needs_reply(item["text"], has_reply)
+
+            # Upsert: skip if this comment_id already exists
+            existing = (
+                db.query(CommentDraft)
+                .filter(CommentDraft.comment_id == item["comment_id"])
+                .first()
+            )
+            if existing is None:
+                row = CommentDraft(
+                    video_id=video.id,
+                    comment_id=item["comment_id"],
+                    author=item["author"],
+                    comment_text=item["text"],
+                    published_at=item["published_at"],
+                    needs_reply=flag,
+                    draft_reply=None,
+                    status="pending",
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                )
+                try:
+                    # SAVEPOINT so a lost insert race doesn't poison the whole batch.
+                    with db.begin_nested():
+                        db.add(row)
+                        db.flush()  # get row.id
+                    summary["comments_upserted"] += 1
+                    if flag:
+                        summary["flagged"] += 1
+                except IntegrityError:
+                    # Another concurrent run inserted this comment first — use theirs.
+                    row = (
+                        db.query(CommentDraft)
+                        .filter(CommentDraft.comment_id == item["comment_id"])
+                        .first()
+                    )
+                    if row is None:
+                        continue
+            else:
+                row = existing
+                # Update needs_reply flag if it changed (e.g. owner replied externally)
+                if existing.needs_reply != flag:
+                    existing.needs_reply = flag
+
+            # Generate draft only for flagged comments without a draft yet,
+            # and only while under the max_drafts budget
+            if flag and row.status == "pending" and not row.draft_reply:
+                if drafts_this_run >= max_drafts:
+                    break
+                context = _get_transcript_context(db, video.id)
+                prompt = _DRAFT_PROMPT_TEMPLATE.format(
+                    title=video.title or video.id,
+                    comment=item["text"],
+                    context=context,
+                )
+                try:
+                    draft = chat(prompt, want_json=False)
+                    if draft and draft.strip():
+                        row.draft_reply = draft.strip()
+                        row.status = "drafted"
+                        summary["drafted"] += 1
+                        drafts_this_run += 1
+                except Exception as exc:
+                    log.warning(
+                        "crawl_comments: LLM draft failed for comment %s: %s",
+                        item["comment_id"], exc,
+                    )
+                    summary["errors"] += 1
+
+        # Stamp this video as crawled so the next run rotates to others.
+        video.comments_crawled_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+
+    # Refresh KPI stats (views/likes/comment_count) for the videos crawled this run. The
+    # archive shows these; a single batched videos.list call keeps them current as the crawl
+    # rotates the whole catalog. Best-effort — a stats failure must not fail the crawl.
+    crawled_ids = [v.id for v in videos]
+    if crawled_ids:
+        try:
+            stats = fetch_stats(crawled_ids)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            for vid, s in stats.items():
+                db.query(Video).filter(Video.id == vid).update({
+                    Video.views: s["views"],
+                    Video.likes: s["likes"],
+                    Video.comment_count: s["comments"],
+                    Video.kpis_polled_at: now,
+                })
+            db.commit()
+            summary["kpis_updated"] = len(stats)
+        except Exception as exc:  # noqa: BLE001 — stats refresh is best-effort
+            log.warning("crawl_comments: KPI stats refresh failed: %s", exc)
 
     return summary
+
+
+def run(limit: int = 20, max_drafts: int = _DEFAULT_MAX_DRAFTS) -> dict:
+    """Iterate active tenants and crawl comments for each."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    init_db()
+    results: list[dict] = []
+
+    def _fn(db, tenant_id: int) -> None:
+        results.append(_run_for_tenant(db, tenant_id, limit=limit, max_drafts=max_drafts))
+
+    for_each_tenant(SessionLocal, _fn)
+
+    totals: dict = {}
+    for r in results:
+        for k, v in r.items():
+            totals[k] = totals.get(k, 0) + v
+    return totals
 
 
 if __name__ == "__main__":

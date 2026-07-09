@@ -28,98 +28,88 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def run(target: int = _TARGET_IN_FLIGHT, now: datetime | None = None) -> dict[str, int]:
-    """Drain due articles, keep *target* in-flight, publish pillar-before-supports.
-
-    Returns:
-        Dict with keys published, blocked, errored.
-    """
+def _run_for_tenant(db, tenant_id: int, target: int = _TARGET_IN_FLIGHT, now: datetime | None = None) -> dict[str, int]:
+    """Per-tenant publish body. Called by for_each_tenant via run()."""
     now = now or _utcnow()
     published = blocked = errored = 0
 
-    s = SessionLocal()
-    try:
-        # --- 1. Load ready articles (due, not yet published) with skip-locked ---
-        # status 'ready' means the article has been approved and is waiting to drip.
-        # We also pick up 'scheduled' articles whose scheduled_at is due.
-        candidates = (
-            s.query(Article)
-            .filter(
-                Article.status.in_(["ready", "scheduled"]),
-                Article.scheduled_at <= now,
-            )
-            .with_for_update(skip_locked=True)
-            .order_by(Article.cluster_id.nullslast(), Article.priority.nullslast())
-            .all()
+    candidates = (
+        db.query(Article)
+        .filter(
+            Article.status.in_(["ready", "scheduled"]),
+            Article.scheduled_at <= now,
+        )
+        .with_for_update(skip_locked=True)
+        .order_by(Article.cluster_id.nullslast(), Article.priority.nullslast())
+        .all()
+    )
+
+    if not candidates:
+        return {"published": 0, "blocked": 0, "errored": 0}
+
+    cluster_groups: dict[int | None, list[dict]] = {}
+    for a in candidates:
+        cluster_groups.setdefault(a.cluster_id, []).append(
+            {"_orm": a, "slug": a.slug, "role": a.role or "support",
+             "priority": a.priority, "cluster_id": a.cluster_id}
         )
 
-        if not candidates:
-            s.close()
-            return {"published": 0, "blocked": 0, "errored": 0}
+    dispatch_queue: list[Article] = []
+    for cid, group in cluster_groups.items():
+        ordered = publish_order(group)
+        dispatch_queue.extend(item["_orm"] for item in ordered)
 
-        # --- 2. Group by cluster and apply pillar-first ordering ---
-        # Flatten into a dispatch list respecting pillar-before-support ordering.
-        # Articles without a cluster_id are treated as standalone (no reordering needed).
-        cluster_groups: dict[int | None, list[dict]] = {}
-        for a in candidates:
-            cluster_groups.setdefault(a.cluster_id, []).append(
-                {"_orm": a, "slug": a.slug, "role": a.role or "support",
-                 "priority": a.priority, "cluster_id": a.cluster_id}
-            )
+    to_publish = dispatch_queue[:max(0, target)]
 
-        dispatch_queue: list[Article] = []
-        for cid, group in cluster_groups.items():
-            ordered = publish_order(group)
-            dispatch_queue.extend(item["_orm"] for item in ordered)
+    for article in to_publish:
+        try:
+            text = article.content_md or ""
+            gate_result = run_gate(text, "article")
+            if not gate_result.passed:
+                article.status = "blocked"
+                db.add(article)
+                db.commit()
+                blocked += 1
+                print(
+                    f"[publish] BLOCKED {article.slug}: gate failed — "
+                    f"{gate_result.reason[:120] if gate_result.reason else 'no reason'}"
+                )
+                continue
 
-        # Drip throttle: publish up to `target` articles per run. Publishing here is
-        # synchronous (article goes ready→published within this call), so there is no
-        # persistent "in-flight" state between scheduler ticks — the drip rate is simply
-        # `target` per run. Cloud Scheduler cadence controls the overall pace.
-        to_publish = dispatch_queue[:max(0, target)]
+            if article.wp_post_id:
+                wordpress.update_status(article.wp_post_id, "publish")
 
-        # --- 3. Publish each article ---
-        for article in to_publish:
-            try:
-                # Content-safety gate — block on fail, never publish unsafe content
-                text = article.content_md or ""
-                gate_result = run_gate(text, "article")
-                if not gate_result.passed:
-                    article.status = "blocked"
-                    s.add(article)
-                    s.commit()
-                    blocked += 1
-                    print(
-                        f"[publish] BLOCKED {article.slug}: gate failed — "
-                        f"{gate_result.reason[:120] if gate_result.reason else 'no reason'}"
-                    )
-                    continue
+            article.status = "published"
+            db.add(article)
+            db.commit()
+            published += 1
+            print(f"[publish] published {article.slug} (cluster={article.cluster_id})")
 
-                # Push to WordPress if wired
-                if article.wp_post_id:
-                    wordpress.update_status(article.wp_post_id, "publish")
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            article.status = "error"
+            db.add(article)
+            db.commit()
+            errored += 1
+            print(f"[error] publish {article.slug}: {str(e)[:120]}")
 
-                article.status = "published"
-                s.add(article)
-                s.commit()
-                published += 1
-                print(f"[publish] published {article.slug} (cluster={article.cluster_id})")
-
-            except Exception as e:  # noqa: BLE001
-                s.rollback()
-                article.status = "error"
-                s.add(article)
-                s.commit()
-                errored += 1
-                print(f"[error] publish {article.slug}: {str(e)[:120]}")
-
-        # --- 5. Check for cluster completion → activate next cluster's pillar ---
-        _maybe_activate_next_cluster(s, now)
-
-    finally:
-        s.close()
-
+    _maybe_activate_next_cluster(db, now)
     return {"published": published, "blocked": blocked, "errored": errored}
+
+
+def run(target: int = _TARGET_IN_FLIGHT, now: datetime | None = None) -> dict[str, int]:
+    """Iterate active tenants and drain due articles for each."""
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict = {"published": 0, "blocked": 0, "errored": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = _run_for_tenant(db, tenant_id, target=target, now=now)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
 
 
 def _maybe_activate_next_cluster(s, now: datetime) -> None:
