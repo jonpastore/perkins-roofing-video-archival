@@ -295,3 +295,64 @@ export async function getBrandUploadUrl(
   const data = await res.json();
   return { url: data.upload_url, gcs_path: data.gcs_uri };
 }
+
+// ── F6: tenant provisioning + per-tenant SSO ─────────────────────────────────
+
+export interface Tenant {
+  id: number;
+  name: string;
+  slug: string;
+  status: "provisioning" | "active" | "provisioning_failed" | "offboarded";
+  admin_email?: string | null;
+  created_at?: string | null;
+  mau?: number | null;
+}
+
+export interface TenantStatus {
+  status: "provisioning" | "active" | "provisioning_failed";
+  invite_link?: string;
+  error?: string;
+}
+
+export type IdpType = "saml" | "oidc";
+
+export interface SsoProvider {
+  idp_id: string;
+  type: IdpType;
+  display_name: string;
+  entity_id?: string;
+  sso_url?: string;
+  issuer_url?: string;
+  client_id?: string;
+  created_at?: string;
+}
+
+export type AddSsoProviderPayload =
+  | { type: "saml"; display_name: string; entity_id: string; sso_url: string; certificate_pem: string }
+  | { type: "oidc"; display_name: string; issuer_url: string; client_id: string; client_secret: string };
+
+export function listTenants(): Promise<Tenant[]> {
+  return apiFetch("/internal/tenants").then((r) => r.json());
+}
+export function provisionTenant(payload: { name: string; slug: string; admin_email: string }): Promise<{ id: number; status: string; invite_link?: string }> {
+  return apiFetch("/internal/tenants", { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json());
+}
+export function getTenantStatus(id: number): Promise<TenantStatus> {
+  return apiFetch(`/internal/tenants/${id}/status`).then((r) => r.json());
+}
+export function resendTenantInvite(id: number): Promise<{ invite_link?: string }> {
+  return apiFetch(`/internal/tenants/${id}/resend-invite`, { method: "POST" }).then((r) => r.json());
+}
+export function offboardTenant(id: number): Promise<void> {
+  // Backend contract is DELETE /internal/tenants/{id} (F6 §3.4).
+  return apiFetch(`/internal/tenants/${id}`, { method: "DELETE" }).then(() => undefined);
+}
+export function listSsoProviders(): Promise<SsoProvider[]> {
+  return apiFetch("/admin/sso/providers").then((r) => r.json());
+}
+export function addSsoProvider(payload: AddSsoProviderPayload): Promise<SsoProvider> {
+  return apiFetch("/admin/sso/providers", { method: "POST", body: JSON.stringify(payload) }).then((r) => r.json());
+}
+export function deleteSsoProvider(idpId: string): Promise<void> {
+  return apiFetch(`/admin/sso/providers/${idpId}`, { method: "DELETE" }).then(() => undefined);
+}

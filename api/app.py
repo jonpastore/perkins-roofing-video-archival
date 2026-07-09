@@ -239,11 +239,177 @@ def internal_tenants(audit=Depends(require_internal_tenants)):
     Uses PlatformSessionLocal directly (a plain context manager) — NOT the
     get_platform_db_session FastAPI dependency, which is a generator and would
     raise on `with ... as db` (architect H5)."""
-    from app.models import PlatformSessionLocal, Tenant
+    from app.models import PlatformSessionLocal, Tenant, TenantDefaultAdmin
     with PlatformSessionLocal() as db:
         db.info["platform_scope"] = True
         rows = db.query(Tenant).order_by(Tenant.id).all()
-        return [{"id": t.id, "name": t.name, "slug": t.slug, "status": t.status} for t in rows]
+        out = []
+        for t in rows:
+            admin = (db.query(TenantDefaultAdmin)
+                     .filter(TenantDefaultAdmin.tenant_id == t.id)
+                     .first())
+            out.append({
+                "id": t.id, "name": t.name, "slug": t.slug, "status": t.status,
+                "admin_email": (admin.email if admin else None),
+                "created_at": (t.created_at.isoformat() if t.created_at else None),
+                "mau": None,  # populated once GCIP usage metering lands (F6+)
+            })
+        return out
+
+
+def _gcip_tenant_id_for(db, tenant_id: int) -> str | None:
+    """Look up the GCIP tenant id for a platform tenant_id via tenant_gcip_map."""
+    from app.models import TenantGcipMap
+    row = (db.query(TenantGcipMap)
+           .filter(TenantGcipMap.tenant_id == tenant_id)
+           .first())
+    return row.gcip_tenant if row else None
+
+
+@app.post("/internal/tenants", status_code=201)
+def provision_tenant_route(body: dict, audit=Depends(require_internal_tenants)):
+    """platform_admin: provision a new tenant end-to-end (DB row + GCIP tenant +
+    seed configs + invite). F6 §3.2. GCIP tenant creation is a live Admin SDK call;
+    tests mock core.provision.provision_tenant."""
+    import adapters.gcip as gcip_client
+    import core.provision as provision
+    from app.models import PlatformSessionLocal
+    name, slug, admin_email = body.get("name"), body.get("slug"), body.get("admin_email")
+    if not (name and slug and admin_email):
+        raise HTTPException(422, "name, slug, admin_email required")
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        try:
+            result = provision.provision_tenant(name, slug, admin_email, db, gcip_client)
+            db.commit()
+            return {"id": result["tenant_id"], "status": "active",
+                    "invite_link": result.get("invite_link")}
+        except provision.SlugConflictError as e:
+            db.rollback()
+            raise HTTPException(409, f"slug '{slug}' already exists") from e
+        except provision.ProvisioningError as e:
+            # Persist the 'provisioning_failed' status + error so the status
+            # endpoint can surface it; provision_tenant wrote them before raising.
+            db.commit()
+            raise HTTPException(500, f"provisioning failed: {e}") from e
+
+
+@app.get("/internal/tenants/{tenant_id}/status")
+def tenant_status_route(tenant_id: int, audit=Depends(require_internal_tenants)):
+    from app.models import PlatformSessionLocal, Tenant
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        t = db.get(Tenant, tenant_id)
+        if t is None:
+            raise HTTPException(404, "tenant not found")
+        return {"status": t.status,
+                "error": (t.settings or {}).get("provisioning_error")}
+
+
+@app.delete("/internal/tenants/{tenant_id}")
+def offboard_tenant_route(tenant_id: int, audit=Depends(require_internal_tenants)):
+    """platform_admin: offboard a tenant (RLS-scoped cascade + GCS delete + audit).
+    Delegates to core.offboard.offboard_tenant (tenant 1 is protected)."""
+    import os
+
+    import adapters.gcip as gcip_client
+    import core.offboard as offboard
+    from app.models import PlatformSessionLocal
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        gcs_client = None
+        try:
+            from google.cloud import storage  # noqa: PLC0415
+            gcs_client = storage.Client()
+        except Exception:  # noqa: BLE001 — GCS optional in non-prod/test
+            pass
+        try:
+            offboard.offboard_tenant(tenant_id, audit.get("email", "platform_admin"),
+                                     db, gcs_client, f"{project}-media",
+                                     gcip_client=gcip_client)
+            db.commit()
+        except offboard.ProtectedTenantError as e:
+            db.rollback()
+            raise HTTPException(409, "tenant 1 (Perkins) is protected") from e
+        except ValueError as e:
+            db.rollback()
+            raise HTTPException(404, str(e)) from e
+    return {"ok": True, "status": "offboarded"}
+
+
+@app.post("/internal/tenants/{tenant_id}/resend-invite")
+def resend_invite_route(tenant_id: int, audit=Depends(require_internal_tenants)):
+    import adapters.gcip as gcip_client
+    import core.provision as provision
+    from app.models import PlatformSessionLocal, Tenant, TenantDefaultAdmin
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        t = db.get(Tenant, tenant_id)
+        if t is None:
+            raise HTTPException(404, "tenant not found")
+        gcip_id = _gcip_tenant_id_for(db, tenant_id)
+        admin = (db.query(TenantDefaultAdmin)
+                 .filter(TenantDefaultAdmin.tenant_id == tenant_id).first())
+        if gcip_id is None or admin is None:
+            raise HTTPException(404, "tenant has no GCIP tenant / admin to invite")
+        link = provision.resend_invite(gcip_id, admin.email, gcip_client)
+    return {"invite_link": link}
+
+
+# ── F6: per-tenant SSO (GCIP SAML/OIDC IdP config for the caller's own tenant) ──
+
+@app.get("/admin/sso/providers")
+def list_sso_route(claims=Depends(require_role_db("admin_users"))):
+    import adapters.gcip as gcip_client
+    import core.provision as provision
+    from app.models import PlatformSessionLocal
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        gcip_id = _gcip_tenant_id_for(db, claims.get("tenant_id") or 1)
+    if gcip_id is None:
+        return []  # tenant 1 (Perkins) uses the project-level pool; no per-tenant IdPs
+    return provision.list_sso_providers(gcip_id, gcip_client)
+
+
+@app.post("/admin/sso/providers", status_code=201)
+def add_sso_route(body: dict, claims=Depends(require_role_db("admin_users"))):
+    import adapters.gcip as gcip_client
+    import core.provision as provision
+    from app.models import PlatformSessionLocal
+    tenant_id = claims.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(400, "no tenant context")
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        gcip_id = _gcip_tenant_id_for(db, tenant_id)
+    if gcip_id is None:
+        raise HTTPException(404, "no GCIP tenant for the caller's tenant")
+    provider_type = body.get("type")
+    try:
+        return provision.add_sso_provider(gcip_id, provider_type, body, gcip_client)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@app.delete("/admin/sso/providers/{idp_id}")
+def delete_sso_route(idp_id: str, claims=Depends(require_role_db("admin_users"))):
+    import adapters.gcip as gcip_client
+    import core.provision as provision
+    from app.models import PlatformSessionLocal
+    tenant_id = claims.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(400, "no tenant context")
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        gcip_id = _gcip_tenant_id_for(db, tenant_id)
+    if gcip_id is None:
+        raise HTTPException(404, "no GCIP tenant for the caller's tenant")
+    try:
+        provision.remove_sso_provider(gcip_id, idp_id, gcip_client)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"ok": True}
 
 
 @app.post("/internal/proposal-reminders", dependencies=[Depends(_require_internal)])

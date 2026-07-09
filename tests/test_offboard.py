@@ -199,11 +199,161 @@ def test_offboard_sets_tenant_status_offboarded():
 
 
 # ---------------------------------------------------------------------------
-# GCIP stub
+# GCIP tenant deletion
 # ---------------------------------------------------------------------------
 
-def test_offboard_gcip_delete_is_stub():
-    """offboard_tenant completes without error even though GCIP delete is a stub."""
+def test_offboard_deletes_gcip_tenant_when_client_provided():
+    """offboard_tenant looks up the mapped gcip_tenant and deletes it."""
+    from core.offboard import offboard_tenant
+
+    def execute_side_effect(sql, params=None):
+        sql_str = str(sql)
+        result = MagicMock()
+        if "SELECT id" in sql_str:
+            row = MagicMock()
+            row.id = 4
+            row.status = "active"
+            result.fetchone.return_value = row
+        elif "tenant_gcip_map" in sql_str:
+            result.fetchone.return_value = ("gcip-acme-99",)
+        else:
+            result.fetchone.return_value = (0,)
+        return result
+
+    mock_db = MagicMock()
+    mock_db.execute.side_effect = execute_side_effect
+    mock_bucket = MagicMock()
+    mock_bucket.list_blobs.return_value = []
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+    mock_gcip = MagicMock()
+
+    offboard_tenant(
+        tenant_id=4,
+        platform_admin_email="admin@degenito.ai",
+        db=mock_db,
+        gcs_client=mock_gcs,
+        bucket_name="mybucket",
+        gcip_client=mock_gcip,
+    )
+
+    mock_gcip.delete_gcip_tenant.assert_called_once_with("gcip-acme-99")
+
+
+def test_offboard_best_effort_on_gcip_delete_failure():
+    """A GCIP delete failure is logged but does not abort the offboard."""
+    from core.offboard import offboard_tenant
+
+    def execute_side_effect(sql, params=None):
+        sql_str = str(sql)
+        result = MagicMock()
+        if "SELECT id" in sql_str:
+            row = MagicMock()
+            row.id = 9
+            row.status = "active"
+            result.fetchone.return_value = row
+        elif "tenant_gcip_map" in sql_str:
+            result.fetchone.return_value = ("gcip-boom",)
+        else:
+            result.fetchone.return_value = (0,)
+        return result
+
+    mock_db = MagicMock()
+    mock_db.execute.side_effect = execute_side_effect
+    mock_bucket = MagicMock()
+    mock_bucket.list_blobs.return_value = []
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+    mock_gcip = MagicMock()
+    mock_gcip.delete_gcip_tenant.side_effect = RuntimeError("gcip down")
+
+    # Must not raise despite the GCIP failure.
+    offboard_tenant(
+        tenant_id=9,
+        platform_admin_email="admin@degenito.ai",
+        db=mock_db,
+        gcs_client=mock_gcs,
+        bucket_name="mybucket",
+        gcip_client=mock_gcip,
+    )
+
+
+def test_offboard_gcip_lookup_failure_is_best_effort():
+    """A tenant_gcip_map lookup failure (table absent) does not abort offboard."""
+    from core.offboard import offboard_tenant
+
+    def execute_side_effect(sql, params=None):
+        sql_str = str(sql)
+        result = MagicMock()
+        if "SELECT id" in sql_str:
+            row = MagicMock()
+            row.id = 11
+            row.status = "active"
+            result.fetchone.return_value = row
+            return result
+        if "tenant_gcip_map" in sql_str:
+            raise Exception("no such table: tenant_gcip_map")
+        result.fetchone.return_value = (0,)
+        return result
+
+    mock_db = MagicMock()
+    mock_db.execute.side_effect = execute_side_effect
+    mock_bucket = MagicMock()
+    mock_bucket.list_blobs.return_value = []
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+    mock_gcip = MagicMock()
+
+    offboard_tenant(
+        tenant_id=11,
+        platform_admin_email="admin@degenito.ai",
+        db=mock_db,
+        gcs_client=mock_gcs,
+        bucket_name="mybucket",
+        gcip_client=mock_gcip,
+    )
+    mock_gcip.delete_gcip_tenant.assert_not_called()
+
+
+def test_offboard_no_gcip_mapping_skips_delete():
+    """When no gcip_tenant is mapped, delete is not attempted."""
+    from core.offboard import offboard_tenant
+
+    def execute_side_effect(sql, params=None):
+        sql_str = str(sql)
+        result = MagicMock()
+        if "SELECT id" in sql_str:
+            row = MagicMock()
+            row.id = 12
+            row.status = "active"
+            result.fetchone.return_value = row
+        elif "tenant_gcip_map" in sql_str:
+            result.fetchone.return_value = None
+        else:
+            result.fetchone.return_value = (0,)
+        return result
+
+    mock_db = MagicMock()
+    mock_db.execute.side_effect = execute_side_effect
+    mock_bucket = MagicMock()
+    mock_bucket.list_blobs.return_value = []
+    mock_gcs = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+    mock_gcip = MagicMock()
+
+    offboard_tenant(
+        tenant_id=12,
+        platform_admin_email="admin@degenito.ai",
+        db=mock_db,
+        gcs_client=mock_gcs,
+        bucket_name="mybucket",
+        gcip_client=mock_gcip,
+    )
+    mock_gcip.delete_gcip_tenant.assert_not_called()
+
+
+def test_offboard_skips_gcip_when_no_client():
+    """offboard_tenant completes without a gcip_client (deletion skipped)."""
     from core.offboard import offboard_tenant
 
     mock_db = _make_db(tenant_exists=True, tenant_id=3)

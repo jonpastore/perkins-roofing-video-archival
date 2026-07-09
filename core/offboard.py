@@ -6,7 +6,7 @@ offboard_tenant() implements the full offboard sequence:
   3. INSERT tenant_offboard_log (status='pending').
   4. RLS-scoped DELETE cascade on all tenant-scoped tables.
   5. Delete GCS prefix tenants/{tenant_id}/ (list + delete all objects).
-  6. GCIP delete stub (F6 wires the real implementation).
+  6. Delete the mapped GCIP tenant (best-effort; injected gcip_client).
   7. UPDATE tenant_offboard_log status='complete'.
   8. UPDATE tenants SET status='offboarded'.
 
@@ -71,6 +71,7 @@ def offboard_tenant(
     db,
     gcs_client,
     bucket_name: str,
+    gcip_client=None,
 ) -> None:
     """Offboard a tenant. See module docstring for full step sequence.
 
@@ -80,6 +81,9 @@ def offboard_tenant(
         db:                   SQLAlchemy session. The caller must commit/rollback.
         gcs_client:           google.cloud.storage.Client instance (injected).
         bucket_name:          GCS bucket containing tenant assets.
+        gcip_client:          adapters.gcip module (injected). When provided, the
+                              mapped GCIP tenant is deleted (best-effort). When None
+                              (e.g. unit tests), GCIP deletion is skipped.
 
     Raises:
         ProtectedTenantError: if tenant_id == 1.
@@ -154,8 +158,8 @@ def offboard_tenant(
     # ── Step 5: Delete GCS prefix ────────────────────────────────────────────
     _delete_gcs_prefix(gcs_client, bucket_name, gcs_prefix)
 
-    # ── Step 6: GCIP delete (stub — F6 wires real implementation) ────────────
-    _gcip_delete_stub(tenant_id)
+    # ── Step 6: GCIP delete (best-effort) ────────────────────────────────────
+    _delete_gcip_tenant(db, tenant_id, gcip_client)
 
     # ── Step 7: UPDATE audit log to 'complete' ───────────────────────────────
     db.execute(
@@ -189,11 +193,37 @@ def _delete_gcs_prefix(gcs_client, bucket_name: str, prefix: str) -> None:
         blob.delete()
 
 
-def _gcip_delete_stub(tenant_id: int) -> None:
-    """Stub for GCIP tenant deletion. F6 implements the real call.
+def _delete_gcip_tenant(db, tenant_id: int, gcip_client) -> None:
+    """Delete the tenant's GCIP tenant (best-effort).
 
-    When F6 is ready, replace this with:
-        firebase_admin.auth.delete_tenant(gcip_tenant_id)
-    and look up the gcip_tenant_id from the tenant_gcip_map table.
+    Looks up the mapped gcip_tenant from tenant_gcip_map and calls
+    gcip_client.delete_gcip_tenant(). A missing map row or a GCIP-side failure is
+    logged and swallowed so it never leaves the DB/GCS offboard half-applied —
+    an orphaned GCIP tenant is reconciled out-of-band, not by aborting offboard.
     """
-    log.info("offboard_tenant: GCIP delete stub for tenant %d (F6 TODO)", tenant_id)
+    if gcip_client is None:
+        log.info("offboard_tenant: no gcip_client; skipping GCIP delete for tenant %d", tenant_id)
+        return
+
+    try:
+        row = db.execute(
+            text("SELECT gcip_tenant FROM tenant_gcip_map WHERE tenant_id = :tid"),
+            {"tid": tenant_id},
+        ).fetchone()
+    except Exception as exc:  # noqa: BLE001 — map table absent in unit DBs
+        log.error("offboard_tenant: gcip_tenant lookup failed for tenant %d: %s", tenant_id, exc)
+        return
+
+    gcip_tenant_id = row[0] if row else None
+    if not gcip_tenant_id:
+        log.info("offboard_tenant: no GCIP tenant mapped for tenant %d; nothing to delete", tenant_id)
+        return
+
+    try:
+        gcip_client.delete_gcip_tenant(gcip_tenant_id)
+        log.info("offboard_tenant: deleted GCIP tenant %s for tenant %d", gcip_tenant_id, tenant_id)
+    except Exception as exc:  # noqa: BLE001 — best-effort; reconcile orphans out-of-band
+        log.error(
+            "offboard_tenant: GCIP delete failed for %s (tenant %d): %s",
+            gcip_tenant_id, tenant_id, exc,
+        )

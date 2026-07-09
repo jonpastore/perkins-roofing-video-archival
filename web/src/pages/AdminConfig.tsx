@@ -5,6 +5,8 @@ import { Settings } from "./Settings";
 import { EstimatingConfig } from "./EstimatingConfig";
 import { MarketingConfig } from "./MarketingConfig";
 import { KbConfig } from "./KbConfig";
+import { TenantsConfig } from "./TenantsConfig";
+import { SsoPanel } from "./SsoPanel";
 
 type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
 
@@ -99,9 +101,14 @@ export function AdminConfig({ role }: AdminConfigProps) {
       {activeSubTab === "quoting" && (
         <PlaceholderCard message="Quoting config — coming in F3 (proposal templates, T&C library, deposit policy, reminder cadence)" />
       )}
-      {activeSubTab === "users-roles" && <Users />}
+      {activeSubTab === "users-roles" && (
+        <>
+          <Users />
+          <SsoPanel />
+        </>
+      )}
       {activeSubTab === "tenants" && role === "platform_admin" && (
-        <PlaceholderCard message="Tenant provisioning — coming in F4/F6 (GCIP tenant, invite admin, usage metering)" />
+        <TenantsConfig />
       )}
       {activeSubTab === "settings" && <Settings />}
     </div>
