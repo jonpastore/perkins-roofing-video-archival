@@ -21,13 +21,14 @@ interface QueueItem {
   status: string;
 }
 
+interface ScheduledBucket {
+  count: number;
+  next_up: string | null; // ISO datetime
+}
+
 interface ScheduledBreakdown {
-  articles: number;
-  social_instagram: number;
-  social_tiktok: number;
-  social_other: number;
-  next_article_at: string | null;
-  next_social_at: string | null;
+  articles: ScheduledBucket;
+  social: Record<string, ScheduledBucket>;
 }
 
 interface StatusData {
@@ -207,11 +208,11 @@ export function Status() {
                       Articles
                     </div>
                     <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText }}>
-                      {data.scheduled_breakdown.articles}
+                      {data.scheduled_breakdown.articles.count}
                     </div>
-                    {data.scheduled_breakdown.next_article_at && (
+                    {data.scheduled_breakdown.articles.next_up && (
                       <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
-                        Next: {new Date(data.scheduled_breakdown.next_article_at).toLocaleDateString()}
+                        Next: {new Date(data.scheduled_breakdown.articles.next_up).toLocaleDateString()}
                       </div>
                     )}
                   </div>
@@ -220,36 +221,24 @@ export function Status() {
                     <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
                       Social Posts
                     </div>
-                    <div style={{ display: "flex", gap: 16, alignItems: "baseline" }}>
-                      {data.scheduled_breakdown.social_instagram > 0 && (
-                        <span>
-                          <span style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText }}>{data.scheduled_breakdown.social_instagram}</span>
-                          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 4 }}>Instagram</span>
-                        </span>
-                      )}
-                      {data.scheduled_breakdown.social_tiktok > 0 && (
-                        <span>
-                          <span style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText }}>{data.scheduled_breakdown.social_tiktok}</span>
-                          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 4 }}>TikTok</span>
-                        </span>
-                      )}
-                      {data.scheduled_breakdown.social_other > 0 && (
-                        <span>
-                          <span style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText }}>{data.scheduled_breakdown.social_other}</span>
-                          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 4 }}>Other</span>
-                        </span>
-                      )}
-                      {data.scheduled_breakdown.social_instagram === 0 &&
-                        data.scheduled_breakdown.social_tiktok === 0 &&
-                        data.scheduled_breakdown.social_other === 0 && (
+                    <div style={{ display: "flex", gap: 16, alignItems: "baseline", flexWrap: "wrap" }}>
+                      {Object.entries(data.scheduled_breakdown.social)
+                        .filter(([, b]) => b.count > 0)
+                        .map(([platform, b]) => (
+                          <span key={platform}>
+                            <span style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText }}>{b.count}</span>
+                            <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 4, textTransform: "capitalize" }}>{platform}</span>
+                            {b.next_up && (
+                              <span style={{ fontSize: 11, color: BRAND.sub, marginLeft: 4 }}>
+                                (next {new Date(b.next_up).toLocaleDateString()})
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      {Object.values(data.scheduled_breakdown.social).every((b) => b.count === 0) && (
                         <span style={{ fontSize: 14, color: BRAND.sub }}>None scheduled</span>
                       )}
                     </div>
-                    {data.scheduled_breakdown.next_social_at && (
-                      <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
-                        Next: {new Date(data.scheduled_breakdown.next_social_at).toLocaleDateString()}
-                      </div>
-                    )}
                   </div>
                 </div>
               </Card>
