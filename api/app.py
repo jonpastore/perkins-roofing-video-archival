@@ -5,8 +5,9 @@ at the Cloud Run IAM layer (scheduler-sa OIDC, run.invoker)."""
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import current_claims, require_internal_tenants, require_role, require_role_db
+from api.auth import current_claims, get_db_session, require_internal_tenants, require_role, require_role_db
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
@@ -458,67 +459,64 @@ def poll_archive_kpis_cron():
 
 
 @app.get("/status")
-def status(_claims=Depends(require_role("view_status"))):
+def status(_claims=Depends(require_role("view_status")), s: Session = Depends(get_db_session)):
     """Admin observability (Req 6): corpus + pipeline + content counts, last errors,
-    scheduled-content breakdown (articles vs social by platform), and action counters."""
+    scheduled-content breakdown (articles vs social by platform), and action counters.
+    Uses the RLS-stamped session so all counts are the caller's tenant."""
     from sqlalchemy import func
 
-    from app.models import Article, Chunk, FaqEntry, IngestionRun, ScheduledContent, SessionLocal, Video
+    from app.models import Article, Chunk, FaqEntry, IngestionRun, ScheduledContent, Video
     from core.status import action_counters, scheduled_breakdown
-    s = SessionLocal()
-    try:
-        errors = [
-            {
-                "video_id": r.video_id,
-                "stage": r.stage,
-                "error": (r.last_error or "")[:200],
-                "title": (v.title if v else None),
-                "youtube_url": (v.url if v and v.url else f"https://youtu.be/{r.video_id}"),
-            }
-            for r, v in (
-                s.query(IngestionRun, Video)
-                .outerjoin(Video, Video.id == IngestionRun.video_id)
-                .filter(IngestionRun.status == "error")
-                .limit(20)
-            )
-        ]
-        queue = [
-            {
-                "video_id": r.video_id,
-                "title": (v.title if v else None),
-                "stage": r.stage,
-                "status": r.status,
-            }
-            for r, v in (
-                s.query(IngestionRun, Video)
-                .outerjoin(Video, Video.id == IngestionRun.video_id)
-                .filter(IngestionRun.status.in_(["pending", "running"]))
-                .order_by(IngestionRun.updated_at.desc())
-                .limit(50)
-            )
-        ]
-        breakdown = scheduled_breakdown(s)
-        counters = action_counters(s)
-        return {
-            "videos": s.query(func.count(Video.id)).scalar(),
-            "videos_embedded": s.query(func.count(func.distinct(Chunk.video_id))).scalar(),
-            "videos_archived": s.query(func.count(Video.id)).filter(Video.archive_uri.isnot(None)).scalar(),
-            "transcripts_done": s.query(func.count(IngestionRun.id)).filter(
-                IngestionRun.stage == "transcript", IngestionRun.status == "done").scalar(),
-            "articles": s.query(func.count(Article.slug)).scalar(),
-            "faq_count": s.query(func.count(FaqEntry.id)).scalar(),
-            "scheduled_content": s.query(func.count(ScheduledContent.id)).scalar(),
-            # Scheduled-content split: articles vs social posts grouped by platform
-            "scheduled_breakdown": breakdown,
-            # Action counters: items needing attention
-            "content_opportunities": counters["content_opportunities"],
-            "comments_pending": counters["comments_pending"],
-            "videos_pending": counters["videos_pending"],
-            "failed_stages": errors,
-            "queue": queue,
+    errors = [
+        {
+            "video_id": r.video_id,
+            "stage": r.stage,
+            "error": (r.last_error or "")[:200],
+            "title": (v.title if v else None),
+            "youtube_url": (v.url if v and v.url else f"https://youtu.be/{r.video_id}"),
         }
-    finally:
-        s.close()
+        for r, v in (
+            s.query(IngestionRun, Video)
+            .outerjoin(Video, Video.id == IngestionRun.video_id)
+            .filter(IngestionRun.status == "error")
+            .limit(20)
+        )
+    ]
+    queue = [
+        {
+            "video_id": r.video_id,
+            "title": (v.title if v else None),
+            "stage": r.stage,
+            "status": r.status,
+        }
+        for r, v in (
+            s.query(IngestionRun, Video)
+            .outerjoin(Video, Video.id == IngestionRun.video_id)
+            .filter(IngestionRun.status.in_(["pending", "running"]))
+            .order_by(IngestionRun.updated_at.desc())
+            .limit(50)
+        )
+    ]
+    breakdown = scheduled_breakdown(s)
+    counters = action_counters(s)
+    return {
+        "videos": s.query(func.count(Video.id)).scalar(),
+        "videos_embedded": s.query(func.count(func.distinct(Chunk.video_id))).scalar(),
+        "videos_archived": s.query(func.count(Video.id)).filter(Video.archive_uri.isnot(None)).scalar(),
+        "transcripts_done": s.query(func.count(IngestionRun.id)).filter(
+            IngestionRun.stage == "transcript", IngestionRun.status == "done").scalar(),
+        "articles": s.query(func.count(Article.slug)).scalar(),
+        "faq_count": s.query(func.count(FaqEntry.id)).scalar(),
+        "scheduled_content": s.query(func.count(ScheduledContent.id)).scalar(),
+        # Scheduled-content split: articles vs social posts grouped by platform
+        "scheduled_breakdown": breakdown,
+        # Action counters: items needing attention
+        "content_opportunities": counters["content_opportunities"],
+        "comments_pending": counters["comments_pending"],
+        "videos_pending": counters["videos_pending"],
+        "failed_stages": errors,
+        "queue": queue,
+    }
 
 
 class RetryRequest(BaseModel):
@@ -527,30 +525,30 @@ class RetryRequest(BaseModel):
 
 
 @app.post("/status/retry")
-def status_retry(body: RetryRequest, _claims=Depends(require_role("view_status"))):
+def status_retry(body: RetryRequest, _claims=Depends(require_role("view_status")),
+                 s: Session = Depends(get_db_session)):
     """Reset a failed IngestionRun back to pending so the next ingest run reprocesses it.
 
     Finds all IngestionRun rows matching video_id + stage with status='error',
     clears last_error, and sets status='pending'. Returns {reset: <count>}.
-    404 if no matching error row exists.
+    404 if no matching error row exists. RLS-stamped session (caller's tenant).
     """
-    from app.models import IngestionRun, SessionLocal
+    from app.models import IngestionRun
 
-    with SessionLocal() as s:
-        rows = (
-            s.query(IngestionRun)
-            .filter(
-                IngestionRun.video_id == body.video_id,
-                IngestionRun.stage == body.stage,
-                IngestionRun.status == "error",
-            )
-            .all()
+    rows = (
+        s.query(IngestionRun)
+        .filter(
+            IngestionRun.video_id == body.video_id,
+            IngestionRun.stage == body.stage,
+            IngestionRun.status == "error",
         )
-        if not rows:
-            raise HTTPException(status_code=404, detail="No failed stage found for that video_id + stage")
-        for row in rows:
-            row.status = "pending"
-            row.last_error = None
-        s.commit()
+        .all()
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="No failed stage found for that video_id + stage")
+    for row in rows:
+        row.status = "pending"
+        row.last_error = None
+    s.flush()
 
     return {"reset": len(rows)}

@@ -14,11 +14,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import AggregatedTopic, Article, GraphNode, ScheduledContent, SessionLocal, Video
+from api.auth import get_db_session, require_role
+from app.models import AggregatedTopic, Article, GraphNode, ScheduledContent, Video
 from core.topic_freshness import topic_freshness
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,7 @@ def list_topics(
     offset: int = 0,
     generated: str = "all",
     claims=Depends(require_role("article_read")),
+    db: Session = Depends(get_db_session),
 ):
     """Return distilled topic list — aggregated by semantic similarity when pre-computed.
 
@@ -87,14 +88,13 @@ def list_topics(
     The shape of each item is backwards-compatible with the previous flat list so
     the SPA continues to work without changes.
     """
-    with SessionLocal() as db:
-        # ---- Try aggregated path first ----------------------------------
-        agg_count = db.query(AggregatedTopic).count()
-        if agg_count > 0:
-            return _list_topics_aggregated(db, sort=sort, limit=limit, offset=offset, generated=generated)
+    # ---- Try aggregated path first ----------------------------------
+    agg_count = db.query(AggregatedTopic).count()
+    if agg_count > 0:
+        return _list_topics_aggregated(db, sort=sort, limit=limit, offset=offset, generated=generated)
 
-        # ---- Fallback: live grouping from content_graph -----------------
-        return _list_topics_live(db, sort=sort, limit=limit, offset=offset, generated=generated)
+    # ---- Fallback: live grouping from content_graph -----------------
+    return _list_topics_live(db, sort=sort, limit=limit, offset=offset, generated=generated)
 
 
 def _sort_key(sort: str):
@@ -328,7 +328,11 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int, generate
 
 
 @router.get("/videos")
-def list_topic_videos(label: str, claims=Depends(require_role("article_read"))):
+def list_topic_videos(
+    label: str,
+    claims=Depends(require_role("article_read")),
+    db: Session = Depends(get_db_session),
+):
     """Return all source videos for a given topic label.
 
     When aggregated_topics is populated, looks up the matching aggregate row
@@ -340,87 +344,87 @@ def list_topic_videos(label: str, claims=Depends(require_role("article_read"))):
     Returns [{video_id, title, duration, start}] sorted by video title.
     """
     norm = _normalize_label(label)
-    with SessionLocal() as db:
-        # ---- Try aggregated path ----------------------------------------
-        agg_count = db.query(AggregatedTopic).count()
-        if agg_count > 0:
-            # Find the best-matching aggregate row by normalised canonical_label
-            agg_rows = db.query(AggregatedTopic).all()
-            match = next(
-                (r for r in agg_rows if _normalize_label(r.canonical_label) == norm),
-                None,
-            )
-            if match is None:
-                return []
-
-            member_video_ids: list[str] = match.video_ids or []
-            if not member_video_ids:
-                return []
-
-            # Get earliest start per video_id from the member node_ids
-            video_starts: dict[str, float] = {}
-            if match.node_ids:
-                nodes = (
-                    db.query(GraphNode)
-                    .filter(GraphNode.id.in_(match.node_ids))
-                    .all()
-                )
-                for node in nodes:
-                    t = float(node.start or 0)
-                    if node.video_id not in video_starts or t < video_starts[node.video_id]:
-                        video_starts[node.video_id] = t
-
-            vids = db.query(Video).filter(Video.id.in_(member_video_ids)).all()
-            vid_map = {v.id: v for v in vids}
-
-            result = []
-            for vid_id in member_video_ids:
-                v = vid_map.get(vid_id)
-                result.append({
-                    "video_id": vid_id,
-                    "title": v.title if v and v.title else vid_id,
-                    "duration": v.duration if v and v.duration is not None else 0.0,
-                    "start": video_starts.get(vid_id, 0.0),
-                })
-            result.sort(key=lambda x: x["title"].lower())
-            return result
-
-        # ---- Fallback: live content_graph scan --------------------------
-        rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
-        video_starts: dict[str, float] = {}
-        for row in rows:
-            if not row.label:
-                continue
-            if _normalize_label(row.label) != norm:
-                continue
-            vid = row.video_id
-            t = float(row.start or 0)
-            if vid not in video_starts or t < video_starts[vid]:
-                video_starts[vid] = t
-
-        if not video_starts:
+    # ---- Try aggregated path ----------------------------------------
+    agg_count = db.query(AggregatedTopic).count()
+    if agg_count > 0:
+        # Find the best-matching aggregate row by normalised canonical_label
+        agg_rows = db.query(AggregatedTopic).all()
+        match = next(
+            (r for r in agg_rows if _normalize_label(r.canonical_label) == norm),
+            None,
+        )
+        if match is None:
             return []
 
-        vids = db.query(Video).filter(Video.id.in_(list(video_starts.keys()))).all()
+        member_video_ids: list[str] = match.video_ids or []
+        if not member_video_ids:
+            return []
+
+        # Get earliest start per video_id from the member node_ids
+        video_starts: dict[str, float] = {}
+        if match.node_ids:
+            nodes = (
+                db.query(GraphNode)
+                .filter(GraphNode.id.in_(match.node_ids))
+                .all()
+            )
+            for node in nodes:
+                t = float(node.start or 0)
+                if node.video_id not in video_starts or t < video_starts[node.video_id]:
+                    video_starts[node.video_id] = t
+
+        vids = db.query(Video).filter(Video.id.in_(member_video_ids)).all()
         vid_map = {v.id: v for v in vids}
 
         result = []
-        for vid_id, start in video_starts.items():
+        for vid_id in member_video_ids:
             v = vid_map.get(vid_id)
             result.append({
                 "video_id": vid_id,
                 "title": v.title if v and v.title else vid_id,
                 "duration": v.duration if v and v.duration is not None else 0.0,
-                "start": start,
+                "start": video_starts.get(vid_id, 0.0),
             })
         result.sort(key=lambda x: x["title"].lower())
         return result
+
+    # ---- Fallback: live content_graph scan --------------------------
+    rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
+    video_starts: dict[str, float] = {}
+    for row in rows:
+        if not row.label:
+            continue
+        if _normalize_label(row.label) != norm:
+            continue
+        vid = row.video_id
+        t = float(row.start or 0)
+        if vid not in video_starts or t < video_starts[vid]:
+            video_starts[vid] = t
+
+    if not video_starts:
+        return []
+
+    vids = db.query(Video).filter(Video.id.in_(list(video_starts.keys()))).all()
+    vid_map = {v.id: v for v in vids}
+
+    result = []
+    for vid_id, start in video_starts.items():
+        v = vid_map.get(vid_id)
+        result.append({
+            "video_id": vid_id,
+            "title": v.title if v and v.title else vid_id,
+            "duration": v.duration if v and v.duration is not None else 0.0,
+            "start": start,
+        })
+    result.sort(key=lambda x: x["title"].lower())
+    return result
 
 
 @router.post("/generate-article", status_code=201)
 def generate_cluster_article(
     body: GenerateArticleRequest,
     claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
 ):
     """Generate a content cluster: one pillar article + 4-6 cluster articles with REAL content.
 
@@ -454,135 +458,134 @@ def generate_cluster_article(
     pillar_title = _title_case(topic)
 
     # Derive 4-6 subtopic titles (target 5-7 total articles including pillar)
-    subtopics = _derive_subtopics(topic, pillar_slug)
+    subtopics = _derive_subtopics(topic, pillar_slug, db)
 
-    with SessionLocal() as db:
-        # --- Idempotency: only short-circuit when a FULL cluster already exists ---
-        # A bare standalone article with the pillar slug (e.g. from priming) is NOT a
-        # complete cluster — in that case we promote it to pillar and generate the
-        # 4-6 supporting cluster articles rather than returning "0 supporting articles".
-        existing_pillar = db.get(Article, pillar_slug)
-        existing_clusters = (
-            db.query(Article)
-            .filter(Article.pillar_slug == pillar_slug, Article.role == "cluster")
-            .all()
-        )
-        if existing_pillar is not None and len(existing_clusters) >= 4:
-            return {
-                "pillar_slug": pillar_slug,
-                "pillar": {"slug": existing_pillar.slug, "title": existing_pillar.title},
-                "clusters": [{"slug": c.slug, "title": c.title} for c in existing_clusters],
-                "count": 1 + len(existing_clusters),
-            }
-
-        # --- Compute base publish date before generating articles ---
-        base_date = _compute_base_publish_date(db)
-
-        pillar_publish_at = datetime(
-            base_date.year, base_date.month, base_date.day, tzinfo=timezone.utc
-        ).replace(tzinfo=None)  # store as naive UTC
-
-        if existing_pillar is not None:
-            # Reuse the existing article as the pillar (promote it) and generate clusters.
-            existing_pillar.role = "pillar"
-            existing_pillar.pillar_slug = pillar_slug
-            pillar_article = existing_pillar
-        else:
-            # --- Generate pillar content via LLM ---
-            pillar_ctx = {
-                "keyword": topic,
-                "role": "pillar",
-                "pillar_slug": pillar_slug,
-                "topic": topic,
-            }
-            pillar_content = _generate_content_with_fallback(topic, pillar_ctx, pillar_title)
-
-            pillar_article = Article(
-                slug=pillar_slug,
-                title=pillar_content["title"],
-                meta=pillar_content["meta"] or f"Complete guide to {topic} from Perkins Roofing.",
-                content_md=pillar_content["content_md"],
-                faq_json=pillar_content["faq_json"] or None,
-                jsonld_json=pillar_content.get("jsonld_json"),
-                role="pillar",
-                pillar_slug=pillar_slug,
-                wp_post_id=None,
-                status="scheduled",
-                publish_at=pillar_publish_at,
-            )
-            db.add(pillar_article)
-
-            # Only schedule a NEW pillar (a promoted existing one keeps its schedule).
-            db.add(ScheduledContent(
-                kind="article",
-                ref_id=pillar_slug,
-                publish_at=pillar_publish_at,
-                status="scheduled",
-                target="wordpress",
-            ))
-
-        # --- Generate cluster articles ---
-        created_clusters: list[Article] = []
-        seen_slugs: set[str] = {pillar_slug}
-        cluster_day_offset = 1  # pillar is base_date; first cluster is base_date+1
-        for subtopic in subtopics:
-            slug = _unique_slug(subtopic, seen_slugs)
-            seen_slugs.add(slug)
-            if db.get(Article, slug) is not None:
-                continue
-
-            cluster_ctx = {
-                "keyword": subtopic,
-                "role": "cluster",
-                "pillar_slug": pillar_slug,
-                "topic": topic,
-            }
-            cluster_content = _generate_content_with_fallback(
-                subtopic, cluster_ctx, _title_case(subtopic)
-            )
-
-            cluster_date = base_date + timedelta(days=cluster_day_offset)
-            cluster_publish_at = datetime(
-                cluster_date.year, cluster_date.month, cluster_date.day
-            )  # naive UTC
-
-            cluster = Article(
-                slug=slug,
-                title=cluster_content["title"],
-                meta=cluster_content["meta"] or f"Expert roofing advice on {subtopic} from Perkins Roofing.",
-                content_md=cluster_content["content_md"],
-                faq_json=cluster_content["faq_json"] or None,
-                jsonld_json=cluster_content.get("jsonld_json"),
-                role="cluster",
-                pillar_slug=pillar_slug,
-                wp_post_id=None,
-                status="scheduled",
-                publish_at=cluster_publish_at,
-            )
-            db.add(cluster)
-            created_clusters.append(cluster)
-
-            cluster_sched = ScheduledContent(
-                kind="article",
-                ref_id=slug,
-                publish_at=cluster_publish_at,
-                status="scheduled",
-                target="wordpress",
-            )
-            db.add(cluster_sched)
-            cluster_day_offset += 1
-
-        db.commit()
-        db.refresh(pillar_article)
-        for c in created_clusters:
-            db.refresh(c)
-
+    # --- Idempotency: only short-circuit when a FULL cluster already exists ---
+    # A bare standalone article with the pillar slug (e.g. from priming) is NOT a
+    # complete cluster — in that case we promote it to pillar and generate the
+    # 4-6 supporting cluster articles rather than returning "0 supporting articles".
+    existing_pillar = db.get(Article, pillar_slug)
+    existing_clusters = (
+        db.query(Article)
+        .filter(Article.pillar_slug == pillar_slug, Article.role == "cluster")
+        .all()
+    )
+    if existing_pillar is not None and len(existing_clusters) >= 4:
         return {
             "pillar_slug": pillar_slug,
-            "pillar": {"slug": pillar_article.slug, "title": pillar_article.title},
-            "clusters": [{"slug": c.slug, "title": c.title} for c in created_clusters],
-            "count": 1 + len(created_clusters),
+            "pillar": {"slug": existing_pillar.slug, "title": existing_pillar.title},
+            "clusters": [{"slug": c.slug, "title": c.title} for c in existing_clusters],
+            "count": 1 + len(existing_clusters),
         }
+
+    # --- Compute base publish date before generating articles ---
+    base_date = _compute_base_publish_date(db)
+
+    pillar_publish_at = datetime(
+        base_date.year, base_date.month, base_date.day, tzinfo=timezone.utc
+    ).replace(tzinfo=None)  # store as naive UTC
+
+    if existing_pillar is not None:
+        # Reuse the existing article as the pillar (promote it) and generate clusters.
+        existing_pillar.role = "pillar"
+        existing_pillar.pillar_slug = pillar_slug
+        pillar_article = existing_pillar
+    else:
+        # --- Generate pillar content via LLM ---
+        pillar_ctx = {
+            "keyword": topic,
+            "role": "pillar",
+            "pillar_slug": pillar_slug,
+            "topic": topic,
+        }
+        pillar_content = _generate_content_with_fallback(topic, pillar_ctx, pillar_title)
+
+        pillar_article = Article(
+            slug=pillar_slug,
+            title=pillar_content["title"],
+            meta=pillar_content["meta"] or f"Complete guide to {topic} from Perkins Roofing.",
+            content_md=pillar_content["content_md"],
+            faq_json=pillar_content["faq_json"] or None,
+            jsonld_json=pillar_content.get("jsonld_json"),
+            role="pillar",
+            pillar_slug=pillar_slug,
+            wp_post_id=None,
+            status="scheduled",
+            publish_at=pillar_publish_at,
+        )
+        db.add(pillar_article)
+
+        # Only schedule a NEW pillar (a promoted existing one keeps its schedule).
+        db.add(ScheduledContent(
+            kind="article",
+            ref_id=pillar_slug,
+            publish_at=pillar_publish_at,
+            status="scheduled",
+            target="wordpress",
+        ))
+
+    # --- Generate cluster articles ---
+    created_clusters: list[Article] = []
+    seen_slugs: set[str] = {pillar_slug}
+    cluster_day_offset = 1  # pillar is base_date; first cluster is base_date+1
+    for subtopic in subtopics:
+        slug = _unique_slug(subtopic, seen_slugs)
+        seen_slugs.add(slug)
+        if db.get(Article, slug) is not None:
+            continue
+
+        cluster_ctx = {
+            "keyword": subtopic,
+            "role": "cluster",
+            "pillar_slug": pillar_slug,
+            "topic": topic,
+        }
+        cluster_content = _generate_content_with_fallback(
+            subtopic, cluster_ctx, _title_case(subtopic)
+        )
+
+        cluster_date = base_date + timedelta(days=cluster_day_offset)
+        cluster_publish_at = datetime(
+            cluster_date.year, cluster_date.month, cluster_date.day
+        )  # naive UTC
+
+        cluster = Article(
+            slug=slug,
+            title=cluster_content["title"],
+            meta=cluster_content["meta"] or f"Expert roofing advice on {subtopic} from Perkins Roofing.",
+            content_md=cluster_content["content_md"],
+            faq_json=cluster_content["faq_json"] or None,
+            jsonld_json=cluster_content.get("jsonld_json"),
+            role="cluster",
+            pillar_slug=pillar_slug,
+            wp_post_id=None,
+            status="scheduled",
+            publish_at=cluster_publish_at,
+        )
+        db.add(cluster)
+        created_clusters.append(cluster)
+
+        cluster_sched = ScheduledContent(
+            kind="article",
+            ref_id=slug,
+            publish_at=cluster_publish_at,
+            status="scheduled",
+            target="wordpress",
+        )
+        db.add(cluster_sched)
+        cluster_day_offset += 1
+
+    db.flush()
+    db.refresh(pillar_article)
+    for c in created_clusters:
+        db.refresh(c)
+
+    return {
+        "pillar_slug": pillar_slug,
+        "pillar": {"slug": pillar_article.slug, "title": pillar_article.title},
+        "clusters": [{"slug": c.slug, "title": c.title} for c in created_clusters],
+        "count": 1 + len(created_clusters),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +607,7 @@ def _unique_slug(text: str, seen: set[str]) -> str:
     return f"{base}-{n}"
 
 
-def _derive_subtopics(topic: str, pillar_slug: str) -> list[str]:
+def _derive_subtopics(topic: str, pillar_slug: str, db) -> list[str]:
     """Derive 4–6 cluster subtopic titles for *topic* (so total = 5–7 incl. pillar).
 
     Strategy:
@@ -618,27 +621,27 @@ def _derive_subtopics(topic: str, pillar_slug: str) -> list[str]:
     related: list[str] = []
     topic_lower = topic.lower()
     try:
-        with SessionLocal() as db:
-            rows = (
-                db.query(GraphNode.label)
-                .filter(GraphNode.kind == "topics")
-                .all()
-            )
-            seen_norm: set[str] = {_normalize_label(topic)}
-            for (label,) in rows:
-                if not label:
-                    continue
-                norm = _normalize_label(label)
-                if norm in seen_norm:
-                    continue
-                # Include if the label overlaps with the topic keyword
-                if topic_lower in norm or any(
-                    word in norm for word in topic_lower.split() if len(word) > 3
-                ):
-                    seen_norm.add(norm)
-                    related.append(label.strip())
-                if len(related) >= 6:
-                    break
+        # Uses the caller's RLS-stamped session (content_graph is tenant-scoped).
+        rows = (
+            db.query(GraphNode.label)
+            .filter(GraphNode.kind == "topics")
+            .all()
+        )
+        seen_norm: set[str] = {_normalize_label(topic)}
+        for (label,) in rows:
+            if not label:
+                continue
+            norm = _normalize_label(label)
+            if norm in seen_norm:
+                continue
+            # Include if the label overlaps with the topic keyword
+            if topic_lower in norm or any(
+                word in norm for word in topic_lower.split() if len(word) > 3
+            ):
+                seen_norm.add(norm)
+                related.append(label.strip())
+            if len(related) >= 6:
+                break
     except Exception:  # noqa: BLE001
         pass  # DB not available in all test contexts — fall through to fallbacks
 

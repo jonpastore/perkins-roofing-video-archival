@@ -15,9 +15,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import FaqEntry, GraphNode, SessionLocal, Video
+from api.auth import get_db_session, require_role
+from app.models import FaqEntry, GraphNode, Video
 
 router = APIRouter(prefix="/faq", tags=["faq"])
 log = logging.getLogger(__name__)
@@ -178,7 +179,11 @@ class MineRequest(BaseModel):
 
 
 @router.post("/mine")
-def mine_faq(body: MineRequest = MineRequest(), claims=Depends(require_role("manage_articles"))):
+def mine_faq(
+    body: MineRequest = MineRequest(),
+    claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
     """Find content_graph claims+objections not yet in faq_entries, rephrase into questions,
     and INSERT FaqEntry rows (status='mined'). Idempotent — a node is mined at most once.
     Returns {mined: N, remaining_uncovered: M}.
@@ -186,105 +191,103 @@ def mine_faq(body: MineRequest = MineRequest(), claims=Depends(require_role("man
     """
     limit = max(1, min(body.limit, MINE_MAX))
 
-    with SessionLocal() as db:
-        # Find node IDs already covered
-        covered_ids = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
+    # Find node IDs already covered
+    covered_ids = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
 
-        # Query uncovered claim/objection nodes with a timestamp
-        candidates = (
+    # Query uncovered claim/objection nodes with a timestamp
+    candidates = (
+        db.query(GraphNode)
+        .filter(
+            GraphNode.kind.in_(("claims", "objections")),
+            GraphNode.start.isnot(None),
+            ~GraphNode.id.in_(covered_ids) if covered_ids else True,
+        )
+        .order_by(GraphNode.video_id, GraphNode.start)
+        .limit(limit)
+        .all()
+    )
+
+    if not candidates:
+        # Count remaining
+        total_uncovered = (
             db.query(GraphNode)
             .filter(
                 GraphNode.kind.in_(("claims", "objections")),
                 GraphNode.start.isnot(None),
                 ~GraphNode.id.in_(covered_ids) if covered_ids else True,
             )
-            .order_by(GraphNode.video_id, GraphNode.start)
-            .limit(limit)
-            .all()
-        )
-
-        if not candidates:
-            # Count remaining
-            total_uncovered = (
-                db.query(GraphNode)
-                .filter(
-                    GraphNode.kind.in_(("claims", "objections")),
-                    GraphNode.start.isnot(None),
-                    ~GraphNode.id.in_(covered_ids) if covered_ids else True,
-                )
-                .count()
-            )
-            return {"mined": 0, "remaining_uncovered": total_uncovered}
-
-        # Rephrase via LLM
-        raw_statements = [
-            (row.label or "").strip() or (row.detail or "").strip()
-            for row in candidates
-        ]
-        rephrased = _rephrase_via_llm(raw_statements)
-        use_llm = len(rephrased) == len(candidates)
-
-        # Dedupe against existing questions (normalized) so answers aren't repetitive.
-        seen_norm = {_normalize_question(row[0]) for row in db.query(FaqEntry.question).all()}
-
-        now = datetime.utcnow()
-        new_entries: list[FaqEntry] = []
-        for i, node in enumerate(candidates):
-            if use_llm and rephrased[i]:
-                question = rephrased[i]
-                if not question.endswith("?"):
-                    question += "?"
-            else:
-                question = _to_question_heuristic(node.label or "", node.detail or "")
-            if not question:
-                continue
-            # Guard against duplicates (same node, or a near-identical question already mined)
-            exists = db.query(FaqEntry).filter(FaqEntry.source_node_id == node.id).first()
-            if exists:
-                continue
-            norm = _normalize_question(question)
-            if norm in seen_norm:
-                continue
-            seen_norm.add(norm)
-            entry = FaqEntry(
-                question=question,
-                answer=None,
-                source_kind="claim" if node.kind == "claims" else "objection",
-                source_node_id=node.id,
-                video_id=node.video_id,
-                start=node.start,
-                status="mined",
-                created_at=now,
-            )
-            db.add(entry)
-            new_entries.append(entry)
-
-        db.commit()
-        inserted = len(new_entries)
-
-        # Mining and answering are coupled — answer the freshly-mined questions now so
-        # the FAQ is usable in one step (idempotent: abstained questions stay 'mined').
-        answered = 0
-        for entry in new_entries:
-            try:
-                if _answer_entry(entry):
-                    answered += 1
-                    db.commit()
-            except Exception as exc:  # noqa: BLE001 — keep going, leave unanswered
-                log.warning("mine: answer failed for entry %s: %s", entry.id, exc)
-                db.rollback()
-
-        # Count remaining after this batch
-        covered_ids_after = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
-        remaining = (
-            db.query(GraphNode)
-            .filter(
-                GraphNode.kind.in_(("claims", "objections")),
-                GraphNode.start.isnot(None),
-                ~GraphNode.id.in_(covered_ids_after) if covered_ids_after else True,
-            )
             .count()
         )
+        return {"mined": 0, "remaining_uncovered": total_uncovered}
+
+    # Rephrase via LLM
+    raw_statements = [
+        (row.label or "").strip() or (row.detail or "").strip()
+        for row in candidates
+    ]
+    rephrased = _rephrase_via_llm(raw_statements)
+    use_llm = len(rephrased) == len(candidates)
+
+    # Dedupe against existing questions (normalized) so answers aren't repetitive.
+    seen_norm = {_normalize_question(row[0]) for row in db.query(FaqEntry.question).all()}
+
+    now = datetime.utcnow()
+    new_entries: list[FaqEntry] = []
+    for i, node in enumerate(candidates):
+        if use_llm and rephrased[i]:
+            question = rephrased[i]
+            if not question.endswith("?"):
+                question += "?"
+        else:
+            question = _to_question_heuristic(node.label or "", node.detail or "")
+        if not question:
+            continue
+        # Guard against duplicates (same node, or a near-identical question already mined)
+        exists = db.query(FaqEntry).filter(FaqEntry.source_node_id == node.id).first()
+        if exists:
+            continue
+        norm = _normalize_question(question)
+        if norm in seen_norm:
+            continue
+        seen_norm.add(norm)
+        entry = FaqEntry(
+            question=question,
+            answer=None,
+            source_kind="claim" if node.kind == "claims" else "objection",
+            source_node_id=node.id,
+            video_id=node.video_id,
+            start=node.start,
+            status="mined",
+            created_at=now,
+        )
+        db.add(entry)
+        new_entries.append(entry)
+
+    db.flush()
+    inserted = len(new_entries)
+
+    # Mining and answering are coupled — answer the freshly-mined questions now so
+    # the FAQ is usable in one step (idempotent: abstained questions stay 'mined').
+    answered = 0
+    for entry in new_entries:
+        try:
+            if _answer_entry(entry):
+                answered += 1
+                db.flush()
+        except Exception as exc:  # noqa: BLE001 — keep going, leave unanswered
+            log.warning("mine: answer failed for entry %s: %s", entry.id, exc)
+
+    # Count remaining after this batch
+    covered_ids_after = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
+    remaining = (
+        db.query(GraphNode)
+        .filter(
+            GraphNode.kind.in_(("claims", "objections")),
+            GraphNode.start.isnot(None),
+            ~GraphNode.id.in_(covered_ids_after) if covered_ids_after else True,
+        )
+        .count()
+    )
 
     return {"mined": inserted, "answered": answered, "remaining_uncovered": remaining}
 
@@ -300,36 +303,36 @@ def list_faq(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     claims=Depends(require_role("article_read")),
+    db: Session = Depends(get_db_session),
 ):
     """Paginated list of FAQ entries. Joins Video for title.
     Returns {total, items: [{id, question, answer, status, video_id, video_title, url, start}]}.
     """
-    with SessionLocal() as db:
-        # Consolidated near-duplicates (status='duplicate') are hidden from the builder.
-        query = db.query(FaqEntry).filter(FaqEntry.status != "duplicate")
+    # Consolidated near-duplicates (status='duplicate') are hidden from the builder.
+    query = db.query(FaqEntry).filter(FaqEntry.status != "duplicate")
 
-        if answered == "yes":
-            query = query.filter(FaqEntry.status == "answered")
-        elif answered == "no":
-            query = query.filter(FaqEntry.status == "mined")
+    if answered == "yes":
+        query = query.filter(FaqEntry.status == "answered")
+    elif answered == "no":
+        query = query.filter(FaqEntry.status == "mined")
 
-        if q:
-            query = query.filter(FaqEntry.question.ilike(f"%{q}%"))
+    if q:
+        query = query.filter(FaqEntry.question.ilike(f"%{q}%"))
 
-        total = query.count()
-        entries = (
-            query.order_by(FaqEntry.id)
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+    total = query.count()
+    entries = (
+        query.order_by(FaqEntry.id)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
-        # Batch-load video titles
-        video_ids = {e.video_id for e in entries}
-        titles = {}
-        if video_ids:
-            rows = db.query(Video.id, Video.title).filter(Video.id.in_(video_ids)).all()
-            titles = {r.id: r.title for r in rows}
+    # Batch-load video titles
+    video_ids = {e.video_id for e in entries}
+    titles = {}
+    if video_ids:
+        rows = db.query(Video.id, Video.title).filter(Video.id.in_(video_ids)).all()
+        titles = {r.id: r.title for r in rows}
 
     items = [_entry_to_dict(e, titles.get(e.video_id)) for e in entries]
     return {"total": total, "items": items}
@@ -340,20 +343,23 @@ def list_faq(
 # ---------------------------------------------------------------------------
 
 @router.post("/{entry_id}/answer")
-def answer_one(entry_id: int, claims=Depends(require_role("manage_articles"))):
+def answer_one(
+    entry_id: int,
+    claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
     """Generate + store a concise, cited answer for a single FAQ entry."""
-    with SessionLocal() as db:
-        entry = db.query(FaqEntry).filter(FaqEntry.id == entry_id).first()
-        if not entry:
-            raise HTTPException(status_code=404, detail="FAQ entry not found")
+    entry = db.query(FaqEntry).filter(FaqEntry.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="FAQ entry not found")
 
-        _answer_entry(entry)
-        db.commit()
-        db.refresh(entry)
+    _answer_entry(entry)
+    db.flush()
+    db.refresh(entry)
 
-        video_ids = {entry.video_id}
-        rows = db.query(Video.id, Video.title).filter(Video.id.in_(video_ids)).all()
-        titles = {r.id: r.title for r in rows}
+    video_ids = {entry.video_id}
+    rows = db.query(Video.id, Video.title).filter(Video.id.in_(video_ids)).all()
+    titles = {r.id: r.title for r in rows}
 
     return _entry_to_dict(entry, titles.get(entry.video_id))
 
@@ -367,33 +373,35 @@ class AnswerBatchRequest(BaseModel):
 
 
 @router.post("/answer-batch")
-def answer_batch(body: AnswerBatchRequest = AnswerBatchRequest(), claims=Depends(require_role("manage_articles"))):
+def answer_batch(
+    body: AnswerBatchRequest = AnswerBatchRequest(),
+    claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
     """Generate + store answers for up to `limit` unanswered entries.
     Returns {answered: N, remaining: M}.
     Max ANSWER_BATCH_MAX items per call (server-enforced).
     """
     limit = max(1, min(body.limit, ANSWER_BATCH_MAX))
 
-    with SessionLocal() as db:
-        entries = (
-            db.query(FaqEntry)
-            .filter(FaqEntry.status == "mined")
-            .order_by(FaqEntry.id)
-            .limit(limit)
-            .all()
-        )
+    entries = (
+        db.query(FaqEntry)
+        .filter(FaqEntry.status == "mined")
+        .order_by(FaqEntry.id)
+        .limit(limit)
+        .all()
+    )
 
-        answered = 0
-        for entry in entries:
-            try:
-                if _answer_entry(entry):
-                    answered += 1
-                    db.commit()
-            except Exception as exc:
-                log.warning("answer-batch: failed for entry %d: %s", entry.id, exc)
-                db.rollback()
+    answered = 0
+    for entry in entries:
+        try:
+            if _answer_entry(entry):
+                answered += 1
+                db.flush()
+        except Exception as exc:
+            log.warning("answer-batch: failed for entry %d: %s", entry.id, exc)
 
-        remaining = db.query(FaqEntry).filter(FaqEntry.status == "mined").count()
+    remaining = db.query(FaqEntry).filter(FaqEntry.status == "mined").count()
 
     return {"answered": answered, "remaining": remaining}
 
@@ -456,7 +464,10 @@ def _build_faqpage_jsonld(entries: list[FaqEntry]) -> dict:
 
 
 @router.post("/publish-wordpress")
-def publish_wordpress(claims=Depends(require_role("manage_articles"))):
+def publish_wordpress(
+    claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
     """Collect all ANSWERED FaqEntry rows, build a semantic HTML FAQ page with
     FAQPage JSON-LD, and create-or-update a WordPress PAGE titled 'FAQ'.
 
@@ -477,13 +488,12 @@ def publish_wordpress(claims=Depends(require_role("manage_articles"))):
             detail=f"WordPress credentials not configured: {', '.join(missing)}",
         )
 
-    with SessionLocal() as db:
-        entries = (
-            db.query(FaqEntry)
-            .filter(FaqEntry.status == "answered")
-            .order_by(FaqEntry.id)
-            .all()
-        )
+    entries = (
+        db.query(FaqEntry)
+        .filter(FaqEntry.status == "answered")
+        .order_by(FaqEntry.id)
+        .all()
+    )
 
     if not entries:
         raise HTTPException(status_code=422, detail="No answered FAQ entries to publish.")
@@ -580,25 +590,27 @@ def estimate_cost(
 # ---------------------------------------------------------------------------
 
 @router.get("/coverage")
-def coverage(claims=Depends(require_role("article_read"))):
+def coverage(
+    claims=Depends(require_role("article_read")),
+    db: Session = Depends(get_db_session),
+):
     """Return coverage stats: mined, answered, uncovered_nodes."""
-    with SessionLocal() as db:
-        # 'mined' total excludes consolidated near-duplicates so the count reflects the
-        # curated set the operator actually works with.
-        mined_count = db.query(FaqEntry).filter(FaqEntry.status != "duplicate").count()
-        answered_count = db.query(FaqEntry).filter(FaqEntry.status == "answered").count()
-        duplicate_count = db.query(FaqEntry).filter(FaqEntry.status == "duplicate").count()
+    # 'mined' total excludes consolidated near-duplicates so the count reflects the
+    # curated set the operator actually works with.
+    mined_count = db.query(FaqEntry).filter(FaqEntry.status != "duplicate").count()
+    answered_count = db.query(FaqEntry).filter(FaqEntry.status == "answered").count()
+    duplicate_count = db.query(FaqEntry).filter(FaqEntry.status == "duplicate").count()
 
-        covered_ids = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
-        uncovered_nodes = (
-            db.query(GraphNode)
-            .filter(
-                GraphNode.kind.in_(("claims", "objections")),
-                GraphNode.start.isnot(None),
-                ~GraphNode.id.in_(covered_ids) if covered_ids else True,
-            )
-            .count()
+    covered_ids = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
+    uncovered_nodes = (
+        db.query(GraphNode)
+        .filter(
+            GraphNode.kind.in_(("claims", "objections")),
+            GraphNode.start.isnot(None),
+            ~GraphNode.id.in_(covered_ids) if covered_ids else True,
         )
+        .count()
+    )
 
     return {
         "mined": mined_count,

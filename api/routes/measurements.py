@@ -11,9 +11,10 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import Measurement, SessionLocal
+from api.auth import get_db_session, require_role
+from app.models import Measurement
 
 router = APIRouter(prefix="/measurements", tags=["measurements"])
 
@@ -55,34 +56,34 @@ def _row_to_dict(row: Measurement) -> dict:
 def create_measurement(
     body: MeasurementCreateRequest,
     claims=Depends(require_role("estimating_manage")),
+    db: Session = Depends(get_db_session),
 ):
     """Create a manual measurement entry. Sets provider='manual', confidence=null,
-    and auto-builds provenance_note if not supplied."""
+    and auto-builds provenance_note if not supplied. tenant_id comes from the
+    RLS-stamped session (the caller's verified tenant), never a hardcoded literal."""
     email = claims.get("email") or "unknown"
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     provenance = body.provenance_note or f"Manual entry by {email} on {now_str}"
 
-    with SessionLocal() as db:
-        row = Measurement(
-            tenant_id=1,
-            provider="manual",
-            status="complete",
-            total_sq=body.total_sq,
-            hips_lf=body.hips_lf,
-            ridges_lf=body.ridges_lf,
-            valleys_lf=body.valleys_lf,
-            rakes_lf=body.rakes_lf,
-            eaves_lf=body.eaves_lf,
-            wall_flashings_lf=body.wall_flashings_lf,
-            pitch_primary=body.pitch_primary,
-            confidence=None,
-            provenance_note=provenance,
-            created_by=email,
-        )
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-
+    row = Measurement(
+        tenant_id=db.info["tenant_id"],
+        provider="manual",
+        status="complete",
+        total_sq=body.total_sq,
+        hips_lf=body.hips_lf,
+        ridges_lf=body.ridges_lf,
+        valleys_lf=body.valleys_lf,
+        rakes_lf=body.rakes_lf,
+        eaves_lf=body.eaves_lf,
+        wall_flashings_lf=body.wall_flashings_lf,
+        pitch_primary=body.pitch_primary,
+        confidence=None,
+        provenance_note=provenance,
+        created_by=email,
+    )
+    db.add(row)
+    db.flush()
+    db.refresh(row)
     return _row_to_dict(row)
 
 
@@ -90,9 +91,9 @@ def create_measurement(
 def get_measurement(
     measurement_id: int,
     _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
 ):
-    with SessionLocal() as db:
-        row = db.get(Measurement, measurement_id)
+    row = db.get(Measurement, measurement_id)
     if row is None:
         raise HTTPException(404, f"Measurement {measurement_id} not found")
     return _row_to_dict(row)

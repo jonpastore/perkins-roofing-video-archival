@@ -13,30 +13,25 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import Estimate, PricingConfig, SessionLocal
+from api.auth import get_db_session, require_role
+from app.models import Estimate, PricingConfig
 from core import estimator as E
 from core.pricing_config import load_config
 
 router = APIRouter(prefix="/estimator", tags=["estimator"])
 
 
-def current_tenant_id() -> int:
-    """Return the active tenant id. Single seam: F4 swaps this for multi-tenant JWT claims."""
-    return 1
-
-
-def _get_active_config_row(branch: str) -> Optional[PricingConfig]:
+def _get_active_config_row(branch: str, db: Session) -> Optional[PricingConfig]:
     """Fetch the active PricingConfig row for (current tenant, branch), or None."""
-    with SessionLocal() as db:
-        return db.execute(
-            select(PricingConfig).where(
-                PricingConfig.tenant_id == current_tenant_id(),
-                PricingConfig.branch == branch,
-                PricingConfig.is_active == True,  # noqa: E712
-            )
-        ).scalar_one_or_none()
+    return db.execute(
+        select(PricingConfig).where(
+            PricingConfig.tenant_id == db.info["tenant_id"],
+            PricingConfig.branch == branch,
+            PricingConfig.is_active == True,  # noqa: E712
+        )
+    ).scalar_one_or_none()
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +76,11 @@ class QuoteRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/quote")
-def quote(body: QuoteRequest, claims=Depends(require_role("estimating_view"))):
+def quote(
+    body: QuoteRequest,
+    claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
+):
     """Compute an itemized roofing estimate.
 
     Uses the active config for the branch (or a pinned config_id).
@@ -91,12 +90,11 @@ def quote(body: QuoteRequest, claims=Depends(require_role("estimating_view"))):
     """
     # Resolve the config row
     if body.config_id is not None:
-        with SessionLocal() as db:
-            cfg_row = db.get(PricingConfig, body.config_id)
+        cfg_row = db.get(PricingConfig, body.config_id)
         if cfg_row is None:
             raise HTTPException(404, f"Config {body.config_id} not found")
     else:
-        cfg_row = _get_active_config_row(body.branch)
+        cfg_row = _get_active_config_row(body.branch, db)
 
     # No active config — refuse with 503 (no silent legacy fallback)
     if cfg_row is None or not cfg_row.config:
@@ -158,20 +156,19 @@ def quote(body: QuoteRequest, claims=Depends(require_role("estimating_view"))):
     result["county"] = body.county
 
     # Persist estimate row for audit reproduction (TRD §2.2)
-    with SessionLocal() as db:
-        est = Estimate(
-            tenant_id=current_tenant_id(),
-            branch=body.branch,
-            code_zone=body.code_zone,
-            county=body.county,
-            pricing_config_id=cfg_row.id,
-            pricing_config_hash=cfg_row.config_hash,
-            input_json=body.model_dump(),
-            result_json=result,
-            created_by=claims.get("email") or "unknown",
-        )
-        db.add(est)
-        db.commit()
+    est = Estimate(
+        tenant_id=db.info["tenant_id"],
+        branch=body.branch,
+        code_zone=body.code_zone,
+        county=body.county,
+        pricing_config_id=cfg_row.id,
+        pricing_config_hash=cfg_row.config_hash,
+        input_json=body.model_dump(),
+        result_json=result,
+        created_by=claims.get("email") or "unknown",
+    )
+    db.add(est)
+    db.flush()
 
     return result
 
@@ -181,13 +178,14 @@ def rates(
     branch: str = Query(default="miami"),
     region: str = Query(default="FBC"),
     _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
 ):
     """Rate tables from the active config for the current tenant's branch.
 
     Returns a minimal response with null config fields when no active config is seeded
     (graceful — no 503 here; the estimator UI can still show the form).
     """
-    cfg_row = _get_active_config_row(branch)
+    cfg_row = _get_active_config_row(branch, db)
     if cfg_row and cfg_row.config:
         cfg = cfg_row.config
         zone = region

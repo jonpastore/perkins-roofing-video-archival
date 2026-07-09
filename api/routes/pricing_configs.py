@@ -18,9 +18,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import PricingConfig, SessionLocal
+from api.auth import get_db_session, require_role
+from app.models import PricingConfig
 from core.pricing_config import compute_hash as _core_compute_hash
 
 router = APIRouter(prefix="/estimator/configs", tags=["pricing_configs"])
@@ -77,15 +78,15 @@ def _row_to_dict(row: PricingConfig, include_config: bool = False) -> dict:
 def get_active_config(
     branch: str = Query(...),
     _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
 ):
     """Return the currently active config for a branch."""
-    with SessionLocal() as db:
-        row = db.execute(
-            select(PricingConfig).where(
-                PricingConfig.branch == branch,
-                PricingConfig.is_active == True,  # noqa: E712
-            )
-        ).scalar_one_or_none()
+    row = db.execute(
+        select(PricingConfig).where(
+            PricingConfig.branch == branch,
+            PricingConfig.is_active == True,  # noqa: E712
+        )
+    ).scalar_one_or_none()
     if row is None:
         raise HTTPException(404, f"No active config for branch {branch!r}")
     return _row_to_dict(row, include_config=True)
@@ -115,6 +116,7 @@ def diff_configs(
     from_id: int = Query(...),
     to_id: int = Query(...),
     _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
 ):
     """Return a field-level dot-path diff between two config versions.
 
@@ -126,9 +128,8 @@ def diff_configs(
     Lists are treated as leaf values. Added keys have from_value=null;
     removed keys have to_value=null.
     """
-    with SessionLocal() as db:
-        a = db.get(PricingConfig, from_id)
-        b = db.get(PricingConfig, to_id)
+    a = db.get(PricingConfig, from_id)
+    b = db.get(PricingConfig, to_id)
     if a is None:
         raise HTTPException(404, f"Config {from_id} not found")
     if b is None:
@@ -158,14 +159,14 @@ def diff_configs(
 def list_configs(
     branch: Optional[str] = Query(None),
     _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
 ):
     """List all versions for a branch (or all branches if branch omitted)."""
-    with SessionLocal() as db:
-        stmt = select(PricingConfig)
-        if branch:
-            stmt = stmt.where(PricingConfig.branch == branch)
-        stmt = stmt.order_by(PricingConfig.branch, PricingConfig.version.desc())
-        rows = db.execute(stmt).scalars().all()
+    stmt = select(PricingConfig)
+    if branch:
+        stmt = stmt.where(PricingConfig.branch == branch)
+    stmt = stmt.order_by(PricingConfig.branch, PricingConfig.version.desc())
+    rows = db.execute(stmt).scalars().all()
     return [_row_to_dict(r) for r in rows]
 
 
@@ -173,10 +174,10 @@ def list_configs(
 def get_config(
     config_id: int,
     _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
 ):
     """Get a specific config version including the full config body and hash."""
-    with SessionLocal() as db:
-        row = db.get(PricingConfig, config_id)
+    row = db.get(PricingConfig, config_id)
     if row is None:
         raise HTTPException(404, f"Config {config_id} not found")
     return _row_to_dict(row, include_config=True)
@@ -186,38 +187,38 @@ def get_config(
 def create_config(
     body: ConfigCreateRequest,
     claims=Depends(require_role("estimating_manage")),
+    db: Session = Depends(get_db_session),
 ):
     """Create a new immutable config version. Server computes the RFC 8785 hash."""
     config_hash = _core_compute_hash(body.config)
 
-    with SessionLocal() as db:
-        # Compute next version number for (tenant_id=1, branch)
-        from sqlalchemy import func
-        max_ver = db.execute(
-            select(func.max(PricingConfig.version)).where(
-                PricingConfig.tenant_id == 1,
-                PricingConfig.branch == body.branch,
-            )
-        ).scalar()
-        next_version = (max_ver or 0) + 1
-
-        row = PricingConfig(
-            tenant_id=1,
-            branch=body.branch,
-            version=next_version,
-            label=body.label,
-            config=body.config,
-            config_hash=config_hash,
-            is_active=False,
-            created_by=claims.get("email") or "unknown",
+    # Compute next version number for (caller's tenant, branch)
+    from sqlalchemy import func
+    tenant_id = db.info["tenant_id"]
+    max_ver = db.execute(
+        select(func.max(PricingConfig.version)).where(
+            PricingConfig.tenant_id == tenant_id,
+            PricingConfig.branch == body.branch,
         )
-        db.add(row)
-        try:
-            db.commit()
-            db.refresh(row)
-        except IntegrityError:
-            db.rollback()
-            raise HTTPException(409, "Config version conflict — retry")
+    ).scalar()
+    next_version = (max_ver or 0) + 1
+
+    row = PricingConfig(
+        tenant_id=tenant_id,
+        branch=body.branch,
+        version=next_version,
+        label=body.label,
+        config=body.config,
+        config_hash=config_hash,
+        is_active=False,
+        created_by=claims.get("email") or "unknown",
+    )
+    db.add(row)
+    try:
+        db.flush()
+        db.refresh(row)
+    except IntegrityError:
+        raise HTTPException(409, "Config version conflict — retry")
 
     return _row_to_dict(row, include_config=True)
 
@@ -226,32 +227,32 @@ def create_config(
 def activate_config(
     config_id: int,
     claims=Depends(require_role("estimating_manage")),
+    db: Session = Depends(get_db_session),
 ):
     """Activate a config version. Deactivates the current active version atomically.
     Idempotent: activating an already-active version returns 200 with no changes.
     """
-    with SessionLocal() as db:
-        target = db.get(PricingConfig, config_id)
-        if target is None:
-            raise HTTPException(404, f"Config {config_id} not found")
+    target = db.get(PricingConfig, config_id)
+    if target is None:
+        raise HTTPException(404, f"Config {config_id} not found")
 
-        if target.is_active:
-            # Idempotent re-activate — no-op
-            return _row_to_dict(target)
+    if target.is_active:
+        # Idempotent re-activate — no-op
+        return _row_to_dict(target)
 
-        # Deactivate any currently active row for this (tenant, branch)
-        current_active = db.execute(
-            select(PricingConfig).where(
-                PricingConfig.tenant_id == target.tenant_id,
-                PricingConfig.branch == target.branch,
-                PricingConfig.is_active == True,  # noqa: E712
-            )
-        ).scalar_one_or_none()
-        if current_active is not None:
-            current_active.is_active = False
+    # Deactivate any currently active row for this (tenant, branch)
+    current_active = db.execute(
+        select(PricingConfig).where(
+            PricingConfig.tenant_id == target.tenant_id,
+            PricingConfig.branch == target.branch,
+            PricingConfig.is_active == True,  # noqa: E712
+        )
+    ).scalar_one_or_none()
+    if current_active is not None:
+        current_active.is_active = False
 
-        target.is_active = True
-        db.commit()
-        db.refresh(target)
+    target.is_active = True
+    db.flush()
+    db.refresh(target)
 
     return _row_to_dict(target)

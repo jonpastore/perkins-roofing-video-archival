@@ -11,9 +11,10 @@ import re
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import Article, GraphNode, MiniSeries, SessionLocal, SocialPost, Video
+from api.auth import get_db_session, require_role
+from app.models import Article, GraphNode, MiniSeries, SocialPost, Video
 from core.ratelimit import SingleFlightGuard
 from core.retrieval import link
 
@@ -74,6 +75,7 @@ def list_videos(
     articles: str = "all",
     social: str = "all",
     _claims=Depends(require_role("search")),
+    db: Session = Depends(get_db_session),
 ):
     """Return all Video rows ordered by upload_date desc.
 
@@ -95,107 +97,107 @@ def list_videos(
       last_comment_at, kpis_polled_at, last_pulled_at
       content_length (= duration as int seconds)
     """
-    with SessionLocal() as db:
-        query = db.query(Video)
-        if archived_only:
-            query = query.filter(Video.archive_uri.isnot(None))
-        if q:
-            query = query.filter(Video.title.ilike(f"%{q}%"))
-        if min_length is not None:
-            query = query.filter(Video.duration >= min_length)
-        if max_length is not None:
-            query = query.filter(Video.duration <= max_length)
-        if uploaded_after:
-            query = query.filter(Video.upload_date >= uploaded_after)
-        if uploaded_before:
-            query = query.filter(Video.upload_date <= uploaded_before)
+    query = db.query(Video)
+    if archived_only:
+        query = query.filter(Video.archive_uri.isnot(None))
+    if q:
+        query = query.filter(Video.title.ilike(f"%{q}%"))
+    if min_length is not None:
+        query = query.filter(Video.duration >= min_length)
+    if max_length is not None:
+        query = query.filter(Video.duration <= max_length)
+    if uploaded_after:
+        query = query.filter(Video.upload_date >= uploaded_after)
+    if uploaded_before:
+        query = query.filter(Video.upload_date <= uploaded_before)
 
-        rows = query.order_by(Video.upload_date.desc()).all()
+    rows = query.order_by(Video.upload_date.desc()).all()
 
-        if not rows:
-            return []
+    if not rows:
+        return []
 
-        video_ids = [v.id for v in rows]
+    video_ids = [v.id for v in rows]
 
-        # topic counts: one query, group by video_id
-        topic_counts: dict[str, int] = dict(
-            db.query(GraphNode.video_id, func.count(GraphNode.id))
-            .filter(GraphNode.video_id.in_(video_ids), GraphNode.kind == "topics")
-            .group_by(GraphNode.video_id)
-            .all()
+    # topic counts: one query, group by video_id
+    topic_counts: dict[str, int] = dict(
+        db.query(GraphNode.video_id, func.count(GraphNode.id))
+        .filter(GraphNode.video_id.in_(video_ids), GraphNode.kind == "topics")
+        .group_by(GraphNode.video_id)
+        .all()
+    )
+
+    # article counts: per video_id, count articles whose content_md contains it
+    article_counts: dict[str, int] = {}
+    for vid in video_ids:
+        article_counts[vid] = (
+            db.query(func.count(Article.slug))
+            .filter(Article.content_md.contains(vid))
+            .scalar() or 0
         )
 
-        # article counts: per video_id, count articles whose content_md contains it
-        article_counts: dict[str, int] = {}
-        for vid in video_ids:
-            article_counts[vid] = (
-                db.query(func.count(Article.slug))
-                .filter(Article.content_md.contains(vid))
-                .scalar() or 0
+    # social post counts + presence: mini_series.video_id → social_posts.series_id
+    series_map: dict[str, list[int]] = {}  # video_id -> [series_id]
+    for s in db.query(MiniSeries.id, MiniSeries.video_id).filter(MiniSeries.video_id.in_(video_ids)).all():
+        series_map.setdefault(s.video_id, []).append(s.id)
+    all_series_ids = [sid for sids in series_map.values() for sid in sids]
+    post_counts_by_series: dict[int, int] = {}
+    if all_series_ids:
+        post_counts_by_series = dict(
+            db.query(SocialPost.series_id, func.count(SocialPost.id))
+            .filter(SocialPost.series_id.in_(all_series_ids))
+            .group_by(SocialPost.series_id)
+            .all()
+        )
+    social_post_counts: dict[str, int] = {
+        vid: sum(post_counts_by_series.get(sid, 0) for sid in sids)
+        for vid, sids in series_map.items()
+    }
+
+    # Derived booleans
+    clips_generated_map: dict[str, bool] = {
+        vid: bool(sids) for vid, sids in series_map.items()
+    }
+    articles_generated_map: dict[str, bool] = {
+        vid: cnt > 0 for vid, cnt in article_counts.items()
+    }
+    social_generated_map: dict[str, bool] = {
+        vid: cnt > 0 for vid, cnt in social_post_counts.items()
+    }
+
+    # Apply boolean filters (post-query, derived from join results)
+    def _bool_filter(vid: str, param: str, generated_map: dict[str, bool]) -> bool:
+        if param == "all":
+            return True
+        val = generated_map.get(vid, False)
+        return val if param == "yes" else not val
+
+    result = []
+    for v in rows:
+        if not _bool_filter(v.id, clips, clips_generated_map):
+            continue
+        if not _bool_filter(v.id, articles, articles_generated_map):
+            continue
+        if not _bool_filter(v.id, social, social_generated_map):
+            continue
+        result.append(
+            _video_to_dict(
+                v,
+                topic_count=topic_counts.get(v.id, 0),
+                article_count=article_counts.get(v.id, 0),
+                social_post_count=social_post_counts.get(v.id, 0),
+                clips_generated=clips_generated_map.get(v.id, False),
+                articles_generated=articles_generated_map.get(v.id, False),
+                social_generated=social_generated_map.get(v.id, False),
             )
-
-        # social post counts + presence: mini_series.video_id → social_posts.series_id
-        series_map: dict[str, list[int]] = {}  # video_id -> [series_id]
-        for s in db.query(MiniSeries.id, MiniSeries.video_id).filter(MiniSeries.video_id.in_(video_ids)).all():
-            series_map.setdefault(s.video_id, []).append(s.id)
-        all_series_ids = [sid for sids in series_map.values() for sid in sids]
-        post_counts_by_series: dict[int, int] = {}
-        if all_series_ids:
-            post_counts_by_series = dict(
-                db.query(SocialPost.series_id, func.count(SocialPost.id))
-                .filter(SocialPost.series_id.in_(all_series_ids))
-                .group_by(SocialPost.series_id)
-                .all()
-            )
-        social_post_counts: dict[str, int] = {
-            vid: sum(post_counts_by_series.get(sid, 0) for sid in sids)
-            for vid, sids in series_map.items()
-        }
-
-        # Derived booleans
-        clips_generated_map: dict[str, bool] = {
-            vid: bool(sids) for vid, sids in series_map.items()
-        }
-        articles_generated_map: dict[str, bool] = {
-            vid: cnt > 0 for vid, cnt in article_counts.items()
-        }
-        social_generated_map: dict[str, bool] = {
-            vid: cnt > 0 for vid, cnt in social_post_counts.items()
-        }
-
-        # Apply boolean filters (post-query, derived from join results)
-        def _bool_filter(vid: str, param: str, generated_map: dict[str, bool]) -> bool:
-            if param == "all":
-                return True
-            val = generated_map.get(vid, False)
-            return val if param == "yes" else not val
-
-        result = []
-        for v in rows:
-            if not _bool_filter(v.id, clips, clips_generated_map):
-                continue
-            if not _bool_filter(v.id, articles, articles_generated_map):
-                continue
-            if not _bool_filter(v.id, social, social_generated_map):
-                continue
-            result.append(
-                _video_to_dict(
-                    v,
-                    topic_count=topic_counts.get(v.id, 0),
-                    article_count=article_counts.get(v.id, 0),
-                    social_post_count=social_post_counts.get(v.id, 0),
-                    clips_generated=clips_generated_map.get(v.id, False),
-                    articles_generated=articles_generated_map.get(v.id, False),
-                    social_generated=social_generated_map.get(v.id, False),
-                )
-            )
-        return result
+        )
+    return result
 
 
 @router.get("/{video_id}/download")
 def download_video(
     video_id: str,
     _claims=Depends(require_role("search")),
+    db: Session = Depends(get_db_session),
 ):
     """Return a short-lived signed GCS download URL for an archived video.
 
@@ -203,8 +205,7 @@ def download_video(
     has no archive_uri. ``adapters.storage`` is imported lazily so tests can
     monkeypatch it without triggering real GCP initialisation.
     """
-    with SessionLocal() as db:
-        video = db.get(Video, video_id)
+    video = db.get(Video, video_id)
 
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
@@ -248,19 +249,19 @@ def rename_video(
     video_id: str,
     body: RenameRequest,
     _claims=Depends(require_role("manage_archive")),
+    db: Session = Depends(get_db_session),
 ):
     """Set the stored display title for a video. Returns {id, title}. 404 if missing."""
     title = body.title.strip()
     if not title:
         raise HTTPException(status_code=422, detail="title must not be empty")
-    with SessionLocal() as db:
-        v = db.get(Video, video_id)
-        if v is None:
-            raise HTTPException(status_code=404, detail="video not found")
-        v.title = title
-        db.commit()
-        db.refresh(v)
-        return {"id": v.id, "title": v.title}
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    v.title = title
+    db.flush()
+    db.refresh(v)
+    return {"id": v.id, "title": v.title}
 
 
 @router.get("/{video_id}/youtube-name")
@@ -278,22 +279,25 @@ def youtube_name(video_id: str, _claims=Depends(require_role("manage_archive")))
 
 
 @router.post("/{video_id}/suggest-name")
-def suggest_name(video_id: str, _claims=Depends(require_role("manage_archive"))):
+def suggest_name(
+    video_id: str,
+    _claims=Depends(require_role("manage_archive")),
+    db: Session = Depends(get_db_session),
+):
     """Suggest a concise, descriptive title from the video transcript via the LLM."""
     from app.llm import chat
     from app.models import Segment
 
-    with SessionLocal() as db:
-        v = db.get(Video, video_id)
-        if v is None:
-            raise HTTPException(status_code=404, detail="video not found")
-        segments = (
-            db.query(Segment)
-            .filter(Segment.video_id == video_id)
-            .order_by(Segment.start)
-            .limit(40)
-            .all()
-        )
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    segments = (
+        db.query(Segment)
+        .filter(Segment.video_id == video_id)
+        .order_by(Segment.start)
+        .limit(40)
+        .all()
+    )
     context = " ".join(s.text for s in segments if s.text)[:2000]
     if not context.strip():
         raise HTTPException(status_code=400, detail="no transcript available to suggest a name")
@@ -334,6 +338,7 @@ def _social_post_url(post: SocialPost) -> str | None:
 def video_detail(
     video_id: str,
     _claims=Depends(require_role("search")),
+    db: Session = Depends(get_db_session),
 ):
     """Return per-video detail: topics with timecoded deep links, article usage, and social posts.
 
@@ -345,58 +350,57 @@ def video_detail(
 
     TODO (B2): add unanswered_comments count once the comments table is built.
     """
-    with SessionLocal() as db:
-        video = db.get(Video, video_id)
-        if video is None:
-            raise HTTPException(status_code=404, detail="video not found")
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
 
-        # Topics — content_graph rows, kind='topics', ordered by timecode
-        topic_rows = (
-            db.query(GraphNode)
-            .filter(GraphNode.video_id == video_id, GraphNode.kind == "topics")
-            .order_by(GraphNode.start)
-            .all()
-        )
-        topics = [
-            {
-                "label": t.label,
-                "t": int(t.start) if t.start is not None else 0,
-                "url": link(video_id, t.start if t.start is not None else 0),
-            }
-            for t in topic_rows
-        ]
+    # Topics — content_graph rows, kind='topics', ordered by timecode
+    topic_rows = (
+        db.query(GraphNode)
+        .filter(GraphNode.video_id == video_id, GraphNode.kind == "topics")
+        .order_by(GraphNode.start)
+        .all()
+    )
+    topics = [
+        {
+            "label": t.label,
+            "t": int(t.start) if t.start is not None else 0,
+            "url": link(video_id, t.start if t.start is not None else 0),
+        }
+        for t in topic_rows
+    ]
 
-        # Articles — detect usage by scanning content_md for the video_id string
-        article_rows = (
-            db.query(Article)
-            .filter(Article.content_md.contains(video_id))
-            .all()
-        )
-        articles = [
-            {"slug": a.slug, "title": a.title, "status": a.status}
-            for a in article_rows
-        ]
+    # Articles — detect usage by scanning content_md for the video_id string
+    article_rows = (
+        db.query(Article)
+        .filter(Article.content_md.contains(video_id))
+        .all()
+    )
+    articles = [
+        {"slug": a.slug, "title": a.title, "status": a.status}
+        for a in article_rows
+    ]
 
-        # Social posts — join mini_series (video_id) → social_posts (series_id)
-        series_rows = (
-            db.query(MiniSeries)
-            .filter(MiniSeries.video_id == video_id)
-            .all()
-        )
-        series_ids = [s.id for s in series_rows]
-        post_rows = (
-            db.query(SocialPost)
-            .filter(SocialPost.series_id.in_(series_ids))
-            .all()
-        ) if series_ids else []
-        social_posts = [
-            {
-                "platform": p.platform,
-                "status": p.status,
-                "url": _social_post_url(p),
-            }
-            for p in post_rows
-        ]
+    # Social posts — join mini_series (video_id) → social_posts (series_id)
+    series_rows = (
+        db.query(MiniSeries)
+        .filter(MiniSeries.video_id == video_id)
+        .all()
+    )
+    series_ids = [s.id for s in series_rows]
+    post_rows = (
+        db.query(SocialPost)
+        .filter(SocialPost.series_id.in_(series_ids))
+        .all()
+    ) if series_ids else []
+    social_posts = [
+        {
+            "platform": p.platform,
+            "status": p.status,
+            "url": _social_post_url(p),
+        }
+        for p in post_rows
+    ]
 
     return {"topics": topics, "articles": articles, "social_posts": social_posts}
 

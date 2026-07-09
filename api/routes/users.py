@@ -12,10 +12,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import current_claims, require_role
+from api.auth import current_claims, get_db_session, require_role
 from app.config import settings
-from app.models import SessionLocal, UserSetting
+from app.models import UserSetting
 from app.observability import log
 
 router = APIRouter(prefix="/admin/users", tags=["users"])
@@ -58,7 +59,10 @@ def _firebase_auth():
 
 
 @router.get("")
-def list_users(claims=Depends(require_role("manage_users"))):
+def list_users(
+    claims=Depends(require_role("manage_users")),
+    db: Session = Depends(get_db_session),
+):
     """List up to 200 Firebase users with their current role claim and display name.
 
     - Filters out rows with a blank/missing email (anonymous or phone-only accounts).
@@ -74,10 +78,7 @@ def list_users(claims=Depends(require_role("manage_users"))):
     # sourced from the verified token claim, never a hardcoded literal (TRD-F4 §4.2:
     # a token with no GCIP claim resolves to tenant 1, but that value comes from
     # claim resolution, not a constant).
-    tenant_id = claims.get("tenant_id") or 1
-    with SessionLocal() as db:
-        db.info["tenant_id"] = tenant_id
-        sigs = {r.email.lower(): r.signature for r in db.query(UserSetting).all()}
+    sigs = {r.email.lower(): r.signature for r in db.query(UserSetting).all()}
 
     page = auth.list_users(max_results=200)
     for user in page.iterate_all():
@@ -206,17 +207,23 @@ def delete_user(body: DeleteRequest, claims=Depends(require_role("manage_users")
 
 
 @router.put("/signature")
-def set_user_signature_admin(body: AdminSignatureRequest, claims=Depends(require_role("manage_users"))):
+def set_user_signature_admin(
+    body: AdminSignatureRequest,
+    claims=Depends(require_role("manage_users")),
+    db: Session = Depends(get_db_session),
+):
     """Set or clear the email signature for any user (admin only)."""
-    with SessionLocal() as db:
-        db.info["tenant_id"] = claims.get("tenant_id") or 1
-        row = db.get(UserSetting, body.email.lower())
-        if row is None:
-            row = UserSetting(email=body.email.lower(), signature=body.signature or None)
-            db.add(row)
-        else:
-            row.signature = body.signature or None
-        db.commit()
+    row = db.get(UserSetting, body.email.lower())
+    if row is None:
+        row = UserSetting(
+            email=body.email.lower(),
+            signature=body.signature or None,
+            tenant_id=db.info["tenant_id"],
+        )
+        db.add(row)
+    else:
+        row.signature = body.signature or None
+    db.flush()
     return {"email": body.email, "signature": body.signature or None}
 
 
@@ -225,26 +232,33 @@ def set_user_signature_admin(body: AdminSignatureRequest, claims=Depends(require
 # ---------------------------------------------------------------------------
 
 @me_router.get("/signature")
-def get_my_signature(claims=Depends(current_claims)):
+def get_my_signature(
+    claims=Depends(current_claims),
+    db: Session = Depends(get_db_session),
+):
     email = (claims.get("email") or "").lower()
-    with SessionLocal() as db:
-        db.info["tenant_id"] = claims.get("tenant_id") or 1
-        row = db.get(UserSetting, email)
+    row = db.get(UserSetting, email)
     return {"email": email, "signature": row.signature if row else None}
 
 
 @me_router.put("/signature")
-def set_my_signature(body: SignatureRequest, claims=Depends(current_claims)):
+def set_my_signature(
+    body: SignatureRequest,
+    claims=Depends(current_claims),
+    db: Session = Depends(get_db_session),
+):
     email = (claims.get("email") or "").lower()
-    with SessionLocal() as db:
-        db.info["tenant_id"] = claims.get("tenant_id") or 1
-        row = db.get(UserSetting, email)
-        if row is None:
-            row = UserSetting(email=email, signature=body.signature or None)
-            db.add(row)
-        else:
-            row.signature = body.signature or None
-        db.commit()
+    row = db.get(UserSetting, email)
+    if row is None:
+        row = UserSetting(
+            email=email,
+            signature=body.signature or None,
+            tenant_id=db.info["tenant_id"],
+        )
+        db.add(row)
+    else:
+        row.signature = body.signature or None
+    db.flush()
     return {"email": email, "signature": body.signature or None}
 
 

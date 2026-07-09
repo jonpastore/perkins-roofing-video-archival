@@ -11,10 +11,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
+from api.auth import get_db_session, require_role
 from app.llm import chat
-from app.models import CommentDraft, SessionLocal, Video
+from app.models import CommentDraft, Video
 from core.ratelimit import SingleFlightGuard
 
 router = APIRouter(prefix="/comments", tags=["comments"])
@@ -58,31 +59,31 @@ def list_comments(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     _claims=Depends(require_role("article_read")),
+    db: Session = Depends(get_db_session),
 ):
     """Paginated list of comment drafts.
     Returns {total, items: [{id, video_id, video_title, comment_text, draft_reply, status, ...}]}.
     """
-    with SessionLocal() as db:
-        query = db.query(CommentDraft)
+    query = db.query(CommentDraft)
 
-        if status is not None:
-            query = query.filter(CommentDraft.status == status)
-        if needs_reply is not None:
-            query = query.filter(CommentDraft.needs_reply == needs_reply)
+    if status is not None:
+        query = query.filter(CommentDraft.status == status)
+    if needs_reply is not None:
+        query = query.filter(CommentDraft.needs_reply == needs_reply)
 
-        total = query.count()
-        rows = (
-            query.order_by(CommentDraft.published_at.desc().nullslast())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+    total = query.count()
+    rows = (
+        query.order_by(CommentDraft.published_at.desc().nullslast())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
-        video_ids = {r.video_id for r in rows}
-        titles: dict[str, str] = {}
-        if video_ids:
-            vrows = db.query(Video.id, Video.title).filter(Video.id.in_(video_ids)).all()
-            titles = {v.id: v.title for v in vrows}
+    video_ids = {r.video_id for r in rows}
+    titles: dict[str, str] = {}
+    if video_ids:
+        vrows = db.query(Video.id, Video.title).filter(Video.id.in_(video_ids)).all()
+        titles = {v.id: v.title for v in vrows}
 
     items = [_row_to_dict(r, titles.get(r.video_id)) for r in rows]
     return {"total": total, "items": items}
@@ -93,53 +94,55 @@ def list_comments(
 # ---------------------------------------------------------------------------
 
 @router.post("/{comment_id}/draft")
-def regenerate_draft(comment_id: int, _claims=Depends(require_role("manage_articles"))):
+def regenerate_draft(
+    comment_id: int,
+    _claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
     """Regenerate the LLM draft reply for a comment. Overwrites any existing draft."""
     from app.models import Segment
 
-    with SessionLocal() as db:
-        row = db.query(CommentDraft).filter(CommentDraft.id == comment_id).first()
-        if not row:
-            raise HTTPException(status_code=404, detail="Comment not found")
+    row = db.query(CommentDraft).filter(CommentDraft.id == comment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Comment not found")
 
-        video = db.query(Video).filter(Video.id == row.video_id).first()
-        title = video.title if video else row.video_id
+    video = db.query(Video).filter(Video.id == row.video_id).first()
+    title = video.title if video else row.video_id
 
-        segments = (
-            db.query(Segment)
-            .filter(Segment.video_id == row.video_id)
-            .order_by(Segment.start)
-            .limit(30)
-            .all()
-        )
-        context = " ".join(s.text for s in segments if s.text)[:1200] or "(transcript not available)"
+    segments = (
+        db.query(Segment)
+        .filter(Segment.video_id == row.video_id)
+        .order_by(Segment.start)
+        .limit(30)
+        .all()
+    )
+    context = " ".join(s.text for s in segments if s.text)[:1200] or "(transcript not available)"
 
-        prompt = (
-            f'You are the social media voice for Perkins Roofing, a professional residential roofing company.\n\n'
-            f'A viewer left this comment on the video "{title}":\n'
-            f'"{row.comment_text}"\n\n'
-            f"Video topic / context (transcript excerpt):\n{context}\n\n"
-            "Write a concise, professional reply (2-4 sentences) that directly addresses the viewer's "
-            "question or concern, reflects genuine roofing expertise, and ends with a friendly actionable "
-            "sentence. No price promises, no excessive exclamation marks.\n\nReply only — no preamble."
-        )
+    prompt = (
+        f'You are the social media voice for Perkins Roofing, a professional residential roofing company.\n\n'
+        f'A viewer left this comment on the video "{title}":\n'
+        f'"{row.comment_text}"\n\n'
+        f"Video topic / context (transcript excerpt):\n{context}\n\n"
+        "Write a concise, professional reply (2-4 sentences) that directly addresses the viewer's "
+        "question or concern, reflects genuine roofing expertise, and ends with a friendly actionable "
+        "sentence. No price promises, no excessive exclamation marks.\n\nReply only — no preamble."
+    )
 
-        try:
-            draft = chat(prompt, want_json=False)
-        except Exception as exc:
-            log.error("regenerate_draft: LLM failed for comment %d: %s", comment_id, exc, exc_info=True)
-            raise HTTPException(status_code=502, detail="comment draft generation failed") from exc
+    try:
+        draft = chat(prompt, want_json=False)
+    except Exception as exc:
+        log.error("regenerate_draft: LLM failed for comment %d: %s", comment_id, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="comment draft generation failed") from exc
 
-        if not draft or not draft.strip():
-            raise HTTPException(status_code=502, detail="LLM returned an empty reply")
+    if not draft or not draft.strip():
+        raise HTTPException(status_code=502, detail="LLM returned an empty reply")
 
-        row.draft_reply = draft.strip()
-        row.status = "drafted"
-        db.commit()
-        db.refresh(row)
+    row.draft_reply = draft.strip()
+    row.status = "drafted"
+    db.flush()
+    db.refresh(row)
 
-        v_title = title
-    return _row_to_dict(row, v_title)
+    return _row_to_dict(row, title)
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +159,7 @@ def update_comment(
     comment_id: int,
     body: UpdateRequest,
     _claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
 ):
     """Edit the draft reply text and/or set status (ready | dismissed | drafted | pending | posted)."""
     valid_statuses = {"pending", "drafted", "ready", "dismissed", "posted"}
@@ -165,21 +169,20 @@ def update_comment(
             detail=f"status must be one of: {', '.join(sorted(valid_statuses))}",
         )
 
-    with SessionLocal() as db:
-        row = db.query(CommentDraft).filter(CommentDraft.id == comment_id).first()
-        if not row:
-            raise HTTPException(status_code=404, detail="Comment not found")
+    row = db.query(CommentDraft).filter(CommentDraft.id == comment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Comment not found")
 
-        if body.draft_reply is not None:
-            row.draft_reply = body.draft_reply
-        if body.status is not None:
-            row.status = body.status
+    if body.draft_reply is not None:
+        row.draft_reply = body.draft_reply
+    if body.status is not None:
+        row.status = body.status
 
-        db.commit()
-        db.refresh(row)
+    db.flush()
+    db.refresh(row)
 
-        video = db.query(Video).filter(Video.id == row.video_id).first()
-        title = video.title if video else row.video_id
+    video = db.query(Video).filter(Video.id == row.video_id).first()
+    title = video.title if video else row.video_id
 
     return _row_to_dict(row, title)
 
@@ -196,7 +199,11 @@ def reply_config(_claims=Depends(require_role("article_read"))):
 
 
 @router.post("/{comment_id}/post")
-def post_reply_to_youtube(comment_id: int, _claims=Depends(require_role("manage_articles"))):
+def post_reply_to_youtube(
+    comment_id: int,
+    _claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
     """Post the saved draft reply to YouTube (OAuth, scope youtube.force-ssl) and mark it posted.
 
     503 if reply OAuth isn't configured (no owner refresh token) — the UI keeps draft/copy mode.
@@ -204,29 +211,28 @@ def post_reply_to_youtube(comment_id: int, _claims=Depends(require_role("manage_
     """
     from adapters.youtube_comments import post_reply
 
-    with SessionLocal() as db:
-        row = db.query(CommentDraft).filter(CommentDraft.id == comment_id).first()
-        if not row:
-            raise HTTPException(status_code=404, detail="Comment not found")
-        reply_text = (row.draft_reply or "").strip()
-        if not reply_text:
-            raise HTTPException(status_code=400, detail="no draft reply to post")
+    row = db.query(CommentDraft).filter(CommentDraft.id == comment_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    reply_text = (row.draft_reply or "").strip()
+    if not reply_text:
+        raise HTTPException(status_code=400, detail="no draft reply to post")
 
-        try:
-            post_reply(row.comment_id, reply_text)
-        except RuntimeError as exc:
-            # OAuth not configured — a deliberate, recoverable state.
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except Exception as exc:
-            log.error("post_reply_to_youtube: YouTube post failed for %d: %s", comment_id, exc, exc_info=True)
-            raise HTTPException(status_code=502, detail="posting the reply to YouTube failed") from exc
+    try:
+        post_reply(row.comment_id, reply_text)
+    except RuntimeError as exc:
+        # OAuth not configured — a deliberate, recoverable state.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        log.error("post_reply_to_youtube: YouTube post failed for %d: %s", comment_id, exc, exc_info=True)
+        raise HTTPException(status_code=502, detail="posting the reply to YouTube failed") from exc
 
-        row.status = "posted"
-        db.commit()
-        db.refresh(row)
+    row.status = "posted"
+    db.flush()
+    db.refresh(row)
 
-        video = db.query(Video).filter(Video.id == row.video_id).first()
-        title = video.title if video else row.video_id
+    video = db.query(Video).filter(Video.id == row.video_id).first()
+    title = video.title if video else row.video_id
 
     return _row_to_dict(row, title)
 

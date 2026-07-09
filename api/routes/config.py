@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from api.auth import require_role
 from app.config import settings
-from app.models import PlatformConfig, SecretAudit, SessionLocal
+from app.models import PlatformConfig, PlatformSessionLocal, SecretAudit
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -256,7 +256,8 @@ def get_config(claims=Depends(require_role("manage_config"))):
         "default_admins": [...]
       }
     """
-    with SessionLocal() as db:
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
         overrides = _db_overrides(db)
 
     result: list[dict[str, Any]] = []
@@ -323,7 +324,8 @@ def upsert_config(entry: ConfigEntry, claims=Depends(require_role("manage_config
     email = claims.get("email", "unknown")
     now = datetime.now(UTC).replace(tzinfo=None)
 
-    with SessionLocal() as db:
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
         row = db.get(PlatformConfig, entry.key)
         if row is None:
             row = PlatformConfig(
@@ -359,7 +361,8 @@ def get_secrets(claims=Depends(require_role("manage_config"))):
 
     If GCP Secret Manager is unavailable (dev), last_set falls back to None.
     """
-    with SessionLocal() as db:
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
         audits = {r.key: r for r in db.query(SecretAudit).all()}
 
     try:
@@ -438,7 +441,8 @@ def upsert_secret(entry: SecretEntry, claims=Depends(require_role("manage_config
         raise HTTPException(status_code=502, detail="secret update failed")
 
     # Record audit (upsert — one row per secret key).
-    with SessionLocal() as db:
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
         audit = db.get(SecretAudit, entry.key)
         if audit is None:
             audit = SecretAudit(key=entry.key, updated_at=now, updated_by=email)
@@ -478,7 +482,8 @@ def _check_vertex(project: str) -> tuple[bool, str]:
 def _check_db() -> tuple[bool, str]:
     """Probe DB by opening a session and running a trivial query."""
     try:
-        with SessionLocal() as db:
+        with PlatformSessionLocal() as db:
+            db.info["platform_scope"] = True
             db.execute(__import__("sqlalchemy").text("SELECT 1"))
         return True, "ok"
     except Exception as exc:

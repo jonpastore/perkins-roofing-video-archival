@@ -12,12 +12,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
 
 import adapters.resend as resend_adapter
-from api.auth import require_role
+from api.auth import get_db_session, require_role
 from app.config import settings
 from app.llm import chat
-from app.models import EmailTemplate, PlatformConfig, SessionLocal
+from app.models import EmailTemplate, PlatformConfig, PlatformSessionLocal
 from core.email_proof import build_proof_prompt, diff_suggestions
 
 router = APIRouter(prefix="/email", tags=["email"])
@@ -59,57 +60,67 @@ class DraftRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("/templates")
-def list_templates(claims=Depends(require_role("email_compose"))):
-    with SessionLocal() as db:
-        rows = db.query(EmailTemplate).all()
-        return [
-            {"id": r.id, "name": r.name, "subject": r.subject, "body": r.body,
-             "created_by": r.created_by}
-            for r in rows
-        ]
+def list_templates(
+    claims=Depends(require_role("email_compose")),
+    db: Session = Depends(get_db_session),
+):
+    rows = db.query(EmailTemplate).all()
+    return [
+        {"id": r.id, "name": r.name, "subject": r.subject, "body": r.body,
+         "created_by": r.created_by}
+        for r in rows
+    ]
 
 
 @router.post("/templates", status_code=201)
-def create_template(body: TemplateIn, claims=Depends(require_role("manage_templates"))):
-    with SessionLocal() as db:
-        tmpl = EmailTemplate(
-            name=body.name,
-            subject=body.subject,
-            body=body.body,
-            created_by=claims.get("email", ""),
-        )
-        db.add(tmpl)
-        db.commit()
-        db.refresh(tmpl)
-        return {"id": tmpl.id, "name": tmpl.name, "subject": tmpl.subject,
-                "body": tmpl.body, "created_by": tmpl.created_by}
+def create_template(
+    body: TemplateIn,
+    claims=Depends(require_role("manage_templates")),
+    db: Session = Depends(get_db_session),
+):
+    tmpl = EmailTemplate(
+        tenant_id=db.info["tenant_id"],
+        name=body.name,
+        subject=body.subject,
+        body=body.body,
+        created_by=claims.get("email", ""),
+    )
+    db.add(tmpl)
+    db.flush()
+    db.refresh(tmpl)
+    return {"id": tmpl.id, "name": tmpl.name, "subject": tmpl.subject,
+            "body": tmpl.body, "created_by": tmpl.created_by}
 
 
 @router.put("/templates/{template_id}")
-def update_template(template_id: int, body: TemplateIn,
-                    claims=Depends(require_role("manage_templates"))):
-    from fastapi import HTTPException
-    with SessionLocal() as db:
-        tmpl = db.get(EmailTemplate, template_id)
-        if tmpl is None:
-            raise HTTPException(status_code=404, detail="template not found")
-        tmpl.name = body.name
-        tmpl.subject = body.subject
-        tmpl.body = body.body
-        db.commit()
-        return {"id": tmpl.id, "name": tmpl.name, "subject": tmpl.subject,
-                "body": tmpl.body, "created_by": tmpl.created_by}
+def update_template(
+    template_id: int,
+    body: TemplateIn,
+    claims=Depends(require_role("manage_templates")),
+    db: Session = Depends(get_db_session),
+):
+    tmpl = db.get(EmailTemplate, template_id)
+    if tmpl is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    tmpl.name = body.name
+    tmpl.subject = body.subject
+    tmpl.body = body.body
+    db.flush()
+    return {"id": tmpl.id, "name": tmpl.name, "subject": tmpl.subject,
+            "body": tmpl.body, "created_by": tmpl.created_by}
 
 
 @router.delete("/templates/{template_id}", status_code=204)
-def delete_template(template_id: int, claims=Depends(require_role("manage_templates"))):
-    from fastapi import HTTPException
-    with SessionLocal() as db:
-        tmpl = db.get(EmailTemplate, template_id)
-        if tmpl is None:
-            raise HTTPException(status_code=404, detail="template not found")
-        db.delete(tmpl)
-        db.commit()
+def delete_template(
+    template_id: int,
+    claims=Depends(require_role("manage_templates")),
+    db: Session = Depends(get_db_session),
+):
+    tmpl = db.get(EmailTemplate, template_id)
+    if tmpl is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    db.delete(tmpl)
+    db.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +141,8 @@ def proof_email(req: ProofRequest, claims=Depends(require_role("email_proof"))):
 
 def _get_email_html_header() -> str:
     """Return the configured global email header HTML (db override takes precedence over env)."""
-    with SessionLocal() as db:
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
         row = db.get(PlatformConfig, "EMAIL_HTML_HEADER")
     if row is not None:
         return row.value or ""

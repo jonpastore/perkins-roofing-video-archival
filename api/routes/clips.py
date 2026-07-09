@@ -30,9 +30,10 @@ import google.auth.transport.requests
 import requests as _requests
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import GraphNode, MiniSeries, PlatformConfig, Segment, SessionLocal, SocialPost, Video
+from api.auth import get_db_session, require_role
+from app.models import GraphNode, MiniSeries, PlatformConfig, PlatformSessionLocal, Segment, SocialPost, Video
 from core.render_spec import ClipRenderSpec, get_clips, get_render_spec, set_render_spec
 
 # GCP coordinates — read from env so deploy.sh / Terraform own the values.
@@ -243,12 +244,13 @@ def upload_brand_scene(
 
     gcs_path = f"gs://{bucket_name}/{object_key}"
 
-    # Persist to platform_config
+    # Persist to platform_config (platform-level table, no tenant_id — use PlatformSessionLocal)
     from datetime import datetime, timezone  # noqa: PLC0415
 
     email = claims.get("email", "unknown")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    with SessionLocal() as db:
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
         row = db.get(PlatformConfig, config_key)
         if row is None:
             row = PlatformConfig(key=config_key, value=gcs_path, updated_at=now, updated_by=email)
@@ -347,12 +349,13 @@ def upload_brand_video(
 
     gcs_path = f"gs://{bucket_name}/{object_key}"
 
-    # Persist to platform_config
+    # Persist to platform_config (platform-level table, no tenant_id — use PlatformSessionLocal)
     from datetime import datetime, timezone  # noqa: PLC0415
 
     email = claims.get("email", "unknown")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    with SessionLocal() as db:
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
         row = db.get(PlatformConfig, config_key)
         if row is None:
             row = PlatformConfig(key=config_key, value=gcs_path, updated_at=now, updated_by=email)
@@ -520,6 +523,7 @@ def _fallback_suggestions(segments: list, nodes: list, count: int) -> list[dict]
 def suggest_clips(
     body: SuggestRequest,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """AI-suggest the best clippable moments from a video's transcript.
 
@@ -527,31 +531,30 @@ def suggest_clips(
     propose_parts logic when the LLM is unavailable or returns unusable output.
     Returns 404 when the video has no transcript segments.
     """
-    with SessionLocal() as db:
-        video = db.get(Video, body.video_id)
-        if video is None:
-            raise HTTPException(status_code=404, detail="video not found")
+    video = db.get(Video, body.video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
 
-        segments = (
-            db.query(Segment)
-            .filter(Segment.video_id == body.video_id)
-            .order_by(Segment.start)
-            .all()
-        )
-        if not segments:
-            raise HTTPException(
-                status_code=404,
-                detail="video has no transcript — cannot suggest clips",
-            )
-
-        nodes = (
-            db.query(GraphNode)
-            .filter(GraphNode.video_id == body.video_id)
-            .order_by(GraphNode.start)
-            .all()
+    segments = (
+        db.query(Segment)
+        .filter(Segment.video_id == body.video_id)
+        .order_by(Segment.start)
+        .all()
+    )
+    if not segments:
+        raise HTTPException(
+            status_code=404,
+            detail="video has no transcript — cannot suggest clips",
         )
 
-        video_title = video.title or body.video_id
+    nodes = (
+        db.query(GraphNode)
+        .filter(GraphNode.video_id == body.video_id)
+        .order_by(GraphNode.start)
+        .all()
+    )
+
+    video_title = video.title or body.video_id
 
     suggestions_raw = _llm_suggestions(video_title, segments, nodes, body.count)
 
@@ -567,6 +570,7 @@ def suggest_clips(
 def save_clips(
     body: SaveRequest,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Upsert a curated MiniSeries (approved=1) from admin-chosen clip boundaries.
 
@@ -579,68 +583,68 @@ def save_clips(
 
     parts_json = [p.model_dump() for p in body.parts]
 
-    with SessionLocal() as db:
-        video = db.get(Video, body.video_id)
-        if video is None:
-            raise HTTPException(status_code=404, detail="video not found")
+    video = db.get(Video, body.video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
 
-        existing = (
-            db.query(MiniSeries)
-            .filter(MiniSeries.video_id == body.video_id)
-            .first()
-        )
-        if existing:
-            existing.title = body.title
-            existing.parts_json = parts_json
-            existing.approved = 1
-            db.commit()
-            db.refresh(existing)
-            return _series_to_dict(existing)
+    existing = (
+        db.query(MiniSeries)
+        .filter(MiniSeries.video_id == body.video_id)
+        .first()
+    )
+    if existing:
+        existing.title = body.title
+        existing.parts_json = parts_json
+        existing.approved = 1
+        db.flush()
+        db.refresh(existing)
+        return _series_to_dict(existing)
 
-        series = MiniSeries(
-            video_id=body.video_id,
-            title=body.title,
-            parts_json=parts_json,
-            approved=1,
-        )
-        db.add(series)
-        db.commit()
-        db.refresh(series)
-        return _series_to_dict(series)
+    series = MiniSeries(
+        video_id=body.video_id,
+        title=body.title,
+        parts_json=parts_json,
+        approved=1,
+        tenant_id=db.info["tenant_id"],
+    )
+    db.add(series)
+    db.flush()
+    db.refresh(series)
+    return _series_to_dict(series)
 
 
 @router.get("/renderable")
 def list_renderable(
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Return approved MiniSeries that have not yet been rendered (no SocialPost row).
 
     A series is considered rendered when at least one SocialPost with a non-null
     gcs_url exists for it — matching the idempotency logic in render_job.
     """
-    with SessionLocal() as db:
-        approved = (
-            db.query(MiniSeries)
-            .filter(MiniSeries.approved == 1)
-            .order_by(MiniSeries.id.desc())
-            .all()
-        )
+    approved = (
+        db.query(MiniSeries)
+        .filter(MiniSeries.approved == 1)
+        .order_by(MiniSeries.id.desc())
+        .all()
+    )
 
-        rendered_ids = {
-            row.series_id
-            for row in db.query(SocialPost.series_id)
-            .filter(SocialPost.gcs_url.isnot(None))
-            .all()
-        }
+    rendered_ids = {
+        row.series_id
+        for row in db.query(SocialPost.series_id)
+        .filter(SocialPost.gcs_url.isnot(None))
+        .all()
+    }
 
-        result = []
-        for s in approved:
-            if s.id not in rendered_ids:
-                result.append({
-                    **_series_to_dict(s),
-                    "parts_count": len(get_clips(s.parts_json)),
-                })
-        return result
+    result = []
+    for s in approved:
+        if s.id not in rendered_ids:
+            result.append({
+                **_series_to_dict(s),
+                "parts_count": len(get_clips(s.parts_json)),
+            })
+    return result
 
 
 @router.get("/transcript")
@@ -649,6 +653,7 @@ def clip_transcript(
     start: float,
     end: float,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Return transcript segments that overlap the given [start, end] window.
 
@@ -667,27 +672,26 @@ def clip_transcript(
     Returns 404 if the video does not exist.
     Returns an empty segments list (not 404) if the video has no transcript in range.
     """
-    with SessionLocal() as db:
-        video = db.get(Video, video_id)
-        if video is None:
-            raise HTTPException(status_code=404, detail="video not found")
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
 
-        segs = (
-            db.query(Segment)
-            .filter(
-                Segment.video_id == video_id,
-                Segment.end > start,
-                Segment.start < end,
-            )
-            .order_by(Segment.start)
-            .all()
+    segs = (
+        db.query(Segment)
+        .filter(
+            Segment.video_id == video_id,
+            Segment.end > start,
+            Segment.start < end,
         )
+        .order_by(Segment.start)
+        .all()
+    )
 
-        segments_out = [
-            {"start": s.start, "end": s.end, "text": (s.text or "").strip()}
-            for s in segs
-            if (s.text or "").strip()
-        ]
+    segments_out = [
+        {"start": s.start, "end": s.end, "text": (s.text or "").strip()}
+        for s in segs
+        if (s.text or "").strip()
+    ]
 
     return {
         "video_id": video_id,
@@ -719,16 +723,16 @@ class RenderSpecRequest(BaseModel):
 def get_render_spec_route(
     series_id: int,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Return the current render spec for a series (defaults when none saved).
 
     Response: the ClipRenderSpec dict matching the JSON contract in core/render_spec.
     """
-    with SessionLocal() as db:
-        series = db.get(MiniSeries, series_id)
-        if series is None or not series.approved:
-            raise HTTPException(status_code=404, detail="series not found or not approved")
-        spec = get_render_spec(series.parts_json)
+    series = db.get(MiniSeries, series_id)
+    if series is None or not series.approved:
+        raise HTTPException(status_code=404, detail="series not found or not approved")
+    spec = get_render_spec(series.parts_json)
     return spec.to_dict()
 
 
@@ -737,6 +741,7 @@ def save_render_spec_route(
     series_id: int,
     body: RenderSpecRequest,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Save render options for a series without triggering a render.
 
@@ -751,12 +756,11 @@ def save_render_spec_route(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    with SessionLocal() as db:
-        series = db.get(MiniSeries, series_id)
-        if series is None or not series.approved:
-            raise HTTPException(status_code=404, detail="series not found or not approved")
-        series.parts_json = set_render_spec(series.parts_json, spec)
-        db.commit()
+    series = db.get(MiniSeries, series_id)
+    if series is None or not series.approved:
+        raise HTTPException(status_code=404, detail="series not found or not approved")
+    series.parts_json = set_render_spec(series.parts_json, spec)
+    db.flush()
 
     logger.info("render_spec saved: series_id=%d spec=%s", series_id, spec.to_dict())
     return spec.to_dict()
@@ -766,6 +770,7 @@ def save_render_spec_route(
 def trigger_render(
     series_id: int,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Kick off the Cloud Run render JOB for a single approved MiniSeries.
 
@@ -783,10 +788,9 @@ def trigger_render(
         (roles/iam.serviceAccountUser on jobs-sa@{project}.iam.gserviceaccount.com)
     """
     # 404 guard — series must exist and be approved.
-    with SessionLocal() as db:
-        series = db.get(MiniSeries, series_id)
-        if series is None or not series.approved:
-            raise HTTPException(status_code=404, detail="series not found or not approved")
+    series = db.get(MiniSeries, series_id)
+    if series is None or not series.approved:
+        raise HTTPException(status_code=404, detail="series not found or not approved")
 
     job_parent = (
         f"projects/{_GCP_PROJECT}/locations/{_GCP_REGION}/jobs/{_RENDER_JOB_NAME}"
@@ -837,6 +841,7 @@ def trigger_render(
 def render_status(
     series_id: int,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Return render progress for a MiniSeries.
 
@@ -848,21 +853,20 @@ def render_status(
 
     404 if the series does not exist or is not approved.
     """
-    with SessionLocal() as db:
-        series = db.get(MiniSeries, series_id)
-        if series is None or not series.approved:
-            raise HTTPException(status_code=404, detail="series not found or not approved")
+    series = db.get(MiniSeries, series_id)
+    if series is None or not series.approved:
+        raise HTTPException(status_code=404, detail="series not found or not approved")
 
-        parts_total = len(get_clips(series.parts_json))
-        parts_rendered = (
-            db.query(SocialPost.part)
-            .filter(
-                SocialPost.series_id == series_id,
-                SocialPost.gcs_url.isnot(None),
-            )
-            .distinct()
-            .count()
+    parts_total = len(get_clips(series.parts_json))
+    parts_rendered = (
+        db.query(SocialPost.part)
+        .filter(
+            SocialPost.series_id == series_id,
+            SocialPost.gcs_url.isnot(None),
         )
+        .distinct()
+        .count()
+    )
 
     return {
         "rendered": parts_rendered >= parts_total and parts_total > 0,

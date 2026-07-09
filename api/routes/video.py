@@ -11,9 +11,10 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
-from app.models import MiniSeries, SessionLocal, Video
+from api.auth import get_db_session, require_role
+from app.models import MiniSeries, Video
 
 router = APIRouter(prefix="/video", tags=["video"])
 
@@ -116,12 +117,14 @@ def _build_series_label(series: list[MiniSeries]) -> dict[int, str]:
 # ---------------------------------------------------------------------------
 
 @router.get("/proposals")
-def list_proposals(claims=Depends(require_role("approve_video"))):
+def list_proposals(
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
     """Return all pending MiniSeries (approved==0)."""
-    with SessionLocal() as db:
-        rows = db.query(MiniSeries).filter(MiniSeries.approved == 0).all()
-        durations = _durations_for(db, [r.video_id for r in rows])
-        return [_series_to_dict(r, durations.get(r.video_id)) for r in rows]
+    rows = db.query(MiniSeries).filter(MiniSeries.approved == 0).all()
+    durations = _durations_for(db, [r.video_id for r in rows])
+    return [_series_to_dict(r, durations.get(r.video_id)) for r in rows]
 
 
 class ProposeTopicSeriesRequest(BaseModel):
@@ -144,41 +147,47 @@ def propose_topic_series(
 
 
 @router.get("/series")
-def list_series(claims=Depends(require_role("approve_video"))):
+def list_series(
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
     """Return ALL MiniSeries (approved and unapproved), ordered by id desc.
 
     Each item includes a ``label`` field: cleaned, de-duplicated display name
     suitable for dropdowns (no raw emojis or hashtag-only names).
     """
-    with SessionLocal() as db:
-        rows = db.query(MiniSeries).order_by(MiniSeries.id.desc()).all()
-        labels = _build_series_label(rows)
-        return [
-            {
-                "id": s.id,
-                "video_id": s.video_id,
-                "title": s.title,
-                "approved": s.approved,
-                "label": labels[s.id],
-            }
-            for s in rows
-        ]
+    rows = db.query(MiniSeries).order_by(MiniSeries.id.desc()).all()
+    labels = _build_series_label(rows)
+    return [
+        {
+            "id": s.id,
+            "video_id": s.video_id,
+            "title": s.title,
+            "approved": s.approved,
+            "label": labels[s.id],
+        }
+        for s in rows
+    ]
 
 
 @router.get("/{series_id}")
-def get_series(series_id: int, claims=Depends(require_role("approve_video"))):
+def get_series(
+    series_id: int,
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
     """Return one MiniSeries by id (any approval state)."""
-    with SessionLocal() as db:
-        row = db.get(MiniSeries, series_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="series not found")
-        return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
+    row = db.get(MiniSeries, series_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="series not found")
+    return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
 
 
 @router.post("/{series_id}/repropose")
 def repropose_series(
     series_id: int,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Recompute a MiniSeries' parts with the content-driven selection logic.
 
@@ -196,20 +205,19 @@ def repropose_series(
     """
     from jobs.propose_series_job import compute_series  # noqa: PLC0415
 
-    with SessionLocal() as db:
-        row = db.get(MiniSeries, series_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="series not found")
-        try:
-            title, parts = compute_series(db, row.video_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        row.title = title
-        row.parts_json = parts
-        row.approved = 0
-        db.commit()
-        db.refresh(row)
-        return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
+    row = db.get(MiniSeries, series_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="series not found")
+    try:
+        title, parts = compute_series(db, row.video_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    row.title = title
+    row.parts_json = parts
+    row.approved = 0
+    db.flush()
+    db.refresh(row)
+    return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
 
 
 @router.post("/{series_id}/approve")
@@ -217,15 +225,15 @@ def approve_series(
     series_id: int,
     body: ApproveRequest,
     claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
 ):
     """Approve a MiniSeries; optionally edit parts in/out points before approval."""
-    with SessionLocal() as db:
-        row = db.get(MiniSeries, series_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="series not found")
-        if body.parts is not None:
-            row.parts_json = [p.model_dump() for p in body.parts]
-        row.approved = 1
-        db.commit()
-        db.refresh(row)
-        return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
+    row = db.get(MiniSeries, series_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="series not found")
+    if body.parts is not None:
+        row.parts_json = [p.model_dump() for p in body.parts]
+    row.approved = 1
+    db.flush()
+    db.refresh(row)
+    return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))

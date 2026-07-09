@@ -9,10 +9,11 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from api.auth import require_role
+from api.auth import get_db_session, require_role
 from api.routes.video import clean_label
-from app.models import Article, MiniSeries, ScheduledContent, SessionLocal
+from app.models import Article, MiniSeries, ScheduledContent
 
 router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 
@@ -99,32 +100,33 @@ def _row_dict(r: ScheduledContent, db=None) -> dict:
 def list_scheduled(
     status: str | None = None,
     claims=Depends(require_role("manage_scheduling")),
+    db: Session = Depends(get_db_session),
 ):
-    with SessionLocal() as db:
-        q = db.query(ScheduledContent)
-        if status is not None:
-            q = q.filter(ScheduledContent.status == status)
-        rows = q.order_by(ScheduledContent.publish_at).all()
-        return [_row_dict(r, db) for r in rows]
+    q = db.query(ScheduledContent)
+    if status is not None:
+        q = q.filter(ScheduledContent.status == status)
+    rows = q.order_by(ScheduledContent.publish_at).all()
+    return [_row_dict(r, db) for r in rows]
 
 
 @router.post("", status_code=201)
 def create_scheduled(
     body: ScheduledContentIn,
     claims=Depends(require_role("manage_scheduling")),
+    db: Session = Depends(get_db_session),
 ):
-    with SessionLocal() as db:
-        item = ScheduledContent(
-            kind=body.kind,
-            ref_id=body.ref_id,
-            publish_at=body.publish_at,
-            status="scheduled",
-            target=body.target,
-        )
-        db.add(item)
-        db.commit()
-        db.refresh(item)
-        return _row_dict(item, db)
+    item = ScheduledContent(
+        tenant_id=db.info["tenant_id"],
+        kind=body.kind,
+        ref_id=body.ref_id,
+        publish_at=body.publish_at,
+        status="scheduled",
+        target=body.target,
+    )
+    db.add(item)
+    db.flush()
+    db.refresh(item)
+    return _row_dict(item, db)
 
 
 @router.put("/{item_id}")
@@ -132,28 +134,28 @@ def update_scheduled(
     item_id: int,
     body: ScheduledContentUpdate,
     claims=Depends(require_role("manage_scheduling")),
+    db: Session = Depends(get_db_session),
 ):
-    with SessionLocal() as db:
-        item = db.get(ScheduledContent, item_id)
-        if item is None:
-            raise HTTPException(status_code=404, detail="scheduled item not found")
-        if body.publish_at is not None:
-            item.publish_at = body.publish_at
-        if body.target is not None:
-            item.target = body.target
-        db.commit()
-        db.refresh(item)
-        return _row_dict(item, db)
+    item = db.get(ScheduledContent, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="scheduled item not found")
+    if body.publish_at is not None:
+        item.publish_at = body.publish_at
+    if body.target is not None:
+        item.target = body.target
+    db.flush()
+    db.refresh(item)
+    return _row_dict(item, db)
 
 
 @router.delete("/{item_id}", status_code=204)
 def delete_scheduled(
     item_id: int,
     claims=Depends(require_role("manage_scheduling")),
+    db: Session = Depends(get_db_session),
 ):
-    with SessionLocal() as db:
-        item = db.get(ScheduledContent, item_id)
-        if item is None:
-            raise HTTPException(status_code=404, detail="scheduled item not found")
-        db.delete(item)
-        db.commit()
+    item = db.get(ScheduledContent, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="scheduled item not found")
+    db.delete(item)
+    db.flush()
