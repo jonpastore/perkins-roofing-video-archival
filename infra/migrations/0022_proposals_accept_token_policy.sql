@@ -18,13 +18,18 @@
 -- accept happens in a subsequent tenant-stamped session, not the token session).
 -- Idempotent (DROP ... IF EXISTS + CREATE). `app` owns the table (no admin role).
 
+-- NULLIF(..., '') is load-bearing: a custom GUC that was set-then-reset on a
+-- POOLED connection reads back as '' (empty string), not NULL, and ''::int raises.
+-- The accept-page resolver runs on pooled PlatformSessionLocal connections that may
+-- have previously served a tenant-stamped request, so a bare 2-arg current_setting
+-- would still 500. NULLIF collapses both never-set (NULL) and reset ('') to NULL.
 DROP POLICY IF EXISTS tenant_isolation ON proposals;
 CREATE POLICY tenant_isolation ON proposals
     USING (
-        tenant_id = current_setting('app.tenant_id', true)::int
+        tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::int
         OR (
-            current_setting('app.accept_token', true) IS NOT NULL
+            NULLIF(current_setting('app.accept_token', true), '') IS NOT NULL
             AND accept_token = current_setting('app.accept_token', true)
         )
     )
-    WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::int);
+    WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::int);

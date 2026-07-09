@@ -109,7 +109,9 @@ def _app_role_url(admin_url: str) -> str:
 
 
 def _apply_rls_migration(admin_engine) -> None:
-    """Apply the RLS-policy DDL from migration 0018 to the fixture DB.
+    """Apply the RLS-policy DDL to the fixture DB: 0018 (base per-table policies)
+    then 0022 (proposals accept-token resolver policy, which DROP/CREATEs the
+    proposals policy 0018 made — order matters).
 
     Reuses the dollar-quote-aware statement splitter from the production migration
     runner so DO $$ ... $$ policy blocks are applied intact. Runs as the admin
@@ -119,17 +121,15 @@ def _apply_rls_migration(admin_engine) -> None:
     from scripts.apply_migrations_connector import _statements
 
     here = os.path.dirname(__file__)
-    migration_path = os.path.join(
-        here, "..", "..", "infra", "migrations", "0018_rls_gcip.sql"
-    )
-    with open(os.path.abspath(migration_path)) as fh:
-        sql = fh.read()
-
-    with admin_engine.begin() as conn:
-        for stmt in _statements(sql):
-            # The identity-section INSERT/CREATE TABLE statements are already
-            # created by create_all; IF NOT EXISTS / ON CONFLICT make them no-ops.
-            conn.execute(text(stmt))
+    for fname in ("0018_rls_gcip.sql", "0022_proposals_accept_token_policy.sql"):
+        migration_path = os.path.join(here, "..", "..", "infra", "migrations", fname)
+        with open(os.path.abspath(migration_path)) as fh:
+            sql = fh.read()
+        with admin_engine.begin() as conn:
+            for stmt in _statements(sql):
+                # The identity-section INSERT/CREATE TABLE statements are already
+                # created by create_all; IF NOT EXISTS / ON CONFLICT make them no-ops.
+                conn.execute(text(stmt))
 
 
 def _create_app_role(admin_engine) -> None:
