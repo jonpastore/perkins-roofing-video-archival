@@ -70,7 +70,11 @@ class Query(BaseModel):
 
 
 @app.get("/healthz")
+@app.get("/health")
 def healthz():
+    # /healthz is swallowed by Google Frontend on Cloud Run (reserved path — GFE
+    # returns an HTML 404 without ever reaching the container). /health is the
+    # probe URL that works in prod; /healthz kept for local/container use.
     return {"ok": True}
 
 
