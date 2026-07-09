@@ -101,7 +101,7 @@ Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/E
 ### Session history / continuations
 - **Most recent:** [CONTINUATION-2026-07-08-pm.md](CONTINUATION-2026-07-08-pm.md) (Phase 0 docs + F0 tenancy + F1 sidebar IA shipped; prod migration 0013 awaits owner)
 - [CONTINUATION-2026-07-08.md](CONTINUATION-2026-07-08.md) ·
-  [CONTINUATION-2026-07-06-pm.md](CONTINUATION-2026-07-06-pm.md)
+  [docs/continuations/CONTINUATION-2026-07-06-pm.md](docs/continuations/CONTINUATION-2026-07-06-pm.md)
 - Archived: [docs/continuations/CONTINUATION-2026-07-06.md](docs/continuations/CONTINUATION-2026-07-06.md) ·
   [docs/continuations/CONTINUATION-2026-07-05.md](docs/continuations/CONTINUATION-2026-07-05.md) ·
   [docs/continuations/CONTINUATION-2026-07-05-am.md](docs/continuations/CONTINUATION-2026-07-05-am.md)

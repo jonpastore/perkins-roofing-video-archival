@@ -1,49 +1,47 @@
-Resume the Perkins FULL-FUNNEL platform build (plan APPROVED 2026-07-08). Read IN ORDER first:
+Resume the Perkins full-funnel platform. F0–F6 are ALL BUILT + DEPLOYED to prod +
+deepsec-hardened + infra-reconciled. Read IN ORDER first:
 
-1. CONTINUATION-2026-07-08.md            — full handoff (state, locked decisions, gotchas)
-2. docs/superpowers/plans/2026-07-08-full-funnel-plan.md — the approved plan (waves F0–F6)
-3. Memory index (auto-loaded) — esp. perkins-full-funnel-reorg, perkins-ezbids-proposal,
-   perkins-knowify-teardown, perkins-squarequote-review
-4. docs/ENGINEERING_RULES.md             — R1–R5 binding
-5. mcp__jarvis-memory__my_tasks          — live human blockers (#315–331)
+1. CONTINUATION-2026-07-09.md            — full handoff (current state, the active task, gotchas)
+2. Memory index (auto-loaded)            — esp. perkins-full-funnel-reorg
+3. docs/ENGINEERING_RULES.md             — R1–R5 binding
+4. mcp__jarvis-memory__sync then my_tasks — live human blockers (Perkins v2 project)
 
-MISSION, in this order:
+PRIMARY TASK — C1 Part 2 (the tenant-2 gate; local task #38, full checklist in the continuation):
+Make the last request-path sessions tenant-aware, then flip strict=True (GLOBAL flag on the
+SessionLocal factory). In order:
+  1. Thread a stamped `db` through the retrieval chain (app/store.vector_search,
+     app/retrieval.hybrid_search+search, app/answer.ask+answer_faq) + update callers
+     (api/app.py /search + /ask, api/routes/faq.py answer_faq call). They query RLS-forced
+     chunks/content_graph UNSTAMPED today.
+  2. core/tenant_loop.for_each_tenant: switch the tenant-ENUMERATION session from raw
+     SessionLocal → PlatformSessionLocal (per-tenant fn sessions are already stamped).
+  3. Audit job top-level sessions (jobs/ingest_worker.py:36, jobs/article_job.py:649/692).
+  4. Flip strict=True in app/models.py (~line 638).
+  5. Full gate + tenancy PG suite + DEPLOY + PROD SMOKE (/search /ask /status + a CRUD route +
+     one job) — SQLite can't exercise strict, so prod smoke is the real test.
+THE PROVEN PATTERN (Part 1 done, commit d9e2e5b): tenant route → add
+`db: Session = Depends(get_db_session)` after require_role, drop `with SessionLocal()`, dedent,
+commit→flush, insert tenant_id=db.info["tenant_id"]. Platform-table route → PlatformSessionLocal.
+Reference: api/routes/customers.py, api/routes/measurements.py.
 
-PHASE 0 — Documentation set (BEFORE any code), under docs/superpowers/specs/full-funnel/:
-  - PRD-<section>.md per sidebar section (knowledge-base, marketing, estimating, quoting, admin):
-    user stories, acceptance criteria, non-goals, differentiators (Quoting must beat Knowify on
-    self-serve multi-templates, revisions, good-better-best tiers).
-  - TRD-F0..F6.md per wave: data models, APIs, migrations, RLS/GCIP mechanics, TEST PLAN FIRST,
-    rollout/rollback. F2 embeds Exhibit-B pricing rules + the 5 golden-file ±$0.01 acceptance
-    (incl. Dade+Broward=HVHZ, per-county overrides). F2b = Google Solar API measurement service
-    (+ manual fallback). F3 = proposal builder + e-sign-lite + Gotenberg + Knowify migration.
-  - DDD.md: bounded contexts (Tenancy/Identity, Corpus/KB, Content/Marketing, Pricing/Estimating,
-    Quoting/Proposal, Measurement), aggregates, entities/value objects, ubiquitous-language
-    glossary, context map with integration seams.
-  Draft with sonnet subagents (clear file-ownership boundaries), R2 review (architect + critic),
-  fix HIGH/critical, commit + push the set.
-
-PHASE 1 — Execute F0 (thin tenancy: tenants table + tenant_id default 1 everywhere, ORM
-discipline, NO RLS/GCIP yet) then F1 (sidebar IA: KB · Marketing · Estimating · Quoting + Admin
-config-tab shell; keep existing route keys) — each per its TRD.
+ALSO BUILDABLE (no external dep): #321 Contract-FAQ engine (web/src/pages/ContractFaq.tsx is a
+stub — build the T&C→LLM-FAQ backend, reuse the FAQ/JSON-LD/safety-gate machinery). #40 deepsec
+M/L: L2 template-render sandbox review + pip-audit/npm-audit in CI.
+GATED ON JON (don't attempt): H1 edge (needs Cloudflare token + LB / jarvis #330 DNS), Tim's
+estimator pricing + clips + ToS, YouTube OAuth mint, deposit/ownership reconcile.
 
 NON-NEGOTIABLE DISCIPLINE:
-- TDD, FAIL-FIRST, ALWAYS: write the test → run it → confirm it fails FOR THE RIGHT REASON →
-  minimal implementation → green → refactor. No implementation before a red test. Every wave,
-  every feature. R1's 100% core gate is the floor, not the method.
-- Full gate before any "done": ruff clean + pytest 100% core coverage (run backgrounded to a
-  /tmp log with EXIT marker) + `cd web && npm run build` for SPA changes.
-- Implementation subagents = sonnet; opus only for plan/architecture/security/final verification.
-- Commit + push at each green milestone. scripts/deploy.sh requires a CLEAN tree (run via bash).
-- NO prod DB changes without my explicit permission (then scripts/apply_migrations_connector.py;
-  needs fresh ADC which only I can mint).
-- Do NOT relitigate locked decisions (continuation §3): GCP · Postgres RLS+tenant_id · GCIP
-  (Perkins stays project-pool) · Cloudflare ingress + app.perkinsroofing.net · Solar API
-  measurements (no LiDAR/drones, no Google-Earth scraping) · e-sign-lite · Gotenberg ·
-  royalty-FREE music only · no payments/accounting/CRM/native-iOS in v1 · eaglepoint source is
-  reference-only, never merged into this repo.
+- TDD fail-first ALWAYS. Full gate before "done": ruff clean (`ruff check core adapters api jobs`)
+  + `pytest tests/ --cov=core --cov-fail-under=100` (background to /tmp log + EXIT marker —
+  headroom garbles inline pytest output) + `cd web && npm run build` for SPA changes.
+- Implementation subagents = sonnet; opus for plan/architecture/security/final verification only.
+- Commit + push at each green milestone. scripts/deploy.sh needs a CLEAN tree + `gcloud auth login`
+  (CLI token, separate from ADC); frontend needs `firebase login --reauth`. Migrations via
+  scripts/apply_migrations_adc.py (ADC-only). R3: infra ONLY via terraform, never gcloud-by-hand.
+- Do NOT relitigate locked decisions (continuation §"Locked decisions"). Jon has been authorizing
+  applies/deploys ("do it / greenfield") — but still surface hard-to-reverse prod actions.
 
-COMMERCIAL CLOCK: F3 (Quoting/Proposals) is the ~3-week deliverable to Tim; critical path
-F0 → (F1 ∥ F2) → F3. Bias prioritization toward it; if squeezed, cut reminders/leads — never
-templates/revisions/tiers/e-sign. Tim's email (docs/2026-07-08-tim-email.md) is drafted — golden
-files + pricing confirmations arrive via him and gate F2's contract-grade signoff only.
+CRITICAL GOTCHAS (see continuation for detail): RLS GUC needs NULLIF(current_setting(n,true),'')
+on pooled connections; migrations can't DML RLS-forced tables under the app role (use DDL DEFAULT);
+get_db_session 403s without tenant context; PlatformSessionLocal never raises (platform tables);
+strict=True is global + SQLite no-ops the event so only prod smoke validates it.

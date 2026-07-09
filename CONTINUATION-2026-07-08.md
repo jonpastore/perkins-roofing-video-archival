@@ -1,6 +1,6 @@
 # CONTINUATION — 2026-07-08 (full day, Opus 4.8 → Fable 5)
 
-Previous handoff: `CONTINUATION-2026-07-06-pm.md` (top level). This was the pivot session: the
+Previous handoff: `docs/continuations/CONTINUATION-2026-07-06-pm.md` (top level). This was the pivot session: the
 project graduated from "Perkins video platform" to an **approved multi-tenant full-funnel sales &
 marketing platform** (content → leads → quote → proposal → handoff). Everything below is current
 as of commit `b19b34b` + this doc's commit.
