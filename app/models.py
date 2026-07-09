@@ -630,11 +630,19 @@ SessionLocal = sessionmaker(bind=engine, future=True)
 # SQLite-based tests continue to run without stamping session.info.
 from core.tenant import register_tenant_session_events  # noqa: E402
 
-# strict=False: the ~150 bare SessionLocal() call sites across api/jobs/scripts
-# predate F4 and don't stamp session.info["tenant_id"] yet. In the single-tenant
-# world that exists today they default to tenant 1 with a CRITICAL log naming the
-# caller (F4 -> pre-tenant-2 transition contract; see core/tenant.py). Migrated
-# endpoints use get_db_session (api/auth.py) which stamps the verified tenant.
+# strict=False: 124 bare SessionLocal() call sites across api/jobs/scripts (counted
+# 2026-07-09) predate F4 and don't stamp session.info["tenant_id"] yet. In the
+# single-tenant world that exists today they default to tenant 1 with a CRITICAL log
+# naming the caller (F4 -> pre-tenant-2 transition contract; see core/tenant.py).
+# Migrated endpoints use get_db_session (api/auth.py) which stamps the verified tenant.
+#
+# ISOLATION IS ALREADY ENFORCED without strict=True: the prod app role is
+# NOSUPERUSER NOBYPASSRLS and 29 tables are RLS-FORCED, so every statement is
+# filtered by app.tenant_id (which the after_begin event always sets — to the
+# stamped tenant, or to 1 for unstamped sessions). strict=True only converts the
+# unstamped-default into a hard raise; flipping it REQUIRES migrating all 124 sites
+# first (else they 500), so it stays False until that refactor lands before tenant #2.
+# refuse_to_serve was flipped True (api/app.py) now that the role is verified hardened.
 register_tenant_session_events(SessionLocal, strict=False)
 
 # Platform-scoped session factory — no after_begin tenant GUC hook.

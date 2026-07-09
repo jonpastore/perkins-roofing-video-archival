@@ -122,8 +122,8 @@ export function Status() {
         ...(data.videos_to_approve != null
           ? [{ label: "Videos to Approve", value: data.videos_to_approve, color: data.videos_to_approve > 0 ? "#b45309" : BRAND.navyText, navTarget: "scheduling" }]
           : []),
-        { label: "Failed Stages", value: data.failed_stages.length, color: data.failed_stages.length > 0 ? BRAND.red : BRAND.navyText },
-        { label: "In Queue", value: data.queue.length, color: data.queue.length > 0 ? "#b45309" : BRAND.navyText },
+        // Failed Stages / In Queue summary cards removed — the detail sections
+        // below ("Failed Stages" + "Processing / Queue") already show these counts.
       ]
     : [];
 

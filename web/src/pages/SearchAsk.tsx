@@ -31,6 +31,7 @@ interface TopicItem {
   num_videos: number;
   total_content_length: number;
   sample: { video_id: string; t: number };
+  generated?: boolean;  // server-side: articles already exist for this topic's cluster
 }
 interface TopicVideo {
   video_id: string;
@@ -362,6 +363,17 @@ function TopicRow({
       <span style={{ flex: 1, fontSize: 14, color: BRAND.ink, fontWeight: 500 }}>
         {topic.label}
       </span>
+      {topic.generated && (
+        <span
+          title="Articles have been generated for this topic. Click 'View' to see them."
+          style={{
+            fontSize: 11, fontWeight: 700, color: "#1a7f4b", background: "#e6f4ec",
+            border: "1px solid #b7e0c6", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap",
+          }}
+        >
+          ✓ articles
+        </span>
+      )}
       <button
         onClick={() => onDrillIn(topic.label)}
         style={{
@@ -801,7 +813,7 @@ export function SearchAsk() {
                     key={t.label}
                     topic={t}
                     generating={topicStates[t.label] === "generating"}
-                    done={topicStates[t.label] === "done"}
+                    done={t.generated === true || topicStates[t.label] === "done"}
                     onGenerate={handleGenerateArticle}
                     onView={handleViewCluster}
                     onDrillIn={setDrillLabel}

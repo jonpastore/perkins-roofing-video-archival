@@ -406,7 +406,7 @@ export function KbConfig({ role }: KbConfigProps) {
         </div>
         <HelpText>
           Controls whether the nightly ingest job fetches new videos from the configured channel
-          sources and adds them to the corpus.
+          sources and adds them to the video archive.
         </HelpText>
 
         <SectionLabel>Ingest enabled</SectionLabel>

@@ -70,7 +70,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         tabs: [
           ["search-ask", "Search / Ask"],
           ["faq", "FAQ"],
-          ["archive", "Archive / Corpus"],
+          ["archive", "Video Archive"],
           ["contract-faq", "Contract-FAQ"],
         ],
       },
@@ -116,7 +116,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         tabs: [
           ["search-ask", "Search / Ask"],
           ["faq", "FAQ"],
-          ["archive", "Archive / Corpus"],
+          ["archive", "Video Archive"],
           ["contract-faq", "Contract-FAQ"],
         ],
       },
@@ -154,7 +154,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         tabs: [
           ["search-ask", "Search / Ask"],
           ["email", "Email"],
-          ["archive", "Archive / Corpus"],
+          ["archive", "Video Archive"],
           ["estimator", "Estimator"],
           ["quoting", "Quoting"],
         ],
