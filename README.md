@@ -99,10 +99,11 @@ Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/E
 - [2026-07-07 — comprehensive review (frontend / tests / adversarial / perf / SAST)](docs/reviews/2026-07-07-comprehensive-review.md)
 
 ### Session history / continuations
-- **Most recent:** [CONTINUATION-2026-07-08.md](CONTINUATION-2026-07-08.md) (full-funnel plan approved; resume via [prompt.txt](prompt.txt))
-- [CONTINUATION-2026-07-06-pm.md](CONTINUATION-2026-07-06-pm.md) ·
-  [CONTINUATION-2026-07-06.md](CONTINUATION-2026-07-06.md)
-- Archived: [docs/continuations/CONTINUATION-2026-07-05.md](docs/continuations/CONTINUATION-2026-07-05.md) ·
+- **Most recent:** [CONTINUATION-2026-07-08-pm.md](CONTINUATION-2026-07-08-pm.md) (Phase 0 docs + F0 tenancy + F1 sidebar IA shipped; prod migration 0013 awaits owner)
+- [CONTINUATION-2026-07-08.md](CONTINUATION-2026-07-08.md) ·
+  [CONTINUATION-2026-07-06-pm.md](CONTINUATION-2026-07-06-pm.md)
+- Archived: [docs/continuations/CONTINUATION-2026-07-06.md](docs/continuations/CONTINUATION-2026-07-06.md) ·
+  [docs/continuations/CONTINUATION-2026-07-05.md](docs/continuations/CONTINUATION-2026-07-05.md) ·
   [docs/continuations/CONTINUATION-2026-07-05-am.md](docs/continuations/CONTINUATION-2026-07-05-am.md)
 
 ### Origins (v1 prototype & proposal)
