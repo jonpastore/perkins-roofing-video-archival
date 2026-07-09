@@ -277,6 +277,86 @@ class FaqEntry(Base):
         Index("ix_faq_entries_tenant_video", "tenant_id", "video_id"),
     )
 
+class PricingConfig(Base):
+    """Versioned, immutable per-tenant per-branch pricing configuration rows.
+
+    Immutability contract: rows are never UPDATEd except to flip is_active.
+    Every config edit creates a new row with version = MAX(version)+1 for that
+    (tenant_id, branch). Activation sets is_active=TRUE on the new row and
+    FALSE on the prior active row in one deferred transaction.
+    The UNIQUE(tenant_id, branch, is_active) constraint with DEFERRABLE INITIALLY
+    DEFERRED (Postgres-side, in migration 0014) enforces one active row per branch.
+    """
+    __tablename__ = "pricing_configs"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    branch       = Column(String, nullable=False)
+    version      = Column(Integer, nullable=False)
+    label        = Column(String, nullable=True)
+    config       = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    config_hash  = Column(String(64), nullable=False)
+    is_active    = Column(Boolean, nullable=False, default=False)
+    created_at   = Column(DateTime, nullable=False, default=_utcnow)
+    created_by   = Column(String, nullable=False)
+    tenant_id    = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "branch", "version",
+                         name="uq_pricing_configs_tenant_branch_version"),
+        Index("ix_pricing_configs_tenant_branch", "tenant_id", "branch"),
+    )
+
+
+class Estimate(Base):
+    """Saved estimate rows — hash columns added in migration 0015."""
+    __tablename__ = "estimates"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id           = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    pricing_config_id   = Column(Integer, ForeignKey("pricing_configs.id"), nullable=True)
+    pricing_config_hash = Column(String(64), nullable=True)
+    branch              = Column(String, nullable=True)
+    code_zone           = Column(String, nullable=True)
+    county              = Column(String, nullable=True)
+    input_json          = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    result_json         = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    created_at          = Column(DateTime, nullable=False, default=_utcnow)
+    created_by          = Column(String, nullable=True)
+
+    __table_args__ = (
+        Index("ix_estimates_tenant_id", "tenant_id"),
+    )
+
+
+class Measurement(Base):
+    """Measurement stub — full model in TRD-F2b. Manual-entry provider for F2."""
+    __tablename__ = "measurements"
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id         = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    property_id       = Column(Integer, nullable=True)
+    provider          = Column(String, nullable=False, default="manual")
+    status            = Column(String, nullable=False, default="complete")
+    total_sq          = Column(Float, nullable=True)
+    hips_lf           = Column(Float, nullable=True)
+    ridges_lf         = Column(Float, nullable=True)
+    valleys_lf        = Column(Float, nullable=True)
+    rakes_lf          = Column(Float, nullable=True)
+    eaves_lf          = Column(Float, nullable=True)
+    wall_flashings_lf = Column(Float, nullable=True)
+    pitch_primary     = Column(Float, nullable=True)
+    segments_json     = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    confidence        = Column(Float, nullable=True)
+    raw_payload       = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    provenance_note   = Column(String, nullable=True)
+    created_at        = Column(DateTime, nullable=False, default=_utcnow)
+    created_by        = Column(String, nullable=False)
+
+    __table_args__ = (
+        Index("ix_measurements_tenant", "tenant_id"),
+    )
+
+
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
 

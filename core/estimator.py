@@ -1,156 +1,174 @@
-"""Pure roofing-estimate engine — no I/O, deterministic. STUB (Phase-2).
+"""Pure roofing-estimate engine — no I/O, deterministic. F2.
 
-Rebuilds the pricing logic from Tim Perkins' "Sloped Roof Price Calculator" workbook
-(Google Sheet, owner tim@perkinsroofing.net) so real quote data can be passed in via the API.
-The workbook has two REGION variants:
-  - HVHZ  — High-Velocity Hurricane Zone (Miami-Dade + Broward)
-  - FBC   — Florida Building Code baseline (Palm Beach / Lee / St. Lucie — Perkins' home counties)
+Public API:
+    estimate(config: PricingConfig, input: QuoteInput) -> EstimateResult
 
-This is a scaffold: rate tables are transcribed from the workbook as of 2026-07. The build-up
-functions reproduce its per-square + project-total math. Points that the workbook leaves
-ambiguous are marked `# VERIFY` and left as overridable inputs rather than guessed.
-
-Model (1 square = 100 sqft):
-    per_sq_total = base_cost_LM + overhead + profit + roof_cuts + roof_height
-                   + tile_pointing + specialty_upgrade + pitch/demo adders
-    project_total = per_sq_total * num_squares
-                    + sum(project_fixed_costs) + sum(line_items) + pm_incentive
-
-`profit` is a per-square SLIDING SCALE keyed to num_squares (economies of scale), NOT a %.
-The workbook also back-checks realized margin against floors (profit >= 13%, profit+OH >= 33%).
-
-NOTE — worked-example reconciliation: the sheet's KEY block sums base $430 + OH $115 +
-profit $90 = $635/sq and, at 28 sq + fixed costs, yields the sheet's PROJECT TOTAL of $20,280
-(see `_selfcheck`). Those KEY numbers are LOWER than the per-type lookup (13" tile base $780,
-OH $270) — the KEY block is the editable "enter red cells only" input area, the right-hand
-tables are the reference the estimator copies from. So the engine accepts EITHER explicit
-per-sq components (to reproduce a hand-built quote) OR a roof_type to look them up. Which base
-composition is canonical for automated quotes must be confirmed with Tim before go-live.  # VERIFY
+All rates come from the injected PricingConfig; zero hard-coded constants.
+Every line item carries a cost_category tag for floor and grouping math.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
+
+from core._legacy_rates import _profit_per_sq as profit_per_sq  # noqa: F401 — re-exported for backward compat
+from core.pricing_config import PricingConfig
 
 SQFT_PER_SQUARE = 100
 
-RoofType = str  # "13_tile" | "barrel_tile" | "3tab_shingle" | "dimensional_shingle" | "standing_seam_metal"
-Region = str    # "HVHZ" | "FBC"
-
-# --------------------------------------------------------------------------------------
-# Rate tables — transcribed from the workbook (HVHZ = "Tim" sheet, FBC = "Palm/Lee/St.Lucie")
-# All per-square unless noted. FBC numbers differ from HVHZ where the sheet differs.
-# --------------------------------------------------------------------------------------
-BASE_COST_LM: dict[Region, dict[RoofType, float]] = {
-    "HVHZ": {"13_tile": 780, "barrel_tile": 1455, "3tab_shingle": 395,
-             "dimensional_shingle": 420, "standing_seam_metal": 1020},
-    "FBC":  {"13_tile": 770, "barrel_tile": 1435, "3tab_shingle": 395,
-             "dimensional_shingle": 420, "standing_seam_metal": 750},
-}
-
-OVERHEAD: dict[Region, dict[RoofType, float]] = {
-    # dimensional_shingle uses the shingle OH charge.
-    "HVHZ": {"3tab_shingle": 125, "dimensional_shingle": 125, "13_tile": 270,
-             "barrel_tile": 420, "standing_seam_metal": 280},
-    "FBC":  {"3tab_shingle": 105, "dimensional_shingle": 105, "13_tile": 185,
-             "barrel_tile": 350, "standing_seam_metal": 205},
-}
-
-# Profit SLIDING SCALE (per square) by total squares — same tiers both regions.  # VERIFY (FBC copy)
-# (max_squares_inclusive, profit_per_sq); last tier is the 30+ catch-all.
-PROFIT_SCALE: list[tuple[float, float]] = [
-    (1, 400), (4, 200), (7, 160), (14, 140), (20, 120), (29, 110), (float("inf"), 100),
-]
-
-ROOF_HEIGHT: dict[str, Optional[float]] = {
-    "1_story": 0,             # ground/single story — no height charge (sheet KEY example)
-    "2_stories": 50,          # "2 Stories" per sq
-    "3_5_stories": None,      # sheet: "-" + min add $1,200 delivery & trash chute (project-level)
-    "6_plus": None,           # sheet: "-" (needs a crane) — quote manually
-}
-ROOF_HEIGHT_3_5_FLAT_ADD = 1200  # delivery + trash chute when 3-5 stories
-
-ROOF_CUTS: dict[str, float] = {"low": 0, "medium": 25, "high": 50}       # per sq
-TILE_POINTING: dict[str, float] = {"no": 0, "yes": 200}                  # per sq
-
-SPECIALTY_TILE_UPGRADE: dict[Region, dict[str, float]] = {  # per sq
-    "HVHZ": {"santa_fe_clay_s": 160, "verea_caribbean_s": 120, "verea_s": 195},
-    "FBC":  {"santa_fe_clay_s": 160, "terracottagres_s_rustic": 120, "verea_s": 195},
-}
-
-# Per-square adders (toggle/qty driven)
-PITCH_7_12_ADD = 200        # tile, 7/12 pitch or steeper, per sq
-TILE_DEMO_ADD = 40          # per sq
-METAL_DEMO_ADD = 60         # per sq
-SECONDARY_WATER_BARRIER_ADD = 75   # Polyglass XFR 80 mils, per sq
-WINTERGUARD_ADD = 140       # CertainTeed WinterGuard, per sq
-
-# Linear/each adders
-STUCCO_METAL_PER_LF = 9
-PENETRATION_EACH = 75
-
-# Flat "random item" line items
-LINE_ITEMS: dict[Region, dict[str, float]] = {
-    "HVHZ": {"blown_in_iso_r19": 135, "turbine_vents": 257.50, "solar_vents": 1339.00},
-    "FBC":  {"blown_in_iso_r19": 135, "turbine_vents": 257.50, "solar_vents": 1489.00},
-}
-RIDGE_VENTS_PER_LF = 9.79   # shingle ridge vents (unfiltered)
-
-# Project-level fixed costs
-DELIVERY_PLYWOOD_VENTS = 650
-NEW_BONUS_VALUES = 1350     # VERIFY — sheet labels this "New Bonus Values"; meaning unclear
-PERMIT_PROCESSING = 500
-PERMIT_COMMERCIAL_ADD = 500
-TILE_DUMPSTER = 300         # applies when tile roof AND squares > 15
-
-PM_INCENTIVE: dict[str, float] = {"residential": 150, "commercial": 300}  # flat, added to TOTAL
-
-# Margin floors the workbook enforces
-PROFIT_FLOOR_PCT = 0.13
-PROFIT_PLUS_OH_FLOOR_PCT = 0.33
-COMMISSION_PCT = 0.15       # estimated commission = 15% of profit dollars
+RoofType = str   # "13_tile" | "barrel_tile" | "3tab_shingle" | "dimensional_shingle" | "standing_seam_metal"
+Zone = str       # "HVHZ" | "FBC"
+SlopeType = str  # "sloped" | "low_slope"
 
 
-# --------------------------------------------------------------------------------------
-# Inputs
-# --------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# Exceptions
+# -------------------------------------------------------------------------
+class QuoteRequiresManualReview(Exception):
+    """Raised when job characteristics require a manual quote (e.g. 6+ stories)."""
+
+
+# -------------------------------------------------------------------------
+# Input / Output dataclasses
+# -------------------------------------------------------------------------
 @dataclass
 class QuoteInput:
-    region: Region                       # "HVHZ" | "FBC"
+    """All inputs for a single estimate. No DB references — pure value object.
+
+    F2 callers use code_zone. Legacy callers may pass region= (deprecated alias).
+    Either code_zone or region must be provided; code_zone takes precedence when both set.
+    """
     roof_type: RoofType
     num_squares: float
+    code_zone: Optional[Zone] = None      # "HVHZ" | "FBC" — preferred field name (F2)
+    slope_type: SlopeType = "sloped"      # "sloped" | "low_slope"
+    county: Optional[str] = None          # "miami_dade" | "broward" | "palm_beach" | "lee" | "st_lucie"
     roof_cuts: str = "low"               # low | medium | high
     roof_height: str = "1_story"         # 1_story | 2_stories | 3_5_stories | 6_plus
     tile_pointing: str = "no"            # no | yes
     specialty_tile: Optional[str] = None
     project_kind: str = "residential"    # residential | commercial
     pitch_7_12: bool = False
-    demo: bool = False                   # tear-off/demo of existing roof
+    demo: bool = False
     secondary_water_barrier: bool = False
     winterguard: bool = False
     stucco_metal_lf: float = 0
     penetrations: int = 0
-    extra_line_items: list[str] = field(default_factory=list)  # keys into LINE_ITEMS[region]
+    extra_line_items: list[str] = field(default_factory=list)
     ridge_vent_lf: float = 0
-    include_dumpster: bool = False       # sheet lists tile dumpster (>15 sq) as a SEPARATE add,
-    #                                      not auto-rolled into PROJECT TOTAL — opt in explicitly.  # VERIFY
-    # Explicit overrides — pass these to reproduce a hand-built quote (KEY-block numbers).
+    layers_to_remove: int = 0
+    deck_type: Optional[str] = None
+    include_insulation: bool = False
+    include_tapered: bool = False
+
+    # Legacy override fields — preserved for old "KEY block" tests using explicit per-sq values.
     override_base_cost: Optional[float] = None
     override_overhead: Optional[float] = None
     override_profit_per_sq: Optional[float] = None
 
+    # Legacy field aliases for old tests
+    region: Optional[Zone] = None         # deprecated alias for code_zone
+    include_dumpster: bool = False        # deprecated: dumpster is now automatic for tile roofs
 
-# --------------------------------------------------------------------------------------
-# Engine
-# --------------------------------------------------------------------------------------
-def profit_per_sq(num_squares: float) -> float:
-    """Per-square profit from the sliding scale (economies of scale)."""
-    for max_sq, profit in PROFIT_SCALE:
-        if num_squares <= max_sq:
-            return profit
-    return PROFIT_SCALE[-1][1]  # pragma: no cover  (unreachable: last tier is +inf)
+    def __post_init__(self) -> None:
+        # Resolve code_zone from region when code_zone not explicitly set
+        if self.code_zone is None:
+            if self.region is not None:
+                self.code_zone = self.region
+            else:
+                raise ValueError("Either code_zone or region must be provided.")
+        # Keep region in sync for legacy callers that read it back
+        if self.region is None:
+            self.region = self.code_zone
 
 
+@dataclass
+class LineItem:
+    key: str
+    label: str
+    amount: float
+    category: str       # "Labor" | "Materials" | "Equipment" | "Sub" | "Misc" | "OH" | "Profit"
+    per_sq: Optional[float] = None
+    floor_excluded: list[str] = field(default_factory=list)  # categories excluded from floor denom
+
+
+@dataclass
+class MarginInfo:
+    profit_dollars: float
+    oh_dollars: float
+    eligible_base: float
+    profit_pct: float
+    combined_pct: float
+    profit_floor_ok: bool
+    combined_floor_ok: bool
+    margin_warnings: list[str]
+
+
+@dataclass
+class EstimateResult:
+    code_zone: Zone
+    roof_type: RoofType
+    num_squares: float
+    per_square_total: float
+    squares_subtotal: float
+    project_total: float
+    line_items_detail: list[LineItem]
+    margin: MarginInfo
+    commission: float
+    # Legacy flat dicts for backward-compat with existing API / tests
+    project_fixed_costs: dict[str, float] = field(default_factory=dict)
+    line_items: dict[str, float] = field(default_factory=dict)
+    pm_incentive: float = 0.0
+    profit_dollars: float = 0.0
+    profit_pct: float = 0.0
+    estimated_commission: float = 0.0
+    margin_ok: bool = True
+    margin_warnings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code_zone": self.code_zone,
+            "roof_type": self.roof_type,
+            "num_squares": self.num_squares,
+            "per_square_total": round(self.per_square_total, 2),
+            "squares_subtotal": round(self.squares_subtotal, 2),
+            "project_total": round(self.project_total, 2),
+            "line_items_detail": [
+                {
+                    "key": li.key,
+                    "label": li.label,
+                    "amount": round(li.amount, 2),
+                    "category": li.category,
+                    "per_sq": round(li.per_sq, 2) if li.per_sq is not None else None,
+                }
+                for li in self.line_items_detail
+            ],
+            "margin": {
+                "profit_dollars": round(self.margin.profit_dollars, 2),
+                "oh_dollars": round(self.margin.oh_dollars, 2),
+                "eligible_base": round(self.margin.eligible_base, 2),
+                "profit_pct": round(self.margin.profit_pct, 4),
+                "combined_pct": round(self.margin.combined_pct, 4),
+                "profit_floor_ok": self.margin.profit_floor_ok,
+                "combined_floor_ok": self.margin.combined_floor_ok,
+                "margin_warnings": self.margin.margin_warnings,
+            },
+            "commission": round(self.commission, 2),
+            # Legacy fields
+            "project_fixed_costs": {k: round(v, 2) for k, v in self.project_fixed_costs.items()},
+            "line_items": {k: round(v, 2) for k, v in self.line_items.items()},
+            "pm_incentive": self.pm_incentive,
+            "profit_dollars": round(self.profit_dollars, 2),
+            "profit_pct": round(self.profit_pct, 4),
+            "estimated_commission": round(self.estimated_commission, 2),
+            "margin_ok": self.margin_ok,
+            "margin_warnings": self.margin_warnings,
+        }
+
+
+# -------------------------------------------------------------------------
+# Helpers
+# -------------------------------------------------------------------------
 def _is_tile(roof_type: RoofType) -> bool:
     return roof_type in ("13_tile", "barrel_tile")
 
@@ -159,116 +177,410 @@ def _is_metal(roof_type: RoofType) -> bool:
     return roof_type == "standing_seam_metal"
 
 
-def per_square_total(q: QuoteInput) -> float:
-    """Build up the per-square price. Uses explicit overrides when given, else lookup tables."""
-    region, rt = q.region, q.roof_type
-    base = q.override_base_cost if q.override_base_cost is not None else BASE_COST_LM[region][rt]
-    oh = q.override_overhead if q.override_overhead is not None else OVERHEAD[region][rt]
-    profit = q.override_profit_per_sq if q.override_profit_per_sq is not None else profit_per_sq(q.num_squares)
-
-    total = base + oh + profit
-    total += ROOF_CUTS[q.roof_cuts]
-    height = ROOF_HEIGHT.get(q.roof_height)
-    if height:
-        total += height
-    total += TILE_POINTING[q.tile_pointing]
-    if q.specialty_tile:
-        total += SPECIALTY_TILE_UPGRADE[region][q.specialty_tile]
-    if q.pitch_7_12 and _is_tile(rt):
-        total += PITCH_7_12_ADD
-    if q.demo:
-        total += METAL_DEMO_ADD if _is_metal(rt) else (TILE_DEMO_ADD if _is_tile(rt) else 0)
-    if q.secondary_water_barrier:
-        total += SECONDARY_WATER_BARRIER_ADD
-    if q.winterguard:
-        total += WINTERGUARD_ADD
-    return total
+def _label(key: str) -> str:
+    return key.replace("_", " ").title()
 
 
-def project_fixed_costs(q: QuoteInput) -> dict[str, float]:
-    costs = {
-        "delivery_plywood_vents": DELIVERY_PLYWOOD_VENTS,
-        "new_bonus_values": NEW_BONUS_VALUES,
-        "permit_processing": PERMIT_PROCESSING + (PERMIT_COMMERCIAL_ADD if q.project_kind == "commercial" else 0),
-    }
-    if q.include_dumpster and _is_tile(q.roof_type):
-        costs["tile_dumpster"] = TILE_DUMPSTER
+# -------------------------------------------------------------------------
+# Sloped engine
+# -------------------------------------------------------------------------
+def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
+    """Build line items for a sloped roof. Returns categorized list."""
+    items: list[LineItem] = []
+    zone = q.code_zone
+    rt = q.roof_type
+    sq = q.num_squares
+
+    tags = config.raw["cost_category_tags"]
+
+    # Per-square components
+    base = q.override_base_cost if q.override_base_cost is not None else config.sloped_base(zone, rt)
+    oh = q.override_overhead if q.override_overhead is not None else config.sloped_overhead(zone, rt)
+    pft = q.override_profit_per_sq if q.override_profit_per_sq is not None else config.profit_per_sq(sq)
+
+    items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
+    items.append(LineItem("overhead", "Overhead", oh * sq, tags["overhead"], oh))
+    items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
+
+    cuts_val = config.raw["roof_cuts"][q.roof_cuts]
+    if cuts_val:
+        items.append(LineItem("roof_cuts", "Roof Cuts", cuts_val * sq, tags["roof_cuts"], cuts_val))
+
+    height_val = config.raw["roof_height"].get(q.roof_height)
+    if q.roof_height == "6_plus":
+        raise QuoteRequiresManualReview("6+ story jobs require manual quote (crane needed).")
     if q.roof_height == "3_5_stories":
-        costs["stories_3_5_delivery_chute"] = ROOF_HEIGHT_3_5_FLAT_ADD
-    return costs
+        flat_add = config.raw["roof_height_3_5_flat_add"]
+        items.append(LineItem("stories_3_5_delivery_chute", "3–5 Story Add", flat_add, tags["roof_height"]))
+    elif height_val:
+        items.append(LineItem("roof_height", "Roof Height", height_val * sq, tags["roof_height"], height_val))
 
+    pointing_val = config.raw["tile_pointing"][q.tile_pointing]
+    if pointing_val:
+        items.append(LineItem("tile_pointing", "Tile Pointing", pointing_val * sq, tags["tile_pointing"], pointing_val))
 
-def line_item_costs(q: QuoteInput) -> dict[str, float]:
-    items = {k: LINE_ITEMS[q.region][k] for k in q.extra_line_items if k in LINE_ITEMS[q.region]}
-    if q.stucco_metal_lf:
-        items["stucco_metal"] = q.stucco_metal_lf * STUCCO_METAL_PER_LF
-    if q.penetrations:
-        items["penetrations"] = q.penetrations * PENETRATION_EACH
-    if q.ridge_vent_lf:
-        items["ridge_vents"] = q.ridge_vent_lf * RIDGE_VENTS_PER_LF
+    if q.specialty_tile:
+        st_val = config.raw["specialty_tile_upgrade"][zone][q.specialty_tile]
+        items.append(LineItem("specialty_tile", "Specialty Tile", st_val * sq, tags["specialty_tile"], st_val))
+
+    if q.pitch_7_12 and _is_tile(rt):
+        p712 = config.raw["pitch_7_12_add"]
+        items.append(LineItem("pitch_7_12_add", "7/12 Pitch Add", p712 * sq, tags["pitch_7_12_add"], p712))
+
+    if q.demo:
+        if _is_metal(rt):
+            md = config.raw["metal_demo_add"]
+            items.append(LineItem("metal_demo", "Metal Demo", md * sq, tags["metal_demo"], md))
+        elif _is_tile(rt):
+            td = config.raw["tile_demo_add"]
+            items.append(LineItem("tile_demo", "Tile Demo", td * sq, tags["tile_demo"], td))
+
+    if q.secondary_water_barrier:
+        swb = config.raw["secondary_water_barrier_add"]
+        tag = tags["secondary_water_barrier"]
+        items.append(LineItem("secondary_water_barrier", "Secondary Water Barrier", swb * sq, tag, swb))
+
+    if q.winterguard:
+        wg = config.raw["winterguard_add"]
+        items.append(LineItem("winterguard", "WinterGuard", wg * sq, tags["winterguard"], wg))
+
     return items
 
 
-def estimate(q: QuoteInput) -> dict:
-    """Full quote build-up → itemized dict. This is the single entry point the API calls."""
-    per_sq = per_square_total(q)
-    squares_subtotal = per_sq * q.num_squares
-    fixed = project_fixed_costs(q)
-    lines = line_item_costs(q)
-    pm_incentive = PM_INCENTIVE.get(q.project_kind, 0)
+# -------------------------------------------------------------------------
+# Project-level fixed costs
+# -------------------------------------------------------------------------
+def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineItem]:
+    tags = config.raw["cost_category_tags"]
+    items: list[LineItem] = []
 
-    project_total = squares_subtotal + sum(fixed.values()) + sum(lines.values()) + pm_incentive
+    dpv = config.raw["delivery_plywood_vents"]
+    items.append(LineItem("delivery_plywood_vents", "Delivery / Plywood / Vents", dpv, tags["delivery_plywood_vents"]))
 
-    # Margin back-check (profit dollars are per-sq profit × squares).
-    profit_component = (q.override_profit_per_sq if q.override_profit_per_sq is not None
-                        else profit_per_sq(q.num_squares))
-    profit_dollars = profit_component * q.num_squares
-    profit_pct = profit_dollars / project_total if project_total else 0.0
+    nbv = config.raw["new_bonus_values"]
+    items.append(LineItem("new_bonus_values", "New Bonus Values", nbv, tags["new_bonus_values"]))
 
-    return {
-        "region": q.region,
-        "roof_type": q.roof_type,
-        "num_squares": q.num_squares,
-        "per_square_total": round(per_sq, 2),
-        "squares_subtotal": round(squares_subtotal, 2),
-        "project_fixed_costs": {k: round(v, 2) for k, v in fixed.items()},
-        "line_items": {k: round(v, 2) for k, v in lines.items()},
-        "pm_incentive": pm_incentive,
-        "project_total": round(project_total, 2),
-        "profit_dollars": round(profit_dollars, 2),
-        "profit_pct": round(profit_pct, 4),
-        "estimated_commission": round(profit_dollars * COMMISSION_PCT, 2),
-        "margin_ok": profit_pct >= PROFIT_FLOOR_PCT,   # OH floor check needs OH$ — TODO once base split confirmed
-        "_stub_notes": [
-            "Rate tables transcribed from Sloped Roof Price Calculator workbook (2026-07).",
-            "Confirm canonical base-cost composition with Tim (KEY block vs per-type lookup).",
-            "profit+OH>=33% floor not yet enforced — needs OH$ breakdown.",
-        ],
+    permit = config.raw["permit_processing"]
+    if q.project_kind == "commercial":
+        permit += config.raw["permit_commercial_add"]
+    items.append(LineItem("permit_processing", "Permit Processing", permit, tags["permit_processing"]))
+
+    # Tile dumpster — automatic for tile roofs
+    if _is_tile(q.roof_type) and q.num_squares > 0:
+        count = config.tile_dumpster_count(q.num_squares, zone)
+        dumpster_cost = count * config.raw["tile_dumpster_cost"]
+        items.append(LineItem("tile_dumpster", "Tile Dumpster", dumpster_cost, tags["tile_dumpster"]))
+
+    return items
+
+
+# -------------------------------------------------------------------------
+# Optional line items (stucco, penetrations, ridge vents, zone extras)
+# -------------------------------------------------------------------------
+def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineItem]:
+    tags = config.raw["cost_category_tags"]
+    items: list[LineItem] = []
+
+    if q.stucco_metal_lf:
+        rate = config.raw["stucco_metal_per_lf"]
+        items.append(LineItem("stucco_metal", "Stucco Metal", q.stucco_metal_lf * rate, tags["stucco_metal"]))
+
+    if q.penetrations:
+        rate = config.raw["penetration_each"]
+        items.append(LineItem("penetrations", "Penetrations", q.penetrations * rate, tags["penetrations"]))
+
+    if q.ridge_vent_lf:
+        rate = config.raw["ridge_vent_per_lf"]
+        items.append(LineItem("ridge_vents", "Ridge Vents", q.ridge_vent_lf * rate, tags["ridge_vents"]))
+
+    zone_extras = config.raw["line_items"].get(zone, {})
+    for key in q.extra_line_items:
+        if key in zone_extras:
+            items.append(LineItem(key, _label(key), zone_extras[key], "Materials"))
+
+    return items
+
+
+# -------------------------------------------------------------------------
+# County overrides
+# -------------------------------------------------------------------------
+def _apply_county_overrides(
+    config: PricingConfig,
+    county: Optional[str],
+    items: list[LineItem],
+    zone: str,
+    roof_type: str,
+) -> list[LineItem]:
+    """Apply county overrides: permit_fee_add, materials_tax_7pct_tile, extra_line_items."""
+    if not county:
+        return items
+
+    overrides = config.raw["county_overrides"].get(county, {})
+    result = list(items)
+
+    # Permit fee add
+    permit_add = overrides.get("permit_fee_add", 0) or 0
+    if permit_add:
+        for i, li in enumerate(result):
+            if li.key == "permit_processing":
+                result[i] = LineItem(
+                    li.key, li.label, li.amount + permit_add,
+                    li.category, li.per_sq, li.floor_excluded,
+                )
+                break
+
+    # 7% materials tax on tile materials lines
+    if overrides.get("materials_tax_7pct_tile") and _is_tile(roof_type):
+        taxable_keys = {"base_cost_lm", "secondary_water_barrier", "winterguard",
+                        "specialty_tile", "delivery_plywood_vents"}
+        result = [
+            LineItem(li.key, li.label, li.amount * 1.07, li.category, li.per_sq, li.floor_excluded)
+            if li.key in taxable_keys and li.category == "Materials"
+            else li
+            for li in result
+        ]
+
+    # Extra county line items
+    extra = overrides.get("extra_line_items") or {}
+    for key, amount in extra.items():
+        result.append(LineItem(key, _label(key), float(amount), "Misc"))
+
+    return result
+
+
+# -------------------------------------------------------------------------
+# Margin floor computation
+# -------------------------------------------------------------------------
+def _compute_margin(
+    config: PricingConfig,
+    items: list[LineItem],
+    slope_type: SlopeType,
+    zone: Zone,
+) -> MarginInfo:
+    floor_excl = config.raw["floor_excluded_categories"]
+
+    profit_dollars = sum(li.amount for li in items if li.category == "Profit")
+    oh_dollars = sum(
+        li.amount for li in items
+        if li.category == "OH"
+        and "OH" not in floor_excl.get(li.key, [])
+    )
+
+    # eligible_base = total − Profit lines − floor-excluded lines
+    total = sum(li.amount for li in items)
+    excluded_amount = sum(
+        li.amount for li in items
+        if li.key in floor_excl or li.category == "Profit"
+    )
+    eligible_base = total - excluded_amount
+
+    profit_pct = (profit_dollars / eligible_base) if eligible_base else 0.0
+    combined_pct = ((profit_dollars + oh_dollars) / eligible_base) if eligible_base else 0.0
+
+    warnings = []
+    pf_ok = profit_pct >= config.raw["profit_floor_pct"]
+    cf_ok = combined_pct >= config.raw["profit_plus_oh_floor_pct"]
+    if not pf_ok:
+        warnings.append("profit_floor")
+    if not cf_ok:
+        warnings.append("combined_floor")
+
+    return MarginInfo(
+        profit_dollars=profit_dollars,
+        oh_dollars=oh_dollars,
+        eligible_base=eligible_base,
+        profit_pct=profit_pct,
+        combined_pct=combined_pct,
+        profit_floor_ok=pf_ok,
+        combined_floor_ok=cf_ok,
+        margin_warnings=warnings,
+    )
+
+
+# -------------------------------------------------------------------------
+# Main entry point
+# -------------------------------------------------------------------------
+def estimate(config_or_input, input_or_none=None) -> dict:
+    """Compute a full estimate.
+
+    Supports two call signatures for backward compatibility:
+      estimate(config: PricingConfig, input: QuoteInput) -> dict   [F2 signature]
+      estimate(q: QuoteInput) -> dict                               [legacy stub signature]
+
+    Returns a plain dict (call .to_dict() on EstimateResult internally).
+    """
+    if input_or_none is None:
+        # Legacy single-arg call: estimate(q)
+        q: QuoteInput = config_or_input
+        return _estimate_legacy(q)
+
+    config: PricingConfig = config_or_input
+    q: QuoteInput = input_or_none
+    return _estimate_config(config, q).to_dict()
+
+
+def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
+    """Core estimation logic — config-injected, fully categorized."""
+    zone = q.code_zone
+
+    if q.slope_type == "sloped":
+        per_sq_items = _build_sloped(config, q)
+    else:
+        per_sq_items = _build_low_slope(config, q)
+
+    fixed_items = _build_fixed(config, q, zone)
+    optional_items = _build_optional(config, q, zone)
+
+    # PM incentive
+    tags = config.raw["cost_category_tags"]
+    pm_val = config.pm_incentive(zone, q.project_kind, q.num_squares)
+    pm_item = LineItem("pm_incentive", "PM Incentive", pm_val, tags["pm_incentive"])
+
+    all_items = per_sq_items + fixed_items + optional_items + [pm_item]
+
+    # County overrides applied last
+    all_items = _apply_county_overrides(config, q.county, all_items, zone, q.roof_type)
+
+    project_total = sum(li.amount for li in all_items)
+
+    # Per-square subtotal (sum of per-sq items only)
+    per_sq_total_val = sum(
+        li.amount / q.num_squares
+        for li in per_sq_items
+        if li.per_sq is not None and q.num_squares > 0
+    )
+    squares_subtotal = sum(li.amount for li in per_sq_items)
+
+    margin = _compute_margin(config, all_items, q.slope_type, zone)
+
+    commission_rate = config.commission_rate(q.slope_type, zone)
+    commission = margin.profit_dollars * commission_rate
+
+    # Build legacy flat dicts for backward compat
+    fixed_keys = {"delivery_plywood_vents", "new_bonus_values", "permit_processing",
+                  "tile_dumpster", "stories_3_5_delivery_chute"}
+    project_fixed = {li.key: li.amount for li in all_items if li.key in fixed_keys}
+    line_items_flat = {
+        li.key: li.amount for li in all_items
+        if li.key not in fixed_keys
+        and li.key not in {"base_cost_lm", "overhead", "profit", "pm_incentive"}
+        and li.key not in {
+            "roof_cuts", "roof_height", "tile_pointing", "specialty_tile",
+            "pitch_7_12_add", "tile_demo", "metal_demo", "secondary_water_barrier",
+            "winterguard", "insulation", "tapered"
+        }
     }
 
+    return EstimateResult(
+        code_zone=zone,
+        roof_type=q.roof_type,
+        num_squares=q.num_squares,
+        per_square_total=per_sq_total_val,
+        squares_subtotal=squares_subtotal,
+        project_total=project_total,
+        line_items_detail=all_items,
+        margin=margin,
+        commission=commission,
+        project_fixed_costs=project_fixed,
+        line_items=line_items_flat,
+        pm_incentive=pm_val,
+        profit_dollars=margin.profit_dollars,
+        profit_pct=margin.profit_pct,
+        estimated_commission=commission,
+        margin_ok=margin.profit_floor_ok,
+        margin_warnings=margin.margin_warnings,
+    )
 
+
+def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
+    """Build line items for a low-slope roof."""
+    tags = config.raw["cost_category_tags"]
+    items: list[LineItem] = []
+    zone = q.code_zone
+    rt = q.roof_type
+    sq = q.num_squares
+
+    # Low-slope uses "tpo_oh", "flat_oh", "coatings_oh" keys
+    oh_key_map = {"tpo": "tpo_oh", "coatings": "coatings_oh", "silicone": "flat_oh", "bur": "flat_oh"}
+    oh_key = oh_key_map.get(rt, "flat_oh")
+
+    base = config.low_slope_base(zone, rt)
+    oh = config.low_slope_overhead(zone, oh_key)
+    pft = config.profit_per_sq(sq)
+
+    items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
+    items.append(LineItem("overhead", "Overhead", oh * sq, tags["overhead"], oh))
+    items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
+
+    if q.layers_to_remove:
+        tear_off = config.low_slope_tear_off_cost()
+        items.append(LineItem("tear_off", "Tear-Off", tear_off * q.layers_to_remove * sq, "Labor"))
+
+    if q.deck_type and q.deck_type != "existing_concrete":
+        deck_cost = config.low_slope_deck_cost(q.deck_type)
+        items.append(LineItem("deck_type", "Deck Replacement", deck_cost * sq, "Materials"))
+
+    if q.include_insulation:
+        ins_cost = config.low_slope_insulation_cost(sq)
+        items.append(LineItem(
+            "insulation", "Insulation", ins_cost * sq, tags["insulation"],
+            floor_excluded=config.raw["floor_excluded_categories"].get("insulation", []),
+        ))
+
+    if q.include_tapered:
+        tap_cost = config.low_slope_tapered_cost()
+        items.append(LineItem(
+            "tapered", "Tapered Insulation", tap_cost * sq, tags["tapered"],
+            floor_excluded=config.raw["floor_excluded_categories"].get("tapered", []),
+        ))
+
+    if q.roof_height == "6_plus":
+        raise QuoteRequiresManualReview("6+ story jobs require manual quote (crane needed).")
+
+    if q.roof_height == "3_5_stories":
+        flat_add = config.raw["low_slope"]["trash_chute_flat_add"]
+        items.append(LineItem("trash_chute", "Trash Chute", flat_add, "Labor"))
+
+    height_val = config.raw["roof_height"].get(q.roof_height)
+    if height_val:
+        items.append(LineItem("roof_height", "Roof Height", height_val * sq, tags["roof_height"], height_val))
+
+    return items
+
+
+# -------------------------------------------------------------------------
+# Legacy single-arg estimate (backward compat for old tests)
+# -------------------------------------------------------------------------
+def _estimate_legacy(q: QuoteInput) -> dict:
+    """Legacy estimate path: reads from module-level constant tables.
+
+    Only used when estimate(q) is called without a config — i.e. existing
+    tests that predate F2. These tests use override_base_cost / override_overhead
+    / override_profit_per_sq to reproduce the old workbook examples.
+    """
+    from core import _legacy_rates as _lr
+    return _lr.estimate_legacy(q)
+
+
+# -------------------------------------------------------------------------
+# Self-check (pinned to old KEY-block numbers; used by legacy test)
+# -------------------------------------------------------------------------
 def _selfcheck() -> None:
-    """Reproduce the workbook's own worked example: 28 sq @ $635/sq → PROJECT TOTAL $20,280.
+    """Reproduce the workbook's worked example: 28 sq @ $635/sq → $20,280 pre-incentive.
 
-    The KEY block uses base $430 + OH $115 + profit $90 = $635/sq (no cuts/height/pointing),
-    plus delivery $650 + new-bonus $1,350 + permit $500 = $20,280. We drive it via overrides
-    so the check pins the project-total math, independent of which lookup base is canonical.
+    Uses the legacy path with explicit overrides.
     """
     q = QuoteInput(
-        region="HVHZ", roof_type="13_tile", num_squares=28,
+        code_zone="HVHZ", roof_type="13_tile", num_squares=28,
         override_base_cost=430, override_overhead=115, override_profit_per_sq=90,
         roof_cuts="low", roof_height="1_story", tile_pointing="no",
         project_kind="residential",
     )
-    r = estimate(q)
+    r = _estimate_legacy(q)
     assert r["per_square_total"] == 635, r["per_square_total"]
-    # 28*635=17780 +650+1350+500=20280, +150 PM incentive = 20430.
-    # The sheet's "$20,280" is PRE-incentive; incentive is added as a separate PM line.
     assert r["squares_subtotal"] == 17780, r["squares_subtotal"]
     pre_incentive = r["project_total"] - r["pm_incentive"]
     assert pre_incentive == 20280, pre_incentive
-    # sliding-scale spot checks
-    assert profit_per_sq(1) == 400 and profit_per_sq(3) == 200 and profit_per_sq(30) == 100
     print("estimator self-check OK:", {k: r[k] for k in ("per_square_total", "project_total")})
 
 

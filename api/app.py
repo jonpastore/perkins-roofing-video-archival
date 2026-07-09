@@ -16,6 +16,8 @@ from api.routes.email import router as email_router
 from api.routes.estimator import router as estimator_router
 from api.routes.faq import router as faq_router
 from api.routes.logs import router as logs_router
+from api.routes.measurements import router as measurements_router
+from api.routes.pricing_configs import router as pricing_configs_router
 from api.routes.scheduling import router as scheduling_router
 from api.routes.suggestions import router as suggestions_router
 from api.routes.topics import router as topics_router
@@ -50,6 +52,8 @@ app.include_router(articles_router)
 app.include_router(scheduling_router)
 app.include_router(topics_router)
 app.include_router(estimator_router)
+app.include_router(pricing_configs_router)
+app.include_router(measurements_router)
 app.include_router(faq_router)
 app.include_router(config_router)
 app.include_router(users_router)
@@ -118,18 +122,35 @@ def crawl_comments_cron():
     bounded batch of the least-recently-crawled videos and drafts replies — the cron rotates
     through the whole catalog over successive runs (see jobs/crawl_comments rotation).
 
-    Bounded (15 videos / 15 drafts) and INTERNAL_SECRET-gated (not user-reachable); the upsert
-    is race-safe (per-comment SAVEPOINT) so an overlapping run can't corrupt the batch."""
+    Bounded (50 videos / 25 drafts) and INTERNAL_SECRET-gated (not user-reachable); the upsert
+    is race-safe (per-comment SAVEPOINT) so an overlapping run can't corrupt the batch.
+
+    Limit raised from 15→50 videos per run: at every-2h cadence (12 runs/day) and 841 videos
+    this covers the full catalog in ~1.4 days vs the prior ~2.8 days, ensuring KPIs stay fresh."""
     from jobs.crawl_comments import run
-    return run(limit=15, max_drafts=15)
+    return run(limit=50, max_drafts=25)
+
+
+@app.post("/internal/poll-archive-kpis", dependencies=[Depends(_require_internal)])
+def poll_archive_kpis_cron():
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). Polls YouTube KPIs
+    (views/likes/comment_count/kpis_polled_at) for all archived videos once daily.
+
+    Complements crawl_comments (which only refreshes KPIs for the rotated batch).
+    This endpoint ensures every archived video gets a KPI update every 24 h regardless
+    of comment-crawl rotation position. Scheduled daily at 02:00 Chicago time."""
+    from jobs.poll_archive_kpis import run
+    return run()
 
 
 @app.get("/status")
 def status(_claims=Depends(require_role("view_status"))):
-    """Admin observability (Req 6): corpus + pipeline + content counts, last errors."""
+    """Admin observability (Req 6): corpus + pipeline + content counts, last errors,
+    scheduled-content breakdown (articles vs social by platform), and action counters."""
     from sqlalchemy import func
 
     from app.models import Article, Chunk, FaqEntry, IngestionRun, ScheduledContent, SessionLocal, Video
+    from core.status import action_counters, scheduled_breakdown
     s = SessionLocal()
     try:
         errors = [
@@ -162,6 +183,8 @@ def status(_claims=Depends(require_role("view_status"))):
                 .limit(50)
             )
         ]
+        breakdown = scheduled_breakdown(s)
+        counters = action_counters(s)
         return {
             "videos": s.query(func.count(Video.id)).scalar(),
             "videos_embedded": s.query(func.count(func.distinct(Chunk.video_id))).scalar(),
@@ -171,6 +194,12 @@ def status(_claims=Depends(require_role("view_status"))):
             "articles": s.query(func.count(Article.slug)).scalar(),
             "faq_count": s.query(func.count(FaqEntry.id)).scalar(),
             "scheduled_content": s.query(func.count(ScheduledContent.id)).scalar(),
+            # Scheduled-content split: articles vs social posts grouped by platform
+            "scheduled_breakdown": breakdown,
+            # Action counters: items needing attention
+            "content_opportunities": counters["content_opportunities"],
+            "comments_pending": counters["comments_pending"],
+            "videos_pending": counters["videos_pending"],
             "failed_stages": errors,
             "queue": queue,
         }

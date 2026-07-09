@@ -540,28 +540,32 @@ Both checks are surfaced in the estimate result with the computed percentages, n
 This worked example must be encoded as a pinned golden fixture in `tests/fixtures/golden/floor_exhibit_b.json` and asserted by `test_floor_exhibit_b_example`. Any future change to the floor formula must keep this fixture passing.
 
 ```
-Inputs (28 SQ sloped HVHZ, 13" tile, 1-story, no options):
+Inputs (28 SQ sloped HVHZ, 13" tile, 1-story, commercial, no options):
   base (Materials):        $780/sq × 28 = $21,840
   overhead (OH):           $270/sq × 28 =  $7,560
-  profit (Profit):         $120/sq × 28 =  $3,360   [tier: 20–29 SQ → $120/sq]
-  delivery/vents (Materials):              $   650
+  profit (Profit):         $110/sq × 28 =  $3,080   [tier: 20 ≤ sq < 29 → $110/sq]
+  tile dumpster (Equip):   ceil(28/15)=2 × $300 =  $   600   [auto tile dumpster, HVHZ threshold=15]
+  delivery/vents (Mats):                   $   650
   new_bonus (Misc):                        $ 1,350
   permit (Misc):                           $   500
-  pm_incentive (Misc):                     $   150   [HVHZ residential <20... wait: 28 SQ > 20 → commercial_20_50 = $300]
+  pm_incentive (Misc):                     $   300   [HVHZ commercial 20–50 SQ]
 
-Correction — 28 SQ commercial HVHZ:
-  pm_incentive (Misc):                     $   300
-
-  project_total = 21,840 + 7,560 + 3,360 + 650 + 1,350 + 500 + 300 = $35,560
+  project_total = 21,840 + 7,560 + 3,080 + 600 + 650 + 1,350 + 500 + 300 = $35,880
 
 Floor computation (no insulation or tapered lines in this scenario):
-  eligible_base = 35,560 − 3,360 (Profit) − 0 (no floor-exempt lines) = $32,200
+  eligible_base = 35,880 − 3,080 (Profit) − 0 (no floor-exempt lines) = $32,800
 
-  profit_pct   = 3,360 / 32,200 = 10.43%   → BELOW 13% floor → margin_warning: "profit_floor"
-  combined_pct = (3,360 + 7,560) / 32,200 = 10,920 / 32,200 = 33.91%  → above 33% floor ✓
+  profit_pct   = 3,080 / 32,800 = 9.39%    → BELOW 13% floor → margin_warning: "profit_floor"
+  combined_pct = (3,080 + 7,560) / 32,800 = 10,640 / 32,800 = 32.44% → BELOW 33% floor → margin_warning: "combined_floor"
 
-Expected result: profit_floor warning fires; combined floor passes.
+Expected result: both profit_floor and combined_floor warnings fire.
 ```
+
+> **NOTE — boundary reading:** The profit_scale entry `[20, 120]` means `max_sq = 20` (upper-exclusive
+> boundary), so sq=20 is NOT in the `$120/sq` tier — it falls into the next tier `[29, 110]`
+> (`$110/sq` for 20 ≤ sq < 29). The annotation `"20–29 SQ → $120/sq"` in earlier drafts was
+> incorrect. **Tim must verify PC-4 (the 20-SQ boundary + $110 vs $120 reading) before
+> contract-grade sign-off.**
 
 This example is deliberately constructed to trigger the profit-floor warning so the test covers both the passing and failing branch. The exact numbers above are the pinned expected values; the fixture must assert `margin_warnings == ["profit_floor"]` and `combined_floor_ok == True`.
 
@@ -607,7 +611,7 @@ The hash is stored on the `pricing_configs` row at creation time and re-verified
 
 ## 5. APIs
 
-All endpoints require `manage_estimates` role (admin, web_admin, sales).
+**Authz:** TRD-F1 §11 role matrix (`estimating_view` / `estimating_manage`) supersedes the earlier `manage_estimates` wording used in some drafts. All read endpoints require `estimating_view`; all write/activate endpoints require `estimating_manage`. See TRD-F1 §11 for the canonical role-to-permission mapping.
 
 ### 5.1 Pricing config admin API
 
@@ -944,6 +948,8 @@ The wave is done when ALL of the following are true:
 - [ ] `scripts/drift_check.sh` → no drift (R4).
 - [ ] CONTRACT-GRADE exit (gated on Tim's real Exhibit C files): 5 golden files replaced with Tim's actuals; all 5 pass at ±$0.01.
 
+> **Current status (2026-07-08):** 3/5 golden fixtures committed and passing; contract-grade sign-off blocked on OI-1/golden files (Tim must supply low-slope base costs before the remaining 2 fixtures can be created and verified).
+
 ---
 
 ## 10. Rollout / rollback
@@ -951,9 +957,10 @@ The wave is done when ALL of the following are true:
 **Rollout:**
 
 1. Apply migrations 0014 + 0015 via `scripts/apply_migrations_connector.py` (with Jon's explicit permission; requires fresh ADC).
-2. Deploy API with config-injected engine. The engine reads the active config from DB on first request (no startup cache invalidation needed; each request fetches active config — adds one DB read, acceptable for this query volume).
-3. Activate the seed Exhibit B config for all three branches via `POST /estimator/configs/{id}/activate`.
-4. Smoke: `scripts/validate_estimator.py` against prod (read-only; no writes).
+2. Seed Exhibit B configs for all three branches: `python scripts/seed_pricing_configs.py` (idempotent — skips branches that already have a config; the seed script uses `core.pricing_config.compute_hash` so the stored hash is canonical).
+3. Verify seed: `python scripts/seed_pricing_configs.py --check` — must print "OK 3 active configs".
+4. Deploy API with config-injected engine. The engine reads the active config from DB on first request (no startup cache invalidation needed; each request fetches active config — adds one DB read, acceptable for this query volume).
+5. Smoke: `scripts/validate_estimator.py` against prod (read-only; no writes).
 
 **Rollback (config):**
 

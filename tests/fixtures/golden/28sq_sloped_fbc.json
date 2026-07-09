@@ -1,0 +1,41 @@
+{
+  "description": "28 SQ sloped FBC — dimensional shingle, Lee county, commercial, 1-story, no options",
+  "source": "exhibit_b_derived",
+  "provider": "manual",
+  "input": {
+    "code_zone": "FBC",
+    "county": "lee",
+    "slope_type": "sloped",
+    "roof_type": "dimensional_shingle",
+    "num_squares": 28.0,
+    "roof_cuts": "low",
+    "roof_height": "1_story",
+    "tile_pointing": "no",
+    "specialty_tile": null,
+    "project_kind": "commercial",
+    "pitch_7_12": false,
+    "demo": false,
+    "secondary_water_barrier": false,
+    "winterguard": false,
+    "stucco_metal_lf": 0,
+    "penetrations": 0,
+    "extra_line_items": [],
+    "ridge_vent_lf": 0,
+    "layers_to_remove": 0,
+    "deck_type": null,
+    "include_insulation": false,
+    "include_tapered": false
+  },
+  "expected_total": 20880.0,
+  "expected_line_items": {
+    "base_cost_lm": 11760.0,
+    "overhead": 2940.0,
+    "profit": 3080.0,
+    "delivery_plywood_vents": 650.0,
+    "new_bonus_values": 1350.0,
+    "permit_processing": 1000.0,
+    "pm_incentive": 100.0
+  },
+  "tolerance_abs": 0.01,
+  "tolerance_pct": 0.0001
+}

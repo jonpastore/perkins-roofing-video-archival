@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BRAND, FONT } from "../ui";
 import { Users } from "./Users";
 import { Settings } from "./Settings";
+import { EstimatingConfig } from "./EstimatingConfig";
 
 type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
 
@@ -96,9 +97,7 @@ export function AdminConfig({ role }: AdminConfigProps) {
       {activeSubTab === "marketing" && (
         <PlaceholderCard message="Marketing config — coming in F5 (brand kit, voice samples, caption prompts, social accounts, safety-gate denylist)" />
       )}
-      {activeSubTab === "estimating" && (
-        <PlaceholderCard message="Estimating config — coming in F2 (branches, pricing-config editor, code-zone defaults, measurement provider)" />
-      )}
+      {activeSubTab === "estimating" && <EstimatingConfig role={role} />}
       {activeSubTab === "quoting" && (
         <PlaceholderCard message="Quoting config — coming in F3 (proposal templates, T&C library, deposit policy, reminder cadence)" />
       )}
