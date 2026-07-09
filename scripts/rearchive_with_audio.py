@@ -11,7 +11,7 @@ Run it locally (needs a browser logged into YouTube for cookies), against Cloud 
 
     /tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
     export GOOGLE_CLOUD_PROJECT=video-archival-and-content-gen
-    export GOOGLE_APPLICATION_CREDENTIALS=infra/vertex-dev-sa.json
+    export GOOGLE_APPLICATION_CREDENTIALS=$(scripts/fetch_vertex_sa.sh)
     export DB_URL="postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins"
     export COOKIES_FROM_BROWSER=chrome        # or firefox / chromium
     export FFMPEG_BIN=$(.venv/bin/python -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())")

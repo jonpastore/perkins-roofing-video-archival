@@ -2,14 +2,17 @@
 --
 -- Records when an article was generated so the topic-freshness feature can
 -- detect whether new source videos have appeared since the articles were
--- created.  Backfills existing rows from scheduled_at or publish_at (whichever
--- is non-null), falling back to NOW() so the column is never NULL after this
--- migration runs.
+-- created.
 --
--- Idempotent: IF NOT EXISTS guards mean repeated execution is safe.
+-- Backfill via a DDL column DEFAULT rather than a separate UPDATE: `articles` is
+-- RLS-FORCED (0018) and the migration runner connects as the NOBYPASSRLS `app`
+-- role with no app.tenant_id set, so an UPDATE on the table would raise
+-- ("unrecognized configuration parameter app.tenant_id"). ADD COLUMN ... DEFAULT
+-- is DDL — it populates all existing rows (every tenant) with the default at
+-- migration time and is NOT subject to row-level security. New rows get the value
+-- from the app model (Article.generated_at default=_utcnow); the DB default is a
+-- backstop. Freshness therefore begins tracking from this migration's timestamp.
+--
+-- Idempotent: IF NOT EXISTS makes repeated execution safe.
 
-ALTER TABLE articles ADD COLUMN IF NOT EXISTS generated_at TIMESTAMP;
-
-UPDATE articles
-   SET generated_at = COALESCE(scheduled_at, publish_at, NOW())
- WHERE generated_at IS NULL;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS generated_at TIMESTAMP DEFAULT now();

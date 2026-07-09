@@ -53,6 +53,17 @@ def _make_db(tenant_exists=True, tenant_id=2):
 # ProtectedTenantError guard
 # ---------------------------------------------------------------------------
 
+def test_safe_table_accepts_allowlist_and_rejects_injection():
+    """_safe_table (deepsec M2) passes bare identifiers, raises on anything else."""
+    from core.offboard import _TENANT_SCOPED_TABLES, _safe_table
+
+    for t in _TENANT_SCOPED_TABLES:
+        assert _safe_table(t) == t
+    for bad in ("videos; DROP TABLE x", "a b", "v-1", "", "V", "x;"):
+        with pytest.raises(ValueError, match="illegal table identifier"):
+            _safe_table(bad)
+
+
 def test_offboard_blocks_tenant_1():
     """offboard_tenant(1, ...) raises ProtectedTenantError."""
     from core.offboard import ProtectedTenantError, offboard_tenant

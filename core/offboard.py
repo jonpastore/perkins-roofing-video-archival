@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from sqlalchemy import text
 
@@ -59,6 +60,20 @@ _TENANT_SCOPED_TABLES = [
     "catalog_items",
     "tc_versions",
 ]
+
+# Defense-in-depth (deepsec M2): the DELETE/COUNT statements interpolate table
+# names into text(). The names are this static allowlist, never user input — but
+# validate at the point of interpolation so a future edit can't introduce an
+# injectable identifier. Fails loudly rather than silently interpolating a bad name.
+_IDENT_RE = re.compile(r"^[a-z_]+$")
+
+
+def _safe_table(name: str) -> str:
+    """Return ``name`` iff it is a bare [a-z_] SQL identifier, else raise. Guards the
+    table-name interpolation in the COUNT/DELETE cascade below."""
+    if not _IDENT_RE.match(name):
+        raise ValueError(f"offboard: illegal table identifier: {name!r}")
+    return name
 
 
 class ProtectedTenantError(ValueError):
@@ -111,7 +126,7 @@ def offboard_tenant(
     for table in _TENANT_SCOPED_TABLES:
         try:
             result = db.execute(
-                text(f"SELECT COUNT(*) FROM {table} WHERE tenant_id = :tid"),  # noqa: S608
+                text(f"SELECT COUNT(*) FROM {_safe_table(table)} WHERE tenant_id = :tid"),  # noqa: S608
                 {"tid": tenant_id},
             ).fetchone()
             row_counts[table] = result[0] if result else 0
@@ -148,7 +163,7 @@ def offboard_tenant(
     for table in _TENANT_SCOPED_TABLES:
         try:
             db.execute(
-                text(f"DELETE FROM {table} WHERE tenant_id = :tid"),  # noqa: S608
+                text(f"DELETE FROM {_safe_table(table)} WHERE tenant_id = :tid"),  # noqa: S608
                 {"tid": tenant_id},
             )
         except Exception:

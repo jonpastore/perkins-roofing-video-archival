@@ -45,7 +45,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
@@ -103,6 +103,14 @@ def _token_scoped_session(token: str):
     plat = PlatformSessionLocal()
     plat.info["platform_scope"] = True
     try:
+        # Set the transaction-local app.accept_token GUC so the proposals RLS policy
+        # (migration 0022) grants exactly this token's row — the only way to read the
+        # RLS-FORCED proposals table without a resolved tenant context. Never sourced
+        # from anything but the URL token; is_local=true dies with the transaction.
+        # PostgreSQL-only: set_config is a PG function; SQLite (dev/test) has no RLS,
+        # so the plain SELECT below already returns the row.
+        if plat.bind.dialect.name == "postgresql":
+            plat.execute(text("SELECT set_config('app.accept_token', :tok, true)"), {"tok": token})
         row = plat.execute(
             select(Proposal.id, Proposal.tenant_id).where(Proposal.accept_token == token)
         ).first()

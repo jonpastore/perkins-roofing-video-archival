@@ -5,7 +5,7 @@ the Identity Toolkit REST API, seeds it into the SPA's IndexedDB auth store, rel
 so Firebase picks up the signed-in user, then screenshots every console tab.
 
 Run:
-  GOOGLE_APPLICATION_CREDENTIALS=infra/vertex-dev-sa.json \
+  GOOGLE_APPLICATION_CREDENTIALS=$(scripts/fetch_vertex_sa.sh) \
   .venv/bin/python -m scripts.visual_walk
 """
 import json

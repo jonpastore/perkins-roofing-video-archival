@@ -8,7 +8,7 @@ a cluster, so it can be re-run or run in chunks.
 Run (from a box with the Cloud SQL proxy up):
   LLM_BACKEND=ollama OLLAMA_URL=http://cerberus-ai:11434 LLM_MODEL=qwen3:30b-a3b \
   EMBED_BACKEND=vertex EMBED_MODEL=gemini-embedding-001 \
-  GOOGLE_APPLICATION_CREDENTIALS=infra/vertex-dev-sa.json GOOGLE_CLOUD_PROJECT=... \
+  GOOGLE_APPLICATION_CREDENTIALS=$(scripts/fetch_vertex_sa.sh) GOOGLE_CLOUD_PROJECT=... \
   python -m jobs.prime_backlog --faqs 300 --answers 300 --articles 10
 
 EMBED must stay on the cloud gemini model so retrieval matches the stored 3072-dim chunks.

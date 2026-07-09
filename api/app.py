@@ -64,7 +64,7 @@ def _assert_rls_enforceable() -> None:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.CORS_ORIGINS),
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # deepsec L1: no wildcard
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -384,7 +384,7 @@ def resend_invite_route(tenant_id: int, audit=Depends(require_internal_tenants))
 # ── F6: per-tenant SSO (GCIP SAML/OIDC IdP config for the caller's own tenant) ──
 
 @app.get("/admin/sso/providers")
-def list_sso_route(claims=Depends(require_role_db("admin_users"))):
+def list_sso_route(claims=Depends(require_role_db("manage_sso"))):
     import adapters.gcip as gcip_client
     import core.provision as provision
     from app.models import PlatformSessionLocal
@@ -397,7 +397,7 @@ def list_sso_route(claims=Depends(require_role_db("admin_users"))):
 
 
 @app.post("/admin/sso/providers", status_code=201)
-def add_sso_route(body: dict, claims=Depends(require_role_db("admin_users"))):
+def add_sso_route(body: dict, claims=Depends(require_role_db("manage_sso"))):
     import adapters.gcip as gcip_client
     import core.provision as provision
     from app.models import PlatformSessionLocal
@@ -417,7 +417,7 @@ def add_sso_route(body: dict, claims=Depends(require_role_db("admin_users"))):
 
 
 @app.delete("/admin/sso/providers/{idp_id}")
-def delete_sso_route(idp_id: str, claims=Depends(require_role_db("admin_users"))):
+def delete_sso_route(idp_id: str, claims=Depends(require_role_db("manage_sso"))):
     import adapters.gcip as gcip_client
     import core.provision as provision
     from app.models import PlatformSessionLocal
