@@ -1,7 +1,20 @@
 """100% coverage tests for core/render_spec.py (pure, no I/O)."""
 import pytest
 
-from core.render_spec import build_filtergraph, output_args, _W, _H
+from core.render_spec import (
+    build_filtergraph,
+    output_args,
+    _W,
+    _H,
+    ClipRenderSpec,
+    CaptionsSpec,
+    BrollSpec,
+    MusicSpec,
+    FxSpec,
+    get_clips,
+    get_render_spec,
+    set_render_spec,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -172,3 +185,196 @@ def test_filtergraph_aformat_after_loudnorm():
     loudnorm_pos = fg.index("loudnorm")
     aformat_pos = fg.index("aformat")
     assert aformat_pos > loudnorm_pos
+
+
+# ---------------------------------------------------------------------------
+# ClipRenderSpec — defaults
+# ---------------------------------------------------------------------------
+
+def test_render_spec_defaults():
+    spec = ClipRenderSpec()
+    assert spec.reframe is False
+    assert spec.speech_cleanup is False
+    assert spec.captions.style == "default"
+    assert spec.captions.position == "bottom"
+    assert spec.broll.source == "none"
+    assert spec.broll.query_auto is True
+    assert spec.music.catalog == "none"
+    assert spec.music.track_id == ""
+    assert spec.music.volume_db == -18.0
+    assert spec.fx.transition == "cut"
+    assert spec.fx.color_grade == "none"
+    assert spec.fx.title_card is True
+
+
+def test_render_spec_roundtrip():
+    spec = ClipRenderSpec(
+        reframe=True,
+        speech_cleanup=True,
+        captions=CaptionsSpec(style="bold_yellow", position="top"),
+        broll=BrollSpec(source="pexels", query_auto=False),
+        music=MusicSpec(catalog="pixabay", track_id="upbeat-001", volume_db=-20.0),
+        fx=FxSpec(transition="fade", color_grade="vivid", title_card=False),
+    )
+    data = spec.to_dict()
+    spec2 = ClipRenderSpec.from_dict(data)
+    assert spec2.reframe is True
+    assert spec2.speech_cleanup is True
+    assert spec2.captions.style == "bold_yellow"
+    assert spec2.broll.source == "pexels"
+    assert spec2.music.catalog == "pixabay"
+    assert spec2.music.track_id == "upbeat-001"
+    assert spec2.music.volume_db == -20.0
+    assert spec2.fx.transition == "fade"
+    assert spec2.fx.color_grade == "vivid"
+    assert spec2.fx.title_card is False
+
+
+def test_render_spec_from_none_returns_defaults():
+    spec = ClipRenderSpec.from_dict(None)
+    assert spec.reframe is False
+    assert spec.captions.style == "default"
+
+
+def test_render_spec_from_empty_dict_returns_defaults():
+    spec = ClipRenderSpec.from_dict({})
+    assert spec.reframe is False
+
+
+def test_render_spec_partial_dict():
+    spec = ClipRenderSpec.from_dict({"reframe": True})
+    assert spec.reframe is True
+    assert spec.speech_cleanup is False
+
+
+# ---------------------------------------------------------------------------
+# Validation errors
+# ---------------------------------------------------------------------------
+
+def test_captions_invalid_style_raises():
+    with pytest.raises(Exception):
+        CaptionsSpec(style="neon_rainbow")
+
+
+def test_broll_invalid_source_raises():
+    with pytest.raises(Exception):
+        BrollSpec(source="shutterstock")
+
+
+def test_music_invalid_catalog_raises():
+    with pytest.raises(Exception):
+        MusicSpec(catalog="spotify")
+
+
+def test_music_volume_too_high_raises():
+    with pytest.raises(Exception):
+        MusicSpec(volume_db=1.0)
+
+
+def test_music_volume_too_low_raises():
+    with pytest.raises(Exception):
+        MusicSpec(volume_db=-100.0)
+
+
+def test_fx_invalid_transition_raises():
+    with pytest.raises(Exception):
+        FxSpec(transition="zoom_punch")
+
+
+def test_fx_invalid_color_grade_raises():
+    with pytest.raises(Exception):
+        FxSpec(color_grade="sepia")
+
+
+# ---------------------------------------------------------------------------
+# broll_enabled / music_enabled gates
+# ---------------------------------------------------------------------------
+
+def test_broll_enabled_requires_pexels_key():
+    spec = ClipRenderSpec(broll=BrollSpec(source="pexels"))
+    assert spec.broll_enabled(pexels_key_present=False) is False
+    assert spec.broll_enabled(pexels_key_present=True) is True
+
+
+def test_broll_disabled_when_source_none():
+    spec = ClipRenderSpec(broll=BrollSpec(source="none"))
+    assert spec.broll_enabled(pexels_key_present=True) is False
+
+
+def test_music_enabled_requires_track_id():
+    spec = ClipRenderSpec(music=MusicSpec(catalog="pixabay", track_id=""))
+    assert spec.music_enabled() is False
+
+
+def test_music_enabled_with_track_id():
+    spec = ClipRenderSpec(music=MusicSpec(catalog="pixabay", track_id="upbeat-001"))
+    assert spec.music_enabled() is True
+
+
+def test_music_disabled_when_catalog_none():
+    spec = ClipRenderSpec(music=MusicSpec(catalog="none", track_id="upbeat-001"))
+    assert spec.music_enabled() is False
+
+
+# ---------------------------------------------------------------------------
+# parts_json envelope helpers
+# ---------------------------------------------------------------------------
+
+def test_get_clips_from_list():
+    clips = [{"title": "T", "start": 0.0, "end": 10.0}]
+    assert get_clips(clips) == clips
+
+
+def test_get_clips_from_envelope():
+    clips = [{"title": "T", "start": 0.0, "end": 10.0}]
+    assert get_clips({"clips": clips, "render_spec": {}}) == clips
+
+
+def test_get_clips_from_none():
+    assert get_clips(None) == []
+
+
+def test_get_clips_from_empty_envelope():
+    assert get_clips({}) == []
+
+
+def test_get_render_spec_from_list_returns_defaults():
+    spec = get_render_spec([{"title": "T", "start": 0.0, "end": 10.0}])
+    assert isinstance(spec, ClipRenderSpec)
+    assert spec.reframe is False
+
+
+def test_get_render_spec_from_envelope():
+    envelope = {"clips": [], "render_spec": {"reframe": True}}
+    spec = get_render_spec(envelope)
+    assert spec.reframe is True
+
+
+def test_get_render_spec_from_none():
+    spec = get_render_spec(None)
+    assert isinstance(spec, ClipRenderSpec)
+
+
+def test_set_render_spec_upgrades_list():
+    clips = [{"title": "T", "start": 0.0, "end": 10.0}]
+    spec = ClipRenderSpec(reframe=True)
+    envelope = set_render_spec(clips, spec)
+    assert envelope["clips"] == clips
+    assert envelope["render_spec"]["reframe"] is True
+
+
+def test_set_render_spec_preserves_existing_clips():
+    clips = [{"title": "C1", "start": 0.0, "end": 5.0}]
+    old_envelope = {"clips": clips, "render_spec": {"reframe": False}}
+    spec = ClipRenderSpec(reframe=True, speech_cleanup=True)
+    new_envelope = set_render_spec(old_envelope, spec)
+    assert new_envelope["clips"] == clips
+    assert new_envelope["render_spec"]["reframe"] is True
+    assert new_envelope["render_spec"]["speech_cleanup"] is True
+
+
+def test_render_spec_to_dict_is_json_serialisable():
+    import json
+    spec = ClipRenderSpec(reframe=True, music=MusicSpec(catalog="pixabay", track_id="t1"))
+    data = spec.to_dict()
+    assert json.dumps(data)  # must not raise

@@ -3,7 +3,23 @@
 Render target (binding, satisfies IG + TikTok):
   MP4, H.264 high profile, +faststart, 9:16, 1080×1920,
   AAC 128kbps 48kHz, EBU R128 loudnorm (-14 LUFS), ≤300s, ≤300MB.
+
+ClipRenderSpec
+--------------
+Pydantic model that captures per-series render options chosen in the Clip Studio
+UI.  Stored inside MiniSeries.parts_json as a "render_spec" key (no new DB
+column required — parts_json migrates from a bare list to
+``{"clips": [...], "render_spec": {...}}``).
+
+Defaults reproduce the current render_job behaviour so a null/absent spec is
+fully backward-compatible.
 """
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 # Duration in seconds that title and closing cards are held on screen when
 # they are produced from static images (passed to build_filtergraph).
@@ -88,3 +104,155 @@ def output_args() -> list[str]:
         "-b:a", "128k",
         "-ar", "48000",
     ]
+
+
+# ---------------------------------------------------------------------------
+# ClipRenderSpec — per-series render options (Track A engine wiring)
+# ---------------------------------------------------------------------------
+
+_VALID_CAPTION_STYLES: frozenset[str] = frozenset({"default", "bold_yellow"})
+_VALID_TRANSITIONS: frozenset[str] = frozenset({"cut", "fade", "wipe", "slide", "dissolve"})
+_VALID_COLOR_GRADES: frozenset[str] = frozenset({"none", "vivid", "warm", "cool"})
+_VALID_BROLL_SOURCES: frozenset[str] = frozenset({"pexels", "none"})
+_VALID_MUSIC_CATALOGS: frozenset[str] = frozenset({"pixabay", "ytaudio", "fma", "none"})
+
+
+class CaptionsSpec(BaseModel):
+    style: str = "default"
+    position: str = "bottom"
+
+    @field_validator("style")
+    @classmethod
+    def _valid_style(cls, v: str) -> str:
+        if v not in _VALID_CAPTION_STYLES:
+            raise ValueError(f"captions.style must be one of {sorted(_VALID_CAPTION_STYLES)}, got {v!r}")
+        return v
+
+
+class BrollSpec(BaseModel):
+    source: str = "none"
+    query_auto: bool = True
+
+    @field_validator("source")
+    @classmethod
+    def _valid_source(cls, v: str) -> str:
+        if v not in _VALID_BROLL_SOURCES:
+            raise ValueError(f"broll.source must be one of {sorted(_VALID_BROLL_SOURCES)}, got {v!r}")
+        return v
+
+
+class MusicSpec(BaseModel):
+    catalog: str = "none"
+    track_id: str = ""
+    volume_db: float = -18.0
+
+    @field_validator("catalog")
+    @classmethod
+    def _valid_catalog(cls, v: str) -> str:
+        if v not in _VALID_MUSIC_CATALOGS:
+            raise ValueError(f"music.catalog must be one of {sorted(_VALID_MUSIC_CATALOGS)}, got {v!r}")
+        return v
+
+    @field_validator("volume_db")
+    @classmethod
+    def _valid_volume(cls, v: float) -> float:
+        if not (-60.0 <= v <= 0.0):
+            raise ValueError(f"music.volume_db must be between -60 and 0, got {v}")
+        return v
+
+
+class FxSpec(BaseModel):
+    transition: str = "cut"
+    color_grade: str = "none"
+    title_card: bool = True
+
+    @field_validator("transition")
+    @classmethod
+    def _valid_transition(cls, v: str) -> str:
+        if v not in _VALID_TRANSITIONS:
+            raise ValueError(f"fx.transition must be one of {sorted(_VALID_TRANSITIONS)}, got {v!r}")
+        return v
+
+    @field_validator("color_grade")
+    @classmethod
+    def _valid_color_grade(cls, v: str) -> str:
+        if v not in _VALID_COLOR_GRADES:
+            raise ValueError(f"fx.color_grade must be one of {sorted(_VALID_COLOR_GRADES)}, got {v!r}")
+        return v
+
+
+class ClipRenderSpec(BaseModel):
+    """Per-series render options chosen in Clip Studio UI.
+
+    All fields default to values that reproduce the current (pre-Track-A)
+    render_job behaviour, so an absent spec is fully backward-compatible.
+
+    JSON contract (stored in MiniSeries.parts_json["render_spec"]):
+    {
+      "reframe":        false,
+      "captions":       {"style": "default", "position": "bottom"},
+      "speech_cleanup": false,
+      "broll":          {"source": "none", "query_auto": true},
+      "music":          {"catalog": "none", "track_id": "", "volume_db": -18.0},
+      "fx":             {"transition": "cut", "color_grade": "none", "title_card": true}
+    }
+    """
+
+    reframe: bool = False
+    captions: CaptionsSpec = Field(default_factory=CaptionsSpec)
+    speech_cleanup: bool = False
+    broll: BrollSpec = Field(default_factory=BrollSpec)
+    music: MusicSpec = Field(default_factory=MusicSpec)
+    fx: FxSpec = Field(default_factory=FxSpec)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ClipRenderSpec":
+        if not data:
+            return cls()
+        return cls.model_validate(data)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump()
+
+    def broll_enabled(self, pexels_key_present: bool = False) -> bool:
+        """Return True only when broll is requested AND the provider key is available."""
+        return self.broll.source == "pexels" and pexels_key_present
+
+    def music_enabled(self) -> bool:
+        return self.music.catalog != "none" and bool(self.music.track_id)
+
+
+# ---------------------------------------------------------------------------
+# parts_json envelope helpers
+#
+# MiniSeries.parts_json stores either:
+#   - Legacy: a bare list  [{title, start, end}, ...]
+#   - New:    a dict       {"clips": [...], "render_spec": {...}}
+#
+# All code should use these helpers rather than accessing parts_json directly.
+# ---------------------------------------------------------------------------
+
+
+def get_clips(parts_json: Any) -> list[dict]:
+    """Extract the clips list from parts_json (handles both legacy and envelope form)."""
+    if isinstance(parts_json, dict):
+        return parts_json.get("clips") or []
+    if isinstance(parts_json, list):
+        return parts_json
+    return []
+
+
+def get_render_spec(parts_json: Any) -> ClipRenderSpec:
+    """Extract the ClipRenderSpec from parts_json; returns defaults if absent."""
+    if isinstance(parts_json, dict):
+        return ClipRenderSpec.from_dict(parts_json.get("render_spec"))
+    return ClipRenderSpec()
+
+
+def set_render_spec(parts_json: Any, spec: ClipRenderSpec) -> dict:
+    """Return a new envelope dict with the render_spec set.
+
+    Upgrades legacy list form to envelope form transparently.
+    """
+    clips = get_clips(parts_json)
+    return {"clips": clips, "render_spec": spec.to_dict()}

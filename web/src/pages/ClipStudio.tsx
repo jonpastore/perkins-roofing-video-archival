@@ -693,6 +693,261 @@ function ReelSettingsPanel() {
   );
 }
 
+// ── Render options (Track A spec) ─────────────────────────────────────────────
+
+interface ClipRenderSpec {
+  reframe: boolean;
+  captions: { style: string; position: string };
+  speech_cleanup: boolean;
+  broll: { source: string; query_auto: boolean };
+  music: { catalog: string; track_id: string; volume_db: number };
+  fx: { transition: string; color_grade: string; title_card: boolean };
+}
+
+const DEFAULT_SPEC: ClipRenderSpec = {
+  reframe: false,
+  captions: { style: "default", position: "bottom" },
+  speech_cleanup: false,
+  broll: { source: "none", query_auto: true },
+  music: { catalog: "none", track_id: "", volume_db: -18 },
+  fx: { transition: "cut", color_grade: "none", title_card: true },
+};
+
+function RenderOptionsPanel({
+  seriesId,
+  onSpecSaved,
+}: {
+  seriesId: number;
+  onSpecSaved?: (spec: ClipRenderSpec) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [spec, setSpec] = useState<ClipRenderSpec>(DEFAULT_SPEC);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  function loadSpec() {
+    if (loading) return;
+    setLoading(true);
+    apiFetch(`/clips/${seriesId}/render_spec`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: ClipRenderSpec | null) => { if (data) setSpec(data); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
+
+  function handleToggle() {
+    if (!open) loadSpec();
+    setOpen((o) => !o);
+    setMsg(null);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const r = await apiFetch(`/clips/${seriesId}/render_spec`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(spec),
+      });
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      const saved: ClipRenderSpec = await r.json();
+      setSpec(saved);
+      setMsg("Options saved.");
+      onSpecSaved?.(saved);
+    } catch (e: unknown) {
+      setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const rowStyle: React.CSSProperties = {
+    display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap",
+  };
+  const labelStyle: React.CSSProperties = {
+    fontSize: 13, color: BRAND.ink, fontWeight: 600, minWidth: 120,
+  };
+  const selectStyle: React.CSSProperties = {
+    ...inputStyle, fontSize: 13, padding: "4px 8px", minWidth: 130,
+  };
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button
+        onClick={handleToggle}
+        style={{
+          background: "none", border: "none", cursor: "pointer",
+          fontSize: 12, color: BRAND.sub, padding: 0, fontWeight: 600,
+          textDecoration: "underline",
+        }}
+      >
+        {open ? "Hide render options ▲" : "Render options ▼"}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            marginTop: 10, padding: "12px 14px",
+            background: "#f8f9fb", borderRadius: 8,
+            border: `1px solid ${BRAND.border}`,
+          }}
+        >
+          {loading && <Spinner small />}
+
+          {!loading && (
+            <>
+              {/* Reframe */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Reframe 9:16</label>
+                <input
+                  type="checkbox"
+                  checked={spec.reframe}
+                  onChange={(e) => setSpec({ ...spec, reframe: e.target.checked })}
+                  style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                />
+                <span style={{ fontSize: 12, color: BRAND.sub }}>Auto-crop to vertical (active-speaker mock)</span>
+              </div>
+
+              {/* Speech cleanup */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Speech cleanup</label>
+                <input
+                  type="checkbox"
+                  checked={spec.speech_cleanup}
+                  onChange={(e) => setSpec({ ...spec, speech_cleanup: e.target.checked })}
+                  style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                />
+                <span style={{ fontSize: 12, color: BRAND.sub }}>Remove filler words / stutters (requires transcript)</span>
+              </div>
+
+              {/* Captions */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Captions</label>
+                <select
+                  value={spec.captions.style}
+                  onChange={(e) => setSpec({ ...spec, captions: { ...spec.captions, style: e.target.value } })}
+                  style={selectStyle}
+                >
+                  <option value="default">Default</option>
+                  <option value="bold_yellow">Bold yellow</option>
+                </select>
+                <select
+                  value={spec.captions.position}
+                  onChange={(e) => setSpec({ ...spec, captions: { ...spec.captions, position: e.target.value } })}
+                  style={selectStyle}
+                >
+                  <option value="bottom">Bottom</option>
+                  <option value="top">Top</option>
+                </select>
+              </div>
+
+              {/* B-roll */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>B-roll source</label>
+                <select
+                  value={spec.broll.source}
+                  onChange={(e) => setSpec({ ...spec, broll: { ...spec.broll, source: e.target.value } })}
+                  style={selectStyle}
+                >
+                  <option value="none">None</option>
+                  <option value="pexels">Pexels (key required)</option>
+                </select>
+                {spec.broll.source === "pexels" && (
+                  <span style={{ fontSize: 12, color: BRAND.sub }}>PEXELS_API_KEY must be set server-side</span>
+                )}
+              </div>
+
+              {/* Music */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Background music</label>
+                <select
+                  value={spec.music.catalog}
+                  onChange={(e) => setSpec({ ...spec, music: { ...spec.music, catalog: e.target.value } })}
+                  style={selectStyle}
+                >
+                  <option value="none">None</option>
+                  <option value="pixabay">Pixabay</option>
+                  <option value="fma">FMA</option>
+                </select>
+                {spec.music.catalog !== "none" && (
+                  <input
+                    type="text"
+                    placeholder="Track ID"
+                    value={spec.music.track_id}
+                    onChange={(e) => setSpec({ ...spec, music: { ...spec.music, track_id: e.target.value } })}
+                    style={{ ...inputStyle, fontSize: 13, width: 120, padding: "4px 8px" }}
+                  />
+                )}
+                {spec.music.catalog !== "none" && (
+                  <label style={{ fontSize: 12, color: BRAND.sub }}>
+                    Vol&nbsp;
+                    <input
+                      type="number"
+                      min={-60}
+                      max={0}
+                      step={1}
+                      value={spec.music.volume_db}
+                      onChange={(e) => setSpec({ ...spec, music: { ...spec.music, volume_db: Number(e.target.value) } })}
+                      style={{ ...inputStyle, fontSize: 13, width: 60, padding: "4px 6px" }}
+                    />
+                    &nbsp;dB
+                  </label>
+                )}
+              </div>
+
+              {/* FX */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Transition</label>
+                <select
+                  value={spec.fx.transition}
+                  onChange={(e) => setSpec({ ...spec, fx: { ...spec.fx, transition: e.target.value } })}
+                  style={selectStyle}
+                >
+                  <option value="cut">Cut (none)</option>
+                  <option value="fade">Fade</option>
+                  <option value="wipe">Wipe</option>
+                  <option value="slide">Slide</option>
+                  <option value="dissolve">Dissolve</option>
+                </select>
+                <label style={labelStyle}>Color grade</label>
+                <select
+                  value={spec.fx.color_grade}
+                  onChange={(e) => setSpec({ ...spec, fx: { ...spec.fx, color_grade: e.target.value } })}
+                  style={selectStyle}
+                >
+                  <option value="none">None</option>
+                  <option value="vivid">Vivid</option>
+                  <option value="warm">Warm</option>
+                  <option value="cool">Cool</option>
+                </select>
+              </div>
+
+              {/* Save */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                <Button
+                  variant="ghost"
+                  disabled={saving}
+                  onClick={handleSave}
+                  style={{ padding: "5px 12px", fontSize: 13 }}
+                >
+                  {saving ? "Saving…" : "Save options"}
+                </Button>
+                {msg && (
+                  <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
+                    {msg}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Ready-to-render panel ─────────────────────────────────────────────────────
 
 function RenderableRow({ s }: { s: RenderableSeries }) {
@@ -741,41 +996,42 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
         padding: "10px 12px",
         background: BRAND.bg,
         borderRadius: 8,
-        gap: 12,
-        flexWrap: "wrap",
       }}
     >
-      <span style={{ fontWeight: 500, color: BRAND.ink, fontSize: 14, flex: 1 }}>{s.title}</span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ fontWeight: 500, color: BRAND.ink, fontSize: 14, flex: 1 }}>{s.title}</span>
 
-      {isRendered ? (
-        <Badge tone="green">Rendered</Badge>
-      ) : polling ? (
-        <Badge tone="amber">Rendering {partsRendered}/{partsTotal}…</Badge>
-      ) : (
-        <Badge tone="blue">{partCount} part{partCount !== 1 ? "s" : ""}</Badge>
-      )}
+        {isRendered ? (
+          <Badge tone="green">Rendered</Badge>
+        ) : polling ? (
+          <Badge tone="amber">Rendering {partsRendered}/{partsTotal}…</Badge>
+        ) : (
+          <Badge tone="blue">{partCount} part{partCount !== 1 ? "s" : ""}</Badge>
+        )}
 
-      {msg && !isRendered && (
-        <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
-          {msg}
-        </span>
-      )}
+        {msg && !isRendered && (
+          <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
+            {msg}
+          </span>
+        )}
+
+        {!isRendered && (
+          <Button
+            variant="primary"
+            disabled={triggering || polling}
+            onClick={handleRender}
+            style={{ padding: "6px 14px", fontSize: 13 }}
+          >
+            {triggering ? "Starting…" : "Render now"}
+          </Button>
+        )}
+      </div>
 
       {!isRendered && (
-        <Button
-          variant="primary"
-          disabled={triggering || polling}
-          onClick={handleRender}
-          style={{ padding: "6px 14px", fontSize: 13 }}
-        >
-          {triggering ? "Starting…" : "Render now"}
-        </Button>
+        <RenderOptionsPanel seriesId={s.id} />
       )}
     </div>
   );

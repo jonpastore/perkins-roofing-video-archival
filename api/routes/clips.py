@@ -33,6 +33,7 @@ from pydantic import BaseModel
 
 from api.auth import require_role
 from app.models import GraphNode, MiniSeries, PlatformConfig, Segment, SessionLocal, SocialPost, Video
+from core.render_spec import ClipRenderSpec, get_clips, get_render_spec, set_render_spec
 
 # GCP coordinates — read from env so deploy.sh / Terraform own the values.
 _GCP_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "video-archival-and-content-gen")
@@ -89,7 +90,7 @@ def _series_to_dict(s: MiniSeries) -> dict:
         "id": s.id,
         "video_id": s.video_id,
         "title": s.title,
-        "parts": s.parts_json or [],
+        "parts": get_clips(s.parts_json),
         "approved": s.approved,
     }
 
@@ -637,7 +638,7 @@ def list_renderable(
             if s.id not in rendered_ids:
                 result.append({
                     **_series_to_dict(s),
-                    "parts_count": len(s.parts_json or []),
+                    "parts_count": len(get_clips(s.parts_json)),
                 })
         return result
 
@@ -702,6 +703,63 @@ def _cloud_run_bearer_token() -> str:
     creds, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
     creds.refresh(google.auth.transport.requests.Request())
     return creds.token
+
+
+class RenderSpecRequest(BaseModel):
+    """Body for PUT /clips/{series_id}/render_spec."""
+    reframe: bool = False
+    captions: dict = {}
+    speech_cleanup: bool = False
+    broll: dict = {}
+    music: dict = {}
+    fx: dict = {}
+
+
+@router.get("/{series_id}/render_spec")
+def get_render_spec_route(
+    series_id: int,
+    claims=Depends(require_role("approve_video")),
+):
+    """Return the current render spec for a series (defaults when none saved).
+
+    Response: the ClipRenderSpec dict matching the JSON contract in core/render_spec.
+    """
+    with SessionLocal() as db:
+        series = db.get(MiniSeries, series_id)
+        if series is None or not series.approved:
+            raise HTTPException(status_code=404, detail="series not found or not approved")
+        spec = get_render_spec(series.parts_json)
+    return spec.to_dict()
+
+
+@router.put("/{series_id}/render_spec")
+def save_render_spec_route(
+    series_id: int,
+    body: RenderSpecRequest,
+    claims=Depends(require_role("approve_video")),
+):
+    """Save render options for a series without triggering a render.
+
+    Stores the spec inside parts_json (no new DB column).  Upgrades legacy
+    list-form parts_json to envelope form transparently.
+
+    Returns the saved spec dict.
+    """
+    raw = body.model_dump()
+    try:
+        spec = ClipRenderSpec.model_validate(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    with SessionLocal() as db:
+        series = db.get(MiniSeries, series_id)
+        if series is None or not series.approved:
+            raise HTTPException(status_code=404, detail="series not found or not approved")
+        series.parts_json = set_render_spec(series.parts_json, spec)
+        db.commit()
+
+    logger.info("render_spec saved: series_id=%d spec=%s", series_id, spec.to_dict())
+    return spec.to_dict()
 
 
 @router.post("/{series_id}/render")
@@ -795,7 +853,7 @@ def render_status(
         if series is None or not series.approved:
             raise HTTPException(status_code=404, detail="series not found or not approved")
 
-        parts_total = len(series.parts_json or [])
+        parts_total = len(get_clips(series.parts_json))
         parts_rendered = (
             db.query(SocialPost.part)
             .filter(

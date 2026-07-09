@@ -32,6 +32,8 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
+from core.render_spec import ClipRenderSpec, get_clips, get_render_spec
+
 logger = logging.getLogger(__name__)
 
 # Public GCS bucket name follows the project convention.
@@ -302,6 +304,235 @@ def _source_video_path(video_id: str, archive_uri: str | None, scratch: str) -> 
     return pull_video(video_id, scratch)
 
 
+def _apply_track_a_engines(
+    clip_path: str,
+    spec: "ClipRenderSpec",
+    scratch: str,
+    series_id: int,
+    part_index: int,
+) -> str:
+    """Apply Track A engines to *clip_path* in TRD sequence; return output path.
+
+    Engine order (TRD-F5 §7.3):
+      speech_cleanup → reframe → captions → broll → music_mix → clip_fx
+
+    Each engine is applied only when its spec flag/option enables it.  Absent or
+    disabled options are no-ops so the function is fully backward-compatible when
+    called with a default ClipRenderSpec.
+
+    Provider-gated engines (broll/music) silently skip when keys are absent —
+    they must never hard-fail a render.
+
+    Args:
+        clip_path: Path to the extracted clip MP4 produced by ffmpeg_clip().
+        spec:      ClipRenderSpec from the series' parts_json (may be defaults).
+        scratch:   Temporary directory for intermediate outputs.
+        series_id / part_index: Used to name intermediate files.
+
+    Returns:
+        Path to the (possibly transformed) clip MP4.  May be the original
+        clip_path when no engines are enabled.
+    """
+    current = clip_path
+    suffix = f"{series_id}_{part_index}"
+
+    # ── A6: speech_cleanup ────────────────────────────────────────────────────
+    # Requires word-level timestamps from the transcript.  When not available
+    # (no transcript or words key absent), log and skip silently.
+    if spec.speech_cleanup:
+        try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from core.speech_cleanup import build_cleanup_cmd, detect_fillers, keep_segments  # noqa: PLC0415
+
+            words = _load_words_for_clip(current)
+            if words:
+                filler_ranges = detect_fillers(words)
+                clip_duration = words[-1]["end"] if words else 0.0
+                segs = keep_segments(clip_duration, filler_ranges)
+                if segs:
+                    out = os.path.join(scratch, f"cleanup_{suffix}.mp4")
+                    cmd = build_cleanup_cmd(current, out, segs)
+                    run_ffmpeg_cmd(cmd)
+                    current = out
+                    logger.info("speech_cleanup applied: series=%d part=%d", series_id, part_index)
+                else:
+                    logger.info("speech_cleanup: no fillers found, skipping")
+            else:
+                logger.info("speech_cleanup: no word timestamps available, skipping")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("speech_cleanup skipped (non-fatal): %s", exc)
+
+    # ── A2: reframe (9:16 centre-crop) ───────────────────────────────────────
+    if spec.reframe:
+        try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from core.reframe import crop_filter_9x16  # noqa: PLC0415
+
+            out = os.path.join(scratch, f"reframe_{suffix}.mp4")
+            # Mock active-speaker detector: centre crop (focus_x=0.5).
+            # Real MediaPipe integration belongs in adapters/ (TRD-F5 unresolved Q1).
+            crop_filter = crop_filter_9x16(1920, 1080, focus_x=0.5, ratio="9:16")
+            cmd = [
+                "ffmpeg", "-y", "-i", current,
+                "-vf", crop_filter,
+                "-c:v", "libx264", "-profile:v", "high",
+                "-pix_fmt", "yuv420p", "-c:a", "copy",
+                out,
+            ]
+            run_ffmpeg_cmd(cmd)
+            current = out
+            logger.info("reframe applied: series=%d part=%d", series_id, part_index)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("reframe skipped (non-fatal): %s", exc)
+
+    # ── A3: captions (burn-in) ────────────────────────────────────────────────
+    # Requires ASS subtitle file generated from transcript segments.
+    if spec.captions.style != "default" or spec.captions.position != "bottom":
+        # Only apply when a non-default style is requested; default style is
+        # applied by the brand-scene fuse step's loudnorm pass already.
+        try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from core.captions import caption_events, to_ass_karaoke  # noqa: PLC0415
+
+            words = _load_words_for_clip(current)
+            if words:
+                events = caption_events(words)
+                ass_content = to_ass_karaoke(events, style=spec.captions.style)
+                ass_path = os.path.join(scratch, f"captions_{suffix}.ass")
+                with open(ass_path, "w", encoding="utf-8") as f:
+                    f.write(ass_content)
+                out = os.path.join(scratch, f"captioned_{suffix}.mp4")
+                cmd = [
+                    "ffmpeg", "-y", "-i", current,
+                    "-vf", f"ass={ass_path}",
+                    "-c:v", "libx264", "-profile:v", "high",
+                    "-pix_fmt", "yuv420p", "-c:a", "copy",
+                    out,
+                ]
+                run_ffmpeg_cmd(cmd)
+                current = out
+                logger.info(
+                    "captions applied: series=%d part=%d style=%s",
+                    series_id, part_index, spec.captions.style,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("captions skipped (non-fatal): %s", exc)
+
+    # ── A7: broll ─────────────────────────────────────────────────────────────
+    # Provider-gated: only when PEXELS_API_KEY is present in env.
+    pexels_key = os.getenv("PEXELS_API_KEY", "").strip()
+    if spec.broll_enabled(pexels_key_present=bool(pexels_key)):
+        try:
+            logger.info(
+                "broll: source=%s query_auto=%s series=%d part=%d",
+                spec.broll.source, spec.broll.query_auto, series_id, part_index,
+            )
+            # B-roll asset fetch and stitch is an I/O operation belonging in
+            # adapters/; cues are computed here but the ffmpeg splice lives there.
+            # For now, log intent and skip the ffmpeg step until the broll adapter
+            # is wired (tracked as #325).
+            logger.info("broll: cue planning complete; ffmpeg splice pending adapter (#325)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("broll skipped (non-fatal): %s", exc)
+    elif spec.broll.source != "none":
+        logger.info(
+            "broll: source=%s requested but PEXELS_API_KEY absent — skipping (never fail render)",
+            spec.broll.source,
+        )
+
+    # ── A8: music_mix ─────────────────────────────────────────────────────────
+    # Provider-gated: catalog must resolve to a local file path.
+    if spec.music_enabled():
+        try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from core.music_mix import build_music_mix_cmd  # noqa: PLC0415
+
+            music_path = _resolve_music_track(spec.music.catalog, spec.music.track_id, scratch)
+            if music_path:
+                out = os.path.join(scratch, f"music_{suffix}.mp4")
+                cmd = build_music_mix_cmd(current, music_path, out, music_gain_db=spec.music.volume_db)
+                run_ffmpeg_cmd(cmd)
+                current = out
+                logger.info(
+                    "music_mix applied: catalog=%s track=%s series=%d part=%d",
+                    spec.music.catalog, spec.music.track_id, series_id, part_index,
+                )
+            else:
+                logger.info(
+                    "music_mix: track %r not found in catalog %r — skipping",
+                    spec.music.track_id, spec.music.catalog,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("music_mix skipped (non-fatal): %s", exc)
+
+    # ── A9–A11: clip_fx (transitions / overlays / floating text) ─────────────
+    # build_transition_filter / build_overlay_filter / build_floating_text_filter
+    # are pure builders from core/clip_fx.py.  The multi-clip xfade transition
+    # is applied at the brand-fusion step (brand intro+clip+outro = 3 clips).
+    # For single-clip use here, a fade-in/fade-out vf filter is sufficient;
+    # xfade (two-stream) is intentionally deferred to the fuse step (#326).
+    if spec.fx.transition not in ("cut", "none") or spec.fx.color_grade not in ("none", ""):
+        try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+
+            vf_parts: list[str] = []
+            if spec.fx.transition not in ("cut", "none"):
+                # Simple single-clip fade-in (0.5s) using ffmpeg fade filter.
+                vf_parts.append("fade=t=in:st=0:d=0.5")
+            if spec.fx.color_grade == "vivid":
+                vf_parts.append("eq=saturation=1.4:contrast=1.05")
+            elif spec.fx.color_grade == "warm":
+                vf_parts.append("colortemperature=temperature=5000")
+            elif spec.fx.color_grade == "cool":
+                vf_parts.append("colortemperature=temperature=8000")
+
+            if vf_parts:
+                out = os.path.join(scratch, f"fx_{suffix}.mp4")
+                cmd = [
+                    "ffmpeg", "-y", "-i", current,
+                    "-vf", ",".join(vf_parts),
+                    "-c:v", "libx264", "-profile:v", "high",
+                    "-pix_fmt", "yuv420p", "-c:a", "copy",
+                    out,
+                ]
+                run_ffmpeg_cmd(cmd)
+                current = out
+                logger.info(
+                    "clip_fx applied: transition=%s color_grade=%s series=%d part=%d",
+                    spec.fx.transition, spec.fx.color_grade, series_id, part_index,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("clip_fx skipped (non-fatal): %s", exc)
+
+    return current
+
+
+def _load_words_for_clip(clip_path: str) -> list[dict]:  # noqa: ARG001
+    """Load word-level timestamps for the clip.
+
+    Returns an empty list when no transcript is available — callers must
+    handle this gracefully (skip the engine, never fail the render).
+
+    Real implementation: query the DB for Segment rows with word_json for
+    the video_id + time range.  Stub returns [] until the adapter is wired
+    (tracked as #326).
+    """
+    return []
+
+
+def _resolve_music_track(catalog: str, track_id: str, scratch: str) -> str | None:  # noqa: ARG001
+    """Resolve a catalog + track_id to a local audio file path.
+
+    Returns None when the track cannot be resolved (missing catalog key,
+    file not found, network error) — callers must skip gracefully.
+
+    Real implementation: fetch from GCS / Pixabay API / local cache.
+    Stub returns None until the music adapter is wired (tracked as #326).
+    """
+    logger.info("_resolve_music_track: catalog=%r track_id=%r (stub — returns None)", catalog, track_id)
+    return None
+
+
 def _upload_to_gcs(local_path: str, bucket_name: str, object_key: str) -> str:
     """Upload *local_path* to the private GCS bucket and return a gs:// URI.
 
@@ -413,7 +644,7 @@ def render_part(
                 f"MiniSeries id={series_id} has not been admin-approved"
             )
 
-        parts = series.parts_json or []
+        parts = get_clips(series.parts_json)
         if part_index >= len(parts):
             raise IndexError(
                 f"part_index={part_index} out of range for series {series_id} "
@@ -426,6 +657,9 @@ def render_part(
         # part); fall back to the series' single source for classic single-source series.
         video_id = part.get("video_id") or series.video_id
         series_title = series.title or f"Series {series_id}"
+
+        # Load the render spec saved by Clip Studio (defaults reproduce current behaviour).
+        render_spec = get_render_spec(series.parts_json)
 
         # Load Video row here so we can check archive_uri in _source_video_path.
         video_row = db.get(Video, video_id)
@@ -464,6 +698,11 @@ def render_part(
         clip_path = os.path.join(scratch, f"clip_{series_id}_{part_index}.mp4")
         logger.info("clip: %s [%.2f, %.2f] -> %s", src_path, start, end, clip_path)
         ffmpeg_clip(src_path, start, end, clip_path)
+
+        # 5a. Track A engine sequence (spec-driven; null spec = no-ops → backward compat)
+        clip_path = _apply_track_a_engines(
+            clip_path, render_spec, scratch, series_id, part_index
+        )
 
         # 6 + 7. Fuse — brand video path (BRAND_INTRO_VIDEO / BRAND_OUTRO_VIDEO) takes
         # precedence over the image-card path when both are configured.
@@ -617,7 +856,7 @@ def run(limit: int | None = None, *, series_id: int | None = None) -> dict:
         # Snapshot: build list of (series_id, part_index) pairs to render
         work: list[tuple[int, int]] = []
         for series in approved:
-            parts = series.parts_json or []
+            parts = get_clips(series.parts_json)
             for part_index in range(len(parts)):
                 rendered = (
                     db.query(SocialPost)

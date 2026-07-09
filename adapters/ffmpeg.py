@@ -303,3 +303,23 @@ def probe(path: str) -> dict:
         )
 
     return {"width": width, "height": height, "duration": duration}
+
+
+def run_ffmpeg_cmd(cmd: list[str]) -> None:
+    """Execute an arbitrary ffmpeg command list, raising on non-zero exit.
+
+    Replaces the first element with the configured FFMPEG_BIN so callers
+    that construct commands with a bare ``"ffmpeg"`` work correctly when the
+    binary is overridden (e.g. imageio-ffmpeg in tests).
+
+    Args:
+        cmd: Full ffmpeg argument list, beginning with ``"ffmpeg"`` or
+             the binary path.  The first element is replaced with FFMPEG_BIN.
+
+    Raises:
+        subprocess.CalledProcessError: if ffmpeg exits non-zero.
+        subprocess.TimeoutExpired: if the call exceeds _ENCODE_TIMEOUT.
+    """
+    if cmd:
+        cmd = [_FFMPEG] + cmd[1:]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=_ENCODE_TIMEOUT)
