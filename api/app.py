@@ -40,14 +40,25 @@ def _assert_rls_enforceable() -> None:
     BYPASSRLS. The prod `app` role is verified NOSUPERUSER NOBYPASSRLS (Cloud SQL
     created it that way; confirmed 2026-07-09 against 29 RLS-FORCED tables), so this
     check passes at boot and now REFUSES TO SERVE if the role ever regains bypass.
-    No-op on SQLite (dev/test)."""
+    No-op on SQLite (dev/test).
+
+    Fail-closed contract (deepsec C2): the RuntimeError raised by
+    assert_rls_enforceable(refuse_to_serve=True) — the role CAN bypass RLS — MUST
+    propagate and crash the revision. Only transient import/connection errors are
+    swallowed, so a DB blip at boot doesn't crash-loop the service."""
+    import logging
     try:
         from app.models import engine
         from core.tenant import assert_rls_enforceable
+    except Exception:  # noqa: BLE001 — import failure: can't verify, proceed (non-fatal)
+        logging.getLogger(__name__).warning("RLS enforceability check skipped (import)", exc_info=True)
+        return
+    try:
         assert_rls_enforceable(engine, refuse_to_serve=True)
-    except Exception:  # noqa: BLE001 — an advisory guard must never block startup
-        import logging
-        logging.getLogger(__name__).warning("RLS enforceability check skipped", exc_info=True)
+    except RuntimeError:
+        raise  # deliberate fail-closed — role can bypass RLS; abort startup
+    except Exception:  # noqa: BLE001 — transient DB/connection blip: log, don't block boot
+        logging.getLogger(__name__).warning("RLS enforceability check skipped (transient)", exc_info=True)
 
 
 app.add_middleware(
@@ -137,10 +148,21 @@ def _tenant_settings_merge(tenant_id: int, sub_key: str, sub_value: dict) -> dic
         return merged
 
 
+def _require_tenant(claims) -> int:
+    """Resolve the caller's tenant_id from verified claims, or 403 (deepsec H3).
+
+    Never falls back to tenant 1: a platform_admin with no impersonation context has
+    tenant_id=None and must NOT silently read/write Perkins' (tenant 1) settings."""
+    tid = claims.get("tenant_id")
+    if tid is None:
+        raise HTTPException(403, "no tenant context (impersonate a tenant to manage its settings)")
+    return tid
+
+
 @app.get("/admin/tenant/settings")
 def get_tenant_settings(claims=Depends(require_role_db("marketing_articles"))):
     from core.tenant_settings import TenantSettings
-    raw = _tenant_settings_read(claims.get("tenant_id") or 1)
+    raw = _tenant_settings_read(_require_tenant(claims))
     return TenantSettings.load(raw).model_dump()
 
 
@@ -148,13 +170,13 @@ def get_tenant_settings(claims=Depends(require_role_db("marketing_articles"))):
 def put_marketing_settings(body: dict, claims=Depends(require_role_db("marketing_articles"))):
     # social_accounts is read-only via this path (OAuth tokens live in Secret Manager).
     body.pop("social_accounts", None)
-    merged = _tenant_settings_merge(claims.get("tenant_id") or 1, "marketing", body)
+    merged = _tenant_settings_merge(_require_tenant(claims), "marketing", body)
     return {"marketing": merged.get("marketing", {})}
 
 
 @app.put("/admin/tenant/settings/kb")
 def put_kb_settings(body: dict, claims=Depends(require_role_db("kb_archive_manage"))):
-    merged = _tenant_settings_merge(claims.get("tenant_id") or 1, "kb", body)
+    merged = _tenant_settings_merge(_require_tenant(claims), "kb", body)
     return {"kb": merged.get("kb", {})}
 
 
@@ -174,11 +196,12 @@ def brand_upload_url(body: dict, claims=Depends(require_role_db("marketing_artic
     if not project:
         raise HTTPException(503, "GCS not configured (GOOGLE_CLOUD_PROJECT unset)")
     from google.cloud import storage  # noqa: PLC0415 — heavy import, endpoint-local
+    tid = _require_tenant(claims)
     url = brand_upload_signed_url(
-        claims.get("tenant_id") or 1, asset_name, content_type,
+        tid, asset_name, content_type,
         storage.Client(), f"{project}-media",
     )
-    gcs_uri = f"gs://{project}-media/tenants/{claims.get('tenant_id') or 1}/brand/{asset_name}"
+    gcs_uri = f"gs://{project}-media/tenants/{tid}/brand/{asset_name}"
     return {"upload_url": url, "gcs_uri": gcs_uri}
 
 
