@@ -1,43 +1,49 @@
-Resume the Perkins v2 platform build. FIRST read CONTINUATION-2026-07-06-pm.md in full — it has the
-complete state, deployed status, outstanding items, commands, and gotchas. Everything is committed on
-branch feat/platform-v2 (HEAD 41c13e5) and DEPLOYED (Cloud Run API image 41c13e5, SPA on Firebase);
-terraform is drift-clean. Prod migrations (articles.focus_keyword, user_settings) already applied.
+Resume the Perkins FULL-FUNNEL platform build (plan APPROVED 2026-07-08). Read IN ORDER first:
 
-Follow docs/ENGINEERING_RULES.md — especially R3-ENFORCE: NO direct deploy. Commit first (scripts/deploy.sh
-refuses a dirty tree), deploy via scripts/deploy.sh (API+jobs) + `firebase deploy` (SPA) + `terraform apply`
-(infra). Run scripts/drift_check.sh and reconcile any drift via `terraform import` + apply, never by hand.
+1. CONTINUATION-2026-07-08.md            — full handoff (state, locked decisions, gotchas)
+2. docs/superpowers/plans/2026-07-08-full-funnel-plan.md — the approved plan (waves F0–F6)
+3. Memory index (auto-loaded) — esp. perkins-full-funnel-reorg, perkins-ezbids-proposal,
+   perkins-knowify-teardown, perkins-squarequote-review
+4. docs/ENGINEERING_RULES.md             — R1–R5 binding
+5. mcp__jarvis-memory__my_tasks          — live human blockers (#315–331)
 
-AUTH: `.env` sets GOOGLE_APPLICATION_CREDENTIALS=infra/vertex-dev-sa.json (read-only SA, for Vertex/DB jobs).
-For gcloud / Secret Manager / Scheduler / storage commands, run in a shell WITHOUT that var (unset it) so
-ADC uses the jon@perkinsroofing.net account. Start the Cloud SQL proxy before local DB/job work:
-  /tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
-  export DB_URL="postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins"
-Verify the SPA with `cd web && npm run build` (exit 0), not just tsc.
+MISSION, in this order:
 
-PRIORITIES (full detail in the continuation §Outstanding):
-1. Task 27 — DECIDED: get to a clean 15/15, THEN regenerate all articles. Do it in this order:
-   a) Add a keyword-DENSITY-targeting refine step so generation passes ALL 15 Rank Math checks (today
-      it only guarantees 14/15 — the 0.5–1.5% density band isn't hit). Enforce it in the generation
-      loop: after generating, run core.seo.rank_math_failures(title, meta, slug, content_md,
-      focus_keyword); if 'rm_kw_density' (or any rm_* check) fails, refine and re-check, up to N iters —
-      i.e. make jobs/article_job.generate_scored_article (or a wrapper used by jobs/regen_articles_seo.py)
-      loop until rank_math_failures == []. Density fix = adjust focus-keyword occurrences to land in band
-      without harming readability.
-   b) Verify on one article first: LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo
-      --slug wall-flashings  → confirm still_failing == {} (all 15 pass) and WP republished.
-   c) Then batch all: LLM_BACKEND=vertex .venv/bin/python -m jobs.regen_articles_seo  (34 articles,
-      ~30-50 min; republishes the 6 published ones to WordPress as Tim Kanak). Report per-article
-      pass/fail. Needs the Cloud SQL proxy + .env WP creds + vertex creds.
-   Keep the Articles SEO panel click-to-fix (POST /articles/{slug}/fix-seo) as the per-article manual path.
-2. YouTube Post-to-YouTube: if Tim owns the channel, mint the youtube.force-ssl refresh token
-   (scripts/youtube_oauth_setup.py), store as secret youtube-oauth-refresh-token, wire into deploy.sh/infra
-   (docs/YOUTUBE_REPLY_OAUTH.md).
-3. GSuite invite dropdown: if the Workspace super-admin grant landed, finish domain-wide delegation
-   (docs/GSUITE_DIRECTORY_SETUP.md).
-4. Retire the cerberus Whisper node in ansible/whisper.yml (STT is fully cloud) so drift_check is fully green.
+PHASE 0 — Documentation set (BEFORE any code), under docs/superpowers/specs/full-funnel/:
+  - PRD-<section>.md per sidebar section (knowledge-base, marketing, estimating, quoting, admin):
+    user stories, acceptance criteria, non-goals, differentiators (Quoting must beat Knowify on
+    self-serve multi-templates, revisions, good-better-best tiers).
+  - TRD-F0..F6.md per wave: data models, APIs, migrations, RLS/GCIP mechanics, TEST PLAN FIRST,
+    rollout/rollback. F2 embeds Exhibit-B pricing rules + the 5 golden-file ±$0.01 acceptance
+    (incl. Dade+Broward=HVHZ, per-county overrides). F2b = Google Solar API measurement service
+    (+ manual fallback). F3 = proposal builder + e-sign-lite + Gotenberg + Knowify migration.
+  - DDD.md: bounded contexts (Tenancy/Identity, Corpus/KB, Content/Marketing, Pricing/Estimating,
+    Quoting/Proposal, Measurement), aggregates, entities/value objects, ubiquitous-language
+    glossary, context map with integration seams.
+  Draft with sonnet subagents (clear file-ownership boundaries), R2 review (architect + critic),
+  fix HIGH/critical, commit + push the set.
 
-VERIFIED THIS SESSION (don't redo): cloud STT via GCS-output batch (97-min podcast = 362 segs); auto-drain
-ingest cron; comment-crawl cron (populates comment_count); email suite (WYSIWYG/templates/signatures/header/
-AI-draft loop); ClipStudio intro/outro videos; Articles 15 Rank Math checks + click-to-fix; WP author policy
-(Tim Kanak, 6 posts reassigned); scheduling WP links; search-topics toggle fix; logs IAM fix; IaC drift
-reconciled. Commit/deploy as you go; don't push unless asked.
+PHASE 1 — Execute F0 (thin tenancy: tenants table + tenant_id default 1 everywhere, ORM
+discipline, NO RLS/GCIP yet) then F1 (sidebar IA: KB · Marketing · Estimating · Quoting + Admin
+config-tab shell; keep existing route keys) — each per its TRD.
+
+NON-NEGOTIABLE DISCIPLINE:
+- TDD, FAIL-FIRST, ALWAYS: write the test → run it → confirm it fails FOR THE RIGHT REASON →
+  minimal implementation → green → refactor. No implementation before a red test. Every wave,
+  every feature. R1's 100% core gate is the floor, not the method.
+- Full gate before any "done": ruff clean + pytest 100% core coverage (run backgrounded to a
+  /tmp log with EXIT marker) + `cd web && npm run build` for SPA changes.
+- Implementation subagents = sonnet; opus only for plan/architecture/security/final verification.
+- Commit + push at each green milestone. scripts/deploy.sh requires a CLEAN tree (run via bash).
+- NO prod DB changes without my explicit permission (then scripts/apply_migrations_connector.py;
+  needs fresh ADC which only I can mint).
+- Do NOT relitigate locked decisions (continuation §3): GCP · Postgres RLS+tenant_id · GCIP
+  (Perkins stays project-pool) · Cloudflare ingress + app.perkinsroofing.net · Solar API
+  measurements (no LiDAR/drones, no Google-Earth scraping) · e-sign-lite · Gotenberg ·
+  royalty-FREE music only · no payments/accounting/CRM/native-iOS in v1 · eaglepoint source is
+  reference-only, never merged into this repo.
+
+COMMERCIAL CLOCK: F3 (Quoting/Proposals) is the ~3-week deliverable to Tim; critical path
+F0 → (F1 ∥ F2) → F3. Bias prioritization toward it; if squeezed, cut reminders/leads — never
+templates/revisions/tiers/e-sign. Tim's email (docs/2026-07-08-tim-email.md) is drafted — golden
+files + pricing confirmations arrive via him and gate F2's contract-grade signoff only.

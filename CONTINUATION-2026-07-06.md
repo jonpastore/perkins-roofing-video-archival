@@ -1,7 +1,7 @@
 # Perkins v2 Platform — Continuation (2026-07-06)
 
 Resume after a very large build+harden session on branch **`feat/platform-v2`** (not pushed).
-Previous handoff: `CONTINUATION-2026-07-05.md` (still at top level). Everything below is current
+Previous handoff: `docs/continuations/CONTINUATION-2026-07-05.md` (archived 2026-07-08). Everything below is current
 as of commit **`2ff19cb`**, which is the **live** API image and SPA.
 
 ---
@@ -107,5 +107,5 @@ consolidate_faqs, prime_backlog, upgrade_articles, propose_topic_series, ingest_
 secrets IaC in `infra/main.tf`; runtime deploy in `scripts/deploy.sh`.
 
 ---
-*Continuation-doc archive directive: top level now holds `CONTINUATION-2026-07-05.md` + this file (≤3, no
-move needed). Apply the archive step next session when a 4th is added.*
+*Continuation-doc archive directive: performed 2026-07-08 — `CONTINUATION-2026-07-05.md` moved to
+`docs/continuations/`; top level holds 2026-07-06, 2026-07-06-pm, 2026-07-08.*
