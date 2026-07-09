@@ -586,6 +586,31 @@ resource "google_cloud_scheduler_job" "crawl_comments" {
   depends_on = [google_project_service.apis]
 }
 
+# Poll YouTube KPIs (views/likes/comment counts) for all archived videos daily.
+# Runs as a Cloud Run Job (jobs-sa) so it can handle the full 841-video catalog
+# in one execution without the API request timeout constraint.
+# Cadence: 02:00 Chicago time daily — off-peak, after the overnight crawl-comments
+# rotation has already refreshed the most recently touched videos.
+resource "google_cloud_scheduler_job" "poll_archive_kpis" {
+  name      = "poll-archive-kpis"
+  region    = var.region
+  schedule  = "0 2 * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/poll-archive-kpis"
+    http_method = "POST"
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 # Drain the ingest queue every minute by triggering the `ingest` Cloud Run Job (runs as jobs-sa:
 # has speech.client + media-bucket access + a 3600s timeout — the STT-heavy work does NOT belong
 # in the user-facing API request). The job itself is single-flight (Postgres advisory lock), so a
@@ -627,6 +652,7 @@ locals {
     "tiktok-refresh-token",
     "google-idp-client-secret",
     "whisper-token",
+    "youtube-oauth-refresh-token",
   ])
 }
 

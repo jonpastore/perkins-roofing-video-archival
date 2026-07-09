@@ -10,13 +10,6 @@ interface Reel {
   parts_count: number;
 }
 
-interface FaqItem {
-  question: string;
-  video_id: string;
-  title: string;
-  t: number;
-}
-
 interface UnusedVideo {
   video_id: string;
   title: string;
@@ -25,11 +18,6 @@ interface UnusedVideo {
 
 interface ReelsBucket {
   reels: Reel[];
-}
-
-interface FaqBucket {
-  faqs: FaqItem[];
-  faqs_total: number;
 }
 
 interface UnusedBucket {
@@ -502,13 +490,6 @@ export function Opportunities() {
   const [reelsLoading, setReelsLoading] = useState(true);
   const [reelsError, setReelsError] = useState<string | null>(null);
 
-  // FAQ — server-paginated
-  const [faqs, setFaqs] = useState<FaqItem[]>([]);
-  const [faqsTotal, setFaqsTotal] = useState(0);
-  const [faqPage, setFaqPage] = useState(0);
-  const [faqLoading, setFaqLoading] = useState(true);
-  const [faqError, setFaqError] = useState<string | null>(null);
-
   // Unused videos — server-paginated
   const [unused, setUnused] = useState<UnusedVideo[]>([]);
   const [unusedTotal, setUnusedTotal] = useState(0);
@@ -560,23 +541,6 @@ export function Opportunities() {
       .finally(() => setReelsLoading(false));
   }, []);
 
-  const fetchFaqs = useCallback((page: number) => {
-    setFaqLoading(true);
-    setFaqError(null);
-    const offset = page * BUCKET_PAGE_SIZE;
-    apiFetch(`/suggestions?limit=${BUCKET_PAGE_SIZE}&offset=${offset}&bucket=faqs`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-        return r.json();
-      })
-      .then((d: FaqBucket) => {
-        setFaqs(d.faqs ?? []);
-        setFaqsTotal(d.faqs_total ?? 0);
-      })
-      .catch((e: unknown) => setFaqError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setFaqLoading(false));
-  }, []);
-
   const fetchUnused = useCallback((page: number) => {
     setUnusedLoading(true);
     setUnusedError(null);
@@ -595,13 +559,11 @@ export function Opportunities() {
   }, []);
 
   useEffect(() => { fetchReels(); }, [fetchReels]);
-  useEffect(() => { fetchFaqs(faqPage); }, [fetchFaqs, faqPage]);
   useEffect(() => { fetchUnused(unusedPage); }, [fetchUnused, unusedPage]);
 
   function refreshAll() {
     fetchTopics(topicSort, topicFilter, topicOffset);
     fetchReels();
-    fetchFaqs(faqPage);
     fetchUnused(unusedPage);
   }
 
@@ -665,10 +627,9 @@ export function Opportunities() {
   // Server handles filter + generated-to-back ordering across all pages.
   const filteredTopicItems: TopicItem[] = topicItems;
 
-  const faqTotalPages = Math.max(1, Math.ceil(faqsTotal / BUCKET_PAGE_SIZE));
   const unusedTotalPages = Math.max(1, Math.ceil(unusedTotal / BUCKET_PAGE_SIZE));
 
-  const anyLoading = reelsLoading || faqLoading || unusedLoading || topicLoading;
+  const anyLoading = reelsLoading || unusedLoading || topicLoading;
 
   return (
     <main style={{ padding: "0 4px" }}>
@@ -905,86 +866,6 @@ export function Opportunities() {
             </Card>
           ))}
         </div>
-      )}
-
-      {/* FAQs */}
-      <SectionHeader>
-        FAQ candidates ({faqsTotal > 0 ? faqsTotal : faqLoading ? "…" : faqs.length})
-      </SectionHeader>
-      <ActionNote>
-        These are candidate questions from your video content. Use the{" "}
-        <strong>FAQ tab</strong> to mine and generate answers — the full FAQ builder
-        (mine + batch answer) lives there.
-      </ActionNote>
-      {faqLoading && <Loading label="Loading FAQ candidates…" />}
-      {faqError && <ErrorMsg>Could not load FAQ candidates: {faqError}</ErrorMsg>}
-      {!faqLoading && !faqError && faqs.length === 0 && (
-        <EmptyState label="No FAQ gaps found" />
-      )}
-      {!faqLoading && !faqError && faqs.length > 0 && (
-        <>
-          <Card style={{ padding: 0, overflow: "hidden" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 14,
-              }}
-            >
-              <thead>
-                <tr
-                  style={{
-                    borderBottom: `2px solid ${BRAND.border}`,
-                    textAlign: "left",
-                  }}
-                >
-                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>
-                    Question
-                  </th>
-                  <th
-                    style={{
-                      padding: "10px 16px",
-                      color: BRAND.sub,
-                      fontWeight: 600,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Source clip
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {faqs.map((f, i) => (
-                  <tr
-                    key={`${f.video_id}-${f.t}-${i}`}
-                    style={{ borderBottom: `1px solid ${BRAND.border}` }}
-                  >
-                    <td style={{ padding: "10px 16px" }}>{f.question}</td>
-                    <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
-                      <a
-                        href={`https://youtu.be/${f.video_id}?t=${f.t}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
-                      >
-                        {f.title} @{hms(f.t)}
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-          <Paginator
-            page={faqPage}
-            totalPages={faqTotalPages}
-            onPrev={() => setFaqPage((p) => Math.max(0, p - 1))}
-            onNext={() => setFaqPage((p) => Math.min(faqTotalPages - 1, p + 1))}
-          />
-          <p style={{ fontSize: 12, color: BRAND.sub, margin: "8px 0 0", fontStyle: "italic" }}>
-            Open the <strong>FAQ tab</strong> to mine questions and generate answers in bulk.
-          </p>
-        </>
       )}
 
       {/* Unused Videos */}

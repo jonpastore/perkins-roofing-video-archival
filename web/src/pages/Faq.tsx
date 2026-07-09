@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "../api";
-import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
+import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, hms } from "../ui";
+import { ComposeEmailModal } from "../components/ComposeEmailModal";
 
 // Render an FAQ answer: turn `[link n](url)` markdown citations into clickable links.
 function renderAnswer(text: string): ReactNode[] {
@@ -58,8 +59,19 @@ interface EstimateResult {
   caps: { mine_max: number; answer_batch_max: number };
 }
 
+// Unmined FAQ candidates from /suggestions?bucket=faqs
+interface UnminedFaqItem {
+  question: string;
+  video_id: string;
+  title: string;
+  t: number;
+}
+
 const MINE_BATCH_OPTIONS = [50, 100, 200] as const;
 const ANSWER_BATCH_OPTIONS = [25, 50, 100] as const;
+const UNMINED_PAGE_SIZE = 50;
+
+type FaqTab = "answered" | "unmined";
 
 function fmt$( n: number): string {
   return `$${n.toFixed(4)}`;
@@ -74,6 +86,9 @@ function mmss(t: number): string {
 const PAGE_SIZE = 50;
 
 export function Faq() {
+  // Tab state: "answered" = mined+answered FAQ list; "unmined" = candidates from /suggestions
+  const [activeTab, setActiveTab] = useState<FaqTab>("answered");
+
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [items, setItems] = useState<FaqItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -94,6 +109,34 @@ export function Faq() {
   const [mineEstimate, setMineEstimate] = useState<EstimateResult | null>(null);
   const [answerEstimate, setAnswerEstimate] = useState<EstimateResult | null>(null);
   const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unmined tab state
+  const [unminedItems, setUnminedItems] = useState<UnminedFaqItem[]>([]);
+  const [unminedTotal, setUnminedTotal] = useState(0);
+  const [unminedPage, setUnminedPage] = useState(0);
+  const [unminedLoading, setUnminedLoading] = useState(false);
+  const [unminedError, setUnminedError] = useState<string | null>(null);
+
+  const fetchUnmined = useCallback((page: number) => {
+    setUnminedLoading(true);
+    setUnminedError(null);
+    const off = page * UNMINED_PAGE_SIZE;
+    apiFetch(`/suggestions?bucket=faqs&limit=${UNMINED_PAGE_SIZE}&offset=${off}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((d: { faqs?: UnminedFaqItem[]; faqs_total?: number }) => {
+        setUnminedItems(d.faqs ?? []);
+        setUnminedTotal(d.faqs_total ?? 0);
+      })
+      .catch((e: unknown) => setUnminedError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setUnminedLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "unmined") fetchUnmined(unminedPage);
+  }, [activeTab, unminedPage, fetchUnmined]);
 
   function loadCoverage() {
     setCoverageLoading(true);
@@ -239,11 +282,200 @@ export function Faq() {
     }
   }
 
+  // Email compose state
+  const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
+  const [emailModalBody, setEmailModalBody] = useState<string | null>(null);
+
+  function toggleCheck(id: number) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    const answered = items.filter((i) => i.answer);
+    const allChecked = answered.length > 0 && answered.every((i) => checkedIds.has(i.id));
+    if (allChecked) {
+      setCheckedIds(new Set());
+    } else {
+      setCheckedIds(new Set(answered.map((i) => i.id)));
+    }
+  }
+
+  function buildFaqEmailBody(): string {
+    const esc = (s: string) =>
+      (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    const selected = items.filter((i) => checkedIds.has(i.id) && i.answer);
+    const qas = selected
+      .map(
+        (i) =>
+          `<li style="margin-bottom:16px;">` +
+          `<p style="margin:0 0 6px;font-weight:bold;">${esc(i.question)}</p>` +
+          `<p style="margin:0;color:#333;">${esc(i.answer ?? "")}</p>` +
+          `<p style="margin:4px 0 0;font-size:12px;"><a href="${esc(i.url)}">▶ ${esc(i.video_title)} @ ${mmss(i.start)}</a></p>` +
+          `</li>`
+      )
+      .join("\n");
+    return [
+      "<p>Hi,</p>",
+      "<p>Here are some answers from Tim Perkins' roofing knowledge base that I thought might help:</p>",
+      `<ul style="padding-left:20px;">${qas}</ul>`,
+      "<p>Let me know if you have any other questions!</p>",
+      "<p>Best,<br>Tim Perkins Roofing</p>",
+    ].join("\n");
+  }
+
+  const answeredItems = items.filter((i) => i.answer);
+  const allAnsweredChecked =
+    answeredItems.length > 0 && answeredItems.every((i) => checkedIds.has(i.id));
+  const someAnsweredChecked = answeredItems.some((i) => checkedIds.has(i.id));
+
   const hasMore = offset + PAGE_SIZE < total;
+
+  const unminedTotalPages = Math.max(1, Math.ceil(unminedTotal / UNMINED_PAGE_SIZE));
+
+  function tabStyle(t: FaqTab): React.CSSProperties {
+    const active = activeTab === t;
+    return {
+      padding: "8px 18px",
+      border: "none",
+      borderBottom: active ? `2px solid ${BRAND.red}` : "2px solid transparent",
+      background: "none",
+      cursor: "pointer",
+      fontSize: 14,
+      fontWeight: active ? 700 : 500,
+      color: active ? BRAND.navyText : BRAND.sub,
+      marginBottom: -1,
+    };
+  }
 
   return (
     <main style={{ maxWidth: 960 }}>
       <PageTitle>FAQ Builder</PageTitle>
+
+      {/* Tab switcher */}
+      <div style={{ display: "flex", borderBottom: `1px solid ${BRAND.border}`, marginBottom: 20 }}>
+        <button style={tabStyle("answered")} onClick={() => setActiveTab("answered")}>
+          Answered
+          {coverage && (
+            <span style={{
+              marginLeft: 7, fontSize: 11, fontWeight: 700, padding: "1px 7px",
+              borderRadius: 10, background: "#eef1f5", color: BRAND.sub,
+            }}>
+              {coverage.answered}
+            </span>
+          )}
+        </button>
+        <button style={tabStyle("unmined")} onClick={() => setActiveTab("unmined")}>
+          Unmined questions
+          {unminedTotal > 0 && (
+            <span style={{
+              marginLeft: 7, fontSize: 11, fontWeight: 700, padding: "1px 7px",
+              borderRadius: 10, background: "#fff3e0", color: "#b45309",
+            }}>
+              {unminedTotal}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ── UNMINED TAB ─────────────────────────────────────── */}
+      {activeTab === "unmined" && (
+        <div>
+          <p style={{ fontSize: 13, color: BRAND.sub, margin: "0 0 16px" }}>
+            These are candidate questions mined from video content (objections and claims) whose
+            source video is not yet referenced in any article. Use the{" "}
+            <strong>mine & answer</strong> controls on the Answered tab to pull them into the FAQ.
+          </p>
+          {unminedLoading && <Loading label="Loading candidates…" />}
+          {unminedError && <ErrorMsg>Could not load candidates: {unminedError}</ErrorMsg>}
+          {!unminedLoading && !unminedError && unminedItems.length === 0 && (
+            <Card>
+              <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
+                No unmined candidates — all content is covered by articles.
+              </p>
+            </Card>
+          )}
+          {!unminedLoading && !unminedError && unminedItems.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 10 }}>
+                {unminedTotal} candidate{unminedTotal !== 1 ? "s" : ""} · page {unminedPage + 1} of {unminedTotalPages}
+              </div>
+              <Card style={{ padding: 0, overflow: "hidden", marginBottom: 12 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
+                      <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Question</th>
+                      <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, whiteSpace: "nowrap" }}>
+                        Source clip
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unminedItems.map((f, i) => (
+                      <tr key={`${f.video_id}-${f.t}-${i}`} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                        <td style={{ padding: "10px 16px" }}>{f.question}</td>
+                        <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
+                          <a
+                            href={`https://youtu.be/${f.video_id}?t=${f.t}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
+                          >
+                            {f.title} @ {hms(f.t)}
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+              {unminedTotalPages > 1 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                  <button
+                    onClick={() => setUnminedPage((p) => Math.max(0, p - 1))}
+                    disabled={unminedPage === 0}
+                    style={{
+                      background: "none", border: `1px solid ${BRAND.border}`, borderRadius: 6,
+                      padding: "3px 12px", cursor: unminedPage === 0 ? "not-allowed" : "pointer",
+                      color: unminedPage === 0 ? BRAND.sub : BRAND.navyText, fontWeight: 600,
+                    }}
+                  >
+                    Prev
+                  </button>
+                  <span style={{ color: BRAND.sub }}>
+                    Page {unminedPage + 1} of {unminedTotalPages}
+                  </span>
+                  <button
+                    onClick={() => setUnminedPage((p) => Math.min(unminedTotalPages - 1, p + 1))}
+                    disabled={unminedPage >= unminedTotalPages - 1}
+                    style={{
+                      background: "none", border: `1px solid ${BRAND.border}`, borderRadius: 6,
+                      padding: "3px 12px",
+                      cursor: unminedPage >= unminedTotalPages - 1 ? "not-allowed" : "pointer",
+                      color: unminedPage >= unminedTotalPages - 1 ? BRAND.sub : BRAND.navyText,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+              <p style={{ fontSize: 12, color: BRAND.sub, margin: "12px 0 0", fontStyle: "italic" }}>
+                Switch to the <button
+                  onClick={() => setActiveTab("answered")}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: BRAND.navyText, fontWeight: 700, fontSize: 12, padding: 0, textDecoration: "underline" }}
+                >Answered tab</button> to mine and batch-answer these questions.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── ANSWERED TAB ────────────────────────────────────── */}
+      {activeTab === "answered" && <>
 
       {/* Coverage summary bar */}
       <Card style={{ marginBottom: 20 }}>
@@ -438,10 +670,54 @@ export function Faq() {
 
       {!loading && !error && items.length > 0 && (
         <>
+          {/* Email action bar — shown when any answered item is on the page */}
+          {answeredItems.length > 0 && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 12, marginBottom: 12,
+              padding: "10px 16px", background: BRAND.bg, borderRadius: 8,
+              border: `1px solid ${BRAND.border}`,
+            }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={allAnsweredChecked}
+                  ref={(el) => { if (el) el.indeterminate = someAnsweredChecked && !allAnsweredChecked; }}
+                  onChange={toggleAll}
+                  style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.navyText }}>
+                  Select answered Q&As
+                </span>
+              </label>
+              {someAnsweredChecked && (
+                <Button
+                  style={{ fontSize: 13, padding: "6px 14px", marginLeft: "auto" }}
+                  onClick={() => setEmailModalBody(buildFaqEmailBody())}
+                >
+                  Email selected ({checkedIds.size})
+                </Button>
+              )}
+            </div>
+          )}
+
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {items.map((item) => (
-              <Card key={item.id} style={{ borderLeft: `4px solid ${item.status === "answered" ? BRAND.navy : BRAND.border}` }}>
+              <Card
+                key={item.id}
+                style={{ borderLeft: `4px solid ${checkedIds.has(item.id) ? BRAND.red : item.status === "answered" ? BRAND.navy : BRAND.border}` }}
+              >
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                  {/* Checkbox — only shown for answered items */}
+                  {item.answer ? (
+                    <input
+                      type="checkbox"
+                      checked={checkedIds.has(item.id)}
+                      onChange={() => toggleCheck(item.id)}
+                      style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer", flexShrink: 0, marginTop: 3 }}
+                    />
+                  ) : (
+                    <div style={{ width: 15, flexShrink: 0 }} />
+                  )}
                   <div style={{ flex: 1 }}>
                     <p style={{ margin: "0 0 6px", fontWeight: 700, color: BRAND.navyText, fontSize: 15 }}>
                       {item.question}
@@ -488,6 +764,16 @@ export function Faq() {
           )}
         </>
       )}
+
+      {/* Email compose modal — opened when user clicks "Email selected" */}
+      {emailModalBody !== null && (
+        <ComposeEmailModal
+          initialBody={emailModalBody}
+          onClose={() => setEmailModalBody(null)}
+        />
+      )}
+
+      </> /* end answered tab */}
     </main>
   );
 }

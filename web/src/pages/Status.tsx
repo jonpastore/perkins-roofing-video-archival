@@ -21,6 +21,15 @@ interface QueueItem {
   status: string;
 }
 
+interface ScheduledBreakdown {
+  articles: number;
+  social_instagram: number;
+  social_tiktok: number;
+  social_other: number;
+  next_article_at: string | null;
+  next_social_at: string | null;
+}
+
 interface StatusData {
   videos: number;
   videos_embedded: number;
@@ -29,6 +38,11 @@ interface StatusData {
   articles: number;
   faq_count: number;
   scheduled_content: number;
+  // Extended counters — added by backend; optional so page still works before backend lands.
+  scheduled_breakdown?: ScheduledBreakdown;
+  content_opportunities?: number;
+  comments_to_answer?: number;
+  videos_to_approve?: number;
   failed_stages: FailedStage[];
   queue: QueueItem[];
 }
@@ -98,6 +112,15 @@ export function Status() {
         { label: "Articles", value: data.articles, color: BRAND.navyText, navTarget: "articles" },
         { label: "FAQ Entries", value: data.faq_count, color: BRAND.navyText, navTarget: "faq" },
         { label: "Scheduled Content", value: data.scheduled_content, color: BRAND.navyText, navTarget: "scheduling" },
+        ...(data.content_opportunities != null
+          ? [{ label: "Content Opportunities", value: data.content_opportunities, color: data.content_opportunities > 0 ? "#b45309" : BRAND.navyText, navTarget: "search-ask" }]
+          : []),
+        ...(data.comments_to_answer != null
+          ? [{ label: "Comments to Answer", value: data.comments_to_answer, color: data.comments_to_answer > 0 ? "#b45309" : BRAND.navyText, navTarget: "comments" }]
+          : []),
+        ...(data.videos_to_approve != null
+          ? [{ label: "Videos to Approve", value: data.videos_to_approve, color: data.videos_to_approve > 0 ? "#b45309" : BRAND.navyText, navTarget: "scheduling" }]
+          : []),
         { label: "Failed Stages", value: data.failed_stages.length, color: data.failed_stages.length > 0 ? BRAND.red : BRAND.navyText },
         { label: "In Queue", value: data.queue.length, color: data.queue.length > 0 ? "#b45309" : BRAND.navyText },
       ]
@@ -170,6 +193,68 @@ export function Status() {
               </Card>
             ))}
           </div>
+
+          {/* Scheduled content breakdown */}
+          {data.scheduled_breakdown && (
+            <>
+              <h3 style={{ margin: "0 0 14px", color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
+                Scheduled Content Breakdown
+              </h3>
+              <Card style={{ marginBottom: 32, padding: "16px 20px" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 24 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+                      Articles
+                    </div>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText }}>
+                      {data.scheduled_breakdown.articles}
+                    </div>
+                    {data.scheduled_breakdown.next_article_at && (
+                      <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+                        Next: {new Date(data.scheduled_breakdown.next_article_at).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ width: 1, background: BRAND.border, alignSelf: "stretch" }} />
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+                      Social Posts
+                    </div>
+                    <div style={{ display: "flex", gap: 16, alignItems: "baseline" }}>
+                      {data.scheduled_breakdown.social_instagram > 0 && (
+                        <span>
+                          <span style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText }}>{data.scheduled_breakdown.social_instagram}</span>
+                          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 4 }}>Instagram</span>
+                        </span>
+                      )}
+                      {data.scheduled_breakdown.social_tiktok > 0 && (
+                        <span>
+                          <span style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText }}>{data.scheduled_breakdown.social_tiktok}</span>
+                          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 4 }}>TikTok</span>
+                        </span>
+                      )}
+                      {data.scheduled_breakdown.social_other > 0 && (
+                        <span>
+                          <span style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText }}>{data.scheduled_breakdown.social_other}</span>
+                          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 4 }}>Other</span>
+                        </span>
+                      )}
+                      {data.scheduled_breakdown.social_instagram === 0 &&
+                        data.scheduled_breakdown.social_tiktok === 0 &&
+                        data.scheduled_breakdown.social_other === 0 && (
+                        <span style={{ fontSize: 14, color: BRAND.sub }}>None scheduled</span>
+                      )}
+                    </div>
+                    {data.scheduled_breakdown.next_social_at && (
+                      <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+                        Next: {new Date(data.scheduled_breakdown.next_social_at).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            </>
+          )}
 
           {/* Failed stages */}
           <h3 style={{ margin: "0 0 14px", color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>

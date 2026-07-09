@@ -435,26 +435,35 @@ export function SearchAsk() {
   const [topicOffset, setTopicOffset] = useState(0);
   const [topicTotal, setTopicTotal] = useState(0);
 
-  // Fetch aggregated topics (paginated over ALL) when in "search" mode, on page/sort change.
+  // Fetch topics when in "search" mode.
+  // Strategy: when there is an active filter query, fetch ALL topics (no limit) so
+  // client-side filtering covers the full corpus — topic labels are short strings and
+  // the entire set fits in one response at any realistic scale (< 5 000 rows).
+  // When there is no query, use normal pagination so the initial load stays fast.
+  const isFiltering = mode === "search" && query.trim().length > 0;
+
   useEffect(() => {
     if (mode !== "search") return;
     setTopicsLoading(true);
     setTopicsError(null);
     const sortParam = topicSort === "alpha" ? "alpha" : topicSort === "videos" ? "videos" : "length";
-    apiFetch(`/topics?sort=${sortParam}&limit=${TOPIC_PAGE_SIZE}&offset=${topicOffset}`)
+    // Omit limit when the user is filtering so we search across all topics, not just the current page.
+    const url = isFiltering
+      ? `/topics?sort=${sortParam}`
+      : `/topics?sort=${sortParam}&limit=${TOPIC_PAGE_SIZE}&offset=${topicOffset}`;
+    apiFetch(url)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
       .then((data: { total?: number; items?: TopicItem[] } | TopicItem[]) => {
-        // Supports both the {total, items} envelope and a bare list (fallback).
         const items = Array.isArray(data) ? data : data.items ?? [];
         setTopics(items);
         setTopicTotal(Array.isArray(data) ? items.length : data.total ?? items.length);
       })
       .catch((e) => setTopicsError(e instanceof Error ? e.message : String(e)))
       .finally(() => setTopicsLoading(false));
-  }, [mode, topicOffset, topicSort]);
+  }, [mode, topicOffset, topicSort, isFiltering]);
 
   async function run(q: string) {
     const question = q.trim();

@@ -34,16 +34,19 @@ the **refresh token**. Copy it.
 
 ## Step 3 — store it as a secret + wire it into the API (IaC)
 
+The secret **container** is Terraform-owned (R3-ENFORCE): `youtube-oauth-refresh-token` is already
+in the `secret_ids` set in `infra/main.tf` — run `terraform apply` if it doesn't exist yet.
+Then add the **value** (a data operation, allowed outside Terraform):
+
 ```bash
 PROJECT=video-archival-and-content-gen
-printf '%s' '<REFRESH_TOKEN>' | gcloud secrets create youtube-oauth-refresh-token --data-file=- --project="$PROJECT"
-# (or: gcloud secrets versions add youtube-oauth-refresh-token --data-file=- ...)
+printf '%s' '<REFRESH_TOKEN>' | gcloud secrets versions add youtube-oauth-refresh-token --data-file=- --project="$PROJECT"
 ```
 
-Then, in IaC:
-- Add `youtube-oauth-refresh-token` to the `secret_ids` set in `infra/main.tf` and apply.
-- Add to `scripts/deploy.sh` SECRETS: `YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:latest`
-  (the API service reads it; `OAUTH_CLIENT_ID/SECRET` are already injected).
+Finally, in `scripts/deploy.sh`, uncomment the prepared
+`YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:latest` SECRETS line (kept commented
+until the version exists — Cloud Run refuses a `:latest` ref on an empty secret) and deploy.
+`OAUTH_CLIENT_ID/SECRET` are already injected.
 
 Redeploy the API. `GET /comments/reply-config` will return `oauth_configured: true` and the
 **Post to YouTube** button lights up.
