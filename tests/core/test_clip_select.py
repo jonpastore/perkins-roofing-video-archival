@@ -1,5 +1,6 @@
 """Tests for core/clip_select.py — 100% line coverage required."""
 import json
+
 import pytest
 
 from core.clip_select import (
@@ -9,7 +10,6 @@ from core.clip_select import (
     rank_moments,
     score_segments,
 )
-
 
 # ---------------------------------------------------------------------------
 # build_viral_prompt
@@ -156,6 +156,7 @@ def test_parse_viral_bare_string_value():
     # it finds no { or [ — but if it somehow yields a non-dict non-list (e.g. int),
     # the not-isinstance-list guard fires.  Patch parse_model_json to return an int.
     from unittest.mock import patch
+
     import core.clip_select as cs
     with patch.object(cs, "parse_model_json", return_value=42):
         assert cs.parse_viral("irrelevant") == []

@@ -4,7 +4,6 @@ All tests are pure (no I/O, no mocking required).
 """
 from core.email_proof import build_proof_prompt, diff_suggestions
 
-
 # ---------------------------------------------------------------------------
 # build_proof_prompt
 # ---------------------------------------------------------------------------

@@ -4,7 +4,13 @@ signal Perkins uses for engagement + content ideas. Writes mockup/comments.json.
 
 Runs over the top-N indexed videos by comment count (the rest are handled by the recurring
 job in production). Idempotent: skips videos already in the output file."""
-import json, os, sqlite3, subprocess, glob, tempfile, sys
+import glob
+import json
+import os
+import sqlite3
+import subprocess
+import tempfile
+
 from .llm import chat
 
 DB = os.path.join(os.path.dirname(__file__), "dev.db")

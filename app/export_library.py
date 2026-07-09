@@ -1,6 +1,8 @@
 """Freeze the indexed library into static JSON for the Cloudflare mock — Phase 1 surface:
 video list + per-video Content-Graph topics with timecoded deep links. All real dev.db data."""
-import json, os, sqlite3
+import json
+import os
+import sqlite3
 
 DB = os.path.join(os.path.dirname(__file__), "dev.db")
 OUT = os.path.join(os.path.dirname(__file__), "..", "mockup", "library.json")

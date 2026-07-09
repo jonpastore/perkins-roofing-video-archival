@@ -261,8 +261,14 @@ resource "google_sql_database_instance" "pg" {
     edition = "ENTERPRISE"       # ENTERPRISE_PLUS only accepts db-perf-optimized-* tiers
 
     backup_configuration {
-      enabled    = true
-      start_time = "03:00"
+      enabled                        = true
+      start_time                     = "03:00"
+      point_in_time_recovery_enabled = true
+      transaction_log_retention_days = 7
+      backup_retention_settings {
+        retained_backups = 7
+        retention_unit   = "COUNT"
+      }
     }
 
     ip_configuration {

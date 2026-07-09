@@ -10,6 +10,8 @@ select = ["E", "F", "I", "W"]
 # length; reflowing them would alter prompt content. Correctness lints still apply.
 "api/routes/clips.py" = ["E501"]
 "jobs/crawl_comments.py" = ["E501"]
+"core/proposal_render.py" = ["E501"]
+"scripts/rearchive_with_audio.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

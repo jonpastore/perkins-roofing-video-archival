@@ -1,10 +1,12 @@
 """Eval harness (council requirement). Runs a seed question set against the indexed corpus,
 calibrates the abstain threshold (separating answerable vs off-topic by retrieval confidence),
 and measures citation + keyword-hit quality. Run: python3 -m app.eval"""
-import json, os
+import json
+import os
+
+from .answer import ask
 from .config import settings
 from .retrieval import hybrid_search
-from .answer import ask
 
 SEED = os.path.join(os.path.dirname(__file__), "eval_seed.json")
 
@@ -31,7 +33,7 @@ def run():
         if acc > best[1]:
             best = (t, acc)
     sth = best[0]
-    print(f"\n=== calibration ===")
+    print("\n=== calibration ===")
     print(f"  current threshold: {settings.ABSTAIN_THRESHOLD}")
     print(f"  SUGGESTED threshold: {sth:.2f}  (separation accuracy {best[1]*100:.0f}%)")
     off_abst = sum(1 for c in off_conf if c < sth)

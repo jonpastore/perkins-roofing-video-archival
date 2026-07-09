@@ -1,10 +1,15 @@
 """FastAPI serving layer (online). Ingestion runs as a separate Cloud Run Job in prod —
 do NOT run ingestion in the request lifecycle (council requirement: split serving from ingest)."""
-import os, json
+import json
+import os
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from . import retrieval as R, answer as A, ingest as I
+
+from . import answer as A
+from . import ingest as I
+from . import retrieval as R
 from .models import SessionLocal, Video
 from .observability import Cost
 

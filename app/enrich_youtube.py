@@ -2,8 +2,11 @@
 timestamp (date+time, shown in ET) and fresh view/like/comment counts. Reads YOUTUBE_API_KEY
 from env (piped from 1Password — never hardcoded). Updates mockup/library.json + channel.json.
 4 API calls for 161 videos (videos.list, 50 ids/call). Re-run anytime to refresh."""
-import os, json, urllib.request, urllib.parse
-from datetime import datetime, timezone
+import json
+import os
+import urllib.parse
+import urllib.request
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 HERE = os.path.dirname(__file__)

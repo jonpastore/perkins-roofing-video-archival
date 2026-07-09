@@ -1,7 +1,7 @@
 """Unit tests for core.comments.needs_reply — pure function, no I/O."""
 import pytest
-from core.comments import needs_reply
 
+from core.comments import needs_reply
 
 # ---------------------------------------------------------------------------
 # has_channel_reply=True — always False regardless of text

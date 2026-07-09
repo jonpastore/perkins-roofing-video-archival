@@ -126,3 +126,73 @@ export async function apiFetchMultipart(
   if (res.status === 401) res = await call(true);
   return res;
 }
+
+// ── Quoting: public accept-page client (RESTORED — clobbered by a stale write) ──
+// These three call the UNAUTHENTICATED token-gated accept surface with plain fetch
+// (no Firebase token). Shapes match api/routes/proposals.py public projection.
+
+export interface QuoteTier {
+  label: string;
+  description: string;
+  total: number;
+}
+
+export interface QuoteOptionalItem {
+  id: string;
+  label: string;
+  unit_price: number;
+  qty: number;
+}
+
+export interface QuoteDepositPolicy {
+  mode: "percent" | "fixed" | "none";
+  value: number;
+  instructions: string;
+}
+
+export interface QuoteSnapshot {
+  tiers: Record<string, QuoteTier>;
+  optional_items: QuoteOptionalItem[];
+  deposit_policy: QuoteDepositPolicy;
+}
+
+export interface AcceptPageData {
+  status: string;
+  title: string;
+  customer_name: string;
+  property_address: string;
+  quote_snapshot: QuoteSnapshot;
+  tenant_name: string;
+}
+
+export async function getAcceptPage(token: string): Promise<AcceptPageData> {
+  const res = await fetch(`${BASE}/p/${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error(`accept page ${res.status}`);
+  return res.json();
+}
+
+export async function submitAccept(
+  token: string,
+  body: { selected_tier: string; selected_options: string[]; consent_electronic: boolean; signed_name: string },
+): Promise<{ ok: boolean; status: string }> {
+  const res = await fetch(`${BASE}/p/${encodeURIComponent(token)}/accept`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`accept ${res.status}`);
+  return res.json();
+}
+
+export async function submitDecline(
+  token: string,
+  body: { note?: string },
+): Promise<{ ok: boolean; status: string }> {
+  const res = await fetch(`${BASE}/p/${encodeURIComponent(token)}/decline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`decline ${res.status}`);
+  return res.json();
+}

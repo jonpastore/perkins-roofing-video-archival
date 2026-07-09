@@ -6,9 +6,13 @@
 
 Embeds topic labels on cerberus, greedy-clusters by cosine, names + drafts an angle per cluster.
 Writes mockup/insights.json. NAME=0 for a clustering-only dry run (no LLM)."""
-import json, os, sqlite3, re
+import json
+import os
+import sqlite3
+
 import numpy as np
-from .llm import embed, chat
+
+from .llm import chat, embed
 
 DB = os.path.join(os.path.dirname(__file__), "dev.db")
 OUT = os.path.join(os.path.dirname(__file__), "..", "mockup", "insights.json")

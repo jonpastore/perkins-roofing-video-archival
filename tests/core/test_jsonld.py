@@ -1,9 +1,7 @@
 """Unit tests for core/jsonld.py — 100% coverage target."""
 
-import pytest
 
 from core.jsonld import build_article, build_faq_page, build_video_object
-
 
 # ---------------------------------------------------------------------------
 # build_video_object

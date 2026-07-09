@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.qa_gate import verdict, dedup_jaccard, is_duplicate, _shingles
-
+from core.qa_gate import _shingles, dedup_jaccard, is_duplicate, verdict
 
 # ---------------------------------------------------------------------------
 # verdict — precedence logic

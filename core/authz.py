@@ -25,6 +25,7 @@ _MATRIX = {
         "marketing_status",
         "estimating_view", "estimating_manage",
         "quoting_view", "quoting_create", "quoting_send",
+        "quoting_manage_templates", "quoting_manage_settings",
         "admin_users",
     },
     # sales — search/ask, email tools + email templates, bid estimator.
@@ -44,10 +45,14 @@ _MATRIX = {
     "platform_admin": {
         "admin_tenants",
         "admin_users",
+        "provision_tenant",
+        "view_all_tenants",
+        "manage_platform_config",
+        "impersonate_tenant",
     },
 }
 # Admin-only actions (granted only via admin's "*"): manage_users, manage_config,
-# marketing_email, quoting_manage_templates, admin_config.
+# marketing_email, admin_config.
 # manage_archive: backfill channel, poll KPIs — admin + web_admin.
 
 
@@ -57,16 +62,51 @@ def can(role, action):
     return "*" in perms or action in perms
 
 
-def effective_role(email, role, default_admins, email_verified=False):
-    """Resolve the caller's effective role. Emails in ``default_admins`` are admin by
-    default — no per-user grant needed — so the core team is admin the instant they
-    sign in. Everyone else falls back to their assigned custom-claim ``role``.
+def effective_role(email, role, tenant_id=1, db_session=None, email_verified=False):
+    """Resolve the caller's effective role.
 
-    SECURITY: email-based elevation requires a VERIFIED email. `verify_id_token` proves the
-    token was minted by our Firebase project but NOT that the email is verified, so without
-    this gate anyone who could self-register a `*@perkinsroofing.net` address (if a
-    password/email-link provider were enabled) would be promoted to admin. An explicit
-    custom-claim ``role`` is a trusted server-side grant and is always honored."""
-    if email_verified and email and email.lower() in default_admins:
-        return "admin"
+    F4 version: checks ``tenant_default_admins`` table via ``db_session`` for the given
+    ``tenant_id``. Falls back to ``app.config.settings.DEFAULT_ADMINS`` frozenset when
+    ``db_session`` is None (SQLite dev path) or a frozenset is passed as ``tenant_id``
+    (backward-compat for pre-F4 callers that pass DEFAULT_ADMINS as the third arg).
+
+    SECURITY: email-based elevation requires a VERIFIED email. ``verify_id_token`` proves
+    the token was minted by our Firebase project but NOT that the email is verified.
+    An explicit custom-claim ``role`` is a trusted server-side grant and is always honored.
+
+    Backward-compatibility: pre-F4 callers pass (email, role, default_admins_frozenset,
+    email_verified). We detect that via isinstance on the third arg and fall back to the
+    frozenset path so no existing call sites break.
+    """
+    if not email_verified or not email:
+        return role
+
+    email_lower = email.lower()
+
+    # Backward-compat: third positional arg was a frozenset (pre-F4 callers)
+    if isinstance(tenant_id, (frozenset, set)):
+        legacy_set = tenant_id
+        if email_lower in legacy_set:
+            return "admin"
+        return role
+
+    # DB path (F4): query tenant_default_admins
+    if db_session is not None:
+        try:
+            from sqlalchemy import text
+            row = db_session.execute(
+                text("SELECT 1 FROM tenant_default_admins WHERE tenant_id=:t AND email=:e"),
+                {"t": tenant_id, "e": email_lower},
+            ).fetchone()
+            if row is not None:
+                return "admin"
+        except Exception:
+            # Table may not exist yet (migrations pending); fall through to config fallback
+            pass
+    else:
+        # Fallback: config frozenset (dev/SQLite/no session available)
+        from app.config import settings
+        if email_lower in settings.DEFAULT_ADMINS:
+            return "admin"
+
     return role

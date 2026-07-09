@@ -4,8 +4,8 @@ TDD sequence: write red first, then implement in core/authz.py, then green.
 """
 
 import pytest
-from core.authz import can
 
+from core.authz import can
 
 # ---------------------------------------------------------------------------
 # §11 normative action list for use across tests
@@ -94,10 +94,11 @@ SALES_DENIED = [
     "admin_tenants",
 ]
 
-# Actions NOT granted to web_admin (boundary check)
+# Actions NOT granted to web_admin (boundary check).
+# NOTE: quoting_manage_templates/quoting_manage_settings were GRANTED to web_admin
+# by TRD-F3 §2 (post-F1 registry change) — deliberately absent from this list.
 WEB_ADMIN_DENIED = [
     "marketing_email",        # email is admin-only
-    "quoting_manage_templates",  # admin-only
     "admin_config",           # admin-only
     "admin_tenants",          # platform_admin only
 ]
@@ -209,10 +210,6 @@ def test_web_admin_can_admin_users():
 def test_web_admin_cannot_marketing_email():
     """Email compose/send is admin-only; web_admin must be denied."""
     assert can("web_admin", "marketing_email") is False
-
-
-def test_web_admin_cannot_quoting_manage_templates():
-    assert can("web_admin", "quoting_manage_templates") is False
 
 
 def test_web_admin_cannot_admin_config():

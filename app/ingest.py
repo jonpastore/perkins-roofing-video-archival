@@ -1,13 +1,18 @@
 """Idempotent, resumable, staged ingestion (council requirement). Each stage
 (transcript → graph → embed) is content-hashed and status-tracked in IngestionRun;
 re-running skips unchanged stages and retries only what failed."""
-import hashlib, json
-from .config import settings
-from .models import SessionLocal, init_db, Video, IngestionRun, Segment, Word, GraphNode, Chunk
-from . import transcript as T, graph as G
-from .llm import embed
+import hashlib
+import json
+
 from core.chunking import chunk_segments
 from core.vad import should_transcribe
+
+from . import graph as G
+from . import transcript as T
+from .config import settings
+from .llm import embed
+from .models import Chunk, GraphNode, IngestionRun, Segment, SessionLocal, Video, Word, init_db
+
 
 def _hash(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()[:16]

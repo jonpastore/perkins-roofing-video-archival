@@ -3,10 +3,8 @@
 Tests cover: select_seed pct rounding/edge cases, publish_order pillar-first,
 next_cluster pending selection, to_dispatch always-full math, and empty inputs.
 """
-import pytest
 
 from core.publish_planner import next_cluster, publish_order, select_seed, to_dispatch
-
 
 # ---------------------------------------------------------------------------
 # Helpers

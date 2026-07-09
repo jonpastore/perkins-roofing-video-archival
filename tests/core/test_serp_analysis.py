@@ -1,6 +1,5 @@
 """Tests for core/serp_analysis.py — 100% coverage target."""
 
-import pytest
 
 from core.serp_analysis import (
     aggregate_authority_citations,
@@ -8,7 +7,6 @@ from core.serp_analysis import (
     classify_keyword,
     extract_paa_questions,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

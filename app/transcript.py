@@ -1,8 +1,12 @@
 """Transcript-source abstraction (council requirement #1). Downstream never cares whether
 the transcript came from YouTube captions or GCP STT — it always gets the same normalized
 schema: {source, segments:[{text,start,end}], words:[{word,start,confidence}]}."""
-import os, glob, json
+import glob
+import json
+import os
+
 from .config import settings
+
 
 def _json3_path(vid):
     g = sorted(glob.glob(os.path.join(settings.DATA_DIR, f"{vid}*.json3")))

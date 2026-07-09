@@ -477,7 +477,8 @@ Full list of new action strings added to `core/authz.py` in F1. These are the ca
 | `quoting_view` | admin, web_admin, sales | View quotes/proposals |
 | `quoting_create` | admin, web_admin, sales | Create a new quote |
 | `quoting_send` | admin, web_admin, sales | Send a proposal |
-| `quoting_manage_templates` | admin | Manage proposal templates |
+| `quoting_manage_templates` | admin, web_admin | Manage proposal templates (extended to web_admin by TRD-F3 §2) |
+| `quoting_manage_settings` | admin, web_admin | Manage tenant quoting settings (added by TRD-F3 §2) |
 | `admin_users` | admin | Manage users/roles (replaces `manage_users` for new endpoints) |
 | `admin_config` | admin | Manage platform config |
 | `admin_tenants` | platform_admin | Tenant provisioning (F4/F6; no current user has this) |

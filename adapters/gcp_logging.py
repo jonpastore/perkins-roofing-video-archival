@@ -15,9 +15,52 @@ Raises RuntimeError (turned into 503 by the route) when:
 """
 from __future__ import annotations
 
+import contextvars
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
+
+# ---------------------------------------------------------------------------
+# Structured-logging tenant context (TRD-F4 §5 — tenant_id on every log line)
+# ---------------------------------------------------------------------------
+
+# Request-scoped tenant id. get_db_session (api/auth.py) / the token-scoped
+# session set this from the VERIFIED tenant so every log record emitted while
+# handling a request carries tenant_id, without threading it through call sites.
+_tenant_ctx: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "tenant_id", default=None
+)
+
+
+def set_log_tenant(tenant_id: int | None) -> "contextvars.Token":
+    """Bind tenant_id to the current context for structured logging. Returns a
+    reset token; pass it to reset_log_tenant in a finally block."""
+    return _tenant_ctx.set(tenant_id)
+
+
+def reset_log_tenant(token: "contextvars.Token") -> None:
+    _tenant_ctx.reset(token)
+
+
+class TenantLogFilter(logging.Filter):
+    """Inject the context-bound tenant_id onto every LogRecord (TRD-F4 §5).
+
+    Attach once to the root logger at startup. Records get a ``tenant_id``
+    attribute (the bound value, or None outside a request) so the Cloud Logging
+    structured formatter can emit it as a label on every line.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.tenant_id = _tenant_ctx.get()
+        return True
+
+
+def install_tenant_log_filter() -> None:
+    """Idempotently attach TenantLogFilter to the root logger."""
+    root = logging.getLogger()
+    if not any(isinstance(f, TenantLogFilter) for f in root.filters):
+        root.addFilter(TenantLogFilter())
 
 _SEVERITY_ORDER = ["DEFAULT", "DEBUG", "INFO", "NOTICE", "WARNING", "ERROR", "CRITICAL", "ALERT", "EMERGENCY"]
 

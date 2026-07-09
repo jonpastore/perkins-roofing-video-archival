@@ -2,20 +2,19 @@
 import pytest
 
 from core.render_spec import (
-    build_filtergraph,
-    output_args,
-    _W,
     _H,
-    ClipRenderSpec,
-    CaptionsSpec,
+    _W,
     BrollSpec,
-    MusicSpec,
+    CaptionsSpec,
+    ClipRenderSpec,
     FxSpec,
+    MusicSpec,
+    build_filtergraph,
     get_clips,
     get_render_spec,
+    output_args,
     set_render_spec,
 )
-
 
 # ---------------------------------------------------------------------------
 # build_filtergraph

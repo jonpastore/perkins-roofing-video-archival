@@ -164,11 +164,14 @@ class TestOrmMixin:
             f"TenantMixin.tenant_id must FK to tenants.id, got {fk_targets}"
         assert col.nullable is False, "TenantMixin.tenant_id must be NOT NULL"
 
-    def test_set_tenant_context_is_noop_in_f0(self):
+    def test_set_tenant_context_issues_set_local(self):
         from core.tenant import set_tenant_context
         mock_session = MagicMock()
-        set_tenant_context(mock_session, 1)
-        mock_session.execute.assert_not_called()
+        set_tenant_context(mock_session, 42)
+        mock_session.execute.assert_called_once()
+        call_args = mock_session.execute.call_args
+        # second positional arg is the params dict
+        assert call_args[0][1] == {"tid": "42"}
 
     def test_tenant_query_mixin_filter_returns_correct_clause(self):
         from core.tenant import TenantQueryMixin

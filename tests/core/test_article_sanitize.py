@@ -1,13 +1,12 @@
 """Tests for article HTML sanitizer, residual-markdown detector, placeholder detector,
 and JSON-LD completeness helpers in jobs/article_job.py."""
 
+from core.jsonld import build_breadcrumb_list
 from jobs.article_job import (
     has_placeholder,
     has_residual_markdown,
     markdownish_to_html,
 )
-from core.jsonld import build_breadcrumb_list
-
 
 # ---------------------------------------------------------------------------
 # has_placeholder

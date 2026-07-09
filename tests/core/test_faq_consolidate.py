@@ -1,4 +1,4 @@
-from core.faq_consolidate import greedy_cluster, choose_canonical, links_in, merge_citations
+from core.faq_consolidate import choose_canonical, greedy_cluster, links_in, merge_citations
 
 
 def test_greedy_cluster_groups_similar():

@@ -4,7 +4,10 @@ link to the exact second the answer is given. This is the batch ('functionalized
 the ask/search pipeline. Writes mockup/faq.json. Re-runnable; skips videos already done.
 
 Prototype of the Phase-2 FAQ-bank (500+) feature — here we run a representative subset."""
-import json, os, sqlite3
+import json
+import os
+import sqlite3
+
 from .llm import chat
 
 DB = os.path.join(os.path.dirname(__file__), "dev.db")

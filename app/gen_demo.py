@@ -1,6 +1,8 @@
 """One-shot: run the real grounded pipeline for a few homeowner questions and freeze the
 results into a static JSON the Cloudflare mockup serves (no backend needed for client review)."""
-import json, os
+import json
+import os
+
 from .answer import ask
 from .models import SessionLocal, Video
 

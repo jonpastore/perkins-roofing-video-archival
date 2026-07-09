@@ -14,8 +14,10 @@ import time
 import urllib.request
 
 import firebase_admin
-from firebase_admin import auth as admin_auth, credentials
+from firebase_admin import auth as admin_auth
+from firebase_admin import credentials
 from playwright.sync_api import sync_playwright
+
 
 def _firebase_web_api_key() -> str:
     """The Firebase Web API key (public by design — it also ships in the SPA bundle as

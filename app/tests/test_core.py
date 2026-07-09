@@ -1,6 +1,7 @@
 """Core tests (dev: requires cerberus reachable + migrated corpus in app/dev.db).
 Run: python3 -m pytest app/tests -q"""
-from app import retrieval, answer, ingest
+from app import answer, ingest, retrieval
+
 
 def test_search_returns_timecoded_results():
     res = retrieval.search("clay tile underlayment", 3)

@@ -1,6 +1,10 @@
 """Structured logging + cost tracking (council requirements). JSON logs carry run/video IDs;
 Cost counters back the per-run guardrails enforced in llm.py."""
-import json, logging, sys, threading, time
+import json
+import logging
+import sys
+import threading
+import time
 
 _logger = logging.getLogger("perkins")
 if not _logger.handlers:

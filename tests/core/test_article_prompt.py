@@ -6,7 +6,6 @@ import pytest
 
 from core.article_prompt import system_prompt, template_prompt
 
-
 # ---------------------------------------------------------------------------
 # system_prompt
 # ---------------------------------------------------------------------------

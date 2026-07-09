@@ -119,7 +119,6 @@ from jobs.article_job import (  # noqa: E402
     _ensure_answer_first,
     _ensure_heading,
     _ensure_title,
-    _word_count_str,
 )
 
 
@@ -227,7 +226,6 @@ class TestDeterministicGuaranteesScore100:
     def _apply_guarantees(self, fields: dict, keyword: str) -> dict:
         """Apply only the deterministic guarantee helpers (no LLM calls)."""
         from jobs.article_job import (
-            _build_article_jsonld,
             _clamp_meta,
             _ensure_answer_first,
             _ensure_heading,
@@ -282,7 +280,6 @@ class TestDeterministicGuaranteesScore100:
 
         fields = self._apply_guarantees(fields, keyword)
 
-        jsonld = [{"@type": "Article"}]  # non-empty → has_jsonld=True
         result = score_article(
             fields["title"],
             fields["meta"],
@@ -337,7 +334,7 @@ class TestDeterministicGuaranteesScore100:
             keyword=keyword,
         )
         af_check = next(c for c in result["checks"] if c["key"] == "answer_first")
-        assert af_check["pass"] is True, f"answer_first still failing after guarantee"
+        assert af_check["pass"] is True, "answer_first still failing after guarantee"
 
     def test_headings_guaranteed(self):
         keyword = "shingle replacement"
@@ -502,7 +499,7 @@ class TestRankMathBasicSeo:
 
     def test_kw_in_body_pass(self):
         kw = "roof repair miami"
-        body = f"<p>word </p>" * 50 + f"<p>{kw}</p>"
+        body = "<p>word </p>" * 50 + f"<p>{kw}</p>"
         checks = rank_math_checks(_rm_good_title(), _rm_good_meta(), _rm_good_slug(), body, kw)
         c = next(x for x in checks if x["key"] == "rm_kw_in_body")
         assert c["pass"] is True

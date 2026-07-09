@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import patch
 
-from core.article_plan import build_plan, _slugify, _capitalize, _cluster_score, _topic_match
-
+from core.article_plan import _capitalize, _cluster_score, _slugify, _topic_match, build_plan
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers

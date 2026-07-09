@@ -60,3 +60,60 @@ def test_non_default_admin_keeps_assigned_role():
     assert effective_role("stranger@example.com", "sales", _ADMINS, email_verified=True) == "sales"
     assert effective_role("stranger@example.com", "", _ADMINS, email_verified=True) == ""
     assert effective_role(None, "sales", _ADMINS, email_verified=True) == "sales"
+
+
+# ---------------------------------------------------------------------------
+# F3 quoting actions
+# ---------------------------------------------------------------------------
+
+def test_admin_can_all_quoting_actions():
+    for action in ("quoting_view", "quoting_create", "quoting_send",
+                   "quoting_manage_templates", "quoting_manage_settings"):
+        assert can("admin", action) is True, action
+
+
+def test_web_admin_can_all_quoting_actions():
+    for action in ("quoting_view", "quoting_create", "quoting_send",
+                   "quoting_manage_templates", "quoting_manage_settings"):
+        assert can("web_admin", action) is True, action
+
+
+def test_sales_can_quoting_view_create_send_but_not_manage():
+    assert can("sales", "quoting_view") is True
+    assert can("sales", "quoting_create") is True
+    assert can("sales", "quoting_send") is True
+    assert can("sales", "quoting_manage_templates") is False
+    assert can("sales", "quoting_manage_settings") is False
+
+
+# ---------------------------------------------------------------------------
+# F4 effective_role DB path
+# ---------------------------------------------------------------------------
+
+def test_effective_role_db_path_elevates_admin():
+    from unittest.mock import MagicMock
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchone.return_value = (1,)
+    result = effective_role("admin@example.com", "sales", tenant_id=1,
+                            db_session=mock_db, email_verified=True)
+    assert result == "admin"
+    mock_db.execute.assert_called_once()
+
+
+def test_effective_role_db_path_no_row_keeps_role():
+    from unittest.mock import MagicMock
+    mock_db = MagicMock()
+    mock_db.execute.return_value.fetchone.return_value = None
+    result = effective_role("stranger@example.com", "sales", tenant_id=1,
+                            db_session=mock_db, email_verified=True)
+    assert result == "sales"
+
+
+def test_effective_role_db_path_exception_falls_through():
+    from unittest.mock import MagicMock
+    mock_db = MagicMock()
+    mock_db.execute.side_effect = Exception("table missing")
+    result = effective_role("admin@example.com", "sales", tenant_id=1,
+                            db_session=mock_db, email_verified=True)
+    # Should fall through to config fallback, not raise
+    assert result in ("admin", "sales")

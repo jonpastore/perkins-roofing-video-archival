@@ -1,9 +1,12 @@
 """Offline ingestion worker — runs as a Cloud Run Job (NOT in the API request lifecycle;
 council requirement: split serving from ingestion). Dev: `python3 -m app.worker <id|idfile>...`
 Prod: a Pub/Sub push subscription invokes this with the video_id message body."""
-import sys, os
+import os
+import sys
+
 from .ingest import ingest_video
-from .observability import log, Cost
+from .observability import Cost, log
+
 
 def process(ids):
     for vid in ids:

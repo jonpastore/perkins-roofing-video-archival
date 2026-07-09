@@ -1,5 +1,4 @@
 """Tests for core/captions.py — 100% line coverage required."""
-import pytest
 
 from core.captions import (
     caption_events,
@@ -7,7 +6,6 @@ from core.captions import (
     to_ass_karaoke,
     to_srt,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

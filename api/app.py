@@ -6,18 +6,20 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from api.auth import current_claims, require_role
+from api.auth import current_claims, require_internal_tenants, require_role
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
 from api.routes.comments import router as comments_router
 from api.routes.config import router as config_router
+from api.routes.customers import router as customers_router
 from api.routes.email import router as email_router
 from api.routes.estimator import router as estimator_router
 from api.routes.faq import router as faq_router
 from api.routes.logs import router as logs_router
 from api.routes.measurements import router as measurements_router
 from api.routes.pricing_configs import router as pricing_configs_router
+from api.routes.proposals import router as proposals_router
 from api.routes.scheduling import router as scheduling_router
 from api.routes.suggestions import router as suggestions_router
 from api.routes.topics import router as topics_router
@@ -62,6 +64,8 @@ app.include_router(suggestions_router)
 app.include_router(clips_router)
 app.include_router(comments_router)
 app.include_router(logs_router)
+app.include_router(customers_router)
+app.include_router(proposals_router)
 
 
 class Query(BaseModel):
@@ -133,6 +137,30 @@ def crawl_comments_cron():
     this covers the full catalog in ~1.4 days vs the prior ~2.8 days, ensuring KPIs stay fresh."""
     from jobs.crawl_comments import run
     return run(limit=50, max_drafts=25)
+
+
+@app.get("/internal/tenants")
+def internal_tenants(audit=Depends(require_internal_tenants)):
+    """Platform-admin tenant listing (F4b stub — full management API is F6 scope).
+    Gated by require_internal_tenants: verified EXACT platform_admin claim (H6 —
+    admin '*' does not satisfy it) + optional X-Tenant-ID impersonation (audited).
+    Uses PlatformSessionLocal directly (a plain context manager) — NOT the
+    get_platform_db_session FastAPI dependency, which is a generator and would
+    raise on `with ... as db` (architect H5)."""
+    from app.models import PlatformSessionLocal, Tenant
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        rows = db.query(Tenant).order_by(Tenant.id).all()
+        return [{"id": t.id, "name": t.name, "slug": t.slug, "status": t.status} for t in rows]
+
+
+@app.post("/internal/proposal-reminders", dependencies=[Depends(_require_internal)])
+def proposal_reminders_cron():
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). Sends due proposal reminder
+    nudges per tenant cadence (jobs/proposal_reminders — SKIP LOCKED, idempotent).
+    Scheduled daily 09:00 UTC via infra/gotenberg.tf."""
+    from jobs.proposal_reminders import run_reminders
+    return run_reminders()
 
 
 @app.post("/internal/poll-archive-kpis", dependencies=[Depends(_require_internal)])

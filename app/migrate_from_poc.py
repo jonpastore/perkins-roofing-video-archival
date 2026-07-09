@@ -1,9 +1,12 @@
 """One-off dev utility: import the overnight POC corpus (poc/perkins_poc.db) into the
 production app schema (app/dev.db) so the eval harness can run against the real 161-video
 library without re-transcribing. Reuses already-computed embeddings + Content Graph."""
-import json, sqlite3, os
-from .models import init_db, SessionLocal, Video, GraphNode, Chunk
+import json
+import os
+import sqlite3
+
 from .config import settings
+from .models import Chunk, GraphNode, SessionLocal, Video, init_db
 
 POC = os.path.join(os.path.dirname(__file__), "..", "poc", "perkins_poc.db")
 

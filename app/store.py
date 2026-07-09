@@ -2,9 +2,11 @@
 pgvector ANN with an HNSW index — same interface, selected by DB_URL."""
 import numpy as np
 from sqlalchemy import text
+
 from .config import settings
-from .models import SessionLocal, Chunk
 from .llm import embed
+from .models import Chunk, SessionLocal
+
 
 def _is_pg():
     return settings.DB_URL.startswith("postgres")

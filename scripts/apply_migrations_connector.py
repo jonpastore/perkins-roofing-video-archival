@@ -31,16 +31,37 @@ def _password() -> str:
 def _statements(sql: str):
     """Split a .sql file into executable statements.
 
-    Strip -- comments (line AND inline) BEFORE splitting on ';', so a ';' inside a comment
-    can't cut a statement in half. Safe for these migrations (no '--' inside string literals).
+    Dollar-quote-aware: $$ ... $$ blocks (PG DO blocks, anonymous functions) are
+    kept intact even if they contain semicolons. Line/inline -- comments are stripped
+    first so a semicolon inside a comment can't split a statement.
     """
     stripped = []
     for ln in sql.splitlines():
         i = ln.find("--")
         stripped.append(ln if i == -1 else ln[:i])
-    for chunk in "\n".join(stripped).split(";"):
-        if chunk.strip():
-            yield chunk.strip()
+    text = "\n".join(stripped)
+    current: list[str] = []
+    in_dollar_quote = False
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] == "$" and i + 1 < n and text[i + 1] == "$":
+            in_dollar_quote = not in_dollar_quote
+            current.append("$$")
+            i += 2
+            continue
+        ch = text[i]
+        if ch == ";" and not in_dollar_quote:
+            stmt = "".join(current).strip()
+            if stmt:
+                yield stmt
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    stmt = "".join(current).strip()
+    if stmt:
+        yield stmt
 
 
 def main() -> None:

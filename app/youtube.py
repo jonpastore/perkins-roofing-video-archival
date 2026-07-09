@@ -1,7 +1,10 @@
 """YouTube Data API ingestion — metrics + comments. NEEDS YOUTUBE_API_KEY.
 ToS/quota notes: default 10k units/day; commentThreads.list = 1 unit/call (100/page);
 store derived analysis, refresh periodically, honor deletions (don't cache raw indefinitely)."""
-import os, json, urllib.request, urllib.parse
+import json
+import os
+import urllib.parse
+import urllib.request
 
 API = "https://www.googleapis.com/youtube/v3"
 

@@ -70,7 +70,13 @@ def list_users(claims=Depends(require_role("manage_users"))):
     seen_emails: set[str] = set()
 
     # Load all signatures in one query for efficiency.
+    # User-management always operates in the caller's own verified tenant context —
+    # sourced from the verified token claim, never a hardcoded literal (TRD-F4 §4.2:
+    # a token with no GCIP claim resolves to tenant 1, but that value comes from
+    # claim resolution, not a constant).
+    tenant_id = claims.get("tenant_id") or 1
     with SessionLocal() as db:
+        db.info["tenant_id"] = tenant_id
         sigs = {r.email.lower(): r.signature for r in db.query(UserSetting).all()}
 
     page = auth.list_users(max_results=200)
@@ -203,6 +209,7 @@ def delete_user(body: DeleteRequest, claims=Depends(require_role("manage_users")
 def set_user_signature_admin(body: AdminSignatureRequest, claims=Depends(require_role("manage_users"))):
     """Set or clear the email signature for any user (admin only)."""
     with SessionLocal() as db:
+        db.info["tenant_id"] = claims.get("tenant_id") or 1
         row = db.get(UserSetting, body.email.lower())
         if row is None:
             row = UserSetting(email=body.email.lower(), signature=body.signature or None)
@@ -221,6 +228,7 @@ def set_user_signature_admin(body: AdminSignatureRequest, claims=Depends(require
 def get_my_signature(claims=Depends(current_claims)):
     email = (claims.get("email") or "").lower()
     with SessionLocal() as db:
+        db.info["tenant_id"] = claims.get("tenant_id") or 1
         row = db.get(UserSetting, email)
     return {"email": email, "signature": row.signature if row else None}
 
@@ -229,6 +237,7 @@ def get_my_signature(claims=Depends(current_claims)):
 def set_my_signature(body: SignatureRequest, claims=Depends(current_claims)):
     email = (claims.get("email") or "").lower()
     with SessionLocal() as db:
+        db.info["tenant_id"] = claims.get("tenant_id") or 1
         row = db.get(UserSetting, email)
         if row is None:
             row = UserSetting(email=email, signature=body.signature or None)
