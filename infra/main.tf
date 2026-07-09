@@ -663,6 +663,7 @@ locals {
     "google-idp-client-secret",
     "whisper-token",
     "youtube-oauth-refresh-token",
+    "vertex-dev-sa-key",  # deepsec M1: local-dev Vertex SA key (value added out-of-band)
   ])
 }
 

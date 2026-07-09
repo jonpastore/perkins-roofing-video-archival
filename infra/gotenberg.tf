@@ -11,6 +11,10 @@ resource "google_cloud_run_v2_service" "gotenberg" {
   location = var.region
   ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
 
+  # Stateless HTML→PDF render service — no data to protect, and the provider default
+  # of true blocks recreating a tainted/failed revision. Safe to allow deletion.
+  deletion_protection = false
+
   template {
     service_account = google_service_account.api_run_sa.email
 
@@ -24,6 +28,13 @@ resource "google_cloud_run_v2_service" "gotenberg" {
       # Pinned to Gotenberg 8 (Chromium-based HTML→PDF).
       # Update the tag here and re-apply when a new minor/patch is available.
       image = "gotenberg/gotenberg:8"
+
+      # Gotenberg listens on 3000 by default (it does NOT read Cloud Run's PORT=8080),
+      # so Cloud Run must route + health-check the container's real port or the revision
+      # fails to start. Point Cloud Run at 3000.
+      ports {
+        container_port = 3000
+      }
 
       resources {
         limits = {
@@ -46,6 +57,11 @@ resource "google_cloud_run_v2_service" "gotenberg" {
 
   lifecycle {
     # client/client_version are gcloud-set metadata; ignore to keep drift checks clean.
+    # NOTE: Cloud Run returns scaling.{manual,min}_instance_count = 0 for these unset
+    # fields, so `terraform plan` shows a harmless perpetual "0 -> null" in-place diff on
+    # this service. It cannot be applied away (GCP always reports 0) and nested-path
+    # ignore_changes is unsupported here — treat this one gotenberg in-place change as
+    # expected/benign in the R4 drift check.
     ignore_changes = [
       client,
       client_version,
