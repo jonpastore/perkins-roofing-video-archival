@@ -17,12 +17,28 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    event,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from .config import settings
 
 Base = declarative_base()
+
+
+# ---------------------------------------------------------------------------
+# Platform-level: Tenant registry
+# ---------------------------------------------------------------------------
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    slug = Column(String, nullable=False, unique=True)
+    status = Column(String, nullable=False, default="active")
+    settings = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 def _utcnow():
@@ -55,6 +71,8 @@ class Video(Base):
     clips_generated_at = Column(DateTime)
     # Comment-crawl rotation timestamp (jobs/crawl_comments.py; cron rotates least-recent first)
     comments_crawled_at = Column(DateTime)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_videos_tenant_id", "tenant_id"),)
 
 class IngestionRun(Base):
     __tablename__ = "ingestion_runs"
@@ -67,7 +85,11 @@ class IngestionRun(Base):
     attempts = Column(Integer, default=0)
     last_error = Column(Text)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
-    __table_args__ = (Index("ix_run_video_stage", "video_id", "stage"),)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (
+        Index("ix_run_video_stage", "video_id", "stage"),
+        Index("ix_ingestion_runs_tenant_video_stage", "tenant_id", "video_id", "stage"),
+    )
 
 class Segment(Base):
     __tablename__ = "segments"
@@ -75,12 +97,16 @@ class Segment(Base):
     video_id = Column(String, index=True)
     text = Column(Text); start = Column(Float); end = Column(Float)
     source = Column(String)           # youtube_caption | gcp_stt
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_segments_tenant_video", "tenant_id", "video_id"),)
 
 class Word(Base):
     __tablename__ = "words"
     id = Column(Integer, primary_key=True, autoincrement=True)
     video_id = Column(String, index=True)
     word = Column(String); start = Column(Float); confidence = Column(Float)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_words_tenant_video", "tenant_id", "video_id"),)
 
 class GraphNode(Base):
     __tablename__ = "content_graph"
@@ -89,6 +115,8 @@ class GraphNode(Base):
     kind = Column(String)             # topics | claims | objections | ctas
     label = Column(String); detail = Column(Text); start = Column(Float)
     version = Column(String)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_content_graph_tenant_video", "tenant_id", "video_id"),)
 
 class Chunk(Base):
     __tablename__ = "chunks"
@@ -97,12 +125,16 @@ class Chunk(Base):
     text = Column(Text); start = Column(Float); end = Column(Float)
     embedding = Column(_EMBEDDING)    # pgvector Vector(3072) on Postgres, JSON on SQLite
     embed_model = Column(String); version = Column(String)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_chunks_tenant_video", "tenant_id", "video_id"),)
 
 class EmailTemplate(Base):
     __tablename__ = "email_templates"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String); subject = Column(String); body = Column(Text)
     created_by = Column(String)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_email_templates_tenant_id", "tenant_id"),)
 
 class Cluster(Base):
     __tablename__ = "clusters"
@@ -110,6 +142,8 @@ class Cluster(Base):
     pillar_topic = Column(String, nullable=False)
     status = Column(String, nullable=False, default="pending")  # pending | active | complete
     position = Column(Integer, nullable=False)  # activation order (ascending)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_clusters_tenant_id", "tenant_id"),)
 
 
 class Article(Base):
@@ -127,6 +161,8 @@ class Article(Base):
     cluster_id = Column(Integer, ForeignKey("clusters.id"), nullable=True)
     priority = Column(Integer, nullable=True)   # lower = higher priority within cluster
     scheduled_at = Column(DateTime, nullable=True)  # when to drip this article
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_articles_tenant_status", "tenant_id", "status"),)
 
 class ScheduledContent(Base):
     __tablename__ = "scheduled_content"
@@ -136,6 +172,8 @@ class ScheduledContent(Base):
     publish_at = Column(DateTime)
     status = Column(String, default="scheduled")  # scheduled | published | error
     target = Column(String)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_scheduled_content_tenant_status", "tenant_id", "status"),)
 
 class MiniSeries(Base):
     __tablename__ = "mini_series"
@@ -144,6 +182,8 @@ class MiniSeries(Base):
     title = Column(String)
     parts_json = Column(JSON)         # [{title, start, end}] proposed clip in/out points
     approved = Column(Integer, default=0)  # 0 pending | 1 admin-approved
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_mini_series_tenant_video", "tenant_id", "video_id"),)
 
 class SocialPost(Base):
     __tablename__ = "social_posts"
@@ -154,8 +194,10 @@ class SocialPost(Base):
     gcs_url = Column(String)          # gs:// URI of the private reel object
     external_id = Column(String)      # returned post id (idempotency)
     status = Column(String, default="pending")
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (
         UniqueConstraint("series_id", "part", "platform", name="uq_social_series_part_platform"),
+        Index("ix_social_posts_tenant_series", "tenant_id", "series_id"),
     )
 
 class AggregatedTopic(Base):
@@ -167,6 +209,8 @@ class AggregatedTopic(Base):
     video_ids = Column(JSON, nullable=False)   # list[str]
     node_ids = Column(JSON, nullable=False)    # list[int]
     version = Column(String, nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_aggregated_topics_tenant_id", "tenant_id"),)
 
 
 class PlatformConfig(Base):
@@ -200,7 +244,11 @@ class CommentDraft(Base):
     draft_reply  = Column(Text)
     status       = Column(String, nullable=False, default="pending")  # pending|drafted|ready|dismissed
     created_at   = Column(DateTime, default=_utcnow)
-    __table_args__ = (UniqueConstraint("comment_id", name="uq_comment_drafts_comment_id"),)
+    tenant_id    = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (
+        UniqueConstraint("comment_id", name="uq_comment_drafts_comment_id"),
+        Index("ix_comment_drafts_tenant_status", "tenant_id", "status"),
+    )
 
 
 class UserSetting(Base):
@@ -208,6 +256,8 @@ class UserSetting(Base):
     __tablename__ = "user_settings"
     email = Column(String, primary_key=True)
     signature = Column(Text, nullable=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (Index("ix_user_settings_tenant_id", "tenant_id"),)
 
 
 class FaqEntry(Base):
@@ -221,10 +271,35 @@ class FaqEntry(Base):
     start = Column(Float, nullable=False)
     status = Column(String, nullable=False, default="mined")  # mined | answered
     created_at = Column(DateTime, default=_utcnow)
-    __table_args__ = (Index("ix_faq_source_node", "source_node_id"),)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
+    __table_args__ = (
+        Index("ix_faq_source_node", "source_node_id"),
+        Index("ix_faq_entries_tenant_video", "tenant_id", "video_id"),
+    )
 
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
+
+
+@event.listens_for(Tenant.__table__, "after_create")
+def _seed_perkins_tenant(target, connection, **kw):
+    """Seed Perkins as tenant 1 immediately after the tenants table is created.
+
+    Idempotent on both SQLite (INSERT OR IGNORE) and Postgres (ON CONFLICT DO NOTHING).
+    Explicit id=1 ensures the Perkins row is always tenant 1 on any dialect.
+    Mirrored by the INSERT ... ON CONFLICT seed in infra/migrations/0013_thin_tenancy.sql
+    (the prod path) — keep both in sync.
+    """
+    row = {"id": 1, "name": "Perkins Roofing", "slug": "perkins", "status": "active", "settings": {}}
+    if connection.dialect.name == "sqlite":
+        connection.execute(target.insert().prefix_with("OR IGNORE"), row)
+    else:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        connection.execute(
+            pg_insert(target).values(**row).on_conflict_do_nothing(index_elements=["id"])
+        )
+
 
 def init_db():
     Base.metadata.create_all(engine)

@@ -518,6 +518,6 @@ No application code reads `tenant_id` in F0 (the column is added to the DB and O
 F4 activates tenancy enforcement. The F0 seam is:
 
 1. `core/tenant.py::set_tenant_context(session, tenant_id)` — body is a no-op in F0. F4 replaces the body with `session.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": tenant_id})`.
-2. Every FastAPI route that opens a DB session must call `set_tenant_context(db, resolved_tenant_id)` after obtaining the session. F0 plants these call sites (they call a no-op). F4 fills in the function body. This means F4 requires zero call-site changes.
+2. Every FastAPI route that opens a DB session must call `set_tenant_context(db, resolved_tenant_id)` after obtaining the session. **Contract amended at F0 R2 review:** F0 ships only the no-op function; call-site plumbing (one line in the shared session dependency, not per-route) is F4's FIRST implementation step, done together with filling in the body. Rationale: planting no-op calls across api/ in F0 widened the F0 diff for zero behavior, and the seam lives in the session dependency anyway — one place, not N routes.
 3. `TenantQueryMixin.tenant_filter()` — ORM-layer belt. F4 adds RLS as the suspenders layer. Both stay active in F4+.
 4. The `tenant_id` column default of `1` on every table acts as a final safety net: raw SQL executed outside the session context still lands on Perkins, not a cross-tenant null. F4 RLS will reject a cross-tenant read even if the column is wrong.
