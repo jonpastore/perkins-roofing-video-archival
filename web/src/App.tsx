@@ -10,13 +10,14 @@ import { Articles } from "./pages/Articles";
 import { Scheduling } from "./pages/Scheduling";
 import { Faq } from "./pages/Faq";
 import { Opportunities } from "./pages/Opportunities";
-import { Settings } from "./pages/Settings";
-import { Users } from "./pages/Users";
 import { ClipStudio } from "./pages/ClipStudio";
 import { Comments } from "./pages/Comments";
 import { Logs } from "./pages/Logs";
 import { Email } from "./pages/Email";
 import { Estimator } from "./pages/Estimator";
+import { Quoting } from "./pages/Quoting";
+import { ContractFaq } from "./pages/ContractFaq";
+import { AdminConfig } from "./pages/AdminConfig";
 import { BRAND, FONT, Spinner } from "./ui";
 
 // ---------------------------------------------------------------------------
@@ -38,72 +39,154 @@ export const NavContext = createContext<NavContextValue>({
   params: {},
 });
 
-type Role = "admin" | "web_admin" | "sales" | null;
+type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
 
-// Tab config: regular tabs + optional admin-only tabs rendered in a separate group.
+// ---------------------------------------------------------------------------
+// Shell config — two-level sidebar (sections + pinned + admin section)
+// ---------------------------------------------------------------------------
+
+interface SectionConfig {
+  label: string;
+  tabs: [string, string][]; // [tab_key, display_label]
+}
+
 interface ShellConfig {
   title: string;
-  tabs: [string, string][];
-  adminTabs?: [string, string][];
+  pinnedTabs: [string, string][];
+  sections: SectionConfig[];
+  adminSection?: SectionConfig;
+  useSections: boolean; // false = flat list (sales role)
   defaultTab: string;
 }
 
-const ROLE_CONFIG: Record<Exclude<Role, null>, ShellConfig> = {
+const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
   admin: {
     title: "Perkins Admin",
-    tabs: [
-      ["dashboard", "Dashboard"],
-      ["search-ask", "Search / Ask"],
-      ["opportunities", "Content Opportunities"],
-      ["articles", "Articles"],
-      ["faq", "FAQ"],
-      ["email", "Email"],
-      ["scheduling", "Content Scheduling"],
-      ["clip-studio", "Clip Studio"],
-      ["comments", "Comments"],
-      ["video-approval", "Video Approval"],
-      ["archive", "Archive"],
+    pinnedTabs: [["dashboard", "Dashboard"]],
+    useSections: true,
+    sections: [
+      {
+        label: "Knowledge Base",
+        tabs: [
+          ["search-ask", "Search / Ask"],
+          ["faq", "FAQ"],
+          ["archive", "Archive / Corpus"],
+          ["contract-faq", "Contract-FAQ"],
+        ],
+      },
+      {
+        label: "Marketing",
+        tabs: [
+          ["opportunities", "Opportunities"],
+          ["articles", "Articles"],
+          ["scheduling", "Scheduling"],
+          ["clip-studio", "Clip Studio"],
+          ["comments", "Comments"],
+          ["email", "Email"],
+          ["video-approval", "Video Approval"],
+          ["status-view", "Status"],
+        ],
+      },
+      {
+        label: "Estimating",
+        tabs: [["estimator", "Estimator"]],
+      },
+      {
+        label: "Quoting",
+        tabs: [["quoting", "Quoting"]],
+      },
     ],
-    adminTabs: [
-      ["estimator", "Estimator"],
-      ["users", "Users"],
-      ["config", "Config"],
-      ["logs", "Logs"],
-    ],
+    adminSection: {
+      label: "Admin",
+      tabs: [
+        ["admin-config", "Admin Config"],
+        ["logs", "Logs"],
+      ],
+    },
     defaultTab: "dashboard",
   },
+
   web_admin: {
     title: "Perkins Content",
-    tabs: [
-      ["dashboard", "Dashboard"],
-      ["search-ask", "Search / Ask"],
-      ["opportunities", "Content Opportunities"],
-      ["articles", "Articles"],
-      ["faq", "FAQ"],
-      ["scheduling", "Content Scheduling"],
-      ["clip-studio", "Clip Studio"],
-      ["comments", "Comments"],
-      ["video-approval", "Video Approval"],
-      ["archive", "Archive"],
-    ],
-    adminTabs: [
-      ["estimator", "Estimator"],
+    pinnedTabs: [["dashboard", "Dashboard"]],
+    useSections: true,
+    sections: [
+      {
+        label: "Knowledge Base",
+        tabs: [
+          ["search-ask", "Search / Ask"],
+          ["faq", "FAQ"],
+          ["archive", "Archive / Corpus"],
+          ["contract-faq", "Contract-FAQ"],
+        ],
+      },
+      {
+        label: "Marketing",
+        tabs: [
+          ["opportunities", "Opportunities"],
+          ["articles", "Articles"],
+          ["scheduling", "Scheduling"],
+          ["clip-studio", "Clip Studio"],
+          ["comments", "Comments"],
+          ["video-approval", "Video Approval"],
+          ["status-view", "Status"],
+        ],
+      },
+      {
+        label: "Estimating",
+        tabs: [["estimator", "Estimator"]],
+      },
+      {
+        label: "Quoting",
+        tabs: [["quoting", "Quoting"]],
+      },
     ],
     defaultTab: "dashboard",
   },
+
   sales: {
     title: "Perkins Sales",
-    tabs: [
-      ["search-ask", "Search / Ask"],
-      ["email", "Email"],
-      ["archive", "Archive"],
-      ["estimator", "Estimator"],
+    pinnedTabs: [],
+    useSections: false,
+    sections: [
+      {
+        label: "",
+        tabs: [
+          ["search-ask", "Search / Ask"],
+          ["email", "Email"],
+          ["archive", "Archive / Corpus"],
+          ["estimator", "Estimator"],
+          ["quoting", "Quoting"],
+        ],
+      },
     ],
     defaultTab: "search-ask",
   },
+
+  // platform_admin deliberately has NO shell config in F1 (TRD-F1 §3c: skip render
+  // until F4 ships the Tenants tab + per-sub-tab role gating). The backend authz
+  // entry exists; a platform_admin claim signing in early sees the no-role screen.
 };
 
-function NavButton({ id, label, active, onClick, badge }: { id: string; label: string; active: boolean; onClick: () => void; badge?: number }) {
+// ---------------------------------------------------------------------------
+// NavButton
+// ---------------------------------------------------------------------------
+
+function NavButton({
+  id,
+  label,
+  active,
+  onClick,
+  badge,
+  indent,
+}: {
+  id: string;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  badge?: number;
+  indent?: boolean;
+}) {
   return (
     <button
       key={id}
@@ -113,7 +196,7 @@ function NavButton({ id, label, active, onClick, badge }: { id: string; label: s
         alignItems: "center",
         width: "100%",
         textAlign: "left",
-        padding: "11px 16px",
+        padding: indent ? "9px 16px 9px 28px" : "11px 16px",
         background: active ? BRAND.navyActive : "transparent",
         color: active ? "#fff" : "#c3c9d9",
         borderLeft: active ? `3px solid ${BRAND.red}` : "3px solid transparent",
@@ -147,7 +230,11 @@ function NavButton({ id, label, active, onClick, badge }: { id: string; label: s
   );
 }
 
-function AdminSectionDivider() {
+// ---------------------------------------------------------------------------
+// SectionHeader — visual group label in the sidebar
+// ---------------------------------------------------------------------------
+
+function SectionHeader({ label }: { label: string }) {
   return (
     <div
       style={{
@@ -169,12 +256,21 @@ function AdminSectionDivider() {
           whiteSpace: "nowrap",
         }}
       >
-        Admin
+        {label}
       </span>
       <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
     </div>
   );
 }
+
+// AdminSectionDivider kept for backward compat with the visual — now delegates to SectionHeader.
+function AdminSectionDivider() {
+  return <SectionHeader label="Admin" />;
+}
+
+// ---------------------------------------------------------------------------
+// Badge data
+// ---------------------------------------------------------------------------
 
 interface OpportunityCounts {
   article_topics: number;
@@ -185,12 +281,16 @@ interface OpportunityCounts {
   comment_drafts?: number;
 }
 
-// Shared console shell: branded sidebar + content area.
-function Shell({ config }: { config: ShellConfig }) {
-  const { title, tabs, adminTabs, defaultTab } = config;
+// ---------------------------------------------------------------------------
+// Shell
+// ---------------------------------------------------------------------------
+
+function Shell({ config, role }: { config: ShellConfig; role: Role }) {
+  const { title, pinnedTabs, sections, adminSection, useSections, defaultTab } = config;
   const [tab, setTab] = useState<string>(defaultTab);
   const [navParams, setNavParams] = useState<NavParams>({});
   const [oppCounts, setOppCounts] = useState<OpportunityCounts | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     apiFetch("/suggestions/counts")
@@ -217,43 +317,69 @@ function Shell({ config }: { config: ShellConfig }) {
     setTab(targetTab);
   }
 
-  // Clear params when the user manually switches tabs (not via navigate())
   function handleTabClick(id: string) {
     setNavParams({});
     setTab(id);
+    setSidebarOpen(false); // close mobile drawer on nav
   }
 
-  return (
-    <NavContext.Provider value={{ navigate, params: navParams }}>
-      <div style={{ display: "flex", height: "100vh", fontFamily: FONT }}>
-        <nav
-          style={{
-            width: 220,
-            background: BRAND.navy,
-            color: "#fff",
-            display: "flex",
-            flexDirection: "column",
-            padding: "18px 0",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "0 16px 18px",
-              marginBottom: 10,
-              borderBottom: "1px solid rgba(255,255,255,0.12)",
-            }}
-          >
-            <img
-              src="/perkins-logo.png"
-              alt="Perkins Roofing"
-              style={{ height: 36, background: "#fff", borderRadius: 6, padding: "3px 5px" }}
-            />
-            <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
-          </div>
-          {tabs.map(([id, label]) => (
+  // Collect all tab keys in a flat list for section rendering
+  const allSectionTabs = sections.flatMap((s) => s.tabs);
+  const allAdminTabs = adminSection?.tabs ?? [];
+
+  const sidebarContent = (
+    <>
+      {/* Logo + title */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "0 16px 18px",
+          marginBottom: 10,
+          borderBottom: "1px solid rgba(255,255,255,0.12)",
+        }}
+      >
+        <img
+          src="/perkins-logo.png"
+          alt="Perkins Roofing"
+          style={{ height: 36, background: "#fff", borderRadius: 6, padding: "3px 5px" }}
+        />
+        <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
+      </div>
+
+      {/* Pinned tabs (e.g. Dashboard) */}
+      {pinnedTabs.map(([id, label]) => (
+        <NavButton
+          key={id}
+          id={id}
+          label={label}
+          active={tab === id}
+          onClick={() => handleTabClick(id)}
+          badge={badgeFor(id)}
+        />
+      ))}
+
+      {/* Sections */}
+      {useSections
+        ? sections.map((section) => (
+            <div key={section.label}>
+              <SectionHeader label={section.label} />
+              {section.tabs.map(([id, label]) => (
+                <NavButton
+                  key={id}
+                  id={id}
+                  label={label}
+                  active={tab === id}
+                  onClick={() => handleTabClick(id)}
+                  badge={badgeFor(id)}
+                  indent
+                />
+              ))}
+            </div>
+          ))
+        : allSectionTabs.map(([id, label]) => (
+            // Flat list for sales role (no section headers)
             <NavButton
               key={id}
               id={id}
@@ -263,32 +389,131 @@ function Shell({ config }: { config: ShellConfig }) {
               badge={badgeFor(id)}
             />
           ))}
-          {adminTabs && adminTabs.length > 0 && (
-            <>
-              <AdminSectionDivider />
-              {adminTabs.map(([id, label]) => (
-                <NavButton key={id} id={id} label={label} active={tab === id} onClick={() => handleTabClick(id)} />
-              ))}
-            </>
-          )}
-          <div style={{ marginTop: "auto", padding: "18px 16px 0" }}>
-            <button
-              onClick={signOutUser}
-              style={{ background: "none", border: "none", color: "#9aa3ba", cursor: "pointer", fontSize: 13 }}
-            >
-              Sign out
-            </button>
-          </div>
+
+      {/* Admin section */}
+      {adminSection && allAdminTabs.length > 0 && (
+        <>
+          <AdminSectionDivider />
+          {allAdminTabs.map(([id, label]) => (
+            <NavButton
+              key={id}
+              id={id}
+              label={label}
+              active={tab === id}
+              onClick={() => handleTabClick(id)}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Sign out */}
+      <div style={{ marginTop: "auto", padding: "18px 16px 0" }}>
+        <button
+          onClick={signOutUser}
+          style={{ background: "none", border: "none", color: "#9aa3ba", cursor: "pointer", fontSize: 13 }}
+        >
+          Sign out
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <NavContext.Provider value={{ navigate, params: navParams }}>
+      <div style={{ display: "flex", height: "100vh", fontFamily: FONT }}>
+
+        {/* Mobile hamburger button — only visible < 768px */}
+        <button
+          aria-label="Open navigation"
+          onClick={() => setSidebarOpen(true)}
+          style={{
+            display: "none",
+            position: "fixed",
+            top: 12,
+            left: 12,
+            zIndex: 300,
+            background: BRAND.navy,
+            color: "#fff",
+            border: "none",
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontSize: 20,
+            cursor: "pointer",
+          }}
+          className="hamburger-btn"
+        >
+          ☰
+        </button>
+
+        {/* Mobile backdrop */}
+        {sidebarOpen && (
+          <div
+            aria-hidden="true"
+            onClick={() => setSidebarOpen(false)}
+            style={{
+              display: "none",
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.45)",
+              zIndex: 199,
+            }}
+            className="sidebar-backdrop"
+          />
+        )}
+
+        {/* Sidebar — desktop: static; mobile: drawer overlay */}
+        <nav
+          aria-label="Main navigation"
+          role="navigation"
+          style={{
+            width: 220,
+            background: BRAND.navy,
+            color: "#fff",
+            display: "flex",
+            flexDirection: "column",
+            padding: "18px 0",
+            flexShrink: 0,
+            overflowY: "auto",
+          }}
+          className={`app-sidebar${sidebarOpen ? " sidebar-open" : ""}`}
+        >
+          {sidebarContent}
         </nav>
+
+        {/* Content area */}
         <div style={{ flex: 1, padding: 32, overflowY: "auto", background: "#f7f8fa" }}>
-          <TabContent tab={tab} />
+          <TabContent tab={tab} role={role} />
         </div>
       </div>
+
+      {/* Inline responsive styles — pure CSS, no new dependencies */}
+      <style>{`
+        @media (max-width: 767px) {
+          .hamburger-btn { display: block !important; }
+          .sidebar-backdrop { display: block !important; }
+          .app-sidebar {
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            z-index: 200;
+            transform: translateX(-100%);
+            transition: transform 0.22s ease;
+          }
+          .app-sidebar.sidebar-open {
+            transform: translateX(0);
+          }
+        }
+      `}</style>
     </NavContext.Provider>
   );
 }
 
-function TabContent({ tab }: { tab: string }) {
+// ---------------------------------------------------------------------------
+// TabContent
+// ---------------------------------------------------------------------------
+
+function TabContent({ tab, role }: { tab: string; role: Role }) {
   return (
     <>
       {tab === "dashboard" && <Status />}
@@ -303,14 +528,24 @@ function TabContent({ tab }: { tab: string }) {
       {tab === "video-approval" && <VideoApproval />}
       {tab === "archive" && <Archive />}
       {tab === "estimator" && <Estimator />}
-      {tab === "users" && <Users />}
-      {tab === "config" && <Settings />}
       {tab === "logs" && <Logs />}
+      {tab === "quoting" && <Quoting />}
+      {tab === "contract-faq" && <ContractFaq />}
+      {tab === "admin-config" && <AdminConfig role={role} />}
+      {/* status-view: Marketing > Status — renders the same Status component as dashboard */}
+      {tab === "status-view" && <Status />}
+      {/* Legacy backward-compat: users/config keys redirect into admin-config sub-tabs.
+          These keys are no longer in the sidebar but may exist in saved client state. */}
+      {tab === "users" && <AdminConfig role={role} />}
+      {tab === "config" && <AdminConfig role={role} />}
     </>
   );
 }
 
-// Centered branded card used by the login + no-role screens
+// ---------------------------------------------------------------------------
+// Login / auth screens
+// ---------------------------------------------------------------------------
+
 function CenterCard({ children }: { children: ReactNode }) {
   return (
     <div
@@ -393,6 +628,10 @@ function LoginScreen() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// App root
+// ---------------------------------------------------------------------------
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role>(null);
@@ -432,7 +671,10 @@ export default function App() {
   }
 
   if (!user) return <LoginScreen />;
-  if (role && role in ROLE_CONFIG) return <Shell config={ROLE_CONFIG[role as Exclude<Role, null>]} />;
+  const shellConfig = role ? ROLE_CONFIG[role as Exclude<Role, null>] : undefined;
+  if (role && shellConfig) {
+    return <Shell config={shellConfig} role={role} />;
+  }
 
   // Signed in but no recognized role
   return (
@@ -442,7 +684,7 @@ export default function App() {
         Access pending
       </p>
       <p style={{ margin: "0 0 22px", color: "#667085", fontSize: 14, maxWidth: 300 }}>
-        Your account doesn’t have an assigned role yet. Contact your administrator.
+        Your account doesn't have an assigned role yet. Contact your administrator.
       </p>
       <button
         onClick={signOutUser}
