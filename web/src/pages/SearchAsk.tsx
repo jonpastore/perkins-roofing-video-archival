@@ -32,6 +32,8 @@ interface TopicItem {
   total_content_length: number;
   sample: { video_id: string; t: number };
   generated?: boolean;  // server-side: articles already exist for this topic's cluster
+  stale?: boolean;      // server-side: new source videos appeared since articles were generated
+  new_source_count?: number;
 }
 interface TopicVideo {
   video_id: string;
@@ -372,6 +374,17 @@ function TopicRow({
           }}
         >
           ✓ articles
+        </span>
+      )}
+      {topic.generated && topic.stale && (
+        <span
+          title="New source videos have been published for this topic since its articles were generated — regenerate to enhance."
+          style={{
+            color: "#b45309", background: "#fef3e2", border: "1px solid #f5c98a",
+            borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
+          }}
+        >
+          🔄 {topic.new_source_count} new
         </span>
       )}
       <button

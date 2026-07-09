@@ -15,8 +15,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from sqlalchemy import func
+
 from api.auth import require_role
 from app.models import AggregatedTopic, Article, GraphNode, ScheduledContent, SessionLocal, Video
+from core.topic_freshness import topic_freshness
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +164,9 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int, ge
     rows = db.query(AggregatedTopic).all()
     generated_slugs = _build_generated_set(db)
 
+    # Keep a label→row map so we can look up video_ids per topic after pagination.
+    label_to_row: dict[str, AggregatedTopic] = {row.canonical_label: row for row in rows}
+
     items = [
         {
             "label": row.canonical_label,
@@ -200,6 +206,49 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int, ge
         del it["_first_node_id"]
         del it["_first_video_id"]
 
+    # Batch-compute topic freshness for the current page only.
+    # (a) latest generated_at per pillar_slug for generated topics on this page.
+    page_gen_slugs = [_slugify(it["label"]) for it in page if it["generated"]]
+    article_map: dict[str, object] = {}
+    if page_gen_slugs:
+        rows_at = (
+            db.query(Article.pillar_slug, func.max(Article.generated_at))
+            .filter(Article.pillar_slug.in_(page_gen_slugs))
+            .group_by(Article.pillar_slug)
+            .all()
+        )
+        article_map = {ps: latest for ps, latest in rows_at if ps is not None}
+
+    # (b) upload_date for all video_ids belonging to generated topics on this page.
+    all_gen_video_ids: list[str] = []
+    for it in page:
+        if it["generated"]:
+            agg_row = label_to_row.get(it["label"])
+            if agg_row and agg_row.video_ids:
+                all_gen_video_ids.extend(agg_row.video_ids)
+
+    upload_map: dict[str, str | None] = {}
+    if all_gen_video_ids:
+        vid_rows = (
+            db.query(Video.id, Video.upload_date)
+            .filter(Video.id.in_(all_gen_video_ids))
+            .all()
+        )
+        upload_map = {vid_id: ud for vid_id, ud in vid_rows}
+
+    # Apply freshness to each page item.
+    for it in page:
+        slug = _slugify(it["label"])
+        if it["generated"]:
+            agg_row = label_to_row.get(it["label"])
+            video_ids = agg_row.video_ids if agg_row and agg_row.video_ids else []
+            upload_dates = [upload_map.get(v) for v in video_ids]
+            freshness = topic_freshness(upload_dates, article_map.get(slug))
+        else:
+            freshness = {"stale": False, "new_source_count": 0}
+        it["stale"] = freshness["stale"]
+        it["new_source_count"] = freshness["new_source_count"]
+
     return {"total": len(items), "items": page}
 
 
@@ -223,9 +272,11 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int, generate
 
     all_video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
     duration_map: dict[str, float] = {}
+    upload_map: dict[str, str | None] = {}
     if all_video_ids:
         vids = db.query(Video).filter(Video.id.in_(list(all_video_ids))).all()
         duration_map = {v.id: (v.duration or 0.0) for v in vids}
+        upload_map = {v.id: v.upload_date for v in vids}
 
     items = [
         {
@@ -235,6 +286,7 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int, generate
             "total_content_length": sum(duration_map.get(v, 0.0) for v in g["video_ids"]),
             "sample": g["sample"],
             "generated": _slugify(g["label"]) in generated_slugs,
+            "_video_ids": g["video_ids"],
         }
         for g in groups.values()
     ]
@@ -245,7 +297,34 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int, generate
     # Apply generated filter + push-generated-to-back ordering BEFORE pagination.
     items = _apply_generated_filter_and_order(items, generated, sort)
 
-    return _paginate(items, limit, offset)
+    paginated = _paginate(items, limit, offset)
+    page = paginated["items"]
+
+    # Batch-compute topic freshness for the current page only.
+    page_gen_slugs = [_slugify(it["label"]) for it in page if it["generated"]]
+    article_map: dict[str, object] = {}
+    if page_gen_slugs:
+        rows_at = (
+            db.query(Article.pillar_slug, func.max(Article.generated_at))
+            .filter(Article.pillar_slug.in_(page_gen_slugs))
+            .group_by(Article.pillar_slug)
+            .all()
+        )
+        article_map = {ps: latest for ps, latest in rows_at if ps is not None}
+
+    for it in page:
+        slug = _slugify(it["label"])
+        if it["generated"]:
+            video_ids = it["_video_ids"]
+            upload_dates = [upload_map.get(v) for v in video_ids]
+            freshness = topic_freshness(upload_dates, article_map.get(slug))
+        else:
+            freshness = {"stale": False, "new_source_count": 0}
+        it["stale"] = freshness["stale"]
+        it["new_source_count"] = freshness["new_source_count"]
+        del it["_video_ids"]
+
+    return paginated
 
 
 @router.get("/videos")
@@ -740,8 +819,6 @@ def _compute_base_publish_date(db) -> date:
       2. Day after max Article.publish_at where status='published'
       3. Tomorrow (UTC)
     """
-    from sqlalchemy import func  # noqa: PLC0415
-
     max_sched = db.query(func.max(ScheduledContent.publish_at)).scalar()
     if max_sched is not None:
         if isinstance(max_sched, str):

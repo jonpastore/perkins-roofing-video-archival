@@ -156,6 +156,7 @@ class Article(Base):
     cluster_id = Column(Integer, ForeignKey("clusters.id"), nullable=True)
     priority = Column(Integer, nullable=True)
     scheduled_at = Column(DateTime, nullable=True)
+    generated_at = Column(DateTime, default=_utcnow)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_articles_tenant_status", "tenant_id", "status"),)
 
