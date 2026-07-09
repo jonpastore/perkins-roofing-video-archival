@@ -32,6 +32,23 @@ from app.config import settings
 from app.observability import Cost
 
 app = FastAPI(title="Perkins Video Intelligence API", version="2.0")
+
+
+@app.on_event("startup")
+def _assert_rls_enforceable() -> None:
+    """H2 fail-open guard: RLS is a silent no-op if the app DB role is SUPERUSER/
+    BYPASSRLS. Log CRITICAL if so — do NOT hard-refuse yet: the ALTER ROLE
+    NOSUPERUSER NOBYPASSRLS in migration 0018 is Jon-applied and still pending.
+    Flip refuse_to_serve=True once it lands, before tenant #2. No-op on SQLite."""
+    try:
+        from app.models import engine
+        from core.tenant import assert_rls_enforceable
+        assert_rls_enforceable(engine, refuse_to_serve=False)
+    except Exception:  # noqa: BLE001 — an advisory guard must never block startup
+        import logging
+        logging.getLogger(__name__).warning("RLS enforceability check skipped", exc_info=True)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.CORS_ORIGINS),
