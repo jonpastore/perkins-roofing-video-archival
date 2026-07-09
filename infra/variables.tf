@@ -57,7 +57,12 @@ variable "cloudflare_zone_id" {
 variable "cloudflare_api_token" {
   type        = string
   description = "Cloudflare API token with Zone:Edit + DNS:Edit + Firewall:Edit scopes for perkinsroofing.net. Stored in Secret Manager (cloudflare-api-token); injected via TF_VAR_cloudflare_api_token at plan/apply time. Never commit to git."
-  default     = ""
+  # Format-valid placeholder (NOT a real token): the cloudflare provider validates the
+  # api_token charset eagerly and errors on an empty string, which blocked `terraform plan`
+  # (and the R4 drift check) even though every CF resource is count-guarded off until
+  # cloudflare_zone_id is set. The placeholder satisfies provider config while CF is disabled;
+  # the real token overrides via TF_VAR_cloudflare_api_token when CF is activated.
+  default     = "placeholder_unused_until_cloudflare_zone_id_is_set_0000"
   sensitive   = true
 }
 
