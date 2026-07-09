@@ -4,12 +4,12 @@
 #   Converge:    ansible-playbook whisper.yml
 #   Drift check: ansible-playbook whisper.yml --check --diff   (0 changed == no drift)
 #   Release GPU back to ollama when the project ends: -e dedicate_gpu=false
-- name: Perkins Whisper STT node (cerberus) — IaC-managed, GPU-dedicated
+- name: Perkins Whisper STT node (cerberus) — IaC-managed, dev-only
   hosts: stt
   gather_facts: true
   vars:
     whisper_dir: /home/morpheus/whisper-perkins
-    dedicate_gpu: true   # stop+disable ollama so the 5090 is Whisper-only for this project
+    dedicate_gpu: false  # prod STT moved to GCP (2026-07-06); cerberus is dev-only; GPU released to ollama
 
   tasks:
     - name: Install ffmpeg (yt-dlp audio extraction)
@@ -64,12 +64,12 @@
         mode: "0644"
       notify: restart whisper
 
-    - name: Enable + start whisper service
+    - name: Whisper service — stopped + disabled (dev-only; prod STT is GCP)
       become: true
       ansible.builtin.systemd:
         name: whisper-perkins
-        enabled: true
-        state: started
+        enabled: false
+        state: stopped
         daemon_reload: true
 
     - name: Dedicate the 5090 to Whisper (stop + disable ollama)
@@ -79,6 +79,14 @@
         enabled: false
         state: stopped
       when: dedicate_gpu | bool
+
+    - name: Restore ollama when GPU dedication is released
+      become: true
+      ansible.builtin.systemd:
+        name: ollama
+        enabled: true
+        state: started
+      when: not (dedicate_gpu | bool)
 
   handlers:
     - name: restart whisper

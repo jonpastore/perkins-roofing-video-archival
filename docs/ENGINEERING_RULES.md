@@ -63,6 +63,8 @@ every change must satisfy these. CI enforces what it can; the rest is a manual p
 - [ ] Committed on `feat/platform-v2` with a descriptive message.
 
 ## Current standing operational directives
-- **cerberus 5090 is dedicated to Whisper** for the duration of this project (ollama stopped +
-  disabled via `ansible/whisper.yml`, `dedicate_gpu=true`). Release with `-e dedicate_gpu=false`
-  when the project ends.
+- **cerberus is dev-only for STT** (prod STT moved to GCP/Vertex on 2026-07-06). The
+  `whisper-perkins` service is stopped + disabled; the GPU is released back to ollama
+  (`ansible/whisper.yml`, `dedicate_gpu=false`). For local dev/testing, start Whisper
+  on-demand: `systemctl start whisper-perkins` — do NOT flip `dedicate_gpu` back to true
+  unless re-dedicating for a specific workload (requires an Ansible apply + `drift_check`).
