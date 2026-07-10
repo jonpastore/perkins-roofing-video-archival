@@ -34,9 +34,9 @@ CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_
 
 # Vault-backed secrets (resettable in the Config UI). One source of truth: Secret Manager.
 SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest"
-# YouTube reply posting (docs/YOUTUBE_REPLY_OAUTH.md): uncomment ONLY after the refresh token
-# version exists in Secret Manager — Cloud Run refuses a :latest ref on an empty secret.
-#SECRETS="${SECRETS},YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:latest"
+# YouTube reply posting (docs/YOUTUBE_REPLY_OAUTH.md): refresh token minted by Jon and
+# stored 2026-07-10 (Cloud Run refuses a :latest ref on an empty secret — version exists).
+SECRETS="${SECRETS},YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:latest"
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .
