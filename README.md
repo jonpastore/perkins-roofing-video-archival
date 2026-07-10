@@ -99,9 +99,9 @@ Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/E
 - [2026-07-07 — comprehensive review (frontend / tests / adversarial / perf / SAST)](docs/reviews/2026-07-07-comprehensive-review.md)
 
 ### Session history / continuations
-- **Most recent:** [CONTINUATION-2026-07-10.md](CONTINUATION-2026-07-10.md) (C1 strict=True + #321 Contract-FAQ committed+gated; deploy runbook — blocked on gcloud reauth)
+- **Most recent:** [CONTINUATION-2026-07-10-pm.md](CONTINUATION-2026-07-10-pm.md) (evening: Squares/estimator/proposals/clip-studio/email/YouTube-fix shipped; Ez-Bids plan approved)
 - [CONTINUATION-2026-07-09.md](CONTINUATION-2026-07-09.md) ·
-  [CONTINUATION-2026-07-08-pm.md](CONTINUATION-2026-07-08-pm.md)
+  [docs/continuations/CONTINUATION-2026-07-08-pm.md](docs/continuations/CONTINUATION-2026-07-08-pm.md)
 - Archived: [docs/continuations/CONTINUATION-2026-07-08.md](docs/continuations/CONTINUATION-2026-07-08.md) ·
   [docs/continuations/CONTINUATION-2026-07-06-pm.md](docs/continuations/CONTINUATION-2026-07-06-pm.md) ·
   [docs/continuations/CONTINUATION-2026-07-06.md](docs/continuations/CONTINUATION-2026-07-06.md) ·

@@ -1,7 +1,7 @@
 # CONTINUATION — 2026-07-09 (Perkins full-funnel platform)
 
 Handoff for resuming after `/clear`. Read this + the memory index (auto-loaded, esp.
-`perkins-full-funnel-reorg`) + `prompt.txt`. Prior handoff: `CONTINUATION-2026-07-08-pm.md`.
+`perkins-full-funnel-reorg`) + `prompt.txt`. Prior handoff: `docs/continuations/CONTINUATION-2026-07-08-pm.md`.
 
 ## TL;DR — where we are
 F0–F6 are **all built, deployed to prod, deepsec-hardened, and the infra drift is reconciled.**
