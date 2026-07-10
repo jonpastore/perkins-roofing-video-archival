@@ -1,7 +1,7 @@
 # Ez-Bids — Data / Domain Design Document
 
-**STATUS: DRAFT — derived from consensus-approved plan; pending council + Jon validation.**
-Derived from: `ralplan-ezbids-multitenant-DRAFT.md` (Planner→Architect SOUND-WITH-CHANGES→Critic APPROVE, all 7 changes applied) and `docs/superpowers/specs/2026-07-10-ezbids-multitenant-brief.md`.
+**STATUS: SYNCED TO COUNCIL-REVISED PLAN — 2026-07-10.**
+Derived from: `ralplan-ezbids-multitenant-DRAFT.md` (council-revised, APPROVED) and `docs/superpowers/specs/ezbids/COUNCIL-REVIEW.md` (Grok-4 + GPT-5, all 10 findings absorbed). All decisions below are final; do not relitigate.
 
 ---
 
@@ -23,11 +23,8 @@ New sub-keys added by Ez-Bids waves (all under `settings`):
 | `settings.integrations.yt_owner_channel_id` | W0 | Moved from env; tenant 1 only initially |
 | `settings.integrations.workspace_admin_subject` | W0 | Moved from env; tenant 1 only initially |
 | `settings.brand.email_html_header` | W3 | Per-tenant email header HTML (was platform_config) |
-| `settings.brand.from_name` | W3 | Per-tenant Resend from_name |
-| `settings.brand.reply_to` | W3 | Per-tenant reply_to address |
-| `settings.email.resend_domain_id` | W3 | Resend domain registration id |
-| `settings.email.verified` | W3 | Email domain verification state |
-| `settings.email.dkim_records` | W3 | DKIM/SPF records to surface in UI |
+| `settings.brand.from_name` | W3 | Per-tenant display name used in `from` field (e.g. "Acme Roofing") — sender address itself is the platform domain (J-1) |
+| `settings.brand.reply_to` | W3 | Per-tenant reply-to address (e.g. info@tenantdomain.com) — NOT the sender domain, which is platform-controlled in v1 (J-1) |
 | `settings.domains` | W2 | Lightweight domain state cache (source of truth is `tenant_domains`) |
 
 ### 1.2 `tenant_gcip_map` (existing, platform-scoped)
@@ -84,10 +81,11 @@ CREATE TABLE tenant_domains (
     host            TEXT NOT NULL,      -- e.g. app.example.com
     surface         TEXT NOT NULL CHECK (surface IN ('app', 'quote')),
     state           TEXT NOT NULL CHECK (state IN (
+                        'control_pending', 'control_verified',   -- proof-of-control stages (council #6)
                         'requested', 'dns_pending', 'cert_pending', 'live', 'failed'
-                    )) DEFAULT 'requested',
+                    )) DEFAULT 'control_pending',
     cname_target    TEXT,               -- CNAME record value to surface in UI
-    txt_record      TEXT,               -- TXT record value to surface in UI
+    txt_record      TEXT,               -- DNS TXT challenge value for proof-of-control + CNAME
     cert_state      TEXT,               -- raw cert state from Firebase Hosting API
     last_polled_at  TIMESTAMPTZ,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -95,15 +93,35 @@ CREATE TABLE tenant_domains (
 CREATE UNIQUE INDEX tenant_domains_host_uidx ON tenant_domains(host);
 ```
 
+**Proof-of-control requirement (council #6):** A domain enters `control_pending` when the tenant submits it. The platform issues a DNS TXT challenge. Until the challenge is verified (`control_verified`), the domain is NOT trusted for auth (`authorized_domains`) or email (W3 sending). State advances to `requested` → `dns_pending` only after `control_verified`. This prevents a tenant from claiming a domain they don't control and using it to auth on behalf of that domain's legitimate owner.
+
+**Collision / squatting guard (council #6):** registrable-domain ownership is checked at submission; a conflicting apex/subdomain claim by a different tenant is blocked and routed to moderation. The unique index on `host` prevents silent races.
+
+**Dangling-DNS / takeover detection (council #6):** periodic re-verification that the CNAME still points at our origin. A domain whose DNS drifts away is auto-quarantined: state set to `failed`, removed from `authorized_domains` and `cors_origins`. The quarantine prevents subdomain-takeover abuse.
+
+**Deprovisioning (council #6):** `core/offboard.py` removes the domain from Hosting sites, `authorized_domains`, `cors_origins`, and Resend on tenant offboarding. A released domain cannot auth as the departed tenant.
+
 **RLS posture:** RLS-FORCED on `tenant_id`. A tenant session can only see and modify their own domain rows. Platform admin can read all via impersonation.
 
-**Email verification fields** (added in W3 or as a W3 migration to this table):
+**`domain_ownership_log` — append-only journal for `authorized_domains` writes (council #3):**
 
 ```sql
-ALTER TABLE tenant_domains ADD COLUMN email_verified BOOL NOT NULL DEFAULT false;
-ALTER TABLE tenant_domains ADD COLUMN resend_domain_id TEXT;
-ALTER TABLE tenant_domains ADD COLUMN email_dkim_state TEXT;
+CREATE TABLE domain_ownership_log (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    host            TEXT NOT NULL,
+    action          TEXT NOT NULL CHECK (action IN ('add', 'remove', 'quarantine')),
+    actor           TEXT NOT NULL,          -- uid or system process name
+    correlation_id  TEXT NOT NULL,          -- request correlation id or job run id
+    occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    -- NO UPDATE, NO DELETE — append-only
+);
+CREATE INDEX domain_ownership_log_host_idx ON domain_ownership_log(host);
+CREATE INDEX domain_ownership_log_occurred_idx ON domain_ownership_log(occurred_at);
 ```
+
+**Purpose:** every add/remove of a domain to GCIP `authorized_domains` is recorded here with actor + correlation before the Identity Platform API call is made. This is the authoritative audit trail (Terraform is explicitly NOT the source of truth for `authorized_domains` — ADR-001). A reconciler reads this table and alerts on divergence between the journal and the live GCIP config, but never writes to the TF attribute. Break-glass removal is exercised via the `remove` action with a platform-admin actor.
+
+**Email verification fields (DEFERRED — post-v1 per-tenant sender domains only):** columns `email_verified`, `resend_domain_id`, `email_dkim_state` are NOT added in v1. Per-tenant sender domains are a Non-goal in v1 (J-1 / council #9). When the per-tenant-sender-domain wave is built, a migration will extend `tenant_domains` with these columns. In v1, W3 only moves brand tokens (`from_name`, `reply_to`) to `Tenant.settings.brand` — no Resend domain management per tenant.
 
 ---
 
@@ -114,19 +132,29 @@ Short-lived single-use tokens granting a customer a session on `quote.{tenantDom
 ```sql
 CREATE TABLE portal_magic_links (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    token           TEXT NOT NULL UNIQUE,   -- cryptographically random, URL-safe
+    token           TEXT NOT NULL UNIQUE,       -- cryptographically random, URL-safe
     tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     customer_email  TEXT NOT NULL,
-    expires_at      TIMESTAMPTZ NOT NULL,   -- recommend: now() + interval '15 minutes'
-    used_at         TIMESTAMPTZ             -- NULL = unused; set on first successful redeem
+    host            TEXT NOT NULL,              -- e.g. quote.example.com — token only valid on this host
+    proposal_id     UUID REFERENCES proposals(id) ON DELETE SET NULL,
+                                                -- NULL = portal session only; non-null = bound to proposal
+    expires_at      TIMESTAMPTZ NOT NULL,       -- recommend: now() + interval '15 minutes'
+    used_at         TIMESTAMPTZ,                -- NULL = unused; set on first successful redeem (single-use)
+    consumed_via    TEXT                        -- 'POST /portal/redeem' — audit which endpoint consumed it
 );
 CREATE INDEX portal_magic_links_token_idx ON portal_magic_links(token);
 CREATE INDEX portal_magic_links_tenant_idx ON portal_magic_links(tenant_id);
 ```
 
+**Bearer-token binding (council #7):** a token is valid only when ALL of the following match the request: `tenant_id`, `customer_email`, `host` (the `quote.{d}` host the request arrives on), and `proposal_id` (if non-null). A token minted for customer X / tenant A / `quote.a.com` / proposal 7 is rejected on `quote.b.com` or for a different customer or proposal.
+
+**Email-scanner-safe redemption (council #7):** GET on the magic-link URL performs NO state change — `used_at` is NOT stamped on GET. Redemption happens only on an explicit POST to the interstitial endpoint. This means a scanner or prefetcher pre-fetching the link cannot burn the token or trigger side effects.
+
+**Session establishment vs. proposal acceptance (council #7):** redeeming the magic-link establishes a scoped portal session. Accepting or signing a proposal is a separate, explicitly authenticated action in a subsequent request — never a side effect of the GET or the redeem POST.
+
 **RLS posture:** RLS-FORCED on `tenant_id`. The token-resolution query runs on a platform session (like `_token_scoped_session` for proposals), immediately stamps a tenant-scoped session, then all subsequent data reads run RLS-enforced. A token for tenant A's customer cannot resolve to tenant B's data.
 
-**Expiry + single-use enforcement:** `expires_at` checked at redeem time; `used_at IS NOT NULL` → reject. Both checks happen in the same transaction that stamps `used_at`.
+**Expiry + single-use enforcement:** `expires_at` checked at redeem time; `used_at IS NOT NULL` → reject replay. Both checks happen in the same transaction that stamps `used_at`.
 
 ---
 
@@ -167,7 +195,54 @@ CREATE TABLE subscriptions (
 
 **RLS posture:** RLS-FORCED on `tenant_id`. Tenant admins can read their own subscription row (for billing panel display). Platform admins can read all. Write path: only the billing webhook handler (W5) and the platform-admin provisioning flow (W6) write to this table.
 
-**Lifecycle integration:** `subscriptions.status` drives the tenant sign-in gate already modeled in `_resolve_tenant` tenant status check. When the billing webhook (W5) marks a tenant `suspended`, the next login attempt for that tenant is blocked.
+**Lifecycle integration:** `subscriptions.status` drives the tenant sign-in gate already modeled in `_resolve_tenant` tenant status check. When the billing webhook (W5) marks a tenant `suspended`, the next login attempt for that tenant is blocked. The `subscriptions` row is always derived from the `billing_events` ledger — it is never mutated in place by anything other than the single webhook handler path.
+
+---
+
+### 2.5a `billing_events` — W5 (migration 0029, council #8)
+
+The **immutable system-of-record** for all billing activity. Entitlements are derived from this ledger; they are never overwritten in place. No UPDATE or DELETE is permitted on this table — it is append-only by enforcement.
+
+```sql
+CREATE TABLE billing_events (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stripe_event_id TEXT NOT NULL UNIQUE,   -- Stripe event id; UNIQUE enforces idempotency
+    event_type      TEXT NOT NULL,          -- e.g. 'invoice.paid', 'customer.subscription.deleted'
+    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    payload         JSONB NOT NULL,         -- full Stripe event payload (for replay/audit)
+    received_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    source          TEXT NOT NULL DEFAULT 'stripe_webhook'
+    -- NO UPDATE, NO DELETE — append-only
+);
+CREATE INDEX billing_events_tenant_idx ON billing_events(tenant_id);
+CREATE INDEX billing_events_received_idx ON billing_events(received_at);
+```
+
+**Idempotency:** `stripe_event_id UNIQUE` enforces that a duplicate Stripe event delivery is a no-op — the INSERT fails (or is `ON CONFLICT DO NOTHING`) and no entitlement change is made. This is the same code path that will handle live events; only the secret changes at go-live.
+
+**RLS posture:** RLS-FORCED on `tenant_id` (council #4 non-RLS isolation inventory: billing_events accumulates cross-tenant rows — must be tenant-scoped + RLS-forced). Platform admins can read all for support/audit.
+
+---
+
+### 2.5b `entitlement_snapshots` — W5 (migration 0029, council #8)
+
+On each billing event, a snapshot of the tenant's entitlement state is written. This makes historical entitlement auditable and ensures a replayed or duplicate event cannot corrupt current entitlement (the snapshot is compared before applying a change).
+
+```sql
+CREATE TABLE entitlement_snapshots (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    billing_event_id UUID NOT NULL REFERENCES billing_events(id),
+    plan            TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('active', 'past_due', 'suspended')),
+    seat_count      INT NOT NULL,
+    effective_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX entitlement_snapshots_tenant_idx ON entitlement_snapshots(tenant_id);
+CREATE INDEX entitlement_snapshots_event_idx ON entitlement_snapshots(billing_event_id);
+```
+
+**RLS posture:** RLS-FORCED on `tenant_id` (council #4: enrolled in the W5 non-RLS isolation inventory). Platform admins can read all.
 
 ---
 
@@ -193,6 +268,27 @@ CREATE TABLE signup_requests (
 
 ---
 
+### 2.7 `reserved_namespaces` — W6 (migration 0030, council #5)
+
+Reserves tenant slugs/subdomains at signup-request submission time to prevent namespace races and squatting. A prospective tenant's desired slug is locked here before admin approval; no two signups can claim the same namespace, and reserved/abusive names are blocklisted.
+
+```sql
+CREATE TABLE reserved_namespaces (
+    slug            TEXT PRIMARY KEY,                       -- e.g. 'acme', 'perkinsroofing'
+    tenant_id       UUID REFERENCES tenants(id) ON DELETE SET NULL,
+                                                            -- NULL = reserved by a pending signup (no tenant yet)
+    reserved_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**Lifecycle:** when a signup request is submitted, the desired slug is inserted here (`tenant_id = NULL`). On approval + provisioning, the new `tenants.id` is written to `tenant_id`. On rejection, the row is removed. If a slug is already present (regardless of tenant_id), the signup is blocked and routed to moderation.
+
+**Blocklist:** reserved or abusive names (e.g. `admin`, `platform`, `billing`, brand names) are seeded at deployment time with `tenant_id = NULL` and a sentinel `reserved_at` indicating they are permanently blocklisted.
+
+**RLS posture:** platform-scoped (no RLS tenant filter). Readable only by platform admins; not readable in any tenant session.
+
+---
+
 ## 3. Domain Lifecycle State Machine
 
 Managed by `core/domain_onboarding.py` (W2). Stored in `tenant_domains.state`. Designed to be **idempotent and resumable** — any transition can be re-driven without side effects.
@@ -201,39 +297,55 @@ Managed by `core/domain_onboarding.py` (W2). Stored in `tenant_domains.state`. D
          tenant enters domain
                 │
                 ▼
-          [requested]
-                │  sites.create (Firebase Hosting REST)
-                │  customDomains add (proven REST path)
+        [control_pending] ──────────────────────────────────┐
+                │  (surface DNS TXT challenge in UI)         │ collision / squatting
+                │  poll TXT record in DNS                     │ → blocked, routed to
+                ▼                                            │   moderation
+        [control_verified]                                   │
+                │  proof-of-control confirmed                 │
+                │  sites.create (Firebase Hosting REST)       │
+                │  customDomains add (proven REST path)       │
                 ▼
           [dns_pending] ─────────────────────────────────┐
-                │  (surface CNAME + TXT in UI)            │ timeout / cert
+                │  (surface CNAME in UI)                  │ timeout / cert
                 │  poll cert state                         │ provisioning failure
                 ▼                                          │
           [cert_pending]                                   │
                 │  cert issued                             │
-                │  write authorized_domains (GCIP admin API)
+                │  journal → write authorized_domains      │
+                │    (GCIP admin API, after journal write)  │
                 │  insert cors_origins rows (W0 table)     │
                 ▼                                          ▼
             [live]                                     [failed]
-                                                           │
-                                                       resumable:
-                                                       re-enter at
-                                                       [requested]
+                │                                          │
+                │ tenant offboarded                    resumable:
+                ▼                                      re-enter at
+        [deprovisioned]                              [control_pending]
+          remove from authorized_domains,
+          cors_origins, Hosting sites, Resend
 ```
 
 **Transitions:**
 
 | From | To | Trigger | Side effects |
 |---|---|---|---|
-| — | `requested` | Admin enters domain in onboarding UI | Create `tenant_domains` row |
-| `requested` | `dns_pending` | `sites.create` + `customDomains` REST calls succeed | Store `cname_target`, `txt_record` in row |
+| — | `control_pending` | Admin enters domain in onboarding UI | Create `tenant_domains` row; issue DNS TXT challenge |
+| `control_pending` | `control_verified` | Platform polls DNS; TXT record matches challenge | Proof-of-control confirmed; log to `domain_ownership_log` |
+| `control_pending` | `failed` | Collision detected (another tenant owns registrable domain) or timeout | Block; route to moderation; alert |
+| `control_verified` | `dns_pending` | `sites.create` + `customDomains` REST calls succeed | Store `cname_target` in row |
 | `dns_pending` | `cert_pending` | Firebase Hosting API reports DNS verified | Update `cert_state` |
-| `cert_pending` | `live` | Firebase Hosting API reports cert issued | Write `authorized_domains` (GCIP admin API); insert `cors_origins` rows |
+| `cert_pending` | `live` | Firebase Hosting API reports cert issued | Journal write to `domain_ownership_log`; write `authorized_domains` (GCIP admin API); insert `cors_origins` rows |
 | `cert_pending` | `failed` | Timeout threshold exceeded | Alert; mark `failed` |
 | `dns_pending` | `failed` | Timeout threshold exceeded | Alert; mark `failed` |
-| `failed` | `requested` | Admin retries via onboarding UI | Reset state; re-run |
+| `failed` | `control_pending` | Admin retries via onboarding UI | Reset state; re-run |
+| `live` | `failed` (quarantine) | Dangling-DNS re-check: CNAME no longer points at our origin | Auto-quarantine: remove from `authorized_domains` + `cors_origins`; journal `action='quarantine'`; alert |
+| `live` | `deprovisioned` | Tenant offboarded via `core/offboard.py` | Remove from Hosting sites, `authorized_domains`, `cors_origins`, Resend; journal `action='remove'`; released domain cannot auth as departed tenant |
 
-**Alert:** platform-admin dashboard (W6) surfaces a health panel showing domains stuck in `cert_pending` or `dns_pending` past a configurable threshold.
+**Alert:** platform-admin dashboard (W6) surfaces a health panel showing domains stuck in `cert_pending` or `dns_pending` past a configurable threshold, and any quarantined domains requiring attention.
+
+**Proof-of-control invariant (council #6):** a domain NEVER enters `authorized_domains` or is trusted for email sending unless `control_verified` has been reached. The journal write (to `domain_ownership_log`) is always made BEFORE the Identity Platform admin API call, ensuring the audit trail is complete even if the API call fails.
+
+**ADR — Terraform is NOT source of truth for `authorized_domains` (council #3):** the append-only `domain_ownership_log` is the audit trail; `ignore_changes = [authorized_domains]` is set on the TF-managed `google_identity_platform_config.auth` singleton; a reconciler periodically compares the journal state against the live GCIP config and alarms on divergence without writing the TF attribute.
 
 ---
 
@@ -244,10 +356,14 @@ Managed by `core/domain_onboarding.py` (W2). Stored in `tenant_domains.state`. D
 | Status | Sign-in | User invite | Billing |
 |---|---|---|---|
 | `active` | Allowed | Allowed | Seat count updated at invoice time |
-| `past_due` | Allowed (grace period) | Allowed | Payment overdue; Stripe webhook sets this |
-| `suspended` | **Blocked** (`_resolve_tenant` rejects) | Blocked | Suspended; admin must intervene |
+| `past_due` | Allowed (grace period) | Allowed | Payment overdue; Stripe webhook sets this via `billing_events` ledger; grace window duration stubbed in v1 |
+| `suspended` | **Blocked** (`_resolve_tenant` rejects) | Blocked | Suspended; admin must intervene to restore |
 
-The billing webhook handler (W5) is the only writer of `subscriptions.status`; a side-effect of a `suspended` subscription status write also updates `tenants.status` (or `_resolve_tenant` reads `subscriptions.status` directly — to be decided at implementation).
+**Grace/dunning semantics (council #8):** the `past_due` → grace window → `suspended` transition is defined in v1 (timers stubbed). The grace window duration is a platform-config value; when it expires, a job writes a `billing_events` row of type `subscription.grace_expired` which drives the transition to `suspended` via the entitlement path.
+
+**Suspended-tenant portal behavior (council #8):** when a tenant is `suspended`, its `quote.{d}` customer portal is **read-only / accept-blocked** with a billing notice displayed. Existing signed proposals remain viewable (customers are not cut off from documents they already signed). New proposal acceptance and new revision requests are blocked until the tenant is restored to `active`.
+
+**Write discipline:** the billing webhook handler (W5) is the only writer of `subscriptions.status`, and it does so only by first appending to the `billing_events` ledger and writing an `entitlement_snapshots` row, then deriving the new status. `_resolve_tenant` reads `subscriptions.status` directly to gate sign-in — the exact coupling point (direct read vs. side-effect to `tenants.status`) is decided at implementation, but the ledger is always the authoritative source.
 
 ---
 
@@ -289,8 +405,6 @@ erDiagram
         text cname_target
         text txt_record
         text cert_state
-        bool email_verified
-        text resend_domain_id
         timestamptz last_polled_at
         timestamptz updated_at
     }
@@ -300,8 +414,11 @@ erDiagram
         text token
         uuid tenant_id FK
         text customer_email
+        text host
+        uuid proposal_id FK "nullable"
         timestamptz expires_at
         timestamptz used_at
+        text consumed_via
     }
 
     plans {
@@ -321,6 +438,35 @@ erDiagram
         timestamptz updated_at
     }
 
+    billing_events {
+        uuid id PK
+        text stripe_event_id
+        text event_type
+        uuid tenant_id FK
+        jsonb payload
+        timestamptz received_at
+        text source
+    }
+
+    entitlement_snapshots {
+        uuid id PK
+        uuid tenant_id FK
+        uuid billing_event_id FK
+        text plan
+        text status
+        int seat_count
+        timestamptz effective_at
+    }
+
+    domain_ownership_log {
+        uuid id PK
+        text host
+        text action
+        text actor
+        text correlation_id
+        timestamptz occurred_at
+    }
+
     signup_requests {
         uuid id PK
         text company
@@ -332,13 +478,23 @@ erDiagram
         timestamptz reviewed_at
     }
 
+    reserved_namespaces {
+        text slug PK
+        uuid tenant_id FK "nullable"
+        timestamptz reserved_at
+    }
+
     tenants ||--o{ tenant_gcip_map : "has GCIP tenants"
     tenants ||--o{ cors_origins : "has CORS origins"
     tenants ||--o{ tenant_domains : "has domains"
     tenants ||--o{ portal_magic_links : "has magic links"
     tenants ||--|| subscriptions : "has subscription"
+    tenants ||--o{ billing_events : "has billing events"
+    tenants ||--o{ entitlement_snapshots : "has entitlement history"
     subscriptions }o--|| plans : "on plan"
+    billing_events ||--o{ entitlement_snapshots : "triggers snapshot"
     signup_requests }o--o| platform_admins : "reviewed by"
+    reserved_namespaces }o--o| tenants : "claimed by (nullable)"
 ```
 
 ---
@@ -352,11 +508,15 @@ erDiagram
 | `platform_admins` | Platform-scoped | None | Checked before impersonation |
 | `platform_config` | Platform-scoped | None | Existing; Ez-Bids reads at middleware level |
 | `cors_origins` | Platform-scoped | None | Read before tenant resolution at CORS middleware |
-| `tenant_domains` | **RLS-FORCED** | `tenant_id` | Tenant sees only own domains |
-| `portal_magic_links` | **RLS-FORCED** | `tenant_id` | Token resolution on platform session; stamped immediately |
+| `tenant_domains` | **RLS-FORCED** | `tenant_id` | Tenant sees only own domains; `domain_ownership_log` is separate append-only audit |
+| `domain_ownership_log` | Platform-scoped (append-only) | None | Append-only audit trail for `authorized_domains` writes; no tenant GUC required; platform-admin read only |
+| `portal_magic_links` | **RLS-FORCED** | `tenant_id` | Token resolution on platform session; stamped immediately; binding: host + proposal_id (council #7) |
 | `plans` | Platform-scoped | None | Read-only for display; write = platform-admin only |
-| `subscriptions` | **RLS-FORCED** | `tenant_id` | Tenant reads own; write = billing webhook + provisioning |
+| `subscriptions` | **RLS-FORCED** | `tenant_id` | Tenant reads own; write = billing webhook only (via billing_events ledger) |
+| `billing_events` | **RLS-FORCED** | `tenant_id` | Append-only immutable ledger; no UPDATE/DELETE; council #4 non-RLS inventory item |
+| `entitlement_snapshots` | **RLS-FORCED** | `tenant_id` | Written on each billing event; council #4 non-RLS inventory item |
 | `signup_requests` | Platform-scoped | None | Not tenant-scoped (predates tenant creation); platform-admin only |
+| `reserved_namespaces` | Platform-scoped | None | Namespace reservation; platform-admin only; blocklist entries are permanent |
 | All existing 30 tables | **RLS-FORCED** | `tenant_id` | Unchanged; every new path must respect this |
 
 ---
@@ -366,12 +526,16 @@ erDiagram
 | Ez-Bids concern | Storage | Rationale |
 |---|---|---|
 | Per-tenant integration env vars (WP_URL etc.) | `Tenant.settings.integrations` JSONB sub-key | Moved from env in W0; JSONB avoids a new table for simple key-value data |
-| Per-tenant brand / email header | `Tenant.settings.brand` JSONB sub-key | Moved from `platform_config` in W3 |
-| Domain lifecycle state | `tenant_domains` table (W2) + `Tenant.settings.domains` cache | Table for pollability + indexing; JSONB for lightweight in-process reads |
-| Email identity state | `tenant_domains` columns + `Tenant.settings.email` | Shares domain row for co-located verification UX |
-| GCIP per-tenant identity | `tenant_gcip_map` (existing) | Already models the `gcip_tenant_id → platform tenant_id` mapping |
-| Customer portal auth | `portal_magic_links` (W4) + existing 0022 accept-token policy | Magic-link for portal sessions; accept-token for direct proposal deep-links |
-| Billing / plan | `plans` + `subscriptions` (W5) | New tables; linked to `tenants.status` for sign-in gating |
+| Per-tenant brand / email display name + reply-to | `Tenant.settings.brand` JSONB sub-key (`from_name`, `reply_to`, `email_html_header`) | Moved from `platform_config` in W3; sender address is the platform domain (J-1), not a per-tenant domain |
+| Platform sending domain (v1) | Platform-level Resend config (IaC/runbook, done once) | Single DKIM/SPF/DMARC-authenticated sender; per-tenant sender domains deferred behind abuse controls (J-1 / council #9) |
+| Domain lifecycle state | `tenant_domains` table (W2) + `Tenant.settings.domains` cache | Table for pollability + indexing; includes proof-of-control states; JSONB for lightweight in-process reads |
+| `authorized_domains` write audit | `domain_ownership_log` (W2, append-only) | Council #3: Terraform is NOT source of truth; journal is the authoritative record |
+| GCIP per-tenant identity | `tenant_gcip_map` (existing) | Already models the `gcip_tenant_id → platform tenant_id` mapping; explicit binding in W1 (J-2) |
+| Customer portal auth | `portal_magic_links` (W4) + existing 0022 accept-token policy | Magic-link for portal sessions; accept-token for direct proposal deep-links; tokens bound to host + proposal (council #7) |
+| Billing activity (system of record) | `billing_events` (W5, append-only immutable ledger) | Council #8: entitlements derived from ledger, never overwritten in place |
+| Billing entitlement history | `entitlement_snapshots` (W5) | Council #8: snapshot per event for audit and duplicate-event safety |
+| Billing / plan / subscription | `plans` + `subscriptions` (W5) | New tables; `subscriptions.status` linked to `tenants.status` for sign-in gating |
 | Tenant signup queue | `signup_requests` (W6) | Platform-scoped, predates `tenants` row creation |
+| Namespace reservation | `reserved_namespaces` (W6) | Council #5: prevent racing signups + protect reserved/abusive slug names |
 | CORS management | `cors_origins` (W0) | App-owned table; no TF attribute; zero-drift runtime writes |
 | SSO configuration | `tenant_gcip_map` + GCIP tenant IdP config (runtime, via `provision.add_sso_provider`) | No new table; SSO config lives in GCIP; mapping table already exists |
