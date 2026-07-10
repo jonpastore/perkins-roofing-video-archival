@@ -594,7 +594,11 @@ export function Users() {
           </Button>
         </div>
 
-        {inviteOk && <p style={{ marginTop: 10, fontSize: 13, color: "#1a7f4b" }}>{inviteOk}</p>}
+        {inviteOk && (
+          <div style={{ marginTop: 10, padding: "10px 14px", borderRadius: 8, background: "#eefaf2", border: "1px solid #7fd4a3", fontSize: 13, color: "#1a7f4b", fontWeight: 600 }}>
+            ✓ {inviteOk} They now appear in the list above and can sign in with Google.
+          </div>
+        )}
         {inviteErr && <p style={{ marginTop: 10, fontSize: 13, color: BRAND.red }}>{inviteErr}</p>}
       </Card>
 

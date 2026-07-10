@@ -557,21 +557,22 @@ export function SsoPanel() {
         <AddProviderForm onAdded={handleAdded} onCancel={() => setShowForm(false)} />
       )}
 
-      {/* F6-runtime note */}
+      {/* Informational note — neutral styling: this sits directly below the user-invite
+          form, so warning colors here read as an invite error (Jon, 7/10). */}
       <div
         style={{
           marginTop: 14,
           padding: "10px 14px",
           borderRadius: 8,
-          background: "#fffbf0",
-          border: `1px solid #fcd34d`,
+          background: "#f6f8fa",
+          border: `1px solid #d0d7de`,
           fontSize: 12,
-          color: "#92400e",
+          color: "#57606a",
         }}
       >
-        <strong>F6-runtime:</strong> SSO configuration requires a live GCIP multi-tenant setup.
-        Adding a provider calls the GCIP Admin SDK per-tenant. This panel is visible to tenant
-        admins; it has no effect until GCIP tenancy is live.
+        <strong>Note:</strong> SSO is optional and not yet active — identity providers
+        configured here take effect once multi-tenant sign-on (GCIP tenancy) is enabled.
+        This does not affect user invites above; invited users can sign in with Google today.
       </div>
 
     </div>
