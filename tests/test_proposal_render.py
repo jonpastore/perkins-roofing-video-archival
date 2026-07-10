@@ -309,3 +309,24 @@ class TestDefaultTemplate:
         html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
         assert "{{" not in html
         assert "}}" not in html
+
+
+class TestSandboxedRender:
+    """L2 (deepsec): html_body is tenant-editable — template-source SSTI must be
+    blocked by Jinja2's sandbox, not just autoescape (which only covers ctx data)."""
+
+    def test_ssti_attribute_access_is_blocked(self):
+        import jinja2.exceptions
+        import pytest as _pytest
+        from core.proposal_render import ProposalRenderContext, render_proposal_html
+        ctx = ProposalRenderContext(
+            proposal_title="t", proposal_date="d", proposal_version=1,
+            customer_name="c", customer_company=None, property_address="a",
+            property_county=None, property_code_zone="z", quote_roof_type="r",
+            quote_num_squares=1.0, quote_good_price="1", quote_better_price="2",
+            quote_best_price="3", quote_line_items=[], deposit_amount="1",
+            deposit_instructions="", tenant_name="t", tenant_license=None,
+            accept_url="")
+        with _pytest.raises(jinja2.exceptions.SecurityError):
+            render_proposal_html(
+                "{{ ''.__class__.__mro__[1].__subclasses__() }}", ctx)

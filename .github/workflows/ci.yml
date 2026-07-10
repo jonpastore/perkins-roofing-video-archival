@@ -34,3 +34,7 @@ jobs:
           cd web
           npm ci
           npm run build
+      - name: SCA gate (npm audit — prod deps, high+)
+        run: |
+          cd web
+          npm audit --omit=dev --audit-level=high

@@ -80,8 +80,13 @@ class _SilentUndefined(jinja2.Undefined):
 
 
 def _build_jinja_env() -> jinja2.Environment:
-    """Return a Jinja2 Environment with autoescape ON and silent undefined."""
-    return jinja2.Environment(
+    """Return a SANDBOXED Jinja2 Environment with autoescape ON and silent undefined.
+
+    SandboxedEnvironment (deepsec L2): html_body is tenant-editable, so template
+    SOURCE is untrusted — autoescape only covers ctx data. The sandbox raises
+    SecurityError on unsafe attribute access ({{ ''.__class__... }} SSTI → RCE)."""
+    from jinja2.sandbox import SandboxedEnvironment
+    return SandboxedEnvironment(
         autoescape=True,
         undefined=_SilentUndefined,
         keep_trailing_newline=True,
