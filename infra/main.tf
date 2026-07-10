@@ -670,6 +670,7 @@ locals {
     "whisper-token",
     "youtube-oauth-refresh-token",
     "vertex-dev-sa-key",  # deepsec M1: local-dev Vertex SA key (value added out-of-band)
+    "cloudflare-degenito-api-token",  # ez-bids: degenito.ai zone DNS (value from 1Password, added out-of-band)
   ])
 }
 
