@@ -18,6 +18,12 @@ interface AskResult {
   confidence: number;
   citations: string[]; // bare links (widget back-compat)
   sources: Source[]; // descriptive: video title + snippet + timestamp
+  cached?: boolean;   // true when served from ask_cache
+}
+interface CachedSuggestion {
+  question: string;
+  answer: { answer: string; abstained: boolean; confidence: number; citations: string[]; sources: Source[] };
+  similarity: number;
 }
 interface SearchRow {
   score: number;
@@ -444,6 +450,10 @@ export function SearchAsk() {
   const [ans, setAns] = useState<AskResult | null>(null);
   const [rows, setRows] = useState<SearchRow[] | null>(null);
 
+  // Ask-cache typeahead suggestions
+  const [suggestions, setSuggestions] = useState<CachedSuggestion[]>([]);
+  const [suggestTimer, setSuggestTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+
   // Email compose state
   const [checkedUrls, setCheckedUrls] = useState<Set<string>>(new Set());
   const [emailModalBody, setEmailModalBody] = useState<string | null>(null);
@@ -490,9 +500,41 @@ export function SearchAsk() {
       .finally(() => setTopicsLoading(false));
   }, [mode, topicOffset, topicSort, isFiltering]);
 
+  // Debounced typeahead: fire /ask/suggest after 400 ms when >=8 chars typed in ask mode
+  function handleQueryChange(val: string) {
+    setQuery(val);
+    if (mode !== "ask") return;
+    if (suggestTimer) clearTimeout(suggestTimer);
+    if (val.trim().length < 8) {
+      setSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const r = await apiFetch(`/ask/suggest?q=${encodeURIComponent(val.trim())}`);
+        if (!r.ok) return;
+        const data: CachedSuggestion[] = await r.json();
+        setSuggestions(data);
+      } catch {
+        // suggest is best-effort — silently ignore network errors
+      }
+    }, 400);
+    setSuggestTimer(t);
+  }
+
+  function handleSuggestionClick(s: CachedSuggestion) {
+    setSuggestions([]);
+    setQuery(s.question);
+    setAns({ ...s.answer, cached: true });
+    setRows(null);
+    setError(null);
+    setCheckedUrls(new Set());
+  }
+
   async function run(q: string) {
     const question = q.trim();
     if (!question) return;
+    setSuggestions([]);
     setLoading(true); setError(null); setAns(null); setRows(null); setCheckedUrls(new Set());
     try {
       const r = await apiFetch(mode === "ask" ? "/ask" : "/search", {
@@ -651,7 +693,7 @@ export function SearchAsk() {
       <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") run(query); }}
           placeholder={mode === "ask" ? "Ask anything about the roofing content…" : "Filter topics, or type to search all videos…"}
           style={{ ...inputStyle, flex: 1 }}
@@ -661,8 +703,32 @@ export function SearchAsk() {
         </Button>
       </div>
 
-      {/* suggestion chips — ask mode only */}
-      {mode === "ask" && (
+      {/* ask-cache typeahead chips — up to 3 "Asked before" suggestions */}
+      {mode === "ask" && suggestions.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <span style={{ fontSize: 11, color: BRAND.sub, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 8 }}>
+            Asked before:
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+            {suggestions.map((s) => (
+              <button
+                key={s.question}
+                onClick={() => handleSuggestionClick(s)}
+                style={{
+                  padding: "5px 12px", background: "#f0f4ff", color: BRAND.navyText,
+                  border: `1px solid ${BRAND.border}`, borderRadius: 20,
+                  fontSize: 12.5, cursor: "pointer", textAlign: "left",
+                }}
+              >
+                {s.question}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* static suggestion chips — ask mode only, hidden once cache suggestions appear */}
+      {mode === "ask" && suggestions.length === 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 22 }}>
           {SUGGESTIONS.map((s) => (
             <button key={s} onClick={() => { setQuery(s); run(s); }}

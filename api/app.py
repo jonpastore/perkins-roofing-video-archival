@@ -222,6 +222,77 @@ def ask(q: Query, _claims=Depends(require_role("ask")),
     return A.ask(q.query, q.k, db=db)
 
 
+@app.get("/ask/suggest")
+def ask_suggest(
+    q: str,
+    _claims=Depends(require_role("ask")),
+    db: Session = Depends(get_db_session),
+):
+    """Return up to 3 previously-cached questions similar to q (debounce-friendly).
+
+    Postgres: pgvector cosine ANN restricted to the 0.85–0.95 suggestion band.
+    SQLite (dev): prefix/substring match on question_norm as a cheap stand-in.
+
+    Response: [{question, answer, similarity}]
+
+    Pre-seeding from faq_entries is a follow-up; the cache self-populates from /ask traffic.
+    """
+    import numpy as np
+    from sqlalchemy import text
+
+    from app.llm import embed
+    from app.models import AskCache
+    from core.ask_cache import normalize_question, should_suggest
+
+    if not q or not q.strip():
+        return []
+
+    norm = normalize_question(q)
+    is_pg = settings.DB_URL.startswith("postgres")
+
+    if is_pg:
+        from pgvector.psycopg import register_vector
+        register_vector(db.connection().connection.driver_connection)
+        q_vec = np.array(embed([q])[0], dtype=np.float32)
+        rows = db.execute(
+            text(
+                "SELECT id, "
+                "1 - (embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072))) AS sim "
+                "FROM ask_cache "
+                "ORDER BY embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072)) "
+                "LIMIT 10"
+            ),
+            {"q": q_vec},
+        ).fetchall()
+        results = []
+        for row in rows:
+            sim = float(row.sim)
+            if not should_suggest(sim):
+                continue
+            entry = db.get(AskCache, row.id)
+            if entry:
+                results.append({
+                    "question": entry.question,
+                    "answer": entry.answer_json,
+                    "similarity": round(sim, 4),
+                })
+            if len(results) >= 3:
+                break
+        return results
+
+    # SQLite dev fallback: substring match on question_norm
+    entries = (
+        db.query(AskCache)
+        .filter(AskCache.question_norm.contains(norm[:40]))
+        .limit(3)
+        .all()
+    )
+    return [
+        {"question": e.question, "answer": e.answer_json, "similarity": 1.0}
+        for e in entries
+    ]
+
+
 def _require_internal(x_internal_secret: str = Header(default="")):
     """Guard for /internal/* cron targets. The service is GCP-IAM-open so the browser SPA can
     reach the Firebase-authed routes; the internal cron routes are protected here by a shared

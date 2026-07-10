@@ -628,6 +628,29 @@ class TcVersion(Base, TenantMixin):
     )
 
 
+class AskCache(Base, TenantMixin):
+    """Semantic answer cache for /ask.  One row per unique question per tenant.
+
+    Prod: embedding is vector(3072) with an HNSW halfvec index (migration 0025).
+    Dev/SQLite: embedding stored as JSON; lookups fall back to exact question_norm match.
+    hit_count is incremented on every cache hit (write-through on miss, served on hit).
+    """
+    __tablename__ = "ask_cache"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    question         = Column(Text, nullable=False)
+    question_norm    = Column(Text, nullable=False)
+    embedding        = Column(_EMBEDDING)
+    answer_json      = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    pipeline_version = Column(String(64), nullable=False, default="")
+    hit_count        = Column(Integer, nullable=False, default=0)
+    created_at       = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_ask_cache_tenant_norm", "tenant_id", "question_norm"),
+    )
+
+
 class ContractFaqEntry(Base, TenantMixin):
     """Grounded, customer-facing FAQ entries generated from T&C text."""
     __tablename__ = "contract_faq_entries"

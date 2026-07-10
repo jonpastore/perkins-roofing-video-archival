@@ -1,17 +1,109 @@
 """Grounded 'Ask Tim' answer with ABSTENTION + citations (council requirement). Below the
 confidence threshold it refuses rather than hallucinating — protects the brand on a public widget.
-Abstention gate + prompt construction are pure (core.answer); the chat() call is I/O."""
+Abstention gate + prompt construction are pure (core.answer); the chat() call is I/O.
+
+Cache layer (migration 0025 / core.ask_cache):
+  - Embed the query once; probe ask_cache via pgvector cosine (SQLite: exact question_norm match).
+  - Hit (similarity >= 0.95, not stale): increment hit_count, return cached answer immediately.
+  - Miss: run the full pipeline, then write-through to ask_cache (deduped by question_norm).
+
+Pre-seeding from faq_entries is a follow-up; the cache self-populates from live /ask traffic.
+PIPELINE_VERSION must be bumped whenever the embedding model or answer prompt changes so stale
+entries are bypassed and eventually replaced.
+"""
+import numpy as np
+
 from core.answer import build_answer_prompt, build_faq_answer_prompt, should_abstain
+from core.ask_cache import (
+    build_cache_entry,
+    is_stale,
+    normalize_question,
+    should_serve,
+)
 from core.retrieval import link
 
 from .config import settings
-from .llm import chat
-from .models import GraphNode, SessionLocal, Video
+from .llm import chat, embed
+from .models import AskCache, GraphNode, SessionLocal, Video
 from .retrieval import hybrid_search
+
+PIPELINE_VERSION = "v1"
+
+
+def _is_pg() -> bool:
+    """True when the configured DB is PostgreSQL (pgvector available)."""
+    return settings.DB_URL.startswith("postgres")
+
+
+def _probe_cache(query_embedding: list, query_norm: str, db):
+    """Return (AskCache row | None, float similarity).
+
+    Postgres: cosine ANN via halfvec; SQLite: exact question_norm match (similarity=1.0).
+    """
+    if _is_pg():
+        from pgvector.psycopg import register_vector
+        from sqlalchemy import text
+        register_vector(db.connection().connection.driver_connection)
+        q_arr = np.array(query_embedding, dtype=np.float32)
+        row = db.execute(
+            text(
+                "SELECT id, 1 - (embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072))) AS sim "
+                "FROM ask_cache ORDER BY embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072)) LIMIT 1"
+            ),
+            {"q": q_arr},
+        ).fetchone()
+        if row is None:
+            return None, 0.0
+        entry = db.get(AskCache, row.id)
+        return entry, float(row.sim)
+    # SQLite: exact norm match only
+    entry = db.query(AskCache).filter(AskCache.question_norm == query_norm).first()
+    return (entry, 1.0) if entry else (None, 0.0)
+
+
+def _write_cache(question: str, query_embedding: list, answer_dict: dict, db):
+    """Insert a new cache entry if question_norm is not already present for this tenant."""
+    norm = normalize_question(question)
+    existing = db.query(AskCache).filter(AskCache.question_norm == norm).first()
+    if existing is not None:
+        return
+    entry_dict = build_cache_entry(question, answer_dict, PIPELINE_VERSION)
+    entry_dict["embedding"] = query_embedding
+    tenant_id = db.info.get("tenant_id", 1)
+    row = AskCache(
+        question=entry_dict["question"],
+        question_norm=entry_dict["question_norm"],
+        embedding=entry_dict["embedding"],
+        answer_json=entry_dict["answer_json"],
+        pipeline_version=entry_dict["pipeline_version"],
+        hit_count=0,
+        tenant_id=tenant_id,
+    )
+    db.add(row)
+    db.flush()
 
 
 def ask(query, k=8, db=None):
     # db: caller-passed (RLS-stamped) session; used but never closed here.
+
+    # ── Cache probe (embed once; reuse for retrieval) ────────────────────────
+    query_embedding = embed([query])[0]
+    query_norm = normalize_question(query)
+
+    if db is not None:
+        cached_entry, sim = _probe_cache(query_embedding, query_norm, db)
+        if (cached_entry is not None
+                and should_serve(sim)
+                and not is_stale(
+                    cached_entry.created_at,
+                    cached_entry.pipeline_version,
+                    PIPELINE_VERSION,
+                )):
+            cached_entry.hit_count = (cached_entry.hit_count or 0) + 1
+            db.flush()
+            return {**cached_entry.answer_json, "cached": True}
+
+    # ── Full pipeline ─────────────────────────────────────────────────────────
     r = hybrid_search(query, k, db=db)
     chunks = r["chunks"]
     top = max((sc for _, sc in chunks), default=0.0)
@@ -40,8 +132,19 @@ def ask(query, k=8, db=None):
         "title": titles.get(c.video_id) or c.video_id,
         "snippet": (c.text or "").strip()[:160],
     } for c, _ in chunks]
-    return {"answer": chat(prompt), "abstained": False, "confidence": round(top, 2),
-            "citations": [link(c.video_id, c.start) for c, _ in chunks], "sources": sources}
+    answer_dict = {
+        "answer": chat(prompt),
+        "abstained": False,
+        "confidence": round(top, 2),
+        "citations": [link(c.video_id, c.start) for c, _ in chunks],
+        "sources": sources,
+    }
+
+    # ── Write-through (only when we have a stamped tenant session) ────────────
+    if db is not None:
+        _write_cache(query, query_embedding, answer_dict, db)
+
+    return answer_dict
 
 
 def answer_faq(question, k=6, db=None):
