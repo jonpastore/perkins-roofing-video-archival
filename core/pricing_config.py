@@ -288,6 +288,33 @@ class PricingConfig:
         val = self.raw["low_slope"]["tear_off_per_layer_per_sq"]
         return self.get_or_raise(val, "low_slope.tear_off_per_layer_per_sq")
 
+    # ------------------------------------------------------------------ #
+    # v2: Day-based overhead + flat profit mode                           #
+    # ------------------------------------------------------------------ #
+    def daily_overhead_rates(self) -> dict[str, float]:
+        """Return the per-series daily overhead rate map (v2 config key).
+
+        Returns an empty dict when the key is absent so callers can detect
+        and raise a meaningful error rather than silently dividing zero.
+        """
+        return dict(self.raw.get("daily_overhead_rates") or {})
+
+    def profit_mode_default(self) -> str:
+        """Return 'scale' (default) or 'flat' — the tenant's default profit mode."""
+        return str(self.raw.get("profit_mode_default") or "scale")
+
+    def weekly_profit_floor(self) -> float:
+        """Minimum profit per on-site week ($2,500)."""
+        return float(self.raw.get("weekly_profit_floor") or 2500.0)
+
+    def job_profit_floor(self) -> float:
+        """Absolute minimum profit per job ($2,500), regardless of size."""
+        return float(self.raw.get("job_profit_floor") or 2500.0)
+
+    def daily_oh_weeks_rounding(self) -> str:
+        """'ceil' (default) or 'floor' — how total series days map to on-site weeks."""
+        return str(self.raw.get("daily_overhead_weeks_rounding_mode") or "ceil")
+
     def low_slope_deck_cost(self, deck_type: str) -> float:
         val = self.raw["low_slope"]["deck_types"].get(deck_type)
         if val is None and deck_type != "existing_concrete":

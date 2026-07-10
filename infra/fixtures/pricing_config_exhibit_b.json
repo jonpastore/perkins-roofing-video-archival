@@ -92,6 +92,17 @@
     }
   },
 
+  "daily_overhead_rates": {
+    "demo_dry_in_flat": 1050,
+    "tile": 745,
+    "metal": 850,
+    "shingle": 700
+  },
+  "daily_overhead_weeks_rounding_mode": "ceil",
+  "profit_mode_default": "scale",
+  "weekly_profit_floor": 2500,
+  "job_profit_floor": 2500,
+
   "profit_scale": [
     [1,    400],
     [4,    200],

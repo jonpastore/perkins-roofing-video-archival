@@ -5,6 +5,24 @@ import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, TierCard
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Region = "HVHZ" | "FBC";
+type OverheadMode = "per_sq" | "daily";
+type ProfitMode = "scale" | "flat";
+
+// Fallback rates used before the /rates response arrives; overridden by config values.
+const DAILY_SERIES_LABELS: Record<string, string> = {
+  demo_dry_in_flat: "Demo / Dry-In / Flat",
+  tile:             "Tile Install",
+  metal:            "Metal Install",
+  shingle:          "Shingle Install",
+};
+const FALLBACK_DAILY_RATES: Record<string, number> = {
+  demo_dry_in_flat: 1050,
+  tile: 745,
+  metal: 850,
+  shingle: 700,
+};
+const FALLBACK_WEEKLY_FLOOR = 2500;
+const FALLBACK_JOB_FLOOR = 2500;
 
 interface RatesResponse {
   region: Region;
@@ -12,6 +30,21 @@ interface RatesResponse {
   specialty_tile: Record<string, number>;
   base_cost_lm: Record<string, number>;
   overhead: Record<string, number>;
+  // v2 fields — present when config has daily_overhead_rates
+  daily_overhead_rates?: Record<string, number>;
+  daily_overhead_weeks_rounding_mode?: string;
+  weekly_profit_floor?: number;
+  job_profit_floor?: number;
+}
+
+interface ProfitGuidance {
+  total_series_days: number;
+  on_site_weeks: number;
+  weekly_floor: number;
+  profit_floor_guidance: number;
+  absolute_floor: number;
+  effective_floor: number;
+  implied_weekly_profit?: number;
 }
 
 interface QuoteResult {
@@ -28,6 +61,7 @@ interface QuoteResult {
   profit_pct: number;
   estimated_commission: number;
   margin_ok: boolean;
+  profit_guidance?: ProfitGuidance;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -195,6 +229,15 @@ export function Estimator() {
   const [penetrations, setPenetrations] = useState<string>("");
   const [ridgeVentLf, setRidgeVentLf] = useState<string>("");
 
+  // v2: Day-based overhead
+  const [overheadMode, setOverheadMode] = useState<OverheadMode>("per_sq");
+  // days per series, keyed by series key; empty string = not entered
+  const [dailyDays, setDailyDays] = useState<Record<string, string>>({});
+
+  // v2: Profit mode
+  const [profitMode, setProfitMode] = useState<ProfitMode>("scale");
+  const [flatProfitDollars, setFlatProfitDollars] = useState<string>("");
+
   // Quote result
   const [result, setResult] = useState<QuoteResult | null>(null);
   const [quoting, setQuoting] = useState(false);
@@ -251,6 +294,13 @@ export function Estimator() {
     setQuoteError(null);
     setResult(null);
 
+    // Build daily series list (only entries with a valid positive days value)
+    const daily_series = overheadMode === "daily"
+      ? dailySeriesKeys
+          .map((k) => ({ series: k, days: parseFloat(dailyDays[k] || "0") }))
+          .filter((s) => s.days > 0)
+      : [];
+
     const body: Record<string, unknown> = {
       region,
       roof_type: roofType,
@@ -267,8 +317,12 @@ export function Estimator() {
       stucco_metal_lf: parseFloat(stuccoMetalLf) || 0,
       penetrations: parseInt(penetrations) || 0,
       ridge_vent_lf: parseFloat(ridgeVentLf) || 0,
+      overhead_mode: overheadMode,
+      daily_series,
+      profit_mode: profitMode,
     };
     if (specialtyTile) body.specialty_tile = specialtyTile;
+    if (profitMode === "flat") body.flat_profit_dollars = parseFloat(flatProfitDollars) || 0;
 
     try {
       const r = await apiFetch("/estimator/quote", {
@@ -289,6 +343,32 @@ export function Estimator() {
   }
 
   const specialtyTileKeys = rates?.specialty_tile ? Object.keys(rates.specialty_tile) : [];
+
+  // v2: config values sourced from rates response, falling back to constants while loading
+  const dailyRates = rates?.daily_overhead_rates ?? FALLBACK_DAILY_RATES;
+  const weeklyFloor = rates?.weekly_profit_floor ?? FALLBACK_WEEKLY_FLOOR;
+  const jobFloor = rates?.job_profit_floor ?? FALLBACK_JOB_FLOOR;
+  const weeksRounding = rates?.daily_overhead_weeks_rounding_mode ?? "ceil";
+
+  // Series options derived from config (preserves display order via fallback key list)
+  const dailySeriesKeys = Object.keys(dailyRates).length > 0
+    ? Object.keys(dailyRates)
+    : Object.keys(FALLBACK_DAILY_RATES);
+
+  // v2: live derived values for the guidance readout (computed from current form state)
+  const totalSeriesDays = dailySeriesKeys.reduce(
+    (sum, k) => sum + (parseFloat(dailyDays[k] || "0") || 0),
+    0,
+  );
+  const rawWeeks = weeksRounding === "floor"
+    ? Math.max(1, Math.floor(totalSeriesDays / 5))
+    : Math.ceil(totalSeriesDays / 5);
+  const onSiteWeeks = totalSeriesDays > 0 ? rawWeeks : 0;
+  const effectiveFloor = onSiteWeeks > 0
+    ? Math.max(jobFloor, onSiteWeeks * weeklyFloor)
+    : jobFloor;
+  const flatProfitVal = parseFloat(flatProfitDollars) || 0;
+  const impliedWeekly = onSiteWeeks > 0 ? flatProfitVal / onSiteWeeks : 0;
 
   return (
     <main style={{ maxWidth: 900 }}>
@@ -495,6 +575,84 @@ export function Estimator() {
             </div>
           </Card>
 
+          {/* v2: Day-based overhead */}
+          <Card>
+            <div style={{ marginBottom: 10, fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>
+              Overhead Mode
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <PillButton active={overheadMode === "per_sq"} onClick={() => setOverheadMode("per_sq")}>
+                Per-Square (default)
+              </PillButton>
+              <PillButton active={overheadMode === "daily"} onClick={() => setOverheadMode("daily")}>
+                Day-Based (v2)
+              </PillButton>
+            </div>
+            {overheadMode === "daily" && (
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 10 }}>
+                  {dailySeriesKeys.map((k) => (
+                    <div key={k}>
+                      <FieldLabel>{DAILY_SERIES_LABELS[k] ?? k} (${(dailyRates[k] ?? 0).toLocaleString()}/day)</FieldLabel>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={dailyDays[k] ?? ""}
+                        onChange={(e) => setDailyDays((prev) => ({ ...prev, [k]: e.target.value }))}
+                        placeholder="0"
+                        style={{ ...inputStyle, padding: "8px 10px", fontSize: 13, width: "100%" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {totalSeriesDays > 0 && (
+                  <div style={{ fontSize: 12, color: BRAND.sub, background: BRAND.bg, borderRadius: 6, padding: "8px 10px" }}>
+                    {totalSeriesDays} total days · {onSiteWeeks} on-site {onSiteWeeks === 1 ? "week" : "weeks"} · profit floor{" "}
+                    <strong style={{ color: BRAND.navyText }}>{usd(effectiveFloor)}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* v2: Profit mode */}
+          <Card>
+            <div style={{ marginBottom: 10, fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>
+              Profit Mode
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <PillButton active={profitMode === "scale"} onClick={() => setProfitMode("scale")}>
+                Sliding Scale (default)
+              </PillButton>
+              <PillButton active={profitMode === "flat"} onClick={() => setProfitMode("flat")}>
+                Flat Dollar
+              </PillButton>
+            </div>
+            {profitMode === "flat" && (
+              <div>
+                <FieldLabel>Total Profit ($)</FieldLabel>
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={flatProfitDollars}
+                  onChange={(e) => setFlatProfitDollars(e.target.value)}
+                  placeholder="e.g. 5000"
+                  style={{ ...inputStyle, padding: "8px 10px", fontSize: 13, width: "100%", marginBottom: 8 }}
+                />
+                {flatProfitVal > 0 && (
+                  <div style={{ fontSize: 12, borderRadius: 6, padding: "8px 10px", background: flatProfitVal >= effectiveFloor ? "#e6f9f0" : "#fef2f2", color: flatProfitVal >= effectiveFloor ? "#1a7f4b" : BRAND.red }}>
+                    {onSiteWeeks > 0
+                      ? <>{usd(impliedWeekly)}/week implied · floor {usd(effectiveFloor)}{impliedWeekly < weeklyFloor ? " — below floor" : ""}</>
+                      : <>floor {usd(effectiveFloor)}{flatProfitVal < effectiveFloor ? " — below floor" : ""}</>
+                    }
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
           {quoteError && <ErrorMsg>Error: {quoteError}</ErrorMsg>}
 
           <Button
@@ -573,6 +731,29 @@ export function Estimator() {
                 <ResultRow label="Profit" value={usd(result.profit_dollars)} bold />
                 <ResultRow label="Profit %" value={pct(result.profit_pct)} bold />
                 <ResultRow label="Est. Commission (15%)" value={usd(result.estimated_commission)} />
+
+                {result.profit_guidance && (
+                  <>
+                    <SectionLabel>Profit Guidance (v2)</SectionLabel>
+                    <ResultRow label="On-site weeks" value={String(result.profit_guidance.on_site_weeks)} />
+                    <ResultRow label="Profit floor" value={usd(result.profit_guidance.effective_floor)} />
+                    {result.profit_guidance.implied_weekly_profit != null && (
+                      <ResultRow
+                        label="Implied $/week"
+                        value={usd(result.profit_guidance.implied_weekly_profit)}
+                        bold={result.profit_guidance.implied_weekly_profit < (rates?.weekly_profit_floor ?? FALLBACK_WEEKLY_FLOOR)}
+                      />
+                    )}
+                    {result.profit_dollars < result.profit_guidance.effective_floor && (
+                      <div style={{ marginTop: 6, fontSize: 11, color: BRAND.red, fontWeight: 600 }}>
+                        Profit {usd(result.profit_dollars)} is below the {usd(result.profit_guidance.effective_floor)} floor
+                        {result.profit_guidance.on_site_weeks != null && (
+                          <> ({result.profit_guidance.on_site_weeks} week{result.profit_guidance.on_site_weeks !== 1 ? "s" : ""} × {usd(rates?.weekly_profit_floor ?? FALLBACK_WEEKLY_FLOOR)})</>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
 
                 <p style={{ marginTop: 14, marginBottom: 0, fontSize: 11, color: BRAND.sub, lineHeight: 1.5 }}>
                   Cost estimate only — not a scope of work. Base numbers pend Tim's confirmation.

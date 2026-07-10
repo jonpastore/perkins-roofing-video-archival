@@ -918,6 +918,147 @@ class TestDumpsterBoundaryFlag:
 # Fix 8 (M1): Estimate persistence — /quote persists Estimate row
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# R2 HIGH-3: API trust boundary validation for v2 fields
+# ---------------------------------------------------------------------------
+
+# Minimal config with daily_overhead_rates so the engine can run v2 paths
+SAMPLE_CONFIG_V2 = {
+    **SAMPLE_CONFIG,
+    "daily_overhead_rates": {
+        "demo_dry_in_flat": 1050,
+        "tile": 745,
+        "metal": 850,
+        "shingle": 700,
+    },
+    "daily_overhead_weeks_rounding_mode": "ceil",
+    "profit_mode_default": "scale",
+    "weekly_profit_floor": 2500,
+    "job_profit_floor": 2500,
+}
+
+
+class TestV2APIValidation:
+    """HIGH-3: DailySeriesItem must validate days and series name at the API boundary (→422)."""
+
+    def _branch_with_v2_config(self, client) -> str:
+        branch = _unique_branch("v2-api")
+        created = _create_config(client, branch=branch, config=SAMPLE_CONFIG_V2)
+        _activate_config(client, created["id"])
+        return branch
+
+    def test_daily_series_non_half_increment_returns_422(self, admin_client):
+        """days=1.3 is not a 0.5 multiple — must return 422, not 500."""
+        branch = self._branch_with_v2_config(admin_client)
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "3tab_shingle",
+                "num_squares": 10.0,
+                "project_kind": "residential",
+                "overhead_mode": "daily",
+                "daily_series": [{"series": "shingle", "days": 1.3}],
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 422, f"Expected 422 for days=1.3, got {r.status_code}: {r.text}"
+
+    def test_daily_series_unknown_series_returns_422(self, admin_client):
+        """Unknown series name must return 422, not 500."""
+        branch = self._branch_with_v2_config(admin_client)
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "3tab_shingle",
+                "num_squares": 10.0,
+                "project_kind": "residential",
+                "overhead_mode": "daily",
+                "daily_series": [{"series": "mystery_series", "days": 1.0}],
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 422, f"Expected 422 for unknown series, got {r.status_code}: {r.text}"
+
+    def test_flat_profit_negative_returns_422(self, admin_client):
+        """flat_profit_dollars < 0 must return 422 (MEDIUM-1: ge=0 constraint)."""
+        branch = self._branch_with_v2_config(admin_client)
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "3tab_shingle",
+                "num_squares": 10.0,
+                "project_kind": "residential",
+                "profit_mode": "flat",
+                "flat_profit_dollars": -500.0,
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 422, f"Expected 422 for negative flat_profit, got {r.status_code}: {r.text}"
+
+    def test_daily_series_zero_days_returns_422(self, admin_client):
+        """days=0 must return 422 (gt=0 field constraint)."""
+        branch = self._branch_with_v2_config(admin_client)
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "3tab_shingle",
+                "num_squares": 10.0,
+                "project_kind": "residential",
+                "overhead_mode": "daily",
+                "daily_series": [{"series": "shingle", "days": 0}],
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 422, f"Expected 422 for days=0, got {r.status_code}: {r.text}"
+
+    def test_v2_daily_oh_valid_request_succeeds(self, admin_client):
+        """Valid daily OH request with known series and 0.5-increment days returns 200."""
+        branch = self._branch_with_v2_config(admin_client)
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "3tab_shingle",
+                "num_squares": 10.0,
+                "project_kind": "residential",
+                "overhead_mode": "daily",
+                "daily_series": [
+                    {"series": "demo_dry_in_flat", "days": 1.0},
+                    {"series": "shingle", "days": 2.5},
+                ],
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 200, f"Expected 200 for valid v2 request, got {r.status_code}: {r.text}"
+        data = r.json()
+        assert "profit_guidance" in data
+        assert data["profit_guidance"]["on_site_weeks"] == 1  # ceil(3.5/5)=1
+
+    def test_rates_endpoint_includes_v2_fields(self, admin_client):
+        """GET /estimator/rates must return daily_overhead_rates and profit floor fields (MEDIUM-3)."""
+        branch = self._branch_with_v2_config(admin_client)
+        r = admin_client.get(
+            f"/estimator/rates?branch={branch}&region=FBC",
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert "daily_overhead_rates" in data, "rates must include daily_overhead_rates"
+        assert "weekly_profit_floor" in data
+        assert "job_profit_floor" in data
+        assert "daily_overhead_weeks_rounding_mode" in data
+        assert data["daily_overhead_rates"]["shingle"] == 700
+
+
 class TestEstimatePersistence:
     def test_quote_persists_estimate_row(self, admin_client):
         """POST /quote with active config must persist an Estimate row with audit fields."""

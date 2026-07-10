@@ -11,14 +11,30 @@ Role requirements (core.authz):
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from app.models import Estimate, PricingConfig
 from core import estimator as E
-from core.pricing_config import load_config
+from core.estimator import DailyOverheadSeries
+from core.pricing_config import ConfigError, load_config
+
+
+class DailySeriesItem(BaseModel):
+    series: str
+    days: float = Field(..., gt=0)
+
+    @field_validator("days")
+    @classmethod
+    def days_must_be_half_increment(cls, v: float) -> float:
+        remainder = round(v % 0.5, 10)
+        if remainder != 0.0:
+            raise ValueError(
+                f"days must be a multiple of 0.5 (half-day increments); got {v!r}"
+            )
+        return v
 
 router = APIRouter(prefix="/estimator", tags=["estimator"])
 
@@ -69,6 +85,12 @@ class QuoteRequest(BaseModel):
     override_base_cost: Optional[float] = None
     override_overhead: Optional[float] = None
     override_profit_per_sq: Optional[float] = None
+
+    # v2: day-based overhead + flat profit mode
+    overhead_mode: Literal["per_sq", "daily"] = "per_sq"
+    daily_series: list[DailySeriesItem] = Field(default_factory=list)
+    profit_mode: Literal["scale", "flat"] = "scale"
+    flat_profit_dollars: Optional[float] = Field(default=None, ge=0)
 
 
 # ---------------------------------------------------------------------------
@@ -143,10 +165,29 @@ def quote(
         override_base_cost=body.override_base_cost,
         override_overhead=body.override_overhead,
         override_profit_per_sq=body.override_profit_per_sq,
+        overhead_mode=body.overhead_mode,
+        daily_series=[DailyOverheadSeries(series=s.series, days=s.days) for s in body.daily_series],
+        profit_mode=body.profit_mode,
+        flat_profit_dollars=body.flat_profit_dollars,
     )
 
     config = load_config(cfg_row.config)
-    result = E.estimate(config, q)
+
+    # Validate daily series names against config before engine call (→422, not 500)
+    if body.daily_series:
+        known_series = set(config.daily_overhead_rates().keys())
+        unknown = [s.series for s in body.daily_series if s.series not in known_series]
+        if unknown:
+            raise HTTPException(
+                422,
+                detail=f"unknown daily_series name(s): {unknown}. "
+                f"Valid series: {sorted(known_series)}",
+            )
+
+    try:
+        result = E.estimate(config, q)
+    except (ValueError, ConfigError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
 
     # Stamp config audit fields on response
     result["pricing_config_id"] = cfg_row.id
@@ -203,6 +244,11 @@ def rates(
             "specialty_tile": (cfg.get("specialty_tile_upgrade") or {}).get(zone, {}),
             "line_items": (cfg.get("line_items") or {}).get(zone, {}),
             "pm_incentive": cfg.get("pm_incentive", {}),
+            # v2: day-based overhead and profit-floor config fields for the UI
+            "daily_overhead_rates": cfg.get("daily_overhead_rates") or {},
+            "daily_overhead_weeks_rounding_mode": cfg.get("daily_overhead_weeks_rounding_mode") or "ceil",
+            "weekly_profit_floor": cfg.get("weekly_profit_floor") or 2500,
+            "job_profit_floor": cfg.get("job_profit_floor") or 2500,
         }
 
     # No active config seeded — minimal response (documented; the SPA shows the note).

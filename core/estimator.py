@@ -2,17 +2,20 @@
 
 Public API:
     estimate(config: PricingConfig, input: QuoteInput) -> EstimateResult
+    compute_daily_overhead(config, series, num_squares) -> (oh_total, per_sq_oh)
+    compute_profit_guidance(config, series, flat_profit=None) -> dict
 
 All rates come from the injected PricingConfig; zero hard-coded constants.
 Every line item carries a cost_category tag for floor and grouping math.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from core._legacy_rates import _profit_per_sq as profit_per_sq  # noqa: F401 — re-exported for backward compat
-from core.pricing_config import PricingConfig
+from core.pricing_config import ConfigError, PricingConfig
 
 SQFT_PER_SQUARE = 100
 
@@ -22,10 +25,119 @@ SlopeType = str  # "sloped" | "low_slope"
 
 
 # -------------------------------------------------------------------------
+# v2: Day-based overhead
+# -------------------------------------------------------------------------
+@dataclass
+class DailyOverheadSeries:
+    """One work series with its day count for the day-based OH mode (v2).
+
+    days must be a positive multiple of 0.5 (half-day increments per spec).
+    """
+    series: str
+    days: float
+
+    def __post_init__(self) -> None:
+        if self.days <= 0:
+            raise ValueError(f"DailyOverheadSeries.days must be positive; got {self.days!r}")
+        remainder = round(self.days % 0.5, 10)
+        if remainder != 0.0:
+            raise ValueError(
+                f"DailyOverheadSeries.days must be a multiple of 0.5 (half-day increments); "
+                f"got {self.days!r}"
+            )
+
+
+# -------------------------------------------------------------------------
 # Exceptions
 # -------------------------------------------------------------------------
 class QuoteRequiresManualReview(Exception):
     """Raised when job characteristics require a manual quote (e.g. 6+ stories)."""
+
+
+# -------------------------------------------------------------------------
+# v2: Day-based overhead public helpers
+# -------------------------------------------------------------------------
+def compute_daily_overhead(
+    config: PricingConfig,
+    series: list[DailyOverheadSeries],
+    num_squares: float,
+) -> tuple[float, float]:
+    """Compute total overhead and per-square overhead from a list of day-series.
+
+    Returns (oh_total, per_sq_oh).
+    Raises ConfigError for unknown series names.
+    Raises ValueError if num_squares <= 0.
+    """
+    if num_squares <= 0:
+        raise ValueError(f"num_squares must be positive; got {num_squares!r}")
+    rates = config.daily_overhead_rates()
+    oh_total = 0.0
+    for s in series:
+        if s.series not in rates:
+            raise ConfigError(
+                f"daily_overhead_rates has no entry for series '{s.series}'. "
+                "Valid series: " + ", ".join(sorted(rates)) + ". "
+                "Add the series to daily_overhead_rates in the pricing config."
+            )
+        oh_total += s.days * float(rates[s.series])
+    per_sq_oh = oh_total / num_squares
+    return oh_total, per_sq_oh
+
+
+def compute_profit_guidance(
+    config: PricingConfig,
+    series: list[DailyOverheadSeries],
+    flat_profit: Optional[float] = None,
+) -> dict[str, Any]:
+    """Compute profit guidance fields for the flat-dollar profit mode (v2).
+
+    When series is non-empty:
+        on_site_weeks = ceil(total_days / 5) — scheduling-window model (configurable).
+        effective_floor = max(job_profit_floor, on_site_weeks × weekly_profit_floor).
+        implied_weekly_profit returned when flat_profit is supplied.
+
+    When series is empty (flat profit mode without daily OH):
+        on_site_weeks = None; effective_floor = job_profit_floor (absolute floor only).
+        implied_weekly_profit is omitted.
+
+    Returns a dict with: total_series_days, on_site_weeks, weekly_floor,
+    profit_floor_guidance, absolute_floor, effective_floor, and optionally
+    implied_weekly_profit.
+    """
+    absolute_floor = config.job_profit_floor()
+    weekly_floor = config.weekly_profit_floor()
+
+    if not series:
+        return {
+            "total_series_days": 0.0,
+            "on_site_weeks": None,
+            "weekly_floor": weekly_floor,
+            "profit_floor_guidance": None,
+            "absolute_floor": absolute_floor,
+            "effective_floor": absolute_floor,
+        }
+
+    total_days = sum(s.days for s in series)
+    rounding = config.daily_oh_weeks_rounding()
+    if rounding == "floor":
+        on_site_weeks = max(1, math.floor(total_days / 5))
+    else:
+        on_site_weeks = math.ceil(total_days / 5)
+
+    weekly_guidance = on_site_weeks * weekly_floor
+    effective_floor = max(absolute_floor, weekly_guidance)
+
+    result: dict[str, Any] = {
+        "total_series_days": total_days,
+        "on_site_weeks": on_site_weeks,
+        "weekly_floor": weekly_floor,
+        "profit_floor_guidance": weekly_guidance,
+        "absolute_floor": absolute_floor,
+        "effective_floor": effective_floor,
+    }
+    if flat_profit is not None:
+        result["implied_weekly_profit"] = flat_profit / on_site_weeks
+    return result
 
 
 # -------------------------------------------------------------------------
@@ -60,6 +172,14 @@ class QuoteInput:
     deck_type: Optional[str] = None
     include_insulation: bool = False
     include_tapered: bool = False
+
+    # v2: Day-based overhead mode
+    overhead_mode: str = "per_sq"        # "per_sq" (default, existing) | "daily"
+    daily_series: list[DailyOverheadSeries] = field(default_factory=list)
+
+    # v2: Profit mode
+    profit_mode: str = "scale"           # "scale" (default, sliding scale) | "flat"
+    flat_profit_dollars: Optional[float] = None   # used when profit_mode="flat"
 
     # Legacy override fields — preserved for old "KEY block" tests using explicit per-sq values.
     override_base_cost: Optional[float] = None
@@ -195,12 +315,24 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
 
     # Per-square components
     base = q.override_base_cost if q.override_base_cost is not None else config.sloped_base(zone, rt)
-    oh = q.override_overhead if q.override_overhead is not None else config.sloped_overhead(zone, rt)
-    pft = q.override_profit_per_sq if q.override_profit_per_sq is not None else config.profit_per_sq(sq)
-
     items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
-    items.append(LineItem("overhead", "Overhead", oh * sq, tags["overhead"], oh))
-    items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
+
+    # Overhead — per_sq mode (default) or day-based mode (v2)
+    if q.overhead_mode == "daily" and q.daily_series:
+        oh_total, oh_per_sq = compute_daily_overhead(config, q.daily_series, sq)
+        items.append(LineItem("overhead", "Overhead", oh_total, tags["overhead"], oh_per_sq))
+    else:
+        oh = q.override_overhead if q.override_overhead is not None else config.sloped_overhead(zone, rt)
+        items.append(LineItem("overhead", "Overhead", oh * sq, tags["overhead"], oh))
+
+    # Profit — scale mode (default) or flat-dollar mode (v2)
+    if q.profit_mode == "flat" and q.flat_profit_dollars is not None:
+        pft_total = q.flat_profit_dollars
+        pft_per_sq = pft_total / sq
+        items.append(LineItem("profit", "Profit", pft_total, tags["profit"], pft_per_sq))
+    else:
+        pft = q.override_profit_per_sq if q.override_profit_per_sq is not None else config.profit_per_sq(sq)
+        items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
 
     cuts_val = config.raw["roof_cuts"][q.roof_cuts]
     if cuts_val:
@@ -356,7 +488,16 @@ def _compute_margin(
     items: list[LineItem],
     slope_type: SlopeType,
     zone: Zone,
+    flat_profit_effective_floor: Optional[float] = None,
 ) -> MarginInfo:
+    """Compute margin metrics and floor warnings.
+
+    flat_profit_effective_floor: when profit_mode='flat', pass the effective floor
+        (max of job_profit_floor and weekly floor) so the margin badge reflects it.
+        A flat profit below this floor adds 'flat_profit_floor' to margin_warnings
+        and causes profit_floor_ok=False, keeping the hero badge and the inline
+        warning consistent.
+    """
     floor_excl = config.raw["floor_excluded_categories"]
 
     profit_dollars = sum(li.amount for li in items if li.category == "Profit")
@@ -385,6 +526,11 @@ def _compute_margin(
     if not cf_ok:
         warnings.append("combined_floor")
 
+    # v2: flat-profit dollar floor check (absolute + weekly minimum)
+    if flat_profit_effective_floor is not None and profit_dollars < flat_profit_effective_floor:
+        warnings.append("flat_profit_floor")
+        pf_ok = False
+
     return MarginInfo(
         profit_dollars=profit_dollars,
         oh_dollars=oh_dollars,
@@ -408,6 +554,13 @@ def estimate(config_or_input, input_or_none=None) -> dict:
       estimate(q: QuoteInput) -> dict                               [legacy stub signature]
 
     Returns a plain dict (call .to_dict() on EstimateResult internally).
+
+    v2 additions in the result dict (present when either v2 mode is active):
+      profit_guidance — dict from compute_profit_guidance(), attached whenever
+                        overhead_mode="daily" OR profit_mode="flat".
+                        When series is empty (flat mode without daily OH):
+                            on_site_weeks=None, effective_floor=job_profit_floor.
+                        When series is non-empty: full weekly breakdown + implied $/week.
     """
     if input_or_none is None:
         # Legacy single-arg call: estimate(q)
@@ -416,7 +569,14 @@ def estimate(config_or_input, input_or_none=None) -> dict:
 
     config: PricingConfig = config_or_input
     q: QuoteInput = input_or_none
-    return _estimate_config(config, q).to_dict()
+    result = _estimate_config(config, q).to_dict()
+
+    # Attach profit_guidance when any v2 mode is active
+    if q.overhead_mode == "daily" or q.profit_mode == "flat":
+        flat_profit = q.flat_profit_dollars if q.profit_mode == "flat" else None
+        result["profit_guidance"] = compute_profit_guidance(config, q.daily_series, flat_profit)
+
+    return result
 
 
 def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
@@ -451,7 +611,13 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     )
     squares_subtotal = sum(li.amount for li in per_sq_items)
 
-    margin = _compute_margin(config, all_items, q.slope_type, zone)
+    # v2: compute effective floor for flat-profit margin check
+    flat_floor: Optional[float] = None
+    if q.profit_mode == "flat" and q.flat_profit_dollars is not None:
+        guidance = compute_profit_guidance(config, q.daily_series, q.flat_profit_dollars)
+        flat_floor = guidance["effective_floor"]
+
+    margin = _compute_margin(config, all_items, q.slope_type, zone, flat_floor)
 
     commission_rate = config.commission_rate(q.slope_type, zone)
     commission = margin.profit_dollars * commission_rate
@@ -527,16 +693,26 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
 
     if not config.is_all_in(rt):
-        oh_key = _low_slope_oh_key(rt)
-        oh = config.low_slope_overhead(zone, oh_key)
+        # Overhead — per_sq mode (default) or day-based mode (v2)
+        if q.overhead_mode == "daily" and q.daily_series:
+            oh_total, oh_per_sq = compute_daily_overhead(config, q.daily_series, sq)
+            items.append(LineItem("overhead", "Overhead", oh_total, tags["overhead"], oh_per_sq))
+        else:
+            oh_key = _low_slope_oh_key(rt)
+            oh = config.low_slope_overhead(zone, oh_key)
+            # Wood deck type adds $50/sq to overhead (concrete deck is the baseline)
+            wood_adder = config.wood_deck_oh_adder() if q.deck_type in _WOOD_DECK_TYPES() else 0.0
+            effective_oh = oh + wood_adder
+            items.append(LineItem("overhead", "Overhead", effective_oh * sq, tags["overhead"], effective_oh))
 
-        # Wood deck type adds $50/sq to overhead (concrete deck is the baseline)
-        wood_adder = config.wood_deck_oh_adder() if q.deck_type in _WOOD_DECK_TYPES() else 0.0
-        effective_oh = oh + wood_adder
-
-        pft = config.profit_per_sq(sq)
-        items.append(LineItem("overhead", "Overhead", effective_oh * sq, tags["overhead"], effective_oh))
-        items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
+        # Profit — scale mode (default) or flat-dollar mode (v2)
+        if q.profit_mode == "flat" and q.flat_profit_dollars is not None:
+            pft_total = q.flat_profit_dollars
+            pft_per_sq = pft_total / sq
+            items.append(LineItem("profit", "Profit", pft_total, tags["profit"], pft_per_sq))
+        else:
+            pft = config.profit_per_sq(sq)
+            items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
 
     if q.layers_to_remove:
         tear_off = config.low_slope_tear_off_cost()
