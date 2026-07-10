@@ -371,9 +371,16 @@ optional stretch. Gate: designer/architect review of the flow + error states.
 
 ## 11. OPEN DECISIONS — RESOLVED 2026-07-10 (Jon), except D3
 
-**Resolutions:** D1 = FIX (ship PDAL, full pitch tier). D2 = settle in S0 spike. D3 = PENDING
-(Jon asked for the CV-footprints explanation; recommendation stands: drop from runtime image,
-code stays in git history). D4 = KEEP Mapbox as fallback/recency layer — ToS grey area
+**Resolutions:** D1 = FIX (ship PDAL, full pitch tier). D2 = settle in S0 spike. D3 = RESOLVED: OSM lookup only,
+drop U-Net/torch from the runtime image (code stays in git history). PLUS a product
+requirement from Jon: every measurement must surface data-vintage and show a
+"field validation recommended" warning when the footprint/imagery may predate the
+current roof — v1 rule: warn when the OSM polygon's last-edit timestamp OR the NAIP
+flight date is older than 3 years (NAIP re-fly cadence; roof-replacement cycles are
+~15y but footprint/imagery staleness is what mismeasures), and always warn when the
+parcel's year_built (county data, if wired) is NEWER than the OSM polygon edit date
+(new construction OSM hasn't caught up with). Show OSM edit date + NAIP flight year
+on the measurement result regardless. D4 = KEEP Mapbox as fallback/recency layer — ToS grey area
 explicitly accepted by Jon; NAIP stays primary. D5 = **ASYNC (Jon override of the sync
 recommendation: "we should always do things async")** — use Cloud Tasks as the GCP-native
 queue: our API creates the measurement row (status=pending) and enqueues; ml-service
