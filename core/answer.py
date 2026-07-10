@@ -17,7 +17,9 @@ def build_answer_prompt(query, contexts, key_points):
     key = "\n".join(f"(key point, source {lk}) {label}" for lk, label in key_points[:20])
     ctx = "\n\n".join(f"(source {lk}) {text}" for lk, text in contexts)
     return ("Answer the homeowner's question using ONLY the material below. Cite the source link "
-            "after each point. Prefer KEY POINTS (verified facts from the video). If the material "
+            "after each point, formatted as a markdown link [▶ MM:SS](url) where MM:SS is the "
+            "timecode from the url's t= parameter — never paste a bare URL into the prose. "
+            "Prefer KEY POINTS (verified facts from the video). If the material "
             "does not cover it, say you couldn't find it in Tim's videos.\n\n"
             f"QUESTION: {query}\n\nKEY POINTS:\n{key}\n\nTRANSCRIPT EXCERPTS:\n{ctx}")
 

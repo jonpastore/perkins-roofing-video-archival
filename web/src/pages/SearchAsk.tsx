@@ -101,7 +101,7 @@ function TimestampLink({ url, label }: { url: string; label?: string }) {
 // timestamp links. Tokenized into React nodes (no innerHTML → no XSS from model output).
 function renderRich(text: string): ReactNode[] {
   const pattern =
-    /(\*\*[^*]+\*\*)|(\[[^\]]+\]\(https?:\/\/[^)]+\))|(https?:\/\/(?:youtu\.be|www\.youtube\.com)\/[^\s)]+)/g;
+    /(\*\*[^*]+\*\*)|(\[[^\]]+\]\(https?:\/\/[^)]+\))|(https?:\/\/(?:youtu\.be|www\.youtube\.com)\/[^\s).,;]+)/g;
   const out: ReactNode[] = [];
   let last = 0, m: RegExpExecArray | null, i = 0;
   while ((m = pattern.exec(text))) {

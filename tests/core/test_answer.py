@@ -25,6 +25,14 @@ def test_build_answer_prompt_includes_question_and_sources():
     assert "(key point, source https://youtu.be/v1?t=5) check the flashing" in p
 
 
+def test_build_answer_prompt_requires_markdown_link_citations():
+    # Regression for Tim's 7/10 report: bare URLs joined by ", " in the prose get the
+    # comma swallowed into the autolinked href (youtu.be/..?t=1050,) → t is ignored.
+    p = build_answer_prompt("q", contexts=[("https://youtu.be/v1?t=10", "x")], key_points=[])
+    assert "[▶ MM:SS](url)" in p
+    assert "never paste a bare URL" in p
+
+
 def test_key_points_truncated_to_20():
     kp = [(f"l{i}", f"point{i}") for i in range(30)]
     p = build_answer_prompt("q", contexts=[], key_points=kp)
