@@ -1,0 +1,106 @@
+EMAIL SECURITY UPGRADE — PERKINSROOFING.NET
+What we did on July 10, 2026, and why it matters
+
+SUMMARY
+
+We upgraded the email security for perkinsroofing.net. In plain terms:
+
+1. Email the company sends is now digitally "signed," so Gmail, Yahoo,
+   and Outlook can prove a message really came from Perkins Roofing.
+
+2. We turned on a policy that tells the world's mail providers: "If you
+   receive an email claiming to be from perkinsroofing.net and it fails
+   that proof, treat it as suspicious and send it to spam."
+
+3. We set up a reporting mailbox so we can see, every day, who is
+   sending email using our name — including scammers trying to
+   impersonate the company.
+
+The impact: fewer legitimate Perkins emails landing in customers' spam
+folders, and real protection against criminals sending fake invoices or
+phishing emails that appear to come from us. Roofing companies are a
+frequent target for this because of the size of the payments involved.
+
+Nothing changes in day-to-day email use. Nobody needs a new password,
+app, or training. This all happens behind the scenes.
+
+
+THE DETAILS, IN PLAIN ENGLISH
+
+1) THE PROBLEM WE WERE SOLVING
+
+Email was designed decades ago with no built-in way to prove who sent a
+message. Anyone can put "perkinsroofing.net" in the FROM line of an
+email — the same way anyone can write a false return address on an
+envelope. Mail providers deal with this using three published records
+that a domain owner sets up. Before today, our setup was incomplete:
+our marketing emails were covered, but the everyday email sent by staff
+from Gmail was only partially protected. That had two costs:
+
+  - Deliverability: messages from staff, especially when forwarded,
+    could fail the checks and land in spam.
+  - Impersonation: we had no enforcement telling other mail systems to
+    junk emails that fake our name, and no visibility into whether that
+    was happening.
+
+2) WHAT WE CHANGED (THE THREE RECORDS)
+
+These are settings published in our domain's DNS — think of DNS as the
+public phone book for perkinsroofing.net that every mail provider
+checks.
+
+  SPF (already in place, verified): a public list of the mail services
+  allowed to send on our behalf — Google (our staff email), our
+  marketing/newsletter service, and our automated proposal-reminder
+  service. Anything else claiming to be us is not on the list.
+
+  DKIM (new today): the digital signature. We generated a private
+  signing key in our Google Workspace and published the matching public
+  key in DNS. Every email staff send now carries a tamper-proof
+  signature that receiving systems verify automatically. This is the
+  piece that was missing — our automated emails were signed, but
+  regular staff email was not.
+
+  DMARC (upgraded today): the policy and the reporting. Our old policy
+  said "check, but take no action." The new policy says: if an email
+  fails both checks above, put it in the recipient's spam folder
+  ("quarantine"). It also tells every major mail provider to send us a
+  daily summary report of all email seen using our domain name.
+
+3) THE REPORTING GROUP
+
+We created a group mailbox, dmarc@perkinsroofing.net, currently
+received by Jon and Amber. The world's mail providers (Google, Yahoo,
+Microsoft, and others) will send automated daily reports there. The
+reports show how many messages used our name, where they came from,
+and whether they passed or failed. This is how we will spot both
+delivery problems and impersonation attempts.
+
+One group policy had to be loosened to make this work: the group must
+accept email from senders outside the company, because the reports
+come from Google, Yahoo, Microsoft, etc. Only this one mailbox accepts
+outside mail this way; it cannot be used to reach staff, its member
+list is hidden, and only Jon and Amber receive its contents. This was
+a deliberate, contained change, not a company-wide one.
+
+4) WHAT TO EXPECT
+
+  - No change for staff. Sending and receiving email works exactly as
+    before.
+  - Better inbox placement over the coming weeks, as mail providers see
+    consistently signed mail from us.
+  - Daily technical reports arriving at the dmarc@ mailbox within a day
+    or two. They are machine-generated files, not messages needing a
+    reply. Down the road we can plug in a free service that turns them
+    into a simple weekly summary.
+  - If anyone ever reports "I sent an email and it went to spam,"
+    that's now a diagnosable problem — the reports will show exactly
+    which check failed and why.
+
+5) ONE FUTURE STEP (OPTIONAL)
+
+Today's policy is "quarantine" — fakes go to spam. Once the reports
+confirm all our legitimate mail passes cleanly for a few weeks, the
+final step is a "reject" policy, where fakes are refused outright and
+never reach the recipient at all. We'll recommend that switch when the
+data supports it.
