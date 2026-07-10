@@ -400,8 +400,17 @@ export function Users() {
         const detail = await r.json().catch(() => ({}));
         throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
       }
-      const created: FirebaseUser = await r.json();
-      setInviteOk(`Invited ${created.email} as ${created.role}.`);
+      const created: FirebaseUser & { email_sent?: boolean; email_error?: string | null } =
+        await r.json();
+      if (created.email_sent) {
+        setInviteOk(`Invited ${created.email} as ${created.role}. An invitation email was sent.`);
+      } else {
+        setInviteOk(
+          `Invited ${created.email} as ${created.role} — they can sign in with Google now. ` +
+            `(Invite email could not be sent${created.email_error ? `: ${created.email_error}` : ""}; ` +
+            `send them the sign-in link directly.)`,
+        );
+      }
       setInviteEmail("");
       setInviteName("");
       setInviteRole("sales");

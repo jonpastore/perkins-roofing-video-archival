@@ -17,6 +17,7 @@ def send(
     to: str,
     subject: str,
     html: str,
+    bcc: list[str] | str | None = None,
 ) -> str:
     """Send an email via Resend and return the Resend message id.
 
@@ -32,6 +33,8 @@ def send(
         to:         Recipient email address.
         subject:    Email subject line.
         html:       HTML body of the email.
+        bcc:        Optional blind-copy recipient(s). Server-derived only —
+                    never client-supplied.
 
     Returns:
         The Resend ``id`` string for the sent message.
@@ -50,6 +53,8 @@ def send(
         "subject": subject,
         "html": html,
     }
+    if bcc:
+        payload["bcc"] = [bcc] if isinstance(bcc, str) else list(bcc)
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         "https://api.resend.com/emails",
@@ -57,6 +62,10 @@ def send(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Explicit UA: Cloudflare in front of api.resend.com returns 1010 (bot
+            # block) for the default Python-urllib signature from non-Google egress
+            # (dev boxes, scripts). Works in prod either way; this makes it universal.
+            "User-Agent": "PerkinsRoofingPlatform/1.0",
         },
         method="POST",
     )

@@ -8,6 +8,7 @@ NOTE: setting custom claims requires the runtime Service Account to have the
 Firebase Authentication Admin role (roles/firebaseauth.admin) in IAM. The
 endpoint is written correctly; the parent must grant that IAM binding.
 """
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -173,12 +174,54 @@ def invite_user(body: InviteRequest, claims=Depends(require_role("manage_users")
     existing_claims["role"] = body.role
     auth.set_custom_user_claims(user.uid, existing_claims)
 
+    # Send the branded invitation email. Best-effort: the role claim is already set
+    # (the user is authorized regardless), so a mail failure must not 500 the invite —
+    # it is reported back in the response for the UI to surface.
+    display_name = getattr(user, "display_name", None) or body.display_name or None
+    email_sent, email_error = _send_invite_email(
+        to_email=body.email,
+        recipient_name=display_name,
+        role=body.role,
+        inviter_claims=claims,
+    )
+
     return {
         "uid": user.uid,
         "email": body.email,
-        "display_name": getattr(user, "display_name", None) or body.display_name or None,
+        "display_name": display_name,
         "role": body.role,
+        "email_sent": email_sent,
+        "email_error": email_error,
     }
+
+
+def _send_invite_email(
+    *, to_email: str, recipient_name: Optional[str], role: str, inviter_claims: dict
+) -> tuple[bool, Optional[str]]:
+    """Compose + send the invitation email. Returns (sent, error_message)."""
+    from adapters import resend
+    from core.invite_email import build_invite_email
+
+    inviter_email = (inviter_claims or {}).get("email")
+    sign_in_url = os.environ.get("PUBLIC_APP_URL", "https://app.perkinsroofing.net")
+    subject, html = build_invite_email(
+        recipient_name=recipient_name,
+        role=role,
+        sign_in_url=sign_in_url,
+        inviter_name=(inviter_claims or {}).get("name"),
+    )
+    try:
+        resend.send(
+            from_name="Perkins Roofing",
+            reply_to=inviter_email or "info@perkinsroofing.net",
+            to=to_email,
+            subject=subject,
+            html=html,
+        )
+        return True, None
+    except Exception as exc:  # noqa: BLE001 — mail is best-effort; pre-auth already succeeded
+        log("invite_email_failed", email=to_email, error=str(exc))
+        return False, str(exc)
 
 
 @router.delete("")
