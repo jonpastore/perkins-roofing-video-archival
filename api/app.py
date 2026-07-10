@@ -3,11 +3,11 @@ This is the PROD entrypoint (replaces the unauthenticated app/api.py). Search/as
 authenticated sales|admin caller; /internal/promote is the Cloud Scheduler target, protected
 at the Cloud Run IAM layer (scheduler-sa OIDC, run.invoker)."""
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.auth import current_claims, get_db_session, require_internal_tenants, require_role, require_role_db
+from api.middleware.cors import DynamicCORSMiddleware
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
@@ -64,12 +64,7 @@ def _assert_rls_enforceable() -> None:
         logging.getLogger(__name__).warning("RLS enforceability check skipped (transient)", exc_info=True)
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(settings.CORS_ORIGINS),
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # deepsec L1: no wildcard
-    allow_headers=["Authorization", "Content-Type"],
-)
+app.add_middleware(DynamicCORSMiddleware)
 
 
 @app.middleware("http")

@@ -209,6 +209,19 @@ class AggregatedTopic(Base):
     __table_args__ = (Index("ix_aggregated_topics_tenant_id", "tenant_id"),)
 
 
+class CorsOrigin(Base):
+    """Platform-level CORS allow-list — app-owned, no TF resource attribute.
+    tenant_id NULL = platform-wide; non-null = tenant-scoped (added at domain onboarding W2).
+    RLS-exempt: read before tenant context is resolved; filtered in-process by the middleware.
+    """
+    __tablename__ = "cors_origins"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    origin     = Column(String, nullable=False, unique=True)
+    tenant_id  = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    __table_args__ = (Index("ix_cors_origins_tenant_id", "tenant_id"),)
+
+
 class PlatformConfig(Base):
     __tablename__ = "platform_config"
     key = Column(String, primary_key=True)

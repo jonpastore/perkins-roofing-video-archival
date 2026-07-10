@@ -33,7 +33,8 @@ class Settings:
     # Retrieval / answer
     ABSTAIN_THRESHOLD = float(os.getenv("ABSTAIN_THRESHOLD", "0.71"))  # calibrated via app.eval (94% sep)
 
-    # WordPress integration
+    # WordPress integration — single-tenant env fallback (W0: per-tenant value moves to
+    # Tenant.settings.integrations.wp_url; full consumer migration deferred to a later wave).
     WP_URL = os.getenv("WP_URL", "").rstrip("/")
 
     # Production site domain — used for canonical URLs and OpenGraph tags.
@@ -42,20 +43,6 @@ class Settings:
 
     # Cost guardrails
     MAX_VIDEOS_PER_RUN = int(os.getenv("MAX_VIDEOS_PER_RUN", "500"))
-
-    # Browser origins allowed to call the API (SPA). Comma-separated env override.
-    CORS_ORIGINS = tuple(
-        o.strip()
-        for o in os.getenv(
-            "CORS_ORIGINS",
-            "https://video-archival-and-content-gen.web.app,"
-            "https://video-archival-and-content-gen.firebaseapp.com,"
-            "https://perkins.degenito.ai,"
-            "https://app.perkinsroofing.net,"
-            "http://localhost:5173",
-        ).split(",")
-        if o.strip()
-    )
 
     # Global email header HTML — prepended to every outgoing email body when set.
     EMAIL_HTML_HEADER = os.getenv("EMAIL_HTML_HEADER", "")

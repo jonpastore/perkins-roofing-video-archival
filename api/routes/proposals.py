@@ -461,6 +461,10 @@ def send_proposal(
     accept_token = row.accept_token
     proposal_title = row.title
 
+    from core.tenant_settings import TenantSettings  # noqa: PLC0415
+    _ts = TenantSettings.load(dict(tenant_row.settings or {}) if tenant_row else {})
+    _reply_to = _ts.get_workspace_admin_subject() or "info@perkinsroofing.net"
+
     db.add(ProposalEvent(
         tenant_id=tenant_id,
         proposal_id=row.id,
@@ -479,6 +483,7 @@ def send_proposal(
             accept_token=accept_token,
             tenant_name=tenant_name,
             proposal_title=proposal_title,
+            reply_to=_reply_to,
         )
     else:
         email_sent = False
@@ -553,6 +558,10 @@ def revise_proposal(
     customer_email = customer.email if customer else None
     tenant_name = tenant_row.name if tenant_row else "Your roofing contractor"
 
+    from core.tenant_settings import TenantSettings  # noqa: PLC0415
+    _ts2 = TenantSettings.load(dict(tenant_row.settings or {}) if tenant_row else {})
+    _reply_to2 = _ts2.get_workspace_admin_subject() or "info@perkinsroofing.net"
+
     db.add(ProposalEvent(
         tenant_id=tenant_id,
         proposal_id=new_row.id,
@@ -574,6 +583,7 @@ def revise_proposal(
             accept_token=new_accept_token,
             tenant_name=tenant_name,
             proposal_title=new_title,
+            reply_to=_reply_to2,
         )
     else:
         _log.warning("revise_proposal: customer has no email for proposal %s", new_proposal_id)
@@ -901,8 +911,13 @@ def _send_accept_link_email(
     accept_token: str,
     tenant_name: str,
     proposal_title: str,
+    reply_to: str = "info@perkinsroofing.net",
 ) -> bool:
     """Send the accept-link email via Resend. Returns True on success, False if email absent.
+
+    reply_to should be the tenant's workspace_admin_subject from Tenant.settings.integrations
+    (W0: retired WORKSPACE_ADMIN_SUBJECT env var — now read from per-tenant settings at the
+    call site and passed in explicitly).
 
     Degrades gracefully — logs warning and returns False instead of raising if Resend is
     unavailable (missing API key) or to_email is blank.
@@ -929,7 +944,7 @@ Review &amp; Accept Proposal</a></p>
         import adapters.resend as resend_adapter  # noqa: PLC0415
         resend_adapter.send(
             from_name=tenant_name,
-            reply_to=os.environ.get("WORKSPACE_ADMIN_SUBJECT", "info@perkinsroofing.net"),
+            reply_to=reply_to,
             to=to_email,
             subject=f"Your proposal from {tenant_name} is ready",
             html=html,

@@ -85,6 +85,31 @@ class MeteringCaps(BaseModel):
     render_minutes_per_month: float | None = None
 
 
+class IntegrationsSettings(BaseModel):
+    """Per-tenant third-party integration identifiers (W0 T-4 retirement).
+
+    Replaces the single-tenant env vars WP_URL, YT_OWNER_CHANNEL_ID, and
+    WORKSPACE_ADMIN_SUBJECT — each tenant stores its own values here.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    wp_url: str | None = None
+    yt_owner_channel_id: str | None = None
+    workspace_admin_subject: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Ez-Bids platform brand constants (W0 T-5)
+# These are PLATFORM-level constants, distinct from per-tenant brand settings.
+# ---------------------------------------------------------------------------
+
+EZBIDS_PLATFORM_NAME = "Ez-Bids"
+EZBIDS_PLATFORM_DOMAIN = "ezbids.degenito.ai"
+EZBIDS_PLATFORM_FROM_DOMAIN = "ezbids-mail.degenito.ai"
+EZBIDS_PLATFORM_SUPPORT_EMAIL = "support@degenito.ai"
+
+
 # ---------------------------------------------------------------------------
 # Top-level settings model
 # ---------------------------------------------------------------------------
@@ -95,6 +120,7 @@ class TenantSettings(BaseModel):
     Registered keys (TRD-F0 §3a-1):
       F3:  deposit, reminder_cadence_days, license_number
       F5:  brand, kb, marketing, metering_caps
+      W0:  integrations (wp_url, yt_owner_channel_id, workspace_admin_subject)
 
     extra="allow" preserves unknown keys from future waves without dropping them.
     """
@@ -112,6 +138,9 @@ class TenantSettings(BaseModel):
     marketing: MarketingSettings | None = None
     metering_caps: MeteringCaps | None = None
 
+    # W0 keys — third-party integration identifiers (moved from single-tenant env vars)
+    integrations: IntegrationsSettings | None = None
+
     @classmethod
     def load(cls, settings_dict: dict[str, Any]) -> "TenantSettings":
         """Parse a settings dict from the DB. Alias for TenantSettings(**d).
@@ -119,3 +148,21 @@ class TenantSettings(BaseModel):
         Raises ValidationError on structural type errors — no silent fallback.
         """
         return cls(**settings_dict)
+
+    def get_wp_url(self) -> str:
+        """Return the tenant's WordPress URL (empty string if unset)."""
+        if self.integrations and self.integrations.wp_url:
+            return self.integrations.wp_url.rstrip("/")
+        return ""
+
+    def get_yt_owner_channel_id(self) -> str:
+        """Return the tenant's YouTube owner channel ID (empty string if unset)."""
+        if self.integrations and self.integrations.yt_owner_channel_id:
+            return self.integrations.yt_owner_channel_id
+        return ""
+
+    def get_workspace_admin_subject(self) -> str:
+        """Return the tenant's workspace admin email used as reply-to (empty string if unset)."""
+        if self.integrations and self.integrations.workspace_admin_subject:
+            return self.integrations.workspace_admin_subject
+        return ""
