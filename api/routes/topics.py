@@ -498,7 +498,7 @@ def generate_cluster_article(
             "pillar_slug": pillar_slug,
             "topic": topic,
         }
-        pillar_content = _generate_content_with_fallback(topic, pillar_ctx, pillar_title)
+        pillar_content = _generate_content_with_fallback(topic, pillar_ctx, pillar_title, db=db)
 
         pillar_article = Article(
             slug=pillar_slug,
@@ -541,7 +541,7 @@ def generate_cluster_article(
             "topic": topic,
         }
         cluster_content = _generate_content_with_fallback(
-            subtopic, cluster_ctx, _title_case(subtopic)
+            subtopic, cluster_ctx, _title_case(subtopic), db=db
         )
 
         cluster_date = base_date + timedelta(days=cluster_day_offset)
@@ -770,7 +770,7 @@ def _fallback_subtopics(topic: str) -> list[str]:
     return [p.format(topic=topic) for p in _GENERIC_SUBTOPICS]
 
 
-def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str) -> dict:
+def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str, db=None) -> dict:
     """Call generate_article_content (single pass) and return finished prose.
 
     The refine pass is intentionally skipped here to bound latency when generating
@@ -784,7 +784,7 @@ def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str)
         from jobs.article_job import generate_scored_article, markdownish_to_html  # noqa: PLC0415
         # Generative loop with SEO/AIO verification — refines until the score hits 100
         # (or max iters), and always returns finished JSON-LD.
-        fields = dict(generate_scored_article(keyword, ctx))
+        fields = dict(generate_scored_article(keyword, ctx, db=db))
         fields["content_md"] = markdownish_to_html(fields.get("content_md") or "")
         return fields
     except Exception as exc:  # noqa: BLE001

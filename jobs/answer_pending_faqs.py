@@ -31,7 +31,7 @@ from app.models import FaqEntry, SessionLocal, init_db
 log = logging.getLogger(__name__)
 
 
-def run(batch_size: int = 50, limit: int | None = None) -> dict:
+def run(batch_size: int = 50, limit: int | None = None, tenant_id: int = 1) -> dict:
     """Answer all pending (status='mined') FAQ entries.
 
     Args:
@@ -51,6 +51,7 @@ def run(batch_size: int = 50, limit: int | None = None) -> dict:
     processed = 0
 
     with SessionLocal() as db:
+        db.info["tenant_id"] = tenant_id  # strict-safe: stamp before first query
         while True:
             fetch_n = batch_size
             if limit is not None:
@@ -72,7 +73,7 @@ def run(batch_size: int = 50, limit: int | None = None) -> dict:
             for entry in batch:
                 processed += 1
                 try:
-                    res = answer_faq(entry.question)
+                    res = answer_faq(entry.question, db=db)
                     ans = (res.get("answer") or "").strip()
                     if ans:
                         entry.answer = ans
@@ -98,7 +99,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Answer all pending FAQ entries")
     parser.add_argument("--batch-size", type=int, default=50)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--tenant", type=int, default=1)
     args = parser.parse_args()
-    result = run(batch_size=args.batch_size, limit=args.limit)
+    result = run(batch_size=args.batch_size, limit=args.limit, tenant_id=args.tenant)
     print(result)
     sys.exit(0 if result["remaining"] == 0 else 1)

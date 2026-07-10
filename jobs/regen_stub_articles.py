@@ -32,7 +32,7 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
         ctx = {"keyword": kw, "role": a.role or "standalone",
                "pillar_slug": a.pillar_slug or "", "topic": kw}
         try:
-            f = generate_article_content(kw, ctx)
+            f = generate_article_content(kw, ctx, db=db)
             md = markdownish_to_html(f.get("content_md") or "")
             if not md or _STUB_MARK in md:
                 raise RuntimeError("still stub")

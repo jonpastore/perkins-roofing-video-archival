@@ -7,10 +7,9 @@ idempotent, concurrent-safe operation (same pattern as publish_job.py).
 Cadence config in tenants.settings.reminder_cadence_days (JSONB array).
 Default cadence if not configured: [3, 7, 14] days.
 
-Tenancy note (pre-F4): This job runs as a platform-scoped session touching all
-tenants. Post-F4 (RLS active), it must be refactored to use the for_each_tenant()
-wrapper (core/tenant_loop.py, defined in F5) so the SKIP LOCKED scan runs inside
-each tenant's DB context. F5 owns that refactor.
+Tenancy: run() iterates active tenants via for_each_tenant() so the SKIP LOCKED
+scan runs inside each tenant's RLS context (strict-safe). run_reminders(session)
+remains the single-tenant body, also used directly by tests.
 
 Run: POST /jobs/reminders (Cloud Scheduler) or directly:
     python -m jobs.proposal_reminders
@@ -261,6 +260,23 @@ def run_reminders(session: Any = None) -> dict[str, int]:
     return {"sent": sent_count, "skipped": skipped, "errored": errored}
 
 
+def run() -> dict[str, int]:
+    """Iterate active tenants; run the SKIP LOCKED reminder scan inside each
+    tenant's RLS context (the F5 for_each_tenant refactor — strict-safe)."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.tenant_loop import for_each_tenant  # noqa: PLC0415
+
+    totals: dict[str, int] = {"sent": 0, "skipped": 0, "errored": 0}
+
+    def _fn(db, tenant_id: int) -> None:
+        r = run_reminders(session=db)
+        for k in totals:
+            totals[k] += r.get(k, 0)
+
+    for_each_tenant(SessionLocal, _fn)
+    return totals
+
+
 if __name__ == "__main__":
-    result = run_reminders()
+    result = run()
     print(f"Reminders: {result}")

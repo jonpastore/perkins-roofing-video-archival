@@ -76,7 +76,7 @@ def run(channel_id: str = CHANNEL_ID) -> dict:
     return totals
 
 
-def check_new(channel_id: str = CHANNEL_ID) -> dict:
+def check_new(channel_id: str = CHANNEL_ID, db=None) -> dict:
     """Enumerate channel and return count of videos not yet in the DB.
 
     Does NOT insert anything. Uses the latest last_pulled_at as the
@@ -89,7 +89,9 @@ def check_new(channel_id: str = CHANNEL_ID) -> dict:
     rows = to_video_rows(entries)
     channel_ids = {r["id"] for r in rows}
 
-    with SessionLocal() as db:
+    # db: caller-passed (RLS-stamped) session; None opens an own one (script compat).
+    from contextlib import nullcontext  # noqa: PLC0415
+    with (nullcontext(db) if db is not None else SessionLocal()) as db:
         existing_ids: set[str] = {vid for (vid,) in db.query(Video.id).all()}
 
         # Latest last_pulled_at across all rows

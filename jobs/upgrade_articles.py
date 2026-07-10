@@ -76,7 +76,7 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                 ctx = {"keyword": title, "role": a.role or "standalone",
                        "pillar_slug": a.pillar_slug or a.slug, "topic": title}
                 try:
-                    f = generate_scored_article(title, ctx, llm=llm)
+                    f = generate_scored_article(title, ctx, llm=llm, db=db)
                     title = f.get("title") or title
                     a.content_md = markdownish_to_html(f.get("content_md") or a.content_md)
                     meta = f.get("meta") or meta

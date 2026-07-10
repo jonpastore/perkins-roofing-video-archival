@@ -78,7 +78,7 @@ def _run_for_tenant(
             best_fails = None
             for _ in range(3):
                 try:
-                    f = generate_scored_article(kw, ctx, llm=llm)
+                    f = generate_scored_article(kw, ctx, llm=llm, db=db)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("regen failed for %s: %s", slug, exc)
                     break

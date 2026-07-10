@@ -128,7 +128,7 @@ def test_answer_html_renders_link_citations():
     assert _answer_plain(ans) == "Two layers are required [1]."
 
 
-def _fake_answer_faq(question, k=6):
+def _fake_answer_faq(question, k=6, db=None):
     return {
         "answer": f"Answer for: {question}\n\nSources: [link 1](https://youtu.be/testvid1?t=42)",
         "abstained": False,

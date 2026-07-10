@@ -93,7 +93,7 @@ def _run_for_tenant(db, tenant_id: int, limit=None) -> dict:
     ingested, errored = 0, 0
     for vid in vids:
         try:
-            ingest.ingest_video(vid)
+            ingest.ingest_video(vid, tenant_id=tenant_id)
             ingested += 1
         except Exception as e:  # noqa: BLE001 — one bad video must not stop the batch
             errored += 1

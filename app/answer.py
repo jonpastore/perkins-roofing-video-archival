@@ -10,8 +10,9 @@ from .models import GraphNode, SessionLocal, Video
 from .retrieval import hybrid_search
 
 
-def ask(query, k=8):
-    r = hybrid_search(query, k)
+def ask(query, k=8, db=None):
+    # db: caller-passed (RLS-stamped) session; used but never closed here.
+    r = hybrid_search(query, k, db=db)
     chunks = r["chunks"]
     top = max((sc for _, sc in chunks), default=0.0)
     if not chunks or should_abstain(top, settings.ABSTAIN_THRESHOLD):
@@ -19,12 +20,13 @@ def ask(query, k=8):
                 "confidence": round(top, 2), "citations": [], "sources": []}
 
     vids = {c.video_id for c, _ in chunks}
-    s = SessionLocal()
+    s = db or SessionLocal()
     gp = s.query(GraphNode).filter(
         GraphNode.video_id.in_(vids),
         GraphNode.kind.in_(("objections", "claims", "ctas"))).all()
     titles = {v.id: v.title for v in s.query(Video.id, Video.title).filter(Video.id.in_(vids))}
-    s.close()
+    if db is None:
+        s.close()
 
     key_points = [(link(g.video_id, g.start), g.label or g.detail) for g in gp[:20]]
     contexts = [(link(c.video_id, c.start), c.text) for c, _ in chunks]
@@ -42,7 +44,7 @@ def ask(query, k=8):
             "citations": [link(c.video_id, c.start) for c, _ in chunks], "sources": sources}
 
 
-def answer_faq(question, k=6):
+def answer_faq(question, k=6, db=None):
     """Concise, professional FAQ answer with numbered ``link {n}`` citations at the end.
 
     Unlike ``ask`` (the public widget, which cites inline), this produces a tight
@@ -53,7 +55,7 @@ def answer_faq(question, k=6):
     Returns {answer, abstained, confidence, sources}. On abstain, answer="" so the
     caller can leave the entry unanswered rather than store a filler paragraph.
     """
-    r = hybrid_search(question, k)
+    r = hybrid_search(question, k, db=db)
     chunks = r["chunks"]
     top = max((sc for _, sc in chunks), default=0.0)
     if not chunks or should_abstain(top, settings.ABSTAIN_THRESHOLD):
@@ -67,9 +69,10 @@ def answer_faq(question, k=6):
             order.append(c.video_id)
     order = order[:3]
 
-    s = SessionLocal()
+    s = db or SessionLocal()
     titles = {v.id: v.title for v in s.query(Video.id, Video.title).filter(Video.id.in_(order))}
-    s.close()
+    if db is None:
+        s.close()
 
     sources, prompt_sources = [], []
     for i, vid in enumerate(order, start=1):

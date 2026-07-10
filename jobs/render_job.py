@@ -60,9 +60,9 @@ def _closing_text() -> str:
     when the key is absent or empty.
     """
     try:
-        from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+        from app.models import PlatformConfig, PlatformSessionLocal  # noqa: PLC0415
 
-        with SessionLocal() as db:
+        with PlatformSessionLocal() as db:
             row = db.get(PlatformConfig, "REEL_CLOSING_TEXT")
             if row and row.value and row.value.strip():
                 return row.value.strip()
@@ -149,9 +149,9 @@ def _brand_scene_config(scratch: str) -> tuple[str | None, str | None]:
     default off) AND the path is under _BRAND_LOCAL_DIR.
     """
     try:
-        from app.models import PlatformConfig, SessionLocal  # noqa: PLC0415
+        from app.models import PlatformConfig, PlatformSessionLocal  # noqa: PLC0415
 
-        with SessionLocal() as db:
+        with PlatformSessionLocal() as db:
             apply_row = db.get(PlatformConfig, "REEL_APPLY_BRAND_SCENES")
             if not (apply_row and apply_row.value and apply_row.value.strip().lower() == "true"):
                 return None, None

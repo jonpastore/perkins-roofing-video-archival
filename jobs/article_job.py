@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import contextmanager
 
 from core.article_prompt import system_prompt, template_prompt
 from core.json_repair import parse_model_json
@@ -25,6 +26,25 @@ from core.jsonld import build_article, build_breadcrumb_list, build_faq_page, bu
 from core.qa_gate import is_duplicate, verdict
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _stamped_session(tenant_id):
+    """Short-lived SessionLocal stamped with tenant_id (RLS GUC via after_begin).
+
+    For retrieval calls inside job bodies that have a tenant_id but no ambient
+    session — keeps the chain strict-safe (C1 Part 2). tenant_id=None yields an
+    unstamped session (dev/SQLite only, where the event no-ops).
+    """
+    from app.models import SessionLocal  # noqa: PLC0415
+    s = SessionLocal()
+    if tenant_id is not None:
+        s.info["tenant_id"] = tenant_id
+    try:
+        yield s
+    finally:
+        s.close()
+
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +376,7 @@ def generate_article_content(
     *,
     llm=None,
     ground_videos: bool = True,
+    db=None,
 ) -> dict:
     """Generate real article content via LLM + retrieval WITHOUT publishing to WordPress.
 
@@ -404,12 +425,14 @@ def generate_article_content(
     if ground_videos:
         try:
             from app.retrieval import hybrid_search  # noqa: PLC0415
-            result = hybrid_search(keyword, k=4)
+            result = hybrid_search(keyword, k=4, db=db)
             video_chunks = result.get("chunks") or []
             if video_chunks:
                 user_prompt = _append_video_grounding(user_prompt, video_chunks)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("video grounding failed for %r, continuing: %s", keyword, exc)
+            # RuntimeError here is the strict unstamped-session guard — never bury it
+            lvl = logger.critical if isinstance(exc, RuntimeError) else logger.warning
+            lvl("video grounding failed for %r, continuing: %s", keyword, exc)
 
     # ── Call LLM (retry up to 3×) ─────────────────────────────────────────────
     prompt = f"{sys_prompt}\n\n{user_prompt}"
@@ -532,13 +555,15 @@ def generate_article(
     if ground_videos:
         try:
             from app.retrieval import hybrid_search  # noqa: PLC0415
-            result = hybrid_search(keyword, k=4)
+            with _stamped_session(tenant_id) as _gs:
+                result = hybrid_search(keyword, k=4, db=_gs)
             video_chunks = result.get("chunks") or []
             if video_chunks:
                 user_prompt = _append_video_grounding(user_prompt, video_chunks)
                 jsonld_video_list = _build_video_jsonld(video_chunks, tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("video grounding failed, continuing without it: %s", exc)
+            lvl = logger.critical if isinstance(exc, RuntimeError) else logger.warning
+            lvl("video grounding failed, continuing without it: %s", exc)
 
     # ── 3. Call LLM (schema-controlled → guaranteed-valid JSON; retry on any fluke) ──────
     prompt = f"{sys_prompt}\n\n{user_prompt}"
@@ -981,7 +1006,7 @@ def _fallback_faq(keyword: str, content_md: str) -> list[dict]:
     ]
 
 
-def _ensure_video_link(content_md: str, keyword: str) -> str:
+def _ensure_video_link(content_md: str, keyword: str, db=None) -> str:
     """Guarantee an embedded YouTube link (the 'video' check) by appending the top
     grounded clip when the body has none. Best-effort — returns content unchanged on
     any retrieval failure."""
@@ -989,7 +1014,7 @@ def _ensure_video_link(content_md: str, keyword: str) -> str:
         return content_md
     try:
         from app.retrieval import hybrid_search  # noqa: PLC0415
-        chunks = (hybrid_search(keyword, k=1).get("chunks") or [])
+        chunks = (hybrid_search(keyword, k=1, db=db).get("chunks") or [])
         if not chunks:
             return content_md
         chunk = chunks[0][0]
@@ -1144,6 +1169,7 @@ def generate_scored_article(
     target: int = 100,
     max_iters: int = 3,
     llm=None,
+    db=None,
 ) -> dict:
     """Generate an article, then loop (generate → score → refine) until the SEO/AIO
     score reaches ``target`` (default 100) or ``max_iters`` is hit.
@@ -1160,7 +1186,7 @@ def generate_scored_article(
         from adapters.llm import get_default  # noqa: PLC0415
         llm = get_default()
 
-    fields = generate_article_content(keyword, ctx, llm=llm)
+    fields = generate_article_content(keyword, ctx, llm=llm, db=db)
     fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
 
     def _score(f: dict, jl: list) -> dict:
@@ -1209,7 +1235,7 @@ def generate_scored_article(
 
     # 1. Video link (video check)
     fields["content_md"] = markdownish_to_html(
-        _ensure_video_link(fields.get("content_md", ""), keyword))
+        _ensure_video_link(fields.get("content_md", ""), keyword, db=db))
 
     # 2. Meta description (meta_present + meta_len checks)
     fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),

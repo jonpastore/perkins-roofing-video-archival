@@ -7,21 +7,24 @@ from .models import Chunk, GraphNode, SessionLocal
 from .store import vector_search
 
 
-def hybrid_search(query, k=8):
-    vec = vector_search(query, k=k * 2)
-    s = SessionLocal()
+def hybrid_search(query, k=8, db=None):
+    # db: caller-passed (RLS-stamped) session, threaded through vector_search too.
+    # Used but never closed here; None opens an own SessionLocal (compat).
+    vec = vector_search(query, k=k * 2, db=db)
+    s = db or SessionLocal()
     try:
         kw = "%" + query.lower() + "%"
         lex = s.query(Chunk).filter(Chunk.text.ilike(kw)).limit(k).all()
         gnodes = s.query(GraphNode).filter(
             (GraphNode.label.ilike(kw)) | (GraphNode.detail.ilike(kw))).limit(k).all()
     finally:
-        s.close()   # never leak the pooled connection on a query error (every /ask hits this)
+        if db is None:
+            s.close()   # never leak the pooled connection on a query error (every /ask hits this)
     gvids = {g.video_id for g in gnodes}
     return {"chunks": rank(vec, lex, gvids, k), "graph": gnodes}
 
 
-def search(query, k=8):
-    r = hybrid_search(query, k)
+def search(query, k=8, db=None):
+    r = hybrid_search(query, k, db=db)
     return [{"score": round(sc, 2), "link": link(c.video_id, c.start),
              "video_id": c.video_id, "text": c.text[:180].strip()} for c, sc in r["chunks"]]

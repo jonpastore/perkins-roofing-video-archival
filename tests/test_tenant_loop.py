@@ -364,3 +364,20 @@ def test_metering_flush_empty_returns_empty_dict():
     from core import metering
     metering._counters.set({})
     assert metering.flush(emit=True) == {}
+
+
+class TestEnumerationPlatformScope:
+    def test_enumeration_session_is_platform_scoped(self):
+        """C1 Part 2 step 2: the tenants-enumeration session must carry
+        platform_scope=True so the strict after_begin event neither raises nor
+        stamps a tenant GUC. Per-tenant sessions stay tenant-stamped."""
+        from core.tenant_loop import for_each_tenant
+
+        factory = _make_db_factory([1])
+        for_each_tenant(factory, lambda db, tid: None)
+
+        enum_session = factory.sessions[0]
+        assert enum_session.info.get("platform_scope") is True
+        tenant_session = factory.sessions[1]
+        assert tenant_session.info.get("tenant_id") == 1
+        assert "platform_scope" not in tenant_session.info

@@ -207,13 +207,15 @@ def brand_upload_url(body: dict, claims=Depends(require_role_db("marketing_artic
 
 
 @app.post("/search")
-def search(q: Query, _claims=Depends(require_role("search"))):
-    return R.search(q.query, q.k)
+def search(q: Query, _claims=Depends(require_role("search")),
+           db: Session = Depends(get_db_session)):
+    return R.search(q.query, q.k, db=db)
 
 
 @app.post("/ask")
-def ask(q: Query, _claims=Depends(require_role("ask"))):
-    return A.ask(q.query, q.k)
+def ask(q: Query, _claims=Depends(require_role("ask")),
+        db: Session = Depends(get_db_session)):
+    return A.ask(q.query, q.k, db=db)
 
 
 def _require_internal(x_internal_secret: str = Header(default="")):
@@ -442,8 +444,8 @@ def proposal_reminders_cron():
     """Cloud Scheduler target (guarded by INTERNAL_SECRET). Sends due proposal reminder
     nudges per tenant cadence (jobs/proposal_reminders — SKIP LOCKED, idempotent).
     Scheduled daily 09:00 UTC via infra/gotenberg.tf."""
-    from jobs.proposal_reminders import run_reminders
-    return run_reminders()
+    from jobs.proposal_reminders import run
+    return run()
 
 
 @app.post("/internal/poll-archive-kpis", dependencies=[Depends(_require_internal)])

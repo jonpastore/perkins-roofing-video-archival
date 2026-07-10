@@ -68,7 +68,7 @@ def _answer_faqs(limit: int, tenant_id: int | None = None) -> int:
         done = 0
         for e in pending:
             try:
-                res = answer_faq(e.question)
+                res = answer_faq(e.question, db=db)
                 ans = (res.get("answer") or "").strip()
                 if not ans:
                     continue  # abstained — leave as 'mined' rather than store filler

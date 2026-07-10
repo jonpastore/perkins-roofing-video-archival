@@ -203,3 +203,25 @@ def test_cross_tenant_timing_differential(seeded_rows, pg_engine):
         f"Timing differential {diff_ms:.1f} ms exceeds 100 ms threshold. "
         f"avg_own={avg_own*1000:.1f}ms avg_cross={avg_cross*1000:.1f}ms"
     )
+
+
+@pytest.mark.postgres
+def test_ingest_status_stamped_session_on_pg(seeded_rows, pg_engine, monkeypatch):
+    """C1 regression guard: app.ingest opens its own SessionLocal — under strict it must
+    be stamped (tenant_id param, threaded by jobs/ingest_worker) or raise. Exercises the
+    real ingest.status() query path against strict-registered PG sessions."""
+    from core.tenant import register_tenant_session_events
+
+    import app.ingest as ingest
+
+    rls_factory = sessionmaker(bind=pg_engine, future=True)
+    register_tenant_session_events(rls_factory)  # strict=True default
+    monkeypatch.setattr(ingest, "SessionLocal", rls_factory)
+
+    # Stamped (the fixed jobs/ingest_worker path): must not raise
+    out = ingest.status("no-such-video", tenant_id=1)
+    assert out == []
+
+    # Unstamped (the pre-fix bug): must raise before any SQL
+    with pytest.raises(RuntimeError, match="tenant_id not set on session.info"):
+        ingest.status("no-such-video")

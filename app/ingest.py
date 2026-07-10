@@ -34,9 +34,11 @@ def _set(s, vid, stage, status, content_hash=None, err=None):
 def _fresh(st, h):
     return st and st.status == "done" and st.content_hash == h and st.pipeline_version == settings.PIPELINE_VERSION
 
-def ingest_video(vid, meta=None, force=False, transcript=None):
+def ingest_video(vid, meta=None, force=False, transcript=None, tenant_id=None):
     init_db()
     s = SessionLocal()
+    if tenant_id is not None:
+        s.info["tenant_id"] = tenant_id  # strict-safe: stamp before first query
     v = s.get(Video, vid) or Video(id=vid, url=f"https://youtu.be/{vid}")
     if meta:
         v.title = meta.get("title", v.title); v.duration = meta.get("duration", v.duration)
@@ -59,7 +61,7 @@ def ingest_video(vid, meta=None, force=False, transcript=None):
             tr = T.get_transcript(vid, gcs_uri=v.archive_uri)
         except Exception as e:                       # record the failure so it's queryable
             s.rollback(); _set(s, vid, "transcript", "error", err=str(e)[:200])
-            s.close(); return status(vid)
+            s.close(); return status(vid, tenant_id=tenant_id)
     else:
         tr = None                                    # already done at this version — reuse DB
 
@@ -113,10 +115,12 @@ def ingest_video(vid, meta=None, force=False, transcript=None):
                 s.rollback(); _set(s, vid, "embed", "error", err=str(e)[:200])
 
     s.close()
-    return status(vid)
+    return status(vid, tenant_id=tenant_id)
 
-def status(vid=None):
+def status(vid=None, tenant_id=None):
     s = SessionLocal()
+    if tenant_id is not None:
+        s.info["tenant_id"] = tenant_id
     q = s.query(IngestionRun)
     if vid:
         q = q.filter_by(video_id=vid)

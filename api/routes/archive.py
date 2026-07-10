@@ -433,6 +433,7 @@ def backfill(
 @router.get("/check-new")
 def check_new(
     _claims=Depends(require_role("manage_archive")),
+    db: Session = Depends(get_db_session),
 ):
     """Enumerate the channel and return count of videos not yet in the DB.
 
@@ -443,7 +444,7 @@ def check_new(
     _check_new_guard.acquire_or_raise("check-new")
     try:
         import jobs.backfill_archive as _job  # lazy
-        return _job.check_new()
+        return _job.check_new(db=db)
     except HTTPException:
         raise
     finally:

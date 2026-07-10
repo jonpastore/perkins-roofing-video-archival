@@ -16,13 +16,15 @@ class _Row:
     def __init__(self, r):
         self.id, self.video_id, self.text, self.start, self.end = r.id, r.video_id, r.text, r.start, r.end
 
-def vector_search(query, k=8):
+def vector_search(query, k=8, db=None):
+    # db: caller-passed (RLS-stamped) session — used but never closed here. None opens
+    # an own SessionLocal (compat; unstamped, so strict-raising on Postgres).
     q = embed([query])[0]
     if _is_pg():
         # PROD: pgvector cosine ANN. embedding is vector(3072); HNSW caps `vector` at
         # 2000 dims, so we index+query the halfvec(3072) cast (HNSW supports 4000 dims).
         from pgvector.psycopg import register_vector
-        s = SessionLocal()
+        s = db or SessionLocal()
         try:
             # .driver_connection is the raw psycopg3 conn (unwrap SQLAlchemy's pool proxy)
             register_vector(s.connection().connection.driver_connection)
@@ -32,14 +34,16 @@ def vector_search(query, k=8):
                 'FROM chunks ORDER BY embedding::halfvec(3072) <=> CAST(:q AS halfvec(3072)) LIMIT :k'),
                 {"q": np.array(q, dtype=np.float32), "k": k}).fetchall()
         finally:
-            s.close()   # never leak the pooled connection on a query error (hot path)
+            if db is None:
+                s.close()   # never leak the pooled connection on a query error (hot path)
         return [(_Row(r), float(r.score)) for r in rows]
     # DEV: numpy cosine
-    s = SessionLocal()
+    s = db or SessionLocal()
     try:
         rows = s.query(Chunk).all()
     finally:
-        s.close()
+        if db is None:
+            s.close()
     if not rows:
         return []
     M = np.array([r.embedding for r in rows], dtype=np.float32)

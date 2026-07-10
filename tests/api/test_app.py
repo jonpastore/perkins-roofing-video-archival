@@ -15,7 +15,7 @@ def test_search_requires_auth():
 
 def test_search_with_sales_token(monkeypatch):
     set_verifier(lambda t: {"uid": "u", "email": "e", "role": "sales"})
-    monkeypatch.setattr(R, "search", lambda q, k=8: [{"ok": 1}])
+    monkeypatch.setattr(R, "search", lambda q, k=8, db=None: [{"ok": 1}])
     r = TestClient(appmod.app).post("/search", json={"query": "roof"},
                                     headers={"Authorization": "Bearer x"})
     assert r.status_code == 200 and r.json() == [{"ok": 1}]

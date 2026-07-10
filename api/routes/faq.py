@@ -89,15 +89,16 @@ def _normalize_question(q: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (q or "").lower()).strip()
 
 
-def _answer_entry(entry: FaqEntry) -> bool:
+def _answer_entry(entry: FaqEntry, db: Session) -> bool:
     """Generate + store a concise, cited answer for one entry. Returns True if answered.
 
-    Uses answer_faq (professional, 2-4 sentences, numbered ``link n`` citations).
-    Leaves the entry unanswered (status stays 'mined') when the model abstains.
+    Uses answer_faq (professional, 2-4 sentences, numbered ``link n`` citations),
+    threading the route's RLS-stamped session so the retrieval chain never opens
+    an unstamped one (strict=True). Leaves the entry unanswered when it abstains.
     """
     from app.answer import answer_faq
 
-    res = answer_faq(entry.question)
+    res = answer_faq(entry.question, db=db)
     ans = (res.get("answer") or "").strip()
     if not ans:
         return False
@@ -271,7 +272,7 @@ def mine_faq(
     answered = 0
     for entry in new_entries:
         try:
-            if _answer_entry(entry):
+            if _answer_entry(entry, db):
                 answered += 1
                 db.flush()
         except Exception as exc:  # noqa: BLE001 — keep going, leave unanswered
@@ -353,7 +354,7 @@ def answer_one(
     if not entry:
         raise HTTPException(status_code=404, detail="FAQ entry not found")
 
-    _answer_entry(entry)
+    _answer_entry(entry, db)
     db.flush()
     db.refresh(entry)
 
@@ -395,7 +396,7 @@ def answer_batch(
     answered = 0
     for entry in entries:
         try:
-            if _answer_entry(entry):
+            if _answer_entry(entry, db):
                 answered += 1
                 db.flush()
         except Exception as exc:

@@ -27,10 +27,9 @@ def active_tenants(db: Session) -> list[int]:
     """Return tenant IDs for all tenants with status='active'.
 
     Platform-level query; runs without tenant context (no RLS on tenants table).
-    The calling session must NOT have tenant_id stamped (use a raw SessionLocal()
-    without session.info["tenant_id"] — the F4 after_begin event no-ops on SQLite
-    and defaults to tenant 1 on Postgres, which is fine for the tenants table since
-    it has no RLS policy).
+    The calling session must carry session.info["platform_scope"] = True (not a
+    tenant_id) so the F4 after_begin event skips the tenant GUC and never raises
+    under strict. for_each_tenant stamps this on its enumeration session.
     """
     rows = db.execute(
         text("SELECT id FROM tenants WHERE status = 'active' ORDER BY id")
@@ -81,8 +80,10 @@ def for_each_tenant(
                     successful fn() call and rolls back on exception.
     """
     # Use a platform-level session for the tenants query only.
-    # We do NOT stamp tenant_id here — the tenants table is RLS-exempt.
+    # platform_scope=True: the tenants table is RLS-exempt, so the after_begin
+    # event skips the tenant GUC and never raises under strict (C1 Part 2).
     with db_factory() as platform_db:
+        platform_db.info["platform_scope"] = True
         tenant_ids = active_tenants(platform_db)
 
     for tid in tenant_ids:
