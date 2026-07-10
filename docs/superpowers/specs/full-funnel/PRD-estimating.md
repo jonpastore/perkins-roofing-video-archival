@@ -382,7 +382,7 @@ are the only gates that require Tim's responses.
 
 ## 10. Out-of-scope clarifications (do not open debates on these)
 
-These are locked decisions from the full-funnel plan (§0 and §3 of CONTINUATION-2026-07-08.md):
+These are locked decisions from the full-funnel plan (§0 and §3 of docs/continuations/CONTINUATION-2026-07-08.md):
 
 - Stack: GCP everywhere. Ez-Bids is rebuilt on this stack, not Cloudflare/D1/Next.
 - Tenancy: single-DB RLS with `tenant_id`, not schema-per-tenant.

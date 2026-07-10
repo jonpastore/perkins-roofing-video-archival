@@ -1,33 +1,26 @@
-Resume the Perkins full-funnel platform. F0–F6 are ALL BUILT + DEPLOYED to prod +
-deepsec-hardened + infra-reconciled. Read IN ORDER first:
+Resume the Perkins full-funnel platform. C1 Part 2 (strict=True) + #321 Contract-FAQ + #40
+deepsec M/L are ALL BUILT + GATED + R2-REVIEWED + COMMITTED (a5b694d, 4caa493, 7afcf69) but
+NOT DEPLOYED. Read IN ORDER first:
 
-1. CONTINUATION-2026-07-09.md            — full handoff (current state, the active task, gotchas)
-2. Memory index (auto-loaded)            — esp. perkins-full-funnel-reorg
+1. CONTINUATION-2026-07-10.md            — full handoff (state, DEPLOY RUNBOOK, gotchas)
+2. Memory index (auto-loaded)            — esp. c1-deploy-blocked-gcloud (token-mint recipe)
 3. docs/ENGINEERING_RULES.md             — R1–R5 binding
 4. mcp__jarvis-memory__sync then my_tasks — live human blockers (Perkins v2 project)
 
-PRIMARY TASK — C1 Part 2 (the tenant-2 gate; local task #38, full checklist in the continuation):
-Make the last request-path sessions tenant-aware, then flip strict=True (GLOBAL flag on the
-SessionLocal factory). In order:
-  1. Thread a stamped `db` through the retrieval chain (app/store.vector_search,
-     app/retrieval.hybrid_search+search, app/answer.ask+answer_faq) + update callers
-     (api/app.py /search + /ask, api/routes/faq.py answer_faq call). They query RLS-forced
-     chunks/content_graph UNSTAMPED today.
-  2. core/tenant_loop.for_each_tenant: switch the tenant-ENUMERATION session from raw
-     SessionLocal → PlatformSessionLocal (per-tenant fn sessions are already stamped).
-  3. Audit job top-level sessions (jobs/ingest_worker.py:36, jobs/article_job.py:649/692).
-  4. Flip strict=True in app/models.py (~line 638).
-  5. Full gate + tenancy PG suite + DEPLOY + PROD SMOKE (/search /ask /status + a CRUD route +
-     one job) — SQLite can't exercise strict, so prod smoke is the real test.
-THE PROVEN PATTERN (Part 1 done, commit d9e2e5b): tenant route → add
-`db: Session = Depends(get_db_session)` after require_role, drop `with SessionLocal()`, dedent,
-commit→flush, insert tenant_id=db.info["tenant_id"]. Platform-table route → PlatformSessionLocal.
-Reference: api/routes/customers.py, api/routes/measurements.py.
+PRIMARY TASK — SHIP IT (the only blocker was Google auth reauth, needs Jon):
+  1. Jon: `! gcloud auth login` AND `! gcloud auth application-default login`.
+  2. `git push origin main` if not pushed (CI = full gate + npm audit).
+  3. Migration 0023 FIRST (contract-faq table), via scripts/apply_migrations_adc.py
+     (MIN_MIGRATION=0023, ADC-only).
+  4. `scripts/deploy.sh` (clean tree required), then firebase hosting deploy
+     (`! firebase login --reauth`) for the Contract FAQ page.
+  5. PROD SMOKE — the authoritative strict=True check (SQLite no-ops the event):
+     /search /ask /status + a CRUD route + GET /contract-faq + run one ingest job;
+     Cloud Logging must show NO "tenant_id not set on session.info". Token-mint recipe
+     in memory c1-deploy-blocked-gcloud. Rollback = redeploy d9e2e5b or strict=False.
 
-ALSO BUILDABLE (no external dep): #321 Contract-FAQ engine (web/src/pages/ContractFaq.tsx is a
-stub — build the T&C→LLM-FAQ backend, reuse the FAQ/JSON-LD/safety-gate machinery). #40 deepsec
-M/L: L2 template-render sandbox review + pip-audit/npm-audit in CI.
-GATED ON JON (don't attempt): H1 edge (needs Cloudflare token + LB / jarvis #330 DNS), Tim's
+ALSO BUILDABLE (no external dep): #89 retrieval/eval harness (last "production v1" item).
+GATED ON JON (don't attempt): H1 edge (Cloudflare token + LB / jarvis #330 DNS), Tim's
 estimator pricing + clips + ToS, YouTube OAuth mint, deposit/ownership reconcile.
 
 NON-NEGOTIABLE DISCIPLINE:
@@ -35,13 +28,14 @@ NON-NEGOTIABLE DISCIPLINE:
   + `pytest tests/ --cov=core --cov-fail-under=100` (background to /tmp log + EXIT marker —
   headroom garbles inline pytest output) + `cd web && npm run build` for SPA changes.
 - Implementation subagents = sonnet; opus for plan/architecture/security/final verification only.
-- Commit + push at each green milestone. scripts/deploy.sh needs a CLEAN tree + `gcloud auth login`
-  (CLI token, separate from ADC); frontend needs `firebase login --reauth`. Migrations via
-  scripts/apply_migrations_adc.py (ADC-only). R3: infra ONLY via terraform, never gcloud-by-hand.
-- Do NOT relitigate locked decisions (continuation §"Locked decisions"). Jon has been authorizing
-  applies/deploys ("do it / greenfield") — but still surface hard-to-reverse prod actions.
+  VERIFY agent worktree isolation actually happened (`git worktree list`) before concurrent work.
+- Commit + push at each green milestone. R3: infra ONLY via terraform, never gcloud-by-hand.
+- Do NOT relitigate locked decisions. Jon authorizes applies/deploys — still surface
+  hard-to-reverse prod actions.
 
-CRITICAL GOTCHAS (see continuation for detail): RLS GUC needs NULLIF(current_setting(n,true),'')
-on pooled connections; migrations can't DML RLS-forced tables under the app role (use DDL DEFAULT);
-get_db_session 403s without tenant context; PlatformSessionLocal never raises (platform tables);
-strict=True is global + SQLite no-ops the event so only prod smoke validates it.
+CRITICAL GOTCHAS (see continuation for detail): strict=True is LIVE in the code — any new
+session must be stamped (get_db_session / for_each_tenant / tenant_id param) or
+platform_scope; SQLite no-ops the event so grep+trace is the only pre-prod detector;
+RLS GUC needs NULLIF(current_setting(n,true),'') on pooled connections; migrations can't
+DML RLS-forced tables under the app role; create_all now auto-applies RLS to tenant tables
+(after_create hook in app/models.py); get_db_session 403s without tenant context.
