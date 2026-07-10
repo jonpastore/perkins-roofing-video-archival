@@ -621,17 +621,19 @@ resource "google_cloud_scheduler_job" "poll_archive_kpis" {
   depends_on = [google_project_service.apis]
 }
 
-# Drain the ingest queue every minute by triggering the `ingest` Cloud Run Job (runs as jobs-sa:
-# has speech.client + media-bucket access + a 3600s timeout — the STT-heavy work does NOT belong
-# in the user-facing API request). The job itself is single-flight (Postgres advisory lock), so a
-# per-minute cadence can never overlap — a second execution grabs no lock and exits immediately.
-# scheduler_sa already holds project-wide roles/run.invoker (see scheduler_run_invoker), so no
-# extra IAM is needed to start the execution.
+# Trigger the `ingest` Cloud Run Job hourly during business hours (9:00-18:00 ET, inclusive).
+# Runs as jobs-sa: speech.client + media-bucket access + a 3600s timeout — the STT-heavy work
+# does NOT belong in the user-facing API request. The job is single-flight (Postgres advisory
+# lock), so executions can never overlap — a second execution grabs no lock and exits.
+# History: per-minute during the initial backlog drain, then paused out-of-band 2026-07-06 once
+# the queue emptied; hourly keeps new channel uploads flowing without 1,440 no-op runs/day.
+# scheduler_sa already holds project-wide roles/run.invoker (see scheduler_run_invoker).
 resource "google_cloud_scheduler_job" "run_ingest" {
   name      = "run-ingest"
   region    = var.region
-  schedule  = "* * * * *"
-  time_zone = "America/Chicago"
+  schedule  = "0 9-18 * * *"
+  time_zone = "America/New_York"
+  paused    = false
 
   http_target {
     uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/ingest:run"
