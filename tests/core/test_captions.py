@@ -307,3 +307,38 @@ def test_to_ass_karaoke_zero_timestamp():
     lines = [{"text": "hello", "start": 0.0, "end": 0.0, "words": []}]
     ass = to_ass_karaoke(lines)
     assert "0:00:00.00" in ass
+
+
+# ---------------------------------------------------------------------------
+# New karaoke preset styles (Item 2)
+# ---------------------------------------------------------------------------
+
+def test_to_ass_karaoke_tiktok_pop_style():
+    words = make_words(("roofing", 0.0, 0.5))
+    lines = group_caption_lines(words)
+    ass = to_ass_karaoke(lines, style="tiktok_pop")
+    assert "TiktokPop" in ass
+    assert "Arial Black" in ass
+
+
+def test_to_ass_karaoke_reels_clean_style():
+    words = make_words(("roofing", 0.0, 0.5))
+    lines = group_caption_lines(words)
+    ass = to_ass_karaoke(lines, style="reels_clean")
+    assert "ReelsClean" in ass
+
+
+def test_to_ass_karaoke_shorts_editorial_style():
+    words = make_words(("roofing", 0.0, 0.5))
+    lines = group_caption_lines(words)
+    ass = to_ass_karaoke(lines, style="shorts_editorial")
+    assert "ShortsEditorial" in ass
+
+
+def test_caption_styles_frozenset_contains_all_presets():
+    from core.captions import CAPTION_STYLES
+    assert "tiktok_pop" in CAPTION_STYLES
+    assert "reels_clean" in CAPTION_STYLES
+    assert "shorts_editorial" in CAPTION_STYLES
+    assert "default" in CAPTION_STYLES
+    assert "bold_yellow" in CAPTION_STYLES

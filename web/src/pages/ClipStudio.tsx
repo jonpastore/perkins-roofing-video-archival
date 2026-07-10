@@ -702,6 +702,8 @@ interface ClipRenderSpec {
   broll: { source: string; query_auto: boolean };
   music: { catalog: string; track_id: string; volume_db: number };
   fx: { transition: string; color_grade: string; title_card: boolean };
+  emoji_highlights: boolean;
+  aspects: string[];
 }
 
 const DEFAULT_SPEC: ClipRenderSpec = {
@@ -711,6 +713,8 @@ const DEFAULT_SPEC: ClipRenderSpec = {
   broll: { source: "none", query_auto: true },
   music: { catalog: "none", track_id: "", volume_db: -18 },
   fx: { transition: "cut", color_grade: "none", title_card: true },
+  emoji_highlights: false,
+  aspects: [],
 };
 
 function RenderOptionsPanel({
@@ -831,7 +835,10 @@ function RenderOptionsPanel({
                   style={selectStyle}
                 >
                   <option value="default">Default</option>
-                  <option value="bold_yellow">Bold yellow</option>
+                  <option value="bold_yellow">Bold yellow (legacy)</option>
+                  <option value="tiktok_pop">TikTok Pop</option>
+                  <option value="reels_clean">Reels Clean</option>
+                  <option value="shorts_editorial">Shorts Editorial</option>
                 </select>
                 <select
                   value={spec.captions.position}
@@ -841,6 +848,50 @@ function RenderOptionsPanel({
                   <option value="bottom">Bottom</option>
                   <option value="top">Top</option>
                 </select>
+              </div>
+
+              {/* Emoji highlights */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Emoji highlights</label>
+                <input
+                  type="checkbox"
+                  checked={spec.emoji_highlights}
+                  onChange={(e) => setSpec({ ...spec, emoji_highlights: e.target.checked })}
+                  style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                />
+                <span style={{ fontSize: 12, color: BRAND.sub }}>
+                  Append roofing-domain emoji to matched keywords in captions
+                </span>
+              </div>
+
+              {/* Aspects */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Export aspects</label>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <label style={{ fontSize: 13, color: BRAND.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked
+                      disabled
+                      style={{ width: 14, height: 14, accentColor: BRAND.sub }}
+                    />
+                    9:16 (always)
+                  </label>
+                  <label style={{ fontSize: 13, color: BRAND.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={(spec.aspects ?? []).includes("square")}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...(spec.aspects ?? []).filter((a) => a !== "square"), "square"]
+                          : (spec.aspects ?? []).filter((a) => a !== "square");
+                        setSpec({ ...spec, aspects: next });
+                      }}
+                      style={{ width: 14, height: 14, accentColor: BRAND.red, cursor: "pointer" }}
+                    />
+                    1:1 square (1080×1080)
+                  </label>
+                </div>
               </div>
 
               {/* B-roll */}
@@ -956,6 +1007,37 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [status, setStatus] = useState<RenderStatus | null>(null);
   const [polling, setPolling] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  async function handlePreview() {
+    if (previewOpen) {
+      setPreviewOpen(false);
+      return;
+    }
+    if (previewUrl) {
+      setPreviewOpen(true);
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const r = await apiFetch(`/clips/${s.id}/preview-url`);
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+      }
+      const data = await r.json() as { preview_url: string };
+      setPreviewUrl(data.preview_url);
+      setPreviewOpen(true);
+    } catch (e: unknown) {
+      setPreviewError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   function pollStatus(attempts = 0) {
     if (attempts > 6) { setPolling(false); return; }
@@ -1018,6 +1100,17 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
           </span>
         )}
 
+        {isRendered && (
+          <Button
+            variant="ghost"
+            disabled={previewLoading}
+            onClick={handlePreview}
+            style={{ padding: "5px 12px", fontSize: 13 }}
+          >
+            {previewLoading ? "Loading…" : previewOpen ? "Hide preview" : "Play preview"}
+          </Button>
+        )}
+
         {!isRendered && (
           <Button
             variant="primary"
@@ -1029,6 +1122,28 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
           </Button>
         )}
       </div>
+
+      {previewError && (
+        <div style={{ marginTop: 8, fontSize: 12, color: BRAND.red }}>
+          Preview error: {previewError}
+        </div>
+      )}
+
+      {previewOpen && previewUrl && (
+        <div style={{ marginTop: 10 }}>
+          <video
+            src={previewUrl}
+            controls
+            style={{
+              maxWidth: "100%",
+              maxHeight: 480,
+              borderRadius: 8,
+              background: "#000",
+              display: "block",
+            }}
+          />
+        </div>
+      )}
 
       {!isRendered && (
         <RenderOptionsPanel seriesId={s.id} />
@@ -1229,7 +1344,7 @@ export function ClipStudio() {
         body: JSON.stringify({
           video_id: step.video.id,
           title: title,
-          parts: selected.map(({ title: partTitle, start, end }) => ({ title: partTitle, start, end })),
+          parts: selected.map(({ title: partTitle, start, end, hook }) => ({ title: partTitle, start, end, hook: hook ?? "" })),
         }),
       });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);

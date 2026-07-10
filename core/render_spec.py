@@ -110,11 +110,14 @@ def output_args() -> list[str]:
 # ClipRenderSpec — per-series render options (Track A engine wiring)
 # ---------------------------------------------------------------------------
 
-_VALID_CAPTION_STYLES: frozenset[str] = frozenset({"default", "bold_yellow"})
+_VALID_CAPTION_STYLES: frozenset[str] = frozenset(
+    {"default", "bold_yellow", "tiktok_pop", "reels_clean", "shorts_editorial"}
+)
 _VALID_TRANSITIONS: frozenset[str] = frozenset({"cut", "fade", "wipe", "slide", "dissolve"})
 _VALID_COLOR_GRADES: frozenset[str] = frozenset({"none", "vivid", "warm", "cool"})
 _VALID_BROLL_SOURCES: frozenset[str] = frozenset({"pexels", "none"})
 _VALID_MUSIC_CATALOGS: frozenset[str] = frozenset({"pixabay", "ytaudio", "fma", "none"})
+_VALID_ASPECTS: frozenset[str] = frozenset({"9:16", "square"})
 
 
 class CaptionsSpec(BaseModel):
@@ -125,7 +128,9 @@ class CaptionsSpec(BaseModel):
     @classmethod
     def _valid_style(cls, v: str) -> str:
         if v not in _VALID_CAPTION_STYLES:
-            raise ValueError(f"captions.style must be one of {sorted(_VALID_CAPTION_STYLES)}, got {v!r}")
+            raise ValueError(
+                f"captions.style must be one of {sorted(_VALID_CAPTION_STYLES)}, got {v!r}"
+            )
         return v
 
 
@@ -189,12 +194,14 @@ class ClipRenderSpec(BaseModel):
 
     JSON contract (stored in MiniSeries.parts_json["render_spec"]):
     {
-      "reframe":        false,
-      "captions":       {"style": "default", "position": "bottom"},
-      "speech_cleanup": false,
-      "broll":          {"source": "none", "query_auto": true},
-      "music":          {"catalog": "none", "track_id": "", "volume_db": -18.0},
-      "fx":             {"transition": "cut", "color_grade": "none", "title_card": true}
+      "reframe":           false,
+      "captions":          {"style": "default", "position": "bottom"},
+      "speech_cleanup":    false,
+      "broll":             {"source": "none", "query_auto": true},
+      "music":             {"catalog": "none", "track_id": "", "volume_db": -18.0},
+      "fx":                {"transition": "cut", "color_grade": "none", "title_card": true},
+      "emoji_highlights":  false,
+      "aspects":           []
     }
     """
 
@@ -204,6 +211,23 @@ class ClipRenderSpec(BaseModel):
     broll: BrollSpec = Field(default_factory=BrollSpec)
     music: MusicSpec = Field(default_factory=MusicSpec)
     fx: FxSpec = Field(default_factory=FxSpec)
+    emoji_highlights: bool = False
+    aspects: list[str] = Field(default_factory=list)
+
+    @field_validator("aspects", mode="before")
+    @classmethod
+    def _valid_aspects(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        result = []
+        for a in list(v):
+            a_str = str(a)
+            if a_str not in _VALID_ASPECTS:
+                raise ValueError(
+                    f"aspects entries must be one of {sorted(_VALID_ASPECTS)}, got {a_str!r}"
+                )
+            result.append(a_str)
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "ClipRenderSpec":

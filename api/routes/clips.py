@@ -74,6 +74,7 @@ class ClipPart(BaseModel):
     title: str
     start: float
     end: float
+    hook: str = ""
 
 
 class SaveRequest(BaseModel):
@@ -717,6 +718,8 @@ class RenderSpecRequest(BaseModel):
     broll: dict = {}
     music: dict = {}
     fx: dict = {}
+    emoji_highlights: bool = False
+    aspects: list[str] = []
 
 
 @router.get("/{series_id}/render_spec")
@@ -835,6 +838,63 @@ def trigger_render(
     execution_name = data.get("name", "")
     logger.info("Render job execution started: %s (series_id=%d)", execution_name, series_id)
     return {"execution": execution_name, "status": "started"}
+
+
+@router.get("/{series_id}/preview-url")
+def clip_preview_url(
+    series_id: int,
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
+    """Return a short-lived signed GCS URL for in-app video preview.
+
+    Finds the first rendered SocialPost for this series (any platform),
+    extracts the gs:// URI stored in gcs_url, and mints a 1-hour V4 signed
+    GET URL (no Content-Disposition — video players need a bare URL).
+
+    Returns::
+
+        {"preview_url": str, "expires_in": 3600}
+
+    Returns 404 when the series does not exist, is not approved, or has not
+    been rendered yet.  Returns 502 when GCS signing fails (IAM not configured).
+    """
+    series = db.get(MiniSeries, series_id)
+    if series is None or not series.approved:
+        raise HTTPException(status_code=404, detail="series not found or not approved")
+
+    rendered = (
+        db.query(SocialPost)
+        .filter(
+            SocialPost.series_id == series_id,
+            SocialPost.gcs_url.isnot(None),
+        )
+        .first()
+    )
+    if rendered is None:
+        raise HTTPException(status_code=404, detail="series has not been rendered yet")
+
+    gcs_uri = rendered.gcs_url  # gs://bucket/key
+    if not gcs_uri or not gcs_uri.startswith("gs://"):
+        raise HTTPException(status_code=404, detail="rendered URL is not a GCS URI")
+
+    try:
+        without_scheme = gcs_uri[len("gs://"):]
+        slash = without_scheme.index("/")
+        bucket = without_scheme[:slash]
+        key = without_scheme[slash + 1:]
+    except (ValueError, IndexError) as exc:
+        raise HTTPException(status_code=500, detail="malformed GCS URI in SocialPost") from exc
+
+    try:
+        from adapters.storage import signed_get_url  # noqa: PLC0415
+
+        url = signed_get_url(bucket, key, ttl_seconds=3600)
+    except RuntimeError as exc:
+        logger.error("preview-url: GCS signing failed for series %d: %s", series_id, exc)
+        raise HTTPException(status_code=502, detail="could not generate preview URL") from exc
+
+    return {"preview_url": url, "expires_in": 3600}
 
 
 @router.get("/{series_id}/render-status")

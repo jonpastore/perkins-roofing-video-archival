@@ -34,6 +34,23 @@ _ASS_STYLES: dict[str, str] = {
         "Style: BoldYellow,Arial Black,52,&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,"
         "1,0,0,0,100,100,0,0,1,3,1,2,10,10,30,1"
     ),
+    # TikTok pop: large bold white text, black outline; current-word pops with
+    # a colour/scale change via karaoke secondary colour (bright yellow).
+    "tiktok_pop": (
+        "Style: TiktokPop,Arial Black,64,&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,"
+        "1,0,0,0,110,110,0,0,1,4,2,2,10,10,50,1"
+    ),
+    # Reels clean: medium-weight white, subtle secondary underline colour.
+    "reels_clean": (
+        "Style: ReelsClean,Arial,52,&H00FFFFFF,&H0055AAFF,&H00000000,&H80000000,"
+        "0,0,0,0,100,100,0,0,1,2,1,2,10,10,40,1"
+    ),
+    # Shorts editorial: smaller sentence-cased lower-third, accent on keywords
+    # via secondary colour (brand red #CC2222 → &H002222CC in BGR).
+    "shorts_editorial": (
+        "Style: ShortsEditorial,Arial,44,&H00FFFFFF,&H002222CC,&H00000000,&H80000000,"
+        "0,0,0,0,100,100,0,0,1,2,1,2,10,10,80,1"
+    ),
 }
 
 _ASS_HEADER = """\
@@ -52,6 +69,10 @@ BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+
+# Public set of valid style names — used by callers to validate input.
+CAPTION_STYLES: frozenset[str] = frozenset(_ASS_STYLES)
 
 
 def _ass_ts(seconds: float) -> str:
@@ -208,14 +229,26 @@ def caption_events(
 # ---------------------------------------------------------------------------
 
 
-def to_ass_karaoke(lines: list[dict], style: str = "default") -> str:
+def to_ass_karaoke(
+    lines: list[dict],
+    style: str = "default",
+    *,
+    emoji_map: dict[str, str] | None = None,
+) -> str:
     """Render caption lines as an ASS subtitle file with per-word \\k karaoke tags.
 
     ``lines`` is the output of ``group_caption_lines()`` or equivalent.
-    ``style`` must be one of ``'default'`` or ``'bold_yellow'``.
+    ``style`` must be one of the keys in ``CAPTION_STYLES`` (falls back to
+    ``'default'`` for unknown values).
 
-    Each word gets an ``\\k<cs>`` tag (centisecond duration until next word highlight).
-    The ASS file targets a 1080x1920 (9:16) canvas.
+    Each word gets an ``\\k<cs>`` tag (centisecond duration until next word
+    highlight).  The ASS file targets a 1080x1920 (9:16) canvas.
+
+    When *emoji_map* is provided (non-None), matched keywords have the emoji
+    appended and receive an ASS inline colour override (brand-red) via
+    ``core.captions_emoji.build_karaoke_word``.  Pass ``{}`` to enable emoji
+    processing with no matches.  Pass ``None`` (default) to skip emoji lookup
+    entirely and use the bare ``\\k`` serialisation path.
 
     Returns the full ASS file content as a string.
     """
@@ -225,6 +258,13 @@ def to_ass_karaoke(lines: list[dict], style: str = "default") -> str:
 
     header = _ASS_HEADER.format(style_line=style_line)
     dialogue_lines: list[str] = []
+
+    # Import emoji helpers lazily so callers that don't use emoji incur no cost.
+    if emoji_map is not None:
+        from core.captions_emoji import apply_emoji_highlights, build_karaoke_word  # noqa: PLC0415
+    else:
+        build_karaoke_word = None  # type: ignore[assignment]
+        apply_emoji_highlights = None  # type: ignore[assignment]
 
     for line in lines:
         start_ts = _ass_ts(line["start"])
@@ -237,16 +277,29 @@ def to_ass_karaoke(lines: list[dict], style: str = "default") -> str:
             # Build karaoke text: each word preceded by \k<duration_cs>
             # Duration for word i = start of word(i+1) - start of word(i), in cs.
             # Last word: line end - word start.
+            annotated = (
+                apply_emoji_highlights(words, keyword_map=emoji_map)
+                if emoji_map is not None
+                else words
+            )
             parts: list[str] = []
-            for i, w in enumerate(words):
+            for i, w in enumerate(annotated):
                 w_start = float(w.get("start") or line["start"])
-                if i + 1 < len(words):
-                    next_start = float(words[i + 1].get("start") or w_start)
+                if i + 1 < len(annotated):
+                    next_start = float(annotated[i + 1].get("start") or w_start)
                 else:
                     next_start = line["end"]
                 dur_cs = max(1, int(round((next_start - w_start) * 100)))
                 word_str = str(w.get("word") or "").strip()
-                parts.append(f"{{\\k{dur_cs}}}{word_str}")
+                if emoji_map is not None and build_karaoke_word is not None:
+                    parts.append(build_karaoke_word(
+                        word_str,
+                        dur_cs,
+                        emoji=str(w.get("emoji") or ""),
+                        highlight=bool(w.get("highlight")),
+                    ))
+                else:
+                    parts.append(f"{{\\k{dur_cs}}}{word_str}")
             text_body = " ".join(parts)
 
         dialogue_lines.append(

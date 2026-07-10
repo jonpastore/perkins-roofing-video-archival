@@ -377,3 +377,95 @@ def test_render_spec_to_dict_is_json_serialisable():
     spec = ClipRenderSpec(reframe=True, music=MusicSpec(catalog="pixabay", track_id="t1"))
     data = spec.to_dict()
     assert json.dumps(data)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# New caption styles (Item 2)
+# ---------------------------------------------------------------------------
+
+def test_captions_spec_tiktok_pop():
+    spec = CaptionsSpec(style="tiktok_pop")
+    assert spec.style == "tiktok_pop"
+
+
+def test_captions_spec_reels_clean():
+    spec = CaptionsSpec(style="reels_clean")
+    assert spec.style == "reels_clean"
+
+
+def test_captions_spec_shorts_editorial():
+    spec = CaptionsSpec(style="shorts_editorial")
+    assert spec.style == "shorts_editorial"
+
+
+def test_captions_spec_invalid_style_still_raises():
+    with pytest.raises(Exception):
+        CaptionsSpec(style="neon_disco")
+
+
+# ---------------------------------------------------------------------------
+# emoji_highlights field (Item 4)
+# ---------------------------------------------------------------------------
+
+def test_clip_render_spec_emoji_highlights_default_false():
+    spec = ClipRenderSpec()
+    assert spec.emoji_highlights is False
+
+
+def test_clip_render_spec_emoji_highlights_true():
+    spec = ClipRenderSpec(emoji_highlights=True)
+    assert spec.emoji_highlights is True
+
+
+def test_emoji_highlights_serialised_in_to_dict():
+    spec = ClipRenderSpec(emoji_highlights=True)
+    assert spec.to_dict()["emoji_highlights"] is True
+
+
+def test_emoji_highlights_roundtrips_via_from_dict():
+    spec = ClipRenderSpec.from_dict({"emoji_highlights": True})
+    assert spec.emoji_highlights is True
+
+
+# ---------------------------------------------------------------------------
+# aspects field (Item 6)
+# ---------------------------------------------------------------------------
+
+def test_aspects_default_empty():
+    spec = ClipRenderSpec()
+    assert spec.aspects == []
+
+
+def test_aspects_square():
+    spec = ClipRenderSpec(aspects=["square"])
+    assert "square" in spec.aspects
+
+
+def test_aspects_9_16():
+    spec = ClipRenderSpec(aspects=["9:16"])
+    assert "9:16" in spec.aspects
+
+
+def test_aspects_multiple():
+    spec = ClipRenderSpec(aspects=["9:16", "square"])
+    assert len(spec.aspects) == 2
+
+
+def test_aspects_invalid_raises():
+    with pytest.raises(Exception):
+        ClipRenderSpec(aspects=["16:9"])
+
+
+def test_aspects_none_becomes_empty_list():
+    spec = ClipRenderSpec.from_dict({"aspects": None})
+    assert spec.aspects == []
+
+
+def test_aspects_serialised_in_to_dict():
+    spec = ClipRenderSpec(aspects=["square"])
+    assert spec.to_dict()["aspects"] == ["square"]
+
+
+def test_aspects_roundtrips_via_from_dict():
+    spec = ClipRenderSpec.from_dict({"aspects": ["square"]})
+    assert "square" in spec.aspects

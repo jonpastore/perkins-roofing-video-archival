@@ -312,11 +312,20 @@ def _apply_track_a_engines(
     scratch: str,
     series_id: int,
     part_index: int,
+    *,
+    video_id: str | None = None,
+    clip_start: float | None = None,
+    clip_end: float | None = None,
+    db=None,
+    hook_text: str | None = None,
+    aspects: list[str] | None = None,
+    tenant_id: int | None = None,
 ) -> str:
     """Apply Track A engines to *clip_path* in TRD sequence; return output path.
 
     Engine order (TRD-F5 §7.3):
       speech_cleanup → reframe → captions → broll → music_mix → clip_fx
+      → hook_overlay → (multi-aspect handled by caller via aspects list)
 
     Each engine is applied only when its spec flag/option enables it.  Absent or
     disabled options are no-ops so the function is fully backward-compatible when
@@ -326,10 +335,22 @@ def _apply_track_a_engines(
     they must never hard-fail a render.
 
     Args:
-        clip_path: Path to the extracted clip MP4 produced by ffmpeg_clip().
-        spec:      ClipRenderSpec from the series' parts_json (may be defaults).
-        scratch:   Temporary directory for intermediate outputs.
+        clip_path:   Path to the extracted clip MP4 produced by ffmpeg_clip().
+        spec:        ClipRenderSpec from the series' parts_json (may be defaults).
+        scratch:     Temporary directory for intermediate outputs.
         series_id / part_index: Used to name intermediate files.
+        video_id:    Source video ID used to query word timestamps (#326 fix).
+        clip_start:  Clip start time in seconds (for word timestamp query).
+        clip_end:    Clip end time in seconds (for word timestamp query).
+        db:          Stamped SQLAlchemy session for tenant-scoped DB queries.
+                     Must already have session.info["tenant_id"] set.  When
+                     None, word loading is skipped silently.
+        hook_text:   Hook text string to burn as first-2.5s title overlay.
+                     Skipped when None or empty.
+        aspects:     List of aspect ratio strings; currently only "square"
+                     triggers a 1:1 1080×1080 second-pass render.  Ignored
+                     here — caller handles multi-aspect from the returned path.
+        tenant_id:   Tenant id (informational; session stamping is done by caller).
 
     Returns:
         Path to the (possibly transformed) clip MP4.  May be the original
@@ -346,7 +367,12 @@ def _apply_track_a_engines(
             from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
             from core.speech_cleanup import build_cleanup_cmd, detect_fillers, keep_segments  # noqa: PLC0415
 
-            words = _load_words_for_clip(current)
+            words = _load_words_for_clip(
+                video_id=video_id,
+                clip_start=clip_start,
+                clip_end=clip_end,
+                db=db,
+            )
             if words:
                 filler_ranges = detect_fillers(words)
                 clip_duration = words[-1]["end"] if words else 0.0
@@ -396,10 +422,19 @@ def _apply_track_a_engines(
             from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
             from core.captions import caption_events, to_ass_karaoke  # noqa: PLC0415
 
-            words = _load_words_for_clip(current)
+            words = _load_words_for_clip(
+                video_id=video_id,
+                clip_start=clip_start,
+                clip_end=clip_end,
+                db=db,
+            )
             if words:
                 events = caption_events(words)
-                ass_content = to_ass_karaoke(events, style=spec.captions.style)
+                _emoji_map: dict | None = None
+                if getattr(spec, "emoji_highlights", False):
+                    from core.captions_emoji import KEYWORD_EMOJI_MAP  # noqa: PLC0415
+                    _emoji_map = KEYWORD_EMOJI_MAP
+                ass_content = to_ass_karaoke(events, style=spec.captions.style, emoji_map=_emoji_map)
                 ass_path = os.path.join(scratch, f"captions_{suffix}.ass")
                 with open(ass_path, "w", encoding="utf-8") as f:
                     f.write(ass_content)
@@ -506,20 +541,90 @@ def _apply_track_a_engines(
         except Exception as exc:  # noqa: BLE001
             logger.warning("clip_fx skipped (non-fatal): %s", exc)
 
+    # ── A12: hook title overlay ───────────────────────────────────────────────
+    # Burns the clip's hook text as a branded title band for the first 2.5 s.
+    # Pure drawtext via core.hook_overlay (no external deps, never fail render).
+    if hook_text and hook_text.strip():
+        try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from core.hook_overlay import hook_drawtext_filter  # noqa: PLC0415
+
+            vf_hook = hook_drawtext_filter(hook_text)
+            out = os.path.join(scratch, f"hook_{suffix}.mp4")
+            cmd = [
+                "ffmpeg", "-y", "-i", current,
+                "-vf", vf_hook,
+                "-c:v", "libx264", "-profile:v", "high",
+                "-pix_fmt", "yuv420p", "-c:a", "copy",
+                out,
+            ]
+            run_ffmpeg_cmd(cmd)
+            current = out
+            logger.info("hook_overlay applied: series=%d part=%d", series_id, part_index)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("hook_overlay skipped (non-fatal): %s", exc)
+
     return current
 
 
-def _load_words_for_clip(clip_path: str) -> list[dict]:  # noqa: ARG001
-    """Load word-level timestamps for the clip.
+def _load_words_for_clip(
+    *,
+    video_id: str | None = None,
+    clip_start: float | None = None,
+    clip_end: float | None = None,
+    db=None,
+) -> list[dict]:
+    """Load word-level timestamps for the clip from the Word table.
+
+    Queries Word rows for *video_id* whose start time falls within
+    [clip_start, clip_end].  The ``end`` time for each word is computed as
+    the start of the next word (with a small gap cap of 0.3 s for the last
+    word so it doesn't extend indefinitely).
+
+    The session *db* must already be stamped with session.info["tenant_id"]
+    by the caller (render_part passes its own stamped session).  When *db*
+    or *video_id* is None the function returns an empty list silently.
 
     Returns an empty list when no transcript is available — callers must
     handle this gracefully (skip the engine, never fail the render).
-
-    Real implementation: query the DB for Segment rows with word_json for
-    the video_id + time range.  Stub returns [] until the adapter is wired
-    (tracked as #326).
     """
-    return []
+    if db is None or not video_id:
+        return []
+    if clip_start is None or clip_end is None:
+        return []
+    try:
+        from app.models import Word  # noqa: PLC0415
+
+        rows = (
+            db.query(Word)
+            .filter(
+                Word.video_id == video_id,
+                Word.start >= clip_start,
+                Word.start < clip_end,
+            )
+            .order_by(Word.start)
+            .all()
+        )
+        if not rows:
+            return []
+
+        result: list[dict] = []
+        for i, row in enumerate(rows):
+            w_start = float(row.start or 0.0)
+            if i + 1 < len(rows):
+                w_end = float(rows[i + 1].start or w_start)
+            else:
+                w_end = min(w_start + 0.3, float(clip_end))
+            result.append({
+                "word": str(row.word or ""),
+                "start": w_start,
+                "end": w_end,
+                "confidence": float(row.confidence or 1.0),
+            })
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_load_words_for_clip: DB query failed: %s", exc)
+        return []
 
 
 def _resolve_music_track(catalog: str, track_id: str, scratch: str) -> str | None:  # noqa: ARG001
@@ -705,9 +810,23 @@ def render_part(
         ffmpeg_clip(src_path, start, end, clip_path)
 
         # 5a. Track A engine sequence (spec-driven; null spec = no-ops → backward compat)
-        clip_path = _apply_track_a_engines(
-            clip_path, render_spec, scratch, series_id, part_index
-        )
+        # Open a stamped read-only session for word timestamp queries (Item 1/#326).
+        # Kept open only for the duration of the engine sequence, then closed.
+        from app.models import SessionLocal as _SL  # noqa: PLC0415
+        _words_db = _SL()
+        if tenant_id is not None:
+            _words_db.info["tenant_id"] = tenant_id
+        try:
+            clip_path = _apply_track_a_engines(
+                clip_path, render_spec, scratch, series_id, part_index,
+                video_id=video_id,
+                clip_start=start,
+                clip_end=end,
+                db=_words_db,
+                hook_text=part.get("hook") or None,
+            )
+        finally:
+            _words_db.close()
 
         # 6 + 7. Fuse — brand video path (BRAND_INTRO_VIDEO / BRAND_OUTRO_VIDEO) takes
         # precedence over the image-card path when both are configured.
@@ -746,6 +865,40 @@ def render_part(
         # Emit render duration to per-tenant metering (no-op outside a tenant context).
         # clip_duration is the part's wall-clock length; convert seconds → minutes.
         metering.add("render_minutes", clip_duration / 60.0)
+
+        # ── Multi-aspect export (Item 6) ──────────────────────────────────────
+        # When the render spec includes "square" in aspects, produce a second
+        # 1:1 1080×1080 output from the finished reel (scale+pad, black bars).
+        # The square variant is uploaded to GCS under a sibling key and recorded
+        # in a separate SocialPost row with platform tagged as "{platform}:square".
+        # Default: 9:16 only (no aspects field → no second pass).
+        aspects = list(render_spec.aspects) if hasattr(render_spec, "aspects") else []
+        square_gcs_url: str | None = None
+        if "square" in aspects:
+            try:
+                from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+
+                square_path = os.path.join(scratch, f"square_{series_id}_{part_index}.mp4")
+                square_vf = (
+                    "scale=1080:1080:force_original_aspect_ratio=decrease,"
+                    "pad=1080:1080:(ow-iw)/2:(oh-ih)/2:color=black,"
+                    "setsar=1"
+                )
+                run_ffmpeg_cmd([
+                    "ffmpeg", "-y", "-i", reel_path,
+                    "-vf", square_vf,
+                    "-c:v", "libx264", "-profile:v", "high",
+                    "-pix_fmt", "yuv420p", "-c:a", "copy",
+                    square_path,
+                ])
+                sq_key = _gcs_object_key(series_id, part_index, tenant_id=tenant_id or 1).replace(
+                    ".mp4", "_square.mp4"
+                )
+                bucket_name_sq = _reels_bucket()
+                square_gcs_url = _upload_to_gcs(square_path, bucket_name_sq, sq_key)
+                logger.info("square export uploaded: %s", square_gcs_url)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("square export skipped (non-fatal): %s", exc)
 
         # 8. Upload to GCS (private bucket — returns gs:// URI)
         bucket_name = _reels_bucket()
