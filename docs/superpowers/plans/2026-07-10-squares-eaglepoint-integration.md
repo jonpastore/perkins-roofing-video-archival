@@ -369,7 +369,21 @@ optional stretch. Gate: designer/architect review of the flow + error states.
 
 ---
 
-## 11. OPEN DECISIONS FOR JON (flag list — resolve before/at S0)
+## 11. OPEN DECISIONS — RESOLVED 2026-07-10 (Jon), except D3
+
+**Resolutions:** D1 = FIX (ship PDAL, full pitch tier). D2 = settle in S0 spike. D3 = PENDING
+(Jon asked for the CV-footprints explanation; recommendation stands: drop from runtime image,
+code stays in git history). D4 = KEEP Mapbox as fallback/recency layer — ToS grey area
+explicitly accepted by Jon; NAIP stays primary. D5 = **ASYNC (Jon override of the sync
+recommendation: "we should always do things async")** — use Cloud Tasks as the GCP-native
+queue: our API creates the measurement row (status=pending) and enqueues; ml-service
+processes and writes the result back through an INTERNAL_SECRET-gated internal endpoint
+(re-stamped tenant session — the §6.3 cross-tenant test gates this harder now); UI polls
+GET /measurements/{id} as already planned. S2 absorbs the queue wiring; the 900s request-cap
+concern disappears. D6 = DESCOPE eaglepoint PDF/overlay for v1. D7 = Google Geocoding API.
+D8 = acknowledged (no GPU).
+
+Original decision text (for context):
 
 - **D1 — Pitch accuracy tradeoff (most important).** Fix LiDAR by shipping PDAL (full tier: real
   pitch, squares include slope) vs. descope to basic tier (flat-footprint squares + manual pitch
