@@ -628,9 +628,9 @@ class ContractFaqEntry(Base, TenantMixin):
     question      = Column(Text, nullable=False)
     answer        = Column(Text)
     quote         = Column(Text)
-    status        = Column(String, nullable=False, default="draft")
+    status        = Column(String(20), nullable=False, default="draft")
     tc_version_id = Column(Integer, ForeignKey("tc_versions.id"), nullable=True)
-    created_at    = Column(DateTime, default=_utcnow)
+    created_at    = Column(DateTime, nullable=False, default=_utcnow)
 
     __table_args__ = (
         Index("ix_contract_faq_tenant", "tenant_id"),
@@ -679,6 +679,31 @@ def _seed_perkins_tenant(target, connection, **kw):
         connection.execute(
             pg_insert(target).values(**row).on_conflict_do_nothing(index_elements=["id"])
         )
+
+
+# H2 (R2 #321 review): runtime init_db()/create_all (app/ingest.py + several jobs) can
+# create a model-first tenant table BEFORE its migration lands — without this hook that
+# table would have NO RLS (cross-tenant window until the .sql applies). At CREATE TABLE
+# time, apply ENABLE/FORCE + the standard NULLIF-GUC isolation policy to every table
+# carrying a tenant_id column. Migrations stay the source of truth for existing tables
+# (the hook only fires for tables create_all actually creates); policy name is suffixed
+# "_auto" so it coexists with (ORs with) the identical per-table migration policies.
+def _rls_on_create(target, connection, **kw):
+    if connection.dialect.name != "postgresql":
+        return
+    from sqlalchemy import text as _text
+    guc = "NULLIF(current_setting('app.tenant_id', true), '')::int"
+    connection.execute(_text(f'ALTER TABLE {target.name} ENABLE ROW LEVEL SECURITY'))
+    connection.execute(_text(f'ALTER TABLE {target.name} FORCE ROW LEVEL SECURITY'))
+    connection.execute(_text(
+        f"CREATE POLICY tenant_isolation_auto ON {target.name} "
+        f"USING (tenant_id = {guc}) WITH CHECK (tenant_id = {guc})"
+    ))
+
+
+for _t in Base.metadata.tables.values():
+    if "tenant_id" in _t.columns and _t.name != "tenants":
+        event.listens_for(_t, "after_create")(_rls_on_create)
 
 
 def init_db():

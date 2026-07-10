@@ -225,3 +225,36 @@ def test_ingest_status_stamped_session_on_pg(seeded_rows, pg_engine, monkeypatch
     # Unstamped (the pre-fix bug): must raise before any SQL
     with pytest.raises(RuntimeError, match="tenant_id not set on session.info"):
         ingest.status("no-such-video")
+
+
+@pytest.mark.postgres
+def test_contract_faq_rls_isolation_via_create_all_hook(pg_engine):
+    """H2 regression guard (#321): create_all's after_create hook must leave
+    contract_faq_entries RLS-FORCED with the tenant policy — tenant 1 cannot see
+    tenant 2's rows even though no migration ran for this table in the fixture."""
+    from core.tenant import register_tenant_session_events
+
+    with pg_engine.begin() as conn:
+        row = conn.execute(text(
+            "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+            "WHERE relname = 'contract_faq_entries'")).fetchone()
+    assert row is not None, "table missing — create_all did not create it"
+    assert row[0] and row[1], "RLS not ENABLE+FORCE'd by the after_create hook"
+
+    with pg_engine.begin() as conn:
+        conn.execute(text("SET LOCAL app.tenant_id = '2'"))
+        conn.execute(text(
+            "INSERT INTO contract_faq_entries (question, answer, quote, status, created_at, tenant_id) "
+            "VALUES ('T2 Q?', 'T2 A', 'q', 'draft', NOW(), 2)"))
+
+    rls_factory = sessionmaker(bind=pg_engine, future=True)
+    register_tenant_session_events(rls_factory)
+    session = rls_factory()
+    session.info["tenant_id"] = 1
+    try:
+        count = session.execute(text(
+            "SELECT COUNT(*) FROM contract_faq_entries WHERE tenant_id = 2")).scalar()
+        assert count == 0, "tenant 1 session saw tenant 2's contract FAQ rows"
+        session.rollback()
+    finally:
+        session.close()

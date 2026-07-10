@@ -13,6 +13,7 @@ from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
 from api.routes.comments import router as comments_router
 from api.routes.config import router as config_router
+from api.routes.contract_faq import router as contract_faq_router
 from api.routes.customers import router as customers_router
 from api.routes.email import router as email_router
 from api.routes.estimator import router as estimator_router
@@ -87,6 +88,7 @@ app.include_router(estimator_router)
 app.include_router(pricing_configs_router)
 app.include_router(measurements_router)
 app.include_router(faq_router)
+app.include_router(contract_faq_router)
 app.include_router(config_router)
 app.include_router(users_router)
 app.include_router(me_router)
