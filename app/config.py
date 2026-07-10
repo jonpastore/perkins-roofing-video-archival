@@ -51,6 +51,7 @@ class Settings:
             "https://video-archival-and-content-gen.web.app,"
             "https://video-archival-and-content-gen.firebaseapp.com,"
             "https://perkins.degenito.ai,"
+            "https://app.perkinsroofing.net,"
             "http://localhost:5173",
         ).split(",")
         if o.strip()
