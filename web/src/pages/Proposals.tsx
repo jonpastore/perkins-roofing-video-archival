@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge } from "../ui";
+import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, StatusPill, StatCard, TierCard, SectionLabel } from "../ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,17 +55,7 @@ interface ProposalRow {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function statusBadge(status: ProposalStatus) {
-  const map: Record<ProposalStatus, { tone: "gray" | "blue" | "amber" | "green"; label: string }> = {
-    draft: { tone: "gray", label: "Draft" },
-    sent: { tone: "blue", label: "Sent" },
-    viewed: { tone: "blue", label: "Viewed" },
-    accepted: { tone: "green", label: "Accepted" },
-    declined: { tone: "amber", label: "Declined" },
-    superseded: { tone: "gray", label: "Superseded" },
-    revision_requested: { tone: "amber", label: "Revision req." },
-  };
-  const { tone, label } = map[status] ?? { tone: "gray" as const, label: status };
-  return <Badge tone={tone}>{label}</Badge>;
+  return <StatusPill status={status} />;
 }
 
 function fmtDate(iso: string | null | undefined): string {
@@ -344,36 +334,48 @@ export function Proposals() {
           <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
             {/* Status + meta */}
             <div>
-              <div style={{ marginBottom: 8 }}>{statusBadge(p.status)}{" "}<span style={{ fontSize: 12, color: BRAND.sub }}>v{p.version_number}</span></div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: BRAND.navyText, marginBottom: 4 }}>{p.title}</div>
-              {p.customer_name && <div style={{ fontSize: 13, color: BRAND.sub }}>{p.customer_name}</div>}
-              {p.property_address && <div style={{ fontSize: 13, color: BRAND.sub }}>{p.property_address}</div>}
-              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 6 }}>
-                Created {fmtDate(p.created_at)}{p.sent_at ? ` · Sent ${fmtDate(p.sent_at)}` : ""}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                {statusBadge(p.status)}
+                <span style={{ fontSize: 11, color: BRAND.sub, background: BRAND.bg, padding: "2px 8px", borderRadius: 10, fontWeight: 600 }}>v{p.version_number}</span>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: BRAND.navyText, marginBottom: 6 }}>{p.title}</div>
+              {p.customer_name && (
+                <div style={{ fontSize: 13, color: BRAND.sub, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 14 }}>👤</span>{p.customer_name}
+                </div>
+              )}
+              {p.property_address && (
+                <div style={{ fontSize: 13, color: BRAND.sub, display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                  <span style={{ fontSize: 14 }}>📍</span>{p.property_address}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <span>Created {fmtDate(p.created_at)}</span>
+                {p.sent_at && <span>Sent {fmtDate(p.sent_at)}</span>}
+                {p.accepted_at && <span>Accepted {fmtDate(p.accepted_at)}</span>}
               </div>
             </div>
 
-            {/* Quote snapshot summary */}
+            {/* Quote snapshot summary — tier cards */}
             {Object.keys(tiers).length > 0 && (
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Tiers</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <SectionLabel>Pricing Tiers</SectionLabel>
+                <div style={{ display: "flex", gap: 8 }}>
                   {Object.entries(tiers).map(([key, tier]) => (
-                    <div key={key} style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      padding: "8px 12px", border: `1px solid ${p.selected_tier === key ? BRAND.navy : BRAND.border}`,
-                      borderRadius: 8, background: p.selected_tier === key ? "#f0f3fa" : "#fff",
-                    }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.navyText, textTransform: "capitalize" }}>
-                        {tier.label ?? key}
-                        {p.selected_tier === key && <span style={{ marginLeft: 6, fontSize: 11, color: BRAND.sub }}>(selected)</span>}
-                      </span>
-                      <span style={{ fontSize: 13, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
-                        {usd(tier.total)}
-                      </span>
-                    </div>
+                    <TierCard
+                      key={key}
+                      label={tier.label ?? key}
+                      value={usd(tier.total)}
+                      recommended={key === "better"}
+                      selected={p.selected_tier === key}
+                    />
                   ))}
                 </div>
+                {p.selected_tier && (
+                  <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 6 }}>
+                    Customer selected: <strong style={{ color: BRAND.navyText, textTransform: "capitalize" }}>{p.selected_tier}</strong>
+                  </div>
+                )}
               </div>
             )}
 
@@ -443,25 +445,38 @@ export function Proposals() {
               </div>
             </div>
 
-            {/* Event history */}
+            {/* Event history — timeline */}
             {events.length > 0 && (
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Event history</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                  {events.map((ev) => (
+                <SectionLabel>Timeline</SectionLabel>
+                <div style={{ display: "flex", flexDirection: "column", gap: 0, position: "relative" }}>
+                  {/* vertical line */}
+                  <div style={{
+                    position: "absolute", left: 7, top: 8, bottom: 8, width: 2,
+                    background: BRAND.border, borderRadius: 2,
+                  }} />
+                  {events.map((ev, idx) => (
                     <div key={ev.id} style={{
-                      display: "flex", gap: 10, padding: "8px 0",
-                      borderBottom: `1px solid ${BRAND.border}`, fontSize: 12,
+                      display: "flex", gap: 14, padding: "8px 0",
+                      borderBottom: idx < events.length - 1 ? `1px solid ${BRAND.border}` : "none",
+                      fontSize: 12, position: "relative",
                     }}>
+                      <div style={{
+                        width: 16, height: 16, borderRadius: "50%", flexShrink: 0,
+                        background: "#fff", border: `2px solid ${BRAND.navy}`, marginTop: 1,
+                        zIndex: 1,
+                      }} />
                       <div style={{ flex: 1 }}>
-                        <span style={{ fontWeight: 600, color: BRAND.navyText, textTransform: "capitalize" }}>
+                        <div style={{ fontWeight: 600, color: BRAND.navyText, textTransform: "capitalize" }}>
                           {ev.event_type.replace(/_/g, " ")}
-                        </span>
+                        </div>
                         {ev.actor_email && (
-                          <span style={{ color: BRAND.sub }}> · {ev.actor_email}</span>
+                          <div style={{ color: BRAND.sub, fontSize: 11 }}>{ev.actor_email}</div>
                         )}
                       </div>
-                      <div style={{ color: BRAND.sub, whiteSpace: "nowrap" }}>{fmtDateTime(ev.occurred_at)}</div>
+                      <div style={{ color: BRAND.sub, whiteSpace: "nowrap", fontSize: 11, paddingTop: 2 }}>
+                        {fmtDateTime(ev.occurred_at)}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -475,9 +490,39 @@ export function Proposals() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // KPI computations
+  const allProposals = proposals; // we compute from the full in-memory list
+  const kpiDraft    = allProposals.filter((p) => p.status === "draft").length;
+  const kpiSent     = allProposals.filter((p) => p.status === "sent" || p.status === "viewed").length;
+  const kpiAccepted = allProposals.filter((p) => p.status === "accepted").length;
+  const kpiPipeline = (() => {
+    let total = 0;
+    for (const p of allProposals) {
+      const snap = (p.quote_snapshot ?? {}) as Record<string, unknown>;
+      const tiers = (snap.tiers ?? {}) as Record<string, { total?: number }>;
+      const betterTier = tiers["better"] ?? tiers["good"] ?? null;
+      if (betterTier?.total) total += betterTier.total;
+    }
+    return total;
+  })();
+
   return (
     <main style={{ maxWidth: 960, fontFamily: FONT }}>
       <PageTitle>Proposals</PageTitle>
+
+      {/* KPI row */}
+      {allProposals.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+          <StatCard label="Draft" value={kpiDraft} />
+          <StatCard label="Sent / Viewed" value={kpiSent} />
+          <StatCard label="Accepted" value={kpiAccepted} />
+          <StatCard
+            label="Pipeline"
+            value={kpiPipeline > 0 ? kpiPipeline.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }) : "—"}
+            sub="Better-tier total"
+          />
+        </div>
+      )}
 
       {/* Status tabs */}
       <div style={{ display: "flex", borderBottom: `1px solid ${BRAND.border}`, marginBottom: 20, overflowX: "auto" }}>

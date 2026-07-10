@@ -9,6 +9,11 @@ import "tinymce/plugins/link";
 import "tinymce/plugins/image";
 import "tinymce/plugins/code";
 import "tinymce/plugins/table";
+// Self-hosted skin: with skin:false the UI CSS must be bundled explicitly or the
+// editor mounts invisibly (the "blank Body" bug). All local — no CDN, no API key.
+import "tinymce/skins/ui/oxide/skin.css";
+import contentUiCss from "tinymce/skins/ui/oxide/content.css?raw";
+import contentCss from "tinymce/skins/content/default/content.css?raw";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
 
@@ -214,6 +219,7 @@ export function ComposeEmail() {
               init={{
                 skin: false,
                 content_css: false,
+                content_style: [contentUiCss, contentCss].join("\n"),
                 menubar: false,
                 plugins: "lists link image code table",
                 toolbar: "undo redo | bold italic | bullist numlist | link image | code",

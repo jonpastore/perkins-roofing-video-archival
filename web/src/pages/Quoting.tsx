@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge } from "../ui";
+import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, TierCard, SectionLabel } from "../ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -94,14 +94,6 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: BRAND.sub, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.3 }}>
       {children}
     </label>
-  );
-}
-
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 6px" }}>
-      {children}
-    </div>
   );
 }
 
@@ -697,6 +689,39 @@ export function Quoting() {
           Quote builder — {selectedCustomer.display_name}
         </PageTitle>
 
+        {/* Stepper */}
+        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, userSelect: "none" }}>
+          {(["Customer", "Measurement", "Quote", "Proposal"] as const).map((step, i) => {
+            const stepIndex = ["Customer", "Measurement", "Quote", "Proposal"].indexOf(step);
+            const activeIndex = 2; // We're on "Quote" in quote_builder
+            const done = stepIndex < activeIndex;
+            const active = stepIndex === activeIndex;
+            return (
+              <div key={step} style={{ display: "flex", alignItems: "center" }}>
+                <div style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: "50%",
+                    background: active ? BRAND.red : done ? BRAND.navy : BRAND.border,
+                    color: active || done ? "#fff" : BRAND.sub,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 12, fontWeight: 700,
+                  }}>
+                    {done ? "✓" : i + 1}
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? BRAND.navyText : BRAND.sub, whiteSpace: "nowrap" }}>
+                    {step}
+                  </span>
+                </div>
+                {i < 3 && (
+                  <div style={{ width: 40, height: 2, background: done ? BRAND.navy : BRAND.border, margin: "0 4px", marginBottom: 16 }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+
         {activeProp && (
           <div style={{ marginBottom: 16, fontSize: 13, color: BRAND.sub }}>
             Property: <strong style={{ color: BRAND.navyText }}>{activeProp.street}, {activeProp.city} {activeProp.state}</strong>
@@ -782,43 +807,40 @@ export function Quoting() {
             )}
 
             {quoteResult && (
-              <Card>
-                <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                    Quote — {quoteResult.region}
-                  </span>
-                  <span style={{
-                    fontSize: 12, fontWeight: 700, padding: "2px 10px", borderRadius: 20,
-                    background: quoteResult.margin_ok ? "#e6f9f0" : "#fef2f2",
-                    color: quoteResult.margin_ok ? "#1a7f4b" : BRAND.red,
-                  }}>
-                    {quoteResult.margin_ok ? "Margin OK" : "Margin LOW"}
-                  </span>
-                </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <Card style={{ padding: "20px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      {labelRoofType(quoteResult.roof_type)} · {quoteResult.num_squares} sq
+                    </div>
+                    <span style={{
+                      fontSize: 12, fontWeight: 700, padding: "3px 12px", borderRadius: 20,
+                      background: quoteResult.margin_ok ? "#e6f9f0" : "#fef2f2",
+                      color: quoteResult.margin_ok ? "#1a7f4b" : BRAND.red,
+                    }}>
+                      {quoteResult.margin_ok ? "Margin OK" : "Margin LOW"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <TierCard label="Good" value={usd(quoteResult.project_total)} />
+                    <TierCard label="Better" value={usd(Math.round(quoteResult.project_total * 1.15))} recommended />
+                    <TierCard label="Best" value={usd(Math.round(quoteResult.project_total * 1.30))} />
+                  </div>
+                  <SectionLabel>Profitability</SectionLabel>
+                  <ResultRow label="Profit" value={usd(quoteResult.profit_dollars)} />
+                  <ResultRow label="Profit %" value={(quoteResult.profit_pct * 100).toFixed(1) + "%"} />
+                  <ResultRow label="Est. Commission" value={usd(quoteResult.estimated_commission)} />
+                </Card>
 
-                <ResultRow label="Roof Type" value={labelRoofType(quoteResult.roof_type)} />
-                <ResultRow label="Squares" value={String(quoteResult.num_squares)} />
-
-                <SectionHeader>Tiers (Good / Better / Best)</SectionHeader>
-                <ResultRow label="Good" value={usd(quoteResult.project_total)} bold />
-                <ResultRow label="Better" value={usd(Math.round(quoteResult.project_total * 1.15))} bold />
-                <ResultRow label="Best" value={usd(Math.round(quoteResult.project_total * 1.30))} bold />
-
-                <SectionHeader>Profit</SectionHeader>
-                <ResultRow label="Profit" value={usd(quoteResult.profit_dollars)} />
-                <ResultRow label="Profit %" value={(quoteResult.profit_pct * 100).toFixed(1) + "%"} />
-                <ResultRow label="Est. Commission" value={usd(quoteResult.estimated_commission)} />
-
-                <div style={{ marginTop: 16 }}>
+                <Card>
                   {props.length > 1 && (
-                    <div style={{ marginBottom: 10 }}>
+                    <div style={{ marginBottom: 12 }}>
                       <FieldLabel>Property for proposal</FieldLabel>
                       <select value={selectedPropertyId ?? ""} onChange={(e) => setSelectedPropertyId(Number(e.target.value))} style={selectStyle}>
                         {props.map((p) => <option key={p.id} value={p.id}>{p.street}, {p.city}</option>)}
                       </select>
                     </div>
                   )}
-
                   {proposalCreated ? (
                     <div style={{ background: "#e6f9f0", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#1a7f4b" }}>
                       Proposal #{proposalCreated.id} created. Switch to the <strong>Proposals</strong> tab to send it.
@@ -829,8 +851,8 @@ export function Quoting() {
                     </Button>
                   )}
                   {proposalError && <div style={{ marginTop: 8 }}><ErrorMsg>Error: {proposalError}</ErrorMsg></div>}
-                </div>
-              </Card>
+                </Card>
+              </div>
             )}
           </div>
         </div>
@@ -882,37 +904,28 @@ export function Quoting() {
       )}
 
       {filteredCustomers.length > 0 && (
-        <Card style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead>
-              <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Name</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Company</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Email</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Phone</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCustomers.map((c) => (
-                <tr key={c.id} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
-                  <td style={{ padding: "10px 16px", fontWeight: 600, color: BRAND.navyText }}>{c.display_name}</td>
-                  <td style={{ padding: "10px 16px", color: BRAND.sub }}>{c.company_name ?? "—"}</td>
-                  <td style={{ padding: "10px 16px" }}>
-                    {c.email
-                      ? <a href={`mailto:${c.email}`} style={{ color: BRAND.navyText, textDecoration: "none" }}>{c.email}</a>
-                      : <span style={{ color: BRAND.sub }}>—</span>
-                    }
-                  </td>
-                  <td style={{ padding: "10px 16px", color: BRAND.sub }}>{c.phone ?? "—"}</td>
-                  <td style={{ padding: "10px 16px" }}>
-                    <Button variant="ghost" onClick={() => openCustomer(c)} style={{ fontSize: 12 }}>Open</Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filteredCustomers.map((c) => (
+            <Card
+              key={c.id}
+              style={{ padding: "14px 18px", cursor: "pointer" }}
+              onClick={() => openCustomer(c)}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <InitialsAvatar name={c.display_name} size={40} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15 }}>{c.display_name}</div>
+                  <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    {c.company_name && <span>{c.company_name}</span>}
+                    {c.email && <span>{c.email}</span>}
+                    {c.phone && <span>{c.phone}</span>}
+                  </div>
+                </div>
+                <div style={{ color: BRAND.sub, fontSize: 18, lineHeight: 1 }}>›</div>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
     </main>
   );

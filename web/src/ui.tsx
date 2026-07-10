@@ -107,16 +107,192 @@ export function ErrorMsg({ children }: { children: ReactNode }) {
   return <p style={{ color: BRAND.red, fontSize: 14 }}>{children}</p>;
 }
 
-export function Badge({ tone, children }: { tone: "green" | "amber" | "blue" | "gray"; children: ReactNode }) {
+export function Badge({ tone, children }: { tone: "green" | "amber" | "blue" | "gray" | "red"; children: ReactNode }) {
   const c = {
     green: { bg: "#e6f9f0", fg: "#1a7f4b" },
     amber: { bg: "#fff3e0", fg: "#b45309" },
     blue: { bg: "#e8eefc", fg: BRAND.navyText },
     gray: { bg: "#eef1f5", fg: "#667085" },
+    red: { bg: "#fef2f2", fg: BRAND.redDark },
   }[tone];
   return (
     <span style={{ background: c.bg, color: c.fg, padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 600 }}>
       {children}
     </span>
+  );
+}
+
+export function StatusPill({
+  status,
+}: {
+  status: "draft" | "sent" | "viewed" | "accepted" | "declined" | "superseded" | "revision_requested";
+}) {
+  const map: Record<string, { bg: string; fg: string; label: string }> = {
+    draft:              { bg: "#eef1f5", fg: "#667085",       label: "Draft" },
+    sent:               { bg: "#e8eefc", fg: BRAND.navyText,  label: "Sent" },
+    viewed:             { bg: "#fff3e0", fg: "#b45309",       label: "Viewed" },
+    accepted:           { bg: "#e6f9f0", fg: "#1a7f4b",       label: "Accepted" },
+    declined:           { bg: "#fef2f2", fg: BRAND.redDark,   label: "Declined" },
+    superseded:         { bg: "#eef1f5", fg: "#667085",       label: "Superseded" },
+    revision_requested: { bg: "#fff3e0", fg: "#b45309",       label: "Revision req." },
+  };
+  const c = map[status] ?? { bg: "#eef1f5", fg: "#667085", label: status };
+  return (
+    <span style={{
+      display: "inline-block",
+      background: c.bg,
+      color: c.fg,
+      padding: "3px 12px",
+      borderRadius: 20,
+      fontSize: 12,
+      fontWeight: 700,
+      letterSpacing: 0.2,
+    }}>
+      {c.label}
+    </span>
+  );
+}
+
+export function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return (
+    <div style={{
+      background: "#fff",
+      border: `1px solid ${BRAND.border}`,
+      borderRadius: 12,
+      padding: "16px 20px",
+      boxShadow: "0 1px 3px rgba(16,24,40,0.06)",
+      display: "flex",
+      flexDirection: "column" as const,
+      gap: 4,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase" as const, letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: BRAND.navyText, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: BRAND.sub }}>{sub}</div>}
+    </div>
+  );
+}
+
+export function PillButton({
+  active,
+  onClick,
+  children,
+}: {
+  active?: boolean;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "7px 18px",
+        borderRadius: 20,
+        border: active ? `2px solid ${BRAND.navy}` : `2px solid ${BRAND.border}`,
+        background: active ? BRAND.navy : "#fff",
+        color: active ? "#fff" : BRAND.sub,
+        cursor: "pointer",
+        fontSize: 13,
+        fontWeight: 600,
+        transition: "background 0.12s, color 0.12s, border-color 0.12s",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div style={{
+      fontSize: 11,
+      fontWeight: 700,
+      color: BRAND.sub,
+      textTransform: "uppercase" as const,
+      letterSpacing: 0.5,
+      margin: "14px 0 6px",
+    }}>
+      {children}
+    </div>
+  );
+}
+
+export function TierCard({
+  label,
+  value,
+  recommended,
+  selected,
+}: {
+  label: string;
+  value: string;
+  recommended?: boolean;
+  selected?: boolean;
+}) {
+  return (
+    <div style={{
+      border: recommended
+        ? `2px solid ${BRAND.red}`
+        : selected
+        ? `2px solid ${BRAND.navy}`
+        : `1px solid ${BRAND.border}`,
+      borderRadius: 12,
+      padding: "18px 20px",
+      background: recommended ? "#fff8f7" : selected ? "#f0f3fa" : "#fff",
+      boxShadow: recommended ? "0 2px 8px rgba(239,60,26,0.10)" : "0 1px 3px rgba(16,24,40,0.06)",
+      position: "relative" as const,
+      flex: 1,
+      minWidth: 0,
+    }}>
+      {recommended && (
+        <div style={{
+          position: "absolute" as const,
+          top: -12,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: BRAND.red,
+          color: "#fff",
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: 0.5,
+          padding: "2px 10px",
+          borderRadius: 20,
+          whiteSpace: "nowrap" as const,
+        }}>
+          RECOMMENDED
+        </div>
+      )}
+      <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase" as const, letterSpacing: 0.4, marginBottom: 8 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: BRAND.navyText, fontVariantNumeric: "tabular-nums" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+export function InitialsAvatar({ name, size = 36 }: { name: string; size?: number }) {
+  const parts = name.trim().split(/\s+/);
+  const initials = parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : name.slice(0, 2).toUpperCase();
+  const colors = ["#1b2a52", "#2b3c73", "#26386b", "#ef3c1a", "#1a7f4b", "#b45309"];
+  const colorIdx = name.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) % colors.length;
+  return (
+    <div style={{
+      width: size,
+      height: size,
+      borderRadius: "50%",
+      background: colors[colorIdx],
+      color: "#fff",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: size * 0.38,
+      fontWeight: 700,
+      flexShrink: 0,
+      letterSpacing: 0.5,
+    }}>
+      {initials}
+    </div>
   );
 }

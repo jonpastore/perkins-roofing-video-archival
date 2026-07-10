@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
+import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, TierCard, SectionLabel, PillButton } from "../ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -136,10 +136,36 @@ function ResultRow({ label, value, bold, large }: { label: string; value: string
   );
 }
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
+function ExpandableLineItems({ title, items }: { title: string; items: [string, number][] }) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
   return (
-    <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 6px" }}>
-      {children}
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6, background: "none", border: "none",
+          cursor: "pointer", padding: "6px 0", width: "100%", textAlign: "left",
+          fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5,
+        }}
+      >
+        <span style={{ fontSize: 10, transition: "transform 0.15s", display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+        {title} ({items.length})
+      </button>
+      {open && (
+        <div style={{ borderRadius: 8, overflow: "hidden", border: `1px solid ${BRAND.border}` }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <tbody>
+              {items.map(([k, v]) => (
+                <tr key={k} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                  <td style={{ padding: "7px 12px", color: BRAND.ink }}>{labelKey(k)}</td>
+                  <td style={{ padding: "7px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: BRAND.navyText, fontWeight: 600 }}>{usd(v)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -147,7 +173,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function Estimator() {
-  const [region, setRegion] = useState<Region>("FBC");
+  const [region, setRegion] = useState<Region>("HVHZ");
   const [rates, setRates] = useState<RatesResponse | null>(null);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [ratesError, setRatesError] = useState<string | null>(null);
@@ -196,6 +222,19 @@ export function Estimator() {
 
   useEffect(() => {
     loadRates(region);
+    // Read and clear Squares prefill (set by Squares.tsx "Use in Estimate")
+    try {
+      const raw = localStorage.getItem("estimate_prefill");
+      if (raw) {
+        localStorage.removeItem("estimate_prefill");
+        const prefill = JSON.parse(raw) as { num_squares?: number; measurement_id?: number; address?: string };
+        if (prefill.num_squares != null && prefill.num_squares > 0) {
+          setNumSquares(String(prefill.num_squares));
+        }
+      }
+    } catch {
+      // ignore malformed prefill
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleRegion(r: Region) {
@@ -261,44 +300,23 @@ export function Estimator() {
 
           {/* Region toggle */}
           <Card>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <div>
-                <FieldLabel>Region</FieldLabel>
-                <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${BRAND.border}` }}>
-                  {(["HVHZ", "FBC"] as Region[]).map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => handleRegion(r)}
-                      style={{
-                        padding: "7px 22px",
-                        fontSize: 13,
-                        fontWeight: 600,
-                        border: "none",
-                        borderRight: r === "HVHZ" ? `1px solid ${BRAND.border}` : "none",
-                        cursor: "pointer",
-                        background: region === r ? BRAND.navy : "#fff",
-                        color: region === r ? "#fff" : BRAND.sub,
-                        transition: "background 0.1s, color 0.1s",
-                      }}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {region === "HVHZ" && (
-                <span style={{ fontSize: 12, color: BRAND.sub, paddingTop: 18 }}>Miami-Dade / Broward</span>
-              )}
-              {region === "FBC" && (
-                <span style={{ fontSize: 12, color: BRAND.sub, paddingTop: 18 }}>Palm Beach / Lee / St. Lucie</span>
-              )}
+            <FieldLabel>Region</FieldLabel>
+            <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+              {(["HVHZ", "FBC"] as Region[]).map((r) => (
+                <PillButton key={r} active={region === r} onClick={() => handleRegion(r)}>
+                  {r}
+                </PillButton>
+              ))}
+              <span style={{ fontSize: 12, color: BRAND.sub, alignSelf: "center", marginLeft: 4 }}>
+                {region === "HVHZ" ? "Miami-Dade / Broward" : "Palm Beach / Lee / St. Lucie"}
+              </span>
             </div>
 
             {ratesLoading && <div style={{ marginTop: 12 }}><Loading label="Loading rates…" /></div>}
             {ratesError && <div style={{ marginTop: 12 }}><ErrorMsg>Error loading rates: {ratesError}</ErrorMsg></div>}
 
             {rates && (
-              <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {Object.entries(rates.base_cost_lm).map(([rt, cost]) => (
                   <span key={rt} style={{ fontSize: 11, color: BRAND.sub, background: BRAND.bg, padding: "2px 8px", borderRadius: 12 }}>
                     {labelRoofType(rt)}: {usd(cost)}/sq
@@ -505,81 +523,62 @@ export function Estimator() {
           )}
 
           {result && (
-            <Card>
-              <div style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                  Quote — {region}
-                </span>
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  padding: "2px 10px",
-                  borderRadius: 20,
-                  background: result.margin_ok ? "#e6f9f0" : "#fef2f2",
-                  color: result.margin_ok ? "#1a7f4b" : BRAND.red,
-                }}>
-                  {result.margin_ok ? "Margin OK" : "Margin LOW"}
-                </span>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Hero: Good / Better / Best price cards */}
+              <Card style={{ padding: "24px 20px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      {labelRoofType(result.roof_type)} · {result.num_squares} sq · {region}
+                    </div>
+                    <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+                      {usd(result.per_square_total)}/sq base
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, padding: "3px 12px", borderRadius: 20,
+                    background: result.margin_ok ? "#e6f9f0" : "#fef2f2",
+                    color: result.margin_ok ? "#1a7f4b" : BRAND.red,
+                  }}>
+                    {result.margin_ok ? "Margin OK" : "Margin LOW"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <TierCard label="Good" value={usd(result.project_total)} />
+                  <TierCard label="Better" value={usd(Math.round(result.project_total * 1.15))} recommended />
+                  <TierCard label="Best" value={usd(Math.round(result.project_total * 1.30))} />
+                </div>
+              </Card>
 
-              <ResultRow label="Roof Type" value={labelRoofType(result.roof_type)} />
-              <ResultRow label="Squares" value={result.num_squares.toString()} />
-              <ResultRow label="Per-Square Total" value={usd(result.per_square_total)} bold />
+              {/* Line items detail */}
+              <Card>
+                <SectionLabel>Fixed Costs</SectionLabel>
+                <ExpandableLineItems title="Project Fixed Costs" items={Object.entries(result.project_fixed_costs)} />
+                {Object.keys(result.line_items ?? {}).length > 0 && (
+                  <ExpandableLineItems title="Line Items" items={Object.entries(result.line_items)} />
+                )}
 
-              <SectionHeader>Squares Subtotal</SectionHeader>
-              <ResultRow
-                label={`${result.num_squares} sq × ${usd(result.per_square_total)}`}
-                value={usd(result.squares_subtotal)}
-                bold
-              />
+                <SectionLabel>Summary</SectionLabel>
+                <ResultRow
+                  label={`${result.num_squares} sq × ${usd(result.per_square_total)}`}
+                  value={usd(result.squares_subtotal)}
+                  bold
+                />
+                <ResultRow
+                  label={`PM Incentive (${result.region === "commercial" ? "commercial" : "residential"})`}
+                  value={usd(result.pm_incentive)}
+                />
 
-              <SectionHeader>Project Fixed Costs</SectionHeader>
-              {Object.entries(result.project_fixed_costs).map(([k, v]) => (
-                <ResultRow key={k} label={labelKey(k)} value={usd(v)} />
-              ))}
-
-              {Object.keys(result.line_items ?? {}).length > 0 && (
-                <>
-                  <SectionHeader>Line Items</SectionHeader>
-                  {Object.entries(result.line_items).map(([k, v]) => (
-                    <ResultRow key={k} label={labelKey(k)} value={usd(v)} />
-                  ))}
-                </>
-              )}
-
-              <SectionHeader>Incentive</SectionHeader>
-              <ResultRow
-                label={`PM Incentive (${result.region === "commercial" ? "commercial" : "residential"})`}
-                value={usd(result.pm_incentive)}
-              />
-
-              {/* Project total — emphasized */}
-              <div style={{
-                margin: "14px 0 10px",
-                padding: "12px 14px",
-                background: BRAND.navy,
-                borderRadius: 8,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}>
-                <span style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>PROJECT TOTAL</span>
-                <span style={{ fontSize: 18, fontWeight: 700, color: "#fff", fontVariantNumeric: "tabular-nums" }}>
-                  {usd(result.project_total)}
-                </span>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <SectionLabel>Profitability</SectionLabel>
                 <ResultRow label="Profit" value={usd(result.profit_dollars)} bold />
                 <ResultRow label="Profit %" value={pct(result.profit_pct)} bold />
                 <ResultRow label="Est. Commission (15%)" value={usd(result.estimated_commission)} />
-              </div>
 
-              <p style={{ marginTop: 14, marginBottom: 0, fontSize: 11, color: BRAND.sub, lineHeight: 1.5 }}>
-                Cost estimate only — not a scope of work. Base numbers pend Tim's confirmation
-                (see KEY-block vs per-type lookup note in core.estimator).
-              </p>
-            </Card>
+                <p style={{ marginTop: 14, marginBottom: 0, fontSize: 11, color: BRAND.sub, lineHeight: 1.5 }}>
+                  Cost estimate only — not a scope of work. Base numbers pend Tim's confirmation.
+                </p>
+              </Card>
+            </div>
           )}
         </div>
       </div>
