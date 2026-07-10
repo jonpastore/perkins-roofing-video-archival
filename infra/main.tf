@@ -32,6 +32,7 @@ locals {
   required_apis = toset([
     "aiplatform.googleapis.com",
     "cloudidentity.googleapis.com", # Workspace group mgmt (dmarc@ report group; admin ops via ADC)
+    "apikeys.googleapis.com",       # API key management (squares key minted via TF)
     "solar.googleapis.com",         # Google Solar API — Squares roof measurement (pitch/azimuth/area per segment)
     "geocoding-backend.googleapis.com", # Geocoding for address -> lat/lng (Squares)
     "speech.googleapis.com",
@@ -736,7 +737,7 @@ resource "google_billing_budget" "spend_cap" {
 resource "google_apikeys_key" "squares_key" {
   name         = "squares-api-key"
   display_name = "Squares (Solar+Geocoding)"
-  project      = var.project
+  project      = var.project_id
 
   restrictions {
     api_targets {
