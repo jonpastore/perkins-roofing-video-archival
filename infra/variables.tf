@@ -107,3 +107,10 @@ variable "cloud_armor_enabled" {
   description = "Enable the Cloud Armor CF-IP allowlist security policy. Requires a GFE Load Balancer in front of Cloud Run (post-F6 hardening task). Keep false until the LB is provisioned."
   default     = false
 }
+
+variable "google_dkim_key" {
+  type        = string
+  description = "Google Workspace DKIM TXT value (v=DKIM1; k=rsa; p=...) from Admin console -> Gmail -> Authenticate email. Empty = google._domainkey record not created (count-guarded)."
+  default     = ""
+  sensitive   = false
+}

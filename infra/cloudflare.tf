@@ -136,19 +136,38 @@ resource "cloudflare_record" "txt_spf" {
   zone_id = var.cloudflare_zone_id
   name    = "perkinsroofing.net"
   type    = "TXT"
-  content = "v=spf1 include:_spf.google.com ~all"
+  # Matches the live record (imported 2026-07-10). servers.mcsv.net = Mailchimp
+  # (active: k2/k3 DKIM CNAMEs exist); secureserver.net = GoDaddy legacy — candidate
+  # for removal once confirmed nothing sends via GoDaddy (old site contact form?).
+  content = "v=spf1 include:_spf.google.com include:servers.mcsv.net include:secureserver.net ~all"
   ttl     = 3600
   proxied = false
 }
 
-# DKIM — DNS-only; update value to the full DKIM public key from Step A
+# Google Workspace DKIM — GATED until the key exists. Google's DKIM key must be
+# GENERATED in the Admin console (Apps -> Google Workspace -> Gmail -> Authenticate
+# email -> Generate new record, 2048-bit) and "Start authentication" clicked; then
+# set var.google_dkim_key to the full TXT value ("v=DKIM1; k=rsa; p=...") and apply.
 resource "cloudflare_record" "txt_dkim" {
-  count   = var.cloudflare_zone_id != "" ? 1 : 0
+  count   = var.cloudflare_zone_id != "" && var.google_dkim_key != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "google._domainkey"
   type    = "TXT"
-  # Placeholder — replace with the actual DKIM TXT value from Step A scan
-  content = "v=DKIM1; k=rsa; p=REPLACE_WITH_ACTUAL_DKIM_KEY"
+  content = var.google_dkim_key
+  ttl     = 3600
+  proxied = false
+}
+
+# DMARC — imported from the live record (was bare "v=DMARC1; p=none;").
+# rua added for visibility. HOLD at p=none until Google DKIM is signing
+# (txt_dkim above), then flip to p=quarantine — enforcing before DKIM would
+# quarantine forwarded GSuite mail (forwarding breaks SPF alignment).
+resource "cloudflare_record" "txt_dmarc" {
+  count   = var.cloudflare_zone_id != "" ? 1 : 0
+  zone_id = var.cloudflare_zone_id
+  name    = "_dmarc"
+  type    = "TXT"
+  content = "v=DMARC1; p=none; rua=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
   ttl     = 3600
   proxied = false
 }
@@ -162,11 +181,14 @@ resource "cloudflare_record" "app_cname" {
   zone_id = var.cloudflare_zone_id
   name    = "app"
   type    = "CNAME"
-  # Firebase Hosting target — fill in the actual <project-id>.web.app value
-  # after adding the custom domain in the Firebase console.
+  # Firebase Hosting custom domain (registered via the Hosting API 2026-07-10;
+  # Firebase's requiredDnsUpdates asks for exactly this CNAME — ownership +
+  # cert provisioning ride on it). proxied MUST stay false until the Firebase
+  # cert is ACTIVE, and stays false until the H1 edge wave flips it together
+  # with the transform/WAF rules (CLOUDFLARE_RUNBOOK.md step 6).
   content = "${var.project_id}.web.app"
-  proxied = true
-  ttl     = 1 # auto (CF-managed when proxied)
+  proxied = false
+  ttl     = 3600
 }
 
 # ---------------------------------------------------------------------------
