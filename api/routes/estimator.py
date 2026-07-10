@@ -205,30 +205,14 @@ def rates(
             "pm_incentive": cfg.get("pm_incentive", {}),
         }
 
-    # Legacy fallback — no active config seeded
-    try:
-        return {
-            "branch": branch,
-            "region": region,
-            "config_id": None,
-            "config_hash": None,
-            "roof_types": list(E.BASE_COST_LM.get(region, {}).keys()),
-            "base_cost_lm": E.BASE_COST_LM.get(region, {}),
-            "overhead": E.OVERHEAD.get(region, {}),
-            "profit_scale": E.PROFIT_SCALE,
-            "roof_cuts": E.ROOF_CUTS,
-            "tile_pointing": E.TILE_POINTING,
-            "specialty_tile": E.SPECIALTY_TILE_UPGRADE.get(region, {}),
-            "line_items": E.LINE_ITEMS.get(region, {}),
-            "pm_incentive": E.PM_INCENTIVE,
-        }
-    except AttributeError:
-        # New engine has no module-level constants; return minimal structure
-        return {
-            "branch": branch,
-            "region": region,
-            "config_id": None,
-            "config_hash": None,
-            "roof_types": [],
-            "note": "No active config seeded for this branch. Activate a config version first.",
-        }
+    # No active config seeded — minimal response (documented; the SPA shows the note).
+    # (A "legacy rates" fallback used to live here but could never fire: E is
+    # core.estimator, which has no module-level rate constants. Deleted 2026-07-10.)
+    return {
+        "branch": branch,
+        "region": region,
+        "config_id": None,
+        "config_hash": None,
+        "roof_types": [],
+        "note": "No active config seeded for this branch. Activate a config version first.",
+    }

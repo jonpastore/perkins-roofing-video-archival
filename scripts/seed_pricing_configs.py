@@ -54,6 +54,7 @@ def seed(check_only: bool = False) -> int:
     skipped = []
 
     with SessionLocal() as db:
+        db.info["tenant_id"] = TENANT_ID  # strict-safe: stamp before first query
         for branch in BRANCHES:
             existing = db.execute(
                 select(PricingConfig).where(
@@ -95,6 +96,7 @@ def seed(check_only: bool = False) -> int:
 
     # Post-seed assertion
     with SessionLocal() as db:
+        db.info["tenant_id"] = TENANT_ID  # strict-safe
         active_count = db.execute(
             select(PricingConfig).where(
                 PricingConfig.tenant_id == TENANT_ID,

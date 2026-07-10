@@ -16,6 +16,8 @@ import { Logs } from "./pages/Logs";
 import { Email } from "./pages/Email";
 import { Estimator } from "./pages/Estimator";
 import { Quoting } from "./pages/Quoting";
+import { Squares } from "./pages/Squares";
+import { Proposals } from "./pages/Proposals";
 import { ContractFaq } from "./pages/ContractFaq";
 import { AdminConfig } from "./pages/AdminConfig";
 import { BRAND, FONT, Spinner } from "./ui";
@@ -88,12 +90,13 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         ],
       },
       {
-        label: "Estimating",
-        tabs: [["estimator", "Estimator"]],
-      },
-      {
-        label: "Quoting",
-        tabs: [["quoting", "Quoting"]],
+        label: "Proposals",
+        tabs: [
+          ["squares", "Squares"],
+          ["estimator", "Estimates"],
+          ["quoting", "Quotes"],
+          ["proposals", "Proposals"],
+        ],
       },
     ],
     adminSection: {
@@ -133,12 +136,13 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         ],
       },
       {
-        label: "Estimating",
-        tabs: [["estimator", "Estimator"]],
-      },
-      {
-        label: "Quoting",
-        tabs: [["quoting", "Quoting"]],
+        label: "Proposals",
+        tabs: [
+          ["squares", "Squares"],
+          ["estimator", "Estimates"],
+          ["quoting", "Quotes"],
+          ["proposals", "Proposals"],
+        ],
       },
     ],
     defaultTab: "dashboard",
@@ -155,8 +159,10 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["search-ask", "Search / Ask"],
           ["email", "Email"],
           ["archive", "Video Archive"],
-          ["estimator", "Estimator"],
-          ["quoting", "Quoting"],
+          ["squares", "Squares"],
+          ["estimator", "Estimates"],
+          ["quoting", "Quotes"],
+          ["proposals", "Proposals"],
         ],
       },
     ],
@@ -530,6 +536,8 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "estimator" && <Estimator />}
       {tab === "logs" && <Logs />}
       {tab === "quoting" && <Quoting />}
+      {tab === "squares" && <Squares />}
+      {tab === "proposals" && <Proposals />}
       {tab === "contract-faq" && <ContractFaq />}
       {tab === "admin-config" && <AdminConfig role={role} />}
       {/* status-view: Marketing > Status — renders the same Status component as dashboard */}

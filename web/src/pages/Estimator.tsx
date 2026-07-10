@@ -249,7 +249,7 @@ export function Estimator() {
     }
   }
 
-  const specialtyTileKeys = rates ? Object.keys(rates.specialty_tile) : [];
+  const specialtyTileKeys = rates?.specialty_tile ? Object.keys(rates.specialty_tile) : [];
 
   return (
     <main style={{ maxWidth: 900 }}>
@@ -538,7 +538,7 @@ export function Estimator() {
                 <ResultRow key={k} label={labelKey(k)} value={usd(v)} />
               ))}
 
-              {Object.keys(result.line_items).length > 0 && (
+              {Object.keys(result.line_items ?? {}).length > 0 && (
                 <>
                   <SectionHeader>Line Items</SectionHeader>
                   {Object.entries(result.line_items).map(([k, v]) => (
