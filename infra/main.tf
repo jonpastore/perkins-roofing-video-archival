@@ -725,3 +725,31 @@ resource "google_billing_budget" "spend_cap" {
   # all_updates_rule omitted — alerts fire to the billing account's default contacts.
   # Add a monitoring_notification_channels entry here post-billing if needed.
 }
+
+# ---------------------------------------------------------------------------
+# Squares — Google Solar + Geocoding API key (migration 0024, 2026-07-10)
+# Restricted to solar.googleapis.com and geocoding-backend.googleapis.com only.
+# Key string is surfaced as a sensitive output and injected into deploy.sh
+# via SQUARES_API_KEY in .env after `terraform output -raw squares_api_key`.
+# ---------------------------------------------------------------------------
+
+resource "google_apikeys_key" "squares_key" {
+  name         = "squares-api-key"
+  display_name = "Squares (Solar+Geocoding)"
+  project      = var.project
+
+  restrictions {
+    api_targets {
+      service = "solar.googleapis.com"
+    }
+    api_targets {
+      service = "geocoding-backend.googleapis.com"
+    }
+  }
+}
+
+output "squares_api_key" {
+  description = "API key for Google Solar + Geocoding (Squares feature). Inject as SQUARES_API_KEY."
+  value       = google_apikeys_key.squares_key.key_string
+  sensitive   = true
+}

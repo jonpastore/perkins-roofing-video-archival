@@ -30,7 +30,7 @@ CONN="${PROJECT}:${REGION}:${PROJECT}-pg"
 # Env built with a '|' delimiter (gcloud ^|^ form) so values with commas/@/() survive intact.
 # DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
 BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|EMBED_BACKEND=vertex|LLM_BACKEND=vertex|EMBED_MODEL=gemini-embedding-001|LLM_MODEL=gemini-2.5-flash|DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}|WORKSPACE_ADMIN_SUBJECT=jon@perkinsroofing.net|WORKSPACE_DOMAIN=perkinsroofing.net"
-CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}"
+CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}"
 
 # Vault-backed secrets (resettable in the Config UI). One source of truth: Secret Manager.
 SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest"

@@ -369,7 +369,8 @@ class Estimate(Base):
 
 
 class Measurement(Base):
-    """Measurement stub — full model in TRD-F2b. Manual-entry provider for F2."""
+    """Measurement stub — full model in TRD-F2b. Manual-entry provider for F2.
+    Migration 0024 added Solar API columns (address, lat/lng, imagery_*, source_building)."""
     __tablename__ = "measurements"
 
     id                = Column(Integer, primary_key=True, autoincrement=True)
@@ -391,6 +392,13 @@ class Measurement(Base):
     provenance_note   = Column(String, nullable=True)
     created_at        = Column(DateTime, nullable=False, default=_utcnow)
     created_by        = Column(String, nullable=False)
+    # Migration 0024 — Solar API columns (additive, all nullable)
+    address           = Column(String, nullable=True)
+    latitude          = Column(Float, nullable=True)
+    longitude         = Column(Float, nullable=True)
+    imagery_date      = Column(String, nullable=True)
+    imagery_quality   = Column(String, nullable=True)
+    source_building   = Column(String, nullable=True)
 
     __table_args__ = (
         Index("ix_measurements_tenant", "tenant_id"),

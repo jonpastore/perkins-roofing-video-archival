@@ -23,6 +23,7 @@ from api.routes.measurements import router as measurements_router
 from api.routes.pricing_configs import router as pricing_configs_router
 from api.routes.proposals import router as proposals_router
 from api.routes.scheduling import router as scheduling_router
+from api.routes.squares import router as squares_router
 from api.routes.suggestions import router as suggestions_router
 from api.routes.topics import router as topics_router
 from api.routes.users import me_router
@@ -98,6 +99,7 @@ app.include_router(comments_router)
 app.include_router(logs_router)
 app.include_router(customers_router)
 app.include_router(proposals_router)
+app.include_router(squares_router)
 
 
 class Query(BaseModel):
