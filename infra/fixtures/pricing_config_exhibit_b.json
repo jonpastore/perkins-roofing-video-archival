@@ -2,25 +2,20 @@
   "_meta": {
     "schema_version": 1,
     "source": "Exhibit B (Ez-Bids legal package)",
-    "exhibit_version": "B-2026-07",
-    "date": "2026-07-08",
-    "description": "Committed seed pricing config for Perkins Roofing (tenant 1) — all three branches (miami, jupiter, naples). Null values are pending Tim confirmation; engine raises ConfigError on null access.",
+    "exhibit_version": "B-2026-07-10-r2",
+    "date": "2026-07-10",
+    "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit — engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. Remaining open items: OI-7, OI-8, OI-9, OI-10 (sloped HVHZ commission, pm_incentive matrix, boundary rules, dumpster boundary).",
     "tim_verify_open_items": [
-      "OI-1: low_slope.base_cost_lm — ALL cells null; Tim must supply Exhibit B §4 base costs for TPO/coatings/silicone/BUR in both zones (blocks low-slope path)",
-      "OI-2: low_slope.overhead — ALL cells null; Tim must supply per-type OH for flat/TPO/coatings in both zones",
-      "OI-3: low_slope.insulation_tiers — empty; Tim must supply tiered insulation cost-per-sq breakpoints",
-      "OI-4: low_slope.tapered_cost_per_sq — null; Tim must supply tapered polyiso cost per sq",
-      "OI-5: low_slope.deck_types.plywood_replace — null; Tim must supply plywood deck replacement adder",
-      "OI-6: low_slope.tear_off_per_layer_per_sq — null; Tim must supply per-layer tear-off cost per sq",
       "OI-7: commission_pct.sloped_hvhz — null; Tim must confirm whether sloped HVHZ jobs use 10% (sloped) or 15% (low_slope) rate (PC-1)",
       "OI-8: pm_incentive — full matrix needs Tim verification before activation (PC matrix per PRD F2-11; current values from plan §10.5)",
       "OI-9: boundary_inclusive_lower / boundary_exclusive_upper — presumed lower-inclusive/upper-exclusive per Exhibit B wording (PC-2); config flag means answer is a data change only",
-      "OI-10: tile_dumpster_boundary_inclusive — default true; Tim to confirm (Adv-1 per PRD)"
+      "OI-10: tile_dumpster_boundary_inclusive — default true; Tim to confirm (Adv-1 per PRD)",
+      "OI-11: low_slope zones — sheet note says FBC deltas unverified except SAV-M -$25 (encoded); confirm all FBC low-slope values match HVHZ or supply deltas"
     ]
   },
 
   "schema_version": 1,
-  "exhibit_version": "B-2026-07",
+  "exhibit_version": "B-2026-07-10-r2",
 
   "boundary_inclusive_lower": true,
   "boundary_exclusive_upper": true,
@@ -230,58 +225,109 @@
   },
 
   "low_slope": {
+    "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached — engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* — prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
+    "_note_fbc_deltas": "FBC values set equal to HVHZ per sheet note 'FBC deltas unverified' EXCEPT polyglass_sav_sap which is $25 lower in FBC (sheet explicit). Confirm remaining FBC low-slope values with Tim (OI-11).",
+
+    "all_in_systems": [
+      "pb_acrylic_2coat",
+      "pb_premium_acrylic",
+      "pb_silicone_1coat",
+      "pb_silicone_2coat",
+      "pb_silicone_3coat",
+      "stockmeier_polyurethane_2coat"
+    ],
+
     "base_cost_lm": {
       "HVHZ": {
-        "tpo":      null,
-        "_pending_tpo_hvhz":      "Tim — Exhibit B §4: TPO base cost per sq in HVHZ zone (OI-1)",
-        "coatings": null,
-        "_pending_coatings_hvhz": "Tim — Exhibit B §4: coatings base cost per sq in HVHZ zone (OI-1)",
-        "silicone": null,
-        "_pending_silicone_hvhz": "Tim — Exhibit B §4: silicone base cost per sq in HVHZ zone (OI-1)",
-        "bur":      null,
-        "_pending_bur_hvhz":      "Tim — Exhibit B §4: BUR base cost per sq in HVHZ zone (OI-1)"
+        "polyglass_sav_sap":            475,
+        "tpo_adhered":                  485,
+        "tpo_mech_attached":            485,
+        "pb_acrylic_2coat":             375,
+        "pb_premium_acrylic":           550,
+        "pb_silicone_1coat":            445,
+        "pb_silicone_2coat":            515,
+        "pb_silicone_3coat":            645,
+        "stockmeier_polyurethane_2coat": 595,
+        "_note_polyglass_upgrades": "SAV+ 3-ply +175 → 650; polyfresko upgrade +80 → 555; polyfresko+SAVplus +315 → 790; encode as adders when quoting (v2)",
+        "_note_stockmeier_floor": "stockmeier min 12 sq; under 12 sq = $390/sq T&M — floor note only, not engine logic v1"
       },
       "FBC": {
-        "tpo":      null,
-        "_pending_tpo_fbc":      "Tim — Exhibit B §4: TPO base cost per sq in FBC zone (OI-1)",
-        "coatings": null,
-        "_pending_coatings_fbc": "Tim — Exhibit B §4: coatings base cost per sq in FBC zone (OI-1)",
-        "silicone": null,
-        "_pending_silicone_fbc": "Tim — Exhibit B §4: silicone base cost per sq in FBC zone (OI-1)",
-        "bur":      null,
-        "_pending_bur_fbc":      "Tim — Exhibit B §4: BUR base cost per sq in FBC zone (OI-1)"
+        "polyglass_sav_sap":            450,
+        "_note_fbc_sav_sap": "FBC is $25 less than HVHZ per sheet explicit note (SAV M -$25 in FBC)",
+        "tpo_adhered":                  485,
+        "tpo_mech_attached":            485,
+        "pb_acrylic_2coat":             375,
+        "pb_premium_acrylic":           550,
+        "pb_silicone_1coat":            445,
+        "pb_silicone_2coat":            515,
+        "pb_silicone_3coat":            645,
+        "stockmeier_polyurethane_2coat": 595
       }
     },
+
     "overhead": {
+      "_note": "OH rates apply only to non-all-in systems. flat_oh covers BUR/polyglass; tpo_oh covers TPO systems; coatings_inhouse_oh is informational (coatings are all-in).",
       "HVHZ": {
-        "flat_oh":     null,
-        "_pending_flat_oh_hvhz":     "Tim — Exhibit B §4: flat/BUR overhead per sq HVHZ (OI-2)",
-        "tpo_oh":      null,
-        "_pending_tpo_oh_hvhz":      "Tim — Exhibit B §4: TPO overhead per sq HVHZ (OI-2)",
-        "coatings_oh": null,
-        "_pending_coatings_oh_hvhz": "Tim — Exhibit B §4: coatings overhead per sq HVHZ (OI-2)"
+        "flat_oh":            155,
+        "tpo_oh":             135,
+        "coatings_inhouse_oh": 95
       },
       "FBC": {
-        "flat_oh":     null,
-        "_pending_flat_oh_fbc":     "Tim — Exhibit B §4: flat/BUR overhead per sq FBC (OI-2)",
-        "tpo_oh":      null,
-        "_pending_tpo_oh_fbc":      "Tim — Exhibit B §4: TPO overhead per sq FBC (OI-2)",
-        "coatings_oh": null,
-        "_pending_coatings_oh_fbc": "Tim — Exhibit B §4: coatings overhead per sq FBC (OI-2)"
+        "flat_oh":            155,
+        "tpo_oh":             135,
+        "coatings_inhouse_oh": 95
       }
     },
-    "insulation_tiers": [],
-    "_pending_insulation_tiers": "Tim — Exhibit B §4: insulation tier breakpoints as [[max_sq, cost_per_sq], ...]; no profit added per Exhibit B (OI-3)",
-    "tapered_cost_per_sq": null,
-    "_pending_tapered_cost_per_sq": "Tim — Exhibit B §4: tapered polyiso cost per sq; no OH or profit per Exhibit B (OI-4)",
+
+    "wood_deck_oh_adder": 50,
+    "_note_wood_deck_oh": "Add $50/sq to overhead when deck_type is a wood variant (concrete is baseline). Jon confirmed 2026-07-10 — sheet showed $45 but Jon corrected to $50.",
+
+    "insulation_tiers": [
+      [null, 255],
+      [null, 275],
+      [null, 310]
+    ],
+    "_note_insulation_tiers": "From sheet: board_1in $255, board_1_5in $275, board_2in $310 per sq (no profit). Tiers are type-based not sq-range-based — all have null max so first match wins; v1 uses first entry (1-in board default). Tapered system is separate (tapered_cost_per_sq). No OH or profit on insulation per Exhibit B.",
+
+    "tapered_cost_per_sq": 400,
+
     "deck_types": {
-      "existing_concrete":  0,
-      "plywood_replace":    null,
-      "_pending_plywood_replace": "Tim — Exhibit B §4: plywood deck replacement adder per sq (OI-5)"
+      "existing_concrete":       0,
+      "bur_tpo_concrete_primer": 15,
+      "bur_wood_wb3000":         35,
+      "_note_bur_wood_wb3000":   "Not HVHZ, 1-story only",
+      "bur_wood_sav_flashing":   55,
+      "_note_bur_wood_sav_flashing": "Not HVHZ, plywood",
+      "bur_wood_elastobase":     110,
+      "tpo_wood_versashield":    135,
+      "tpo_wood_densdeck_iso":   120,
+      "plywood_replace":         null,
+      "_pending_plywood_replace": "Tim — generic plywood deck replacement adder per sq (OI-5 — partial; specific deck adders now filled above)"
     },
-    "tear_off_per_layer_per_sq": null,
-    "_pending_tear_off_per_layer_per_sq": "Tim — Exhibit B §4: per-layer tear-off cost per sq (OI-6)",
-    "crane_threshold_stories": 3,
-    "trash_chute_flat_add": 1200
+
+    "tear_off_per_layer_per_sq": 20,
+    "_note_tear_off": "Additional hauling $20/sq, labor $20/sq, OH $35/sq per layer (+$75/sq per extra layer per sheet note). Engine v1 uses $20/layer/sq for base labor; OH and hauling encoded in tear_off_extras for line-item reporting in v2.",
+
+    "tear_off_extras": {
+      "additional_hauling": 20,
+      "labor":              20,
+      "oh":                 35,
+      "_note_extra_layer":  "+$75/sq per additional layer beyond first"
+    },
+
+    "pressure_cleaning": {
+      "flat":   30,
+      "sloped": 40
+    },
+
+    "roof_height_notes": {
+      "1_4_stories": 0,
+      "5_plus":       null,
+      "_note_5_plus": "5+ stories requires crane — manual quote only (null = not engine-quoted). 3-5 stories uses trash_chute_flat_add."
+    },
+
+    "trash_chute_flat_add": 1500,
+
+    "crane_threshold_stories": 3
   }
 }

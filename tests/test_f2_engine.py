@@ -74,7 +74,20 @@ def test_golden_file(fixture_path: Path, cfg: PricingConfig):
 # ---------------------------------------------------------------------------
 def test_config_load_valid(cfg: PricingConfig):
     assert cfg.schema_version == 1
-    assert cfg.exhibit_version == "B-2026-07"
+    assert cfg.exhibit_version == "B-2026-07-10-r2"
+
+
+def _cfg_low_slope_nulled(*path) -> PricingConfig:
+    """Load a config copy with one nested low_slope value set to null/[] so the
+    accessor's missing-value guard can be exercised now that the fixture is
+    fully populated (low-slope prices filled 2026-07-10)."""
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    node = raw["low_slope"]
+    for k in path[:-1]:
+        node = node[k]
+    node[path[-1]] = [] if path[-1] == "insulation_tiers" else None
+    return load_config(raw)
 
 
 def test_config_hash_matches_recomputed(cfg: PricingConfig):
@@ -97,22 +110,26 @@ def test_config_null_low_slope_raises(cfg: PricingConfig):
         cfg.low_slope_base("HVHZ", "tpo")
 
 
-def test_config_null_low_slope_overhead_raises(cfg: PricingConfig):
+def test_config_null_low_slope_overhead_raises():
+    cfg = _cfg_low_slope_nulled("overhead", "HVHZ", "tpo_oh")
     with pytest.raises(ConfigError, match="low_slope.overhead"):
         cfg.low_slope_overhead("HVHZ", "tpo_oh")
 
 
-def test_config_null_tapered_raises(cfg: PricingConfig):
+def test_config_null_tapered_raises():
+    cfg = _cfg_low_slope_nulled("tapered_cost_per_sq")
     with pytest.raises(ConfigError, match="low_slope.tapered_cost_per_sq"):
         cfg.low_slope_tapered_cost()
 
 
-def test_config_null_tear_off_raises(cfg: PricingConfig):
+def test_config_null_tear_off_raises():
+    cfg = _cfg_low_slope_nulled("tear_off_per_layer_per_sq")
     with pytest.raises(ConfigError, match="low_slope.tear_off_per_layer_per_sq"):
         cfg.low_slope_tear_off_cost()
 
 
-def test_config_empty_insulation_tiers_raises(cfg: PricingConfig):
+def test_config_empty_insulation_tiers_raises():
+    cfg = _cfg_low_slope_nulled("insulation_tiers")
     with pytest.raises(ConfigError, match="insulation_tiers"):
         cfg.low_slope_insulation_cost(10.0)
 
@@ -833,7 +850,7 @@ def test_low_slope_3_5_stories():
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "trash_chute" in keys
-    assert keys["trash_chute"] == 1200
+    assert keys["trash_chute"] == 1500
 
 
 def test_low_slope_6_plus_raises():

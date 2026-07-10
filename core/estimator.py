@@ -492,25 +492,51 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     )
 
 
+def _WOOD_DECK_TYPES() -> frozenset:
+    """Deck type keys that are wood-based (trigger the $50/sq OH adder)."""
+    return frozenset({
+        "bur_wood_wb3000", "bur_wood_sav_flashing", "bur_wood_elastobase",
+        "tpo_wood_versashield", "tpo_wood_densdeck_iso",
+    })
+
+
+def _low_slope_oh_key(rt: str) -> str:
+    """Map a low-slope roof_type system name to the overhead config key."""
+    if rt.startswith("tpo"):
+        return "tpo_oh"
+    if rt.startswith("pb_") or rt.startswith("stockmeier"):
+        return "coatings_inhouse_oh"
+    return "flat_oh"
+
+
 def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
-    """Build line items for a low-slope roof."""
+    """Build line items for a low-slope roof.
+
+    All-in systems (listed in low_slope.all_in_systems) have OH+profit baked into their
+    base price — the engine emits only the base_cost_lm line and skips OH/profit lines.
+    Non-all-in systems get OH and profit added on top, matching the sloped path shape.
+    Wood deck types add a $50/sq OH adder (concrete is the baseline; no adder).
+    """
     tags = config.raw["cost_category_tags"]
     items: list[LineItem] = []
     zone = q.code_zone
     rt = q.roof_type
     sq = q.num_squares
 
-    # Low-slope uses "tpo_oh", "flat_oh", "coatings_oh" keys
-    oh_key_map = {"tpo": "tpo_oh", "coatings": "coatings_oh", "silicone": "flat_oh", "bur": "flat_oh"}
-    oh_key = oh_key_map.get(rt, "flat_oh")
-
     base = config.low_slope_base(zone, rt)
-    oh = config.low_slope_overhead(zone, oh_key)
-    pft = config.profit_per_sq(sq)
-
     items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
-    items.append(LineItem("overhead", "Overhead", oh * sq, tags["overhead"], oh))
-    items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
+
+    if not config.is_all_in(rt):
+        oh_key = _low_slope_oh_key(rt)
+        oh = config.low_slope_overhead(zone, oh_key)
+
+        # Wood deck type adds $50/sq to overhead (concrete deck is the baseline)
+        wood_adder = config.wood_deck_oh_adder() if q.deck_type in _WOOD_DECK_TYPES() else 0.0
+        effective_oh = oh + wood_adder
+
+        pft = config.profit_per_sq(sq)
+        items.append(LineItem("overhead", "Overhead", effective_oh * sq, tags["overhead"], effective_oh))
+        items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
 
     if q.layers_to_remove:
         tear_off = config.low_slope_tear_off_cost()

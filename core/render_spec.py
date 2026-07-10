@@ -195,17 +195,20 @@ class ClipRenderSpec(BaseModel):
     JSON contract (stored in MiniSeries.parts_json["render_spec"]):
     {
       "reframe":           false,
+      "speaker_tracking":  false,
       "captions":          {"style": "default", "position": "bottom"},
       "speech_cleanup":    false,
       "broll":             {"source": "none", "query_auto": true},
       "music":             {"catalog": "none", "track_id": "", "volume_db": -18.0},
       "fx":                {"transition": "cut", "color_grade": "none", "title_card": true},
       "emoji_highlights":  false,
-      "aspects":           []
+      "aspects":           [],
+      "audio_enhance":     false
     }
     """
 
     reframe: bool = False
+    speaker_tracking: bool = False
     captions: CaptionsSpec = Field(default_factory=CaptionsSpec)
     speech_cleanup: bool = False
     broll: BrollSpec = Field(default_factory=BrollSpec)
@@ -213,6 +216,7 @@ class ClipRenderSpec(BaseModel):
     fx: FxSpec = Field(default_factory=FxSpec)
     emoji_highlights: bool = False
     aspects: list[str] = Field(default_factory=list)
+    audio_enhance: bool = False
 
     @field_validator("aspects", mode="before")
     @classmethod

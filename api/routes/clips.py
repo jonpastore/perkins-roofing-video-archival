@@ -54,6 +54,20 @@ class SuggestRequest(BaseModel):
     count: int = 4
 
 
+class ViralityScore(BaseModel):
+    """Per-clip heuristic virality score returned by the LLM.
+
+    Each dimension scores 0–25; total is the sum (0–100).
+    Labelled "Heuristic score" in the UI — honest until we have real engagement data.
+    """
+    hook_strength: int = 0
+    emotion: int = 0
+    pacing: int = 0
+    value: int = 0
+    total: int = 0
+    rationale: str = ""
+
+
 class ClipSuggestion(BaseModel):
     start: float
     end: float
@@ -62,6 +76,7 @@ class ClipSuggestion(BaseModel):
     hook: str
     reason: str
     summary: str = ""
+    virality: ViralityScore = ViralityScore()
 
 
 class SuggestResponse(BaseModel):
@@ -409,7 +424,15 @@ Return ONLY valid JSON — a single object with a "clips" array. Each clip:
   "caption": "<Instagram/TikTok caption with hashtags>",
   "hook":  "<the actual opening line/sentence spoken in the clip that works as a scroll-stopping hook — quote or closely paraphrase the transcript>",
   "summary": "<2-3 sentence plain-English summary of what happens in this specific clip, grounded in the transcript text for that timespan>",
-  "reason": "<why this specific moment is a strong clip — reference the content, not a generic explanation>"
+  "reason": "<why this specific moment is a strong clip — reference the content, not a generic explanation>",
+  "virality": {{
+    "hook_strength": <int 0-25, how scroll-stopping the opening hook is>,
+    "emotion":       <int 0-25, emotional resonance / relatability for homeowners>,
+    "pacing":        <int 0-25, energy and momentum — tight editing potential, no dead air>,
+    "value":         <int 0-25, practical value or insight delivered for the viewer>,
+    "total":         <int 0-100, sum of the four dimensions above>,
+    "rationale":     "<one sentence explaining the total score — be specific to this clip>"
+  }}
 }}
 
 Rules:
@@ -418,9 +441,53 @@ Rules:
 - do not overlap clips
 - hook must be specific to this clip's content — never a generic phrase like "Did you know?" or "Watch this"
 - summary must describe what is actually said/shown in this clip's timespan
+- virality.total must equal hook_strength + emotion + pacing + value
 - return exactly {count} clips
 - return ONLY the JSON object, no markdown fences
 """
+
+
+def _parse_virality(raw: object) -> dict:
+    """Defensively parse a virality dict from LLM output.
+
+    Accepts any input shape; clamps ints to [0, 25] per dimension and
+    recomputes total from the four dimensions so the UI always sees a
+    consistent sum.  Returns all-zero defaults on any parse failure.
+    """
+    defaults: dict = {
+        "hook_strength": 0,
+        "emotion": 0,
+        "pacing": 0,
+        "value": 0,
+        "total": 0,
+        "rationale": "",
+    }
+    if not isinstance(raw, dict):
+        return defaults
+
+    def _clamp(key: str) -> int:
+        try:
+            v = int(raw.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            v = 0
+        return max(0, min(25, v))
+
+    hook_strength = _clamp("hook_strength")
+    emotion = _clamp("emotion")
+    pacing = _clamp("pacing")
+    value = _clamp("value")
+    total = hook_strength + emotion + pacing + value
+
+    rationale = str(raw.get("rationale", "") or "")[:300]
+
+    return {
+        "hook_strength": hook_strength,
+        "emotion": emotion,
+        "pacing": pacing,
+        "value": value,
+        "total": total,
+        "rationale": rationale,
+    }
 
 
 def _llm_suggestions(
@@ -441,6 +508,7 @@ def _llm_suggestions(
             for c in clips:
                 if not all(k in c for k in ("start", "end", "title")):
                     continue
+                virality = _parse_virality(c.get("virality"))
                 validated.append({
                     "start": float(c["start"]),
                     "end": float(c["end"]),
@@ -449,6 +517,7 @@ def _llm_suggestions(
                     "hook": str(c.get("hook", "")),
                     "reason": str(c.get("reason", "")),
                     "summary": str(c.get("summary", "")),
+                    "virality": virality,
                 })
             if validated:
                 return validated[:count]
@@ -512,6 +581,7 @@ def _fallback_suggestions(segments: list, nodes: list, count: int) -> list[dict]
             "hook": hook,
             "summary": summary,
             "reason": f"Content graph segment: {p['title']}",
+            "virality": _parse_virality(None),
         })
     return results
 
@@ -713,6 +783,7 @@ def _cloud_run_bearer_token() -> str:
 class RenderSpecRequest(BaseModel):
     """Body for PUT /clips/{series_id}/render_spec."""
     reframe: bool = False
+    speaker_tracking: bool = False
     captions: dict = {}
     speech_cleanup: bool = False
     broll: dict = {}
@@ -720,6 +791,7 @@ class RenderSpecRequest(BaseModel):
     fx: dict = {}
     emoji_highlights: bool = False
     aspects: list[str] = []
+    audio_enhance: bool = False
 
 
 @router.get("/{series_id}/render_spec")

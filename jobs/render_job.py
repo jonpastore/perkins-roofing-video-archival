@@ -359,6 +359,22 @@ def _apply_track_a_engines(
     current = clip_path
     suffix = f"{series_id}_{part_index}"
 
+    # ── A10: audio_enhance (Item 10) ─────────────────────────────────────────
+    # opt-in: afftdn denoise + acompressor + loudnorm EBU R128 -14 LUFS.
+    # Applied first so downstream engines see clean audio.
+    if getattr(spec, "audio_enhance", False):
+        try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from core.audio_enhance import build_enhance_cmd  # noqa: PLC0415
+
+            out = os.path.join(scratch, f"enhanced_{suffix}.mp4")
+            cmd = build_enhance_cmd(current, out)
+            run_ffmpeg_cmd(cmd)
+            current = out
+            logger.info("audio_enhance applied: series=%d part=%d", series_id, part_index)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("audio_enhance skipped (non-fatal): %s", exc)
+
     # ── A6: speech_cleanup ────────────────────────────────────────────────────
     # Requires word-level timestamps from the transcript.  When not available
     # (no transcript or words key absent), log and skip silently.
@@ -390,16 +406,35 @@ def _apply_track_a_engines(
         except Exception as exc:  # noqa: BLE001
             logger.warning("speech_cleanup skipped (non-fatal): %s", exc)
 
-    # ── A2: reframe (9:16 centre-crop) ───────────────────────────────────────
+    # ── A2: reframe (9:16 crop — centre or speaker-tracked) ──────────────────
     if spec.reframe:
         try:
             from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
-            from core.reframe import crop_filter_9x16  # noqa: PLC0415
 
             out = os.path.join(scratch, f"reframe_{suffix}.mp4")
-            # Mock active-speaker detector: centre crop (focus_x=0.5).
-            # Real MediaPipe integration belongs in adapters/ (TRD-F5 unresolved Q1).
-            crop_filter = crop_filter_9x16(1920, 1080, focus_x=0.5, ratio="9:16")
+
+            if getattr(spec, "speaker_tracking", False):
+                # Item 7: speaker-tracking path — NullFaceDetector falls back to
+                # centre-crop until adapters/speaker_detector.py is implemented.
+                from core.speaker_track import (  # noqa: PLC0415
+                    NullFaceDetector,
+                    build_tracking_crop_filter,
+                    smooth_centroids,
+                )
+
+                # Build a single-segment pseudo-detection using the null detector.
+                # A real detector (opencv-python-headless DNN or mediapipe) would
+                # be wired here via adapters/speaker_detector.py — see core/speaker_track.py
+                # FaceDetector protocol for the seam contract.
+                detector = NullFaceDetector()
+                segments_for_detect = [{"start": 0.0, "end": 1.0}]
+                raw_centroids = detector.detect_centroids(current, segments_for_detect)
+                smoothed = smooth_centroids(raw_centroids, timestamps=[0.5])
+                crop_filter = build_tracking_crop_filter(smoothed, [0.5], src_w=1920, src_h=1080)
+            else:
+                from core.reframe import crop_filter_9x16  # noqa: PLC0415
+                crop_filter = crop_filter_9x16(1920, 1080, focus_x=0.5, ratio="9:16")
+
             cmd = [
                 "ffmpeg", "-y", "-i", current,
                 "-vf", crop_filter,
@@ -409,7 +444,10 @@ def _apply_track_a_engines(
             ]
             run_ffmpeg_cmd(cmd)
             current = out
-            logger.info("reframe applied: series=%d part=%d", series_id, part_index)
+            logger.info(
+                "reframe applied: series=%d part=%d speaker_tracking=%s",
+                series_id, part_index, getattr(spec, "speaker_tracking", False),
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("reframe skipped (non-fatal): %s", exc)
 
@@ -455,20 +493,35 @@ def _apply_track_a_engines(
         except Exception as exc:  # noqa: BLE001
             logger.warning("captions skipped (non-fatal): %s", exc)
 
-    # ── A7: broll ─────────────────────────────────────────────────────────────
+    # ── A7: broll splice (#325 — wired) ──────────────────────────────────────
     # Provider-gated: only when PEXELS_API_KEY is present in env.
     pexels_key = os.getenv("PEXELS_API_KEY", "").strip()
     if spec.broll_enabled(pexels_key_present=bool(pexels_key)):
         try:
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from adapters.pexels import build_broll_overlay_cmd, fetch_broll_clip  # noqa: PLC0415
+            from core.broll import _derive_keyword  # noqa: PLC0415
+
+            # Derive a roofing-tuned search keyword from the clip's part title or hook.
+            part_text = hook_text or f"series {series_id} part {part_index}"
+            broll_keyword = _derive_keyword(part_text)
             logger.info(
-                "broll: source=%s query_auto=%s series=%d part=%d",
-                spec.broll.source, spec.broll.query_auto, series_id, part_index,
+                "broll: source=%s keyword=%r series=%d part=%d",
+                spec.broll.source, broll_keyword, series_id, part_index,
             )
-            # B-roll asset fetch and stitch is an I/O operation belonging in
-            # adapters/; cues are computed here but the ffmpeg splice lives there.
-            # For now, log intent and skip the ffmpeg step until the broll adapter
-            # is wired (tracked as #325).
-            logger.info("broll: cue planning complete; ffmpeg splice pending adapter (#325)")
+            broll_path = fetch_broll_clip(broll_keyword, scratch)
+            if broll_path:
+                out = os.path.join(scratch, f"broll_{suffix}.mp4")
+                cmd = build_broll_overlay_cmd(
+                    current, broll_path, out,
+                    overlay_start=2.0,
+                    overlay_end=6.0,
+                )
+                run_ffmpeg_cmd(cmd)
+                current = out
+                logger.info("broll splice applied: series=%d part=%d", series_id, part_index)
+            else:
+                logger.info("broll: no clip downloaded — skipping splice (non-fatal)")
         except Exception as exc:  # noqa: BLE001
             logger.warning("broll skipped (non-fatal): %s", exc)
     elif spec.broll.source != "none":
@@ -627,16 +680,27 @@ def _load_words_for_clip(
         return []
 
 
-def _resolve_music_track(catalog: str, track_id: str, scratch: str) -> str | None:  # noqa: ARG001
+def _resolve_music_track(catalog: str, track_id: str, scratch: str) -> str | None:
     """Resolve a catalog + track_id to a local audio file path.
 
     Returns None when the track cannot be resolved (missing catalog key,
     file not found, network error) — callers must skip gracefully.
 
-    Real implementation: fetch from GCS / Pixabay API / local cache.
-    Stub returns None until the music adapter is wired (tracked as #326).
+    Supported catalogs:
+      - ``"pixabay"``: queries Pixabay Audio API (PIXABAY_API_KEY required).
+                       track_id may be a numeric Pixabay ID or a mood keyword
+                       (e.g. ``"upbeat"``, ``"calm"``).
+      - All others:    returns None with a log message.
     """
-    logger.info("_resolve_music_track: catalog=%r track_id=%r (stub — returns None)", catalog, track_id)
+    logger.info("_resolve_music_track: catalog=%r track_id=%r", catalog, track_id)
+    if catalog == "pixabay":
+        try:
+            from adapters.pixabay_audio import resolve_track  # noqa: PLC0415
+            return resolve_track(track_id, scratch)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("_resolve_music_track: pixabay resolve failed: %s", exc)
+            return None
+    logger.info("_resolve_music_track: catalog=%r not implemented — returns None", catalog)
     return None
 
 

@@ -253,6 +253,21 @@ class PricingConfig:
         val = self.raw["low_slope"]["overhead"][zone].get(oh_key)
         return self.get_or_raise(val, f"low_slope.overhead[{zone}][{oh_key}]")
 
+    def is_all_in(self, roof_type: str) -> bool:
+        """Return True when the system price is all-in (OH+profit already included).
+
+        All-in systems are listed in low_slope.all_in_systems. The engine must NOT
+        add overhead or profit on top when this returns True.
+        """
+        return roof_type in self.raw["low_slope"].get("all_in_systems", [])
+
+    def wood_deck_oh_adder(self) -> float:
+        """Return the per-sq OH adder applied when deck_type is a wood variant ($50).
+
+        Returns 0 if the key is absent so callers can always add without a None check.
+        """
+        return float(self.raw["low_slope"].get("wood_deck_oh_adder") or 0)
+
     def low_slope_insulation_cost(self, num_squares: float) -> float:
         tiers = self.raw["low_slope"]["insulation_tiers"]
         if not tiers:

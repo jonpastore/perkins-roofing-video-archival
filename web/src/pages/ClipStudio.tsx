@@ -16,6 +16,15 @@ interface ArchiveVideo {
   clips_generated_at?: string | null;
 }
 
+interface ViralityScore {
+  hook_strength: number;
+  emotion: number;
+  pacing: number;
+  value: number;
+  total: number;
+  rationale: string;
+}
+
 interface SuggestedClip {
   start: number;
   end: number;
@@ -24,6 +33,7 @@ interface SuggestedClip {
   hook: string;
   reason: string;
   summary?: string;
+  virality?: ViralityScore;
 }
 
 interface EditableClip extends SuggestedClip {
@@ -80,6 +90,77 @@ function seriesTitle(videoTitle: string): string {
     ? cleaned.slice(0, MAX).replace(/\s+\S*$/, "").trim()
     : cleaned;
   return `${truncated} — Clips`;
+}
+
+// ── Virality score badge ──────────────────────────────────────────────────────
+
+function viralityColor(total: number): string {
+  if (total >= 80) return "#1a7f4b";   // green — strong
+  if (total >= 60) return "#b45309";   // amber — moderate
+  if (total >= 40) return "#2563eb";   // blue — fair
+  return "#6b7280";                    // gray — weak
+}
+
+function ViralityBadge({ virality }: { virality: ViralityScore }) {
+  const [tip, setTip] = useState(false);
+  const color = viralityColor(virality.total);
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={() => setTip((t) => !t)}
+        title="Heuristic score — click for breakdown"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          padding: "3px 8px",
+          borderRadius: 12,
+          border: `1.5px solid ${color}`,
+          background: "transparent",
+          color,
+          fontSize: 12,
+          fontWeight: 700,
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Heuristic score: {virality.total}/100
+      </button>
+      {tip && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            zIndex: 10,
+            minWidth: 240,
+            background: "#fff",
+            border: `1px solid ${BRAND.border}`,
+            borderRadius: 8,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+            padding: "10px 12px",
+            fontSize: 12,
+            color: BRAND.ink,
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6, color }}>Heuristic score breakdown</div>
+          <div>Hook strength: {virality.hook_strength}/25</div>
+          <div>Emotion: {virality.emotion}/25</div>
+          <div>Pacing: {virality.pacing}/25</div>
+          <div>Value: {virality.value}/25</div>
+          {virality.rationale && (
+            <div style={{ marginTop: 6, color: BRAND.sub, fontStyle: "italic" }}>
+              {virality.rationale}
+            </div>
+          )}
+          <div style={{ marginTop: 6, color: BRAND.sub, fontSize: 11 }}>
+            LLM heuristic — not trained on engagement data.
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Analyzing animation ───────────────────────────────────────────────────────
@@ -312,6 +393,11 @@ function ClipCard({
             style={{ ...inputStyle, width: "100%", fontWeight: 700, fontSize: 15, color: BRAND.navyText, boxSizing: "border-box" }}
           />
         </div>
+        {clip.virality && clip.virality.total > 0 && (
+          <div style={{ flexShrink: 0, marginTop: 2 }}>
+            <ViralityBadge virality={clip.virality} />
+          </div>
+        )}
       </div>
 
       {/* Hook */}
@@ -697,6 +783,7 @@ function ReelSettingsPanel() {
 
 interface ClipRenderSpec {
   reframe: boolean;
+  speaker_tracking: boolean;
   captions: { style: string; position: string };
   speech_cleanup: boolean;
   broll: { source: string; query_auto: boolean };
@@ -704,10 +791,12 @@ interface ClipRenderSpec {
   fx: { transition: string; color_grade: string; title_card: boolean };
   emoji_highlights: boolean;
   aspects: string[];
+  audio_enhance: boolean;
 }
 
 const DEFAULT_SPEC: ClipRenderSpec = {
   reframe: false,
+  speaker_tracking: false,
   captions: { style: "default", position: "bottom" },
   speech_cleanup: false,
   broll: { source: "none", query_auto: true },
@@ -715,6 +804,7 @@ const DEFAULT_SPEC: ClipRenderSpec = {
   fx: { transition: "cut", color_grade: "none", title_card: true },
   emoji_highlights: false,
   aspects: [],
+  audio_enhance: false,
 };
 
 function RenderOptionsPanel({
@@ -811,8 +901,24 @@ function RenderOptionsPanel({
                   onChange={(e) => setSpec({ ...spec, reframe: e.target.checked })}
                   style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
                 />
-                <span style={{ fontSize: 12, color: BRAND.sub }}>Auto-crop to vertical (active-speaker mock)</span>
+                <span style={{ fontSize: 12, color: BRAND.sub }}>Auto-crop to vertical</span>
               </div>
+
+              {/* Speaker tracking */}
+              {spec.reframe && (
+                <div style={{ ...rowStyle, paddingLeft: 24 }}>
+                  <label style={{ ...labelStyle, color: BRAND.sub }}>Speaker tracking</label>
+                  <input
+                    type="checkbox"
+                    checked={spec.speaker_tracking}
+                    onChange={(e) => setSpec({ ...spec, speaker_tracking: e.target.checked })}
+                    style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: 12, color: BRAND.sub }}>
+                    Face-centroid tracking crop (requires face detector adapter — falls back to centre-crop when not wired)
+                  </span>
+                </div>
+              )}
 
               {/* Speech cleanup */}
               <div style={rowStyle}>
@@ -824,6 +930,18 @@ function RenderOptionsPanel({
                   style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
                 />
                 <span style={{ fontSize: 12, color: BRAND.sub }}>Remove filler words / stutters (requires transcript)</span>
+              </div>
+
+              {/* Audio enhance */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Audio enhance</label>
+                <input
+                  type="checkbox"
+                  checked={spec.audio_enhance}
+                  onChange={(e) => setSpec({ ...spec, audio_enhance: e.target.checked })}
+                  style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                />
+                <span style={{ fontSize: 12, color: BRAND.sub }}>Denoise + compress + loudnorm (EBU R128, -14 LUFS)</span>
               </div>
 
               {/* Captions */}

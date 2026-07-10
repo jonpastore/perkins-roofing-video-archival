@@ -52,8 +52,13 @@ def _tripwire(monkeypatch, *modules):
 @pytest.fixture()
 def session(monkeypatch):
     _seed()
+    import app.answer as answer
     import app.store as store
-    monkeypatch.setattr(store, "embed", lambda texts: [[1.0, 0.0, 0.0] for _ in texts])
+    _fake_embed = lambda texts: [[1.0, 0.0, 0.0] for _ in texts]  # noqa: E731
+    monkeypatch.setattr(store, "embed", _fake_embed)
+    # ask() now embeds the query up front for the semantic cache probe (ask_cache);
+    # mock answer.embed too so no test in this module reaches the real embedder.
+    monkeypatch.setattr(answer, "embed", _fake_embed)
     from app.models import SessionLocal
     s = SessionLocal()
     yield s
