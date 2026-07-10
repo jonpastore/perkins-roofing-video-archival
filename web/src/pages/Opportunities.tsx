@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useContext } from "react";
 import { apiFetch } from "../api";
-import { hms, BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
+import { hms, ytLink, BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
 
 interface Reel {
@@ -214,7 +214,7 @@ function TopicVideoModal({
                       <span style={{ flex: 1, fontSize: 13.5, color: BRAND.ink, fontWeight: 500 }}>{v.title}</span>
                       <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>{hms(v.duration)}</span>
                       <a
-                        href={`https://youtu.be/${v.video_id}?t=${Math.floor(v.start)}`}
+                        href={ytLink(v.video_id, v.start)}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{ color: BRAND.red, fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}

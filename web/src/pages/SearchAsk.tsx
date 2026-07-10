@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext, type ReactNode } from "react";
 import { apiFetch } from "../api";
-import { BRAND, Card, Button, inputStyle, Loading, ErrorMsg, hms } from "../ui";
+import { BRAND, Card, Button, inputStyle, Loading, ErrorMsg, hms, ytLink } from "../ui";
 import { ComposeEmailModal } from "../components/ComposeEmailModal";
 import { NavContext } from "../App";
 
@@ -243,7 +243,7 @@ function TopicVideosModal({
                         {hms(v.duration)}
                       </span>
                       <a
-                        href={`https://youtu.be/${v.video_id}?t=${Math.floor(v.start)}`}
+                        href={ytLink(v.video_id, v.start)}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
@@ -352,7 +352,7 @@ function TopicRow({
   onView: (label: string) => void;
   onDrillIn: (label: string) => void;
 }) {
-  const sampleUrl = `https://youtu.be/${topic.sample.video_id}?t=${topic.sample.t}`;
+  const sampleUrl = ytLink(topic.sample.video_id, topic.sample.t);
   const numVids = topic.num_videos ?? topic.count;
   const totalSecs = topic.total_content_length ?? 0;
   return (

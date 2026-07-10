@@ -13,6 +13,20 @@ def test_link_builds_timecoded_youtube_url():
     assert link("abc123", 95.7) == "https://youtu.be/abc123?t=95"
 
 
+def test_link_with_zero_start_preserves_t_param():
+    # start=0 is a legitimate first-frame offset — ?t=0 must be present
+    assert link("abc123", 0) == "https://youtu.be/abc123?t=0"
+
+
+def test_link_with_int_start():
+    assert link("abc123", 986) == "https://youtu.be/abc123?t=986"
+
+
+def test_link_with_none_start_returns_bare_url():
+    # None means timestamp unknown — omit ?t= entirely rather than emit ?t=None
+    assert link("abc123", None) == "https://youtu.be/abc123"
+
+
 def test_rank_vector_only_preserves_order():
     a, b = Ch(1, "v1"), Ch(2, "v2")
     out = rank([(a, 0.9), (b, 0.4)], [], set())

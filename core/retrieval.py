@@ -3,7 +3,14 @@ No DB/embedding I/O here; callers fetch rows then hand them to rank()."""
 
 
 def link(video_id, start):
-    """Deep-link into a YouTube video at a timecode (the AIO-critical citation field)."""
+    """Deep-link into a YouTube video at a timecode (the AIO-critical citation field).
+
+    If start is None the bare URL is returned (no ?t= param) — a bare link is better
+    than ?t=None or ?t=0 when the timestamp is genuinely unknown.  start=0 is preserved
+    as ?t=0 because it is a valid first-frame offset.
+    """
+    if start is None:
+        return f"https://youtu.be/{video_id}"
     return f"https://youtu.be/{video_id}?t={int(start)}"
 
 

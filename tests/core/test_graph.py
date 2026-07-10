@@ -6,9 +6,10 @@ def test_secs_parses_mmss():
     assert secs("0:5") == 5
 
 
-def test_secs_malformed_returns_zero():
-    assert secs("garbage") == 0
-    assert secs("") == 0
+def test_secs_malformed_returns_none():
+    # Bad/missing timecodes now return None so callers can distinguish from a real start=0
+    assert secs("garbage") is None
+    assert secs("") is None
 
 
 def test_build_extract_prompt_formats_timecodes_and_truncates():
@@ -46,5 +47,6 @@ def test_parse_nodes_handles_missing_and_none_lists():
 
 
 def test_parse_nodes_defaults_missing_fields():
+    # A missing/malformed ts now produces start=None (not 0), letting link() omit ?t=
     rows = parse_nodes({"claims": [{}]}, "v2")
-    assert rows[0] == {"kind": "claims", "label": "", "detail": "", "start": 0, "version": "v2"}
+    assert rows[0] == {"kind": "claims", "label": "", "detail": "", "start": None, "version": "v2"}

@@ -1018,7 +1018,8 @@ def _ensure_video_link(content_md: str, keyword: str, db=None) -> str:
         if not chunks:
             return content_md
         chunk = chunks[0][0]
-        url = f"https://youtu.be/{chunk.video_id}?t={int(chunk.start or 0)}"
+        from core.retrieval import link as _yt  # noqa: PLC0415
+        url = _yt(chunk.video_id, chunk.start)
         return f"{content_md}\n<h2>Watch: {keyword}</h2>\n<p>See it explained: <a href=\"{url}\">{url}</a></p>"
     except Exception as exc:  # noqa: BLE001
         logger.warning("_ensure_video_link failed for %r: %s", keyword, exc)
@@ -1352,7 +1353,8 @@ def _inject_oembed(content: str, chunks: list[tuple]) -> str:
     if not chunks:
         return content
     chunk, _score = chunks[0]
-    url = f"https://www.youtube.com/watch?v={chunk.video_id}&t={int(chunk.start)}s"
+    t_param = f"&t={int(chunk.start)}s" if chunk.start is not None else ""
+    url = f"https://www.youtube.com/watch?v={chunk.video_id}{t_param}"
     parts = content.split("\n\n", 1)
     if len(parts) == 2:
         return f"{parts[0]}\n\n{url}\n\n{parts[1]}"

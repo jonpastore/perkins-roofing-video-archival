@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 def _yt(video_id: str, start) -> str:
-    return f"https://youtu.be/{video_id}?t={int(start or 0)}"
+    from core.retrieval import link  # noqa: PLC0415
+    return link(video_id, start)
 
 
 def _cosine_matrix(vecs):

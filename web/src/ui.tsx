@@ -15,6 +15,13 @@ export const BRAND = {
 };
 export const FONT = "system-ui, 'Segoe UI', Roboto, sans-serif";
 
+// Build a youtu.be deep-link.  When start is not a finite number the bare URL is returned
+// (no ?t= param) — omitting the param is better than emitting ?t=NaN which YouTube ignores.
+export function ytLink(videoId: string, start: number | null | undefined): string {
+  if (start == null || !Number.isFinite(start)) return `https://youtu.be/${videoId}`;
+  return `https://youtu.be/${videoId}?t=${Math.floor(start)}`;
+}
+
 // seconds -> H:MM:SS (or M:SS when under an hour). Use everywhere durations/timestamps show.
 export function hms(totalSeconds: number | null | undefined): string {
   if (totalSeconds == null || !isFinite(totalSeconds)) return "—";

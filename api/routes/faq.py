@@ -80,8 +80,9 @@ def _estimate_cost(count: int, model: str) -> dict:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _yt_link(video_id: str, t: float) -> str:
-    return f"https://youtu.be/{video_id}?t={int(t)}"
+def _yt_link(video_id: str, t) -> str:
+    from core.retrieval import link  # noqa: PLC0415
+    return link(video_id, t)
 
 
 def _normalize_question(q: str) -> str:

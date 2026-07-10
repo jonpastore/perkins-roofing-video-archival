@@ -3,12 +3,16 @@ Ported from app/graph. The chat() call stays in the app/adapter layer."""
 
 
 def secs(ts):
-    """Parse an 'mm:ss' timecode to integer seconds; 0 on any malformed input."""
+    """Parse an 'mm:ss' timecode to integer seconds; None on any malformed/missing input.
+
+    Returning None (rather than 0) lets callers distinguish a genuine first-frame start
+    from a lost/unparseable LLM timecode.  core.retrieval.link() treats None as 'omit ?t='.
+    """
     try:
         m, s = ts.split(":")
         return int(m) * 60 + int(s)
     except Exception:
-        return 0
+        return None
 
 
 def build_extract_prompt(segments):
@@ -39,7 +43,7 @@ def parse_nodes(g, graph_version):
                 "kind": kind,
                 "label": it.get("label", ""),
                 "detail": it.get("detail", ""),
-                "start": secs(it.get("ts", "0:0")),
+                "start": secs(it.get("ts")),
                 "version": graph_version,
             })
     return rows

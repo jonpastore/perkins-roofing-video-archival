@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, hms } from "../ui";
+import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, hms, ytLink } from "../ui";
 import { NavContext } from "../App";
 
 interface Part {
@@ -21,10 +21,7 @@ interface Proposal {
   duration: number | null;
 }
 
-// youtu.be link jumped to a specific second offset.
-function ytLink(videoId: string, start: number): string {
-  return `https://youtu.be/${videoId}?t=${Math.max(0, Math.floor(start))}`;
-}
+// ytLink is imported from ui — guards NaN/null and omits ?t= when start is not finite.
 
 // Seconds -> "hh:mm:ss" (zero-padded).
 function fmtHMS(secs: number): string {

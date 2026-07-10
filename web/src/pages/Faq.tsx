@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { apiFetch } from "../api";
-import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, hms } from "../ui";
+import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, hms, ytLink } from "../ui";
 import { ComposeEmailModal } from "../components/ComposeEmailModal";
 
 // Render an FAQ answer: turn `[link n](url)` markdown citations into clickable links.
@@ -64,7 +64,7 @@ interface UnminedFaqItem {
   question: string;
   video_id: string;
   title: string;
-  t: number;
+  t: number | null;
 }
 
 const MINE_BATCH_OPTIONS = [50, 100, 200] as const;
@@ -419,7 +419,7 @@ export function Faq() {
                         <td style={{ padding: "10px 16px" }}>{f.question}</td>
                         <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
                           <a
-                            href={`https://youtu.be/${f.video_id}?t=${f.t}`}
+                            href={ytLink(f.video_id, f.t)}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{ color: BRAND.navyText, fontWeight: 500, textDecoration: "none" }}
