@@ -31,6 +31,9 @@ provider "google" {
 locals {
   required_apis = toset([
     "aiplatform.googleapis.com",
+    "cloudidentity.googleapis.com", # Workspace group mgmt (dmarc@ report group; admin ops via ADC)
+    "solar.googleapis.com",         # Google Solar API — Squares roof measurement (pitch/azimuth/area per segment)
+    "geocoding-backend.googleapis.com", # Geocoding for address -> lat/lng (Squares)
     "speech.googleapis.com",
     "sqladmin.googleapis.com",
     "run.googleapis.com",

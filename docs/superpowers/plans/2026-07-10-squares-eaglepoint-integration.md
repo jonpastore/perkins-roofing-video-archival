@@ -1,3 +1,27 @@
+# SUPERSEDED IN PART — 2026-07-10 (late): SOLAR API IS PRIMARY (jarvis #331, Jon's call)
+
+Jon resolved the #331-vs-D1 conflict in favor of **Google Solar API as the PRIMARY
+measurement source**. Verified working same-day with ADC in the client project
+(buildingInsights:findClosest, HIGH quality, per-segment pitchDegrees/azimuthDegrees/
+stats.areaMeters2 — a Miami test address returned 7 segments, whole-roof 217.9 m2).
+This REPLACES the OSM+NAIP+PDAL pipeline for v1:
+
+- NO eaglepoint ml-service port, NO PDAL/3DEP, NO NAIP/Mapbox imagery handling, NO
+  Cloud Tasks queue for v1 — buildingInsights is a single synchronous HTTPS call.
+  (D1/D2/D5 as originally framed are moot; D4 moot — no imagery pipeline at all.)
+- squares = sum(segment stats.areaMeters2) x 10.7639 / 100 (areaMeters2 is true 3D
+  roof area; keep groundAreaMeters2 for sanity checks). Per-segment table (pitch,
+  azimuth, area) is the Roofr-comparison surface.
+- Manual entry stays first-class fallback (Solar coverage gaps / quality < MEDIUM).
+- Staleness rule (Jon, unchanged): surface imageryDate; warn "field validation
+  recommended" when imagery older than 3 years or quality below HIGH.
+- Infra: solar.googleapis.com + geocoding-backend.googleapis.com enabled via TF
+  (applied 2026-07-10). Geocoding needs an API key: create a restricted
+  google_apikeys_key (solar + geocoding only) in TF, inject as SQUARES_API_KEY.
+- Tenancy/UI sections (§6 measurements persistence incl. segments JSON via additive
+  0024, §7 Squares.tsx flow, estimator prefill) REMAIN VALID as written.
+- eaglepoint repo returns to REFERENCE-ONLY status.
+
 # Squares / eaglepoint Roof-Measurement Integration — Implementation Plan
 
 Date: 2026-07-10
