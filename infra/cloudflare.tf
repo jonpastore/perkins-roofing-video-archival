@@ -158,16 +158,15 @@ resource "cloudflare_record" "txt_dkim" {
   proxied = false
 }
 
-# DMARC — imported from the live record (was bare "v=DMARC1; p=none;").
-# rua added for visibility. HOLD at p=none until Google DKIM is signing
-# (txt_dkim above), then flip to p=quarantine — enforcing before DKIM would
-# quarantine forwarded GSuite mail (forwarding breaks SPF alignment).
+# DMARC — p=quarantine since 2026-07-10 (Google DKIM record live + "Start
+# authentication" clicked by Jon). rua reports to dmarc@perkinsroofing.net
+# (create the group in Google Admin if it doesn't exist yet).
 resource "cloudflare_record" "txt_dmarc" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "_dmarc"
   type    = "TXT"
-  content = "v=DMARC1; p=none; rua=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
+  content = "v=DMARC1; p=quarantine; rua=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
   ttl     = 3600
   proxied = false
 }
