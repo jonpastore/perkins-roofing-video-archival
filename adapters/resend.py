@@ -1,20 +1,37 @@
 """Resend email-send adapter (I/O — coverage-omitted). POSTs to the Resend API using
-the RESEND_API_KEY env var. The 'from' address is always noreply@perkinsroofing.net;
+the RESEND_API_KEY env var. The verified sending domain is perkinsroofing.net.
 reply_to routes replies to the authenticated user's own inbox."""
 import json
 import os
 import urllib.request
 
+_DEFAULT_FROM_EMAIL = "noreply@perkinsroofing.net"
+_DEFAULT_FROM_NAME = "Perkins Roofing"
 
-def send(*, from_name: str, reply_to: str, to: str, subject: str, html: str) -> str:
+
+def send(
+    *,
+    from_name: str = _DEFAULT_FROM_NAME,
+    from_email: str = _DEFAULT_FROM_EMAIL,
+    reply_to: str,
+    to: str,
+    subject: str,
+    html: str,
+) -> str:
     """Send an email via Resend and return the Resend message id.
 
     Args:
-        from_name: Display name for the sender (e.g. "Perkins Roofing").
-        reply_to:  Reply-to address — should be the authenticated user's email.
-        to:        Recipient email address.
-        subject:   Email subject line.
-        html:      HTML body of the email.
+        from_name:  Display name for the sender (e.g. "Jane Smith").
+                    Defaults to "Perkins Roofing".
+        from_email: Sending address — must be on the verified perkinsroofing.net
+                    domain. Defaults to noreply@perkinsroofing.net. NEVER accept
+                    this value from client-supplied input; always derive it from
+                    verified server-side claims.
+        reply_to:   Reply-to address — the authenticated user's email so that
+                    client replies land in their own inbox.
+        to:         Recipient email address.
+        subject:    Email subject line.
+        html:       HTML body of the email.
 
     Returns:
         The Resend ``id`` string for the sent message.
@@ -27,7 +44,7 @@ def send(*, from_name: str, reply_to: str, to: str, subject: str, html: str) -> 
         raise RuntimeError("RESEND_API_KEY environment variable is not set")
 
     payload = {
-        "from": f"{from_name} <noreply@perkinsroofing.net>",
+        "from": f"{from_name} <{from_email}>",
         "reply_to": reply_to,
         "to": [to],
         "subject": subject,

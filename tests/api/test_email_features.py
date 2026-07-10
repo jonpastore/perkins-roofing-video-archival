@@ -5,6 +5,9 @@
 - GET /admin/users includes signature field
 - POST /email/send prepends EMAIL_HTML_HEADER from PlatformConfig
 - EMAIL_HTML_HEADER in EDITABLE_KEYS
+- POST /email/send uses claims email for From (sender identity)
+- POST /email/preview returns branded HTML wrapper
+- _claims_display_name / _sender_from_address helpers
 """
 import types
 import pytest
@@ -14,7 +17,11 @@ from unittest.mock import patch
 from api import app as appmod
 from api.auth import set_verifier
 from api.routes.users import router as users_router, me_router
-from api.routes.email import router as email_router
+from api.routes.email import (
+    router as email_router,
+    _claims_display_name,
+    _sender_from_address,
+)
 from api.routes.config import EDITABLE_KEYS
 from app.models import init_db, SessionLocal, UserSetting, PlatformConfig
 
@@ -293,10 +300,11 @@ def test_email_html_header_in_editable_keys():
 # POST /email/send prepends EMAIL_HTML_HEADER
 # ---------------------------------------------------------------------------
 
-def _mock_resend_send(*, from_name, reply_to, to, subject, html):
+def _mock_resend_send(*, from_name, from_email, reply_to, to, subject, html):
     # Store call args in a mutable container for assertions
     _mock_resend_send.last_call = {
         "from_name": from_name,
+        "from_email": from_email,
         "reply_to": reply_to,
         "to": to,
         "subject": subject,
@@ -321,12 +329,14 @@ def test_send_email_prepends_header(admin_client):
     assert r.status_code == 200
     assert r.json()["id"] == "msg_test_id"
     sent_html = _mock_resend_send.last_call["html"]
-    assert sent_html.startswith("<header>BRAND</header>")
+    # wrap_email produces a full HTML doc; the header and body must both be present
+    assert "<header>BRAND</header>" in sent_html
     assert "<p>body</p>" in sent_html
+    assert "<!DOCTYPE html>" in sent_html
 
 
 def test_send_email_no_header_when_unset(admin_client):
-    # No PlatformConfig row, no env — header should be empty
+    # No PlatformConfig row, no env — wrap_email uses fallback company-name header
     _mock_resend_send.last_call = {}
     with patch("api.routes.email.resend_adapter.send", side_effect=_mock_resend_send):
         r = admin_client.post(
@@ -336,7 +346,9 @@ def test_send_email_no_header_when_unset(admin_client):
         )
     assert r.status_code == 200
     sent_html = _mock_resend_send.last_call["html"]
-    assert sent_html == "<p>clean</p>"
+    # Body fragment must be present inside the branded wrapper
+    assert "<p>clean</p>" in sent_html
+    assert "<!DOCTYPE html>" in sent_html
 
 
 def test_send_email_header_env_fallback(admin_client, monkeypatch):
@@ -351,4 +363,157 @@ def test_send_email_header_env_fallback(admin_client, monkeypatch):
         )
     assert r.status_code == 200
     sent_html = _mock_resend_send.last_call["html"]
-    assert sent_html.startswith("<div>ENV HEADER</div>")
+    assert "<div>ENV HEADER</div>" in sent_html
+    assert "<p>body</p>" in sent_html
+    assert "<!DOCTYPE html>" in sent_html
+
+
+# ---------------------------------------------------------------------------
+# _claims_display_name — pure helper unit tests
+# ---------------------------------------------------------------------------
+
+class TestClaimsDisplayName:
+    def test_uses_name_claim_when_present(self):
+        assert _claims_display_name({"name": "Jane Smith", "email": "jane@example.com"}) == "Jane Smith"
+
+    def test_falls_back_to_email_local_part(self):
+        result = _claims_display_name({"email": "john.doe@example.com"})
+        assert result == "John Doe"
+
+    def test_underscore_in_local_part(self):
+        result = _claims_display_name({"email": "tim_perkins@example.com"})
+        assert result == "Tim Perkins"
+
+    def test_empty_name_claim_uses_email(self):
+        result = _claims_display_name({"name": "", "email": "admin@test.com"})
+        assert result == "Admin"
+
+    def test_no_email_no_name_returns_fallback(self):
+        result = _claims_display_name({})
+        assert result == "Perkins Roofing"
+
+    def test_email_without_at_sign(self):
+        result = _claims_display_name({"email": "noemail"})
+        assert result == "Noemail"
+
+
+# ---------------------------------------------------------------------------
+# _sender_from_address — pure helper unit tests
+# ---------------------------------------------------------------------------
+
+class TestSenderFromAddress:
+    def test_builds_perkinsroofing_address(self):
+        result = _sender_from_address("jane@gmail.com")
+        assert result == "jane@perkinsroofing.net"
+
+    def test_strips_invalid_chars(self):
+        result = _sender_from_address("bad chars!#$@gmail.com")
+        assert result.endswith("@perkinsroofing.net")
+        local = result.split("@")[0]
+        assert "!" not in local and "#" not in local
+
+    def test_empty_email_returns_default(self):
+        from adapters.resend import _DEFAULT_FROM_EMAIL
+        assert _sender_from_address("") == _DEFAULT_FROM_EMAIL
+
+    def test_preserves_dots_and_plus(self):
+        result = _sender_from_address("first.last+tag@gmail.com")
+        assert result == "first.last+tag@perkinsroofing.net"
+
+    def test_local_part_only_special_chars_becomes_noreply(self):
+        result = _sender_from_address("!!!@example.com")
+        assert result == "noreply@perkinsroofing.net"
+
+
+# ---------------------------------------------------------------------------
+# POST /email/send — sender identity (From/reply-to from claims)
+# ---------------------------------------------------------------------------
+
+def test_send_uses_claims_email_as_reply_to(admin_client):
+    _mock_resend_send.last_call = {}
+    with patch("api.routes.email.resend_adapter.send", side_effect=_mock_resend_send):
+        r = admin_client.post(
+            "/email/send",
+            json={"to": "recipient@example.com", "subject": "Hi", "html": "<p>x</p>"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 200
+    # reply_to must be the authenticated user's own email (from verified claims)
+    assert _mock_resend_send.last_call["reply_to"] == "admin@test.com"
+
+
+def test_send_from_email_is_perkinsroofing_domain(admin_client):
+    _mock_resend_send.last_call = {}
+    with patch("api.routes.email.resend_adapter.send", side_effect=_mock_resend_send):
+        r = admin_client.post(
+            "/email/send",
+            json={"to": "r@example.com", "subject": "S", "html": "<p>x</p>"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 200
+    assert _mock_resend_send.last_call["from_email"].endswith("@perkinsroofing.net")
+
+
+def test_send_from_name_derived_from_claims(admin_client):
+    _mock_resend_send.last_call = {}
+    with patch("api.routes.email.resend_adapter.send", side_effect=_mock_resend_send):
+        r = admin_client.post(
+            "/email/send",
+            json={"to": "r@example.com", "subject": "S", "html": "<p>x</p>"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 200
+    # admin@test.com → local part "admin" → title-cased "Admin"
+    assert _mock_resend_send.last_call["from_name"] == "Admin"
+
+
+def test_send_from_name_uses_name_claim(user_client):
+    set_verifier(lambda t: {"uid": "u2", "email": "alice@test.com", "name": "Alice Smith", "role": "sales"})
+    _mock_resend_send.last_call = {}
+    with patch("api.routes.email.resend_adapter.send", side_effect=_mock_resend_send):
+        r = user_client.post(
+            "/email/send",
+            json={"to": "r@example.com", "subject": "S", "html": "<p>x</p>"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 200
+    assert _mock_resend_send.last_call["from_name"] == "Alice Smith"
+
+
+# ---------------------------------------------------------------------------
+# POST /email/preview
+# ---------------------------------------------------------------------------
+
+def test_preview_returns_branded_html(admin_client):
+    r = admin_client.post(
+        "/email/preview",
+        json={"to": "ignored@example.com", "subject": "ignored", "html": "<p>Preview body</p>"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+    assert "<!DOCTYPE html>" in r.text
+    assert "<p>Preview body</p>" in r.text
+    assert "Perkins Roofing" in r.text
+
+
+def test_preview_includes_db_header(admin_client):
+    with SessionLocal() as db:
+        db.add(PlatformConfig(key="EMAIL_HTML_HEADER", value="<div>Preview Header</div>"))
+        db.commit()
+    r = admin_client.post(
+        "/email/preview",
+        json={"to": "x@x.com", "subject": "s", "html": "<p>body</p>"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 200
+    assert "<div>Preview Header</div>" in r.text
+
+
+def test_preview_requires_email_compose_role(anon_client):
+    r = anon_client.post(
+        "/email/preview",
+        json={"to": "x@x.com", "subject": "s", "html": "<p>body</p>"},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert r.status_code == 403

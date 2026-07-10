@@ -11,6 +11,7 @@ import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,7 @@ from app.config import settings
 from app.llm import chat
 from app.models import EmailTemplate, PlatformConfig, PlatformSessionLocal
 from core.email_proof import build_proof_prompt, diff_suggestions
+from core.email_template import wrap_email
 
 router = APIRouter(prefix="/email", tags=["email"])
 
@@ -149,21 +151,61 @@ def _get_email_html_header() -> str:
     return settings.EMAIL_HTML_HEADER or ""
 
 
+def _claims_display_name(claims: dict) -> str:
+    """Derive a display name from verified token claims.
+
+    Tries ``name`` claim first; falls back to title-casing the local-part of
+    the email address (e.g. "jane.smith@..." → "Jane Smith").
+    """
+    name = claims.get("name", "")
+    if name:
+        return name
+    email = claims.get("email", "")
+    local = email.split("@")[0] if "@" in email else email
+    return local.replace(".", " ").replace("_", " ").title() or "Perkins Roofing"
+
+
+def _sender_from_address(sender_email: str) -> str:
+    """Return a perkinsroofing.net From address for the authenticated user.
+
+    Users sign in with Google (any domain). We always send from the verified
+    perkinsroofing.net domain; the user's address goes in reply-to so replies
+    land in their inbox.
+    """
+    if not sender_email:
+        return resend_adapter._DEFAULT_FROM_EMAIL
+    local = sender_email.split("@")[0]
+    # Sanitise: strip characters that are not safe in an email local-part
+    safe_local = re.sub(r"[^a-zA-Z0-9.+_-]", "", local) or "noreply"
+    return f"{safe_local}@perkinsroofing.net"
+
+
 @router.post("/send")
 def send_email(req: SendRequest, claims=Depends(require_role("email_send"))):
     sender_email = claims.get("email", "")
     # Strip CRLF from subject to prevent header injection
     safe_subject = req.subject.replace("\r", "").replace("\n", "")
     header_html = _get_email_html_header()
-    html_body = (header_html + req.html) if header_html else req.html
+    wrapped_html = wrap_email(body_html=req.html, header_html=header_html)
+    display_name = _claims_display_name(claims)
+    from_address = _sender_from_address(sender_email)
     msg_id = resend_adapter.send(
-        from_name="Perkins Roofing",
-        reply_to=sender_email,
+        from_name=display_name,
+        from_email=from_address,
+        reply_to=sender_email or resend_adapter._DEFAULT_FROM_EMAIL,
         to=str(req.to),
         subject=safe_subject,
-        html=html_body,
+        html=wrapped_html,
     )
     return {"id": msg_id}
+
+
+@router.post("/preview", response_class=HTMLResponse)
+def preview_email(req: SendRequest, claims=Depends(require_role("email_compose"))):
+    """Return the branded HTML wrapper for a given body — used by the compose UI
+    to render a live preview in an iframe without duplicating the wrap logic."""
+    header_html = _get_email_html_header()
+    return HTMLResponse(content=wrap_email(body_html=req.html, header_html=header_html))
 
 
 # ---------------------------------------------------------------------------
