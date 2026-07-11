@@ -608,10 +608,12 @@ class Job(Base, TenantMixin):
     id          = Column(Integer, primary_key=True, autoincrement=True)
     proposal_id = Column(Integer, ForeignKey("proposals.id"))
     status      = Column(String(50), nullable=False, default="pending")
+    knowify_job_id = Column(String(100), nullable=True)  # Knowify ProjectId crosswalk (migration 0032)
     created_at  = Column(DateTime, nullable=False, default=_utcnow)
 
     __table_args__ = (
         Index("ix_jobs_tenant", "tenant_id"),
+        Index("ix_jobs_tenant_knowify", "tenant_id", "knowify_job_id"),
     )
 
 
@@ -752,6 +754,11 @@ class Invoice(Base, TenantMixin):
     created_by       = Column(String(255), nullable=False)
     created_at       = Column(DateTime, nullable=False, default=_utcnow)
     updated_at       = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+    # Knowify crosswalk (migration 0032). knowify_invoice_number is TEXT because
+    # Knowify's InvoiceNumber is a user-facing STRING, NOT our integer invoice_number.
+    knowify_invoice_id     = Column(String(100), nullable=True)
+    knowify_invoice_number = Column(Text, nullable=True)
+    source                 = Column(String(30), nullable=False, default="v2")  # 'v2' | 'knowify_import'
 
     __table_args__ = (
         # Postgres treats NULLs as distinct → many drafts (NULL number) coexist,
@@ -760,6 +767,7 @@ class Invoice(Base, TenantMixin):
         Index("ix_invoices_tenant", "tenant_id"),
         Index("ix_invoices_job", "job_id"),
         Index("ix_invoices_tenant_status", "tenant_id", "status"),
+        Index("ix_invoices_tenant_knowify", "tenant_id", "knowify_invoice_id"),
     )
 
 
@@ -844,11 +852,13 @@ class Payment(Base, TenantMixin):
     qb_entity_id   = Column(String(100))
     qb_synced_at   = Column(DateTime)
     qb_sync_status = Column(_QB_SYNC_STATUS)
+    knowify_payment_id = Column(String(100), nullable=True)  # Knowify payment crosswalk (migration 0032)
     created_at     = Column(DateTime, nullable=False, default=_utcnow)
 
     __table_args__ = (
         Index("ix_payments_invoice", "invoice_id"),
         Index("ix_payments_tenant", "tenant_id"),
+        Index("ix_payments_tenant_knowify", "tenant_id", "knowify_payment_id"),
     )
 
 
@@ -990,6 +1000,63 @@ class PriceBook(Base, TenantMixin):
         UniqueConstraint("tenant_id", "supplier", "version_number",
                          name="uq_price_books_tenant_supplier_version"),
         Index("ix_price_books_tenant_supplier", "tenant_id", "supplier"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Knowify data mirror (Wave 1 — migration 0032).
+# knowify_sync_state = per-(tenant, entity) watermark + health surface.
+# knowify_raw_records = generic lossless JSONB mirror with tombstone columns.
+# Sync/promotion logic lives in jobs/knowify_sync.py (later slice).
+# ---------------------------------------------------------------------------
+
+class KnowifySyncState(Base, TenantMixin):
+    """Per-(tenant, entity) sync watermark + last-run health.
+
+    v1 records health only (full-pull, not watermark-driven): last_high_water is
+    recorded for observability and as the seed for a future v2 since= delta pull.
+    """
+    __tablename__ = "knowify_sync_state"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    entity          = Column(String(50), nullable=False)          # 'invoices','clients',...
+    last_high_water = Column(DateTime, nullable=True)             # max updated_at (or created_at) seen
+    last_cursor     = Column(String(500), nullable=True)          # opaque next-page cursor if cursor-paged
+    last_run_at     = Column(DateTime, nullable=True)
+    last_status     = Column(String(30), nullable=False, default="never")  # never|ok|partial|error|auth_error|skipped
+    last_error      = Column(Text, nullable=True)
+    rows_seen       = Column(Integer, nullable=False, default=0)
+    updated_at      = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "entity", name="uq_knowify_sync_state_tenant_entity"),
+        Index("ix_knowify_sync_state_tenant", "tenant_id"),
+    )
+
+
+class KnowifyRawRecord(Base, TenantMixin):
+    """Generic lossless mirror of one Knowify record.
+
+    is_present=FALSE + deleted_at set = tombstoned (absent from the last full pull
+    or explicitly Cancelled/Deleted upstream). content_hash gates re-writes so an
+    unchanged payload produces zero writes.
+    """
+    __tablename__ = "knowify_raw_records"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    entity       = Column(String(50), nullable=False)
+    knowify_id   = Column(String(100), nullable=False)            # the record's id in Knowify
+    payload      = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    content_hash = Column(String(64), nullable=False)            # sha256 of canonicalized payload
+    high_water   = Column(DateTime, nullable=True)               # record's updated_at (v2 incremental seed)
+    is_present   = Column(Boolean, nullable=False, default=True)  # FALSE = absent from last full pull
+    deleted_at   = Column(DateTime, nullable=True)               # when tombstoned
+    fetched_at   = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "entity", "knowify_id", name="uq_knowify_raw_tenant_entity_id"),
+        Index("ix_knowify_raw_tenant_entity", "tenant_id", "entity"),
+        Index("ix_knowify_raw_high_water", "tenant_id", "entity", "high_water"),
     )
 
 
