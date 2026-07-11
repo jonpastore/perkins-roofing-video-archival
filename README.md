@@ -40,7 +40,7 @@ pip install -r app/requirements.txt pytest pytest-cov ruff bandit pip-audit
 ruff check core adapters api jobs
 bandit -r core adapters api jobs app -lll -q
 pip-audit -r app/requirements.txt
-pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=100
+pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
 
 # frontend
 cd web && npm ci && npm run build

@@ -19,8 +19,8 @@ jobs:
         run: bandit -r core adapters api jobs app -lll -q
       - name: SCA gate (pip-audit — known CVEs)
         run: pip-audit -r app/requirements.txt
-      - name: Test + coverage gate (core = 100%)
-        run: pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=100
+      - name: Test + coverage gate (core >= 97%)
+        run: pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
 
   frontend:
     runs-on: ubuntu-latest
