@@ -1,50 +1,48 @@
-Resume the Perkins platform + Ez-Bids multi-tenant build. AUTOPILOT everything buildable.
-Jon is doing the IG/TikTok social-API setup himself (docs/SOCIAL_API_SETUP.md); Tim is sending
-real estimates/proposals. Read IN ORDER first:
+Resume the Perkins platform + Ez-Bids build after a Claude RESTART (done to load the
+Knowify MCP). Read IN ORDER: CONTINUATION-2026-07-11.md, the memory index (auto-loaded,
+esp. knowify-integration, perkins-pricing-verified, deploy-not-concurrency-safe),
+docs/ENGINEERING_RULES.md (R1–R5 binding), then `mcp__jarvis-memory__sync` + my_tasks.
 
-1. CONTINUATION-2026-07-10-pm.md          — full handoff (state, resume tasks, gotchas)
-2. Memory index (auto-loaded)             — esp. perkins-pricing-verified, ezbids-degenito-cloudflare
-3. docs/ENGINEERING_RULES.md              — R1–R5 binding
-4. mcp__jarvis-memory__sync then my_tasks — live blockers (Perkins v2 project)
+DO THESE FIRST, IN ORDER:
 
-PRIMARY TASK — analyze Tim's 2 pricing workbooks and resolve why there are "so many":
-  - Sloped/regular: Drive id 1ptSxJYPumUKtxJk66JgbZ8tljVJMbyCAyaSyz_BCwg0
-  - Low-slope/flat: Drive id 1SGLYoOIU13nILqGxJCIxuVZ8A2I_BTEjJ03PUuuRteo
-  The Drive connector reads TAB 1 ONLY. Each workbook likely has per-branch tabs
-  (miami/jupiter/naples). Enumerate ALL tabs (Sheets API spreadsheets.get for titles, then
-  per-tab reads — or ask Jon to point at tabs), map the full roof-type × branch × zone
-  structure, reconcile vs infra/fixtures/pricing_config_exhibit_b.json. KEY FACT: Miami sloped
-  tab 1 == Exhibit B HVHZ exactly; HVHZ=Miami-Dade+Broward only; zone(HVHZ/FBC) and
-  branch(miami/jupiter/naples) are SEPARATE axes; jupiter/naples configs currently duplicate
-  Miami and need real values. See memory perkins-pricing-verified.
+1. KNOWIFY MCP (reason for the restart). It's registered (`claude mcp list` → knowify,
+   "Needs authentication"). Jon authenticates via `/mcp` → knowify → Authenticate →
+   browser login with Knowify admin creds (OAuth; no passwords). Then use the read-only
+   tools (Platform Knowledge, Query Knowify). FOR BULK DATA (task #15 migration): run
+   `python scripts/knowify/knowify_oauth.py` (browser login once) then
+   `python scripts/knowify/knowify_pull.py` → /tmp/knowify_data. Analyze the pulled
+   invoices/milestones/payments to validate + finalize the invoicing/numbering/QuickBooks
+   model. First pull reveals pagination shape — tweak knowify_pull.py if _summary.json shows gaps.
 
-THEN AUTOPILOT (sonnet impl subagents; opus for plan/review/security only):
-  1. Estimator v2 (task #10) — day-based overhead (per-series days to the half-day) + absolute-
-     dollar profit mode. Spec: docs/superpowers/specs/2026-07-10-estimator-v2-tim-feedback.md.
-     Tim's 2 worked examples = golden cases. OH-mode + profit-mode selectable so Exhibit B
-     goldens still pass.
-  2. Ez-Bids W0 (plan APPROVED) — DB-backed CORS, env cleanup, brand tokens. Then W1 (explicit
-     tenant-1 binding, Perkins-smoke gate), W2 (ezbids.degenito.ai domain onboarding — degenito
-     CF token READY, zone 63d609f219b48dafafdb02afa31d403f). Plan:
-     .omc/plans/ralplan-ezbids-multitenant-DRAFT.md. Sync PRD/TRD/DDD to the council-revised plan first.
-  3. (optional) Clip Studio v2; Squares imagery-fields fix; DMARC p=reject after ~2wk clean reports.
+2. COMMIT THE UNCOMMITTED T&C AI-FAQ WORK. A background agent left it in the tree
+   (git status: core/tc_summary.py, core/tc_ai_prompts.py, core/tc_seed.py, their tests,
+   infra/migrations/0029_tc_version_seed.sql, + edits to core/proposal_render.py,
+   api/routes/proposals.py, tests/test_proposal_render.py, pyproject.toml). REVIEW it
+   (R2 — contract-facing), run the CI-EQUIVALENT gate (ruff check core adapters api jobs +
+   pytest tests/ -m "not postgres" --cov=core --cov-config=.coveragerc --cov-fail-under=100,
+   background to /tmp log + EXIT marker). If green → commit + deploy backend. If tests fail,
+   fix first. Spec = Jon's "Requested documents" email (cover letter + AI bullet summary +
+   recommended AI prompts + attorney disclaimer + last-page FAQ, terms UNCHANGED; real T&C
+   from Josh's proposal seeded as DRAFT TcVersion pending Tim). Deferred: SPA surfacing.
+
+3. THEN AUTOPILOT the approved plan (.omc/plans/ralplan-perkins-jobdocs-billing-DRAFT.md):
+   JB1 material price book (task #12) → JB2 measurements/details → JB3 proposal engine
+   (task #14; T&C-FAQ is a component) → JB4/JB5 invoicing+e-sign+QuickBooks (task #15;
+   use the Knowify import). Also Ez-Bids W1 (tenant-1 binding + Perkins-smoke gate) → W2.
 
 NON-NEGOTIABLE DISCIPLINE:
-- TDD fail-first. Gate = the CI-EQUIVALENT gate, NOT a Docker-having local gate:
-  ruff check core adapters api jobs + `pytest tests/ -m "not postgres" --cov=core
-  --cov-config=.coveragerc --cov-fail-under=100` (background to /tmp log + EXIT marker) +
-  `cd web && npm run build` for SPA changes. Backend CI has no testcontainers — postgres tests
-  SKIP there, so coverage they alone provide fails CI while passing locally.
-- Subagents = FILE EDITS ONLY, never git; give each a NON-overlapping file boundary; main lane
-  commits (ideally gate on a clean clone of the commit). Implementation subagents = sonnet.
-- Commit + push at each green milestone. strict=True is LIVE (stamp every session). Migrations
-  additive .sql. R3 infra via terraform only. Output-compressor garbles piped JSON → write to
-  file, parse separately. Deploy via run_in_background (not `&` — gets SIGHUP'd).
-- Do NOT relitigate locked/approved decisions (Ez-Bids plan is APPROVED; council findings folded).
+- Gate = the CI-equivalent gate above, NOT a Docker-having local gate. Subagents = FILE
+  EDITS ONLY, never git; non-overlapping boundaries; main lane commits + gates on a clean tree.
+  Implementation subagents = sonnet; opus for plan/review/security.
+- Deploy is NOT concurrency-safe — one deploy at a time, via run_in_background (not `&`);
+  verify image sha vs HEAD after. strict=True LIVE (stamp sessions). Migrations additive .sql.
+  R3 infra via terraform only. Output-compressor garbles piped JSON → write to file, parse separately.
+- R2 (architect+critic) on every wave; fix HIGH/critical before marking done.
+- Do NOT relitigate locked/approved decisions (JB plan APPROVED; Ez-Bids plan APPROVED).
   Surface hard-to-reverse prod actions.
 
-STATE: everything from the 2026-07-10 sessions is LIVE (strict tenancy, Contract-FAQ, domain +
-email auth, YouTube posting, Squares/Solar, estimator+low-slope, Proposals/Quotes UI, Clip Studio
-v1, ask-cache, email compose, TinyMCE fix, YouTube-link fix + 675 rows recovered). CI GREEN.
-Ez-Bids planned/council-hardened/APPROVED. Waiting on Jon (IG/TT apps) + Tim (golden files,
-Jupiter pricing, pm_incentive sign-off).
+STATE: everything from the 2026-07-10/11 sessions is LIVE (Estimator v2, Ez-Bids W0 CORS,
+invite email+logo, video-unavailable, estimator admin cleanup, Tim link fix, Knowify tooling).
+T&C AI-FAQ is UNCOMMITTED in the tree (step 2). Waiting on Jon (Knowify /mcp auth; Meta/FB
+access for social) + Tim (golden files, Jupiter/Naples pricing, pm_incentive, T&C sign-off,
+audio walkthrough — follow-up logged for 7/13).

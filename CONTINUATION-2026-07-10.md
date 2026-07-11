@@ -1,7 +1,7 @@
 # CONTINUATION — 2026-07-10 (Perkins full-funnel platform)
 
 Handoff for resuming after `/clear`. Read this + the memory index (auto-loaded, esp.
-`c1-deploy-blocked-gcloud`) + `prompt.txt`. Prior handoff: `CONTINUATION-2026-07-09.md`.
+`c1-deploy-blocked-gcloud`) + `prompt.txt`. Prior handoff: `docs/continuations/CONTINUATION-2026-07-09.md`.
 
 ## TL;DR — where we are
 **C1 Part 2 (strict=True) and #321 Contract-FAQ are BUILT, GATED, R2-REVIEWED, and COMMITTED

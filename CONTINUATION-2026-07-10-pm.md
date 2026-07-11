@@ -123,5 +123,5 @@ terraform apply` — never gcloud-by-hand (R3).
 ---
 **Standing archive directive (performed this session):** moved oldest top-level
 `CONTINUATION-2026-07-08-pm.md` → `docs/continuations/`, kept latest 3 top-level (2026-07-10-pm,
-2026-07-10, 2026-07-09), fixed inbound links (README.md, CONTINUATION-2026-07-09.md), updated
+2026-07-10, 2026-07-09), fixed inbound links (README.md, docs/continuations/CONTINUATION-2026-07-09.md), updated
 prompt.txt to point here. Apply on every continuation.
