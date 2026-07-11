@@ -99,9 +99,10 @@ Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/E
 - [2026-07-07 — comprehensive review (frontend / tests / adversarial / perf / SAST)](docs/reviews/2026-07-07-comprehensive-review.md)
 
 ### Session history / continuations
-- **Most recent:** [CONTINUATION-2026-07-11.md](CONTINUATION-2026-07-11.md) (Knowify MCP restart; Estimator v2 + admin cleanup + video-unavailable + invite-email + Knowify tooling shipped; T&C AI-FAQ uncommitted in tree)
-- [CONTINUATION-2026-07-10-pm.md](CONTINUATION-2026-07-10-pm.md) · [CONTINUATION-2026-07-10.md](CONTINUATION-2026-07-10.md)
-- Archived: [docs/continuations/CONTINUATION-2026-07-09.md](docs/continuations/CONTINUATION-2026-07-09.md) ·
+- **Most recent:** [CONTINUATION-2026-07-11-pm.md](CONTINUATION-2026-07-11-pm.md) (platform build: JB1 price-book + JB3 proposal + JB4 invoicing — engines, PDF renderers & APIs all committed & R2-reviewed; anu PR to Vlad; UIs + deploy pending)
+- [CONTINUATION-2026-07-11.md](CONTINUATION-2026-07-11.md) · [CONTINUATION-2026-07-10-pm.md](CONTINUATION-2026-07-10-pm.md)
+- Archived: [docs/continuations/CONTINUATION-2026-07-10.md](docs/continuations/CONTINUATION-2026-07-10.md) ·
+  [docs/continuations/CONTINUATION-2026-07-09.md](docs/continuations/CONTINUATION-2026-07-09.md) ·
   [docs/continuations/CONTINUATION-2026-07-08-pm.md](docs/continuations/CONTINUATION-2026-07-08-pm.md) ·
   [docs/continuations/CONTINUATION-2026-07-08.md](docs/continuations/CONTINUATION-2026-07-08.md) ·
   [docs/continuations/CONTINUATION-2026-07-06-pm.md](docs/continuations/CONTINUATION-2026-07-06-pm.md) ·
