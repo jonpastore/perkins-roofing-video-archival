@@ -60,6 +60,8 @@ def _video_to_dict(
         "last_comment_at": v.last_comment_at.isoformat() if v.last_comment_at else None,
         "kpis_polled_at": v.kpis_polled_at.isoformat() if v.kpis_polled_at else None,
         "last_pulled_at": v.last_pulled_at.isoformat() if v.last_pulled_at else None,
+        "unavailable_since": v.unavailable_since.isoformat() if v.unavailable_since else None,
+        "hidden_at": v.hidden_at.isoformat() if v.hidden_at else None,
     }
 
 
@@ -67,6 +69,7 @@ def _video_to_dict(
 def list_videos(
     q: str | None = None,
     archived_only: bool = False,
+    include_hidden: bool = False,
     min_length: int | None = None,
     max_length: int | None = None,
     uploaded_after: str | None = None,
@@ -82,6 +85,8 @@ def list_videos(
     Optional filters:
       ?q=<title substring>        case-insensitive title search
       ?archived_only=true         only rows with a non-null archive_uri
+      ?include_hidden=true        include rows where hidden_at IS NOT NULL
+                                  (default: hidden rows are excluded)
       ?min_length=<seconds>       minimum duration (inclusive)
       ?max_length=<seconds>       maximum duration (inclusive)
       ?uploaded_after=<ISO date>  upload_date >= date (YYYY-MM-DD)
@@ -96,8 +101,11 @@ def list_videos(
       clips_generated_at, views, likes, comment_count,
       last_comment_at, kpis_polled_at, last_pulled_at
       content_length (= duration as int seconds)
+      unavailable_since, hidden_at
     """
     query = db.query(Video)
+    if not include_hidden:
+        query = query.filter(Video.hidden_at.is_(None))
     if archived_only:
         query = query.filter(Video.archive_uri.isnot(None))
     if q:
@@ -471,3 +479,47 @@ def poll_kpis(
         raise
     finally:
         _poll_kpis_guard.release("poll-kpis")
+
+
+# ---------------------------------------------------------------------------
+# Visibility: hide / unhide
+# ---------------------------------------------------------------------------
+
+@router.post("/{video_id}/hide")
+def hide_video(
+    video_id: str,
+    _claims=Depends(require_role("manage_archive")),
+    db: Session = Depends(get_db_session),
+):
+    """Mark a video as hidden so it is excluded from the default archive list.
+
+    The GCS archive copy is never deleted. Returns the updated video dict.
+    404 if the video is not found (tenant-scoped).
+    """
+    from datetime import datetime, timezone  # noqa: PLC0415
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    v.hidden_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.flush()
+    db.refresh(v)
+    return _video_to_dict(v)
+
+
+@router.post("/{video_id}/unhide")
+def unhide_video(
+    video_id: str,
+    _claims=Depends(require_role("manage_archive")),
+    db: Session = Depends(get_db_session),
+):
+    """Clear the hidden_at flag so the video reappears in the default archive list.
+
+    Returns the updated video dict. 404 if the video is not found (tenant-scoped).
+    """
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    v.hidden_at = None
+    db.flush()
+    db.refresh(v)
+    return _video_to_dict(v)

@@ -24,6 +24,8 @@ interface ArchiveVideo {
   last_comment_at: string | null;
   kpis_polled_at: string | null;
   last_pulled_at: string | null;
+  unavailable_since: string | null;
+  hidden_at: string | null;
 }
 
 interface Topic {
@@ -330,6 +332,37 @@ export function Archive() {
   const [kpiState, setKpiState] = useState<ActionState>("idle");
   const [kpiResult, setKpiResult] = useState<{ polled: number } | null>(null);
 
+  // Show-hidden toggle — when true the API is called with include_hidden=true
+  const [includeHidden, setIncludeHidden] = useState(false);
+  const [hiddenCount, setHiddenCount] = useState(0);
+  const [hidingId, setHidingId] = useState<string | null>(null);
+
+  async function handleHide(video: ArchiveVideo) {
+    setHidingId(video.id);
+    try {
+      const r = await apiFetch(`/archive/${video.id}/hide`, { method: "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      fetchVideos(committed, includeHidden);
+    } catch (e) {
+      alert(`Hide failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setHidingId(null);
+    }
+  }
+
+  async function handleUnhide(video: ArchiveVideo) {
+    setHidingId(video.id);
+    try {
+      const r = await apiFetch(`/archive/${video.id}/unhide`, { method: "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      fetchVideos(committed, includeHidden);
+    } catch (e) {
+      alert(`Unhide failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setHidingId(null);
+    }
+  }
+
   // Inline video rename + name-suggestion state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -376,7 +409,7 @@ export function Archive() {
   // Debounce timer for text/number/date inputs
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchVideos = useCallback((f: Filters) => {
+  const fetchVideos = useCallback((f: Filters, withHidden?: boolean) => {
     setLoading(true);
     setError(null);
     const params = new URLSearchParams();
@@ -388,20 +421,24 @@ export function Archive() {
     if (f.clips !== "all") params.set("clips", f.clips);
     if (f.articles !== "all") params.set("articles", f.articles);
     if (f.social !== "all") params.set("social", f.social);
+    if (withHidden) params.set("include_hidden", "true");
     apiFetch(`/archive/videos?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then(setVideos)
+      .then((data: ArchiveVideo[]) => {
+        setVideos(data);
+        setHiddenCount(data.filter((v) => v.hidden_at !== null).length);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }, []);
 
-  // Initial load
+  // Initial load (and re-load when filters or includeHidden changes)
   useEffect(() => {
-    fetchVideos(committed);
-  }, [committed, fetchVideos]);
+    fetchVideos(committed, includeHidden);
+  }, [committed, includeHidden, fetchVideos]);
 
   // Patch a filter field; for toggle (TriState) fields commit immediately
   function patchFilter<K extends keyof Filters>(key: K, value: Filters[K], immediate = false) {
@@ -458,7 +495,7 @@ export function Archive() {
       setBackfillResult(data);
       setBackfillState("done");
       // Refresh list after backfill
-      fetchVideos(committed);
+      fetchVideos(committed, includeHidden);
     } catch (e) {
       alert(`Backfill failed: ${e instanceof Error ? e.message : String(e)}`);
       setBackfillState("idle");
@@ -475,7 +512,7 @@ export function Archive() {
       setKpiResult(data);
       setKpiState("done");
       // Refresh list to show updated KPI timestamps
-      fetchVideos(committed);
+      fetchVideos(committed, includeHidden);
     } catch (e) {
       alert(`KPI poll failed: ${e instanceof Error ? e.message : String(e)}`);
       setKpiState("idle");
@@ -573,6 +610,30 @@ export function Archive() {
             <strong style={{ color: BRAND.ink }}>{kpiResult.polled} polled</strong>
           </span>
         )}
+
+        <div style={{ width: 1, height: 24, background: BRAND.border }} />
+
+        {/* Show hidden toggle */}
+        <button
+          onClick={() => setIncludeHidden((prev) => !prev)}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            borderRadius: 20,
+            border: `1px solid ${includeHidden ? BRAND.navy : BRAND.border}`,
+            cursor: "pointer",
+            background: includeHidden ? BRAND.navy : "#fff",
+            color: includeHidden ? "#fff" : BRAND.sub,
+            transition: "background 0.1s, color 0.1s",
+            whiteSpace: "nowrap",
+          }}
+          title={includeHidden ? "Click to hide the hidden videos again" : "Click to show videos you have hidden"}
+        >
+          {includeHidden
+            ? `Showing hidden (${hiddenCount})`
+            : "Show hidden"}
+        </button>
       </div>
 
       {/* Filter bar */}
@@ -723,22 +784,37 @@ export function Archive() {
                       >
                         {expandedId === v.id ? "[-]" : "[+]"}
                       </button>
-                      <a
-                        href={`https://youtu.be/${v.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Play on YouTube"
-                        style={{
-                          color: BRAND.red,
-                          fontSize: 15,
-                          lineHeight: 1,
-                          textDecoration: "none",
-                          flexShrink: 0,
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        ▶
-                      </a>
+                      {v.unavailable_since ? (
+                        <span
+                          title="Deleted or made private on YouTube — your archived copy is retained."
+                          style={{
+                            fontSize: 15,
+                            lineHeight: 1,
+                            flexShrink: 0,
+                            color: "#bbb",
+                            cursor: "default",
+                          }}
+                        >
+                          ▶
+                        </span>
+                      ) : (
+                        <a
+                          href={`https://youtu.be/${v.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Play on YouTube"
+                          style={{
+                            color: BRAND.red,
+                            fontSize: 15,
+                            lineHeight: 1,
+                            textDecoration: "none",
+                            flexShrink: 0,
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          ▶
+                        </a>
+                      )}
                       {editingId === v.id ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 }}>
                           <input
@@ -785,6 +861,24 @@ export function Archive() {
                               ✏
                             </button>
                           </span>
+                          {v.unavailable_since && (
+                            <span
+                              title="Deleted or made private on YouTube — your archived copy is retained."
+                              style={{
+                                alignSelf: "flex-start",
+                                fontSize: 10,
+                                fontWeight: 700,
+                                background: "#fffbeb",
+                                color: "#92400e",
+                                border: "1px solid #fcd34d",
+                                borderRadius: 4,
+                                padding: "2px 6px",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Unavailable on YouTube
+                            </span>
+                          )}
                           {v.clips_generated && (
                             <button onClick={() => navigate("video-approval", { series: v.id })} title="Review the generated reel for approval"
                               style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, cursor: "pointer", color: BRAND.red, fontSize: 11, fontWeight: 600 }}>
@@ -839,9 +933,9 @@ export function Archive() {
                     </div>
                   </td>
 
-                  {/* Clip Studio (edit) + Download — icons swapped per request */}
+                  {/* Clip Studio (edit) + Download + Hide/Unhide */}
                   <td style={{ padding: "10px 12px" }}>
-                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
                       <button
                         onClick={() => navigate("clip-studio", { video: v.id })}
                         title="Open in Clip Studio"
@@ -863,7 +957,7 @@ export function Archive() {
                       <button
                         onClick={() => handleDownload(v)}
                         disabled={downloading === v.id}
-                        title="Download"
+                        title="Download archived copy"
                         aria-label="Download"
                         style={{
                           background: "none",
@@ -879,6 +973,45 @@ export function Archive() {
                       >
                         {downloading === v.id ? "…" : "⬇"}
                       </button>
+                      {v.hidden_at ? (
+                        <button
+                          onClick={() => handleUnhide(v)}
+                          disabled={hidingId === v.id}
+                          title="Unhide — restore to default list"
+                          aria-label="Unhide"
+                          style={{
+                            background: "none",
+                            border: `1px solid ${BRAND.border}`,
+                            borderRadius: 5,
+                            cursor: hidingId === v.id ? "not-allowed" : "pointer",
+                            padding: "3px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: hidingId === v.id ? "#bbb" : BRAND.navy,
+                          }}
+                        >
+                          {hidingId === v.id ? "…" : "Unhide"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleHide(v)}
+                          disabled={hidingId === v.id}
+                          title="Hide — remove from default list (archive copy retained)"
+                          aria-label="Hide"
+                          style={{
+                            background: "none",
+                            border: `1px solid ${BRAND.border}`,
+                            borderRadius: 5,
+                            cursor: hidingId === v.id ? "not-allowed" : "pointer",
+                            padding: "3px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: hidingId === v.id ? "#bbb" : BRAND.sub,
+                          }}
+                        >
+                          {hidingId === v.id ? "…" : "Hide"}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

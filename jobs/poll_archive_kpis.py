@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import adapters.youtube_stats as yt_stats
 from app.models import Video, init_db
+from core.video_availability import availability_from_batch
 
 
 def _run_for_tenant(db, tenant_id: int, limit: int | None = None) -> dict:
@@ -28,14 +29,31 @@ def _run_for_tenant(db, tenant_id: int, limit: int | None = None) -> dict:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     for v in videos:
-        stats = stats_map.get(v.id)
-        if stats is None:
-            row = db.get(Video, v.id)
-            if row:
-                row.kpis_polled_at = now
-                db.add(row)
+        availability = availability_from_batch(v.id, stats_map)
+        stats = stats_map.get(v.id) if stats_map else None
+
+        row = db.get(Video, v.id)
+        if not row:
             continue
 
+        if availability == "unavailable":
+            if row.unavailable_since is None:
+                row.unavailable_since = now
+            row.kpis_polled_at = now
+            db.add(row)
+            continue
+
+        if availability == "available":
+            row.unavailable_since = None
+
+        if availability == "unknown":
+            # Transient API failure — stamp poll time but leave unavailable_since unchanged
+            row.kpis_polled_at = now
+            db.add(row)
+            continue
+
+        # availability == "available": update KPIs as normal
+        assert stats is not None
         latest = yt_stats.latest_comment_at(v.id)
         last_comment_dt: datetime | None = None
         if latest:
@@ -46,15 +64,13 @@ def _run_for_tenant(db, tenant_id: int, limit: int | None = None) -> dict:
             except ValueError:
                 last_comment_dt = None
 
-        row = db.get(Video, v.id)
-        if row:
-            row.views = stats["views"]
-            row.likes = stats["likes"]
-            row.comment_count = stats["comments"]
-            if last_comment_dt is not None:
-                row.last_comment_at = last_comment_dt
-            row.kpis_polled_at = now
-            db.add(row)
+        row.views = stats["views"]
+        row.likes = stats["likes"]
+        row.comment_count = stats["comments"]
+        if last_comment_dt is not None:
+            row.last_comment_at = last_comment_dt
+        row.kpis_polled_at = now
+        db.add(row)
 
     db.commit()
     return {"polled": len(videos)}

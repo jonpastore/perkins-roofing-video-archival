@@ -67,6 +67,8 @@ class Video(Base):
     last_pulled_at = Column(DateTime)
     clips_generated_at = Column(DateTime)
     comments_crawled_at = Column(DateTime)
+    unavailable_since = Column(DateTime, nullable=True)
+    hidden_at = Column(DateTime, nullable=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_videos_tenant_id", "tenant_id"),)
 
