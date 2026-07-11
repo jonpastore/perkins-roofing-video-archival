@@ -40,6 +40,10 @@ _MATRIX = {
         "estimating_view",
         "quoting_view", "quoting_create", "quoting_send",
     },
+    # knowify_admin — trigger sync + reconnect OAuth. Admin-only (admin has "*").
+    # Do NOT grant to web_admin/sales/content roles (least privilege).
+    # Read routes (/status, /customers, /invoices, /payments, /raw/*) use billing_manage.
+    "knowify_admin": set(),  # no standalone grants; admin satisfies via "*"
     # platform_admin — cross-tenant management only; no wildcard, no operational actions.
     # Session/impersonation mechanics defined in TRD-F4.
     "platform_admin": {

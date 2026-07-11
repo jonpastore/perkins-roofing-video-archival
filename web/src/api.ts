@@ -585,3 +585,135 @@ export async function recordPayment(
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
+
+// ── Knowify mirror (Wave 6 — read-only sync health + data) ───────────────────
+
+export interface KnowifySyncHealth {
+  entity: string;
+  last_status: string;          // never|ok|partial|error|auth_error|skipped
+  last_run_at: string | null;
+  last_high_water: string | null;
+  rows_seen: number;
+  last_error: string | null;
+  updated_at: string | null;
+}
+
+export interface KnowifyCustomer {
+  id: number;
+  display_name: string;
+  company_name: string | null;
+  email: string | null;
+  phone: string | null;
+  knowify_customer_id: string | null;
+}
+
+export interface KnowifyInvoice {
+  id: number;
+  invoice_number: number | null;
+  knowify_invoice_id: string | null;
+  knowify_invoice_number: string | null;   // Knowify user-facing string (may be non-numeric)
+  job_id: number;
+  customer_id: number;
+  status: string;
+  total: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+}
+
+export interface KnowifyPayment {
+  id: number;
+  invoice_id: number;
+  knowify_payment_id: string | null;
+  amount: string | null;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  payment_date: string | null;
+}
+
+export interface KnowifyRawRecord {
+  id: number;
+  knowify_id: string;
+  content_hash: string;
+  high_water: string | null;
+  is_present: boolean;
+  deleted_at: string | null;    // set when tombstoned (absent from last full pull)
+  fetched_at: string | null;
+}
+
+export interface KnowifyRawPage {
+  entity: string;
+  total: number;
+  offset: number;
+  limit: number;
+  items: KnowifyRawRecord[];
+}
+
+export interface KnowifySyncResult {
+  triggered: boolean;
+  status?: string;
+  error?: string;
+}
+
+export interface KnowifyReconnectResult {
+  status: string;
+  instructions: string;
+  oauth_server_status: string;
+}
+
+/** Per-entity sync health for the caller's tenant. Role: billing_manage. */
+export async function getKnowifyStatus(): Promise<KnowifySyncHealth[]> {
+  const r = await apiFetch("/knowify/status");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Tenant-scoped Knowify customers with crosswalk fields. Role: billing_manage. */
+export async function listKnowifyCustomers(): Promise<KnowifyCustomer[]> {
+  const r = await apiFetch("/knowify/customers");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Tenant-scoped invoices with Knowify crosswalk fields. Role: billing_manage. */
+export async function listKnowifyInvoices(): Promise<KnowifyInvoice[]> {
+  const r = await apiFetch("/knowify/invoices");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Tenant-scoped payments with Knowify crosswalk fields. Role: billing_manage. */
+export async function listKnowifyPayments(): Promise<KnowifyPayment[]> {
+  const r = await apiFetch("/knowify/payments");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Paged raw mirror records for any entity, including tombstoned rows. Role: billing_manage. */
+export async function listKnowifyRaw(
+  entity: string,
+  opts: { limit?: number; offset?: number; is_present?: boolean } = {},
+): Promise<KnowifyRawPage> {
+  const params = new URLSearchParams();
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts.offset !== undefined) params.set("offset", String(opts.offset));
+  if (opts.is_present !== undefined) params.set("is_present", String(opts.is_present));
+  const qs = params.toString() ? `?${params}` : "";
+  const r = await apiFetch(`/knowify/raw/${encodeURIComponent(entity)}${qs}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Trigger an out-of-band Knowify sync run. Role: knowify_admin (admin-only). */
+export async function triggerKnowifySync(): Promise<KnowifySyncResult> {
+  const r = await apiFetch("/knowify/sync-now", { method: "POST" });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Surface Knowify OAuth reconnect status and operator instructions. Role: knowify_admin (admin-only). */
+export async function knowifyReconnect(): Promise<KnowifyReconnectResult> {
+  const r = await apiFetch("/knowify/reconnect", { method: "POST" });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}

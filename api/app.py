@@ -19,6 +19,7 @@ from api.routes.email import router as email_router
 from api.routes.estimator import router as estimator_router
 from api.routes.faq import router as faq_router
 from api.routes.invoices import router as invoices_router
+from api.routes.knowify import router as knowify_router
 from api.routes.price_book import router as price_book_router
 from api.routes.proposal_gen import router as proposal_gen_router
 from api.routes.logs import router as logs_router
@@ -86,6 +87,7 @@ app.include_router(topics_router)
 app.include_router(estimator_router)
 app.include_router(pricing_configs_router)
 app.include_router(invoices_router)
+app.include_router(knowify_router)
 app.include_router(price_book_router)
 app.include_router(proposal_gen_router)
 app.include_router(measurements_router)
