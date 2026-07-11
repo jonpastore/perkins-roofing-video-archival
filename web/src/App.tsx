@@ -22,6 +22,7 @@ import { ProposalBuilder } from "./pages/ProposalBuilder";
 import { Invoices } from "./pages/Invoices";
 import { ContractFaq } from "./pages/ContractFaq";
 import { AdminConfig } from "./pages/AdminConfig";
+import { Knowify } from "./pages/Knowify";
 import { BRAND, FONT, Spinner } from "./ui";
 
 // ---------------------------------------------------------------------------
@@ -107,6 +108,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
       label: "Admin",
       tabs: [
         ["admin-config", "Admin Config"],
+        ["knowify", "Knowify"],
         ["logs", "Logs"],
       ],
     },
@@ -548,6 +550,7 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "invoices" && <Invoices />}
       {tab === "contract-faq" && <ContractFaq />}
       {tab === "admin-config" && <AdminConfig role={role} />}
+      {tab === "knowify" && <Knowify />}
       {/* status-view: Marketing > Status — renders the same Status component as dashboard */}
       {tab === "status-view" && <Status />}
       {/* Legacy backward-compat: users/config keys redirect into admin-config sub-tabs.
