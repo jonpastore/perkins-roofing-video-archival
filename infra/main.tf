@@ -31,9 +31,9 @@ provider "google" {
 locals {
   required_apis = toset([
     "aiplatform.googleapis.com",
-    "cloudidentity.googleapis.com", # Workspace group mgmt (dmarc@ report group; admin ops via ADC)
-    "apikeys.googleapis.com",       # API key management (squares key minted via TF)
-    "solar.googleapis.com",         # Google Solar API — Squares roof measurement (pitch/azimuth/area per segment)
+    "cloudidentity.googleapis.com",     # Workspace group mgmt (dmarc@ report group; admin ops via ADC)
+    "apikeys.googleapis.com",           # API key management (squares key minted via TF)
+    "solar.googleapis.com",             # Google Solar API — Squares roof measurement (pitch/azimuth/area per segment)
     "geocoding-backend.googleapis.com", # Geocoding for address -> lat/lng (Squares)
     "speech.googleapis.com",
     "sqladmin.googleapis.com",
@@ -447,23 +447,29 @@ resource "google_cloud_run_v2_service" "api" {
 # ---------------------------------------------------------------------------
 
 locals {
-  job_names = toset(["ingest", "render", "article", "social"])
+  job_names = toset(["ingest", "render", "article", "social", "knowify-sync", "knowify-keepwarm"])
   # ingest (STT audio demux) and render both download full source MP4s to a memory-backed /tmp;
   # the largest Perkins video is ~2 GB, so they need real headroom or the container OOM-kills
   # (SIGKILL) mid-batch. article/social are lightweight (LLM/HTTP only).
+  # knowify-sync: full-pull of all Knowify entities per run + DB upserts; 1Gi/30min is ample
+  #   at single-tenant volume. knowify-keepwarm: token-only refresh, no data; minimal resources.
   job_memory = {
-    ingest  = "8Gi"
-    render  = "8Gi"
-    article = "2Gi"
-    social  = "2Gi"
+    ingest           = "8Gi"
+    render           = "8Gi"
+    article          = "2Gi"
+    social           = "2Gi"
+    knowify-sync     = "1Gi"
+    knowify-keepwarm = "512Mi"
   }
   # ingest may run a long-form batch STT (a caption-less 97-min podcast's batch takes ~40 min);
   # give it (and render) 2h so a legit long job finishes instead of being killed mid-transcript.
   job_timeout = {
-    ingest  = "7200s"
-    render  = "7200s"
-    article = "3600s"
-    social  = "3600s"
+    ingest           = "7200s"
+    render           = "7200s"
+    article          = "3600s"
+    social           = "3600s"
+    knowify-sync     = "1800s"
+    knowify-keepwarm = "300s"
   }
 }
 
@@ -652,6 +658,179 @@ resource "google_cloud_scheduler_job" "run_ingest" {
 }
 
 # ---------------------------------------------------------------------------
+# 10b. Cloud Scheduler — Knowify hourly sync (08:00-18:00 ET, 11 runs/day)
+#
+# v1 = single writer (TRD §3): only knowify-sync refreshes+rotates the token.
+# The keep-warm job below covers the 14h overnight gap (18:00→08:00 ET).
+# Wave-0 evidence: the stored refresh token was dead within <1 day of disuse,
+# proving the overnight gap exceeds the idle-expiry window. Both jobs share
+# Postgres advisory lock 8274125 (in core/knowify/tokens.py) so no writer can
+# publish a stale rotated token as :latest.
+# ---------------------------------------------------------------------------
+
+resource "google_cloud_scheduler_job" "knowify_sync" {
+  name      = "knowify-sync"
+  region    = var.region
+  schedule  = "0 8-18 * * *"
+  time_zone = "America/New_York"
+
+  http_target {
+    uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/knowify-sync:run"
+    http_method = "POST"
+
+    oauth_token {
+      service_account_email = google_service_account.scheduler_sa.email
+    }
+  }
+
+  depends_on = [google_project_service.apis, google_cloud_run_v2_job.jobs]
+}
+
+# Keep-warm: refreshes the Knowify OAuth token once nightly to prevent the
+# refresh token from lapsing during the 14h overnight gap (last sync 18:00,
+# first sync 08:00 ET). Cadence is set to 02:00 ET — adjust once the exact
+# idle-expiry TTL is measured on the first live pull (Wave-9 open question:
+# if idle-TTL > 14h, disable this scheduler; the IaC resource stays).
+# ponytail: conditional deploy — resource is written; apply is gated on
+#   Wave-9 idle-TTL measurement. If TTL > 14h, leave paused or remove scheduler.
+resource "google_cloud_scheduler_job" "knowify_keepwarm" {
+  name      = "knowify-keepwarm"
+  region    = var.region
+  schedule  = "0 2 * * *"
+  time_zone = "America/New_York"
+
+  http_target {
+    uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/knowify-keepwarm:run"
+    http_method = "POST"
+
+    oauth_token {
+      service_account_email = google_service_account.scheduler_sa.email
+    }
+  }
+
+  depends_on = [google_project_service.apis, google_cloud_run_v2_job.jobs]
+}
+
+# ---------------------------------------------------------------------------
+# 10c. Secret Manager — knowify-tokens (OAuth token blob)
+#      Container only — value is bootstrap-populated by Jon after a fresh
+#      knowify_oauth.py login (Wave-9 step 4). Never committed to git or TF.
+#      Mirrors the db_password / internal_secret standalone pattern (NOT in
+#      local.secret_ids for_each, because this secret needs resource-scoped
+#      IAM that the for_each batch cannot express per-secret).
+# ---------------------------------------------------------------------------
+
+resource "google_secret_manager_secret" "knowify_tokens" {
+  secret_id = "knowify-tokens"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+# Placeholder version so Cloud Run --set-secrets can reference :latest at
+# deploy time before Jon bootstraps the real token. Jon replaces this with
+# the real token blob via Wave-9 bootstrap step (gcloud secrets versions add).
+# The placeholder value is intentionally invalid so any accidental use surfaces
+# as an auth error immediately rather than silently passing a bad token.
+resource "google_secret_manager_secret_version" "knowify_tokens_placeholder" {
+  secret      = google_secret_manager_secret.knowify_tokens.id
+  secret_data = "{\"_placeholder\":\"bootstrap-required-see-wave9\"}"
+
+  lifecycle {
+    # Jon replaces this with the real token out-of-band; ignore subsequent
+    # gcloud-managed versions so terraform plan stays clean after bootstrap.
+    ignore_changes = [secret_data]
+  }
+}
+
+# IAM — secretAccessor for jobs-sa is already granted project-wide at line
+# 235-238 (google_project_iam_member.jobs_secretmanager). No duplicate needed.
+#
+# secretVersionAdder is resource-scoped to knowify-tokens ONLY — deliberate
+# divergence from the project-wide pattern at main.tf:193-197. The sync job
+# rotates the refresh token and must write new secret versions; granting
+# secretVersionAdder project-wide would allow it to overwrite ANY secret,
+# which violates least-privilege. Scope it to the one secret it actually writes.
+resource "google_secret_manager_secret_iam_member" "knowify_tokens_version_adder" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.knowify_tokens.secret_id
+  role      = "roles/secretmanager.secretVersionAdder"
+  member    = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
+# ---------------------------------------------------------------------------
+# 10d. Alerting — Knowify sync failure / stale-sync (AC-18, TRD §9a)
+#      Fires when: (a) any execution logs auth_error status, OR (b) no
+#      successful knowify-sync execution has been logged in >24h (stale sync).
+#      Notification channel reuses var.alert_email (variables.tf:25).
+#      guard: count=0 when alert_email is empty so terraform validate passes
+#      without the value set (mirrors the billing_budget guard pattern).
+# ---------------------------------------------------------------------------
+
+resource "google_monitoring_notification_channel" "knowify_alert_email" {
+  count        = var.alert_email != "" ? 1 : 0
+  display_name = "Knowify Sync Alerts — Email"
+  type         = "email"
+  labels = {
+    email_address = var.alert_email
+  }
+  depends_on = [google_project_service.apis]
+}
+
+# Log-based metric: count executions where the sync job logged auth_error
+# or the Cloud Run execution itself failed (non-zero exit → job/execution failed log).
+resource "google_logging_metric" "knowify_sync_failures" {
+  name   = "knowify_sync_failures"
+  filter = <<-EOT
+    resource.type="cloud_run_job"
+    resource.labels.job_name="knowify-sync"
+    (
+      jsonPayload.last_status="auth_error"
+      OR textPayload=~"auth_error"
+      OR severity="ERROR"
+    )
+  EOT
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+# Alert policy: fires when the failure metric exceeds 0 in any 10-minute window.
+resource "google_monitoring_alert_policy" "knowify_sync_failure_alert" {
+  count        = var.alert_email != "" ? 1 : 0
+  display_name = "Knowify Sync — auth_error or job failure"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "knowify-sync logged auth_error or non-zero exit"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/knowify_sync_failures\" resource.type=\"cloud_run_job\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "600s"
+        per_series_aligner = "ALIGN_COUNT"
+      }
+    }
+  }
+
+  notification_channels = [
+    google_monitoring_notification_channel.knowify_alert_email[0].name,
+  ]
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+
+  depends_on = [google_logging_metric.knowify_sync_failures]
+}
+
+# ---------------------------------------------------------------------------
 # 11. Secret Manager — secret containers only (no versions)
 #     Populate secret values via bootstrap.sh after billing is confirmed.
 # ---------------------------------------------------------------------------
@@ -669,8 +848,8 @@ locals {
     "google-idp-client-secret",
     "whisper-token",
     "youtube-oauth-refresh-token",
-    "vertex-dev-sa-key",  # deepsec M1: local-dev Vertex SA key (value added out-of-band)
-    "cloudflare-degenito-api-token",  # ez-bids: degenito.ai zone DNS (value from 1Password, added out-of-band)
+    "vertex-dev-sa-key",             # deepsec M1: local-dev Vertex SA key (value added out-of-band)
+    "cloudflare-degenito-api-token", # ez-bids: degenito.ai zone DNS (value from 1Password, added out-of-band)
   ])
 }
 

@@ -41,6 +41,9 @@ SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP
 # YouTube reply posting (docs/YOUTUBE_REPLY_OAUTH.md): refresh token minted by Jon and
 # stored 2026-07-10 (Cloud Run refuses a :latest ref on an empty secret — version exists).
 SECRETS="${SECRETS},YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:latest"
+# Knowify OAuth token blob (Wave 8). Bootstrap-populated by Jon in Wave-9 step 4;
+# a placeholder version exists so :latest resolves at deploy time.
+SECRETS="${SECRETS},KNOWIFY_TOKENS_SECRET=knowify-tokens:latest"
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .
@@ -54,18 +57,30 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --allow-unauthenticated --set-secrets "$SECRETS"
 
 # Point each job at the same image with its module entrypoint.
-# Terraform defines these 4 jobs (main.tf job_names). --args uses the = form because the
+# Terraform defines these 6 jobs (main.tf job_names). --args uses the = form because the
 # value begins with '-m' (gcloud would otherwise parse it as a flag).
 declare -A JOBS=(
   [ingest]="jobs.ingest_worker" [render]="jobs.render_job"
-  [article]="jobs.article_job" [social]="jobs.social_job"
+  [article]="jobs.article_job"  [social]="jobs.social_job"
+  # knowify-sync: full hourly Knowify mirror (08:00-18:00 ET). Needs KNOWIFY_TOKENS_SECRET.
+  [knowify-sync]="jobs.knowify_sync"
+  # knowify-keepwarm: token-only refresh covering the 14h overnight gap. --refresh-only
+  # mode skips data fetch; both jobs share advisory lock 8274125 (core/knowify/tokens.py)
+  # so parallel refresh+rotate+write is race-free. Deploy conditional on Wave-9 idle-TTL
+  # measurement (if TTL > 14h, disable the knowify-keepwarm Cloud Scheduler instead).
 )
 for job in "${!JOBS[@]}"; do
-  echo "== Deploy job: $job (${JOBS[$job]}) =="
+  # knowify-keepwarm passes an extra --refresh-only flag to skip data sync.
+  if [[ "$job" == "knowify-keepwarm" ]]; then
+    ARGS="-m,jobs.knowify_sync,--refresh-only"
+  else
+    ARGS="-m,${JOBS[$job]}"
+  fi
+  echo "== Deploy job: $job =="
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
     --service-account "jobs-sa@${PROJECT}.iam.gserviceaccount.com" \
     --set-cloudsql-instances "$CONN" \
-    --command=python --args="-m,${JOBS[$job]}" \
+    --command=python --args="$ARGS" \
     --set-env-vars "^|^${BASE_ENV}|${CFG_ENV}" \
     --set-secrets "$SECRETS"
 done
