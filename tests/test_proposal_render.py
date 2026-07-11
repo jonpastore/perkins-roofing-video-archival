@@ -330,3 +330,95 @@ class TestSandboxedRender:
         with _pytest.raises(jinja2.exceptions.SecurityError):
             render_proposal_html(
                 "{{ ''.__class__.__mro__[1].__subclasses__() }}", ctx)
+
+
+# ---------------------------------------------------------------------------
+# T&C AI-FAQ rendering
+# ---------------------------------------------------------------------------
+
+class TestTcAiFaqRendering:
+    """Tests for tc_summary_bullets and tc_faq_items rendering in DEFAULT_TEMPLATE_HTML."""
+
+    def _ctx(self, **overrides) -> ProposalRenderContext:
+        base = _minimal_context()
+        for k, v in overrides.items():
+            object.__setattr__(base, k, v)
+        return base
+
+    def test_no_ai_blocks_when_bullets_none(self):
+        ctx = self._ctx(tc_summary_bullets=None, tc_faq_items=None)
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert 'class="tc-ai-cover"' not in html
+        assert 'class="tc-ai-faq"' not in html
+
+    def test_no_ai_blocks_when_bullets_empty_list(self):
+        ctx = self._ctx(tc_summary_bullets=[], tc_faq_items=None)
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert 'class="tc-ai-cover"' not in html
+
+    def test_cover_letter_rendered_when_bullets_present(self):
+        ctx = self._ctx(
+            tc_summary_bullets=["Bullet one", "Bullet two"],
+            tc_faq_items=None,
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert 'class="tc-ai-cover"' in html
+        assert "FAQ" in html
+
+    def test_bullets_appear_in_output(self):
+        ctx = self._ctx(
+            tc_summary_bullets=["Bullet one", "Bullet two"],
+            tc_faq_items=None,
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "Bullet one" in html
+        assert "Bullet two" in html
+
+    def test_faq_block_rendered_when_items_present(self):
+        ctx = self._ctx(
+            tc_summary_bullets=None,
+            tc_faq_items=[{"q": "What is the payment schedule?", "a": "30% upfront."}],
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert 'class="tc-ai-faq"' in html
+        assert "What is the payment schedule?" in html
+        assert "30% upfront." in html
+
+    def test_both_blocks_rendered_when_both_set(self):
+        ctx = self._ctx(
+            tc_summary_bullets=["Bullet one"],
+            tc_faq_items=[{"q": "Q?", "a": "A."}],
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert 'class="tc-ai-cover"' in html
+        assert 'class="tc-ai-faq"' in html
+
+    def test_xss_in_bullet_is_escaped(self):
+        ctx = self._ctx(
+            tc_summary_bullets=['<script>alert("xss")</script>'],
+            tc_faq_items=None,
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "<script>" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_xss_in_faq_question_is_escaped(self):
+        ctx = self._ctx(
+            tc_summary_bullets=None,
+            tc_faq_items=[{"q": '<script>evil()</script>', "a": "A."}],
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "<script>" not in html
+
+    def test_xss_in_faq_answer_is_escaped(self):
+        ctx = self._ctx(
+            tc_summary_bullets=None,
+            tc_faq_items=[{"q": "Q?", "a": '<img src=x onerror=alert(1)>'}],
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "<img" not in html
+
+    def test_default_template_renders_when_both_none(self):
+        ctx = self._ctx(tc_summary_bullets=None, tc_faq_items=None)
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert len(html) > 100

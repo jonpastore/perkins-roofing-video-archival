@@ -13,7 +13,7 @@ The default Perkins template is available as DEFAULT_TEMPLATE_HTML.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import jinja2
@@ -48,6 +48,8 @@ class ProposalRenderContext:
     tenant_name: str
     tenant_license: str | None
     accept_url: str
+    tc_summary_bullets: list[str] | None = field(default=None)
+    tc_faq_items: list[dict] | None = field(default=None)
 
 
 class _SilentUndefined(jinja2.Undefined):
@@ -130,6 +132,8 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "license": ctx.tenant_license or "",
         },
         "accept_url": ctx.accept_url,
+        "tc_summary_bullets": ctx.tc_summary_bullets,
+        "tc_faq_items": ctx.tc_faq_items,
     }
 
 
@@ -182,6 +186,21 @@ DEFAULT_TEMPLATE_HTML = """\
     .accept-section { margin-top: 28px; text-align: center; }
     .accept-section a { display: inline-block; background: #C0392B; color: #fff; padding: 14px 32px; border-radius: 4px; text-decoration: none; font-size: 16px; font-weight: bold; letter-spacing: 0.5px; }
     .tc-block { margin-top: 36px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 14px; }
+    .tc-ai-cover { margin-top: 24px; padding: 16px 20px; background: #f4f8ff; border-left: 4px solid #2471a3; font-size: 12px; color: #333; }
+    .tc-ai-cover p { margin: 0 0 10px 0; }
+    .tc-ai-cover ul { margin: 8px 0 12px 0; padding-left: 20px; }
+    .tc-ai-cover li { margin-bottom: 4px; }
+    .tc-ai-prompts { margin-top: 10px; }
+    .tc-ai-prompts p { font-weight: bold; margin: 0 0 4px 0; }
+    .tc-ai-prompts ol { margin: 0; padding-left: 20px; }
+    .tc-ai-prompts li { margin-bottom: 2px; font-style: italic; color: #555; }
+    .tc-ai-disclaimer { margin-top: 10px; font-size: 11px; color: #888; font-style: italic; }
+    .tc-ai-faq { margin-top: 24px; page-break-before: always; }
+    .tc-ai-faq h2 { font-size: 15px; color: #2471a3; border-bottom: 1px solid #cce; padding-bottom: 4px; margin-top: 0; }
+    .tc-ai-faq table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .tc-ai-faq th { background: #2471a3; color: #fff; padding: 8px 12px; text-align: left; }
+    .tc-ai-faq td { padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
+    .tc-ai-faq td:first-child { font-weight: bold; width: 35%; }
     .footer { margin-top: 40px; font-size: 11px; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 12px; }
   </style>
 </head>
@@ -272,6 +291,47 @@ DEFAULT_TEMPLATE_HTML = """\
       are sent to clients. Do not use this template in production until T&amp;C are approved.]
     </p>
   </div>
+
+  {% if tc_summary_bullets %}
+  <div class="tc-ai-cover">
+    <p>While we recommend reading everything yourself and thoroughly understanding the agreement you&#39;re entering into, we&#39;ve created an FAQ for your review on the last page and here&#39;s a concise summary:</p>
+    <ul>
+      {% for bullet in tc_summary_bullets %}
+      <li>{{ bullet }}</li>
+      {% endfor %}
+    </ul>
+    <div class="tc-ai-prompts">
+      <p>Questions you might want to ask your AI assistant about this contract:</p>
+      <ol>
+        <li>Summarize my obligations and what I&#39;m agreeing to.</li>
+        <li>What are the payment terms, deposits, and any penalties or late fees?</li>
+        <li>What are my cancellation/rescission rights and any fees?</li>
+        <li>What warranties and guarantees am I getting, and what voids them?</li>
+        <li>What happens in delays, weather, or unforeseen conditions?</li>
+        <li>What am I responsible for vs. the contractor?</li>
+      </ol>
+    </div>
+    <p class="tc-ai-disclaimer">AI is not a replacement for legal counsel, and we always recommend for full validation and protection that you have an attorney review this agreement.</p>
+  </div>
+  {% endif %}
+
+  {% if tc_faq_items %}
+  <div class="tc-ai-faq">
+    <h2>Frequently Asked Questions</h2>
+    <table>
+      <tr>
+        <th>Question</th>
+        <th>Answer</th>
+      </tr>
+      {% for item in tc_faq_items %}
+      <tr>
+        <td>{{ item.q }}</td>
+        <td>{{ item.a }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
 
   <div class="footer">
     <p>{{ tenant.name }} &nbsp;|&nbsp; {% if tenant.license %}License #{{ tenant.license }} &nbsp;|&nbsp; {% endif %}This proposal is valid for 30 days from the date above.</p>

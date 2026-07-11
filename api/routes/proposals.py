@@ -40,6 +40,7 @@ import logging
 import os
 from contextlib import contextmanager
 from datetime import timezone
+from functools import lru_cache
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -77,6 +78,24 @@ from core.proposal_render import (
 )
 
 _log = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=8)
+def _tc_ai_blocks(tc_text: str):
+    """Return (summary_bullets, faq_items) generated from a T&C text.
+
+    Cached: the T&C is versioned/static, so the two LLM calls run once per process
+    per distinct text — not on every PDF render. lru_cache never stores exceptions,
+    so a transient LLM failure isn't cached and retries on the next render.
+    """
+    import app.llm as llm_mod  # noqa: PLC0415
+    from core.contract_faq import build_contract_faq_prompt, grounding_gate, parse_contract_faq  # noqa: PLC0415
+    from core.tc_summary import build_tc_summary_prompt, parse_tc_summary  # noqa: PLC0415
+
+    bullets = parse_tc_summary(llm_mod.chat(build_tc_summary_prompt(tc_text))) or None
+    faq_items = parse_contract_faq(llm_mod.chat(build_contract_faq_prompt(tc_text)))
+    kept, _ = grounding_gate(faq_items, tc_text)
+    return bullets, (kept or None)
 
 router = APIRouter(tags=["quoting_proposals"])
 
@@ -779,6 +798,13 @@ def get_proposal_pdf(
         tenant_license=None,
         accept_url="",
     )
+
+    # Attach the AI-FAQ block (cached per T&C text; degrades gracefully on any failure)
+    try:
+        from core.tc_seed import DRAFT_TC_TEXT  # noqa: PLC0415
+        ctx.tc_summary_bullets, ctx.tc_faq_items = _tc_ai_blocks(DRAFT_TC_TEXT)
+    except Exception as exc:
+        _log.warning("tc_ai_faq generation failed for proposal %s: %s", proposal_id, exc)
 
     # Use default template if no template attached
     template_html = None
