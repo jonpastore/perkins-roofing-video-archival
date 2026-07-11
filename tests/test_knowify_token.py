@@ -16,6 +16,7 @@ import json
 import logging
 import runpy
 import sys
+import time
 import urllib.error
 from unittest.mock import MagicMock, patch
 
@@ -396,6 +397,16 @@ def test_mcp_expired_true_without_expiresAt():
 
 def test_mcp_expired_true_when_past():
     assert T._mcp_expired({"expiresAt": _PAST_MS}) is True
+
+
+def test_mcp_expired_true_within_two_hour_refresh_window():
+    near_future_ms = int(time.time() * 1000) + 90 * 60 * 1000
+    assert T._mcp_expired({"expiresAt": near_future_ms}) is True
+
+
+def test_mcp_expired_false_outside_two_hour_refresh_window():
+    far_enough_ms = int(time.time() * 1000) + 3 * 60 * 60 * 1000
+    assert T._mcp_expired({"expiresAt": far_enough_ms}) is False
 
 
 def test_mcp_expired_false_when_far_future():

@@ -157,7 +157,12 @@ def refresh(tok: dict, sm_client=None, project: str = "") -> dict:
 # --------------------------------------------------------------------------- #
 
 MCP_SECRET_ID = "knowify-mcp-tokens"
-_ACCESS_SKEW_MS = 300_000  # refresh 5 min before expiry to avoid mid-run 401s
+# Refresh when the access token is within this window of expiry. The keep-warm/sync
+# jobs run hourly, so a small window (e.g. 5 min) is easy to miss between ticks and the
+# refresh token could then lapse. 2h > the 1h scheduler cadence guarantees at least one
+# run lands inside the window before expiry. (MCP access tokens observed ~8h TTL, so this
+# refreshes roughly every ~6h — it does NOT burn a rotation on every run.)
+_ACCESS_SKEW_MS = 2 * 60 * 60 * 1000  # 2 hours
 
 
 def load_mcp_tokens(sm_client=None, project: str = "") -> dict:
