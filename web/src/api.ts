@@ -874,7 +874,8 @@ export interface Payment {
   notes: string | null;
   knowify_payment_id: string | null;
   created_at: string | null;
-  invoice_number: string | null;
+  invoice_number: number | null;
+  knowify_invoice_number: string | null;
   customer_display_name: string | null;
 }
 

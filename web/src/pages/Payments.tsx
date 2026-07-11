@@ -27,6 +27,12 @@ function fmtDate(s: string | null | undefined): string {
   return new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function invoiceLabel(p: Pick<Payment, "invoice_number" | "knowify_invoice_number" | "invoice_id">): string {
+  if (p.invoice_number != null) return `#${p.invoice_number}`;
+  if (p.knowify_invoice_number) return `Knowify #${p.knowify_invoice_number}`;
+  return p.invoice_id != null ? `Invoice ${p.invoice_id}` : "—";
+}
+
 // ── Detail panel ───────────────────────────────────────────────────────────────
 
 function PaymentDetail({ id, onClose }: { id: number; onClose: () => void }) {
@@ -79,7 +85,7 @@ function PaymentDetail({ id, onClose }: { id: number; onClose: () => void }) {
             {field("Amount", fmtUSD(payment.amount))}
             {field("Method", payment.method)}
             {field("Reference", payment.reference)}
-            {field("Invoice #", payment.invoice_number != null ? `#${payment.invoice_number}` : null)}
+            {field("Invoice #", invoiceLabel(payment))}
             {field("Invoice ID", payment.invoice_id)}
             {field("Customer", payment.customer_display_name)}
             {field("Notes", payment.notes)}
@@ -225,7 +231,7 @@ export function Payments() {
       key: "invoice_number" as const,
       header: "Invoice #",
       sortable: true,
-      render: (r: Payment) => r.invoice_number != null ? `#${r.invoice_number}` : "—",
+      render: (r: Payment) => invoiceLabel(r),
     },
     {
       key: "customer_display_name" as const,

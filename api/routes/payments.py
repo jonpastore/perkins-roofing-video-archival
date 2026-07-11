@@ -34,7 +34,12 @@ _PAYMENT_SORT_COLS = {
 }
 
 
-def _payment_dict(p: Payment, invoice_number: int | None = None, customer_display_name: str | None = None) -> dict:
+def _payment_dict(
+    p: Payment,
+    invoice_number: int | None = None,
+    knowify_invoice_number: str | None = None,
+    customer_display_name: str | None = None,
+) -> dict:
     return {
         "id": p.id,
         "invoice_id": p.invoice_id,
@@ -46,6 +51,7 @@ def _payment_dict(p: Payment, invoice_number: int | None = None, customer_displa
         "knowify_payment_id": p.knowify_payment_id,
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "invoice_number": invoice_number,
+        "knowify_invoice_number": knowify_invoice_number,
         "customer_display_name": customer_display_name,
     }
 
@@ -103,7 +109,7 @@ def list_payments(
         base
         .outerjoin(Invoice, Payment.invoice_id == Invoice.id)
         .outerjoin(Customer, Invoice.customer_id == Customer.id)
-        .add_columns(Invoice.invoice_number, Customer.display_name)
+        .add_columns(Invoice.invoice_number, Invoice.knowify_invoice_number, Customer.display_name)
         .order_by(sort_expr)
         .offset(offset)
         .limit(limit)
@@ -111,8 +117,13 @@ def list_payments(
     rows = db.execute(joined).all()
     return {
         "items": [
-            _payment_dict(p, invoice_number=inv_num, customer_display_name=cust_name)
-            for p, inv_num, cust_name in rows
+            _payment_dict(
+                p,
+                invoice_number=inv_num,
+                knowify_invoice_number=knowify_inv_num,
+                customer_display_name=cust_name,
+            )
+            for p, inv_num, knowify_inv_num, cust_name in rows
         ],
         "total": total,
     }
@@ -125,12 +136,17 @@ def get_payment(
     db: Session = Depends(get_db_session),
 ):
     row = db.execute(
-        select(Payment, Invoice.invoice_number, Customer.display_name)
+        select(Payment, Invoice.invoice_number, Invoice.knowify_invoice_number, Customer.display_name)
         .outerjoin(Invoice, Payment.invoice_id == Invoice.id)
         .outerjoin(Customer, Invoice.customer_id == Customer.id)
         .where(Payment.id == payment_id)
     ).one_or_none()
     if row is None:
         raise HTTPException(404, "payment not found")
-    p, inv_num, cust_name = row
-    return _payment_dict(p, invoice_number=inv_num, customer_display_name=cust_name)
+    p, inv_num, knowify_inv_num, cust_name = row
+    return _payment_dict(
+        p,
+        invoice_number=inv_num,
+        knowify_invoice_number=knowify_inv_num,
+        customer_display_name=cust_name,
+    )
