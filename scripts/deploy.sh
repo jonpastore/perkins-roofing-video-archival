@@ -70,6 +70,7 @@ declare -A JOBS=(
   # mode skips data fetch; both jobs share advisory lock 8274125 (core/knowify/tokens.py)
   # so parallel refresh+rotate+write is race-free. Deploy conditional on Wave-9 idle-TTL
   # measurement (if TTL > 14h, disable the knowify-keepwarm Cloud Scheduler instead).
+  [knowify-keepwarm]="jobs.knowify_sync"
 )
 for job in "${!JOBS[@]}"; do
   # knowify-keepwarm passes an extra --refresh-only flag to skip data sync.
