@@ -41,7 +41,18 @@ def _engine(cloudsql: bool):
     def creator():
         return connector.connect(CONN, "pg8000", user="app", password=_password(), db="perkins")
 
-    return create_engine("postgresql+pg8000://", creator=creator, future=True)
+    engine = create_engine("postgresql+pg8000://", creator=creator, future=True)
+    # The app user is NOBYPASSRLS under FORCE RLS — stamp the tenant GUC on every new
+    # connection so promote's INSERTs pass the tenant_isolation WITH CHECK (Perkins=1).
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _stamp_tenant(dbapi_conn, _rec):  # noqa: ANN001
+        cur = dbapi_conn.cursor()
+        cur.execute("SELECT set_config('app.tenant_id', '1', false)")
+        cur.close()
+
+    return engine
 
 
 def main() -> None:
