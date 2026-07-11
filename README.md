@@ -43,6 +43,7 @@ pip-audit -r app/requirements.txt
 pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
 
 # frontend
+# Requires Node.js 24 (matches GitHub Actions / Firebase deploy host).
 cd web && npm ci && npm run build
 ```
 
