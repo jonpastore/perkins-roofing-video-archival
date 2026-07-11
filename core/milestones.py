@@ -68,3 +68,15 @@ def freeze_schedule(schedule: list[dict]) -> tuple[list[dict], str]:
     """
     frozen = copy.deepcopy(schedule)
     return frozen, compute_snapshot_hash({"draws": frozen})
+
+
+def verify_schedule_hash(frozen: list[dict], expected_hash: str) -> bool:
+    """Recompute a frozen schedule's hash and confirm it matches the stored value.
+
+    The frozen snapshot is only tamper-EVIDENT if a reader actually re-checks it
+    (R2 M3). Callers that drive a draw invoice off a MilestoneSchedule row should
+    call this on read and refuse to bill if it returns False — a mutated
+    milestones_snapshot (direct DB edit or a writer bug) then fails loudly instead
+    of silently changing a scheduled job's draws.
+    """
+    return compute_snapshot_hash({"draws": frozen}) == expected_hash
