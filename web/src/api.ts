@@ -368,8 +368,17 @@ export interface Paged<T> {
 
 /** Read the FastAPI `detail` off a failed response, falling back to status text. */
 async function errText(res: Response): Promise<string> {
-  const d = await res.json().catch(() => ({}));
-  return (d as { detail?: string }).detail ?? `${res.status} ${res.statusText}`;
+  const d = await res.json().catch(() => null);
+  if (typeof d === "string" && d.trim()) return d;
+  if (d && typeof d === "object") {
+    const body = d as { detail?: unknown; message?: unknown; error?: unknown };
+    for (const v of [body.detail, body.message, body.error]) {
+      if (typeof v === "string" && v.trim()) return v;
+      if (Array.isArray(v)) return v.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join("; ");
+      if (v && typeof v === "object") return JSON.stringify(v);
+    }
+  }
+  return `${res.status} ${res.statusText}`;
 }
 
 /** Serialize a params object to a query string, skipping undefined/null values. */
@@ -637,7 +646,7 @@ export interface InvoiceLine {
 }
 export interface Invoice {
   id: number;
-  invoice_number: number;
+  invoice_number: number | null;
   job_id: number;
   customer_id: number;
   status: string;                 // derived: sent|partial|paid|void|…

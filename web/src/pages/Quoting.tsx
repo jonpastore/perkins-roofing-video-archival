@@ -319,7 +319,10 @@ export function Quoting() {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((data: Customer[]) => setCustomers(data ?? []))
+      .then((data: Customer[] | { items?: Customer[] }) => {
+        const rows = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+        setCustomers(rows);
+      })
       .catch((e: unknown) => setCustomersError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCustomersLoading(false));
   }
@@ -502,7 +505,8 @@ export function Quoting() {
     }
   }
 
-  const filteredCustomers = customers.filter((c) => {
+  const customerRows = Array.isArray(customers) ? customers : [];
+  const filteredCustomers = customerRows.filter((c) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return (

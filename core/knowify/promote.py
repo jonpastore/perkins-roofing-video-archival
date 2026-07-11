@@ -354,6 +354,8 @@ def promote_invoices(session: Session, records: list[dict[str, Any]]) -> int:
                 "customer_id": _customer_id_for(session, rec.get("ClientId")),
                 "total": total,
                 "subtotal": total,
+                "invoice_date": _parse_date(rec.get("InvoiceDate")),
+                "due_date": _parse_date(rec.get("DueDate")),
                 "created_by": _IMPORT_SOURCE,
             })
 

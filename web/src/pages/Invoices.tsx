@@ -45,6 +45,12 @@ function fmtDateShort(s: string | null | undefined): string {
   return new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function invoiceLabel(inv: Pick<Invoice, "invoice_number" | "knowify_invoice_number" | "id">): string {
+  if (inv.invoice_number != null) return `#${inv.invoice_number}`;
+  if (inv.knowify_invoice_number) return `Knowify #${inv.knowify_invoice_number}`;
+  return `Invoice ${inv.id}`;
+}
+
 function statusTone(status: string): "green" | "amber" | "blue" | "gray" | "red" {
   if (status === "paid") return "green";
   if (status === "partial") return "amber";
@@ -120,7 +126,7 @@ function PaymentForm({ invoice, onSuccess, onCancel }: PaymentFormProps) {
   return (
     <div style={{ marginTop: 8, padding: 16, background: BRAND.bg, borderRadius: 8 }}>
       <div style={{ marginBottom: 10, fontWeight: 600, color: BRAND.navyText, fontSize: 13 }}>
-        Record payment — Invoice #{invoice.invoice_number}
+        Record payment — {invoiceLabel(invoice)}
       </div>
       {err && <ErrorMsg>Error: {err}</ErrorMsg>}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
@@ -397,7 +403,7 @@ function InvoiceDrawer({ invoice, onClose, onPaymentSuccess }: DrawerProps) {
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: BRAND.navyText }}>
-              Invoice #{invoice.invoice_number}
+              {invoiceLabel(invoice)}
             </div>
             {invoice.knowify_invoice_number && (
               <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
@@ -622,7 +628,7 @@ export function Invoices() {
       key: "invoice_number",
       header: "Invoice #",
       sortable: true,
-      render: (inv) => <span style={{ fontWeight: 600, color: BRAND.navyText }}>#{inv.invoice_number}</span>,
+      render: (inv) => <span style={{ fontWeight: 600, color: BRAND.navyText }}>{invoiceLabel(inv)}</span>,
     },
     {
       key: "customer_display_name",

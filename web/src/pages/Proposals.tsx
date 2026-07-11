@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { NavContext } from "../App";
 import { apiFetch } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, StatusPill, StatCard, TierCard, SectionLabel } from "../ui";
 
@@ -95,6 +96,7 @@ const STATUS_TABS: Array<{ key: ProposalStatus | "all"; label: string }> = [
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function Proposals() {
+  const { navigate } = useContext(NavContext);
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
   const [proposals, setProposals] = useState<ProposalRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -508,7 +510,15 @@ export function Proposals() {
 
   return (
     <main style={{ maxWidth: 960, fontFamily: FONT }}>
-      <PageTitle>Proposals</PageTitle>
+      <PageTitle
+        right={
+          <Button onClick={() => navigate("proposal-gen")} style={{ fontSize: 13 }}>
+            + New Proposal
+          </Button>
+        }
+      >
+        Proposals
+      </PageTitle>
 
       {/* KPI row */}
       {allProposals.length > 0 && (

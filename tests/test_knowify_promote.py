@@ -78,6 +78,8 @@ INV_PAID = {
     "ObjectState": "Active",
     "TotalAmount": "6678.00",
     "OutstandingAmount": "0.00",
+    "InvoiceDate": "2024-03-01",
+    "DueDate": "2024-03-31",
 }
 
 # Its receivable payment (Id=7633145) — DOLLARS on REST, NO ÷100.
@@ -311,6 +313,20 @@ class TestInvoiceMappingSQLite:
             select(Invoice).where(Invoice.knowify_invoice_id == "2474204")
         ).scalar_one()
         assert inv.total == Decimal("6678.00")
+
+    def test_invoice_dates_import_from_knowify(self):
+        from app.models import Invoice
+
+        sess = _sqlite_session()
+        promote_clients(sess, [CLIENT])
+        sess.flush()
+        promote_invoices(sess, [INV_PAID])
+        sess.flush()
+        inv = sess.execute(
+            select(Invoice).where(Invoice.knowify_invoice_id == "2474204")
+        ).scalar_one()
+        assert inv.invoice_date.date().isoformat() == "2024-03-01"
+        assert inv.due_date.date().isoformat() == "2024-03-31"
 
     def test_invoice_links_customer(self):
         from app.models import Invoice
