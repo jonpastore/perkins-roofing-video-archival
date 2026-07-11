@@ -28,29 +28,36 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 def _engine(cloudsql: bool):
     if not cloudsql:
+        # DB_URL path — local SQLite, a proxy, OR the in-region Cloud SQL socket the Cloud
+        # Run job provides (fast; run the seed as a job to avoid WAN per-statement latency).
         url = os.environ.get("DB_URL")
         if not url:
             sys.exit("set DB_URL=... or pass --cloudsql")
-        return create_engine(url, future=True)
-    # Prod Cloud SQL via the Python Connector (ADC) — same path as apply_migrations_connector.
-    from google.cloud.sql.connector import Connector
+        engine = create_engine(url, future=True)
+    else:
+        # Prod Cloud SQL via the Python Connector (ADC) — same path as apply_migrations_connector.
+        # NOTE: over a WAN this is ~140ms/statement — for the full dataset run this in-region
+        # (Cloud Run job with DB_URL = the /cloudsql socket) instead.
+        from google.cloud.sql.connector import Connector
 
-    from scripts.apply_migrations_connector import CONN, _password
-    connector = Connector()
+        from scripts.apply_migrations_connector import CONN, _password
+        connector = Connector()
 
-    def creator():
-        return connector.connect(CONN, "pg8000", user="app", password=_password(), db="perkins")
+        def creator():
+            return connector.connect(CONN, "pg8000", user="app", password=_password(), db="perkins")
 
-    engine = create_engine("postgresql+pg8000://", creator=creator, future=True)
-    # The app user is NOBYPASSRLS under FORCE RLS — stamp the tenant GUC on every new
+        engine = create_engine("postgresql+pg8000://", creator=creator, future=True)
+
+    # The app user is NOBYPASSRLS under FORCE RLS — stamp the tenant GUC on every new Postgres
     # connection so promote's INSERTs pass the tenant_isolation WITH CHECK (Perkins=1).
-    from sqlalchemy import event
+    if engine.dialect.name == "postgresql":
+        from sqlalchemy import event
 
-    @event.listens_for(engine, "connect")
-    def _stamp_tenant(dbapi_conn, _rec):  # noqa: ANN001
-        cur = dbapi_conn.cursor()
-        cur.execute("SELECT set_config('app.tenant_id', '1', false)")
-        cur.close()
+        @event.listens_for(engine, "connect")
+        def _stamp_tenant(dbapi_conn, _rec):  # noqa: ANN001
+            cur = dbapi_conn.cursor()
+            cur.execute("SELECT set_config('app.tenant_id', '1', false)")
+            cur.close()
 
     return engine
 
@@ -87,12 +94,22 @@ def main() -> None:
                    f"VALUES (1,'Perkins Roofing','perkins','active','{{}}',CURRENT_TIMESTAMP){tail}"))
     s.commit()
 
-    nc = promote.promote_clients(s, clients)
-    s.commit()
-    ni = promote.promote_invoices(s, invoices)
-    s.commit()
-    npay = promote.promote_payments(s, payments)
-    s.commit()
+    # Batch-commit (safe + restartable over a high-latency connector: a failure loses
+    # only the current batch, and re-running upserts on the crosswalk id / no-ops the
+    # ledger). Order matters: clients -> invoices -> payments (FK).
+    def _batched(fn, records, label, size=500):
+        done = 0
+        for i in range(0, len(records), size):
+            fn(s, records[i:i + size])
+            s.commit()
+            done += len(records[i:i + size])
+            sys.stderr.write(f"  {label}: {done}/{len(records)}\n")
+            sys.stderr.flush()
+        return done
+
+    nc = _batched(promote.promote_clients, clients, "clients")
+    ni = _batched(promote.promote_invoices, invoices, "invoices")
+    npay = _batched(promote.promote_payments, payments, "payments")
 
     total = s.execute(select(Invoice)).scalars().all()
     paid = sum(1 for r in total if r.status == "paid")
