@@ -1,40 +1,38 @@
-Resume the Perkins v2 platform build after a /clear. Read IN ORDER:
-CONTINUATION-2026-07-11-pm.md (canonical — full session summary + outstanding + resume steps),
-the auto-loaded memory index (esp. billing-schema-numbering, perkins-golden-corpus,
-knowify-integration, perkins-pricing-verified, deploy-not-concurrency-safe),
-docs/ENGINEERING_RULES.md (R1–R5 binding). Then `mcp__jarvis-memory__sync` + my_tasks.
+Resume the Perkins v2 platform after a /clear. Read IN ORDER:
+CONTINUATION-2026-07-11-eve.md (canonical — the Knowify data-mirror was BUILT, DEPLOYED to
+prod, and SEEDED with the full real dataset this session), then the auto-loaded memory index
+(esp. knowify-mirror-build, knowify-oauth-outage, billing-schema-numbering, perkins-v2-platform),
+then docs/ENGINEERING_RULES.md (R1–R5 binding). Then `mcp__jarvis-memory__sync` + my_tasks.
 
-STATE (all committed on main, HEAD ~5e92a46, tree clean): the full quote→proposal→invoice
-pipeline exists as validated, R2-reviewed ENGINES + PDF RENDERERS + API ROUTES:
-- JB1 price book: core/price_book.py (R2) + scripts/seed_pricebook.py + api/routes/price_book.py
-- JB3 proposal: core/proposal_gen.py + core/perkins_packages.py (R2; 8/8 golden proposals to the
-  penny) + core/proposal_doc_render.py + api/routes/proposal_gen.py
-- JB4 billing: migration 0030 + core/invoicing.py + core/milestones.py (R2; 7 golden invoices to
-  the penny; atomic numbering C2 closed) + core/invoice_render.py + api/routes/invoices.py
-All have scripts/validate_*.py (green); tenancy 76/76. NOT deployed to prod yet.
+STATE (all committed + PUSHED on main, tree clean): The full Knowify data-mirror is LIVE IN PROD.
+- Migrations 0030+0031+0032 applied to Cloud SQL (invoice counter untouched at 18732).
+- Terraform (targeted) created knowify-sync/keepwarm Cloud Run Jobs + `0 8-18 * * *` ET scheduler
+  + knowify-tokens secret + IaC log-metric alert. API+jobs deployed. Web redeployed → the admin
+  console "Knowify" tab is LIVE at https://video-archival-and-content-gen.web.app.
+- PROD SEEDED with the full real Perkins data: 7,404 customers (18 inactive via customers.is_active),
+  4,484 invoices (4,037 paid; #18732=$6,678 paid), 4,629 payments, 8,747 synthesized ledger events.
+  Money-verified (counter never advanced). Seeded via scripts/knowify/mcp_pull.py (Claude MCP OAuth
+  token → Knowify MCP endpoint, headless) + an in-region Cloud Run job (WAN was too slow).
 
-DO THESE (priority order — from the continuation doc):
-1. ADMIN UIs (web/ React/TS) — the "then UIs" step: price-book editor, proposal builder,
-   invoicing/payments screens against /price-book, /proposal-gen, /invoices. Pattern:
-   web/src/pages/EstimatingConfig.tsx.
-2. GATED DEPLOY (R3/R4): apply migrations 0030 + 0031, run scripts/seed_pricebook.py (loads
-   Tim's material data), deploy the API. Deploy is NOT concurrency-safe — one at a time,
-   verify image sha vs HEAD. strict=True LIVE.
-3. SECURITY/CRITIC pass on the 3 new routes (engines were R2'd, routes were NOT): authz (they
-   reuse estimating_manage — add a billing_manage role), tenant isolation, money-path.
-4. C2 concurrency proof: add a real Postgres two-session numbering test to tests/tenancy/.
-5. JB2 (measurements/orders + Roofr-PDF parser). For roof MEASUREMENTS, recommended path is the
-   Google Solar API (Measurement model already has Solar columns, migration 0024) OR ingest
-   Roofr — NOT the DIY OSM+LiDAR SquareQuote/anu path (verdict in docs/perkins-analysis/).
+DO THESE (priority order — from CONTINUATION-2026-07-11-eve.md "Outstanding"):
+1. HOURLY AUTO-SYNC can't pull yet: Knowify's REST OAuth 500s on the RFC 8707 `resource` binding
+   (their server bug — knowify-oauth-outage memory; support email DRAFTED not sent in
+   docs/perkins-analysis/knowify-support-oauth500.md). Decide: wait for Knowify fix, email support,
+   OR wire the sync job to the MCP-token stopgap (token must move to Secret Manager + refresh). The
+   mirror is a point-in-time snapshot until this is resolved.
+2. promote_items reads wrong Knowify field names (rec["Name"] etc.) — same bug class as the client
+   fix; audit vs the real item schema (items are secondary; Tim's sheet is authoritative for costs).
+3. Pre-existing TF drift (cloudflare placeholder token, gotenberg, domain mapping) — NOT from this
+   work; a full scripts/drift_check.sh is not clean because of it. Reconcile separately (Jon-gated).
+4. Confirm R1 core coverage ≥97 in CI (an ad-hoc stripped-env run showed ~94% because pre-existing
+   billing/proposal PG tests didn't run together; the new core/knowify/* modules are 100%).
 
 NON-NEGOTIABLE DISCIPLINE:
-- Gate = pytest --cov=core (≥97) + scripts/validate_*.py + ruff, on a clean tree. Subagents =
-  FILE EDITS ONLY, never git; sonnet for implementation, opus for plan/R2/security.
+- Gate = pytest --cov=core (≥97) + scripts/validate_*.py + ruff on a clean tree. Subagents = FILE
+  EDITS ONLY, never git; sonnet for implementation, opus for money/migration/OAuth/security/review.
 - R2 (architect+critic) every wave; fix HIGH/CRITICAL before done. Money/legal code stays on Claude.
-- Knowify: MCP query is the working data path (REST base assistant.knowify.com/api/v2). Material
-  COSTS come from Tim's ABC 4/29/26 sheet (Knowify OurCost is stale); invoice numbering next=18733.
+- Deploy: git→apply (R3). Migrations via scripts/apply_migrations_connector.py (needs `gcloud auth
+  application-default login`; sets app.tenant_id=1 for RLS seeds). Terraform: TARGET the knowify
+  resources to avoid the pre-existing cloudflare/gotenberg drift. deploy.sh needs a clean tree.
+- Knowify money units: REST=DOLLARS (no ÷100); MCP/raw layer payments=CENTS (÷100). AIA skipped.
 - Analysis artifacts (client PII) in docs/perkins-analysis/ (gitignored). Do NOT commit PII.
-
-WAITING ON: Jon (review+send the drafted Tim material-cost email in jon@degenito.ai Drafts;
-deploy go-ahead) + Tim (confirm stale material costs, golden files, T&C sign-off).
-anu LiDAR fixes are PR burademirung/anu#1 (for Vlad).

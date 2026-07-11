@@ -3,7 +3,7 @@
 Handoff for resuming after a Claude restart. The restart's PURPOSE: load the newly
 registered **Knowify MCP** so we can pull Knowify data. Read this + the memory index
 (auto-loaded) + `prompt.txt`. HEAD at write time: `d1ced04`. CI: green at last gate.
-Prior handoff: `CONTINUATION-2026-07-10-pm.md`.
+Prior handoff: `docs/continuations/CONTINUATION-2026-07-10-pm.md`.
 
 ## ⚡ DO THESE FIRST, IN ORDER
 
