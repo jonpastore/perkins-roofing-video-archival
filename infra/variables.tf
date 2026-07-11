@@ -62,8 +62,8 @@ variable "cloudflare_api_token" {
   # (and the R4 drift check) even though every CF resource is count-guarded off until
   # cloudflare_zone_id is set. The placeholder satisfies provider config while CF is disabled;
   # the real token overrides via TF_VAR_cloudflare_api_token when CF is activated.
-  default     = "placeholder_unused_until_cloudflare_zone_id_is_set_0000"
-  sensitive   = true
+  default   = "placeholder_unused_until_cloudflare_zone_id_is_set_0000"
+  sensitive = true
 }
 
 variable "cloudflare_ipv4_ranges" {

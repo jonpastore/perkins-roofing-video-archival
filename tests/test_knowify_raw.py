@@ -23,12 +23,6 @@ from sqlalchemy.orm import sessionmaker
 
 from core.knowify.mirror import content_hash, tombstone_absent, upsert_raw, write_state
 
-# Pull in the tenancy conftest fixtures (pg_url, pg_container, pg_admin_engine,
-# pg_engine, rls_engine, etc.) so @pytest.mark.postgres tests here can use them.
-# Must be after imports to avoid E402; pytest_plugins is processed by the framework,
-# not as a module-level side effect, so placement after imports is fine.
-pytest_plugins = ["tests.tenancy.conftest"]
-
 
 # ---------------------------------------------------------------------------
 # Helpers

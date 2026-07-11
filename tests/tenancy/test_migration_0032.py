@@ -129,6 +129,8 @@ class TestPostgresMigration:
             "uq_customers_tenant_knowify",
             "uq_invoices_tenant_knowify_id",
             "uq_payments_tenant_knowify_id",
+            "uq_jobs_tenant_knowify",
+            "uq_price_book_items_tenant_knowify",
         } <= idx
 
     def test_source_check_constraint_exists(self, migrated):

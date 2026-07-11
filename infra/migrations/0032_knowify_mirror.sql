@@ -51,6 +51,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_invoices_tenant_knowify_id
     ON invoices (tenant_id, knowify_invoice_id) WHERE knowify_invoice_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_tenant_knowify_id
     ON payments (tenant_id, knowify_payment_id) WHERE knowify_payment_id IS NOT NULL;
+-- jobs + price_book_items crosswalk partial-unique indexes (Wave 3 addition).
+-- The placeholder job uses knowify_job_id='__knowify_placeholder__' so it is
+-- covered by this index (not NULL) and re-syncs reuse one row per tenant.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_tenant_knowify
+    ON jobs (tenant_id, knowify_job_id) WHERE knowify_job_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_price_book_items_tenant_knowify
+    ON price_book_items (tenant_id, knowify_item_id) WHERE knowify_item_id IS NOT NULL;
 
 -- 1b. knowify_sync_state — per-(tenant, entity) sync watermark + health.
 CREATE TABLE IF NOT EXISTS knowify_sync_state (

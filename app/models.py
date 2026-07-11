@@ -441,6 +441,10 @@ class Customer(Base, TenantMixin):
     __table_args__ = (
         Index("ix_customers_tenant", "tenant_id"),
         Index("ix_customers_knowify", "tenant_id", "knowify_customer_id"),
+        Index(
+            "uq_customers_tenant_knowify", "tenant_id", "knowify_customer_id",
+            unique=True, postgresql_where="knowify_customer_id IS NOT NULL",
+        ),
     )
 
 
@@ -614,6 +618,14 @@ class Job(Base, TenantMixin):
     __table_args__ = (
         Index("ix_jobs_tenant", "tenant_id"),
         Index("ix_jobs_tenant_knowify", "tenant_id", "knowify_job_id"),
+        # Partial-unique crosswalk index (migration 0032). The placeholder job uses
+        # knowify_job_id='__knowify_placeholder__' so it is covered (not NULL).
+        Index(
+            "uq_jobs_tenant_knowify",
+            "tenant_id", "knowify_job_id",
+            unique=True,
+            postgresql_where="knowify_job_id IS NOT NULL",
+        ),
     )
 
 
@@ -768,6 +780,10 @@ class Invoice(Base, TenantMixin):
         Index("ix_invoices_job", "job_id"),
         Index("ix_invoices_tenant_status", "tenant_id", "status"),
         Index("ix_invoices_tenant_knowify", "tenant_id", "knowify_invoice_id"),
+        Index(
+            "uq_invoices_tenant_knowify_id", "tenant_id", "knowify_invoice_id",
+            unique=True, postgresql_where="knowify_invoice_id IS NOT NULL",
+        ),
     )
 
 
@@ -859,6 +875,10 @@ class Payment(Base, TenantMixin):
         Index("ix_payments_invoice", "invoice_id"),
         Index("ix_payments_tenant", "tenant_id"),
         Index("ix_payments_tenant_knowify", "tenant_id", "knowify_payment_id"),
+        Index(
+            "uq_payments_tenant_knowify_id", "tenant_id", "knowify_payment_id",
+            unique=True, postgresql_where="knowify_payment_id IS NOT NULL",
+        ),
     )
 
 
@@ -975,6 +995,13 @@ class PriceBookItem(Base, TenantMixin):
         Index("ix_price_book_items_tenant", "tenant_id"),
         Index("ix_price_book_items_tenant_knowify", "tenant_id", "knowify_item_id"),
         Index("ix_price_book_items_price_book_id", "price_book_id"),
+        # Partial-unique crosswalk index (migration 0032).
+        Index(
+            "uq_price_book_items_tenant_knowify",
+            "tenant_id", "knowify_item_id",
+            unique=True,
+            postgresql_where="knowify_item_id IS NOT NULL",
+        ),
     )
 
 
