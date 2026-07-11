@@ -22,6 +22,8 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS knowify_invoice_number TEXT;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS source                 VARCHAR(30) NOT NULL DEFAULT 'v2';
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS knowify_payment_id     VARCHAR(100);
 ALTER TABLE jobs     ADD COLUMN IF NOT EXISTS knowify_job_id         VARCHAR(100);
+-- Mirror Knowify ObjectState onto customers (Inactive/Cancelled/Deleted -> is_active=false).
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_active            BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- source CHECK constraint (NOT VALID avoids a long lock on the existing table;
 -- new rows are still validated, and every existing row already defaults to 'v2').

@@ -67,6 +67,10 @@ class TestSqliteStructural:
         cols = {c["name"] for c in sqlite_inspector.get_columns("jobs")}
         assert "knowify_job_id" in cols
 
+    def test_customers_is_active_column_exists(self, sqlite_inspector):
+        cols = {c["name"] for c in sqlite_inspector.get_columns("customers")}
+        assert "is_active" in cols
+
     def test_sync_state_table_exists(self, sqlite_inspector):
         assert "knowify_sync_state" in sqlite_inspector.get_table_names()
         cols = {c["name"] for c in sqlite_inspector.get_columns("knowify_sync_state")}

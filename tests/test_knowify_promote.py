@@ -168,6 +168,51 @@ class TestClientMappingSQLite:
         assert cust.display_name == "Physio Healing Therapy"
         assert not cust.display_name.startswith("Knowify ")
 
+    def test_inactive_objectstate_sets_is_active_false(self):
+        from app.models import Customer
+
+        sess = _sqlite_session()
+        promote_clients(sess, [{**CLIENT_NO_COMPANY, "Id": 557, "ObjectState": "Inactive"}])
+        sess.flush()
+        cust = sess.execute(
+            select(Customer).where(Customer.knowify_customer_id == "557")
+        ).scalar_one()
+        assert cust.is_active is False
+
+    def test_active_client_is_active_true(self):
+        from app.models import Customer
+
+        sess = _sqlite_session()
+        promote_clients(sess, [{**CLIENT, "ObjectState": "Active"}])
+        sess.flush()
+        cust = sess.execute(
+            select(Customer).where(Customer.knowify_customer_id == "555")
+        ).scalar_one()
+        assert cust.is_active is True
+
+    def test_invoice_orphan_client_creates_inactive_placeholder(self):
+        """Regression: an invoice whose ClientId has no promoted client (e.g. an inactive
+        client excluded from the pull) must create an inactive placeholder customer and
+        link the invoice — never NULL customer_id / crash the batch."""
+        from app.models import Customer, Invoice
+
+        sess = _sqlite_session()
+        promote_invoices(sess, [{
+            "Id": 99001, "InvoiceNumber": "X1", "ClientId": 888888, "ProjectId": None,
+            "BusinessState": "Outstanding", "ObjectState": "Active",
+            "TotalAmount": "100.00", "OutstandingAmount": "100.00",
+        }])
+        sess.flush()
+        cust = sess.execute(
+            select(Customer).where(Customer.knowify_customer_id == "888888")
+        ).scalar_one()
+        assert cust.is_active is False
+        assert cust.display_name == "Knowify 888888"
+        inv = sess.execute(
+            select(Invoice).where(Invoice.knowify_invoice_id == "99001")
+        ).scalar_one()
+        assert inv.customer_id == cust.id
+
     def test_client_rerun_no_duplicate(self):
         from app.models import Customer
 

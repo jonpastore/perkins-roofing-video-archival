@@ -134,6 +134,8 @@ def promote_clients(session: Session, records: list[dict[str, Any]]) -> int:
                 "company_name": rec.get("CompanyName"),
                 "email": rec.get("Email"),
                 "phone": rec.get("PhoneNumber"),
+                # Knowify ObjectState → our is_active (Inactive/Cancelled/Deleted -> False).
+                "is_active": rec.get("ObjectState", "Active") == "Active",
             })
             n += 1
             log.debug("knowify promote: client id=%s", kid)
@@ -179,17 +181,32 @@ def promote_items(session: Session, records: list[dict[str, Any]]) -> int:
 # ---------------------------------------------------------------------------
 
 def _customer_id_for(session: Session, knowify_client_id: str | None) -> int | None:
+    """Resolve our customers.id for a Knowify ClientId, creating a minimal placeholder
+    customer on first sight if the client wasn't promoted (invoices.customer_id is NOT
+    NULL, and Knowify invoices can reference inactive/deleted clients the clients pull
+    excluded). The real name backfills on a later clients sync that includes them.
+    Returns None only when the invoice truly carries no ClientId."""
     if knowify_client_id is None:
         return None
     from app.models import Customer
 
     tenant_id: int = session.info.get("tenant_id", 1)
-    return session.execute(
+    kid = str(knowify_client_id)
+    existing = session.execute(
         select(Customer.id).where(
             Customer.tenant_id == tenant_id,
-            Customer.knowify_customer_id == str(knowify_client_id),
+            Customer.knowify_customer_id == kid,
         )
     ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    # Orphan (client not in the pull — typically inactive/deleted in Knowify): placeholder
+    # marked inactive; a later clients sync that includes it backfills the real name/state.
+    cust = Customer(tenant_id=tenant_id, knowify_customer_id=kid,
+                    display_name=f"Knowify {kid}", is_active=False)
+    session.add(cust)
+    session.flush()
+    return cust.id
 
 
 def _job_id_for(session: Session, knowify_project_id: str | None) -> int:

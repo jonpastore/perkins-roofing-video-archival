@@ -434,6 +434,9 @@ class Customer(Base, TenantMixin):
     email               = Column(String(255))
     phone               = Column(String(50))
     knowify_customer_id = Column(String(100))
+    # Mirrors Knowify ObjectState: a client Inactive/Cancelled/Deleted in Knowify is
+    # is_active=False here (invoices for inactive clients are still imported/linked).
+    is_active           = Column(Boolean, nullable=False, default=True)
     notes               = Column(Text)
     created_at          = Column(DateTime, nullable=False, default=_utcnow)
     updated_at          = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
