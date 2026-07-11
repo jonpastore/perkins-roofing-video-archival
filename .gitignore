@@ -41,3 +41,4 @@ infra/*.auto.tfvars
 
 # Firebase Hosting deploy cache (regenerated on every deploy)
 web/.firebase/
+docs/perkins-analysis/

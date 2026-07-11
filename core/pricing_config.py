@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 import jcs
@@ -338,14 +339,50 @@ def _strip_pending_keys(d: Any) -> Any:
     return d
 
 
+def _coerce_for_jcs(d: Any) -> Any:
+    """Recursively coerce Decimal → fixed-point string so jcs.canonicalize doesn't crash.
+
+    jcs requires JSON-native types (str/int/float/bool/None/list/dict); Decimal is
+    NOT one, so it must be serialised (4dp fixed-point, matching price_book._canon).
+    float IS JSON-native and is left UNTOUCHED on purpose — coercing it would change
+    the hash of every existing float-valued pricing config and retro-break already-
+    pinned estimates. Callers that need Decimal money in the hash pass Decimals.
+    """
+    if isinstance(d, bool):
+        return d
+    if isinstance(d, Decimal):
+        return format(d.quantize(Decimal("0.0001")), "f")
+    if isinstance(d, dict):
+        return {k: _coerce_for_jcs(v) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_coerce_for_jcs(v) for v in d]
+    return d
+
+
 def compute_hash(config_dict: dict) -> str:
     """Compute RFC 8785 canonical JSON + SHA-256 hex digest.
 
     Strips underscore-prefixed annotation keys before hashing so pending/meta
-    fields in the fixture don't affect the hash.
+    fields in the fixture don't affect the hash. Coerces Decimal/float values
+    to fixed-point strings before canonicalization (jcs requires JSON-native types).
     """
     clean = _strip_pending_keys(config_dict)
-    canon: bytes = jcs.canonicalize(clean)
+    coerced = _coerce_for_jcs(clean)
+    canon: bytes = jcs.canonicalize(coerced)
+    return hashlib.sha256(canon).hexdigest()
+
+
+def compute_snapshot_hash(snapshot_dict: dict) -> str:
+    """Hash a proposal snapshot WITHOUT stripping underscore-prefixed keys.
+
+    Used by freeze_quote_snapshot — pinned price tables are stored under plain
+    keys (no underscore prefix) so this is equivalent to compute_hash for
+    correctly-structured snapshots. Kept separate so the intent is explicit:
+    snapshot data must NEVER use underscore-prefixed keys for content that
+    should be hashed.
+    """
+    coerced = _coerce_for_jcs(snapshot_dict)
+    canon: bytes = jcs.canonicalize(coerced)
     return hashlib.sha256(canon).hexdigest()
 
 
