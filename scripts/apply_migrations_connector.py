@@ -68,6 +68,11 @@ def main() -> None:
     connector = Connector()
     conn = connector.connect(CONN, "pg8000", user="app", password=_password(), db="perkins")
     cur = conn.cursor()
+    # Tenant-scoped seeds (e.g. 0030's invoice-counter seed) run under FORCE ROW LEVEL
+    # SECURITY as the NOBYPASSRLS `app` user, so set the tenant GUC to Perkins (tenant 1 —
+    # the only tenant these migrations seed) or the WITH CHECK policy rejects the INSERT.
+    cur.execute("SELECT set_config('app.tenant_id', '1', false)")
+    conn.commit()
     try:
         for path in sorted(glob.glob("infra/migrations/*.sql")):
             name = os.path.basename(path)
