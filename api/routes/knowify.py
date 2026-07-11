@@ -52,8 +52,13 @@ def trigger_sync() -> dict:
         auth_req = google.auth.transport.requests.Request()
         creds.refresh(auth_req)
 
+        # Region for the Jobs API URL. deploy.sh sets GCP_REGION (us-central1, where the
+        # jobs actually live); read it from the env directly since `settings` doesn't expose
+        # it. The fallback matches the real deploy region — a us-east1 fallback pointed
+        # sync-now at a region with no knowify-sync job (the "Sync now" 403/404 cause).
+        import os  # noqa: PLC0415
         from app.config import settings
-        region = getattr(settings, "GCP_REGION", "us-east1")
+        region = os.getenv("GCP_REGION") or getattr(settings, "GCP_REGION", None) or "us-central1"
         job_url = (
             f"https://{region}-run.googleapis.com/apis/run.googleapis.com/v1"
             f"/namespaces/{project}/jobs/knowify-sync:run"
