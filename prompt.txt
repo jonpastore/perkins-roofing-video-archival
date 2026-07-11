@@ -1,44 +1,40 @@
-Resume the Perkins platform + Ez-Bids build after a Claude RESTART (done to load the
-Knowify MCP). Read IN ORDER: CONTINUATION-2026-07-11.md, the memory index (auto-loaded,
-esp. knowify-integration, perkins-pricing-verified, deploy-not-concurrency-safe),
-docs/ENGINEERING_RULES.md (R1–R5 binding), then `mcp__jarvis-memory__sync` + my_tasks.
+Resume the Perkins v2 platform build after a /clear. Read IN ORDER:
+CONTINUATION-2026-07-11-pm.md (canonical — full session summary + outstanding + resume steps),
+the auto-loaded memory index (esp. billing-schema-numbering, perkins-golden-corpus,
+knowify-integration, perkins-pricing-verified, deploy-not-concurrency-safe),
+docs/ENGINEERING_RULES.md (R1–R5 binding). Then `mcp__jarvis-memory__sync` + my_tasks.
 
-DO THESE FIRST, IN ORDER:
+STATE (all committed on main, HEAD ~5e92a46, tree clean): the full quote→proposal→invoice
+pipeline exists as validated, R2-reviewed ENGINES + PDF RENDERERS + API ROUTES:
+- JB1 price book: core/price_book.py (R2) + scripts/seed_pricebook.py + api/routes/price_book.py
+- JB3 proposal: core/proposal_gen.py + core/perkins_packages.py (R2; 8/8 golden proposals to the
+  penny) + core/proposal_doc_render.py + api/routes/proposal_gen.py
+- JB4 billing: migration 0030 + core/invoicing.py + core/milestones.py (R2; 7 golden invoices to
+  the penny; atomic numbering C2 closed) + core/invoice_render.py + api/routes/invoices.py
+All have scripts/validate_*.py (green); tenancy 76/76. NOT deployed to prod yet.
 
-1. KNOWIFY MCP (reason for the restart). It's registered (`claude mcp list` → knowify,
-   "Needs authentication"). Jon authenticates via `/mcp` → knowify → Authenticate →
-   browser login with Knowify admin creds (OAuth; no passwords). Then use the read-only
-   tools (Platform Knowledge, Query Knowify). FOR BULK DATA (task #15 migration): run
-   `python scripts/knowify/knowify_oauth.py` (browser login once) then
-   `python scripts/knowify/knowify_pull.py` → /tmp/knowify_data. Analyze the pulled
-   invoices/milestones/payments to validate + finalize the invoicing/numbering/QuickBooks
-   model. First pull reveals pagination shape — tweak knowify_pull.py if _summary.json shows gaps.
-
-2. T&C AI-FAQ (task #17) is DONE + COMMITTED (db01b57), gated (core 100%), migration 0029
-   applied, backend deploy kicked off pre-restart. VERIFY the deploy landed: `gcloud run
-   services describe api --region=us-central1 --format='value(spec.template.spec.containers[0].image)'`
-   should show :db01b57 (or newer). If older (restart interrupted it), re-run bash
-   scripts/deploy.sh (run_in_background). Deferred to JB3: formal R2, Tim's real-T&C sign-off
-   (core/tc_seed.py is DRAFT v0.1), per-tenant T&C from DB, SPA surfacing.
-
-3. THEN AUTOPILOT the approved plan (.omc/plans/ralplan-perkins-jobdocs-billing-DRAFT.md):
-   JB1 material price book (task #12) → JB2 measurements/details → JB3 proposal engine
-   (task #14; T&C-FAQ is a component) → JB4/JB5 invoicing+e-sign+QuickBooks (task #15;
-   use the Knowify import). Also Ez-Bids W1 (tenant-1 binding + Perkins-smoke gate) → W2.
+DO THESE (priority order — from the continuation doc):
+1. ADMIN UIs (web/ React/TS) — the "then UIs" step: price-book editor, proposal builder,
+   invoicing/payments screens against /price-book, /proposal-gen, /invoices. Pattern:
+   web/src/pages/EstimatingConfig.tsx.
+2. GATED DEPLOY (R3/R4): apply migrations 0030 + 0031, run scripts/seed_pricebook.py (loads
+   Tim's material data), deploy the API. Deploy is NOT concurrency-safe — one at a time,
+   verify image sha vs HEAD. strict=True LIVE.
+3. SECURITY/CRITIC pass on the 3 new routes (engines were R2'd, routes were NOT): authz (they
+   reuse estimating_manage — add a billing_manage role), tenant isolation, money-path.
+4. C2 concurrency proof: add a real Postgres two-session numbering test to tests/tenancy/.
+5. JB2 (measurements/orders + Roofr-PDF parser). For roof MEASUREMENTS, recommended path is the
+   Google Solar API (Measurement model already has Solar columns, migration 0024) OR ingest
+   Roofr — NOT the DIY OSM+LiDAR SquareQuote/anu path (verdict in docs/perkins-analysis/).
 
 NON-NEGOTIABLE DISCIPLINE:
-- Gate = the CI-equivalent gate above, NOT a Docker-having local gate. Subagents = FILE
-  EDITS ONLY, never git; non-overlapping boundaries; main lane commits + gates on a clean tree.
-  Implementation subagents = sonnet; opus for plan/review/security.
-- Deploy is NOT concurrency-safe — one deploy at a time, via run_in_background (not `&`);
-  verify image sha vs HEAD after. strict=True LIVE (stamp sessions). Migrations additive .sql.
-  R3 infra via terraform only. Output-compressor garbles piped JSON → write to file, parse separately.
-- R2 (architect+critic) on every wave; fix HIGH/critical before marking done.
-- Do NOT relitigate locked/approved decisions (JB plan APPROVED; Ez-Bids plan APPROVED).
-  Surface hard-to-reverse prod actions.
+- Gate = pytest --cov=core (≥97) + scripts/validate_*.py + ruff, on a clean tree. Subagents =
+  FILE EDITS ONLY, never git; sonnet for implementation, opus for plan/R2/security.
+- R2 (architect+critic) every wave; fix HIGH/CRITICAL before done. Money/legal code stays on Claude.
+- Knowify: MCP query is the working data path (REST base assistant.knowify.com/api/v2). Material
+  COSTS come from Tim's ABC 4/29/26 sheet (Knowify OurCost is stale); invoice numbering next=18733.
+- Analysis artifacts (client PII) in docs/perkins-analysis/ (gitignored). Do NOT commit PII.
 
-STATE: everything from the 2026-07-10/11 sessions is LIVE (Estimator v2, Ez-Bids W0 CORS,
-invite email+logo, video-unavailable, estimator admin cleanup, Tim link fix, Knowify tooling).
-T&C AI-FAQ is UNCOMMITTED in the tree (step 2). Waiting on Jon (Knowify /mcp auth; Meta/FB
-access for social) + Tim (golden files, Jupiter/Naples pricing, pm_incentive, T&C sign-off,
-audio walkthrough — follow-up logged for 7/13).
+WAITING ON: Jon (review+send the drafted Tim material-cost email in jon@degenito.ai Drafts;
+deploy go-ahead) + Tim (confirm stale material costs, golden files, T&C sign-off).
+anu LiDAR fixes are PR burademirung/anu#1 (for Vlad).
