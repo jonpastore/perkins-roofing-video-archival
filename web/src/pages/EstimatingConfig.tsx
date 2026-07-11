@@ -477,6 +477,66 @@ function ZoneTypeTable({
   );
 }
 
+// ── Collapsible section group ─────────────────────────────────────────────────
+
+function CollapsibleGroup({
+  title,
+  defaultOpen = true,
+  children,
+  accent,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  accent?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div
+      style={{
+        border: `1px solid ${BRAND.border}`,
+        borderRadius: 10,
+        marginBottom: 14,
+        overflow: "hidden",
+      }}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 14px",
+          background: accent ?? BRAND.bg,
+          border: "none",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          textAlign: "left",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: BRAND.navyText,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+          }}
+        >
+          {title}
+        </span>
+        <span style={{ fontSize: 12, color: BRAND.sub, fontWeight: 600 }}>
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+      {open && (
+        <div style={{ padding: "14px 16px 4px" }}>{children}</div>
+      )}
+    </div>
+  );
+}
+
 // ── Main structured editor ────────────────────────────────────────────────────
 
 interface ConfigEditorProps {
@@ -537,7 +597,24 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
     return (cur ?? {}) as Record<string, Record<string, number | null>>;
   }
 
+  function getStr(path: string[], fallback: string): string {
+    let cur: unknown = config;
+    for (const k of path) {
+      if (cur === null || typeof cur !== "object") return fallback;
+      cur = (cur as Record<string, unknown>)[k];
+    }
+    return typeof cur === "string" ? cur : fallback;
+  }
+
   const profitScale = (config.profit_scale ?? []) as Array<[number | null, number]>;
+
+  // daily_overhead_rates keys in display order
+  const dailyRateKeys: [string, string][] = [
+    ["demo_dry_in_flat", "Demo / Dry-in / Flat"],
+    ["tile", "Tile"],
+    ["metal", "Metal"],
+    ["shingle", "Shingle"],
+  ];
 
   return (
     <div>
@@ -571,265 +648,379 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
         </div>
       ) : (
         <div>
-          {/* ── Base costs ── */}
-          <ZoneTypeTable
-            label="Sloped base cost L+M ($/sq)"
-            data={getObj(["sloped_base_cost_lm"])}
-            onChange={(v) => set(["sloped_base_cost_lm"], v)}
-            disabled={disabled}
-          />
-
-          {/* ── Overhead ── */}
-          <ZoneTypeTable
-            label="Sloped overhead ($/sq)"
-            data={getObj(["sloped_overhead"])}
-            onChange={(v) => set(["sloped_overhead"], v)}
-            disabled={disabled}
-          />
-
-          {/* ── Profit scale ── */}
-          <SectionLabel>Profit sliding scale ($/sq)</SectionLabel>
-          <div
-            style={{
-              border: `1px solid ${BRAND.border}`,
-              borderRadius: 8,
-              overflow: "hidden",
-              marginBottom: 16,
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: BRAND.bg }}>
-                  <th style={{ padding: "8px 12px", textAlign: "left", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>
-                    Max SQ (exclusive, null = catch-all)
-                  </th>
-                  <th style={{ padding: "8px 12px", textAlign: "right", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>
-                    Profit $/sq
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {profitScale.map(([max, pft], i) => (
-                  <tr key={i} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
-                    <td style={{ padding: "6px 12px", color: BRAND.ink }}>
-                      {max === null ? "∞ (catch-all)" : `< ${max} SQ`}
-                    </td>
-                    <td style={{ padding: "4px 8px", textAlign: "right" }}>
-                      <input
-                        type="number"
-                        disabled={disabled}
-                        value={pft}
-                        onChange={(e) => {
-                          const updated = profitScale.map((tier, j) =>
-                            j === i ? [tier[0], parseFloat(e.target.value) || 0] : tier
-                          ) as Array<[number | null, number]>;
-                          set(["profit_scale"], updated);
-                        }}
-                        style={{
-                          ...inputStyle,
-                          padding: "4px 8px",
-                          fontSize: 12,
-                          width: 90,
-                          textAlign: "right",
-                          background: disabled ? BRAND.bg : "#fff",
-                        }}
-                      />
-                    </td>
+          {/* ── Group 1: Base Pricing ── */}
+          <CollapsibleGroup title="Base Pricing">
+            <ZoneTypeTable
+              label="Sloped base cost L+M ($/sq)"
+              data={getObj(["sloped_base_cost_lm"])}
+              onChange={(v) => set(["sloped_base_cost_lm"], v)}
+              disabled={disabled}
+            />
+            <ZoneTypeTable
+              label="Sloped overhead ($/sq)"
+              data={getObj(["sloped_overhead"])}
+              onChange={(v) => set(["sloped_overhead"], v)}
+              disabled={disabled}
+            />
+            <SectionLabel>Profit sliding scale ($/sq)</SectionLabel>
+            <div
+              style={{
+                border: `1px solid ${BRAND.border}`,
+                borderRadius: 8,
+                overflow: "hidden",
+                marginBottom: 16,
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: BRAND.bg }}>
+                    <th style={{ padding: "8px 12px", textAlign: "left", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>
+                      Max SQ (exclusive, null = catch-all)
+                    </th>
+                    <th style={{ padding: "8px 12px", textAlign: "right", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>
+                      Profit $/sq
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* ── PM incentive matrix ── */}
-          <SectionLabel>PM incentive matrix ($ flat)</SectionLabel>
-          <div
-            style={{
-              border: `1px solid ${BRAND.border}`,
-              borderRadius: 8,
-              overflow: "hidden",
-              marginBottom: 16,
-            }}
-          >
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: BRAND.bg }}>
-                  <th style={{ padding: "8px 12px", textAlign: "left", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>Band</th>
-                  <th style={{ padding: "8px 12px", textAlign: "right", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>HVHZ</th>
-                  <th style={{ padding: "8px 12px", textAlign: "right", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>FBC</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(
-                  [
-                    ["residential_lt20", "Residential < 20 SQ"],
-                    ["commercial_20_50", "Commercial 20–50 SQ"],
-                    ["commercial_gt50", "Commercial > 50 SQ"],
-                  ] as [string, string][]
-                ).map(([key, label]) => {
-                  const pm = (config.pm_incentive ?? {}) as Record<string, Record<string, number>>;
-                  return (
-                    <tr key={key} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
-                      <td style={{ padding: "6px 12px", color: BRAND.ink }}>{label}</td>
-                      {(["HVHZ", "FBC"] as const).map((zone) => (
-                        <td key={zone} style={{ padding: "4px 8px", textAlign: "right" }}>
-                          <input
-                            type="number"
-                            disabled={disabled}
-                            value={(pm[zone]?.[key] ?? 0)}
-                            onChange={(e) => {
-                              const updated = JSON.parse(JSON.stringify(pm)) as Record<string, Record<string, number>>;
-                              if (!updated[zone]) updated[zone] = {};
-                              updated[zone][key] = parseFloat(e.target.value) || 0;
-                              set(["pm_incentive"], updated);
-                            }}
-                            style={{
-                              ...inputStyle,
-                              padding: "4px 8px",
-                              fontSize: 12,
-                              width: 90,
-                              textAlign: "right",
-                              background: disabled ? BRAND.bg : "#fff",
-                            }}
-                          />
-                        </td>
-                      ))}
+                </thead>
+                <tbody>
+                  {profitScale.map(([max, pft], i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                      <td style={{ padding: "6px 12px", color: BRAND.ink }}>
+                        {max === null ? "∞ (catch-all)" : `< ${max} SQ`}
+                      </td>
+                      <td style={{ padding: "4px 8px", textAlign: "right" }}>
+                        <input
+                          type="number"
+                          disabled={disabled}
+                          value={pft}
+                          onChange={(e) => {
+                            const updated = profitScale.map((tier, j) =>
+                              j === i ? [tier[0], parseFloat(e.target.value) || 0] : tier
+                            ) as Array<[number | null, number]>;
+                            set(["profit_scale"], updated);
+                          }}
+                          style={{
+                            ...inputStyle,
+                            padding: "4px 8px",
+                            fontSize: 12,
+                            width: 90,
+                            textAlign: "right",
+                            background: disabled ? BRAND.bg : "#fff",
+                          }}
+                        />
+                      </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CollapsibleGroup>
 
-          {/* ── Tile dumpster ── */}
-          <SectionLabel>Tile dumpster</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <NumericField
-              label="Cost per dumpster ($)"
-              value={getNum(["tile_dumpster_cost"])}
-              onChange={(v) => set(["tile_dumpster_cost"], v)}
-              disabled={disabled}
-            />
-            <NumericField
-              label="HVHZ threshold (SQ)"
-              value={getNum(["tile_dumpster_threshold", "HVHZ"])}
-              onChange={(v) => set(["tile_dumpster_threshold", "HVHZ"], v)}
-              disabled={disabled}
-            />
-            <NumericField
-              label="FBC threshold (SQ)"
-              value={getNum(["tile_dumpster_threshold", "FBC"])}
-              onChange={(v) => set(["tile_dumpster_threshold", "FBC"], v)}
-              disabled={disabled}
-            />
-          </div>
-
-          {/* ── Commission ── */}
-          <SectionLabel>Commission rates</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <NumericField
-              label="Sloped (%)"
-              value={
-                typeof (config.commission_pct as Record<string, unknown> | undefined)?.sloped === "number"
-                  ? ((config.commission_pct as Record<string, number>).sloped * 100)
-                  : null
-              }
-              onChange={(v) => {
-                const cur = (config.commission_pct ?? {}) as Record<string, number>;
-                set(["commission_pct"], { ...cur, sloped: v !== null ? v / 100 : null });
-              }}
-              disabled={disabled}
-              unit="e.g. 10 = 10%"
-            />
-            <NumericField
-              label="Low-slope (%)"
-              value={
-                typeof (config.commission_pct as Record<string, unknown> | undefined)?.low_slope === "number"
-                  ? ((config.commission_pct as Record<string, number>).low_slope * 100)
-                  : null
-              }
-              onChange={(v) => {
-                const cur = (config.commission_pct ?? {}) as Record<string, number>;
-                set(["commission_pct"], { ...cur, low_slope: v !== null ? v / 100 : null });
-              }}
-              disabled={disabled}
-              unit="e.g. 15 = 15%"
-            />
-          </div>
-
-          {/* ── Margin floors ── */}
-          <SectionLabel>Margin floors</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <NumericField
-              label="Profit floor (%)"
-              value={typeof config.profit_floor_pct === "number" ? (config.profit_floor_pct as number) * 100 : null}
-              onChange={(v) => set(["profit_floor_pct"], v !== null ? v / 100 : null)}
-              disabled={disabled}
-              unit="e.g. 13 = 13%"
-            />
-            <NumericField
-              label="Profit+OH floor (%)"
-              value={typeof config.profit_plus_oh_floor_pct === "number" ? (config.profit_plus_oh_floor_pct as number) * 100 : null}
-              onChange={(v) => set(["profit_plus_oh_floor_pct"], v !== null ? v / 100 : null)}
-              disabled={disabled}
-              unit="e.g. 33 = 33%"
-            />
-          </div>
-
-          {/* ── Adder scalars ── */}
-          <SectionLabel>Per-square adders ($)</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-            {(
-              [
-                ["pitch_7_12_add", "Pitch ≥ 7/12 (tile)"],
-                ["tile_demo_add", "Tile demo/tear-off"],
-                ["metal_demo_add", "Metal demo/tear-off"],
-                ["secondary_water_barrier_add", "Secondary water barrier"],
-                ["winterguard_add", "WinterGuard"],
-              ] as [string, string][]
-            ).map(([key, label]) => (
+          {/* ── Group 2: Day-Based Overhead & Profit (v2) ── */}
+          <CollapsibleGroup title="Day-Based Overhead & Profit (Estimator v2)" accent="#f0f4ff">
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+              Daily overhead rates and profit controls used by the Estimator v2 day-based engine.
+              These keys are absent in pre-v2 config versions — fields will show the saved value or the engine default.
+            </p>
+            <SectionLabel>Daily overhead rates ($/day)</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {dailyRateKeys.map(([key, label]) => {
+                const rates = (config.daily_overhead_rates ?? {}) as Record<string, number | null>;
+                const val = key in rates ? rates[key] : undefined;
+                return (
+                  <NumericField
+                    key={key}
+                    label={label}
+                    value={val as number | null | undefined}
+                    onChange={(v) => {
+                      const cur = JSON.parse(
+                        JSON.stringify((config.daily_overhead_rates ?? {}) as Record<string, unknown>)
+                      ) as Record<string, unknown>;
+                      cur[key] = v;
+                      set(["daily_overhead_rates"], cur);
+                    }}
+                    disabled={disabled}
+                    unit="$/day, step 5"
+                  />
+                );
+              })}
+            </div>
+            <SectionLabel>Profit floors ($)</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
               <NumericField
-                key={key}
-                label={label}
-                value={getNum([key])}
-                onChange={(v) => set([key], v)}
+                label="Weekly profit floor"
+                value={
+                  config.weekly_profit_floor !== undefined
+                    ? (config.weekly_profit_floor as number | null)
+                    : 2500
+                }
+                onChange={(v) => set(["weekly_profit_floor"], v)}
+                disabled={disabled}
+                unit="$"
+              />
+              <NumericField
+                label="Job profit floor"
+                value={
+                  config.job_profit_floor !== undefined
+                    ? (config.job_profit_floor as number | null)
+                    : 2500
+                }
+                onChange={(v) => set(["job_profit_floor"], v)}
+                disabled={disabled}
+                unit="$"
+              />
+            </div>
+            <SectionLabel>Rounding & profit mode</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div style={{ marginBottom: 8 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: BRAND.sub,
+                    marginBottom: 2,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Weeks rounding mode
+                </label>
+                <select
+                  disabled={disabled}
+                  value={getStr(["daily_overhead_weeks_rounding_mode"], "ceil")}
+                  onChange={(e) => set(["daily_overhead_weeks_rounding_mode"], e.target.value)}
+                  style={{
+                    ...inputStyle,
+                    padding: "6px 10px",
+                    fontSize: 13,
+                    width: "100%",
+                    background: disabled ? BRAND.bg : "#fff",
+                    cursor: disabled ? "default" : "pointer",
+                  }}
+                >
+                  <option value="ceil">ceil (round up)</option>
+                  <option value="floor">floor (round down)</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: BRAND.sub,
+                    marginBottom: 2,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Default profit mode
+                </label>
+                <select
+                  disabled={disabled}
+                  value={getStr(["profit_mode_default"], "scale")}
+                  onChange={(e) => set(["profit_mode_default"], e.target.value)}
+                  style={{
+                    ...inputStyle,
+                    padding: "6px 10px",
+                    fontSize: 13,
+                    width: "100%",
+                    background: disabled ? BRAND.bg : "#fff",
+                    cursor: disabled ? "default" : "pointer",
+                  }}
+                >
+                  <option value="scale">scale (sliding $/sq)</option>
+                  <option value="flat">flat (fixed weekly floor)</option>
+                </select>
+              </div>
+            </div>
+          </CollapsibleGroup>
+
+          {/* ── Group 3: Adders ── */}
+          <CollapsibleGroup title="Adders">
+            <SectionLabel>Per-square adders ($)</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {(
+                [
+                  ["pitch_7_12_add", "Pitch ≥ 7/12 (tile)"],
+                  ["tile_demo_add", "Tile demo/tear-off"],
+                  ["metal_demo_add", "Metal demo/tear-off"],
+                  ["secondary_water_barrier_add", "Secondary water barrier"],
+                  ["winterguard_add", "WinterGuard"],
+                ] as [string, string][]
+              ).map(([key, label]) => (
+                <NumericField
+                  key={key}
+                  label={label}
+                  value={getNum([key])}
+                  onChange={(v) => set([key], v)}
+                  disabled={disabled}
+                />
+              ))}
+            </div>
+            <SectionLabel>Linear / each adders</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField label="Stucco metal ($/LF)" value={getNum(["stucco_metal_per_lf"])} onChange={(v) => set(["stucco_metal_per_lf"], v)} disabled={disabled} />
+              <NumericField label="Penetration ($/each)" value={getNum(["penetration_each"])} onChange={(v) => set(["penetration_each"], v)} disabled={disabled} />
+              <NumericField label="Ridge vent ($/LF)" value={getNum(["ridge_vent_per_lf"])} onChange={(v) => set(["ridge_vent_per_lf"], v)} disabled={disabled} />
+            </div>
+            <SectionLabel>Project fixed costs ($)</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField label="Delivery / plywood / vents" value={getNum(["delivery_plywood_vents"])} onChange={(v) => set(["delivery_plywood_vents"], v)} disabled={disabled} />
+              <NumericField label="New bonus values" value={getNum(["new_bonus_values"])} onChange={(v) => set(["new_bonus_values"], v)} disabled={disabled} />
+              <NumericField label="Permit processing" value={getNum(["permit_processing"])} onChange={(v) => set(["permit_processing"], v)} disabled={disabled} />
+              <NumericField label="Permit commercial add" value={getNum(["permit_commercial_add"])} onChange={(v) => set(["permit_commercial_add"], v)} disabled={disabled} />
+              <NumericField label="3–5 story flat add ($)" value={getNum(["roof_height_3_5_flat_add"])} onChange={(v) => set(["roof_height_3_5_flat_add"], v)} disabled={disabled} />
+            </div>
+          </CollapsibleGroup>
+
+          {/* ── Group 4: Incentives & Commission ── */}
+          <CollapsibleGroup title="Incentives & Commission">
+            <SectionLabel>PM incentive matrix ($ flat)</SectionLabel>
+            <div
+              style={{
+                border: `1px solid ${BRAND.border}`,
+                borderRadius: 8,
+                overflow: "hidden",
+                marginBottom: 16,
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: BRAND.bg }}>
+                    <th style={{ padding: "8px 12px", textAlign: "left", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>Band</th>
+                    <th style={{ padding: "8px 12px", textAlign: "right", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>HVHZ</th>
+                    <th style={{ padding: "8px 12px", textAlign: "right", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>FBC</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(
+                    [
+                      ["residential_lt20", "Residential < 20 SQ"],
+                      ["commercial_20_50", "Commercial 20–50 SQ"],
+                      ["commercial_gt50", "Commercial > 50 SQ"],
+                    ] as [string, string][]
+                  ).map(([key, label]) => {
+                    const pm = (config.pm_incentive ?? {}) as Record<string, Record<string, number>>;
+                    return (
+                      <tr key={key} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                        <td style={{ padding: "6px 12px", color: BRAND.ink }}>{label}</td>
+                        {(["HVHZ", "FBC"] as const).map((zone) => (
+                          <td key={zone} style={{ padding: "4px 8px", textAlign: "right" }}>
+                            <input
+                              type="number"
+                              disabled={disabled}
+                              value={(pm[zone]?.[key] ?? 0)}
+                              onChange={(e) => {
+                                const updated = JSON.parse(JSON.stringify(pm)) as Record<string, Record<string, number>>;
+                                if (!updated[zone]) updated[zone] = {};
+                                updated[zone][key] = parseFloat(e.target.value) || 0;
+                                set(["pm_incentive"], updated);
+                              }}
+                              style={{
+                                ...inputStyle,
+                                padding: "4px 8px",
+                                fontSize: 12,
+                                width: 90,
+                                textAlign: "right",
+                                background: disabled ? BRAND.bg : "#fff",
+                              }}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <SectionLabel>Commission rates</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField
+                label="Sloped (%)"
+                value={
+                  typeof (config.commission_pct as Record<string, unknown> | undefined)?.sloped === "number"
+                    ? ((config.commission_pct as Record<string, number>).sloped * 100)
+                    : null
+                }
+                onChange={(v) => {
+                  const cur = (config.commission_pct ?? {}) as Record<string, number>;
+                  set(["commission_pct"], { ...cur, sloped: v !== null ? v / 100 : null });
+                }}
+                disabled={disabled}
+                unit="e.g. 10 = 10%"
+              />
+              <NumericField
+                label="Low-slope (%)"
+                value={
+                  typeof (config.commission_pct as Record<string, unknown> | undefined)?.low_slope === "number"
+                    ? ((config.commission_pct as Record<string, number>).low_slope * 100)
+                    : null
+                }
+                onChange={(v) => {
+                  const cur = (config.commission_pct ?? {}) as Record<string, number>;
+                  set(["commission_pct"], { ...cur, low_slope: v !== null ? v / 100 : null });
+                }}
+                disabled={disabled}
+                unit="e.g. 15 = 15%"
+              />
+            </div>
+            <SectionLabel>Margin floors</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField
+                label="Profit floor (%)"
+                value={typeof config.profit_floor_pct === "number" ? (config.profit_floor_pct as number) * 100 : null}
+                onChange={(v) => set(["profit_floor_pct"], v !== null ? v / 100 : null)}
+                disabled={disabled}
+                unit="e.g. 13 = 13%"
+              />
+              <NumericField
+                label="Profit+OH floor (%)"
+                value={typeof config.profit_plus_oh_floor_pct === "number" ? (config.profit_plus_oh_floor_pct as number) * 100 : null}
+                onChange={(v) => set(["profit_plus_oh_floor_pct"], v !== null ? v / 100 : null)}
+                disabled={disabled}
+                unit="e.g. 33 = 33%"
+              />
+            </div>
+            <SectionLabel>Tile dumpster</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField
+                label="Cost per dumpster ($)"
+                value={getNum(["tile_dumpster_cost"])}
+                onChange={(v) => set(["tile_dumpster_cost"], v)}
                 disabled={disabled}
               />
-            ))}
-          </div>
+              <NumericField
+                label="HVHZ threshold (SQ)"
+                value={getNum(["tile_dumpster_threshold", "HVHZ"])}
+                onChange={(v) => set(["tile_dumpster_threshold", "HVHZ"], v)}
+                disabled={disabled}
+              />
+              <NumericField
+                label="FBC threshold (SQ)"
+                value={getNum(["tile_dumpster_threshold", "FBC"])}
+                onChange={(v) => set(["tile_dumpster_threshold", "FBC"], v)}
+                disabled={disabled}
+              />
+            </div>
+          </CollapsibleGroup>
 
-          {/* ── Linear/each adders ── */}
-          <SectionLabel>Linear / each adders</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <NumericField label="Stucco metal ($/LF)" value={getNum(["stucco_metal_per_lf"])} onChange={(v) => set(["stucco_metal_per_lf"], v)} disabled={disabled} />
-            <NumericField label="Penetration ($/each)" value={getNum(["penetration_each"])} onChange={(v) => set(["penetration_each"], v)} disabled={disabled} />
-            <NumericField label="Ridge vent ($/LF)" value={getNum(["ridge_vent_per_lf"])} onChange={(v) => set(["ridge_vent_per_lf"], v)} disabled={disabled} />
-          </div>
-
-          {/* ── Project fixed costs ── */}
-          <SectionLabel>Project fixed costs ($)</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <NumericField label="Delivery / plywood / vents" value={getNum(["delivery_plywood_vents"])} onChange={(v) => set(["delivery_plywood_vents"], v)} disabled={disabled} />
-            <NumericField label="New bonus values" value={getNum(["new_bonus_values"])} onChange={(v) => set(["new_bonus_values"], v)} disabled={disabled} />
-            <NumericField label="Permit processing" value={getNum(["permit_processing"])} onChange={(v) => set(["permit_processing"], v)} disabled={disabled} />
-            <NumericField label="Permit commercial add" value={getNum(["permit_commercial_add"])} onChange={(v) => set(["permit_commercial_add"], v)} disabled={disabled} />
-            <NumericField label="3–5 story flat add ($)" value={getNum(["roof_height_3_5_flat_add"])} onChange={(v) => set(["roof_height_3_5_flat_add"], v)} disabled={disabled} />
-          </div>
-
-          {/* ── Low-slope section ── */}
-          <SectionLabel>Low-slope (Exhibit B §4) — Pending Tim</SectionLabel>
-          <div
-            style={{
-              border: `1px dashed #fcd34d`,
-              borderRadius: 8,
-              padding: "12px 14px",
-              background: "#fffbf0",
-              marginBottom: 16,
-            }}
-          >
-            <p style={{ margin: "0 0 10px", fontSize: 13, color: "#92400e" }}>
-              All low-slope rates below are <strong>pending Tim's Exhibit B §4 values</strong>. Null fields will show "Pending Tim" — the engine raises a <code>ConfigError</code> if any null is exercised.
-            </p>
+          {/* ── Group 5: Low-Slope (Pending Tim) ── */}
+          <CollapsibleGroup title="Low-Slope (Pending Tim)" accent="#fffbf0">
+            <div
+              style={{
+                border: `1px dashed #fcd34d`,
+                borderRadius: 8,
+                padding: "12px 14px",
+                background: "#fffbf0",
+                marginBottom: 14,
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
+                All low-slope rates below are <strong>pending Tim's Exhibit B §4 values</strong>. Null fields will show "Pending Tim" — the engine raises a <code>ConfigError</code> if any null is exercised.
+              </p>
+            </div>
             <ZoneTypeTable
               label="Low-slope base cost L+M ($/sq)"
               data={getObj(["low_slope", "base_cost_lm"])}
@@ -842,7 +1033,7 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
               onChange={(v) => set(["low_slope", "overhead"], v)}
               disabled={disabled}
             />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8, marginBottom: 8 }}>
               <NumericField
                 label="Tapered cost ($/sq, no OH/profit)"
                 value={getNum(["low_slope", "tapered_cost_per_sq"])}
@@ -856,7 +1047,7 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                 disabled={disabled}
               />
             </div>
-          </div>
+          </CollapsibleGroup>
         </div>
       )}
     </div>
