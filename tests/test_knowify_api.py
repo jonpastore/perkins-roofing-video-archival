@@ -192,9 +192,10 @@ class TestKnowifyStatus:
         r = no_auth_client.get("/knowify/status", headers={"Authorization": "Bearer bad"})
         assert r.status_code == 401
 
-    def test_sales_role_403(self, sales_client):
+    def test_sales_role_200(self, sales_client):
+        # billing_view widened to sales (Wave 3 authz update) — sales can now view legacy data.
         r = sales_client.get("/knowify/status", headers={"Authorization": "Bearer x"})
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -217,9 +218,10 @@ class TestKnowifyCustomers:
         r = no_auth_client.get("/knowify/customers", headers={"Authorization": "Bearer bad"})
         assert r.status_code == 401
 
-    def test_sales_403(self, sales_client):
+    def test_sales_200(self, sales_client):
+        # billing_view widened to sales (Wave 3) — sales can now view legacy data.
         r = sales_client.get("/knowify/customers", headers={"Authorization": "Bearer x"})
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -242,9 +244,10 @@ class TestKnowifyInvoices:
         r = no_auth_client.get("/knowify/invoices", headers={"Authorization": "Bearer bad"})
         assert r.status_code == 401
 
-    def test_sales_403(self, sales_client):
+    def test_sales_200(self, sales_client):
+        # billing_view widened to sales (Wave 3) — sales can now view legacy data.
         r = sales_client.get("/knowify/invoices", headers={"Authorization": "Bearer x"})
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +269,10 @@ class TestKnowifyPayments:
         r = no_auth_client.get("/knowify/payments", headers={"Authorization": "Bearer bad"})
         assert r.status_code == 401
 
-    def test_sales_403(self, sales_client):
+    def test_sales_200(self, sales_client):
+        # billing_view widened to sales (Wave 3) — sales can now view legacy data.
         r = sales_client.get("/knowify/payments", headers={"Authorization": "Bearer x"})
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -321,9 +325,10 @@ class TestKnowifyRaw:
         r = no_auth_client.get("/knowify/raw/invoices", headers={"Authorization": "Bearer bad"})
         assert r.status_code == 401
 
-    def test_sales_403(self, sales_client):
+    def test_sales_200(self, sales_client):
+        # billing_view widened to sales (Wave 3) — sales can now view legacy data.
         r = sales_client.get("/knowify/raw/invoices", headers={"Authorization": "Bearer x"})
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------

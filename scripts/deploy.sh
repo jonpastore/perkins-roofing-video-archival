@@ -62,7 +62,9 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
 declare -A JOBS=(
   [ingest]="jobs.ingest_worker" [render]="jobs.render_job"
   [article]="jobs.article_job"  [social]="jobs.social_job"
-  # knowify-sync: full hourly Knowify mirror (08:00-18:00 ET). Needs KNOWIFY_TOKENS_SECRET.
+  # knowify-sync: full hourly Knowify mirror (08:00-18:00 ET). Runs KNOWIFY_PULL_MODE=mcp
+  # (REST /oauth 500s); reads the knowify-mcp-tokens secret via the SM API (jobs-sa has a
+  # project-wide accessor — no --set-secrets mount needed).
   [knowify-sync]="jobs.knowify_sync"
   # knowify-keepwarm: token-only refresh covering the 14h overnight gap. --refresh-only
   # mode skips data fetch; both jobs share advisory lock 8274125 (core/knowify/tokens.py)
@@ -76,12 +78,18 @@ for job in "${!JOBS[@]}"; do
   else
     ARGS="-m,${JOBS[$job]}"
   fi
+  # Knowify jobs pull/refresh via the MCP transport (REST /oauth is broken). Both sync
+  # and keepwarm honor KNOWIFY_PULL_MODE=mcp (keepwarm -> mcp_refresh_only).
+  JOB_ENV="^|^${BASE_ENV}|${CFG_ENV}"
+  if [[ "$job" == knowify-* ]]; then
+    JOB_ENV="${JOB_ENV}|KNOWIFY_PULL_MODE=mcp"
+  fi
   echo "== Deploy job: $job =="
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
     --service-account "jobs-sa@${PROJECT}.iam.gserviceaccount.com" \
     --set-cloudsql-instances "$CONN" \
     --command=python --args="$ARGS" \
-    --set-env-vars "^|^${BASE_ENV}|${CFG_ENV}" \
+    --set-env-vars "$JOB_ENV" \
     --set-secrets "$SECRETS"
 done
 

@@ -442,3 +442,101 @@ class TestRefreshOnlyPath:
             result = knowify_sync.run(refresh_only=True)
 
         assert result["exit_code"] != 0
+
+
+# ---------------------------------------------------------------------------
+# MCP transport (KNOWIFY_PULL_MODE=mcp) — stopgap while REST /oauth 500s.
+# Token comes from tokens.mcp_access_token; fetch via _fetch_entity_mcp; NO tombstoning.
+# ---------------------------------------------------------------------------
+
+# items has no MCP spec -> the real fetch returns []; mirror that here.
+_MCP_FIXTURE = {"clients": _CLIENTS, "invoices": _INVOICES, "payments": _PAYMENTS, "items": []}
+
+
+def _mock_fetch_mcp(entity, access_token):
+    assert access_token == "mcp-tok"  # the resolved MCP access token is threaded through
+    return _MCP_FIXTURE.get(entity, [])
+
+
+def _run_sync_mcp(factory, fetch_fn=_mock_fetch_mcp, access="mcp-tok", refresh_only=False):
+    from jobs import knowify_sync
+
+    with (
+        patch.dict("os.environ", {"KNOWIFY_PULL_MODE": "mcp"}),
+        patch.object(knowify_sync.tokens, "mcp_access_token", return_value=access),
+        patch.object(knowify_sync.tokens, "mcp_refresh_only", return_value=0),
+        patch.object(knowify_sync, "_fetch_entity_mcp", side_effect=fetch_fn),
+        patch.object(knowify_sync, "_fetch_entity",
+                     side_effect=AssertionError("REST fetch must not run in mcp mode")),
+        patch("jobs.knowify_sync.for_each_tenant",
+              side_effect=lambda sf, fn: _fake_tenant_loop(sf, fn, factory)),
+    ):
+        return knowify_sync.run(refresh_only=refresh_only)
+
+
+class TestMcpMode:
+    def test_mcp_raw_rows_inserted(self):
+        factory, _ = _sqlite_factory()
+        result = _run_sync_mcp(factory)
+        assert result["exit_code"] == 0
+        for entity, data in _MCP_FIXTURE.items():
+            assert _count_raw(factory, entity) == len(data)
+
+    def test_mcp_mode_skips_tombstone(self):
+        """A prior raw row absent from the current MCP pull is NOT tombstoned (safety:
+        MCP can't enumerate every non-deleted state, so no hard-delete detection)."""
+        factory, _ = _sqlite_factory()
+        s = _make_session(factory)
+        s.execute(insert(KnowifyRawRecord).values(
+            tenant_id=1, entity="clients", knowify_id="999",
+            payload={"Id": "999"}, content_hash="deadbeef" * 8, is_present=True,
+        ))
+        s.commit()
+        s.close()
+
+        _run_sync_mcp(factory)
+
+        s = _make_session(factory)
+        try:
+            ghost = s.execute(
+                select(KnowifyRawRecord).where(KnowifyRawRecord.knowify_id == "999")
+            ).scalar_one_or_none()
+            assert ghost is not None
+            assert ghost.is_present is True  # NOT tombstoned
+            assert ghost.deleted_at is None
+        finally:
+            s.close()
+
+    def test_mcp_auth_error_marks_all_and_skips_fetch(self):
+        from jobs import knowify_sync
+        factory, _ = _sqlite_factory()
+        fetch_mock = MagicMock(side_effect=AssertionError("fetch must not run on auth_error"))
+
+        with (
+            patch.dict("os.environ", {"KNOWIFY_PULL_MODE": "mcp"}),
+            patch.object(knowify_sync.tokens, "mcp_access_token",
+                         side_effect=knowify_sync.tokens.AuthError("dead")),
+            patch.object(knowify_sync, "_fetch_entity_mcp", fetch_mock),
+            patch("jobs.knowify_sync.for_each_tenant",
+                  side_effect=lambda sf, fn: _fake_tenant_loop(sf, fn, factory)),
+        ):
+            result = knowify_sync.run()
+
+        assert result["exit_code"] == 1
+        assert result.get("auth_error") is True
+        states = _get_state(factory)
+        for entity in SYNC_ENTITIES:
+            assert states.get(entity) == "auth_error"
+
+    def test_mcp_refresh_only_uses_mcp_path(self):
+        from jobs import knowify_sync
+        mcp_refresh = MagicMock(return_value=0)
+        rest_refresh = MagicMock(side_effect=AssertionError("REST refresh must not run in mcp mode"))
+        with (
+            patch.dict("os.environ", {"KNOWIFY_PULL_MODE": "mcp"}),
+            patch.object(knowify_sync.tokens, "mcp_refresh_only", mcp_refresh),
+            patch.object(knowify_sync.tokens, "refresh_only", rest_refresh),
+        ):
+            result = knowify_sync.run(refresh_only=True)
+        mcp_refresh.assert_called_once()
+        assert result["exit_code"] == 0

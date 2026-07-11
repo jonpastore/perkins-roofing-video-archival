@@ -114,19 +114,47 @@ def main():
     # Include INACTIVE clients (Knowify auto-filters to Active) so invoices for inactive
     # clients resolve to a real customer, and carry ObjectState → our is_active flag.
     clients = pull_all(m, "Clients",
-                       ["Id", "ClientName", "CompanyName", "Email", "PhoneNumber", "ObjectState"],
+                       ["Id", "ClientName", "CompanyName", "Email", "PhoneNumber", "ObjectState",
+                        "Address1", "City", "StateProvince", "Zip", "PhoneNumberMobile",
+                        "ContactName", "Notes", "PaymentTerms", "ParentId", "DateCreated"],
                        where={"ObjectState": {"$in": ["Active", "Inactive"]}}, cap=cap)
+    # MONEY NOTE (verified 2026-07-11): projects/contracts/deliverables money fields are
+    # ALREADY DOLLARS from MCP — no ÷100 needed. Only payments.Amount is cents.
+    projects = pull_all(m, "Projects",
+                        ["Id", "ProjectName", "ClientId", "ContractId", "DraftContractId",
+                         "BusinessState", "ContractType", "ObjectState", "Address1", "City",
+                         "StateProvince", "Zip", "DateCreated", "DueDate", "ProjectNumber",
+                         "Notes", "SalesLead"],
+                        order=[["Id", "DESC"]], cap=cap)
+    contracts = pull_all(m, "Contracts",
+                         ["Id", "ContractType", "BusinessState", "ObjectState",
+                          "OriginalContractSum", "CurrentContractSum", "AdditionalContractSum",
+                          "DepositAmount", "ClientId", "ProjectId", "ContractName", "Description",
+                          "ContactName", "PONumber", "DateCreated", "ExpirationDate", "StartDate",
+                          "IsSigned", "IsChangeOrder", "PaymentTerms"],
+                         order=[["Id", "DESC"]], cap=cap)
+    deliverables = pull_all(m, "Deliverables",
+                            ["Id", "ContractId", "Description", "Quantity", "UnitPrice", "Price",
+                             "UnitName", "BusinessState", "IsChangeOrder", "ChangeOrderNumber",
+                             "CostLabor", "CostMaterials", "MarkupPercentage", "PriceBilled",
+                             "UnitsBilled", "BillingPeriodicity", "IsTaxable", "ObjectState"],
+                            order=[["Id", "DESC"]], cap=cap)
     invoices = pull_all(m, "Invoices",
                         ["Id", "InvoiceNumber", "ClientId", "ProjectId", "BusinessState",
-                         "ObjectState", "TotalAmount", "OutstandingAmount", "InvoiceDate", "DueDate"],
+                         "ObjectState", "TotalAmount", "OutstandingAmount", "InvoiceDate", "DueDate",
+                         "PaymentTerms", "ForDeposit", "IsRetainage", "PONumber"],
                         order=[["Id", "DESC"]], cap=cap)
     payments = pull_all(m, "Payments",
                         ["Id", "Amount", "PaymentDate", "InvoiceId", "ReceivableId", "PayableId",
                          "Voided", "ObjectState", "isAIA", "CheckNumber", "isCreditCard"],
                         order=[["Id", "DESC"]], cap=cap)
-    json.dump({"_payments_in_cents": True, "clients": clients, "invoices": invoices,
-               "payments": payments}, sys.stdout)
-    sys.stderr.write(f"pulled clients={len(clients)} invoices={len(invoices)} payments={len(payments)}\n")
+    json.dump({"_payments_in_cents": True, "clients": clients, "projects": projects,
+               "contracts": contracts, "deliverables": deliverables,
+               "invoices": invoices, "payments": payments}, sys.stdout)
+    sys.stderr.write(
+        f"pulled clients={len(clients)} projects={len(projects)} contracts={len(contracts)}"
+        f" deliverables={len(deliverables)} invoices={len(invoices)} payments={len(payments)}\n"
+    )
 
 
 if __name__ == "__main__":

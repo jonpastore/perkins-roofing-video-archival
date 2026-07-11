@@ -357,12 +357,29 @@ export function deleteSsoProvider(idpId: string): Promise<void> {
   return apiFetch(`/admin/sso/providers/${idpId}`, { method: "DELETE" }).then(() => undefined);
 }
 
+// ── Generic pagination wrapper ───────────────────────────────────────────────
+
+export interface Paged<T> {
+  items: T[];
+  total: number;
+}
+
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 /** Read the FastAPI `detail` off a failed response, falling back to status text. */
 async function errText(res: Response): Promise<string> {
   const d = await res.json().catch(() => ({}));
   return (d as { detail?: string }).detail ?? `${res.status} ${res.statusText}`;
+}
+
+/** Serialize a params object to a query string, skipping undefined/null values. */
+function qs(params: Record<string, string | number | boolean | undefined | null>): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null) p.set(k, String(v));
+  }
+  const s = p.toString();
+  return s ? `?${s}` : "";
 }
 
 /** Fetch an auth-gated PDF endpoint and open it in a new tab (the PDF routes require the
@@ -383,6 +400,7 @@ export interface QuotingCustomer {
   company_name: string | null;
   email: string | null;
   phone: string | null;
+  is_active: boolean;
 }
 export interface QuotingProperty {
   id: number;
@@ -398,13 +416,94 @@ export interface QuotingCustomerDetail extends QuotingCustomer {
   properties: QuotingProperty[];
 }
 
-export async function listQuotingCustomers(): Promise<QuotingCustomer[]> {
-  const r = await apiFetch("/quoting/customers?limit=500");
+export interface ListCustomersParams {
+  search?: string;
+  is_active?: boolean;
+  sort?: string;
+  order?: "asc" | "desc";
+  skip?: number;
+  limit?: number;
+  page?: number;
+}
+
+/** Returns bare array — backwards-compatible for existing callers (ProposalBuilder, Invoices). */
+export async function listQuotingCustomers(params?: ListCustomersParams): Promise<QuotingCustomer[]> {
+  const q = qs({ limit: 500, ...params });
+  const r = await apiFetch(`/quoting/customers${q}`);
+  if (!r.ok) throw new Error(await errText(r));
+  const data: Paged<QuotingCustomer> = await r.json();
+  return data.items;
+}
+
+/** Paged variant for the new Customers table (returns {items, total}). */
+export async function listQuotingCustomersPaged(params?: ListCustomersParams): Promise<Paged<QuotingCustomer>> {
+  const q = qs({ ...params });
+  const r = await apiFetch(`/quoting/customers${q}`);
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
+
 export async function getQuotingCustomer(id: number): Promise<QuotingCustomerDetail> {
   const r = await apiFetch(`/quoting/customers/${id}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** Soft-delete a customer (sets is_active=false). */
+export async function deactivateCustomer(id: number): Promise<QuotingCustomer> {
+  const r = await apiFetch(`/quoting/customers/${id}/deactivate`, { method: "PATCH" });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export interface CustomerInput {
+  display_name: string;
+  company_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
+}
+export async function createCustomer(body: CustomerInput): Promise<QuotingCustomer> {
+  const r = await apiFetch(`/quoting/customers`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function updateCustomer(id: number, body: Partial<CustomerInput>): Promise<QuotingCustomer> {
+  const r = await apiFetch(`/quoting/customers/${id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export interface ContactInput {
+  name: string; role?: string | null; email?: string | null; phone?: string | null; is_primary?: boolean;
+}
+export async function addCustomerContact(customerId: number, body: ContactInput): Promise<unknown> {
+  const r = await apiFetch(`/quoting/customers/${customerId}/contacts`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export interface PropertyInput {
+  street: string; city?: string | null; state?: string | null; zip?: string | null;
+  county?: string | null; code_zone?: string | null; notes?: string | null;
+}
+export async function addCustomerProperty(customerId: number, body: PropertyInput): Promise<QuotingProperty> {
+  const r = await apiFetch(`/quoting/customers/${customerId}/properties`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function updateProperty(propertyId: number, body: Partial<PropertyInput>): Promise<QuotingProperty> {
+  const r = await apiFetch(`/quoting/properties/${propertyId}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
@@ -549,6 +648,10 @@ export interface Invoice {
   tax_amount: string;
   total: string;
   lines: InvoiceLine[];
+  // new fields added in backend update
+  customer_display_name: string | null;
+  source: string | null;          // e.g. "native" | "knowify"
+  knowify_invoice_number: string | null;
 }
 export interface InvoiceScopeInput {
   description: string;
@@ -567,11 +670,36 @@ export interface IssueInvoiceRequest {
   comments?: string | null;
 }
 
-export async function listInvoices(): Promise<Invoice[]> {
-  const r = await apiFetch("/invoices");
+export interface ListInvoicesParams {
+  status?: string;
+  customer_id?: number;
+  source?: string;
+  date_from?: string;
+  date_to?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  skip?: number;
+  limit?: number;
+  page?: number;
+}
+
+/** Returns bare array — backwards-compatible for existing callers (Invoices.tsx). */
+export async function listInvoices(params?: ListInvoicesParams): Promise<Invoice[]> {
+  const q = qs({ ...params });
+  const r = await apiFetch(`/invoices${q}`);
+  if (!r.ok) throw new Error(await errText(r));
+  const data: Paged<Invoice> = await r.json();
+  return data.items;
+}
+
+/** Paged variant for the new Invoices table (returns {items, total}). */
+export async function listInvoicesPaged(params?: ListInvoicesParams): Promise<Paged<Invoice>> {
+  const q = qs({ ...params });
+  const r = await apiFetch(`/invoices${q}`);
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
+
 export async function issueInvoice(body: IssueInvoiceRequest): Promise<Invoice> {
   const r = await apiFetch("/invoices", { method: "POST", body: JSON.stringify(body) });
   if (!r.ok) throw new Error(await errText(r));
@@ -582,6 +710,13 @@ export async function recordPayment(
   body: { amount: string; method?: string; reference?: string; notes?: string; idempotency_key?: string },
 ): Promise<{ invoice_id: number; status: string }> {
   const r = await apiFetch(`/invoices/${invoiceId}/payments`, { method: "POST", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+/** List all payments recorded against a single invoice. */
+export async function listInvoicePayments(invoiceId: number): Promise<Payment[]> {
+  const r = await apiFetch(`/invoices/${invoiceId}/payments`);
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
@@ -714,6 +849,204 @@ export async function triggerKnowifySync(): Promise<KnowifySyncResult> {
 /** Surface Knowify OAuth reconnect status and operator instructions. Role: knowify_admin (admin-only). */
 export async function knowifyReconnect(): Promise<KnowifyReconnectResult> {
   const r = await apiFetch("/knowify/reconnect", { method: "POST" });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ── Payments (standalone router) ─────────────────────────────────────────────
+
+export interface Payment {
+  id: number;
+  invoice_id: number | null;
+  payment_date: string | null;
+  amount: string;
+  method: string | null;
+  reference: string | null;
+  notes: string | null;
+  knowify_payment_id: string | null;
+  created_at: string | null;
+  invoice_number: string | null;
+  customer_display_name: string | null;
+}
+
+export interface ListPaymentsParams {
+  search?: string;
+  invoice_id?: number;
+  method?: string;
+  date_from?: string;
+  date_to?: string;
+  sort?: string;
+  order?: "asc" | "desc";
+  skip?: number;
+  limit?: number;
+  page?: number;
+}
+
+export async function listPayments(params?: ListPaymentsParams): Promise<Paged<Payment>> {
+  const r = await apiFetch(`/payments${qs({ ...params })}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function getPayment(id: number): Promise<Payment> {
+  const r = await apiFetch(`/payments/${id}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ── Legacy contracts / quotes ─────────────────────────────────────────────────
+
+export interface QuoteLineItem {
+  Id: string | null;
+  ContractId: string | null;
+  Description: string | null;
+  Quantity: string | number | null;
+  UnitPrice: string | null;
+  Price: string | null;
+  PriceBilled: string | null;
+  CostLabor: string | null;
+  CostMaterials: string | null;
+  ObjectState: string | null;
+}
+
+export interface QuoteListItem {
+  contract_id: string;
+  ContractType: string | null;
+  BusinessState: string | null;
+  ContractName: string | null;
+  OriginalContractSum: string | null;
+  CurrentContractSum: string | null;
+  AdditionalContractSum: string | null;
+  DepositAmount: string | null;
+  ClientId: string | null;
+  ProjectId: string | null;
+  DateCreated: string | null;
+  ExpirationDate: string | null;
+  IsSigned: boolean | null;
+  PONumber: string | null;
+  ContactName: string | null;
+}
+
+export interface QuoteDetail extends QuoteListItem {
+  line_items: QuoteLineItem[];
+  project_address: {
+    Id: string | null;
+    Address1: string | null;
+    City: string | null;
+    StateProvince: string | null;
+    Zip: string | null;
+  } | null;
+  _note: string;
+}
+
+export interface ListQuotesParams {
+  search?: string;
+  business_state?: string;
+  client_id?: number;
+  sort?: string;
+  order?: "asc" | "desc";
+  skip?: number;
+  limit?: number;
+  page?: number;
+}
+
+export async function listQuotes(params?: ListQuotesParams): Promise<Paged<QuoteListItem>> {
+  const r = await apiFetch(`/quotes${qs({ ...params })}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function getQuote(id: string): Promise<QuoteDetail> {
+  const r = await apiFetch(`/quotes/${encodeURIComponent(id)}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ── Dashboard billing analytics ───────────────────────────────────────────────
+
+export interface DashboardTimeSeries {
+  period: string;
+  total: string;
+  count: number;
+}
+
+export interface DashboardAgingBuckets {
+  current: string;
+  d1_30: string;
+  d31_60: string;
+  d61_90: string;
+  d90_plus: string;
+}
+
+export interface DashboardProposalFunnel {
+  draft: number;
+  sent: number;
+  viewed: number;
+  accepted: number;
+  declined: number;
+  revision_requested: number;
+  win_rate: number;
+}
+
+export interface DashboardBilling {
+  payments_over_time: DashboardTimeSeries[];
+  invoices_issued_over_time: DashboardTimeSeries[];
+  open_ar_summary: {
+    open_count: number;
+    open_total: string;
+    outstanding_total: string;
+  };
+  aging_buckets: DashboardAgingBuckets;
+  receivables_due_next_30: {
+    count: number;
+    total: string;
+  };
+  proposal_funnel: DashboardProposalFunnel;
+}
+
+export async function getDashboardBilling(params: {
+  from?: string;
+  to?: string;
+  bucket?: string;
+}): Promise<DashboardBilling> {
+  const r = await apiFetch(`/dashboard/billing${qs(params)}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ── Admin metrics ─────────────────────────────────────────────────────────────
+
+export interface ActiveUserEntry {
+  email: string | null;
+  last_sign_in: string | null;
+  disabled: boolean;
+}
+
+export interface ActiveUsersResponse {
+  total_users: number;
+  active_users: number;
+  window_days: number;
+  recent: ActiveUserEntry[];
+  error?: string;
+}
+
+export interface SpendByService {
+  service: string;
+  cost: number;
+}
+
+export type GcpSpendResponse =
+  | { configured: false; note: string }
+  | { configured: true; total: number; currency: string; by_service: SpendByService[]; window_days: number; error?: string };
+
+export async function getActiveUsers(params: { days?: number }): Promise<ActiveUsersResponse> {
+  const r = await apiFetch(`/admin/metrics/active-users${qs(params)}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function getGcpSpend(params: { days?: number }): Promise<GcpSpendResponse> {
+  const r = await apiFetch(`/admin/metrics/gcp-spend${qs(params)}`);
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }

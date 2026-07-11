@@ -22,6 +22,7 @@ Run:
     --refresh-only: keep-warm path — refresh tokens only, no data fetch.
 """
 import logging
+import os
 import sys
 from contextlib import contextmanager
 from typing import Any
@@ -30,19 +31,26 @@ from sqlalchemy import text
 
 import core.knowify.tokens as tokens
 from app.models import SessionLocal
+from core.knowify import mcp_client
 from core.knowify.mirror import tombstone_absent, upsert_raw, write_state
 from core.knowify.promote import promote_run
 from core.tenant_loop import for_each_tenant
-from scripts.knowify.knowify_pull import _get, _records
 
 log = logging.getLogger(__name__)
 
 _LOCK_KEY = 8274124  # distinct from ingest (8274123) and token (8274125)
 
-# Entities synced each run, in FK-safe promotion order:
-# clients → items → invoices → payments.
+# Transport for the pull: "rest" (default) or "mcp" (stopgap while REST /oauth 500s —
+# see core/knowify/mcp_client.py). deploy.sh sets KNOWIFY_PULL_MODE=mcp on knowify-sync.
+def _pull_mode() -> str:
+    return os.getenv("KNOWIFY_PULL_MODE", "rest").strip().lower()
+
+# Entities synced each run, in FK-safe order:
+# clients first (projects/contracts reference clients), then projects (contracts reference
+# projects), then contracts (deliverables reference contracts), then items/invoices/payments.
 # (payments.invoice_id is NOT NULL FK to invoices.id — 0030:99)
-SYNC_ENTITIES = ["clients", "items", "invoices", "payments"]
+# projects/contracts/deliverables are raw-mirror-only — promote_run is NOT called for them.
+SYNC_ENTITIES = ["clients", "projects", "contracts", "deliverables", "items", "invoices", "payments"]
 
 # ObjectState filter appended to GET requests where supported.
 _OBJECT_STATE_FILTER = {"where[ObjectState][$in]": "Active,Cancelled,Deleted"}
@@ -87,7 +95,13 @@ def _fetch_entity(entity: str, tok: dict) -> list[dict[str, Any]]:
 
     Returns all records for the entity. Raises on HTTP error (caller handles).
     Adapts knowify_pull._get + _records with the ObjectState filter for tombstoning.
+
+    knowify_pull lives under scripts/ (.dockerignore'd), so it's imported lazily HERE —
+    only the REST path touches it. The MCP path (mcp_client) never imports scripts, so
+    the container starts cleanly when KNOWIFY_PULL_MODE=mcp.
     """
+    from scripts.knowify.knowify_pull import _get, _records  # noqa: PLC0415
+
     params = {"limit": 100, "offset": 0, **_OBJECT_STATE_FILTER}
     all_rows = []
     while True:
@@ -110,6 +124,7 @@ def _sync_tenant(
     tok: dict,
     entity_data: dict[str, list],
     fetch_errors: set[str],
+    tombstone: bool = True,
 ) -> dict:
     """Upsert raw + tombstone + promote for all entities for one tenant.
 
@@ -142,7 +157,13 @@ def _sync_tenant(
         try:
             present_ids = {str(r["Id"]) for r in records}
             upsert_raw(db, entity, records)
-            tombstone_absent(db, entity, present_ids)
+            # MCP mode skips tombstoning: its pull is not guaranteed to enumerate every
+            # non-deleted ObjectState the way the REST ObjectState filter does, so a
+            # missing row could be an incomplete pull, not a real delete. A stale
+            # un-tombstoned row is far safer than wrongly hard-deleting 7k customers.
+            # ponytail: no hard-delete detection in mcp mode; the REST path restores it.
+            if tombstone:
+                tombstone_absent(db, entity, present_ids)
             write_state(db, entity, rows_seen=len(records), status="ok")
             statuses[entity] = "ok"
             log.info(
@@ -198,6 +219,23 @@ def _sync_tenant(
     return statuses
 
 
+def _fetch_entity_mcp(entity: str, access_token: str) -> list[dict[str, Any]]:
+    """Full-pull one entity via the MCP transport (stopgap). Raises on transport error.
+
+    Thin wrapper over core.knowify.mcp_client.fetch_entity so tests can patch this seam
+    the same way they patch _fetch_entity for the REST path.
+    """
+    return mcp_client.fetch_entity(entity, access_token)
+
+
+def _mark_all_auth_error(db, tenant_id: int) -> None:
+    """Write auth_error into sync_state for every entity (per-tenant). Used by both
+    transports when the token is dead/unrefreshable — no per-entity 401 storm."""
+    for entity in SYNC_ENTITIES:
+        write_state(db, entity, rows_seen=0, status="auth_error")
+        log.error("knowify sync: entity=%s tenant=%d status=auth_error", entity, tenant_id)
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -205,39 +243,46 @@ def _sync_tenant(
 def run(limit=None, refresh_only: bool = False) -> dict:  # noqa: ARG001 (limit unused in v1)
     """Run the Knowify sync job.
 
-    refresh_only=True: keep-warm path — refresh tokens only, no data fetch.
+    Transport is chosen by KNOWIFY_PULL_MODE: "rest" (default) or "mcp" (stopgap while
+    REST /oauth 500s). refresh_only=True: keep-warm path — refresh the token only, no fetch.
     Returns dict with exit_code (0=clean, 1=any error/auth_error).
     """
     logging.basicConfig(level=logging.INFO)
+    mode = _pull_mode()
 
     if refresh_only:
-        rc = tokens.refresh_only()
-        return {"exit_code": rc, "mode": "refresh_only"}
+        rc = tokens.mcp_refresh_only() if mode == "mcp" else tokens.refresh_only()
+        return {"exit_code": rc, "mode": "refresh_only", "pull_mode": mode}
 
     with _single_flight() as ok:
         if not ok:
             log.info("knowify sync: already running (advisory lock held) — skip")
             return {"skipped": "knowify sync already running", "exit_code": 0}
 
-        tok = tokens.load_tokens()
-
-        # Preflight: one GET /api/v2/valid before any entity work.
-        # Dead token → mark all entities auth_error, exit non-zero (no 401 storm).
-        if not tokens.is_valid(tok):
-            log.error(
-                "knowify sync: /api/v2/valid returned dead token — all entities auth_error"
-            )
-            # Write auth_error into sync_state for every entity (per-tenant).
-            def _mark_auth_error(db, tenant_id: int) -> None:
-                for entity in SYNC_ENTITIES:
-                    write_state(db, entity, rows_seen=0, status="auth_error")
-                    log.error(
-                        "knowify sync: entity=%s tenant=%d status=auth_error",
-                        entity, tenant_id,
-                    )
-
-            for_each_tenant(SessionLocal, _mark_auth_error)
-            return {"exit_code": 1, "auth_error": True}
+        # Acquire a token + pick the fetch transport. A dead/unrefreshable token →
+        # mark all entities auth_error, exit non-zero (no per-entity 401 storm).
+        if mode == "mcp":
+            try:
+                access = tokens.mcp_access_token()
+            except tokens.AuthError:
+                log.error("knowify sync (mcp): token refresh failed — all entities auth_error")
+                for_each_tenant(SessionLocal, _mark_all_auth_error)
+                return {"exit_code": 1, "auth_error": True}
+            tok = {"access_token": access}  # carried through for the _sync_tenant signature
+            def _fetch(entity: str) -> list[dict[str, Any]]:
+                return _fetch_entity_mcp(entity, access)
+            do_tombstone = False  # MCP pull can't safely detect hard-deletes (see _sync_tenant)
+        else:
+            tok = tokens.load_tokens()
+            if not tokens.is_valid(tok):
+                log.error(
+                    "knowify sync: /api/v2/valid returned dead token — all entities auth_error"
+                )
+                for_each_tenant(SessionLocal, _mark_all_auth_error)
+                return {"exit_code": 1, "auth_error": True}
+            def _fetch(entity: str) -> list[dict[str, Any]]:
+                return _fetch_entity(entity, tok)
+            do_tombstone = True
 
         # Fetch all entities BEFORE opening tenant sessions.
         # Network errors are isolated per entity; a bad entity does not block others.
@@ -246,7 +291,7 @@ def run(limit=None, refresh_only: bool = False) -> dict:  # noqa: ARG001 (limit 
 
         for entity in SYNC_ENTITIES:
             try:
-                entity_data[entity] = _fetch_entity(entity, tok)
+                entity_data[entity] = _fetch(entity)
                 log.info(
                     "knowify sync: fetched entity=%s rows=%d",
                     entity, len(entity_data[entity]),
@@ -263,7 +308,9 @@ def run(limit=None, refresh_only: bool = False) -> dict:  # noqa: ARG001 (limit 
         all_statuses: dict[str, str] = {}
 
         def _fn(db, tenant_id: int) -> None:
-            tenant_statuses = _sync_tenant(db, tenant_id, tok, entity_data, fetch_errors)
+            tenant_statuses = _sync_tenant(
+                db, tenant_id, tok, entity_data, fetch_errors, tombstone=do_tombstone
+            )
             all_statuses.update(tenant_statuses)
 
         for_each_tenant(SessionLocal, _fn)

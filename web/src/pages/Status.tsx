@@ -1,7 +1,20 @@
 import { useContext, useEffect, useState } from "react";
-import { apiFetch } from "../api";
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  BarChart,
+  Bar,
+  Cell,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+} from "recharts";
+import { apiFetch, getDashboardBilling, getActiveUsers, getGcpSpend, type DashboardBilling, type ActiveUsersResponse, type GcpSpendResponse } from "../api";
 import { NavContext } from "../App";
-import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
+import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg, StatCard, inputStyle } from "../ui";
 
 type ToastTone = "green" | "red";
 interface Toast { message: string; tone: ToastTone; }
@@ -39,7 +52,6 @@ interface StatusData {
   articles: number;
   faq_count: number;
   scheduled_content: number;
-  // Extended counters — added by backend; optional so page still works before backend lands.
   scheduled_breakdown?: ScheduledBreakdown;
   content_opportunities?: number;
   comments_to_answer?: number;
@@ -54,6 +66,493 @@ interface KpiCard {
   color?: string;
   navTarget?: string;
 }
+
+// ── Date-range helpers ────────────────────────────────────────────────────────
+
+function fmt(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+type Preset =
+  | "1d" | "this_week" | "last_week" | "7d"
+  | "this_month" | "last_month" | "30d"
+  | "this_quarter" | "last_quarter" | "90d"
+  | "this_year" | "last_year" | "365d"
+  | "custom";
+
+interface DateRange { from: string; to: string; bucket: "day" | "week" | "month"; }
+
+function rangeForPreset(preset: Preset, customFrom: string, customTo: string): DateRange {
+  const now = new Date();
+  const today = fmt(now);
+
+  const startOfWeek = (d: Date) => {
+    const r = new Date(d);
+    r.setDate(d.getDate() - d.getDay());
+    return r;
+  };
+  const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const startOfQuarter = (d: Date) => {
+    const q = Math.floor(d.getMonth() / 3);
+    return new Date(d.getFullYear(), q * 3, 1);
+  };
+  const startOfYear = (d: Date) => new Date(d.getFullYear(), 0, 1);
+
+  const daysAgo = (n: number) => {
+    const r = new Date(now);
+    r.setDate(r.getDate() - n);
+    return fmt(r);
+  };
+
+  let from: string;
+  let to: string = today;
+
+  switch (preset) {
+    case "1d":
+      from = today; break;
+    case "this_week":
+      from = fmt(startOfWeek(now)); break;
+    case "last_week": {
+      const sw = startOfWeek(now);
+      const lw = new Date(sw);
+      lw.setDate(sw.getDate() - 7);
+      const ew = new Date(sw);
+      ew.setDate(sw.getDate() - 1);
+      from = fmt(lw); to = fmt(ew); break;
+    }
+    case "7d":
+      from = daysAgo(7); break;
+    case "this_month":
+      from = fmt(startOfMonth(now)); break;
+    case "last_month": {
+      const sm = startOfMonth(now);
+      const lm = new Date(sm);
+      lm.setMonth(sm.getMonth() - 1);
+      const em = new Date(sm);
+      em.setDate(sm.getDate() - 1);
+      from = fmt(lm); to = fmt(em); break;
+    }
+    case "30d":
+      from = daysAgo(30); break;
+    case "this_quarter":
+      from = fmt(startOfQuarter(now)); break;
+    case "last_quarter": {
+      const sq = startOfQuarter(now);
+      const lq = new Date(sq);
+      lq.setMonth(sq.getMonth() - 3);
+      const eq = new Date(sq);
+      eq.setDate(sq.getDate() - 1);
+      from = fmt(lq); to = fmt(eq); break;
+    }
+    case "90d":
+      from = daysAgo(90); break;
+    case "this_year":
+      from = fmt(startOfYear(now)); break;
+    case "last_year": {
+      const sy = startOfYear(now);
+      const ly = new Date(sy);
+      ly.setFullYear(sy.getFullYear() - 1);
+      const ey = new Date(sy);
+      ey.setDate(sy.getDate() - 1);
+      from = fmt(ly); to = fmt(ey); break;
+    }
+    case "365d":
+      from = daysAgo(365); break;
+    case "custom":
+      from = customFrom || daysAgo(30);
+      to = customTo || today;
+      break;
+    default:
+      from = daysAgo(30);
+  }
+
+  const days = (new Date(to).getTime() - new Date(from).getTime()) / 86_400_000;
+  const bucket: "day" | "week" | "month" = days <= 45 ? "day" : days <= 180 ? "week" : "month";
+  return { from, to, bucket };
+}
+
+const PRESETS: { key: Preset; label: string }[] = [
+  { key: "1d", label: "Today" },
+  { key: "7d", label: "Last 7d" },
+  { key: "30d", label: "Last 30d" },
+  { key: "this_week", label: "This week" },
+  { key: "last_week", label: "Last week" },
+  { key: "this_month", label: "This month" },
+  { key: "last_month", label: "Last month" },
+  { key: "90d", label: "Last 90d" },
+  { key: "this_quarter", label: "This quarter" },
+  { key: "last_quarter", label: "Last quarter" },
+  { key: "this_year", label: "This year" },
+  { key: "last_year", label: "Last year" },
+  { key: "365d", label: "Last 365d" },
+  { key: "custom", label: "Custom…" },
+];
+
+function usd(val: string | number): string {
+  const n = typeof val === "string" ? parseFloat(val) : val;
+  return Number.isFinite(n)
+    ? n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+    : "$—";
+}
+
+// ── Billing section component ─────────────────────────────────────────────────
+
+function BillingSection() {
+  const [preset, setPreset] = useState<Preset>("30d");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [billing, setBilling] = useState<DashboardBilling | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  function fetch(p: Preset, cf: string, ct: string) {
+    setLoading(true);
+    setError(null);
+    const { from, to, bucket } = rangeForPreset(p, cf, ct);
+    getDashboardBilling({ from, to, bucket })
+      .then(setBilling)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { fetch(preset, customFrom, customTo); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handlePreset(p: Preset) {
+    setPreset(p);
+    if (p !== "custom") fetch(p, customFrom, customTo);
+  }
+
+  function handleCustomApply() {
+    fetch("custom", customFrom, customTo);
+  }
+
+  // Build chart data: merge payments + invoices by period
+  const timeSeriesData = billing
+    ? (() => {
+        const map = new Map<string, { period: string; payments: number; invoices: number; inv_count: number; pay_count: number }>();
+        for (const p of billing.payments_over_time) {
+          map.set(p.period, { period: p.period, payments: parseFloat(p.total), invoices: 0, inv_count: 0, pay_count: p.count });
+        }
+        for (const i of billing.invoices_issued_over_time) {
+          const existing = map.get(i.period);
+          if (existing) {
+            existing.invoices = parseFloat(i.total);
+            existing.inv_count = i.count;
+          } else {
+            map.set(i.period, { period: i.period, payments: 0, invoices: parseFloat(i.total), inv_count: i.count, pay_count: 0 });
+          }
+        }
+        return [...map.values()].sort((a, b) => a.period.localeCompare(b.period));
+      })()
+    : [];
+
+  const agingData = billing
+    ? [
+        { name: "Current", value: parseFloat(billing.aging_buckets.current) },
+        { name: "1–30d", value: parseFloat(billing.aging_buckets.d1_30) },
+        { name: "31–60d", value: parseFloat(billing.aging_buckets.d31_60) },
+        { name: "61–90d", value: parseFloat(billing.aging_buckets.d61_90) },
+        { name: "90d+", value: parseFloat(billing.aging_buckets.d90_plus) },
+      ]
+    : [];
+
+  const funnelData = billing
+    ? [
+        { name: "Draft", value: billing.proposal_funnel.draft },
+        { name: "Sent", value: billing.proposal_funnel.sent },
+        { name: "Viewed", value: billing.proposal_funnel.viewed },
+        { name: "Accepted", value: billing.proposal_funnel.accepted },
+        { name: "Declined", value: billing.proposal_funnel.declined },
+        { name: "Revision", value: billing.proposal_funnel.revision_requested },
+      ]
+    : [];
+
+  const pillStyle = (active: boolean): React.CSSProperties => ({
+    padding: "5px 12px",
+    borderRadius: 16,
+    border: active ? `1.5px solid ${BRAND.navy}` : `1.5px solid ${BRAND.border}`,
+    background: active ? BRAND.navy : "#fff",
+    color: active ? "#fff" : BRAND.sub,
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 600,
+    whiteSpace: "nowrap" as const,
+  });
+
+  return (
+    <>
+      <h3 style={{ margin: "0 0 14px", color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
+        Billing &amp; Receivables
+      </h3>
+
+      {/* Preset bar */}
+      <Card style={{ marginBottom: 20, padding: "12px 16px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          {PRESETS.map(({ key, label }) => (
+            <button key={key} style={pillStyle(preset === key)} onClick={() => handlePreset(key)}>
+              {label}
+            </button>
+          ))}
+          {preset === "custom" && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                style={{ ...inputStyle, padding: "5px 8px", fontSize: 13 }}
+              />
+              <span style={{ color: BRAND.sub, fontSize: 13 }}>to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                style={{ ...inputStyle, padding: "5px 8px", fontSize: 13 }}
+              />
+              <Button
+                onClick={handleCustomApply}
+                disabled={!customFrom || !customTo}
+                style={{ padding: "5px 14px", fontSize: 13 }}
+              >
+                Apply
+              </Button>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {loading && <Loading />}
+      {error && <ErrorMsg>Billing error: {error}</ErrorMsg>}
+
+      {!loading && !error && billing && (
+        <>
+          {/* AR summary stat cards */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+            <StatCard
+              label="Open Invoices"
+              value={billing.open_ar_summary.open_count.toLocaleString()}
+              sub="unpaid invoices"
+            />
+            <StatCard
+              label="Open AR Total"
+              value={usd(billing.open_ar_summary.open_total)}
+              sub="invoiced, not yet paid"
+            />
+            <StatCard
+              label="Outstanding AR"
+              value={usd(billing.open_ar_summary.outstanding_total)}
+              sub="past due"
+            />
+            <StatCard
+              label="Due Next 30 Days"
+              value={usd(billing.receivables_due_next_30.total)}
+              sub={`${billing.receivables_due_next_30.count} invoice${billing.receivables_due_next_30.count === 1 ? "" : "s"}`}
+            />
+            <StatCard
+              label="Proposal Win Rate"
+              value={`${(billing.proposal_funnel.win_rate * 100).toFixed(1)}%`}
+              sub={`${billing.proposal_funnel.accepted} accepted`}
+            />
+          </div>
+
+          {/* Payments + Invoices over time */}
+          <Card style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
+              Payments &amp; Invoices Issued
+            </div>
+            {timeSeriesData.length === 0 ? (
+              <div style={{ color: BRAND.sub, fontSize: 13 }}>No data for this period.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart data={timeSeriesData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
+                  <XAxis dataKey="period" tick={{ fontSize: 11, fill: BRAND.sub }} />
+                  <YAxis
+                    tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                    tick={{ fontSize: 11, fill: BRAND.sub }}
+                    width={56}
+                  />
+                  <Tooltip
+                    formatter={(value, name) => [usd(Number(value)), name === "payments" ? "Payments" : "Invoiced"]}
+                    labelStyle={{ color: BRAND.navyText, fontWeight: 600 }}
+                  />
+                  <Legend formatter={(v: string) => v === "payments" ? "Payments" : "Invoiced"} />
+                  <Bar dataKey="invoices" name="invoices" fill={BRAND.navy} opacity={0.7} radius={[3, 3, 0, 0]} />
+                  <Line dataKey="payments" name="payments" stroke={BRAND.red} strokeWidth={2} dot={false} type="monotone" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+
+          {/* Aging buckets */}
+          <Card style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
+              AR Aging
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={agingData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: BRAND.sub }} />
+                <YAxis
+                  tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                  tick={{ fontSize: 11, fill: BRAND.sub }}
+                  width={56}
+                />
+                <Tooltip formatter={(value) => [usd(Number(value)), "Balance"]} />
+                <Bar dataKey="value" name="Balance" radius={[4, 4, 0, 0]}>
+                  {agingData.map((entry, i) => (
+                    <Cell key={entry.name} fill={i === 0 ? BRAND.navyText : i === 1 ? "#b45309" : i === 2 ? "#e07b39" : i === 3 ? "#d95050" : BRAND.red} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+
+          {/* Proposal funnel */}
+          <Card style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
+              Proposal Funnel
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={funnelData} layout="vertical" margin={{ top: 0, right: 40, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: BRAND.sub }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: BRAND.sub }} width={64} />
+                <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Count"]} />
+                <Bar dataKey="value" name="Count" fill={BRAND.navyText} radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </>
+      )}
+    </>
+  );
+}
+
+// ── Active Users widget ───────────────────────────────────────────────────────
+
+function ActiveUsersWidget() {
+  const [data, setData] = useState<ActiveUsersResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getActiveUsers({ days: 30 })
+      .then(setData)
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        // 403 = not admin; degrade silently with inline note
+        setError(msg.startsWith("403") || msg.includes("403") ? "admin-only" : msg);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Loading />;
+  if (error === "admin-only") return null; // not shown to non-admins
+
+  return (
+    <Card style={{ marginBottom: 20, padding: "16px 20px" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
+        Active Users (last 30 days)
+      </div>
+      {error && <ErrorMsg>Users: {error}</ErrorMsg>}
+      {data?.error && <div style={{ color: BRAND.red, fontSize: 13, marginBottom: 8 }}>Note: {data.error}</div>}
+      {data && (
+        <>
+          <div style={{ display: "flex", gap: 24, marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText }}>{data.active_users.toLocaleString()}</div>
+              <div style={{ fontSize: 12, color: BRAND.sub }}>active / {data.window_days}d</div>
+            </div>
+            <div style={{ width: 1, background: BRAND.border, alignSelf: "stretch" }} />
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText }}>{data.total_users.toLocaleString()}</div>
+              <div style={{ fontSize: 12, color: BRAND.sub }}>total users</div>
+            </div>
+          </div>
+          {data.recent.length > 0 && (
+            <div style={{ fontSize: 13 }}>
+              {data.recent.slice(0, 5).map((u) => (
+                <div key={u.email ?? "anon"} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${BRAND.border}` }}>
+                  <span style={{ color: BRAND.navyText }}>{u.email ?? "(no email)"}</span>
+                  <span style={{ color: BRAND.sub, fontSize: 12 }}>
+                    {u.last_sign_in ? new Date(u.last_sign_in).toLocaleDateString() : "—"}
+                    {u.disabled && <span style={{ color: BRAND.red, marginLeft: 6 }}>disabled</span>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ── GCP Spend widget ──────────────────────────────────────────────────────────
+
+function GcpSpendWidget() {
+  const [data, setData] = useState<GcpSpendResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getGcpSpend({ days: 30 })
+      .then(setData)
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg.startsWith("403") || msg.includes("403") ? "admin-only" : msg);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <Loading />;
+  if (error === "admin-only") return null;
+
+  return (
+    <Card style={{ marginBottom: 20, padding: "16px 20px" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
+        GCP Spend (last 30 days)
+      </div>
+      {error && <ErrorMsg>GCP Spend: {error}</ErrorMsg>}
+      {data && !data.configured && (
+        <div style={{ color: BRAND.sub, fontSize: 13 }}>{(data as { configured: false; note: string }).note}</div>
+      )}
+      {data && data.configured && (
+        <>
+          {"error" in data && data.error && <div style={{ color: BRAND.red, fontSize: 13, marginBottom: 8 }}>Note: {data.error}</div>}
+          {"total" in data && (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <span style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText }}>
+                  {(data as { configured: true; total: number; currency: string }).total.toLocaleString("en-US", { style: "currency", currency: (data as { configured: true; total: number; currency: string }).currency, maximumFractionDigits: 2 })}
+                </span>
+                <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 8 }}>total · {(data as { configured: true; window_days: number }).window_days}d</span>
+              </div>
+              {"by_service" in data && (data as { configured: true; by_service: { service: string; cost: number }[] }).by_service.length > 0 && (
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart
+                    data={(data as { configured: true; by_service: { service: string; cost: number }[] }).by_service.slice(0, 10)}
+                    layout="vertical"
+                    margin={{ top: 0, right: 40, bottom: 0, left: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: BRAND.sub }}
+                      tickFormatter={(v: number) => `$${v.toFixed(0)}`} />
+                    <YAxis type="category" dataKey="service" tick={{ fontSize: 11, fill: BRAND.sub }} width={120} />
+                    <Tooltip formatter={(v) => [`$${Number(v).toFixed(2)}`, "Cost"]} />
+                    <Bar dataKey="cost" fill={BRAND.navyText} radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+// ── Main Status page ──────────────────────────────────────────────────────────
 
 export function Status() {
   const { navigate } = useContext(NavContext);
@@ -122,8 +621,6 @@ export function Status() {
         ...(data.videos_to_approve != null
           ? [{ label: "Videos to Approve", value: data.videos_to_approve, color: data.videos_to_approve > 0 ? "#b45309" : BRAND.navyText, navTarget: "scheduling" }]
           : []),
-        // Failed Stages / In Queue summary cards removed — the detail sections
-        // below ("Failed Stages" + "Processing / Queue") already show these counts.
       ]
     : [];
 
@@ -194,6 +691,16 @@ export function Status() {
               </Card>
             ))}
           </div>
+
+          {/* Billing & Receivables section */}
+          <BillingSection />
+
+          {/* Admin widgets: Active Users + GCP Spend */}
+          <h3 style={{ margin: "0 0 14px", color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
+            Platform Metrics
+          </h3>
+          <ActiveUsersWidget />
+          <GcpSpendWidget />
 
           {/* Scheduled content breakdown */}
           {data.scheduled_breakdown && (

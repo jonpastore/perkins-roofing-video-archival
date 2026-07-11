@@ -20,6 +20,9 @@ import { Squares } from "./pages/Squares";
 import { Proposals } from "./pages/Proposals";
 import { ProposalBuilder } from "./pages/ProposalBuilder";
 import { Invoices } from "./pages/Invoices";
+import { Customers } from "./pages/Customers";
+import { Payments } from "./pages/Payments";
+import { Quotes } from "./pages/Quotes";
 import { ContractFaq } from "./pages/ContractFaq";
 import { AdminConfig } from "./pages/AdminConfig";
 import { Knowify } from "./pages/Knowify";
@@ -93,13 +96,16 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         ],
       },
       {
-        label: "Proposals",
+        label: "Sales",
         tabs: [
           ["squares", "Squares"],
           ["estimator", "Estimates"],
-          ["quoting", "Quotes"],
+          ["quoting", "Estimator"],
+          ["quotes", "Quotes"],
           ["proposals", "Proposals"],
           ["proposal-gen", "New Proposal"],
+          ["customers", "Customers"],
+          ["payments", "Payments"],
           ["invoices", "Invoices"],
         ],
       },
@@ -108,7 +114,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
       label: "Admin",
       tabs: [
         ["admin-config", "Admin Config"],
-        ["knowify", "Knowify"],
+        ["legacy-data", "Legacy Data"],
         ["logs", "Logs"],
       ],
     },
@@ -142,16 +148,26 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         ],
       },
       {
-        label: "Proposals",
+        label: "Sales",
         tabs: [
           ["squares", "Squares"],
           ["estimator", "Estimates"],
-          ["quoting", "Quotes"],
+          ["quoting", "Estimator"],
+          ["quotes", "Quotes"],
           ["proposals", "Proposals"],
           ["proposal-gen", "New Proposal"],
+          ["customers", "Customers"],
+          ["payments", "Payments"],
+          ["invoices", "Invoices"],
         ],
       },
     ],
+    adminSection: {
+      label: "Admin",
+      tabs: [
+        ["legacy-data", "Legacy Data"],
+      ],
+    },
     defaultTab: "dashboard",
   },
 
@@ -168,9 +184,14 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["archive", "Video Archive"],
           ["squares", "Squares"],
           ["estimator", "Estimates"],
-          ["quoting", "Quotes"],
+          ["quoting", "Estimator"],
+          ["quotes", "Quotes"],
           ["proposals", "Proposals"],
           ["proposal-gen", "New Proposal"],
+          ["customers", "Customers"],
+          ["payments", "Payments"],
+          ["invoices", "Invoices"],
+          ["legacy-data", "Legacy Data"],
         ],
       },
     ],
@@ -548,8 +569,13 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "proposals" && <Proposals />}
       {tab === "proposal-gen" && <ProposalBuilder />}
       {tab === "invoices" && <Invoices />}
+      {tab === "customers" && <Customers />}
+      {tab === "payments" && <Payments />}
+      {tab === "quotes" && <Quotes />}
       {tab === "contract-faq" && <ContractFaq />}
       {tab === "admin-config" && <AdminConfig role={role} />}
+      {tab === "legacy-data" && <Knowify />}
+      {/* backward-compat: old "knowify" tab key still works */}
       {tab === "knowify" && <Knowify />}
       {/* status-view: Marketing > Status — renders the same Status component as dashboard */}
       {tab === "status-view" && <Status />}

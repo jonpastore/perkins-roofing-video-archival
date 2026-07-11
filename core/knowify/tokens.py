@@ -28,13 +28,16 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 
-# Reuse the constants + refresh shape from the read-only importer (single source of truth).
-from scripts.knowify.knowify_pull import API, TOKEN_URL, UA
+# Endpoint constants live in core (scripts/ is .dockerignore'd — importing from
+# scripts here would ImportError at container startup). MCP_URL is used by the MCP
+# token path (mcp_access_token / refresh_mcp) added for the stopgap sync.
+from core.knowify.rest import API, MCP_URL, TOKEN_URL, UA
 
 log = logging.getLogger(__name__)
 
@@ -137,6 +140,127 @@ def refresh(tok: dict, sm_client=None, project: str = "") -> dict:
     save_tokens(tok, sm_client=sm_client, project=project)
     log.info("knowify token refreshed + rotated (new secret version written)")
     return tok
+
+
+# --------------------------------------------------------------------------- #
+# MCP-token path (STOPGAP) — the sync job pulls via the /api/v2/mcp audience
+# because REST /oauth 500s on the RFC 8707 `resource` binding (see module docstring).
+# The token blob mirrors Claude Code's creds (camelCase: accessToken/refreshToken/
+# clientId/expiresAt) and lives in its OWN secret, `knowify-mcp-tokens`, so it never
+# collides with the REST `knowify-tokens` blob. Same fail-loud + single-writer-lock
+# (8274125) contract as the REST path.
+#
+# CAVEAT (accepted by Jon): this token is shared with Jon's local Claude Code Knowify
+# connector, and Knowify refresh tokens are single-use — a refresh here rotates it, so
+# Jon's connector may need a one-click reconnect (and vice-versa). Collisions surface as
+# an AuthError -> auth_error status -> alert, never a silent stale token.
+# --------------------------------------------------------------------------- #
+
+MCP_SECRET_ID = "knowify-mcp-tokens"
+_ACCESS_SKEW_MS = 300_000  # refresh 5 min before expiry to avoid mid-run 401s
+
+
+def load_mcp_tokens(sm_client=None, project: str = "") -> dict:
+    """Read the LATEST version of the `knowify-mcp-tokens` secret as a JSON dict."""
+    client = _client(sm_client)
+    name = f"projects/{_project(project)}/secrets/{MCP_SECRET_ID}/versions/latest"
+    version = client.access_secret_version(name=name)
+    return json.loads(version.payload.data.decode())
+
+
+def save_mcp_tokens(tok: dict, sm_client=None, project: str = "") -> None:
+    """Write the MCP token blob as a NEW version of `knowify-mcp-tokens`."""
+    client = _client(sm_client)
+    parent = f"projects/{_project(project)}/secrets/{MCP_SECRET_ID}"
+    client.add_secret_version(
+        request={"parent": parent, "payload": {"data": json.dumps(tok).encode()}}
+    )
+    log.info("knowify-mcp-tokens: wrote new secret version")  # no token value
+
+
+def _mcp_expired(tok: dict) -> bool:
+    """True if the MCP access token is within _ACCESS_SKEW_MS of `expiresAt` (ms epoch).
+    A blob with no expiresAt is treated as expired so we refresh before using it."""
+    exp = tok.get("expiresAt")
+    if not exp:
+        return True
+    return time.time() * 1000 + _ACCESS_SKEW_MS >= exp
+
+
+def refresh_mcp(tok: dict, sm_client=None, project: str = "") -> dict:
+    """Refresh the MCP access token ONCE (resource=MCP audience), rotate, save a new version.
+
+    Fail loud like the REST refresh: a 500 / 400 invalid_grant / 401 raises `AuthError` and
+    writes NOTHING. Knowify refresh tokens are single-use, so exactly one grant attempt.
+    NOTE: refresh with resource=MCP_URL is the stopgap's one unproven assumption — the REST
+    resource value 500s; the MCP value is what Claude Code refreshes against, so it should
+    work. The FIRST prod refresh is the live proof; a 500 here surfaces as auth_error.
+    """
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token", "refresh_token": tok["refreshToken"],
+        "client_id": tok["clientId"], "resource": MCP_URL,  # RFC 8707 — MCP audience
+    }).encode()
+    req = urllib.request.Request(TOKEN_URL, data=body, method="POST",
+                                 headers={"Content-Type": "application/x-www-form-urlencoded",
+                                          "Accept": "application/json", "User-Agent": UA})
+    try:
+        raw = urllib.request.urlopen(req, timeout=30).read().decode()
+    except urllib.error.HTTPError as e:
+        log.error("knowify mcp refresh failed: HTTP %s (auth_error, token not written)", e.code)
+        raise AuthError(f"mcp refresh HTTP {e.code}") from e
+
+    new = json.loads(raw)
+    tok["accessToken"] = new["access_token"]
+    if new.get("refresh_token"):
+        tok["refreshToken"] = new["refresh_token"]  # rotate (single-use)
+    if new.get("expires_in"):
+        tok["expiresAt"] = int(time.time() * 1000) + int(new["expires_in"]) * 1000
+    save_mcp_tokens(tok, sm_client=sm_client, project=project)
+    log.info("knowify mcp token refreshed + rotated (new secret version written)")
+    return tok
+
+
+def mcp_access_token() -> str:
+    """Return a live MCP access-token string, refreshing under lock if near expiry.
+
+    Raises `AuthError` if a needed refresh fails — the caller marks auth_error and exits.
+    """
+    from app.models import SessionLocal  # noqa: PLC0415
+    tok = load_mcp_tokens()
+    if not _mcp_expired(tok):
+        return tok["accessToken"]
+    session = SessionLocal()
+    session.info["platform_scope"] = True  # platform-level lock; no tenant GUC
+    try:
+        with with_token_lock(session):
+            tok = load_mcp_tokens()  # re-read the freshest token under the lock
+            if _mcp_expired(tok):
+                tok = refresh_mcp(tok)
+        return tok["accessToken"]
+    finally:
+        session.close()
+
+
+def mcp_refresh_only() -> int:
+    """Keep-warm for the MCP token: refresh if near expiry, save under lock. 0 ok / 1 auth_error."""
+    from app.models import SessionLocal  # noqa: PLC0415
+    tok = load_mcp_tokens()
+    if not _mcp_expired(tok):
+        log.info("knowify mcp token still valid — keep-warm no-op")
+        return 0
+    session = SessionLocal()
+    session.info["platform_scope"] = True
+    try:
+        with with_token_lock(session):
+            tok = load_mcp_tokens()
+            if _mcp_expired(tok):
+                refresh_mcp(tok)
+        return 0
+    except AuthError:
+        log.error("knowify mcp keep-warm: auth_error — human Reconnect required")
+        return 1
+    finally:
+        session.close()
 
 
 # --------------------------------------------------------------------------- #

@@ -25,7 +25,7 @@ from app.models import Customer, Invoice, KnowifyRawRecord, KnowifySyncState, Pa
 
 router = APIRouter(prefix="/knowify", tags=["knowify"])
 
-_READ_ROLE = "billing_manage"
+_READ_ROLE = "billing_view"   # widened: sales + web_admin + admin can view legacy data
 _ADMIN_ROLE = "knowify_admin"
 
 

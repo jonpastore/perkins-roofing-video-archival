@@ -170,7 +170,7 @@ function SyncHealthPanel() {
         }}>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontWeight: 700, color: BRAND.redDark, fontSize: 14, marginBottom: 2 }}>
-              Knowify connection needs re-auth
+              Legacy data connection needs re-auth
             </div>
             <div style={{ fontSize: 13, color: BRAND.redDark }}>
               The stored refresh token has lapsed. A human must re-authenticate to restore sync.
@@ -270,7 +270,7 @@ function CustomersPanel() {
                 <th style={TH}>Company</th>
                 <th style={TH}>Email</th>
                 <th style={TH}>Phone</th>
-                <th style={TH}>Knowify ID</th>
+                <th style={TH}>Source ID</th>
               </tr>
             </thead>
             <tbody>
@@ -319,12 +319,12 @@ function InvoicesPanel() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr>
-                <th style={TH}>Knowify #</th>
+                <th style={TH}>Source #</th>
                 <th style={TH}>Our #</th>
                 <th style={TH}>Status</th>
                 <th style={{ ...TH, textAlign: "right" }}>Total</th>
                 <th style={TH}>Invoice date</th>
-                <th style={TH}>Knowify Invoice ID</th>
+                <th style={TH}>Source Invoice ID</th>
               </tr>
             </thead>
             <tbody>
@@ -385,7 +385,7 @@ function PaymentsPanel() {
                 <th style={TH}>Method</th>
                 <th style={TH}>Reference</th>
                 <th style={TH}>Invoice ID (ours)</th>
-                <th style={TH}>Knowify Payment ID</th>
+                <th style={TH}>Source Payment ID</th>
               </tr>
             </thead>
             <tbody>
@@ -483,7 +483,7 @@ function RawViewer() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={TH}>Knowify ID</th>
+                  <th style={TH}>Source Payment ID</th>
                   <th style={TH}>Fetched at</th>
                   <th style={TH}>Present</th>
                   <th style={TH}>High water</th>
@@ -575,7 +575,20 @@ export function Knowify() {
 
   return (
     <main style={{ maxWidth: 1100, fontFamily: FONT }}>
-      <PageTitle>Knowify Mirror</PageTitle>
+      <PageTitle>Legacy Data</PageTitle>
+
+      {/* Read-only banner */}
+      <div style={{
+        marginBottom: 20,
+        padding: "10px 16px",
+        background: "#f0f3fa",
+        border: `1px solid ${BRAND.border}`,
+        borderRadius: 10,
+        fontSize: 13,
+        color: BRAND.sub,
+      }}>
+        Legacy data mirrored from Knowify (read-only). Edit in the Sales section by adopting to a v2 record.
+      </div>
 
       {/* Sub-tab bar — same pattern as AdminConfig */}
       <div style={{ display: "flex", gap: 2, borderBottom: `2px solid ${BRAND.border}`, marginBottom: 24, overflowX: "auto" }}>

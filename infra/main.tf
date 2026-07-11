@@ -182,6 +182,17 @@ resource "google_cloud_run_v2_job_iam_member" "api_run_render" {
   member   = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+# "Sync now": api-run-sa triggers the knowify-sync Cloud Run job (POST /knowify/sync-now).
+# Without this the :run call 403s (api-run-sa had run.developer on render ONLY). Scoped to
+# the knowify-sync job — least privilege, mirrors api_run_render above.
+resource "google_cloud_run_v2_job_iam_member" "api_run_knowify_sync" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_job.jobs["knowify-sync"].name
+  role     = "roles/run.developer"
+  member   = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
 resource "google_service_account_iam_member" "api_actas_jobs_sa" {
   service_account_id = google_service_account.jobs_sa.name
   role               = "roles/iam.serviceAccountUser"
@@ -201,6 +212,28 @@ resource "google_project_iam_member" "api_secret_viewer" {
   role    = "roles/secretmanager.viewer"
   member  = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
+
+# Admin metrics — GCP spend widget reads the BigQuery billing export.
+# roles/bigquery.jobUser lets api-run-sa run BQ queries (required for client.query()).
+# NOTE: dataset-level roles/bigquery.dataViewer must also be granted on the billing
+# export dataset out-of-band (gcloud bigquery datasets add-iam-policy-binding or console)
+# since Terraform cannot manage a dataset in a different project (billing exports land in
+# the project's own dataset, but billing export setup is console-side).
+# roles/billing.viewer is NOT needed — BQ export reads work with jobUser + dataViewer only.
+resource "google_project_iam_member" "api_bq_job_user" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+# Data read is deliberately NOT granted project-wide (roles/bigquery.dataViewer at the
+# project level would let api-run-sa read EVERY dataset — over-broad). Grant dataViewer
+# on the billing-export DATASET ONLY, out-of-band, at the same time you enable the export
+# and set BILLING_BQ_TABLE (both are console-side steps Terraform can't manage here):
+#   bq add-iam-policy-binding \
+#     --member=serviceAccount:api-run-sa@${var.project_id}.iam.gserviceaccount.com \
+#     --role=roles/bigquery.dataViewer  PROJECT:BILLING_DATASET
+# Until then the GCP-spend widget returns {configured:false} and needs no read grant.
 
 # ---------------------------------------------------------------------------
 # 4. IAM bindings — jobs-sa
@@ -755,6 +788,45 @@ resource "google_secret_manager_secret_version" "knowify_tokens_placeholder" {
 resource "google_secret_manager_secret_iam_member" "knowify_tokens_version_adder" {
   project   = var.project_id
   secret_id = google_secret_manager_secret.knowify_tokens.secret_id
+  role      = "roles/secretmanager.secretVersionAdder"
+  member    = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
+# ---------------------------------------------------------------------------
+# 10c-mcp. Secret Manager — knowify-mcp-tokens (MCP OAuth token blob, STOPGAP)
+#      knowify-sync runs with KNOWIFY_PULL_MODE=mcp because REST /oauth 500s on the
+#      RFC 8707 resource binding (Wave-0). This secret holds the Claude Code MCP token
+#      blob (camelCase: accessToken/refreshToken/clientId/expiresAt), bootstrap-populated
+#      by Jon out-of-band (gcloud secrets versions add) — never committed to git/TF.
+#      Mirrors the knowify-tokens standalone pattern above.
+# ---------------------------------------------------------------------------
+
+resource "google_secret_manager_secret" "knowify_mcp_tokens" {
+  secret_id = "knowify-mcp-tokens"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+# Placeholder version so deploy can reference :latest before Jon bootstraps the real
+# token. Intentionally invalid (no expiresAt) so any accidental use forces a refresh /
+# surfaces as auth_error rather than silently passing a bad token.
+resource "google_secret_manager_secret_version" "knowify_mcp_tokens_placeholder" {
+  secret      = google_secret_manager_secret.knowify_mcp_tokens.id
+  secret_data = "{\"_placeholder\":\"bootstrap-required-mcp-stopgap\"}"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+# secretVersionAdder resource-scoped to knowify-mcp-tokens ONLY — the sync/keepwarm jobs
+# rotate the single-use MCP refresh token and must write new versions. Same least-privilege
+# reasoning as knowify_tokens_version_adder above (never grant project-wide).
+resource "google_secret_manager_secret_iam_member" "knowify_mcp_tokens_version_adder" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.knowify_mcp_tokens.secret_id
   role      = "roles/secretmanager.secretVersionAdder"
   member    = "serviceAccount:${google_service_account.jobs_sa.email}"
 }

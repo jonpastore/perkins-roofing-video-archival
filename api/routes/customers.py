@@ -1,23 +1,24 @@
 """Quoting — Customers, Contacts, Properties CRUD.
 
 Endpoints:
-  GET    /quoting/customers               list customers (tenant-scoped, paginated)
+  GET    /quoting/customers               list customers (tenant-scoped, paginated, search/filter/sort)
   POST   /quoting/customers               create customer
   GET    /quoting/customers/{id}          get customer + contacts + properties
   PUT    /quoting/customers/{id}          update customer
+  PATCH  /quoting/customers/{id}/deactivate  soft-deactivate (is_active=False)
   POST   /quoting/customers/{id}/contacts add contact
   POST   /quoting/customers/{id}/properties add property
   PUT    /quoting/properties/{id}         update property
 
 Authz:
-  quoting_view   → GET endpoints
+  quoting_view   → GET endpoints + deactivate
   quoting_create → POST / PUT
 """
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
@@ -94,6 +95,7 @@ def _customer_row(row: Customer) -> dict:
         "email": row.email,
         "phone": row.phone,
         "knowify_customer_id": row.knowify_customer_id,
+        "is_active": row.is_active,
         "notes": row.notes,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -136,24 +138,57 @@ def _property_row(row: Property) -> dict:
 # Customer endpoints
 # ---------------------------------------------------------------------------
 
+# Sortable columns whitelist for customers list
+_CUSTOMER_SORT_COLS = {
+    "display_name": Customer.display_name,
+    "company_name": Customer.company_name,
+    "email": Customer.email,
+    "created_at": Customer.created_at,
+    "updated_at": Customer.updated_at,
+}
+
+
 @router.get("/customers")
 def list_customers(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     page: Optional[int] = Query(None, ge=1),
+    search: Optional[str] = Query(None, description="Case-insensitive match on display_name/company_name/email/phone"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    sort: str = Query("display_name", description="Column to sort by"),
+    order: str = Query("asc", pattern="^(asc|desc)$"),
     _claims=Depends(require_role("quoting_view")),
     db: Session = Depends(get_db_session),
 ):
+    """List customers with optional search, is_active filter, sort, and pagination.
+
+    Returns {items: [...], total: N} for pagination support.
+    The search param does a case-insensitive substring match across display_name,
+    company_name, email, and phone using func.lower() so it works on both SQLite and PG.
+    """
     tenant_id = _tenant_id(db)
     offset = (page - 1) * limit if page is not None else skip
-    rows = db.execute(
-        select(Customer)
-        .where(Customer.tenant_id == tenant_id)
-        .order_by(Customer.display_name)
-        .offset(offset)
-        .limit(limit)
-    ).scalars().all()
-    return [_customer_row(r) for r in rows]
+
+    sort_col = _CUSTOMER_SORT_COLS.get(sort, Customer.display_name)
+    sort_expr = sort_col.desc() if order == "desc" else sort_col.asc()
+
+    base = select(Customer).where(Customer.tenant_id == tenant_id)
+
+    if is_active is not None:
+        base = base.where(Customer.is_active == is_active)
+
+    if search:
+        term = search.lower()
+        base = base.where(
+            func.lower(Customer.display_name).contains(term)
+            | func.lower(Customer.company_name).contains(term)
+            | func.lower(Customer.email).contains(term)
+            | func.lower(Customer.phone).contains(term)
+        )
+
+    total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+    rows = db.execute(base.order_by(sort_expr).offset(offset).limit(limit)).scalars().all()
+    return {"items": [_customer_row(r) for r in rows], "total": total}
 
 
 @router.post("/customers")
@@ -227,6 +262,29 @@ def update_customer(
 
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(row, field, value)
+    db.flush()
+    db.refresh(row)
+    return _customer_row(row)
+
+
+@router.patch("/customers/{customer_id}/deactivate")
+def deactivate_customer(
+    customer_id: int,
+    _claims=Depends(require_role("quoting_create")),
+    db: Session = Depends(get_db_session),
+):
+    """Soft-deactivate a customer (is_active=False). NOT a hard delete.
+    Invoices/history for this customer remain intact."""
+    tenant_id = _tenant_id(db)
+    row = db.execute(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, f"Customer {customer_id} not found")
+    row.is_active = False
     db.flush()
     db.refresh(row)
     return _customer_row(row)

@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import insert, select, update
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -39,10 +40,21 @@ from core.invoicing import aggregate_invoice, build_invoice_lines, derive_invoic
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
-# Money path — gated on billing_manage, which only `admin` holds (via "*"). Deliberately
-# NOT granted to web_admin (a content role) or sales, so content/estimating staff cannot
-# issue invoices or record/adjust payments (least privilege; security review H3).
+# Write/mutate gate — only admin (via "*"). Covers: POST (issue invoice), POST /{id}/payments.
 _ROLE = "billing_manage"
+# Read-only gate — admin + web_admin + sales (via billing_view added in Wave 2).
+# Covers: GET list, GET /{id}, GET /{id}/pdf, GET /{id}/payments list.
+_ROLE_VIEW = "billing_view"
+
+# Sortable columns whitelist for invoice list
+_INVOICE_SORT_COLS = {
+    "invoice_number": "invoice_number",
+    "invoice_date": "invoice_date",
+    "due_date": "due_date",
+    "total": "total",
+    "status": "status",
+    "created_at": "created_at",
+}
 
 
 def _utcnow() -> datetime:
@@ -142,6 +154,20 @@ class PaymentRequest(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+def _payment_dict(p: Payment) -> dict:
+    return {
+        "id": p.id,
+        "invoice_id": p.invoice_id,
+        "payment_date": p.payment_date.isoformat() if p.payment_date else None,
+        "amount": str(p.amount),
+        "method": p.method,
+        "reference": p.reference,
+        "notes": p.notes,
+        "knowify_payment_id": p.knowify_payment_id,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+    }
+
+
 def _invoice_dict(db: Session, inv: Invoice) -> dict:
     lines = db.execute(
         select(InvoiceLine).where(InvoiceLine.invoice_id == inv.id).order_by(InvoiceLine.sort_order)
@@ -229,22 +255,124 @@ def issue_invoice(
     return _invoice_dict(db, inv)
 
 
+def _invoice_list_dict(inv: Invoice, customer_display_name: str | None) -> dict:
+    """Light serializer for the list view: uses stored status column, no per-row queries."""
+    return {
+        "id": inv.id,
+        "invoice_number": inv.invoice_number,
+        "customer_id": inv.customer_id,
+        "customer_display_name": customer_display_name,
+        "status": inv.status,
+        "invoice_date": inv.invoice_date.isoformat() if inv.invoice_date else None,
+        "due_date": inv.due_date.isoformat() if inv.due_date else None,
+        "subtotal": str(inv.subtotal),
+        "tax_amount": str(inv.tax_amount),
+        "total": str(inv.total),
+        "source": inv.source,
+        "knowify_invoice_number": inv.knowify_invoice_number,
+    }
+
+
 @router.get("")
-def list_invoices(claims=Depends(require_role(_ROLE)), db: Session = Depends(get_db_session)):
-    rows = db.execute(select(Invoice).order_by(Invoice.id.desc())).scalars().all()
-    return [_invoice_dict(db, inv) for inv in rows]
+def list_invoices(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    page: Optional[int] = Query(None, ge=1),
+    status: Optional[str] = Query(None, description="Filter by invoice status"),
+    customer_id: Optional[int] = Query(None),
+    source: Optional[str] = Query(None, description="'v2' or 'knowify_import'"),
+    date_from: Optional[str] = Query(None, description="ISO date — invoice_date >= date_from"),
+    date_to: Optional[str] = Query(None, description="ISO date — invoice_date <= date_to"),
+    sort: str = Query("invoice_date", description="Column to sort by"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    claims=Depends(require_role(_ROLE_VIEW)),
+    db: Session = Depends(get_db_session),
+):
+    """List invoices with pagination, filters, sort, and joined customer display_name.
+
+    Returns {items: [...], total: N}. Each item uses the stored status column
+    (no N+1 per-row derive_invoice_status). GET /{id} detail uses the full ledger path.
+    Gated on billing_view (admin + web_admin + sales).
+    """
+    offset = (page - 1) * limit if page is not None else skip
+
+    # Build WHERE filters on Invoice alone (no join yet) — used for the count.
+    filters = []
+    if status:
+        filters.append(Invoice.status == status)
+    if customer_id is not None:
+        filters.append(Invoice.customer_id == customer_id)
+    if source:
+        filters.append(Invoice.source == source)
+    if date_from:
+        try:
+            filters.append(Invoice.invoice_date >= datetime.fromisoformat(date_from))
+        except ValueError:
+            raise HTTPException(422, "date_from must be ISO-8601")
+    if date_to:
+        try:
+            filters.append(Invoice.invoice_date <= datetime.fromisoformat(date_to))
+        except ValueError:
+            raise HTTPException(422, "date_to must be ISO-8601")
+
+    # Count on the pre-join base (correct total; no customer join needed for count).
+    count_base = select(func.count()).select_from(Invoice)
+    if filters:
+        count_base = count_base.where(*filters)
+    total = db.execute(count_base).scalar_one()
+
+    # Sort — use getattr so we operate on the mapped column
+    sort_attr = _INVOICE_SORT_COLS.get(sort, "invoice_date")
+    sort_col = getattr(Invoice, sort_attr)
+    sort_expr = sort_col.desc() if order == "desc" else sort_col.asc()
+
+    # Paged rows query: add Customer join only here for display_name.
+    rows_q = (
+        select(Invoice, Customer.display_name.label("customer_display_name"))
+        .outerjoin(Customer, Customer.id == Invoice.customer_id)
+        .order_by(sort_expr)
+        .offset(offset)
+        .limit(limit)
+    )
+    if filters:
+        rows_q = rows_q.where(*filters)
+    rows = db.execute(rows_q).all()
+
+    items = [_invoice_list_dict(row[0], row[1]) for row in rows]
+    return {"items": items, "total": total}
 
 
 @router.get("/{invoice_id}")
-def get_invoice(invoice_id: int, claims=Depends(require_role(_ROLE)), db: Session = Depends(get_db_session)):
+def get_invoice(invoice_id: int, claims=Depends(require_role(_ROLE_VIEW)), db: Session = Depends(get_db_session)):
     inv = db.get(Invoice, invoice_id)
     if inv is None:
         raise HTTPException(404, "invoice not found")
-    return _invoice_dict(db, inv)
+    d = _invoice_dict(db, inv)
+    cust = db.get(Customer, inv.customer_id) if inv.customer_id else None
+    d["customer_display_name"] = cust.display_name if cust else None
+    d["source"] = inv.source
+    d["knowify_invoice_number"] = inv.knowify_invoice_number
+    return d
+
+
+@router.get("/{invoice_id}/payments")
+def list_invoice_payments(
+    invoice_id: int,
+    claims=Depends(require_role(_ROLE_VIEW)),
+    db: Session = Depends(get_db_session),
+):
+    """Read-only list of payments recorded against an invoice (both v2 and Knowify-imported)."""
+    inv = db.get(Invoice, invoice_id)
+    if inv is None:
+        raise HTTPException(404, "invoice not found")
+    rows = db.execute(
+        select(Payment).where(Payment.invoice_id == invoice_id).order_by(Payment.payment_date.desc())
+    ).scalars().all()
+    return [_payment_dict(p) for p in rows]
 
 
 @router.get("/{invoice_id}/pdf")
-def invoice_pdf(invoice_id: int, claims=Depends(require_role(_ROLE)), db: Session = Depends(get_db_session)):
+def invoice_pdf(invoice_id: int, claims=Depends(require_role(_ROLE_VIEW)), db: Session = Depends(get_db_session)):
     inv = db.get(Invoice, invoice_id)
     if inv is None:
         raise HTTPException(404, "invoice not found")

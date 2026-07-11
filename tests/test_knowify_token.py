@@ -352,3 +352,147 @@ def test_main_refresh_only_dispatch(monkeypatch):
         with pytest.raises(SystemExit) as ei:
             runpy.run_module("core.knowify.tokens", run_name="__main__")
     assert ei.value.code == 0
+
+
+# --------------------------------------------------------------------------- #
+# MCP-token path (STOPGAP) — own secret knowify-mcp-tokens, camelCase blob,
+# refresh with resource=MCP audience, single-use rotate, fail-loud, expiry-gated.
+# --------------------------------------------------------------------------- #
+
+_FUTURE_MS = 32503680000000  # ~year 3000
+_PAST_MS = 1
+
+MCP_TOK = {
+    "clientId": "cid-1",
+    "accessToken": ACCESS,
+    "refreshToken": REFRESH,
+    "expiresAt": _FUTURE_MS,
+    "scope": "admin read write offline_access",
+}
+
+
+def test_load_mcp_tokens_reads_latest_version():
+    sm = _sm_client(MCP_TOK)
+    tok = T.load_mcp_tokens(sm_client=sm, project="proj")
+    assert tok["accessToken"] == ACCESS
+    name = str(sm.access_secret_version.call_args)
+    assert "knowify-mcp-tokens" in name
+    assert "versions/latest" in name
+
+
+def test_save_mcp_tokens_adds_new_version_no_leak(caplog):
+    caplog.set_level(logging.DEBUG)
+    sm = MagicMock()
+    T.save_mcp_tokens(dict(MCP_TOK), sm_client=sm, project="proj")
+    req = sm.add_secret_version.call_args.kwargs["request"]
+    assert req["parent"].endswith("secrets/knowify-mcp-tokens")
+    assert json.loads(req["payload"]["data"])["accessToken"] == ACCESS
+    _assert_no_token_leak(caplog)
+
+
+def test_mcp_expired_true_without_expiresAt():
+    assert T._mcp_expired({"accessToken": ACCESS}) is True
+
+
+def test_mcp_expired_true_when_past():
+    assert T._mcp_expired({"expiresAt": _PAST_MS}) is True
+
+
+def test_mcp_expired_false_when_far_future():
+    assert T._mcp_expired({"expiresAt": _FUTURE_MS}) is False
+
+
+def test_refresh_mcp_uses_mcp_resource_and_rotates(caplog):
+    caplog.set_level(logging.DEBUG)
+    sm = _sm_client(MCP_TOK)
+    new = {"access_token": NEW_ACCESS, "refresh_token": NEW_REFRESH, "expires_in": 3600}
+    captured = {}
+
+    def _fake_urlopen(req, timeout=0):
+        captured["data"] = req.data.decode()
+        return _Resp(new, 200)
+
+    with patch.object(T.urllib.request, "urlopen", side_effect=_fake_urlopen):
+        out = T.refresh_mcp(dict(MCP_TOK), sm_client=sm, project="proj")
+    # resource bound to the MCP audience (…/api/v2/mcp), NOT the REST /api/v2 that 500s
+    assert "grant_type=refresh_token" in captured["data"]
+    assert "v2%2Fmcp" in captured["data"]
+    assert out["accessToken"] == NEW_ACCESS
+    assert out["refreshToken"] == NEW_REFRESH  # single-use rotation
+    assert out["expiresAt"] > _PAST_MS  # recomputed from expires_in
+    assert sm.add_secret_version.called
+    _assert_no_token_leak(caplog)
+
+
+@pytest.mark.parametrize("code,body", [
+    (500, b"{}"),
+    (400, b'{"error":"invalid_grant"}'),
+    (401, b"{}"),
+])
+def test_refresh_mcp_fail_loud_writes_nothing(code, body, caplog):
+    caplog.set_level(logging.DEBUG)
+    sm = _sm_client(MCP_TOK)
+    calls = {"n": 0}
+
+    def _fail(req, timeout=0):
+        calls["n"] += 1
+        raise _http_error(code, body)
+
+    with patch.object(T.urllib.request, "urlopen", side_effect=_fail):
+        with pytest.raises(T.AuthError):
+            T.refresh_mcp(dict(MCP_TOK), sm_client=sm, project="proj")
+    assert calls["n"] == 1  # AT MOST ONCE — no token burn
+    assert not sm.add_secret_version.called
+    _assert_no_token_leak(caplog)
+
+
+def test_mcp_access_token_returns_when_valid(monkeypatch):
+    monkeypatch.setattr(T, "load_mcp_tokens", lambda: dict(MCP_TOK))
+    # far-future expiry -> no session, no refresh
+    monkeypatch.setattr("app.models.SessionLocal",
+                        lambda: pytest.fail("must not open a session when token is valid"))
+    assert T.mcp_access_token() == ACCESS
+
+
+def test_mcp_access_token_refreshes_under_lock(monkeypatch):
+    session = _patch_session()
+    monkeypatch.setattr("app.models.SessionLocal", lambda: session)
+    monkeypatch.setattr(T, "load_mcp_tokens", lambda **k: dict(MCP_TOK, expiresAt=_PAST_MS))
+    refreshed = {"accessToken": NEW_ACCESS}
+    called = {}
+
+    def _fake_refresh(tok):
+        called["r"] = True
+        return refreshed
+
+    monkeypatch.setattr(T, "refresh_mcp", _fake_refresh)
+    assert T.mcp_access_token() == NEW_ACCESS
+    assert called.get("r")
+
+
+def test_mcp_refresh_only_noop_when_valid(monkeypatch):
+    monkeypatch.setattr(T, "load_mcp_tokens", lambda: dict(MCP_TOK))
+    monkeypatch.setattr("app.models.SessionLocal", lambda: _patch_session())
+    assert T.mcp_refresh_only() == 0
+
+
+def test_mcp_refresh_only_refreshes_dead(monkeypatch):
+    session = _patch_session()
+    monkeypatch.setattr("app.models.SessionLocal", lambda: session)
+    monkeypatch.setattr(T, "load_mcp_tokens", lambda **k: dict(MCP_TOK, expiresAt=_PAST_MS))
+    called = {}
+    monkeypatch.setattr(T, "refresh_mcp", lambda tok: called.setdefault("r", True))
+    assert T.mcp_refresh_only() == 0
+    assert called.get("r")
+
+
+def test_mcp_refresh_only_returns_1_on_auth_error(monkeypatch):
+    session = _patch_session()
+    monkeypatch.setattr("app.models.SessionLocal", lambda: session)
+    monkeypatch.setattr(T, "load_mcp_tokens", lambda **k: dict(MCP_TOK, expiresAt=_PAST_MS))
+
+    def _boom(tok):
+        raise T.AuthError("dead")
+
+    monkeypatch.setattr(T, "refresh_mcp", _boom)
+    assert T.mcp_refresh_only() == 1

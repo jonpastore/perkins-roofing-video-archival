@@ -20,6 +20,8 @@ import urllib.request
 # Knowify v2 REST API. Base host is assistant.knowify.com and paths are /api/v2/<entity>
 # (verified against the published OpenAPI). The old value (api.knowify.com/v2) 400'd on
 # every entity — it was the wrong host AND missing the /api prefix.
+# NOTE: kept local (not imported from core.knowify.rest) so this script stays runnable as
+# `python scripts/knowify/knowify_pull.py` — that puts scripts/ on sys.path, not repo root.
 API = "https://assistant.knowify.com/api/v2"
 TOKEN_URL = "https://developers-v2.knowify.com/oauth/token"
 UA = "perkins-knowify-importer/1.0"

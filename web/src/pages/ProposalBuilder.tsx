@@ -406,15 +406,16 @@ export function ProposalBuilder() {
   const [result, setResult] = useState<GenerateProposalResult | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
-  // Load customers on mount
+  // Load customers on mount (and on retry)
+  const [customersRetry, setCustomersRetry] = useState(0);
   useEffect(() => {
     setCustomersLoading(true);
     setCustomersError(null);
     listQuotingCustomers()
-      .then((data) => setCustomers(data))
+      .then((data) => setCustomers(Array.isArray(data) ? data : []))
       .catch((e: unknown) => setCustomersError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCustomersLoading(false));
-  }, []);
+  }, [customersRetry]);
 
   // Load customer detail when selection changes
   useEffect(() => {
@@ -647,7 +648,14 @@ export function ProposalBuilder() {
         <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 14 }}>Customer &amp; Property</div>
 
         {customersLoading && <Loading label="Loading customers…" />}
-        {customersError && <ErrorMsg>Failed to load customers: {customersError}</ErrorMsg>}
+        {customersError && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <ErrorMsg>Failed to load customers: {customersError}</ErrorMsg>
+            <Button variant="ghost" onClick={() => setCustomersRetry((n) => n + 1)} style={{ fontSize: 12, padding: "6px 12px", flexShrink: 0 }}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         {!customersLoading && !customersError && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>

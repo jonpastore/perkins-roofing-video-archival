@@ -27,6 +27,8 @@ _MATRIX = {
         "quoting_view", "quoting_create", "quoting_send",
         "quoting_manage_templates", "quoting_manage_settings",
         "admin_users",
+        # Sales console read-only billing view (Wave 2): list/detail invoices + payments.
+        "billing_view",
     },
     # sales — search/ask, email tools + email templates, bid estimator.
     "sales": {
@@ -39,6 +41,9 @@ _MATRIX = {
         "kb_search", "kb_ask",
         "estimating_view",
         "quoting_view", "quoting_create", "quoting_send",
+        # Sales console read-only billing view (Wave 2): list/detail invoices + payments.
+        # Does NOT grant billing_manage (create invoice / record payment — admin only).
+        "billing_view",
     },
     # knowify_admin — trigger sync + reconnect OAuth. Admin-only (admin has "*").
     # Do NOT grant to web_admin/sales/content roles (least privilege).

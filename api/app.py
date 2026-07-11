@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from api.auth import current_claims, get_db_session, require_internal_tenants, require_role, require_role_db
 from api.middleware.cors import DynamicCORSMiddleware
+from api.routes.admin_metrics import router as admin_metrics_router
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.clips import router as clips_router
@@ -15,17 +16,20 @@ from api.routes.comments import router as comments_router
 from api.routes.config import router as config_router
 from api.routes.contract_faq import router as contract_faq_router
 from api.routes.customers import router as customers_router
+from api.routes.dashboard import router as dashboard_router
 from api.routes.email import router as email_router
 from api.routes.estimator import router as estimator_router
 from api.routes.faq import router as faq_router
 from api.routes.invoices import router as invoices_router
 from api.routes.knowify import router as knowify_router
-from api.routes.price_book import router as price_book_router
-from api.routes.proposal_gen import router as proposal_gen_router
 from api.routes.logs import router as logs_router
 from api.routes.measurements import router as measurements_router
+from api.routes.payments import router as payments_router
+from api.routes.price_book import router as price_book_router
 from api.routes.pricing_configs import router as pricing_configs_router
+from api.routes.proposal_gen import router as proposal_gen_router
 from api.routes.proposals import router as proposals_router
+from api.routes.quotes import router as quotes_router
 from api.routes.scheduling import router as scheduling_router
 from api.routes.squares import router as squares_router
 from api.routes.suggestions import router as suggestions_router
@@ -87,7 +91,10 @@ app.include_router(topics_router)
 app.include_router(estimator_router)
 app.include_router(pricing_configs_router)
 app.include_router(invoices_router)
+app.include_router(payments_router)
+app.include_router(dashboard_router)
 app.include_router(knowify_router)
+app.include_router(quotes_router)
 app.include_router(price_book_router)
 app.include_router(proposal_gen_router)
 app.include_router(measurements_router)
@@ -103,6 +110,7 @@ app.include_router(logs_router)
 app.include_router(customers_router)
 app.include_router(proposals_router)
 app.include_router(squares_router)
+app.include_router(admin_metrics_router)
 
 
 class Query(BaseModel):
