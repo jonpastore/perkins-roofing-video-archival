@@ -18,6 +18,7 @@ from api.routes.customers import router as customers_router
 from api.routes.email import router as email_router
 from api.routes.estimator import router as estimator_router
 from api.routes.faq import router as faq_router
+from api.routes.invoices import router as invoices_router
 from api.routes.logs import router as logs_router
 from api.routes.measurements import router as measurements_router
 from api.routes.pricing_configs import router as pricing_configs_router
@@ -82,6 +83,7 @@ app.include_router(scheduling_router)
 app.include_router(topics_router)
 app.include_router(estimator_router)
 app.include_router(pricing_configs_router)
+app.include_router(invoices_router)
 app.include_router(measurements_router)
 app.include_router(faq_router)
 app.include_router(contract_faq_router)
