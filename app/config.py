@@ -41,6 +41,11 @@ class Settings:
     # Default matches the Firebase Hosting / Cloud Run production domain.
     PROD_DOMAIN = os.getenv("PROD_DOMAIN", "perkins.degenito.ai")
 
+    # Contractor identity on generated legal documents (proposals + invoices). FL roofing
+    # contracts are expected to carry the license number; set TENANT_LICENSE via env/secret.
+    TENANT_NAME    = os.getenv("TENANT_NAME", "Perkins Roofing")
+    TENANT_LICENSE = os.getenv("TENANT_LICENSE", "")  # e.g. "CCC1234567" — set in prod config
+
     # Cost guardrails
     MAX_VIDEOS_PER_RUN = int(os.getenv("MAX_VIDEOS_PER_RUN", "500"))
 

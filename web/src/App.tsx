@@ -147,7 +147,6 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["quoting", "Quotes"],
           ["proposals", "Proposals"],
           ["proposal-gen", "New Proposal"],
-          ["invoices", "Invoices"],
         ],
       },
     ],

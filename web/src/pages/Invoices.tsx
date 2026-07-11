@@ -86,6 +86,9 @@ function PaymentForm({ invoice, onSuccess, onCancel }: PaymentFormProps) {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Stable per-attempt key: a retry of THIS form reuses it so the server dedupes the
+  // replay (no double-count); recording a separate payment mounts a fresh form → new key.
+  const [idempotencyKey] = useState(() => `pay-${crypto.randomUUID()}`);
 
   async function handleSubmit() {
     if (!amount.trim()) { setErr("Amount is required."); return; }
@@ -97,6 +100,7 @@ function PaymentForm({ invoice, onSuccess, onCancel }: PaymentFormProps) {
         method: method || undefined,
         reference: reference.trim() || undefined,
         notes: notes.trim() || undefined,
+        idempotency_key: idempotencyKey,
       });
       onSuccess(result.invoice_id, result.status);
     } catch (e: unknown) {

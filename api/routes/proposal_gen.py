@@ -8,6 +8,8 @@ is the frozen source of truth JB4's milestone schedule reads (HIGH-2).
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timezone
+from decimal import InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -15,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from adapters import gotenberg
 from api.auth import get_db_session, require_role
+from app.config import settings
 from app.models import Proposal
 from core.proposal_doc_render import (
     DEFAULT_PROPOSAL_TEMPLATE_HTML,
@@ -40,14 +43,26 @@ class GenerateRequest(BaseModel):
 def generate(body: GenerateRequest, claims=Depends(require_role(_ROLE)),
              db: Session = Depends(get_db_session)):
     """Compose + freeze + persist a proposal. Returns the composed proposal + snapshot hash."""
-    proposal = compose_proposal(body.inputs)
-    snapshot, snap_hash = freeze_quote_snapshot(proposal)
+    # Malformed inputs would otherwise raise deep in the engine as a 500 — 422 at the boundary.
+    try:
+        proposal = compose_proposal(body.inputs)
+        snapshot, snap_hash = freeze_quote_snapshot(proposal)
+    except (ValueError, KeyError, TypeError, InvalidOperation) as e:
+        raise HTTPException(422, f"invalid proposal input: {e}")
+
+    # Document metadata rendered onto the contract PDF. A blank date and a missing FL
+    # contractor license were both legal gaps (security review) — persist them into the
+    # snapshot as `_`-prefixed metadata (outside the hashed quote) so the PDF renders them.
+    doc_date = body.date or datetime.now(timezone.utc).date().isoformat()
+    tenant_name = body.tenant_name or settings.TENANT_NAME
+    tenant_license = body.tenant_license or settings.TENANT_LICENSE or None
 
     row = Proposal(
         customer_id=body.customer_id, property_id=body.property_id,
         version_number=1,
         title=proposal.get("project_name") or f"Roofing Proposal — {proposal.get('customer', '')}",
-        quote_snapshot={**snapshot, "_snapshot_hash": snap_hash},
+        quote_snapshot={**snapshot, "_snapshot_hash": snap_hash, "_date": doc_date,
+                        "_tenant_name": tenant_name, "_tenant_license": tenant_license},
         status="draft",
         accept_token=secrets.token_urlsafe(64),
         created_by=claims.get("email") or "unknown",
@@ -68,11 +83,17 @@ def proposal_pdf(proposal_id: int, claims=Depends(require_role(_ROLE)),
         raise HTTPException(404, "proposal not found")
     snap = dict(row.quote_snapshot or {})
     snap.pop("_snapshot_hash", None)
+    doc_date = snap.pop("_date", "")
+    tenant_name = snap.pop("_tenant_name", None) or settings.TENANT_NAME
+    tenant_license = snap.pop("_tenant_license", None) or (settings.TENANT_LICENSE or None)
     ctx = proposal_doc_context(
-        snap, date=snap.get("_date", ""), tenant_name="Perkins Roofing",
+        snap, date=doc_date, tenant_name=tenant_name, tenant_license=tenant_license,
         tc_summary_bullets=None, marketing_appendix=None,
     )
     html = render_proposal_doc_html(DEFAULT_PROPOSAL_TEMPLATE_HTML, ctx)
-    pdf = gotenberg.html_to_pdf(html)
+    try:
+        pdf = gotenberg.html_to_pdf(html)
+    except RuntimeError as e:
+        raise HTTPException(502, f"PDF service unavailable: {e}")
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="proposal-{proposal_id}.pdf"'})

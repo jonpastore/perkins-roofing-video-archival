@@ -9,15 +9,18 @@ ledger; invoice status is DERIVED from it, never overwritten by hand.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from adapters import gotenberg
 from api.auth import get_db_session, require_role
+from app.config import settings
 from app.models import (
     Customer,
     Invoice,
@@ -36,12 +39,33 @@ from core.invoicing import aggregate_invoice, build_invoice_lines, derive_invoic
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
-# TODO(billing_manage): reuse estimating_manage until a dedicated billing role lands.
-_ROLE = "estimating_manage"
+# Money path — gated on billing_manage, which only `admin` holds (via "*"). Deliberately
+# NOT granted to web_admin (a content role) or sales, so content/estimating staff cannot
+# issue invoices or record/adjust payments (least privilege; security review H3).
+_ROLE = "billing_manage"
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _money(raw: str, *, allow_negative: bool = False) -> str:
+    """Validate a client-supplied money string at the trust boundary (security review H2).
+
+    Rejects non-numeric, NaN/Infinity (a poison-pill that later 500s every status
+    derivation), negatives (unless allowed), and absurd magnitudes. Returns the value
+    normalized to 2 decimals so the ledger never stores an unparseable amount."""
+    try:
+        d = Decimal(raw)
+    except (InvalidOperation, TypeError, ValueError):
+        raise HTTPException(422, "amount must be a decimal number")
+    if not d.is_finite():
+        raise HTTPException(422, "amount must be finite")
+    if not allow_negative and d < 0:
+        raise HTTPException(422, "amount must be non-negative")
+    if abs(d) > Decimal("100000000"):
+        raise HTTPException(422, "amount out of range")
+    return str(d.quantize(Decimal("0.01")))
 
 
 def _issue_number(db: Session, tenant_id: int) -> int:
@@ -108,7 +132,10 @@ class PaymentRequest(BaseModel):
     method: str = "check"       # check|ach|card|cash|other
     reference: str | None = None
     notes: str | None = None
-    idempotency_key: str | None = None
+    # REQUIRED: a null key defeats dedup (Postgres treats NULLs as distinct), so a
+    # double-submit would double-count the payment (security review H1). The client sends
+    # one stable key per payment attempt; a replay collides on UNIQUE(tenant, key) → no-op.
+    idempotency_key: str = Field(min_length=8)
 
 
 # ---------------------------------------------------------------------------
@@ -150,15 +177,23 @@ def issue_invoice(
     """Issue a milestone-draw invoice: allocate a number atomically, build lines,
     persist, append the ledger event, and mark the draw invoiced."""
     tenant_id = db.info["tenant_id"]
-    engine_lines = build_invoice_lines(
-        [s.model_dump() for s in body.scopes],
-        body.milestone_pct,
-        discounts=[d.model_dump() for d in body.discounts],
-    )
-    totals = aggregate_invoice(engine_lines)
+    # Bad milestone_pct / scope_value / discount amount would otherwise raise deep in the
+    # engine as an unhandled 500 — validate at the boundary and return 422 (H2/M6).
+    try:
+        engine_lines = build_invoice_lines(
+            [s.model_dump() for s in body.scopes],
+            body.milestone_pct,
+            discounts=[d.model_dump() for d in body.discounts],
+        )
+        totals = aggregate_invoice(engine_lines)
+    except (ValueError, InvalidOperation) as e:
+        raise HTTPException(422, f"invalid invoice input: {e}")
 
-    inv_date = (datetime.fromisoformat(body.invoice_date) if body.invoice_date else _utcnow())
-    due = datetime.fromisoformat(body.due_date) if body.due_date else inv_date
+    try:
+        inv_date = (datetime.fromisoformat(body.invoice_date) if body.invoice_date else _utcnow())
+        due = datetime.fromisoformat(body.due_date) if body.due_date else inv_date
+    except ValueError:
+        raise HTTPException(422, "invoice_date/due_date must be ISO-8601")
 
     number = _issue_number(db, tenant_id)
     inv = Invoice(
@@ -180,10 +215,16 @@ def issue_invoice(
         idempotency_key=f"issue:{tenant_id}:{number}", source="api",
     ))
     if body.milestone_draw_id:
-        db.execute(
-            update(MilestoneDraw).where(MilestoneDraw.id == body.milestone_draw_id)
+        # Only a still-pending draw may be invoiced. Guarding on status prevents a
+        # double-issue from silently re-pointing the draw at the newer invoice and
+        # orphaning the first (security review G4). RLS also scopes this to the tenant.
+        res = db.execute(
+            update(MilestoneDraw)
+            .where(MilestoneDraw.id == body.milestone_draw_id, MilestoneDraw.status == "pending")
             .values(status="invoiced", invoice_id=inv.id)
         )
+        if res.rowcount == 0:
+            raise HTTPException(409, "milestone draw not found or already invoiced")
     db.flush()
     return _invoice_dict(db, inv)
 
@@ -221,10 +262,14 @@ def invoice_pdf(invoice_id: int, claims=Depends(require_role(_ROLE)), db: Sessio
         bill_to_address="", job_name=f"Job #{inv.job_id}",
         engine_lines=engine_lines, totals={"subtotal": str(inv.subtotal), "tax_amount": str(inv.tax_amount),
                                             "credit_amount": str(inv.credit_amount), "total": str(inv.total)},
-        tenant_name="Perkins Roofing", comments=inv.comments,
+        tenant_name=settings.TENANT_NAME, tenant_license=settings.TENANT_LICENSE or None,
+        comments=inv.comments,
     )
     html = render_invoice_html(DEFAULT_INVOICE_TEMPLATE_HTML, ctx)
-    pdf = gotenberg.html_to_pdf(html)
+    try:
+        pdf = gotenberg.html_to_pdf(html)
+    except RuntimeError as e:
+        raise HTTPException(502, f"PDF service unavailable: {e}")
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="invoice-{inv.invoice_number}.pdf"'})
 
@@ -236,17 +281,34 @@ def record_payment(
     claims=Depends(require_role(_ROLE)),
     db: Session = Depends(get_db_session),
 ):
-    """Record a payment, append the ledger event, and return the DERIVED status."""
+    """Record a payment, append the ledger event, and return the DERIVED status.
+
+    A replayed request (same idempotency_key) collides on UNIQUE(tenant, key) and is
+    returned as a no-op with the current status, so a double-submit can't double-count
+    the payment (security review H1)."""
     inv = db.get(Invoice, invoice_id)
     if inv is None:
         raise HTTPException(404, "invoice not found")
-    db.add(Payment(invoice_id=inv.id, amount=body.amount, method=body.method,
-                   reference=body.reference, notes=body.notes, payment_date=_utcnow()))
-    db.add(JobBillingEvent(
-        job_id=inv.job_id, invoice_id=inv.id, event_type="payment_recorded",
-        payload={"amount": body.amount}, idempotency_key=body.idempotency_key, source="api",
-    ))
-    db.flush()
+    amount = _money(body.amount)  # reject negative/NaN/oversized before it hits the ledger (H2)
+
+    # Payment row + ledger event share one transaction; the ledger's unique key is the
+    # dedup guard. On replay the flush raises IntegrityError → return current state.
+    try:
+        db.add(Payment(invoice_id=inv.id, amount=amount, method=body.method,
+                       reference=body.reference, notes=body.notes, payment_date=_utcnow()))
+        db.add(JobBillingEvent(
+            job_id=inv.job_id, invoice_id=inv.id, event_type="payment_recorded",
+            payload={"amount": amount}, idempotency_key=body.idempotency_key, source="api",
+        ))
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        inv = db.get(Invoice, invoice_id)
+        if inv is None:
+            raise HTTPException(404, "invoice not found")
+        status = derive_invoice_status(_events_for(db, invoice_id), inv.total)
+        return {"invoice_id": invoice_id, "status": status}
+
     status = derive_invoice_status(_events_for(db, inv.id), inv.total)
     db.execute(update(Invoice).where(Invoice.id == inv.id).values(status=status))
     db.flush()
