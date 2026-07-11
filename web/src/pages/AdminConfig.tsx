@@ -3,6 +3,7 @@ import { BRAND, FONT } from "../ui";
 import { Users } from "./Users";
 import { Settings } from "./Settings";
 import { EstimatingConfig } from "./EstimatingConfig";
+import { PriceBook } from "./PriceBook";
 import { MarketingConfig } from "./MarketingConfig";
 import { KbConfig } from "./KbConfig";
 import { TenantsConfig } from "./TenantsConfig";
@@ -43,6 +44,7 @@ export function AdminConfig({ role }: AdminConfigProps) {
     { key: "kb", label: "Knowledge Base" },
     { key: "marketing", label: "Marketing" },
     { key: "estimating", label: "Estimating" },
+    { key: "price-book", label: "Price Book" },
     { key: "quoting", label: "Quoting" },
     { key: "users-roles", label: "Users & Roles" },
     // platform_admin only — hidden for all current roles
@@ -98,6 +100,7 @@ export function AdminConfig({ role }: AdminConfigProps) {
       {activeSubTab === "kb" && <KbConfig role={role} />}
       {activeSubTab === "marketing" && <MarketingConfig role={role} />}
       {activeSubTab === "estimating" && <EstimatingConfig role={role} />}
+      {activeSubTab === "price-book" && <PriceBook />}
       {activeSubTab === "quoting" && (
         <PlaceholderCard message="Quoting config — coming in F3 (proposal templates, T&C library, deposit policy, reminder cadence)" />
       )}

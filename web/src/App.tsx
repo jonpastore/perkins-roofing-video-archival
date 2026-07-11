@@ -18,6 +18,8 @@ import { Estimator } from "./pages/Estimator";
 import { Quoting } from "./pages/Quoting";
 import { Squares } from "./pages/Squares";
 import { Proposals } from "./pages/Proposals";
+import { ProposalBuilder } from "./pages/ProposalBuilder";
+import { Invoices } from "./pages/Invoices";
 import { ContractFaq } from "./pages/ContractFaq";
 import { AdminConfig } from "./pages/AdminConfig";
 import { BRAND, FONT, Spinner } from "./ui";
@@ -96,6 +98,8 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["estimator", "Estimates"],
           ["quoting", "Quotes"],
           ["proposals", "Proposals"],
+          ["proposal-gen", "New Proposal"],
+          ["invoices", "Invoices"],
         ],
       },
     ],
@@ -142,6 +146,8 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["estimator", "Estimates"],
           ["quoting", "Quotes"],
           ["proposals", "Proposals"],
+          ["proposal-gen", "New Proposal"],
+          ["invoices", "Invoices"],
         ],
       },
     ],
@@ -163,6 +169,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["estimator", "Estimates"],
           ["quoting", "Quotes"],
           ["proposals", "Proposals"],
+          ["proposal-gen", "New Proposal"],
         ],
       },
     ],
@@ -538,6 +545,8 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "quoting" && <Quoting />}
       {tab === "squares" && <Squares />}
       {tab === "proposals" && <Proposals />}
+      {tab === "proposal-gen" && <ProposalBuilder />}
+      {tab === "invoices" && <Invoices />}
       {tab === "contract-faq" && <ContractFaq />}
       {tab === "admin-config" && <AdminConfig role={role} />}
       {/* status-view: Marketing > Status — renders the same Status component as dashboard */}

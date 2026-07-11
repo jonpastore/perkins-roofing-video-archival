@@ -356,3 +356,232 @@ export function addSsoProvider(payload: AddSsoProviderPayload): Promise<SsoProvi
 export function deleteSsoProvider(idpId: string): Promise<void> {
   return apiFetch(`/admin/sso/providers/${idpId}`, { method: "DELETE" }).then(() => undefined);
 }
+
+// ── Shared helpers ───────────────────────────────────────────────────────────
+
+/** Read the FastAPI `detail` off a failed response, falling back to status text. */
+async function errText(res: Response): Promise<string> {
+  const d = await res.json().catch(() => ({}));
+  return (d as { detail?: string }).detail ?? `${res.status} ${res.statusText}`;
+}
+
+/** Fetch an auth-gated PDF endpoint and open it in a new tab (the PDF routes require the
+ *  Bearer token, so a plain link/anchor 401s). Mirrors Proposals.tsx handleViewPdf. */
+export async function openAuthedPdf(path: string): Promise<void> {
+  const r = await apiFetch(path);
+  if (!r.ok) throw new Error(await errText(r));
+  const url = URL.createObjectURL(await r.blob());
+  window.open(url, "_blank", "noopener");
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+// ── Quoting customers/properties (reused by proposal + invoice builders) ──────
+
+export interface QuotingCustomer {
+  id: number;
+  display_name: string;
+  company_name: string | null;
+  email: string | null;
+  phone: string | null;
+}
+export interface QuotingProperty {
+  id: number;
+  customer_id: number;
+  street: string;
+  city: string;
+  state: string;
+  zip: string | null;
+  county: string | null;
+  code_zone: string;
+}
+export interface QuotingCustomerDetail extends QuotingCustomer {
+  properties: QuotingProperty[];
+}
+
+export async function listQuotingCustomers(): Promise<QuotingCustomer[]> {
+  const r = await apiFetch("/quoting/customers?limit=500");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function getQuotingCustomer(id: number): Promise<QuotingCustomerDetail> {
+  const r = await apiFetch(`/quoting/customers/${id}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ── JB1: Material price book ─────────────────────────────────────────────────
+
+export interface PriceBookItem {
+  id: number;
+  sku: string | null;
+  name: string;
+  unit: string | null;
+  unit_coverage: string | null;   // Decimal string; null = no coverage → no price/sq
+  unit_price: string | null;      // Decimal string; null = not stocked (never 0)
+  tax_rate: string | null;        // Decimal string, e.g. "0.07"
+  waste_rate: string | null;      // Decimal string, e.g. "0.10"
+  supplier: string | null;
+  item_type: string | null;
+  knowify_item_id: string | null;
+  price_per_square: string | null; // computed server-side; null = not-stocked / no coverage
+}
+export interface PriceBookItemUpsert {
+  name: string;
+  unit?: string | null;
+  unit_coverage?: string | null;
+  unit_price?: string | null;
+  tax_rate?: string;
+  waste_rate?: string;
+  supplier?: string | null;
+  item_type?: string | null;
+  sku?: string | null;
+  knowify_item_id?: string | null;
+}
+export interface PriceBookVersion {
+  id: number;
+  supplier: string;
+  version_number: number;
+  label: string | null;
+  config_hash: string;
+  is_active: boolean;
+  created_at: string | null;
+}
+
+export async function listPriceBookItems(): Promise<PriceBookItem[]> {
+  const r = await apiFetch("/price-book/items");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function createPriceBookItem(body: PriceBookItemUpsert): Promise<PriceBookItem> {
+  const r = await apiFetch("/price-book/items", { method: "POST", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function updatePriceBookItem(id: number, body: PriceBookItemUpsert): Promise<PriceBookItem> {
+  const r = await apiFetch(`/price-book/items/${id}`, { method: "PUT", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function listPriceBookVersions(): Promise<PriceBookVersion[]> {
+  const r = await apiFetch("/price-book/versions");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function freezePriceBookVersion(
+  body: { supplier?: string; label?: string; activate?: boolean },
+): Promise<{ id: number; supplier: string; version_number: number; config_hash: string; is_active: boolean; item_count: number }> {
+  const r = await apiFetch("/price-book/versions", { method: "POST", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ── JB3: Proposal generation (engine-driven) ─────────────────────────────────
+
+export interface ProposalScopeInput {
+  roof_system: string;            // "shingle" | "tile" | "flat" | "metal"
+  tier?: string;                  // e.g. "PROTECTOR" | "COASTAL" | "PREMIUM_CARIBBEAN"
+  squares?: string | null;
+  description?: string;
+  unit_price?: string | null;     // explicit $/sq override (bypasses table)
+  is_optional?: boolean;          // excluded from contract_total unless included
+  included?: boolean;             // accept an optional line into the total
+}
+export interface ProposalExtraLine {
+  description: string;
+  line_total?: string;            // explicit total
+  unit_price?: string | null;
+  qty?: string | null;
+  is_optional?: boolean;
+  included?: boolean;
+  is_metal?: boolean;             // triggers 15-day expiry
+}
+export interface ProposalDiscount {
+  description: string;
+  amount: string;                 // positive; billed negative
+}
+export interface ProposalGenInputs {
+  customer: string;               // name
+  property: string;               // address
+  project_name?: string;
+  hvhz?: boolean;
+  payment_variant?: "standard" | "palmer";
+  scopes: ProposalScopeInput[];
+  extra_lines?: ProposalExtraLine[];
+  discounts?: ProposalDiscount[];
+}
+export interface GenerateProposalResult {
+  id: number;
+  snapshot_hash: string;
+  contract_total: string;
+  expiry_days: number;
+  proposal: Record<string, unknown>;
+}
+export async function generateProposal(body: {
+  customer_id: number;
+  property_id: number;
+  inputs: ProposalGenInputs;
+  date?: string;
+  tenant_name?: string;
+}): Promise<GenerateProposalResult> {
+  const r = await apiFetch("/proposal-gen", { method: "POST", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+// ── JB4: Invoicing + payments (money path) ───────────────────────────────────
+
+export interface InvoiceLine {
+  line_type: string;
+  description: string;
+  milestone_pct: string | null;
+  subtotal: string;
+}
+export interface Invoice {
+  id: number;
+  invoice_number: number;
+  job_id: number;
+  customer_id: number;
+  status: string;                 // derived: sent|partial|paid|void|…
+  invoice_date: string | null;
+  due_date: string | null;
+  milestone_pct: string | null;
+  subtotal: string;
+  tax_amount: string;
+  total: string;
+  lines: InvoiceLine[];
+}
+export interface InvoiceScopeInput {
+  description: string;
+  scope_value: string;            // per-scope CONTRACT value (Decimal string)
+  scope_id?: number | null;
+}
+export interface IssueInvoiceRequest {
+  job_id: number;
+  customer_id: number;
+  milestone_pct: string;          // fraction, e.g. "0.30"
+  scopes: InvoiceScopeInput[];
+  discounts?: ProposalDiscount[];
+  proposal_id?: number | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  comments?: string | null;
+}
+
+export async function listInvoices(): Promise<Invoice[]> {
+  const r = await apiFetch("/invoices");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function issueInvoice(body: IssueInvoiceRequest): Promise<Invoice> {
+  const r = await apiFetch("/invoices", { method: "POST", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function recordPayment(
+  invoiceId: number,
+  body: { amount: string; method?: string; reference?: string; notes?: string; idempotency_key?: string },
+): Promise<{ invoice_id: number; status: string }> {
+  const r = await apiFetch(`/invoices/${invoiceId}/payments`, { method: "POST", body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
