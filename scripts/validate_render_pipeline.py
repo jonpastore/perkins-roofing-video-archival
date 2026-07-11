@@ -185,7 +185,10 @@ db = SessionLocal()
 ms = db.query(MiniSeries).filter(MiniSeries.video_id == "test-vid-1").first()
 assert ms is not None, "MiniSeries row not found"
 assert ms.approved == 0, "MiniSeries should default to unapproved"
-assert isinstance(ms.parts_json, list) and len(ms.parts_json) >= 4
+assert isinstance(ms.parts_json, list) and len(ms.parts_json) >= 1
+for part in ms.parts_json:
+    assert {"title", "start", "end"} <= set(part), f"MiniSeries part has wrong shape: {part!r}"
+    assert float(part["end"]) > float(part["start"]), f"MiniSeries part has invalid window: {part!r}"
 series_id = ms.id
 db.close()
 

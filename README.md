@@ -46,6 +46,19 @@ pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=100
 cd web && npm ci && npm run build
 ```
 
+**Faster PG-backed test runs.** The RLS / billing tests need a real Postgres. By default
+the fixtures spin up (and tear down) a Testcontainers instance every run. To reuse one
+long-lived `pgvector` container instead — provisioning is paid once, then reused — run the
+suite through the helper (it starts the container if needed, uses a fresh DB per run, and
+sets `TENANCY_PG_URL` so the fixtures skip Testcontainers):
+
+```bash
+scripts/test_pg.sh                                   # full suite
+scripts/test_pg.sh --cov=core --cov-fail-under=97    # the R1 gate
+scripts/test_pg.sh tests/tenancy -q                  # a subset
+scripts/test_pg.sh --stop-pg                          # stop + remove the container
+```
+
 Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/ENGINEERING_RULES.md)**
 (and **[CLAUDE.md](CLAUDE.md)**) first.
 

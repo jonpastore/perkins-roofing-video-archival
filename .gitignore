@@ -16,6 +16,7 @@ logs/
 
 # Local tooling state
 .omc/
+.morpheus-ek/
 .claude/
 
 # SPA build artifacts

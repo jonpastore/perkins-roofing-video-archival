@@ -47,6 +47,13 @@ def build_items(data: dict) -> list[dict]:
     """Pure function: parse Tim's JSON into PriceBookItem dicts.
 
     Skips items with price None/0. Deduplicates by (supplier, name) — last wins.
+
+    Knowify crosswalk ids are globally unique in ``price_book_items`` by
+    (tenant_id, knowify_item_id). Tim's ABC and Beacon tabs can both include the
+    same material name, so both parsed supplier rows may initially map to the same
+    Knowify catalog id. Keep the crosswalk on ONE canonical row (prefer ABC_SUPPLY,
+    then first-seen) and clear duplicate supplier rows to NULL; the supplier row is
+    still seeded, but there is a single canonical Knowify↔price-book crosswalk.
     """
     seen: dict[tuple[str, str], dict] = {}
     for tab, items in data.items():
@@ -70,7 +77,21 @@ def build_items(data: dict) -> list[dict]:
                 "roof_system_ids": [],
             }
             seen[(supplier, name)] = item
-    return list(seen.values())
+    out = list(seen.values())
+
+    # Enforce one non-null knowify_item_id per tenant-safe seed set. Prefer ABC
+    # when both suppliers carry the same item name/crosswalk.
+    out.sort(key=lambda i: (0 if i["supplier"] == "ABC_SUPPLY" else 1, i["supplier"], i["name"]))
+    used_xwalk: set[str] = set()
+    for item in out:
+        kid = item.get("knowify_item_id")
+        if not kid:
+            continue
+        if kid in used_xwalk:
+            item["knowify_item_id"] = None
+        else:
+            used_xwalk.add(kid)
+    return out
 
 
 def main() -> None:

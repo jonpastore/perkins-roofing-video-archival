@@ -798,11 +798,11 @@ class TestUISeamContracts:
         r1 = admin_client.get("/quoting/customers?page=1&limit=50", headers=AUTH)
         r2 = admin_client.get("/quoting/customers?page=2&limit=50", headers=AUTH)
         assert r1.status_code == 200 and r2.status_code == 200
-        ids1 = {c["id"] for c in r1.json()}
-        ids2 = {c["id"] for c in r2.json()}
+        ids1 = {c["id"] for c in r1.json()["items"]}
+        ids2 = {c["id"] for c in r2.json()["items"]}
         assert ids1.isdisjoint(ids2)
         if len(ids1) < 50:
-            assert r2.json() == []
+            assert r2.json()["items"] == []
 
     def test_public_token_get_returns_json_not_html(self, admin_client):
         """GET /p/{token} content-type must be application/json for all states."""

@@ -78,7 +78,7 @@ from app import transcript as _T  # noqa: E402
 fetch = {"n": 0}
 
 
-def _fake_fetch(vid):
+def _fake_fetch(vid, **_kw):
     fetch["n"] += 1
     return {"source": "whisper", "segments": [{"text": "real roof talk", "start": 0, "end": 3}],
             "words": [], "speech_ratio": 0.9}

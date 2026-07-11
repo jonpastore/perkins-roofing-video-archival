@@ -161,7 +161,7 @@ class TestListCustomers:
         _create_customer(admin_client, name=name)
         r = admin_client.get("/quoting/customers?limit=200", headers=AUTH)
         assert r.status_code == 200
-        names = [c["display_name"] for c in r.json()]
+        names = [c["display_name"] for c in r.json()["items"]]
         assert name in names
 
     def test_list_unauthenticated_401(self):
@@ -180,7 +180,7 @@ class TestListCustomers:
             db.add(c2)
             db.commit()
         r = admin_client.get("/quoting/customers", headers=AUTH)
-        names = [c["display_name"] for c in r.json()]
+        names = [c["display_name"] for c in r.json()["items"]]
         assert "OtherTenant" not in names
 
 

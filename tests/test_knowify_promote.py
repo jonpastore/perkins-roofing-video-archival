@@ -54,13 +54,18 @@ CLIENT_NO_COMPANY = {
     "PhoneNumber": "305-555-0199",
 }
 
+# Real Knowify `ServiceCatalogItems` field names (verified live via the MCP schema
+# 2026-07-11): the catalog master carries `Name`, `ItemNumber` (the SKU/code — there is
+# NO `Sku`), `UnitName` (there is NO `Unit`), `Price` (sell — there is NO `UnitPrice`),
+# and `OurCost` (cost). Only Name/ItemNumber/UnitName/Price import; OurCost is stale (v2
+# pricing is authoritative) and MUST NOT leak onto the row.
 ITEM = {
     "Id": 900,
     "Name": "GAF Timberline HDZ",
-    "Sku": "GAF-HDZ",
-    "Unit": "square",
-    "UnitPrice": "125.00",   # sale price — imported
-    "OurCost": "88.00",      # cost — MUST NOT be imported (stale, v2 is authoritative)
+    "ItemNumber": "GAF-HDZ",   # real Knowify field (NOT "Sku")
+    "UnitName": "square",      # real Knowify field (NOT "Unit")
+    "Price": "125.00",         # sell price — imported (real field, NOT "UnitPrice")
+    "OurCost": "88.00",        # cost — MUST NOT be imported (stale, v2 is authoritative)
 }
 
 # Real fixture anchor: paid invoice #18732 (Id=2474204).

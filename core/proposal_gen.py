@@ -235,7 +235,8 @@ def compose_proposal(
         return bool(line.get("included", False))
 
     subtotal = sum(
-        Decimal(ln["line_total"]) for ln in scope_lines if _in_total(ln)
+        (Decimal(ln["line_total"]) for ln in scope_lines if _in_total(ln)),
+        Decimal("0.00"),
     )
     tax = Decimal("0.00")  # FL roofing services exempt
     contract_total = subtotal + tax

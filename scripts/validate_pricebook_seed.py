@@ -80,15 +80,15 @@ def main() -> None:
         print(f"  formula check: all {covered_count} covered rows match Tim within $0.01")
 
     # (c) crosswalk: all 13 expected items carry their knowify_item_id
-    item_by_name = {i["name"]: i for i in items}
     missing_xwalk: list[str] = []
     for tim_name, expected_id in _CROSSWALK.items():
-        item = item_by_name.get(tim_name)
-        if item is None:
+        matches = [i for i in items if i["name"] == tim_name]
+        if not matches:
             missing_xwalk.append(f"  {tim_name!r}: not found in seeded items")
-        elif item["knowify_item_id"] != expected_id:
+        elif not any(i["knowify_item_id"] == expected_id for i in matches):
             missing_xwalk.append(
-                f"  {tim_name!r}: expected {expected_id!r}, got {item['knowify_item_id']!r}"
+                f"  {tim_name!r}: expected one supplier row with {expected_id!r}, "
+                f"got {[i['knowify_item_id'] for i in matches]!r}"
             )
     assert not missing_xwalk, "Crosswalk failures:\n" + "\n".join(missing_xwalk)
 

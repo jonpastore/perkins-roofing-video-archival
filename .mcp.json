@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "morpheus-graph": {
+      "command": "morpheus-ek",
+      "args": [
+        "graph",
+        "mcp",
+        "--target",
+        "."
+      ],
+      "type": "stdio"
+    }
+  }
+}

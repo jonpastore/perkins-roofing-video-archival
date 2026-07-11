@@ -152,8 +152,12 @@ def promote_clients(session: Session, records: list[dict[str, Any]]) -> int:
 def promote_items(session: Session, records: list[dict[str, Any]]) -> int:
     """Upsert Knowify items into price_book_items, keyed by knowify_item_id.
 
-    Only name/sku/unit/unit_price are mapped; Knowify's OurCost is NEVER imported
-    (v2 pricing is authoritative — TRD/PRD).
+    Input is Knowify's ServiceCatalogItems schema (verified live via MCP):
+    Name, ItemNumber, UnitName, Price, OurCost, ...
+
+    Only name/sku/unit/unit_price are mapped. ItemNumber is the SKU/code, UnitName
+    is the display unit, and Price is the sell price. Knowify's OurCost is NEVER
+    imported (v2 pricing is authoritative — TRD/PRD; Tim's sheet owns costs).
     """
     from app.models import PriceBookItem
 
@@ -161,11 +165,11 @@ def promote_items(session: Session, records: list[dict[str, Any]]) -> int:
     for rec in records:
         try:
             kid = str(rec["Id"])
-            up = rec.get("UnitPrice")
+            up = rec.get("Price")
             _upsert_by_crosswalk(session, PriceBookItem, "knowify_item_id", kid, {
                 "name": rec.get("Name") or f"Knowify item {kid}",
-                "sku": rec.get("Sku"),
-                "unit": rec.get("Unit"),
+                "sku": rec.get("ItemNumber"),
+                "unit": rec.get("UnitName"),
                 "unit_price": _money(up) if up is not None else None,
             })
             n += 1
