@@ -17,7 +17,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-API = "https://api.knowify.com/v2"
+# Knowify v2 REST API. Base host is assistant.knowify.com and paths are /api/v2/<entity>
+# (verified against the published OpenAPI). The old value (api.knowify.com/v2) 400'd on
+# every entity — it was the wrong host AND missing the /api prefix.
+API = "https://assistant.knowify.com/api/v2"
 TOKEN_URL = "https://developers-v2.knowify.com/oauth/token"
 UA = "perkins-knowify-importer/1.0"
 CFG = os.path.expanduser("~/.config/knowify/tokens.json")
@@ -46,7 +49,7 @@ def _save(tok):
 def _refresh(tok):
     body = urllib.parse.urlencode({
         "grant_type": "refresh_token", "refresh_token": tok["refresh_token"],
-        "client_id": tok["client_id"],
+        "client_id": tok["client_id"], "resource": API,  # RFC 8707 — bind to REST API
     }).encode()
     req = urllib.request.Request(TOKEN_URL, data=body, method="POST",
                                  headers={"Content-Type": "application/x-www-form-urlencoded",
@@ -59,7 +62,7 @@ def _refresh(tok):
     return tok
 
 
-def _get(path, tok, params=None):
+def _get(path, tok, params=None, _retried=False):
     url = API + path + ("?" + urllib.parse.urlencode(params) if params else "")
     req = urllib.request.Request(url, headers={
         "Authorization": "Bearer " + tok["access_token"],
@@ -68,9 +71,12 @@ def _get(path, tok, params=None):
         with urllib.request.urlopen(req, timeout=60) as r:
             return json.loads(r.read().decode()), tok
     except urllib.error.HTTPError as e:
-        if e.code == 401 and tok.get("refresh_token"):
+        # Refresh + retry AT MOST ONCE. The old code recursed unconditionally, so a
+        # persistent 401 looped forever (RecursionError) and burned the refresh_token
+        # on every hop — leaving it invalid_grant. One retry, then surface the error.
+        if e.code == 401 and not _retried and tok.get("refresh_token"):
             tok = _refresh(tok)
-            return _get(path, tok, params)
+            return _get(path, tok, params, _retried=True)
         raise
 
 
@@ -88,18 +94,17 @@ def _records(resp):
 
 
 def pull(entity, tok):
-    all_rows, page, cursor, limit = [], 1, None, 100
+    """Offset-paginate the /api/v2/<entity> list endpoint (limit+offset, meta-paginated).
+    Stops when a page returns fewer rows than the limit. For entities that need complex
+    filters, the API also exposes POST /api/v2/<entity>/query with a JSON body."""
+    all_rows, offset, limit = [], 0, 100
     while True:
-        params = {"cursor": cursor} if cursor else {"page": page, "limit": limit}
-        resp, tok = _get("/" + entity, tok, params)
-        rows, nxt = _records(resp)
+        resp, tok = _get("/" + entity, tok, {"limit": limit, "offset": offset})
+        rows, _ = _records(resp)
         all_rows.extend(rows)
-        if nxt and isinstance(nxt, str):
-            cursor = nxt.split("cursor=")[-1] if "cursor=" in nxt else nxt
-            continue
-        if not rows or len(rows) < limit:
+        if len(rows) < limit:
             break
-        page += 1
+        offset += limit
         time.sleep(0.2)
     return all_rows, tok
 

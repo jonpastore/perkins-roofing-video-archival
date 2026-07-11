@@ -31,6 +31,13 @@ TOKEN = AS + "/oauth/token"
 UA = "perkins-knowify-importer/1.0"
 REDIRECT_PORT = 8765
 REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}/callback"
+# RFC 8707 resource indicator — bind the token to the REST API audience. Without this
+# the issued token was rejected (401) by https://assistant.knowify.com/api/v2. NOTE:
+# entitlement of a Dynamic-Client-Registration client for the REST API is UNVERIFIED —
+# the proven data path is Knowify's MCP server (mcp__knowify__query). If a re-auth'd,
+# resource-bound token still 401s on REST, use the MCP path (or ask Knowify support to
+# entitle this client for /api/v2).
+RESOURCE = "https://assistant.knowify.com/api/v2"
 
 # READ-ONLY scopes only — this tool never requests *:write.
 SCOPES = "openid profile offline_access " + " ".join(
@@ -107,7 +114,8 @@ def login():
     state = secrets.token_urlsafe(16)
     auth_url = AUTH + "?" + urllib.parse.urlencode({
         "response_type": "code", "client_id": client_id, "redirect_uri": REDIRECT_URI,
-        "scope": SCOPES, "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
+        "scope": SCOPES, "state": state, "code_challenge": challenge,
+        "code_challenge_method": "S256", "resource": RESOURCE,
     })
 
     srv = http.server.HTTPServer(("localhost", REDIRECT_PORT), _Handler)
@@ -134,6 +142,7 @@ def login():
     tok = _post(TOKEN, {
         "grant_type": "authorization_code", "code": _Handler.code,
         "redirect_uri": REDIRECT_URI, "client_id": client_id, "code_verifier": verifier,
+        "resource": RESOURCE,
     })
     _save({"client_id": client_id, "client_secret": client.get("client_secret"),
            "access_token": tok["access_token"], "refresh_token": tok.get("refresh_token"),
