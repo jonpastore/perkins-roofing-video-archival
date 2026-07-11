@@ -3,6 +3,7 @@
 versioned-artifact model the council required: every derived row carries a version, and
 IngestionRun tracks per-stage status + content_hash for idempotent/resumable ingestion."""
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -928,6 +929,68 @@ class TenantInvoiceCounter(Base):
     tenant_id   = Column(Integer, ForeignKey("tenants.id"), primary_key=True)
     last_number = Column(Integer, nullable=False, default=0)
     updated_at  = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+# ---------------------------------------------------------------------------
+# JB1 — Material price-book engine
+# Editable catalog (PriceBookItem) + immutable frozen snapshots (PriceBook).
+# Hash / freeze logic lives in core/price_book.py (R1 core-coverage target).
+# ---------------------------------------------------------------------------
+
+class PriceBookItem(Base, TenantMixin):
+    """Editable catalog row for one material / service / system line item.
+
+    unit_price=NULL means not-stocked/price-unknown; never coerce to 0.
+    unit_coverage=NULL means not a per-square item (LF accessories, cans, etc.).
+    """
+    __tablename__ = "price_book_items"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    price_book_id    = Column(Integer, ForeignKey("price_books.id"), nullable=True)
+    sku              = Column(String(100), nullable=True)
+    name             = Column(String(255), nullable=False)
+    unit             = Column(String(50), nullable=True)   # roll|bundle|box|can|sheet|piece|LF|bag|bucket|square|foot
+    unit_coverage    = Column(Numeric(10, 4), nullable=True)   # sq per unit; NULL = not a per-sq item
+    unit_price       = Column(Numeric(12, 4), nullable=True)   # NULL = not-stocked / unknown
+    tax_rate         = Column(Numeric(6, 4), nullable=False, default=Decimal("0.07"))
+    waste_rate       = Column(Numeric(6, 4), nullable=False, default=Decimal("0.10"))
+    supplier         = Column(String(100), nullable=True)      # ABC_SUPPLY|BEACON|VEREA|…
+    roof_system_ids  = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True, default=list)
+    knowify_item_id  = Column(String(100), nullable=True)      # Knowify↔item crosswalk
+    item_type        = Column(String(30), nullable=True)       # material|system|service
+
+    created_at       = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_price_book_items_tenant", "tenant_id"),
+        Index("ix_price_book_items_tenant_knowify", "tenant_id", "knowify_item_id"),
+        Index("ix_price_book_items_price_book_id", "price_book_id"),
+    )
+
+
+class PriceBook(Base, TenantMixin):
+    """Immutable frozen snapshot of price-book items — mirrors PricingConfig versioning.
+
+    Once frozen (is_active=True), items_snapshot and config_hash must never change.
+    Edits produce a new version row; the old row is archived.
+    """
+    __tablename__ = "price_books"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    supplier        = Column(String(100), nullable=False, default="DEFAULT")
+    version_number  = Column(Integer, nullable=False)
+    label           = Column(String, nullable=True)
+    items_snapshot  = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
+    config_hash     = Column(String(64), nullable=False)
+    is_active       = Column(Boolean, nullable=False, default=False)
+    created_at      = Column(DateTime, nullable=False, default=_utcnow)
+    created_by      = Column(String, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "supplier", "version_number",
+                         name="uq_price_books_tenant_supplier_version"),
+        Index("ix_price_books_tenant_supplier", "tenant_id", "supplier"),
+    )
 
 
 engine = create_engine(settings.DB_URL, future=True)
