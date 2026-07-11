@@ -16,6 +16,7 @@ COPY adapters ./adapters
 COPY api ./api
 COPY jobs ./jobs
 COPY app ./app
+COPY scripts ./scripts
 
 ENV PORT=8080 PERKINS_ENV=prod
 CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT}"]
