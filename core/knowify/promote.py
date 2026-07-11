@@ -125,12 +125,15 @@ def promote_clients(session: Session, records: list[dict[str, Any]]) -> int:
     for rec in records:
         try:
             kid = str(rec["Id"])
-            display = rec.get("Name") or rec.get("CompanyName") or f"Knowify {kid}"
+            # Knowify's real field names are ClientName / PhoneNumber (verified against the
+            # live schema + REST OpenAPI) — NOT "Name"/"Phone". A client with no CompanyName
+            # would otherwise fall through to a "Knowify <id>" placeholder display name.
+            display = rec.get("ClientName") or rec.get("CompanyName") or f"Knowify {kid}"
             _upsert_by_crosswalk(session, Customer, "knowify_customer_id", kid, {
                 "display_name": display,
                 "company_name": rec.get("CompanyName"),
                 "email": rec.get("Email"),
-                "phone": rec.get("Phone"),
+                "phone": rec.get("PhoneNumber"),
             })
             n += 1
             log.debug("knowify promote: client id=%s", kid)

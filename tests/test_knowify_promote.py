@@ -37,10 +37,21 @@ from core.knowify.promote import (
 
 CLIENT = {
     "Id": 555,
-    "Name": "Anchor Customer LLC",
+    "ClientName": "Anchor Customer LLC",   # real Knowify field (NOT "Name")
     "CompanyName": "Anchor Customer LLC",
     "Email": "billing@anchor.example",
-    "Phone": "305-555-0100",
+    "PhoneNumber": "305-555-0100",          # real Knowify field (NOT "Phone")
+}
+
+# Regression fixture: a real Knowify client with a ClientName but NO CompanyName
+# (very common — individual homeowners). Must map display_name from ClientName, not
+# fall through to a "Knowify <id>" placeholder.
+CLIENT_NO_COMPANY = {
+    "Id": 556,
+    "ClientName": "Physio Healing Therapy",
+    "CompanyName": None,
+    "Email": "fmorel@example.com",
+    "PhoneNumber": "305-555-0199",
 }
 
 ITEM = {
@@ -141,6 +152,21 @@ class TestClientMappingSQLite:
         ).scalar_one()
         assert cust.display_name == "Anchor Customer LLC"
         assert cust.email == "billing@anchor.example"
+        assert cust.phone == "305-555-0100"   # maps from PhoneNumber, not "Phone"
+
+    def test_client_no_company_uses_clientname_not_placeholder(self):
+        """Regression: a client with ClientName but NO CompanyName must map
+        display_name from ClientName, not a 'Knowify <id>' placeholder."""
+        from app.models import Customer
+
+        sess = _sqlite_session()
+        promote_clients(sess, [CLIENT_NO_COMPANY])
+        sess.flush()
+        cust = sess.execute(
+            select(Customer).where(Customer.knowify_customer_id == "556")
+        ).scalar_one()
+        assert cust.display_name == "Physio Healing Therapy"
+        assert not cust.display_name.startswith("Knowify ")
 
     def test_client_rerun_no_duplicate(self):
         from app.models import Customer
