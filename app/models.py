@@ -683,6 +683,253 @@ class ContractFaqEntry(Base, TenantMixin):
     )
 
 
+# ---------------------------------------------------------------------------
+# JB4 — Invoicing, milestones & payments (Knowify-replacement billing core)
+# Schema layer only: models + migration 0030. Draw math / numbering / ledger
+# derivation live in core/invoicing.py + core/milestones.py (later slice).
+# Money-critical: authored + reviewed on Claude (plan Principle 2).
+# ---------------------------------------------------------------------------
+
+_INVOICE_STATUS = SAEnum(
+    "draft", "sent", "viewed", "partially_paid", "paid", "voided",
+    name="invoice_status", native_enum=False,
+)
+_INVOICE_LINE_TYPE = SAEnum(
+    "scope", "discount", "addon", "tax", "credit",
+    name="invoice_line_type", native_enum=False,
+)
+_DRAW_STATUS = SAEnum(
+    "pending", "invoiced", "paid",
+    name="milestone_draw_status", native_enum=False,
+)
+_PAYMENT_METHOD = SAEnum(
+    "check", "ach", "card", "cash", "other",
+    name="payment_method", native_enum=False,
+)
+_QB_SYNC_STATUS = SAEnum(
+    "pending", "synced", "error",
+    name="qb_sync_status", native_enum=False,
+)
+_JOB_DOC_STATUS = SAEnum(
+    "pending", "approved", "approved_pending_inspection", "denied",
+    name="job_doc_status", native_enum=False,
+)
+_BILLING_EVENT_TYPE = SAEnum(
+    "invoice_issued", "invoice_sent", "invoice_voided",
+    "payment_recorded", "credit_applied", "draw_created", "qb_synced",
+    name="job_billing_event_type", native_enum=False,
+)
+
+
+class Invoice(Base, TenantMixin):
+    """One invoice per milestone draw. invoice_number is a per-tenant sequential
+    integer (continuing the live Knowify sequence — see TenantInvoiceCounter),
+    NULL until issued. All lines on an invoice share the draw's milestone_pct.
+    Tax is $0 for FL roofing services but the field is kept for out-of-state tenants."""
+    __tablename__ = "invoices"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    invoice_number   = Column(Integer, nullable=True)
+    job_id           = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    customer_id      = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    proposal_id      = Column(Integer, ForeignKey("proposals.id"), nullable=True)
+    milestone_draw_id = Column(Integer, ForeignKey("milestone_draws.id"), nullable=True)
+    status           = Column(_INVOICE_STATUS, nullable=False, default="draft")
+    invoice_date     = Column(DateTime, nullable=True)
+    due_date         = Column(DateTime, nullable=True)
+    milestone_pct    = Column(Numeric(6, 4), nullable=True)
+    subtotal         = Column(Numeric(12, 2), nullable=False, default=0)
+    tax_amount       = Column(Numeric(12, 2), nullable=False, default=0)
+    credit_amount    = Column(Numeric(12, 2), nullable=False, default=0)
+    total            = Column(Numeric(12, 2), nullable=False, default=0)
+    comments         = Column(Text)
+    pdf_gcs          = Column(String(1000))
+    qb_entity_id     = Column(String(100))
+    qb_synced_at     = Column(DateTime)
+    qb_sync_status   = Column(_QB_SYNC_STATUS)
+    qb_error_message = Column(Text)
+    created_by       = Column(String(255), nullable=False)
+    created_at       = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at       = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        # Postgres treats NULLs as distinct → many drafts (NULL number) coexist,
+        # while issued numbers are unique per tenant. No collision on the Knowify seq.
+        UniqueConstraint("tenant_id", "invoice_number", name="uq_invoices_tenant_number"),
+        Index("ix_invoices_tenant", "tenant_id"),
+        Index("ix_invoices_job", "job_id"),
+        Index("ix_invoices_tenant_status", "tenant_id", "status"),
+    )
+
+
+class InvoiceLine(Base, TenantMixin):
+    """One line per scope on an invoice. unit_price = contract_value_for_scope *
+    milestone_pct (NEGATIVE for a discount line, same pct as the other lines).
+    quantity is always 1 in current practice (lump-sum scope packages)."""
+    __tablename__ = "invoice_lines"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    invoice_id    = Column(Integer, ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False)
+    line_type     = Column(_INVOICE_LINE_TYPE, nullable=False, default="scope")
+    description   = Column(Text, nullable=False)
+    scope_id      = Column(Integer, nullable=True)  # FK to a job-scope entity (not yet modeled)
+    milestone_pct = Column(Numeric(6, 4), nullable=True)
+    quantity      = Column(Numeric(10, 2), nullable=False, default=1)
+    unit_price    = Column(Numeric(12, 2), nullable=False, default=0)
+    subtotal      = Column(Numeric(12, 2), nullable=False, default=0)
+    is_optional   = Column(Boolean, nullable=False, default=False)
+    sort_order    = Column(Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        Index("ix_invoice_lines_invoice", "invoice_id", "sort_order"),
+        Index("ix_invoice_lines_tenant", "tenant_id"),
+    )
+
+
+class MilestoneSchedule(Base, TenantMixin):
+    """Draw schedule for a job, SNAPSHOTTED from the issued proposal's frozen
+    quote_snapshot at creation (plan HIGH-2) — never read from the live template.
+    milestones_snapshot is the frozen ordered list; snapshot_hash pins it immutable."""
+    __tablename__ = "milestone_schedules"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    job_id              = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    proposal_id         = Column(Integer, ForeignKey("proposals.id"), nullable=True)
+    template_id         = Column(Integer, nullable=True)
+    milestones_snapshot = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
+    snapshot_hash       = Column(String(64), nullable=True)
+    created_at          = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_milestone_schedules_job", "job_id"),
+        Index("ix_milestone_schedules_tenant", "tenant_id"),
+    )
+
+
+class MilestoneDraw(Base, TenantMixin):
+    """One record per draw per job. invoice_id is set when the draw is invoiced."""
+    __tablename__ = "milestone_draws"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    job_id          = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    schedule_id     = Column(Integer, ForeignKey("milestone_schedules.id"), nullable=True)
+    sequence_number = Column(Integer, nullable=False)
+    milestone_name  = Column(String(255))
+    pct_due         = Column(Numeric(6, 4), nullable=False)
+    status          = Column(_DRAW_STATUS, nullable=False, default="pending")
+    invoice_id      = Column(Integer, nullable=True)  # set on invoice creation (soft ref; avoids FK cycle)
+    planned_date    = Column(DateTime)
+    actual_date     = Column(DateTime)
+    created_at      = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_milestone_draws_job", "job_id", "sequence_number"),
+        Index("ix_milestone_draws_tenant", "tenant_id"),
+    )
+
+
+class Payment(Base, TenantMixin):
+    """Record-only payment against an invoice (check/ach/card/cash/other + reference).
+    Live processor capture is a later slice (plan Shape D1)."""
+    __tablename__ = "payments"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    invoice_id     = Column(Integer, ForeignKey("invoices.id"), nullable=False)
+    payment_date   = Column(DateTime, nullable=False, default=_utcnow)
+    amount         = Column(Numeric(12, 2), nullable=False)
+    method         = Column(_PAYMENT_METHOD, nullable=False, default="check")
+    reference      = Column(String(255))
+    notes          = Column(Text)
+    qb_entity_id   = Column(String(100))
+    qb_synced_at   = Column(DateTime)
+    qb_sync_status = Column(_QB_SYNC_STATUS)
+    created_at     = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_payments_invoice", "invoice_id"),
+        Index("ix_payments_tenant", "tenant_id"),
+    )
+
+
+class Credit(Base, TenantMixin):
+    """Customer/job credit, optionally applied to an invoice."""
+    __tablename__ = "credits"
+
+    id                    = Column(Integer, primary_key=True, autoincrement=True)
+    customer_id           = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    job_id                = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    amount                = Column(Numeric(12, 2), nullable=False)
+    reason                = Column(Text)
+    applied_to_invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    created_at            = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_credits_customer", "customer_id"),
+        Index("ix_credits_tenant", "tenant_id"),
+    )
+
+
+class JobDocument(Base, TenantMixin):
+    """HOA/ACC approval (and other pre-work permit docs) as a JOB attribute — the
+    302-Ridge ACC letter shape: reference #, HOA/mgmt co, approval date/scope/status,
+    permit responsibility, and a final-inspection-required flag."""
+    __tablename__ = "job_documents"
+
+    id                        = Column(Integer, primary_key=True, autoincrement=True)
+    job_id                    = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    doc_type                  = Column(String(50), nullable=False, default="hoa_acc_approval")
+    reference_number          = Column(String(100))
+    hoa_name                  = Column(String(255))
+    management_company        = Column(String(255))
+    approval_date             = Column(DateTime)
+    scope_approved            = Column(Text)
+    status                    = Column(_JOB_DOC_STATUS, nullable=False, default="pending")
+    permit_responsibility     = Column(String(50))  # 'homeowner' | 'contractor'
+    final_inspection_required = Column(Boolean, nullable=False, default=False)
+    created_at                = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_job_documents_job", "job_id"),
+        Index("ix_job_documents_tenant", "tenant_id"),
+    )
+
+
+class JobBillingEvent(Base, TenantMixin):
+    """Immutable, append-only billing ledger (plan Principle 2 + Ez-Bids W5 shape).
+    Invoice/payment/draw status is DERIVED from these events, never overwritten in
+    place. No updated_at by design. idempotency_key makes replays a no-op per tenant."""
+    __tablename__ = "job_billing_events"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    job_id          = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    invoice_id      = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    event_type      = Column(_BILLING_EVENT_TYPE, nullable=False)
+    payload         = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    idempotency_key = Column(String(255), nullable=True)
+    source          = Column(String(50), nullable=False, default="api")
+    received_at     = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_billing_events_tenant_idem"),
+        Index("ix_billing_events_job", "job_id", "received_at"),
+        Index("ix_billing_events_invoice", "invoice_id"),
+        Index("ix_billing_events_tenant", "tenant_id"),
+    )
+
+
+class TenantInvoiceCounter(Base):
+    """Per-tenant sequential invoice-number counter. next issued = last_number + 1.
+    Increment atomically inside the tenant txn (SELECT ... FOR UPDATE then bump).
+    Perkins (tenant 1) is seeded in migration 0030 at the live Knowify max
+    (18732 as of 2026-07-10) — MUST be re-confirmed against the live max
+    immediately before cutover (plan Open Question #3 / Pre-mortem #2)."""
+    __tablename__ = "tenant_invoice_counters"
+
+    tenant_id   = Column(Integer, ForeignKey("tenants.id"), primary_key=True)
+    last_number = Column(Integer, nullable=False, default=0)
+    updated_at  = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
 
