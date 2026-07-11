@@ -17,23 +17,19 @@ Prior handoff: `CONTINUATION-2026-07-10-pm.md`.
 - The MCP is read-only + conversational (2 tools only). For **bulk extraction** (the
   Knowify-replacement migration, task #15) use the REST importer instead (below).
 
-### 2. Commit the UNCOMMITTED T&C AI-FAQ work (left in the tree by a background agent)
-A background executor (`tc-aifaq`) built the T&C AI-FAQ feature but the session
-restarted before it reported/was reviewed. Its files are IN THE WORKING TREE, uncommitted:
-- New: `core/tc_summary.py`, `core/tc_ai_prompts.py`, `core/tc_seed.py`,
-  `tests/core/test_tc_summary.py`, `tests/core/test_tc_ai_prompts.py`,
-  `tests/core/test_tc_seed.py`, `infra/migrations/0029_tc_version_seed.sql`
-- Modified: `core/proposal_render.py`, `api/routes/proposals.py`,
-  `tests/test_proposal_render.py`, `pyproject.toml` (added a ruff E501 per-file ignore
-  for `core/tc_seed.py` — benign; the seed holds long verbatim T&C text).
-- **On resume:** review it (R2 — contract-facing), run the CI-equivalent gate
-  (`ruff check core adapters api jobs` + `pytest tests/ -m "not postgres" --cov=core
-  --cov-config=.coveragerc --cov-fail-under=100`), and if green, commit + deploy backend.
-  Spec it implements = Jon's "Requested documents" email: cover letter + AI bullet
-  summary of the T&C + recommended AI-review prompts + attorney disclaimer + last-page
-  FAQ, terms UNCHANGED. Real T&C from Josh's "Jon test roof" proposal seeded as a DRAFT
-  TcVersion, pending Tim sign-off. If tests fail, finish/fix before committing.
-  Deferred (per the task): SPA surfacing of the cover/FAQ, and Tim's T&C sign-off.
+### 2. T&C AI-FAQ (task #17) — DONE + COMMITTED (`db01b57`); just verify the deploy landed
+The `tc-aifaq` build finished, was self-reviewed + gated (core 100%, ruff clean), and is
+**committed** (`db01b57`). I added an lru_cache so the 2 LLM calls run once per T&C text,
+not per PDF render. Migration 0029 (DRAFT TcVersion seed) was applied; a backend deploy was
+kicked off right before the restart. **On resume:** confirm the deploy completed —
+`gcloud run services describe api --region=us-central1 --format='value(spec.template.spec.containers[0].image)'`
+should show `:db01b57` (or newer). If it shows an older sha (the deploy was interrupted by
+the restart), re-run `bash scripts/deploy.sh` (run_in_background). What it does: proposal PDFs
+gain a cover letter + AI bullet summary of the T&C + recommended AI-review prompts + attorney
+disclaimer + last-page FAQ (terms UNCHANGED; best-effort — proposal renders even if generation
+fails). DEFERRED to JB3: formal R2 (architect+critic), Tim's real-T&C sign-off (currently
+`core/tc_seed.py` DRAFT v0.1 from Josh's proposal), per-tenant T&C from the DB TcVersion, and
+SPA surfacing of the cover/FAQ.
 
 ### 3. Then continue autopilot on the approved plan (see "Pending" below).
 
@@ -88,7 +84,8 @@ restarted before it reported/was reviewed. Its files are IN THE WORKING TREE, un
   (renumber above whatever Ez-Bids lands).
 
 ## Pending / buildable (autopilot after steps 1–3)
-- **#17 T&C AI-FAQ** — commit the uncommitted work (step 2), then SPA surfacing.
+- **#17 T&C AI-FAQ** — SHIPPED (`db01b57`, backend). Follow-ups only: SPA surfacing of the
+  cover/FAQ, Tim's real-T&C sign-off, per-tenant T&C from DB, formal R2 at JB3.
 - **#12 Material price book** (JB1) — ABC (42926) tab import + admin edit UI + estimator
   material-side wiring. Daily-cost variables confirmed present (OH Metrics tab + video).
 - **#14 Proposal generation** (JB3) — master template + tiers + scope blocks + payment

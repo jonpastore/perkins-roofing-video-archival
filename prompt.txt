@@ -14,16 +14,12 @@ DO THESE FIRST, IN ORDER:
    invoices/milestones/payments to validate + finalize the invoicing/numbering/QuickBooks
    model. First pull reveals pagination shape — tweak knowify_pull.py if _summary.json shows gaps.
 
-2. COMMIT THE UNCOMMITTED T&C AI-FAQ WORK. A background agent left it in the tree
-   (git status: core/tc_summary.py, core/tc_ai_prompts.py, core/tc_seed.py, their tests,
-   infra/migrations/0029_tc_version_seed.sql, + edits to core/proposal_render.py,
-   api/routes/proposals.py, tests/test_proposal_render.py, pyproject.toml). REVIEW it
-   (R2 — contract-facing), run the CI-EQUIVALENT gate (ruff check core adapters api jobs +
-   pytest tests/ -m "not postgres" --cov=core --cov-config=.coveragerc --cov-fail-under=100,
-   background to /tmp log + EXIT marker). If green → commit + deploy backend. If tests fail,
-   fix first. Spec = Jon's "Requested documents" email (cover letter + AI bullet summary +
-   recommended AI prompts + attorney disclaimer + last-page FAQ, terms UNCHANGED; real T&C
-   from Josh's proposal seeded as DRAFT TcVersion pending Tim). Deferred: SPA surfacing.
+2. T&C AI-FAQ (task #17) is DONE + COMMITTED (db01b57), gated (core 100%), migration 0029
+   applied, backend deploy kicked off pre-restart. VERIFY the deploy landed: `gcloud run
+   services describe api --region=us-central1 --format='value(spec.template.spec.containers[0].image)'`
+   should show :db01b57 (or newer). If older (restart interrupted it), re-run bash
+   scripts/deploy.sh (run_in_background). Deferred to JB3: formal R2, Tim's real-T&C sign-off
+   (core/tc_seed.py is DRAFT v0.1), per-tenant T&C from DB, SPA surfacing.
 
 3. THEN AUTOPILOT the approved plan (.omc/plans/ralplan-perkins-jobdocs-billing-DRAFT.md):
    JB1 material price book (task #12) → JB2 measurements/details → JB3 proposal engine
