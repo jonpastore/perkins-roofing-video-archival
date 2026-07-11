@@ -16,6 +16,7 @@ def wrap_email(
     brand_navy: str = "#1b2a52",
     brand_red: str = "#ef3c1a",
     font_family: str = "system-ui, 'Segoe UI', Roboto, Arial, sans-serif",
+    header_bg: str = "",
 ) -> str:
     """Return a complete, email-safe HTML document wrapping *body_html*.
 
@@ -27,10 +28,15 @@ def wrap_email(
         brand_navy:   Hex colour for the header background band.
         brand_red:    Hex colour for the footer accent line.
         font_family:  CSS font-family stack for body text.
+        header_bg:    Header band background colour. Defaults to ``brand_navy``.
+                      Pass a light colour (e.g. ``#ffffff``) when the header holds a
+                      dark logo. A thin bottom rule keeps the band separated from the
+                      body on light backgrounds (invisible on the navy default).
 
     Returns:
         A self-contained HTML string suitable for sending as an email body.
     """
+    band_bg = header_bg or brand_navy
     header_content: str
     if header_html:
         header_content = header_html
@@ -60,7 +66,8 @@ def wrap_email(
         ' box-shadow:0 2px 8px rgba(16,24,40,0.08);">'
         # Header band
         "<tr>"
-        f'<td style="background-color:{brand_navy}; padding:20px 28px;">'
+        f'<td style="background-color:{band_bg}; padding:20px 28px;'
+        ' border-bottom:1px solid #edf0f3;">'
         f"{header_content}"
         "</td>"
         "</tr>"

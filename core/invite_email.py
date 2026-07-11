@@ -20,6 +20,9 @@ _ROLE_LABELS = {
 }
 
 _BRAND_NAVY = "#1b2a52"
+# Hosted on the app's Firebase Hosting (web/public/perkins-logo.png). Dark navy
+# wordmark on transparent, so it renders on a white header band, not the navy one.
+_DEFAULT_LOGO_URL = "https://app.perkinsroofing.net/perkins-logo.png"
 
 
 def _role_label(role: str) -> str:
@@ -34,6 +37,7 @@ def build_invite_email(
     sign_in_url: str,
     company_name: str = "Perkins Roofing",
     inviter_name: str | None = None,
+    logo_url: str = _DEFAULT_LOGO_URL,
 ) -> tuple[str, str]:
     """Return ``(subject, html)`` for a user-invitation email.
 
@@ -43,6 +47,7 @@ def build_invite_email(
         sign_in_url:    Server-derived sign-in URL (trusted; used in the CTA href).
         company_name:   Tenant/company display name.
         inviter_name:   Optional name of the admin who sent the invite.
+        logo_url:       Absolute https logo URL rendered in the (white) header band.
     """
     role_label = _role_label(role)
     greeting = f"Hi {_html.escape(recipient_name)}," if recipient_name else "Hello,"
@@ -71,5 +76,14 @@ def build_invite_email(
         "If you weren&rsquo;t expecting this invitation, you can safely ignore this email.</p>"
     )
 
+    header_html = (
+        f'<img src="{logo_url}" alt="{company}" width="180" '
+        'style="display:block; border:0; max-width:180px; height:auto;">'
+    )
     subject = f"You've been invited to the {company_name} platform"
-    return subject, wrap_email(body_html=body, company_name=company_name)
+    return subject, wrap_email(
+        body_html=body,
+        header_html=header_html,
+        company_name=company_name,
+        header_bg="#ffffff",
+    )

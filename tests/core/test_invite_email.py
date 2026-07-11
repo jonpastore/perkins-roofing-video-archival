@@ -14,9 +14,20 @@ def _build(**over):
 def test_returns_subject_and_full_html_document():
     subject, html = _build()
     assert "Perkins Roofing" in subject
-    # Wrapped via the shared branded email template (full document + navy header).
+    # Wrapped via the shared branded email template (full document).
     assert html.startswith("<!DOCTYPE html>")
-    assert "#1b2a52" in html  # brand navy header band from wrap_email
+
+
+def test_logo_rendered_on_white_header():
+    _, html = _build()
+    # Logo image present, and the header band is white (dark wordmark needs it).
+    assert 'src="https://app.perkinsroofing.net/perkins-logo.png"' in html
+    assert "background-color:#ffffff" in html
+
+
+def test_logo_url_overridable():
+    _, html = _build(logo_url="https://cdn.example.com/acme.png")
+    assert 'src="https://cdn.example.com/acme.png"' in html
 
 
 def test_includes_signin_url_in_button_and_fallback():
