@@ -57,6 +57,7 @@ def trigger_sync() -> dict:
         # it. The fallback matches the real deploy region — a us-east1 fallback pointed
         # sync-now at a region with no knowify-sync job (the "Sync now" 403/404 cause).
         import os  # noqa: PLC0415
+
         from app.config import settings
         region = os.getenv("GCP_REGION") or getattr(settings, "GCP_REGION", None) or "us-central1"
         job_url = (
