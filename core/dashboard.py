@@ -13,13 +13,29 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Invoice, Payment, Proposal
+from app.models import Customer, Invoice, Payment, Proposal
 
 # Open = money is still expected
 _OPEN_STATUSES = ("sent", "viewed", "partially_paid")
 _FUNNEL_STATUSES = ("draft", "sent", "viewed", "accepted", "declined", "revision_requested")
 
 Bucket = Literal["day", "week", "month"]
+
+# AR aging bucket keys — shared by aging_buckets (totals) and aging_bucket_detail (drill-down).
+AGING_BUCKETS = ("current", "d1_30", "d31_60", "d61_90", "d90_plus")
+
+
+def _aging_bucket_for(days_past: int) -> str:
+    """Map days-past-due to an aging bucket key (matches aging_buckets thresholds)."""
+    if days_past <= 0:
+        return "current"
+    if days_past <= 30:
+        return "d1_30"
+    if days_past <= 60:
+        return "d31_60"
+    if days_past <= 90:
+        return "d61_90"
+    return "d90_plus"
 
 
 def _bucket_key(dt: datetime, bucket: Bucket) -> str:
@@ -188,18 +204,96 @@ def aging_buckets(session: Session, as_of: date) -> dict:
             continue
         due = due_date.date() if isinstance(due_date, datetime) else due_date
         days_past = (as_of - due).days
-        if days_past <= 0:
-            result["current"] += outstanding
-        elif days_past <= 30:
-            result["d1_30"] += outstanding
-        elif days_past <= 60:
-            result["d31_60"] += outstanding
-        elif days_past <= 90:
-            result["d61_90"] += outstanding
-        else:
-            result["d90_plus"] += outstanding
+        result[_aging_bucket_for(days_past)] += outstanding
 
     return result
+
+
+def aging_bucket_detail(session: Session, as_of: date, bucket: str) -> list[dict]:
+    """Open AR drill-down rows for one aging bucket.
+
+    Returns one row per open invoice in the bucket with customer + invoice context:
+    [{customer_id, customer_name, invoice_id, invoice_number, knowify_invoice_number,
+      invoice_date, due_date, status, total, paid, outstanding, days_past_due}]
+    sorted by oldest/most-overdue first (then customer).
+    """
+    if bucket not in AGING_BUCKETS:
+        raise ValueError(f"bucket must be one of {AGING_BUCKETS}")
+
+    open_rows = session.execute(
+        select(
+            Invoice.id,
+            Invoice.customer_id,
+            Customer.display_name,
+            Invoice.invoice_number,
+            Invoice.knowify_invoice_number,
+            Invoice.invoice_date,
+            Invoice.due_date,
+            Invoice.status,
+            Invoice.total,
+        )
+        .outerjoin(Customer, Customer.id == Invoice.customer_id)
+        .where(Invoice.status.in_(_OPEN_STATUSES))
+    ).all()
+
+    if not open_rows:
+        return []
+
+    invoice_ids = [r[0] for r in open_rows]
+    paid_by_invoice: dict[int, Decimal] = {r[0]: Decimal("0") for r in open_rows}
+    payment_rows = session.execute(
+        select(Payment.invoice_id, func.sum(Payment.amount))
+        .where(Payment.invoice_id.in_(invoice_ids))
+        .group_by(Payment.invoice_id)
+    ).all()
+    for inv_id, paid in payment_rows:
+        paid_by_invoice[inv_id] = Decimal(str(paid))
+
+    rows: list[dict] = []
+    for (
+        inv_id,
+        customer_id,
+        customer_name,
+        invoice_number,
+        knowify_invoice_number,
+        invoice_date,
+        due_date,
+        status,
+        total,
+    ) in open_rows:
+        paid = paid_by_invoice.get(inv_id, Decimal("0"))
+        outstanding = Decimal(str(total)) - paid
+        if outstanding <= 0:
+            continue
+
+        if due_date is None:
+            days_past = 0
+            row_bucket = "current"
+        else:
+            due = due_date.date() if isinstance(due_date, datetime) else due_date
+            days_past = (as_of - due).days
+            row_bucket = _aging_bucket_for(days_past)
+
+        if row_bucket != bucket:
+            continue
+
+        rows.append({
+            "customer_id": customer_id,
+            "customer_name": customer_name,
+            "invoice_id": inv_id,
+            "invoice_number": invoice_number,
+            "knowify_invoice_number": knowify_invoice_number,
+            "invoice_date": invoice_date.isoformat() if invoice_date else None,
+            "due_date": due_date.isoformat() if due_date else None,
+            "status": status,
+            "total": str(Decimal(str(total))),
+            "paid": str(paid),
+            "outstanding": str(outstanding),
+            "days_past_due": days_past,
+        })
+
+    rows.sort(key=lambda r: (-int(r["days_past_due"]), r["customer_name"] or "", r["invoice_id"]))
+    return rows
 
 
 # ---------------------------------------------------------------------------

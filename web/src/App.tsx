@@ -310,6 +310,7 @@ interface OpportunityCounts {
   faqs: number;
   unused_videos: number;
   pending_video_approvals?: number;
+  scheduled_articles?: number;
   comment_drafts?: number;
 }
 
@@ -335,10 +336,12 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
     ? oppCounts.article_topics + oppCounts.reels + oppCounts.faqs
     : undefined;
   const approvalBadge = oppCounts?.pending_video_approvals;
+  const scheduledArticlesBadge = oppCounts?.scheduled_articles;
   const commentBadge = oppCounts?.comment_drafts;
 
   function badgeFor(id: string): number | undefined {
     if (id === "opportunities") return oppBadge;
+    if (id === "articles") return scheduledArticlesBadge;
     if (id === "video-approval") return approvalBadge;
     if (id === "comments") return commentBadge;
     return undefined;

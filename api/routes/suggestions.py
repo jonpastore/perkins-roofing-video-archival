@@ -143,6 +143,16 @@ def get_suggestion_counts(
         db.query(MiniSeries).filter(MiniSeries.approved == 0).count()
     )
 
+    # --- articles scheduled for release (sidebar badge on Articles) ---
+    scheduled_articles = (
+        db.query(ScheduledContent)
+        .filter(
+            ScheduledContent.kind == "article",
+            ScheduledContent.status == "scheduled",
+        )
+        .count()
+    )
+
     # --- comment drafts awaiting action (needs a reply, not yet ready/dismissed) ---
     from app.models import CommentDraft  # local import — avoids a heavy top-level dep
     comment_drafts = (
@@ -160,6 +170,7 @@ def get_suggestion_counts(
         "faqs": faqs_count,
         "unused_videos": unused_count,
         "pending_video_approvals": pending_video_approvals,
+        "scheduled_articles": scheduled_articles,
         "comment_drafts": comment_drafts,
     }
 

@@ -1024,6 +1024,34 @@ export async function getDashboardBilling(params: {
   return r.json();
 }
 
+export interface AgingDetailRow {
+  customer_id: number | null;
+  customer_name: string | null;
+  invoice_id: number;
+  invoice_number: number | null;
+  knowify_invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  status: string;
+  total: string;
+  paid: string;
+  outstanding: string;
+  days_past_due: number;
+}
+
+export interface AgingDetail {
+  bucket: string;
+  as_of: string;
+  items: AgingDetailRow[];
+}
+
+/** Drill-down: open AR invoices/customers in one aging bucket. */
+export async function getAgingDetail(bucket: string, asOf?: string): Promise<AgingDetail> {
+  const r = await apiFetch(`/dashboard/billing/aging/${encodeURIComponent(bucket)}${qs({ as_of: asOf })}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
 // ── Admin metrics ─────────────────────────────────────────────────────────────
 
 export interface ActiveUserEntry {

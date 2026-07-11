@@ -1,27 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Editor } from "@tinymce/tinymce-react";
-import "tinymce/tinymce";
-import "tinymce/models/dom/model";
-import "tinymce/themes/silver";
-import "tinymce/icons/default";
-import "tinymce/plugins/advlist";
-import "tinymce/plugins/autolink";
-import "tinymce/plugins/charmap";
-import "tinymce/plugins/code";
-import "tinymce/plugins/fullscreen";
-import "tinymce/plugins/image";
-import "tinymce/plugins/link";
-import "tinymce/plugins/lists";
-import "tinymce/plugins/searchreplace";
-import "tinymce/plugins/table";
-import "tinymce/plugins/wordcount";
-// Self-hosted skin: with skin:false the UI CSS must be bundled explicitly or the
-// editor mounts invisibly (the "blank Body" bug). All local — no CDN, no API key.
-import "tinymce/skins/ui/oxide/skin.css";
-import contentUiCss from "tinymce/skins/ui/oxide/content.css?raw";
-import contentCss from "tinymce/skins/content/default/content.css?raw";
 import { auth } from "../auth";
 import { apiFetch } from "../api";
+import { richEditorInit } from "../lib/richEditor";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
 
 interface EmailTemplate {
@@ -232,41 +213,9 @@ export function ComposeEmail() {
               onInit={(_evt, editor) => { editorRef.current = editor; }}
               value={body}
               onEditorChange={(content) => setBody(content)}
-              init={{
-                skin: false,
-                content_css: false,
-                content_style: [contentUiCss, contentCss].join("\n"),
-                menubar: false,
-                plugins: "advlist autolink charmap code fullscreen image link lists searchreplace table wordcount",
-                toolbar: [
-                  "undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor",
-                  "alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image table charmap hr | code fullscreen wordcount",
-                ].join(" | "),
-                toolbar_mode: "wrap",
-                font_family_formats: [
-                  "System UI=system-ui,'Segoe UI',Roboto,sans-serif",
-                  "Arial=Arial,Helvetica,sans-serif",
-                  "Georgia=Georgia,serif",
-                  "Courier New=Courier New,Courier,monospace",
-                  "Tahoma=Tahoma,Geneva,sans-serif",
-                  "Verdana=Verdana,Geneva,sans-serif",
-                ].join(";"),
-                font_size_formats: "10pt 11pt 12pt 14pt 16pt 18pt 24pt 36pt",
-                color_map: [
-                  "1b2a52", "Brand Navy",
-                  "ef3c1a", "Brand Red",
-                  "2b3c73", "Navy Text",
-                  "1a202c", "Dark Ink",
-                  "667085", "Subtle Grey",
-                  "1a7f4b", "Success Green",
-                  "000000", "Black",
-                  "ffffff", "White",
-                  "e5e7eb", "Light Border",
-                  "b45309", "Amber",
-                ],
+              init={richEditorInit({
                 height: 360,
-                branding: false,
-              }}
+              })}
             />
           </div>
 

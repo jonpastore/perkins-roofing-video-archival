@@ -1,15 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Editor } from "@tinymce/tinymce-react";
-import "tinymce/tinymce";
-import "tinymce/models/dom/model";
-import "tinymce/themes/silver";
-import "tinymce/icons/default";
-import "tinymce/plugins/lists";
-import "tinymce/plugins/link";
-import "tinymce/plugins/image";
-import "tinymce/plugins/code";
-import "tinymce/plugins/table";
 import { apiFetch } from "../api";
+import { richEditorInit } from "../lib/richEditor";
 import { BRAND, Card, Button, PageTitle, Loading, ErrorMsg, Badge, inputStyle } from "../ui";
 import { getAuth } from "firebase/auth";
 
@@ -214,15 +206,9 @@ function SignatureModal({ user, allUsers, initialHtml, saving, error, onSave, on
             onInit={(_evt, editor) => { editorRef.current = editor; }}
             value={html}
             onEditorChange={(content) => setHtml(content)}
-            init={{
-              skin: false,
-              content_css: false,
-              menubar: false,
-              plugins: "lists link image code table",
-              toolbar: "undo redo | bold italic | bullist numlist | link image | code",
+            init={richEditorInit({
               height: 300,
-              branding: false,
-            }}
+            })}
           />
         </div>
 

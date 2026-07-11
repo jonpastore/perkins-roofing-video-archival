@@ -5,6 +5,7 @@ import DOMPurify from "dompurify";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
+import { richEditorInit } from "../lib/richEditor";
 
 // Detect user's local timezone once at module load
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -437,28 +438,13 @@ function HtmlEditor({ value, onChange }: HtmlEditorProps) {
 
   return (
     <Editor
-      tinymceScriptSrc="/tinymce/tinymce.min.js"
       onInit={(_evt, editor) => { editorRef.current = editor; }}
       value={value}
       onEditorChange={(content) => onChange(content)}
-      init={{
+      init={richEditorInit({
         height: 400,
-        menubar: false,
-        plugins: [
-          "advlist", "autolink", "lists", "link", "image", "charmap", "preview",
-          "anchor", "searchreplace", "visualblocks", "code", "fullscreen",
-          "insertdatetime", "media", "table", "help", "wordcount",
-        ],
-        toolbar:
-          "undo redo | blocks | bold italic underline strikethrough | " +
-          "alignleft aligncenter alignright alignjustify | " +
-          "bullist numlist outdent indent | link image media table | " +
-          "removeformat code fullscreen | help",
-        content_style:
-          "body { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; font-size: 15px; color: #1a202c; line-height: 1.7; }",
-        skin: "oxide",
-        branding: false,
-      }}
+        content_style: "body { line-height: 1.7; }",
+      })}
     />
   );
 }

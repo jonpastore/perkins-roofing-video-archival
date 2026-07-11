@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from core.dashboard import (
+    AGING_BUCKETS,
+    aging_bucket_detail,
     aging_buckets,
     invoices_issued_over_time,
     open_ar_summary,
@@ -70,3 +72,21 @@ def billing_dashboard(
         "receivables_due_next_30": receivables_due_next(db, as_of, days=30),
         "proposal_funnel": proposal_funnel(db, from_dt, to_dt),
     }
+
+
+@router.get("/billing/aging/{bucket}")
+def billing_aging_drilldown(
+    bucket: str,
+    as_of: str | None = Query(default=None, description="YYYY-MM-DD; defaults to today"),
+    claims=Depends(require_role(_ROLE)),
+    db: Session = Depends(get_db_session),
+):
+    """Open AR invoice/customer rows for one aging bucket.
+
+    Used by the dashboard bar-chart drill-down. Bucket must be one of:
+    current, d1_30, d31_60, d61_90, d90_plus.
+    """
+    if bucket not in AGING_BUCKETS:
+        raise HTTPException(422, f"bucket must be one of {list(AGING_BUCKETS)}")
+    as_of_date = _parse_date(as_of, "as_of").date() if as_of else date.today()
+    return {"bucket": bucket, "as_of": as_of_date.isoformat(), "items": aging_bucket_detail(db, as_of_date, bucket)}

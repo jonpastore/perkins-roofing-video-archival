@@ -595,7 +595,13 @@ def status(_claims=Depends(require_role("view_status")), s: Session = Depends(ge
             IngestionRun.stage == "transcript", IngestionRun.status == "done").scalar(),
         "articles": s.query(func.count(Article.slug)).scalar(),
         "faq_count": s.query(func.count(FaqEntry.id)).scalar(),
-        "scheduled_content": s.query(func.count(ScheduledContent.id)).scalar(),
+        # Active scheduled rows only (published/error/awaiting_social are history/state, not
+        # upcoming content). Keep this consistent with scheduled_breakdown().
+        "scheduled_content": (
+            s.query(func.count(ScheduledContent.id))
+            .filter(ScheduledContent.status == "scheduled")
+            .scalar()
+        ),
         # Scheduled-content split: articles vs social posts grouped by platform
         "scheduled_breakdown": breakdown,
         # Action counters: items needing attention

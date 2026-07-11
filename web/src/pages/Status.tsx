@@ -12,12 +12,14 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
-import { apiFetch, getDashboardBilling, getActiveUsers, getGcpSpend, type DashboardBilling, type ActiveUsersResponse, type GcpSpendResponse } from "../api";
+import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse } from "../api";
 import { NavContext } from "../App";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg, StatCard, inputStyle } from "../ui";
 
 type ToastTone = "green" | "red";
 interface Toast { message: string; tone: ToastTone; }
+
+type AgingBucketKey = "current" | "d1_30" | "d31_60" | "d61_90" | "d90_plus";
 
 interface FailedStage {
   video_id: string;
@@ -204,15 +206,31 @@ function BillingSection() {
   const [billing, setBilling] = useState<DashboardBilling | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRange, setLastRange] = useState<DateRange | null>(null);
+  const [agingDetail, setAgingDetail] = useState<AgingDetail | null>(null);
+  const [agingLoading, setAgingLoading] = useState(false);
+  const [agingError, setAgingError] = useState<string | null>(null);
 
   function fetch(p: Preset, cf: string, ct: string) {
     setLoading(true);
     setError(null);
     const { from, to, bucket } = rangeForPreset(p, cf, ct);
+    setLastRange({ from, to, bucket });
     getDashboardBilling({ from, to, bucket })
       .then(setBilling)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
+  }
+
+  function openAgingBucket(bucket: AgingBucketKey) {
+    const asOf = lastRange?.to;
+    setAgingLoading(true);
+    setAgingError(null);
+    setAgingDetail(null);
+    getAgingDetail(bucket, asOf)
+      .then(setAgingDetail)
+      .catch((e: unknown) => setAgingError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setAgingLoading(false));
   }
 
   useEffect(() => { fetch(preset, customFrom, customTo); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -248,11 +266,11 @@ function BillingSection() {
 
   const agingData = billing
     ? [
-        { name: "Current", value: parseFloat(billing.aging_buckets.current) },
-        { name: "1–30d", value: parseFloat(billing.aging_buckets.d1_30) },
-        { name: "31–60d", value: parseFloat(billing.aging_buckets.d31_60) },
-        { name: "61–90d", value: parseFloat(billing.aging_buckets.d61_90) },
-        { name: "90d+", value: parseFloat(billing.aging_buckets.d90_plus) },
+        { key: "current" as const, name: "Current", value: parseFloat(billing.aging_buckets.current) },
+        { key: "d1_30" as const, name: "1–30d", value: parseFloat(billing.aging_buckets.d1_30) },
+        { key: "d31_60" as const, name: "31–60d", value: parseFloat(billing.aging_buckets.d31_60) },
+        { key: "d61_90" as const, name: "61–90d", value: parseFloat(billing.aging_buckets.d61_90) },
+        { key: "d90_plus" as const, name: "90d+", value: parseFloat(billing.aging_buckets.d90_plus) },
       ]
     : [];
 
@@ -266,6 +284,13 @@ function BillingSection() {
         { name: "Revision", value: billing.proposal_funnel.revision_requested },
       ]
     : [];
+
+  const agingLabel = (bucket: string) => agingData.find((r) => r.key === bucket)?.name ?? bucket;
+  const invoiceLabel = (row: { invoice_number: number | null; knowify_invoice_number: string | null; invoice_id: number }) => {
+    if (row.invoice_number != null) return `#${row.invoice_number}`;
+    if (row.knowify_invoice_number) return `Knowify #${row.knowify_invoice_number}`;
+    return `Invoice ${row.invoice_id}`;
+  };
 
   const pillStyle = (active: boolean): React.CSSProperties => ({
     padding: "5px 12px",
@@ -388,6 +413,9 @@ function BillingSection() {
             <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
               AR Aging
             </div>
+            <div style={{ color: BRAND.sub, fontSize: 12, marginBottom: 8 }}>
+              Click a bar to see the customers and invoices in that aging bucket.
+            </div>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={agingData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
@@ -398,7 +426,16 @@ function BillingSection() {
                   width={56}
                 />
                 <Tooltip formatter={(value) => [usd(Number(value)), "Balance"]} />
-                <Bar dataKey="value" name="Balance" radius={[4, 4, 0, 0]}>
+                <Bar
+                  dataKey="value"
+                  name="Balance"
+                  radius={[4, 4, 0, 0]}
+                  cursor="pointer"
+                  onClick={(data) => {
+                    const item = (data as { payload?: { key?: AgingBucketKey; value?: number } }).payload;
+                    if (item?.key && (item.value ?? 0) > 0) openAgingBucket(item.key);
+                  }}
+                >
                   {agingData.map((entry, i) => (
                     <Cell key={entry.name} fill={i === 0 ? BRAND.navyText : i === 1 ? "#b45309" : i === 2 ? "#e07b39" : i === 3 ? "#d95050" : BRAND.red} />
                   ))}
@@ -406,6 +443,78 @@ function BillingSection() {
               </BarChart>
             </ResponsiveContainer>
           </Card>
+
+          {(agingDetail || agingLoading || agingError) && (
+            <div style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 1200,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(16,24,40,0.24)",
+              padding: 24,
+            }}>
+              <Card style={{ width: "min(980px, 96vw)", maxHeight: "86vh", overflow: "auto", padding: 0 }}>
+                <div style={{ padding: "18px 22px", borderBottom: `1px solid ${BRAND.border}`, display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: BRAND.navyText }}>
+                      AR Aging — {agingDetail ? agingLabel(agingDetail.bucket) : "Loading…"}
+                    </div>
+                    {agingDetail && (
+                      <div style={{ marginTop: 3, fontSize: 12, color: BRAND.sub }}>
+                        As of {agingDetail.as_of} · {agingDetail.items.length} open invoice{agingDetail.items.length === 1 ? "" : "s"}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setAgingDetail(null); setAgingError(null); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: BRAND.sub, lineHeight: 1 }}
+                    aria-label="Close aging detail"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div style={{ padding: 22 }}>
+                  {agingLoading && <Loading label="Loading aging detail…" />}
+                  {agingError && <ErrorMsg>Error: {agingError}</ErrorMsg>}
+                  {agingDetail && agingDetail.items.length === 0 && (
+                    <div style={{ color: BRAND.sub, fontSize: 13 }}>No open invoices in this bucket.</div>
+                  )}
+                  {agingDetail && agingDetail.items.length > 0 && (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: `2px solid ${BRAND.border}` }}>Customer</th>
+                            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: `2px solid ${BRAND.border}` }}>Invoice</th>
+                            <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: `2px solid ${BRAND.border}` }}>Due</th>
+                            <th style={{ textAlign: "right", padding: "8px 10px", borderBottom: `2px solid ${BRAND.border}` }}>Total</th>
+                            <th style={{ textAlign: "right", padding: "8px 10px", borderBottom: `2px solid ${BRAND.border}` }}>Paid</th>
+                            <th style={{ textAlign: "right", padding: "8px 10px", borderBottom: `2px solid ${BRAND.border}` }}>Outstanding</th>
+                            <th style={{ textAlign: "right", padding: "8px 10px", borderBottom: `2px solid ${BRAND.border}` }}>Days past</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {agingDetail.items.map((row) => (
+                            <tr key={row.invoice_id}>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${BRAND.border}` }}>{row.customer_name ?? `Customer ${row.customer_id ?? "—"}`}</td>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${BRAND.border}`, fontWeight: 600 }}>{invoiceLabel(row)}</td>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${BRAND.border}` }}>{row.due_date ? new Date(row.due_date).toLocaleDateString() : "—"}</td>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${BRAND.border}`, textAlign: "right" }}>{usd(Number(row.total))}</td>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${BRAND.border}`, textAlign: "right" }}>{usd(Number(row.paid))}</td>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${BRAND.border}`, textAlign: "right", fontWeight: 700 }}>{usd(Number(row.outstanding))}</td>
+                              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${BRAND.border}`, textAlign: "right" }}>{Math.max(row.days_past_due, 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+          )}
 
           {/* Proposal funnel */}
           <Card style={{ marginBottom: 32 }}>
