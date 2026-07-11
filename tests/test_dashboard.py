@@ -39,7 +39,7 @@ def _dt(y, m, d, h=0) -> datetime:
     return datetime(y, m, d, h, 0, 0)
 
 
-def _invoice(session, *, status="sent", total="1000.00", due_date=None, created_at=None,
+def _invoice(session, *, status="sent", total="1000.00", due_date=None, invoice_date=None, created_at=None,
              job_id=1, customer_id=1) -> Invoice:
     inv = Invoice(
         job_id=job_id,
@@ -53,6 +53,8 @@ def _invoice(session, *, status="sent", total="1000.00", due_date=None, created_
     )
     if due_date is not None:
         inv.due_date = due_date
+    if invoice_date is not None:
+        inv.invoice_date = invoice_date
     if created_at is not None:
         inv.created_at = created_at
     session.add(inv)
@@ -183,6 +185,21 @@ class TestInvoicesIssuedOverTime:
         assert result[0]["count"] == 2
         assert result[1]["period"] == "2024-01-20"
         assert result[1]["total"] == Decimal("200.00")
+
+    def test_uses_invoice_date_not_import_created_at(self):
+        """Knowify imports have created_at=import day; dashboard must use real invoice_date."""
+        e = _engine()
+        s = _session(e)
+        _invoice(
+            s,
+            total="500.00",
+            invoice_date=_dt(2024, 1, 15),
+            created_at=_dt(2026, 7, 11),
+        )
+        result = invoices_issued_over_time(s, _dt(2024, 1, 1), _dt(2024, 1, 31), bucket="day")
+        assert len(result) == 1
+        assert result[0]["period"] == "2024-01-15"
+        assert result[0]["total"] == Decimal("500.00")
 
     def test_month_bucket(self):
         e = _engine()
@@ -402,7 +419,7 @@ class TestReceivablesDueNext:
         s = _session(e)
         inv1 = _invoice(s, status="partially_paid", total="1000.00", due_date=_dt(2024, 3, 10))
         _payment(s, inv1.id, "400.00", _dt(2024, 3, 2))
-        inv2 = _invoice(s, status="sent", total="500.00", due_date=_dt(2024, 3, 20))
+        _invoice(s, status="sent", total="500.00", due_date=_dt(2024, 3, 20))
         result = receivables_due_next(s, date(2024, 3, 1), days=30)
         assert result["count"] == 2
         # 600 + 500 = 1100

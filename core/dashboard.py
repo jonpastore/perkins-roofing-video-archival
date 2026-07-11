@@ -76,19 +76,26 @@ def invoices_issued_over_time(
     to_dt: datetime,
     bucket: Bucket = "day",
 ) -> list[dict]:
-    """Invoices created in [from_dt, to_dt] (to_dt inclusive of the whole day).
+    """Invoices issued in [from_dt, to_dt] (to_dt inclusive of the whole day).
+
+    Bucketed by the real issue date: ``invoice_date`` when present (Knowify-imported
+    invoices carry the true historical date; native v2 invoices set it at issue),
+    falling back to ``created_at`` only when ``invoice_date`` is NULL. Using
+    ``created_at`` alone would pile every back-filled Knowify invoice onto the import
+    day, producing a single giant bar (the dashboard bug this fixes).
 
     Returns [{period, total, count}] sorted by period.
     """
     to_exclusive = to_dt + timedelta(days=1)
+    issued_at = func.coalesce(Invoice.invoice_date, Invoice.created_at)
     rows = session.execute(
-        select(Invoice.created_at, Invoice.total)
-        .where(Invoice.created_at >= from_dt, Invoice.created_at < to_exclusive)
+        select(issued_at, Invoice.total)
+        .where(issued_at >= from_dt, issued_at < to_exclusive)
     ).all()
 
     buckets: dict[str, dict] = {}
-    for created_at, total in rows:
-        key = _bucket_key(created_at, bucket)
+    for issued, total in rows:
+        key = _bucket_key(issued, bucket)
         if key not in buckets:
             buckets[key] = {"period": key, "total": Decimal("0"), "count": 0}
         buckets[key]["total"] += Decimal(str(total))
