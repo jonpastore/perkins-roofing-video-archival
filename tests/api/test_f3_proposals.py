@@ -24,7 +24,7 @@ from sqlalchemy import select
 
 import api.app as appmod
 from api.auth import set_verifier
-from app.models import SessionLocal, init_db
+from app.models import KnowifyRawRecord, SessionLocal, init_db
 
 # ---------------------------------------------------------------------------
 # Mount F3 routers idempotently
@@ -104,6 +104,91 @@ def _create_property(client, customer_id):
     return r.json()
 
 
+def _create_property_at(client, customer_id, *, street, city, state="FL", zip_code="33101"):
+    r = client.post(f"/quoting/customers/{customer_id}/properties",
+                    json={"street": street,
+                          "city": city, "state": state,
+                          "zip": zip_code, "code_zone": "HVHZ"},
+                    headers=AUTH)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _seed_knowify_quote(contract_id, project_id, *, address=None, total="15000.00",
+                        deposit="5000.00"):
+    """Seed a legacy Knowify contract, two deliverables, and its project address."""
+    address = address or {
+        "Id": project_id,
+        "Address1": f"{_uid()} Legacy Way",
+        "City": "Miami",
+        "StateProvince": "FL",
+        "Zip": "33101",
+    }
+    contract = {
+        "Id": contract_id,
+        "ContractType": "Standard",
+        "BusinessState": "Draft",
+        "ContractName": f"Knowify Roof Replacement {contract_id}",
+        "OriginalContractSum": total,
+        "CurrentContractSum": total,
+        "AdditionalContractSum": "0.00",
+        "DepositAmount": deposit,
+        "ClientId": f"CL-{contract_id}",
+        "ProjectId": project_id,
+        "DateCreated": "2026-07-10",
+        "ExpirationDate": "2026-08-10",
+        "IsSigned": False,
+        "PONumber": f"PO-{contract_id}",
+        "ContactName": "Legacy Contact",
+    }
+    deliverables = [
+        {
+            "Id": f"D-{contract_id}-1",
+            "ContractId": contract_id,
+            "Description": "Remove and replace shingle roof",
+            "Quantity": "30",
+            "UnitPrice": "450.00",
+            "Price": "13500.00",
+            "PriceBilled": "0.00",
+            "CostLabor": "4000.00",
+            "CostMaterials": "6000.00",
+            "ObjectState": "Active",
+        },
+        {
+            "Id": f"D-{contract_id}-2",
+            "ContractId": contract_id,
+            "Description": "Permit allowance",
+            "Quantity": "1",
+            "UnitPrice": "1500.00",
+            "Price": "1500.00",
+            "PriceBilled": "0.00",
+            "CostLabor": "0.00",
+            "CostMaterials": "0.00",
+            "ObjectState": "Active",
+        },
+    ]
+    db = SessionLocal()
+    db.info["tenant_id"] = 1
+    try:
+        db.add(KnowifyRawRecord(
+            tenant_id=1, entity="contracts", knowify_id=contract_id,
+            payload=contract, content_hash="c" * 64, is_present=True,
+        ))
+        for item in deliverables:
+            db.add(KnowifyRawRecord(
+                tenant_id=1, entity="deliverables", knowify_id=item["Id"],
+                payload=item, content_hash="d" * 64, is_present=True,
+            ))
+        db.add(KnowifyRawRecord(
+            tenant_id=1, entity="projects", knowify_id=project_id,
+            payload={**address, "Id": project_id}, content_hash="p" * 64,
+            is_present=True,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+
 _SAMPLE_SNAPSHOT = {
     "pricing_config_hash": "abc123" * 10 + "ab",
     "sent_at_iso": "2026-07-08T14:30:00Z",
@@ -157,6 +242,93 @@ def _scaffold(client=None):
     prop = _create_property(c, cust["id"])
     draft = _create_proposal(c, cust["id"], prop["id"])
     return c, cust, prop, draft
+
+
+# ---------------------------------------------------------------------------
+# Knowify quote import — native draft proposal creation
+# ---------------------------------------------------------------------------
+
+class TestKnowifyQuoteImport:
+    def test_from_quote_creates_draft_and_derives_matching_property(self, admin_client):
+        cust = _create_customer(admin_client)
+        address = {
+            "Address1": f"{_uid()} Legacy Way",
+            "City": "Miami",
+            "StateProvince": "FL",
+            "Zip": "33101",
+        }
+        prop = _create_property_at(
+            admin_client, cust["id"], street=address["Address1"],
+            city=address["City"], state=address["StateProvince"],
+            zip_code=address["Zip"],
+        )
+        contract_id = f"KQ-{_uid()}"
+        _seed_knowify_quote(contract_id, f"KP-{_uid()}", address=address)
+
+        r = admin_client.post(
+            f"/quoting/proposals/from-quote/{contract_id}",
+            json={"customer_id": cust["id"], "title": "Imported Knowify Quote"},
+            headers=AUTH,
+        )
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["status"] == "draft"
+        assert body["customer_id"] == cust["id"]
+        assert body["property_id"] == prop["id"]
+        assert body["title"] == "Imported Knowify Quote"
+
+        snap = body["quote_snapshot"]
+        assert snap["source"] == "knowify_import"
+        assert snap["source_ref"] == contract_id
+        assert snap["contract"]["ContractName"] == f"Knowify Roof Replacement {contract_id}"
+        assert snap["contract"]["ProjectId"].startswith("KP-")
+        assert len(snap["line_items"]) == 2
+        assert snap["total"] == 15000.0
+        assert snap["deposit"] == 5000.0
+        assert snap["project_address"]["Address1"] == address["Address1"]
+        assert snap["tiers"]["legacy"]["total"] == 15000.0
+        assert snap["deposit_policy"]["amount"] == 5000.0
+
+    def test_from_quote_is_idempotent_for_same_tenant_source_ref(self, admin_client):
+        cust = _create_customer(admin_client)
+        prop = _create_property(admin_client, cust["id"])
+        contract_id = f"KQ-{_uid()}"
+        _seed_knowify_quote(contract_id, f"KP-{_uid()}")
+
+        first = admin_client.post(
+            f"/quoting/proposals/from-quote/{contract_id}",
+            json={"customer_id": cust["id"], "property_id": prop["id"], "title": "First"},
+            headers=AUTH,
+        )
+        assert first.status_code == 200, first.text
+
+        second = admin_client.post(
+            f"/quoting/proposals/from-quote/{contract_id}",
+            json={"customer_id": cust["id"], "property_id": prop["id"], "title": "Second"},
+            headers=AUTH,
+        )
+
+        assert second.status_code == 200, second.text
+        assert second.json()["id"] == first.json()["id"]
+        assert second.json()["title"] == "First"
+
+    def test_from_quote_without_property_and_no_safe_project_match_returns_422(self, admin_client):
+        cust = _create_customer(admin_client)
+        contract_id = f"KQ-{_uid()}"
+        _seed_knowify_quote(contract_id, f"KP-{_uid()}",
+                            address={"Address1": "No Matching Property",
+                                     "City": "Miami", "StateProvince": "FL",
+                                     "Zip": "33101"})
+
+        r = admin_client.post(
+            f"/quoting/proposals/from-quote/{contract_id}",
+            json={"customer_id": cust["id"]},
+            headers=AUTH,
+        )
+
+        assert r.status_code == 422
+        assert "property_id" in r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

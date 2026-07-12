@@ -50,9 +50,16 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
+from api.routes.quotes import (
+    _CONTRACT_FIELDS,
+    _DELIVERABLE_FIELDS,
+    _PROJECT_ADDRESS_FIELDS,
+    _pick,
+)
 from app.models import (
     Customer,
     Job,
+    KnowifyRawRecord,
     PlatformSessionLocal,
     Property,
     Proposal,
@@ -210,6 +217,12 @@ class ProposalCreate(BaseModel):
     template_id: Optional[int] = None
 
 
+class ProposalFromQuoteCreate(BaseModel):
+    customer_id: int
+    property_id: Optional[int] = None
+    title: Optional[str] = None
+
+
 class ProposalUpdate(BaseModel):
     title: Optional[str] = None
     quote_snapshot: Optional[dict] = None
@@ -339,6 +352,231 @@ def _template_row(row: ProposalTemplate) -> dict:
     }
 
 
+def _money(payload: dict, field: str) -> float:
+    value = payload.get(field)
+    if value in (None, ""):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _norm_addr(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _load_knowify_quote(db: Session, contract_id: str) -> dict:
+    tenant_id = _tenant_id(db)
+    contract_row = db.execute(
+        select(KnowifyRawRecord).where(
+            KnowifyRawRecord.tenant_id == tenant_id,
+            KnowifyRawRecord.entity == "contracts",
+            KnowifyRawRecord.knowify_id == contract_id,
+            KnowifyRawRecord.is_present == True,  # noqa: E712
+        )
+    ).scalar_one_or_none()
+    if contract_row is None:
+        raise HTTPException(404, "contract not found")
+
+    contract_payload = contract_row.payload or {}
+    project_id = str(contract_payload.get("ProjectId") or "")
+
+    deliverable_rows = db.execute(
+        select(KnowifyRawRecord).where(
+            KnowifyRawRecord.tenant_id == tenant_id,
+            KnowifyRawRecord.entity == "deliverables",
+            KnowifyRawRecord.is_present == True,  # noqa: E712
+        )
+    ).scalars().all()
+    line_items = [
+        _pick(r.payload or {}, _DELIVERABLE_FIELDS)
+        for r in deliverable_rows
+        if str((r.payload or {}).get("ContractId") or "") == contract_id
+    ]
+
+    project_address = None
+    if project_id:
+        project_rows = db.execute(
+            select(KnowifyRawRecord).where(
+                KnowifyRawRecord.tenant_id == tenant_id,
+                KnowifyRawRecord.entity == "projects",
+                KnowifyRawRecord.is_present == True,  # noqa: E712
+            )
+        ).scalars().all()
+        for r in project_rows:
+            project_payload = r.payload or {}
+            if str(project_payload.get("Id") or "") == project_id:
+                project_address = _pick(project_payload, _PROJECT_ADDRESS_FIELDS)
+                break
+
+    return {
+        "contract_id": contract_id,
+        "contract": _pick(contract_payload, _CONTRACT_FIELDS),
+        "line_items": line_items,
+        "project_address": project_address,
+        "project_id": project_id,
+        "content_hash": contract_row.content_hash,
+    }
+
+
+def _existing_knowify_import(db: Session, tenant_id: int, contract_id: str) -> Proposal | None:
+    rows = db.execute(
+        select(Proposal).where(Proposal.tenant_id == tenant_id)
+    ).scalars().all()
+    for row in rows:
+        snap = row.quote_snapshot or {}
+        if (
+            snap.get("source") == "knowify_import"
+            and str(snap.get("source_ref") or "") == contract_id
+        ):
+            return row
+    return None
+
+
+def _matching_property_ids_for_project_address(
+    db: Session,
+    tenant_id: int,
+    customer_id: int,
+    project_address: dict | None,
+) -> set[int]:
+    if not project_address:
+        return set()
+
+    wanted = (
+        _norm_addr(project_address.get("Address1")),
+        _norm_addr(project_address.get("City")),
+        _norm_addr(project_address.get("StateProvince")),
+        _norm_addr(project_address.get("Zip")),
+    )
+    if not wanted[0] or not wanted[1] or not wanted[2]:
+        return set()
+
+    rows = db.execute(
+        select(Property).where(
+            Property.tenant_id == tenant_id,
+            Property.customer_id == customer_id,
+        )
+    ).scalars().all()
+    return {
+        row.id for row in rows
+        if (
+            _norm_addr(row.street),
+            _norm_addr(row.city),
+            _norm_addr(row.state),
+            _norm_addr(row.zip),
+        ) == wanted
+    }
+
+
+def _matching_property_ids_for_project_crosswalk(
+    db: Session,
+    tenant_id: int,
+    customer_id: int,
+    project_id: str,
+) -> set[int]:
+    if not project_id:
+        return set()
+
+    rows = db.execute(
+        select(Proposal.property_id)
+        .join(Job, Job.proposal_id == Proposal.id)
+        .where(
+            Job.tenant_id == tenant_id,
+            Job.knowify_job_id == project_id,
+            Proposal.tenant_id == tenant_id,
+            Proposal.property_id.isnot(None),
+        )
+    ).all()
+    candidate_ids = {pid for (pid,) in rows if pid is not None}
+    if not candidate_ids:
+        return set()
+    valid = db.execute(
+        select(Property.id).where(
+            Property.id.in_(candidate_ids),
+            Property.tenant_id == tenant_id,
+            Property.customer_id == customer_id,
+        )
+    ).all()
+    return {pid for (pid,) in valid}
+
+
+def _resolve_import_property_id(
+    db: Session,
+    *,
+    tenant_id: int,
+    customer_id: int,
+    property_id: int | None,
+    project_id: str,
+    project_address: dict | None,
+) -> int:
+    if property_id is not None:
+        row = db.execute(
+            select(Property.id).where(
+                Property.id == property_id,
+                Property.tenant_id == tenant_id,
+                Property.customer_id == customer_id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(422, "property_id must belong to customer_id for this tenant")
+        return row
+
+    matches = (
+        _matching_property_ids_for_project_crosswalk(db, tenant_id, customer_id, project_id)
+        | _matching_property_ids_for_project_address(
+            db, tenant_id, customer_id, project_address
+        )
+    )
+    if len(matches) == 1:
+        return next(iter(matches))
+    if len(matches) > 1:
+        raise HTTPException(422, "property_id is required; Knowify project matched multiple properties")
+    raise HTTPException(422, "property_id is required; no safe Knowify project match found")
+
+
+def _build_knowify_quote_snapshot(quote: dict) -> dict:
+    contract = quote["contract"]
+    total = _money(contract, "CurrentContractSum") or _money(contract, "OriginalContractSum")
+    deposit = _money(contract, "DepositAmount")
+    title = contract.get("ContractName") or f"Knowify quote {quote['contract_id']}"
+
+    return {
+        "source": "knowify_import",
+        "source_ref": quote["contract_id"],
+        "contract": contract,
+        "line_items": quote["line_items"],
+        "total": total,
+        "deposit": deposit,
+        "project_address": quote["project_address"],
+        # Compatibility fields expected by existing proposal rendering/send paths.
+        "pricing_config_hash": quote.get("content_hash") or f"knowify_import:{quote['contract_id']}",
+        "sent_at_iso": None,
+        "roof_type": "legacy_knowify_quote",
+        "num_squares": 0,
+        "tiers": {
+            "legacy": {
+                "label": "Knowify Quote",
+                "description": title,
+                "total": total,
+                "line_items": quote["line_items"],
+            }
+        },
+        "optional_items": [],
+        "deposit_policy": {
+            "mode": "fixed" if deposit else "none",
+            "value": deposit,
+            "amount": deposit,
+            "instructions": "Imported from Knowify DepositAmount",
+        },
+        "floors": {
+            "min_profit_pct": 0,
+            "min_profit_plus_oh_pct": 0,
+        },
+        "estimator_version": "knowify_import",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Proposal endpoints
 # ---------------------------------------------------------------------------
@@ -392,6 +630,64 @@ def create_proposal(
         template_id=body.template_id,
         title=body.title,
         quote_snapshot=body.quote_snapshot,
+        status="draft",
+        accept_token=generate_accept_token(),
+        created_by=email,
+        version_number=1,
+    )
+    db.add(row)
+    db.flush()
+    db.refresh(row)
+    return _proposal_row(row)
+
+
+@router.post("/quoting/proposals/from-quote/{contract_id}")
+def create_proposal_from_quote(
+    contract_id: str,
+    body: ProposalFromQuoteCreate,
+    claims=Depends(require_role("quoting_create")),
+    db: Session = Depends(get_db_session),
+):
+    """Create a native draft proposal from a mirrored Knowify quote/contract.
+
+    Idempotency is keyed by quote_snapshot.source/source_ref for the resolved tenant:
+    retrying the same contract import returns the existing proposal row instead of
+    creating a duplicate.
+    """
+    tenant_id = _tenant_id(db)
+    email = claims.get("email") or "unknown"
+
+    quote = _load_knowify_quote(db, contract_id)
+    existing = _existing_knowify_import(db, tenant_id, contract_id)
+    if existing is not None:
+        return _proposal_row(existing)
+
+    customer_exists = db.execute(
+        select(Customer.id).where(
+            Customer.id == body.customer_id,
+            Customer.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if customer_exists is None:
+        raise HTTPException(422, "customer_id must belong to this tenant")
+
+    property_id = _resolve_import_property_id(
+        db,
+        tenant_id=tenant_id,
+        customer_id=body.customer_id,
+        property_id=body.property_id,
+        project_id=quote["project_id"],
+        project_address=quote["project_address"],
+    )
+    snapshot = _build_knowify_quote_snapshot(quote)
+    title = body.title or quote["contract"].get("ContractName") or f"Knowify quote {contract_id}"
+
+    row = Proposal(
+        tenant_id=tenant_id,
+        customer_id=body.customer_id,
+        property_id=property_id,
+        title=title,
+        quote_snapshot=snapshot,
         status="draft",
         accept_token=generate_accept_token(),
         created_by=email,
@@ -959,6 +1255,7 @@ def update_settings(
 _PUBLIC_APP_URL = os.environ.get(
     "PUBLIC_APP_URL", "https://video-archival-and-content-gen.web.app"
 )
+_SIGN_PUBLIC_URL = os.environ.get("SIGN_PUBLIC_URL", _PUBLIC_APP_URL)
 
 
 def _send_accept_link_email(
@@ -981,8 +1278,8 @@ def _send_accept_link_email(
     if not to_email:
         return False
 
-    public_url = os.environ.get("PUBLIC_APP_URL", _PUBLIC_APP_URL)
-    accept_url = f"{public_url}/p/{accept_token}"
+    public_url = os.environ.get("SIGN_PUBLIC_URL") or os.environ.get("PUBLIC_APP_URL", _SIGN_PUBLIC_URL)
+    accept_url = f"{public_url.rstrip('/')}/p/{accept_token}"
 
     html = f"""
 <html><body>

@@ -27,6 +27,9 @@ REGION="${GCP_REGION:-us-central1}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/app/platform:$(git rev-parse --short HEAD)"
 CONN="${PROJECT}:${REGION}:${PROJECT}-pg"
 GOTENBERG_URL="${GOTENBERG_URL:-$(cd infra && terraform output -raw gotenberg_url 2>/dev/null || true)}"
+# SIGN_PUBLIC_URL is intentionally left unset until sign.perkinsroofing.net DNS + cert are live.
+# When ready, export SIGN_PUBLIC_URL=https://sign.perkinsroofing.net before deploy to flip accept links.
+SIGN_PUBLIC_URL="${SIGN_PUBLIC_URL:-}"
 
 # Env built with a '|' delimiter (gcloud ^|^ form) so values with commas/@/() survive intact.
 # DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
@@ -35,7 +38,7 @@ BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|
 # existing pipeline consumers (articles, faq, scheduling, jobs) still read os.environ. Full
 # per-tenant migration (Tenant.settings.integrations) is deferred to a later wave. The proposals
 # accept-link email (proposals.py) already reads from Tenant.settings.integrations exclusively.
-CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}|GOTENBERG_URL=${GOTENBERG_URL:-}"
+CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}|GOTENBERG_URL=${GOTENBERG_URL:-}|SIGN_PUBLIC_URL=${SIGN_PUBLIC_URL:-}"
 
 # Vault-backed secrets (resettable in the Config UI). One source of truth: Secret Manager.
 SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest"

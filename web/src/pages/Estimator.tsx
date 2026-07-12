@@ -372,7 +372,22 @@ export function Estimator() {
 
   return (
     <main style={{ maxWidth: 900 }}>
-      <PageTitle>Estimator</PageTitle>
+      <PageTitle>Legacy Quick Estimate Calculator</PageTitle>
+
+      <Card style={{ marginBottom: 16, background: BRAND.bg, border: `1px solid ${BRAND.border}` }}>
+        <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 13, marginBottom: 6 }}>
+          Legacy / unattached calculator
+        </div>
+        <p style={{ margin: "0 0 8px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
+          Use this page only for fast, standalone what-if pricing. It does not create a customer,
+          property, measurement, estimate record, or proposal draft.
+        </p>
+        <p style={{ margin: 0, fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+          Canonical estimates should start from the <strong>Estimates</strong> workflow:
+          customer → property → measurement → estimate → proposal. That keeps pricing attached to
+          the job record and ready for proposal creation.
+        </p>
+      </Card>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
         {/* ── Left: Input form ── */}

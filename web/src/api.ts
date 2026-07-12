@@ -967,6 +967,18 @@ export async function listQuotes(params?: ListQuotesParams): Promise<Paged<Quote
   return r.json();
 }
 
+export async function createProposalFromQuote(
+  contractId: string,
+  body: { customer_id: number; property_id?: number | null; title?: string },
+): Promise<Record<string, unknown>> {
+  const r = await apiFetch(`/quoting/proposals/from-quote/${encodeURIComponent(contractId)}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
 export async function getQuote(id: string): Promise<QuoteDetail> {
   const r = await apiFetch(`/quotes/${encodeURIComponent(id)}`);
   if (!r.ok) throw new Error(await errText(r));

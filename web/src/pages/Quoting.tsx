@@ -260,6 +260,51 @@ function MeasurementForm({
 
 type QuotingView = "customers" | "customer_detail" | "quote_builder";
 
+// Canonical sales workflow presented on the Estimates page. Kept as data so the
+// same ordered steps drive both the intro callout and the builder stepper.
+const ESTIMATE_FLOW_STEPS = ["Customer", "Property", "Measurement", "Estimate", "Proposal"] as const;
+
+function WorkflowCallout() {
+  return (
+    <Card style={{ marginBottom: 16, padding: "14px 18px", background: BRAND.bg, border: `1px solid ${BRAND.border}` }}>
+      <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 13, marginBottom: 6 }}>
+        Estimates workflow
+      </div>
+      <p style={{ margin: "0 0 10px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
+        This is the canonical path for building a customer-linked estimate. Work left to right:
+        pick a <strong>customer</strong>, attach a <strong>property</strong>, record a{" "}
+        <strong>measurement</strong>, then generate the <strong>estimate</strong> that becomes a{" "}
+        <strong>proposal</strong>.
+      </p>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+        {ESTIMATE_FLOW_STEPS.map((step, i) => (
+          <div key={step} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontSize: 12, fontWeight: 600, color: BRAND.navyText,
+              background: "#fff", border: `1px solid ${BRAND.border}`, borderRadius: 20, padding: "3px 10px",
+            }}>
+              <span style={{
+                width: 16, height: 16, borderRadius: "50%", background: BRAND.navy, color: "#fff",
+                display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700,
+              }}>{i + 1}</span>
+              {step}
+            </span>
+            {i < ESTIMATE_FLOW_STEPS.length - 1 && (
+              <span style={{ color: BRAND.sub, fontSize: 12 }}>→</span>
+            )}
+          </div>
+        ))}
+      </div>
+      <p style={{ margin: "10px 0 0", fontSize: 11, color: BRAND.sub, lineHeight: 1.5 }}>
+        Need a fast ballpark without a customer? A standalone <strong>Quick Estimate Calculator</strong>{" "}
+        (legacy) still exists for unattached what-if pricing, but estimates you intend to send should be
+        built here so they stay linked to a customer, property, and measurement.
+      </p>
+    </Card>
+  );
+}
+
 export function Quoting() {
   const [view, setView] = useState<QuotingView>("customers");
 
@@ -535,7 +580,7 @@ export function Quoting() {
               )}
               {props.length > 0 && (
                 <Button onClick={() => setView("quote_builder")} style={{ fontSize: 13 }}>
-                  Build quote
+                  Build estimate
                 </Button>
               )}
             </div>
@@ -543,6 +588,8 @@ export function Quoting() {
         >
           {selectedCustomer.display_name}
         </PageTitle>
+
+        <WorkflowCallout />
 
         {customerDetailError && <ErrorMsg>Error: {customerDetailError}</ErrorMsg>}
         {customerDetailLoading && <Loading label="Loading customer…" />}
@@ -580,9 +627,12 @@ export function Quoting() {
 
         {/* Properties */}
         <Card style={{ marginBottom: 20 }}>
-          <div style={{ marginBottom: 12, fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Properties</div>
+          <div style={{ marginBottom: 6, fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Property</div>
+          <p style={{ margin: "0 0 12px", color: BRAND.sub, fontSize: 12 }}>
+            Select the roof location for this estimate. Full consolidation needs measurements to persist against this property.
+          </p>
           {props.length === 0 ? (
-            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No properties yet. Add one to enable quote building.</p>
+            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No properties yet. Add one to enable estimate building.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {props.map((p) => (
@@ -625,7 +675,12 @@ export function Quoting() {
         {/* Measurements */}
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Measurements</div>
+            <div>
+              <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Measurement</div>
+              <div style={{ color: BRAND.sub, fontSize: 12, marginTop: 2 }}>
+                Add or select roof squares and pitch before calculating pricing.
+              </div>
+            </div>
             {!showNewMeasurement && (
               <Button variant="ghost" onClick={() => setShowNewMeasurement(true)} style={{ fontSize: 12 }}>+ Add measurement</Button>
             )}
@@ -641,7 +696,7 @@ export function Quoting() {
           )}
 
           {measurements.length === 0 && !showNewMeasurement && (
-            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No measurements yet. Add one to start quoting.</p>
+            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No measurements yet. Add one to start estimating.</p>
           )}
 
           {measurements.length > 0 && (
@@ -664,7 +719,7 @@ export function Quoting() {
                       <td style={{ padding: "8px 12px" }}>{m.provider}</td>
                       <td style={{ padding: "8px 12px", color: BRAND.sub, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.provenance_note ?? "—"}</td>
                       <td style={{ padding: "8px 12px" }}>
-                        <Button variant="ghost" onClick={() => { setSelectedMeasurement(m); setView("quote_builder"); }} style={{ fontSize: 12 }}>Use for quote</Button>
+                        <Button variant="ghost" onClick={() => { setSelectedMeasurement(m); setView("quote_builder"); }} style={{ fontSize: 12 }}>Use for estimate</Button>
                       </td>
                     </tr>
                   ))}
@@ -690,14 +745,16 @@ export function Quoting() {
             </Button>
           }
         >
-          Quote builder — {selectedCustomer.display_name}
+          Estimate builder — {selectedCustomer.display_name}
         </PageTitle>
+
+        <WorkflowCallout />
 
         {/* Stepper */}
         <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 20, userSelect: "none" }}>
-          {(["Customer", "Measurement", "Quote", "Proposal"] as const).map((step, i) => {
-            const stepIndex = ["Customer", "Measurement", "Quote", "Proposal"].indexOf(step);
-            const activeIndex = 2; // We're on "Quote" in quote_builder
+          {ESTIMATE_FLOW_STEPS.map((step, i) => {
+            const stepIndex = ESTIMATE_FLOW_STEPS.indexOf(step);
+            const activeIndex = ESTIMATE_FLOW_STEPS.indexOf("Estimate");
             const done = stepIndex < activeIndex;
             const active = stepIndex === activeIndex;
             return (
@@ -718,7 +775,7 @@ export function Quoting() {
                     {step}
                   </span>
                 </div>
-                {i < 3 && (
+                {i < ESTIMATE_FLOW_STEPS.length - 1 && (
                   <div style={{ width: 40, height: 2, background: done ? BRAND.navy : BRAND.border, margin: "0 4px", marginBottom: 16 }} />
                 )}
               </div>
@@ -735,7 +792,7 @@ export function Quoting() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
           <Card>
-            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 14 }}>Quote inputs</div>
+            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 14 }}>Estimate inputs</div>
 
             {/* Measurement selector */}
             <div style={{ marginBottom: 16 }}>
@@ -791,7 +848,7 @@ export function Quoting() {
 
             <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
               <Button onClick={handleCalculateQuote} disabled={quoting || !selectedMeasurement} style={{ fontSize: 13 }}>
-                {quoting ? "Calculating…" : "Calculate quote"}
+                {quoting ? "Calculating…" : "Calculate estimate"}
               </Button>
             </div>
 
@@ -805,7 +862,7 @@ export function Quoting() {
             {!quoting && !quoteResult && (
               <Card style={{ background: BRAND.bg, border: "none" }}>
                 <p style={{ margin: 0, fontSize: 13, color: BRAND.sub, textAlign: "center", padding: "24px 0" }}>
-                  Select a measurement and press <strong>Calculate quote</strong> to see pricing.
+                  Select a measurement and press <strong>Calculate estimate</strong> to see pricing.
                 </p>
               </Card>
             )}
@@ -875,8 +932,10 @@ export function Quoting() {
             : undefined
         }
       >
-        Quoting
+        Estimates
       </PageTitle>
+
+      <WorkflowCallout />
 
       {showNewCustomer && (
         <Card style={{ marginBottom: 20 }}>
@@ -888,6 +947,9 @@ export function Quoting() {
 
       {/* Search */}
       <Card style={{ marginBottom: 16, padding: "12px 16px" }}>
+        <div style={{ marginBottom: 8, fontWeight: 700, color: BRAND.navyText, fontSize: 13 }}>
+          Start with a customer
+        </div>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -902,7 +964,7 @@ export function Quoting() {
       {!customersLoading && !customersError && filteredCustomers.length === 0 && (
         <Card>
           <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
-            {search ? `No customers matching "${search}".` : "No customers yet. Create the first one above."}
+            {search ? `No customers matching "${search}".` : "No customers yet. Create the first customer above to start an estimate."}
           </p>
         </Card>
       )}

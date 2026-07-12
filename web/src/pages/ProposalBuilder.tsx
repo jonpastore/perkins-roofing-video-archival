@@ -36,6 +36,29 @@ function propLabel(p: QuotingProperty): string {
   return `${p.street}, ${p.city} ${p.state}${p.zip ? " " + p.zip : ""}`;
 }
 
+// ── Embedded-mode props ─────────────────────────────────────────────────────────
+// ProposalBuilder is used two ways:
+//   1. As a standalone page (App renders <ProposalBuilder />) — default behaviour.
+//   2. Embedded inside the Proposals "New Proposal" drawer, where the host wants to
+//      drop the page chrome, react to a successful create, and offer a Cancel action.
+export interface ProposalBuilderPrefill {
+  customerId?: number;
+  projectName?: string;
+  hvhz?: boolean;
+  paymentVariant?: "standard" | "palmer";
+}
+
+export interface ProposalBuilderProps {
+  /** Drop the <main>/PageTitle chrome so the builder sits inside a host container. */
+  embedded?: boolean;
+  /** Called after a proposal is generated successfully (host can close + refresh). */
+  onCreated?: (result: GenerateProposalResult) => void;
+  /** Render a Cancel action next to Generate (host closes the drawer). */
+  onCancel?: () => void;
+  /** Seed initial field values. */
+  prefill?: ProposalBuilderPrefill;
+}
+
 const selectStyle: React.CSSProperties = {
   ...inputStyle,
   padding: "8px 10px",
@@ -373,13 +396,18 @@ function emptyDiscount(): DiscountRow {
   return { key: nextKey(), description: "", amount: "" };
 }
 
-export function ProposalBuilder() {
+export function ProposalBuilder({
+  embedded = false,
+  onCreated,
+  onCancel,
+  prefill,
+}: ProposalBuilderProps = {}) {
   // Customer / property selection
   const [customers, setCustomers] = useState<QuotingCustomer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customersError, setCustomersError] = useState<string | null>(null);
 
-  const [selectedCustomerId, setSelectedCustomerId] = useState<number | "">("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | "">(prefill?.customerId ?? "");
   const [customerDetail, setCustomerDetail] = useState<QuotingCustomerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -390,9 +418,9 @@ export function ProposalBuilder() {
   const [printedProperty, setPrintedProperty] = useState("");
 
   // Basic fields
-  const [projectName, setProjectName] = useState("");
-  const [hvhz, setHvhz] = useState(false);
-  const [paymentVariant, setPaymentVariant] = useState<"standard" | "palmer">("standard");
+  const [projectName, setProjectName] = useState(prefill?.projectName ?? "");
+  const [hvhz, setHvhz] = useState(prefill?.hvhz ?? false);
+  const [paymentVariant, setPaymentVariant] = useState<"standard" | "palmer">(prefill?.paymentVariant ?? "standard");
 
   // Dynamic rows
   const [scopes, setScopes] = useState<ScopeRow[]>([emptyScope()]);
@@ -543,6 +571,7 @@ export function ProposalBuilder() {
         },
       });
       setResult(res);
+      onCreated?.(res);
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -567,17 +596,17 @@ export function ProposalBuilder() {
     setScopes([emptyScope()]);
     setExtras([]);
     setDiscounts([]);
-    setProjectName("");
-    setHvhz(false);
-    setPaymentVariant("standard");
+    setProjectName(prefill?.projectName ?? "");
+    setHvhz(prefill?.hvhz ?? false);
+    setPaymentVariant(prefill?.paymentVariant ?? "standard");
   }
 
   // ── Success view ─────────────────────────────────────────────────────────────
 
   if (result) {
     return (
-      <main style={{ maxWidth: 720, fontFamily: FONT }}>
-        <PageTitle>New Proposal</PageTitle>
+      <main style={{ maxWidth: embedded ? "none" : 720, fontFamily: FONT }}>
+        {!embedded && <PageTitle>New Proposal</PageTitle>}
         <Card>
           <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{
@@ -629,6 +658,7 @@ export function ProposalBuilder() {
           <div style={{ display: "flex", gap: 10 }}>
             <Button onClick={() => handleViewPdf(result.id)}>View Contract PDF</Button>
             <Button variant="ghost" onClick={handleReset}>Start another</Button>
+            {onCancel && <Button variant="ghost" onClick={onCancel}>{embedded ? "Close" : "Cancel"}</Button>}
           </div>
         </Card>
       </main>
@@ -640,8 +670,8 @@ export function ProposalBuilder() {
   const properties: QuotingProperty[] = customerDetail?.properties ?? [];
 
   return (
-    <main style={{ maxWidth: 880, fontFamily: FONT }}>
-      <PageTitle>New Proposal</PageTitle>
+    <main style={{ maxWidth: embedded ? "none" : 880, fontFamily: FONT }}>
+      {!embedded && <PageTitle>New Proposal</PageTitle>}
 
       {/* Customer + Property */}
       <Card style={{ marginBottom: 16 }}>
@@ -835,6 +865,11 @@ export function ProposalBuilder() {
         <Button onClick={handleGenerate} disabled={submitting}>
           {submitting ? "Generating…" : "Generate proposal"}
         </Button>
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel} disabled={submitting}>
+            Cancel
+          </Button>
+        )}
         {submitting && <Loading label="" />}
       </div>
     </main>

@@ -1,7 +1,16 @@
-import { useContext, useEffect, useState } from "react";
-import { NavContext } from "../App";
-import { apiFetch } from "../api";
+import { useEffect, useState } from "react";
+import {
+  apiFetch,
+  listQuotes,
+  listQuotingCustomers,
+  getQuotingCustomer,
+  createProposalFromQuote,
+  type QuoteListItem,
+  type QuotingCustomer,
+  type QuotingProperty,
+} from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, StatusPill, StatCard, TierCard, SectionLabel } from "../ui";
+import { ProposalBuilder } from "./ProposalBuilder";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -77,10 +86,21 @@ function fmtDateTime(iso: string | null | undefined): string {
   }
 }
 
+function signPublicUrl(): string {
+  // Opt-in: set VITE_SIGN_PUBLIC_URL=https://sign.perkinsroofing.net at build time once the
+  // custom domain + cert are live. Until then, use the current origin so accept links resolve.
+  const envUrl = import.meta.env.VITE_SIGN_PUBLIC_URL as string | undefined;
+  return (envUrl || window.location.origin).replace(/\/$/, "");
+}
+
 function usd(n: number | string | undefined): string {
   const v = typeof n === "string" ? parseFloat(n) : n;
   if (v == null || isNaN(v as number)) return "—";
   return (v as number).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 });
+}
+
+function propertyLabel(p: QuotingProperty): string {
+  return `${p.street}, ${p.city} ${p.state}${p.zip ? ` ${p.zip}` : ""}`;
 }
 
 const STATUS_TABS: Array<{ key: ProposalStatus | "all"; label: string }> = [
@@ -93,19 +113,38 @@ const STATUS_TABS: Array<{ key: ProposalStatus | "all"; label: string }> = [
   { key: "revision_requested", label: "Revision req." },
 ];
 
+type ProposalWorkspaceTab = "proposals" | "legacy";
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function Proposals() {
-  const { navigate } = useContext(NavContext);
+  const [workspaceTab, setWorkspaceTab] = useState<ProposalWorkspaceTab>("proposals");
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
   const [proposals, setProposals] = useState<ProposalRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Embedded create drawer
+  const [createOpen, setCreateOpen] = useState(false);
+
   // Detail drawer
   const [drawerProposal, setDrawerProposal] = useState<ProposalRow | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
+
+  // Legacy quotes tab
+  const [legacyQuotes, setLegacyQuotes] = useState<QuoteListItem[]>([]);
+  const [legacyLoading, setLegacyLoading] = useState(false);
+  const [legacyError, setLegacyError] = useState<string | null>(null);
+  const [legacySearch, setLegacySearch] = useState("");
+  const [legacyTotal, setLegacyTotal] = useState<number | null>(null);
+  const [importQuote, setImportQuote] = useState<QuoteListItem | null>(null);
+  const [importCustomers, setImportCustomers] = useState<QuotingCustomer[]>([]);
+  const [importProperties, setImportProperties] = useState<QuotingProperty[]>([]);
+  const [importCustomerId, setImportCustomerId] = useState<number | "">("");
+  const [importPropertyId, setImportPropertyId] = useState<number | "">("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
   // Per-row action state
   const [sendingId, setSendingId] = useState<number | null>(null);
@@ -138,10 +177,111 @@ export function Proposals() {
     loadProposals();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function loadLegacyQuotes(search = legacySearch) {
+    setLegacyLoading(true);
+    setLegacyError(null);
+    listQuotes({
+      limit: 100,
+      ...(search.trim() ? { search: search.trim() } : {}),
+    })
+      .then((data) => {
+        setLegacyQuotes(Array.isArray(data.items) ? data.items : []);
+        setLegacyTotal(typeof data.total === "number" ? data.total : null);
+      })
+      .catch((e: unknown) => setLegacyError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLegacyLoading(false));
+  }
+
+  useEffect(() => {
+    if (workspaceTab === "legacy" && legacyQuotes.length === 0 && !legacyLoading) {
+      loadLegacyQuotes();
+    }
+  }, [workspaceTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleTabChange(tab: ProposalStatus | "all") {
     setStatusFilter(tab);
     setDrawerProposal(null);
     loadProposals(tab);
+  }
+
+  function handleWorkspaceTabChange(tab: ProposalWorkspaceTab) {
+    setWorkspaceTab(tab);
+    setDrawerProposal(null);
+    setCreateOpen(false);
+    if (tab === "legacy" && legacyQuotes.length === 0) loadLegacyQuotes();
+  }
+
+  function openCreateDrawer() {
+    setDrawerProposal(null);
+    setCreateOpen(true);
+  }
+
+  function closeCreateDrawer() {
+    setCreateOpen(false);
+  }
+
+  function handleProposalCreated() {
+    closeCreateDrawer();
+    setWorkspaceTab("proposals");
+    setStatusFilter("all");
+    loadProposals("all");
+  }
+
+  function openImportQuote(q: QuoteListItem) {
+    setImportQuote(q);
+    setImportError(null);
+    setImportCustomerId("");
+    setImportPropertyId("");
+    setImportProperties([]);
+    if (importCustomers.length === 0) {
+      setImportLoading(true);
+      listQuotingCustomers({ limit: 200 })
+        .then((rows) => setImportCustomers(rows))
+        .catch((e: unknown) => setImportError(e instanceof Error ? e.message : String(e)))
+        .finally(() => setImportLoading(false));
+    }
+  }
+
+  async function handleImportCustomerChange(id: number | "") {
+    setImportCustomerId(id);
+    setImportPropertyId("");
+    setImportProperties([]);
+    setImportError(null);
+    if (!id) return;
+    setImportLoading(true);
+    try {
+      const detail = await getQuotingCustomer(id);
+      setImportProperties(detail.properties ?? []);
+      if (detail.properties?.length === 1) setImportPropertyId(detail.properties[0].id);
+    } catch (e: unknown) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleCreateFromLegacyQuote() {
+    if (!importQuote || !importCustomerId) {
+      setImportError("Select a customer first.");
+      return;
+    }
+    setImportLoading(true);
+    setImportError(null);
+    try {
+      await createProposalFromQuote(importQuote.contract_id, {
+        customer_id: importCustomerId as number,
+        ...(importPropertyId ? { property_id: importPropertyId as number } : {}),
+        title: importQuote.ContractName ?? `Knowify quote ${importQuote.contract_id}`,
+      });
+      setImportQuote(null);
+      setWorkspaceTab("proposals");
+      setStatusFilter("all");
+      loadProposals("all");
+    } catch (e: unknown) {
+      setImportError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportLoading(false);
+    }
   }
 
   async function openDrawer(proposal: ProposalRow) {
@@ -253,6 +393,21 @@ export function Proposals() {
     };
   }
 
+  function workspaceTabStyle(tab: ProposalWorkspaceTab): React.CSSProperties {
+    const active = workspaceTab === tab;
+    return {
+      padding: "9px 18px",
+      border: `1px solid ${active ? BRAND.navy : BRAND.border}`,
+      borderRadius: 999,
+      background: active ? BRAND.navy : "#fff",
+      color: active ? "#fff" : BRAND.sub,
+      cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 700,
+      whiteSpace: "nowrap" as const,
+    };
+  }
+
   const countByStatus = (s: ProposalStatus | "all") => {
     if (s === "all") return proposals.length;
     return proposals.filter((p) => p.status === s).length;
@@ -307,7 +462,7 @@ export function Proposals() {
     const events = (p.events ?? []) as ProposalEvent[];
 
     const acceptUrl = p.accept_token
-      ? `${window.location.origin}/p/${p.accept_token}`
+      ? `${signPublicUrl()}/p/${p.accept_token}`
       : null;
 
     return (
@@ -490,6 +645,221 @@ export function Proposals() {
     );
   }
 
+  function renderCreateDrawer() {
+    if (!createOpen) return null;
+    return (
+      <div style={{
+        position: "fixed",
+        top: 0,
+        right: 0,
+        width: "min(760px, 96vw)",
+        height: "100vh",
+        background: "#fff",
+        borderLeft: `1px solid ${BRAND.border}`,
+        boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
+        overflowY: "auto",
+        zIndex: 200,
+        fontFamily: FONT,
+      }}>
+        <div style={{ padding: "18px 24px", borderBottom: `1px solid ${BRAND.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+          <div>
+            <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 16 }}>New Proposal</div>
+            <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>Create a contract without leaving the Proposals workspace.</div>
+          </div>
+          <button onClick={closeCreateDrawer} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: BRAND.sub, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: 20 }}>
+          <ProposalBuilder
+            embedded
+            onCreated={handleProposalCreated}
+            onCancel={closeCreateDrawer}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  function renderLegacyQuotes() {
+    return (
+      <div>
+        <Card style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15 }}>Legacy Quotes</div>
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+                Read-only imported contract/quote records from the legacy quote API.
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                value={legacySearch}
+                onChange={(e) => setLegacySearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") loadLegacyQuotes();
+                }}
+                placeholder="Search legacy quotes…"
+                style={{ ...inputStyle, width: 220, fontSize: 13 }}
+              />
+              <Button variant="ghost" onClick={() => loadLegacyQuotes()} disabled={legacyLoading} style={{ fontSize: 13 }}>
+                {legacyLoading ? "Loading…" : "Search"}
+              </Button>
+              <Button variant="ghost" onClick={() => loadLegacyQuotes("")} disabled={legacyLoading} style={{ fontSize: 13 }}>
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        {legacyError && <ErrorMsg>Legacy quotes error: {legacyError}</ErrorMsg>}
+        {legacyLoading && <Loading label="Loading legacy quotes…" />}
+
+        {!legacyLoading && !legacyError && legacyQuotes.length === 0 && (
+          <Card>
+            <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
+              No legacy quotes found.
+            </p>
+          </Card>
+        )}
+
+        {!legacyLoading && !legacyError && legacyQuotes.length > 0 && (
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "10px 16px", borderBottom: `1px solid ${BRAND.border}`, fontSize: 12, color: BRAND.sub }}>
+              Showing {legacyQuotes.length}{legacyTotal != null ? ` of ${legacyTotal}` : ""} legacy quotes.
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Contract</th>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Customer</th>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>State</th>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Current Sum</th>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Created</th>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Expires</th>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Signed</th>
+                  <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {legacyQuotes.map((q) => (
+                  <tr key={q.contract_id} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                    <td style={{ padding: "10px 16px", fontWeight: 600, color: BRAND.navyText, maxWidth: 260 }}>
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {q.ContractName ?? q.contract_id}
+                      </div>
+                      <div style={{ fontWeight: 400, fontSize: 12, color: BRAND.sub }}>{q.contract_id}</div>
+                    </td>
+                    <td style={{ padding: "10px 16px", color: BRAND.ink }}>
+                      {q.ContactName ?? q.ClientId ?? "—"}
+                    </td>
+                    <td style={{ padding: "10px 16px" }}>
+                      <span style={{ fontSize: 12, color: BRAND.sub, background: BRAND.bg, padding: "3px 8px", borderRadius: 999, fontWeight: 700 }}>
+                        {q.BusinessState ?? q.ContractType ?? "—"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px 16px", color: BRAND.navyText, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                      {usd(q.CurrentContractSum ?? q.OriginalContractSum ?? undefined)}
+                    </td>
+                    <td style={{ padding: "10px 16px", color: BRAND.sub, whiteSpace: "nowrap" }}>{fmtDate(q.DateCreated)}</td>
+                    <td style={{ padding: "10px 16px", color: BRAND.sub, whiteSpace: "nowrap" }}>{fmtDate(q.ExpirationDate)}</td>
+                    <td style={{ padding: "10px 16px", color: BRAND.sub }}>{q.IsSigned ? "Yes" : "No"}</td>
+                    <td style={{ padding: "10px 16px" }}>
+                      <Button
+                        variant="ghost"
+                        onClick={() => openImportQuote(q)}
+                        style={{ fontSize: 12, padding: "5px 10px", whiteSpace: "nowrap" }}
+                      >
+                        Import → Proposal
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  function renderImportDialog() {
+    if (!importQuote) return null;
+    return (
+      <div style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 350,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+      }}>
+        <Card style={{ width: "min(560px, 96vw)", maxHeight: "90vh", overflowY: "auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 16 }}>Import legacy quote</div>
+              <div style={{ color: BRAND.sub, fontSize: 12, marginTop: 3 }}>
+                {importQuote.ContractName ?? importQuote.contract_id}
+              </div>
+            </div>
+            <button
+              onClick={() => setImportQuote(null)}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: BRAND.sub, lineHeight: 1 }}
+              aria-label="Close import dialog"
+            >
+              ×
+            </button>
+          </div>
+
+          <p style={{ margin: "0 0 14px", color: BRAND.sub, fontSize: 13, lineHeight: 1.5 }}>
+            Choose the native customer/property to attach this Knowify quote to. If the property
+            is omitted, the backend will only import when it can safely match the Knowify project
+            address to exactly one property.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", marginBottom: 4 }}>Customer</label>
+              <select
+                value={importCustomerId}
+                onChange={(e) => void handleImportCustomerChange(e.target.value ? Number(e.target.value) : "")}
+                style={{ ...inputStyle, width: "100%" }}
+              >
+                <option value="">— Select customer —</option>
+                {importCustomers.map((c) => (
+                  <option key={c.id} value={c.id}>{c.display_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", marginBottom: 4 }}>Property</label>
+              <select
+                value={importPropertyId}
+                onChange={(e) => setImportPropertyId(e.target.value ? Number(e.target.value) : "")}
+                disabled={!importCustomerId || importProperties.length === 0}
+                style={{ ...inputStyle, width: "100%" }}
+              >
+                <option value="">— Let backend match, or select property —</option>
+                {importProperties.map((p) => (
+                  <option key={p.id} value={p.id}>{propertyLabel(p)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {importError && <div style={{ marginTop: 12 }}><ErrorMsg>{importError}</ErrorMsg></div>}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+            <Button variant="ghost" onClick={() => setImportQuote(null)} disabled={importLoading}>Cancel</Button>
+            <Button onClick={handleCreateFromLegacyQuote} disabled={importLoading || !importCustomerId}>
+              {importLoading ? "Importing…" : "Create proposal"}
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   // KPI computations
@@ -512,7 +882,7 @@ export function Proposals() {
     <main style={{ maxWidth: 960, fontFamily: FONT }}>
       <PageTitle
         right={
-          <Button onClick={() => navigate("proposal-gen")} style={{ fontSize: 13 }}>
+          <Button onClick={openCreateDrawer} style={{ fontSize: 13 }}>
             + New Proposal
           </Button>
         }
@@ -520,8 +890,19 @@ export function Proposals() {
         Proposals
       </PageTitle>
 
-      {/* KPI row */}
-      {allProposals.length > 0 && (
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+        <button style={workspaceTabStyle("proposals")} onClick={() => handleWorkspaceTabChange("proposals")}>
+          Proposals
+        </button>
+        <button style={workspaceTabStyle("legacy")} onClick={() => handleWorkspaceTabChange("legacy")}>
+          Legacy Quotes
+        </button>
+      </div>
+
+      {workspaceTab === "proposals" && (
+        <>
+          {/* KPI row */}
+          {allProposals.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
           <StatCard label="Draft" value={kpiDraft} />
           <StatCard label="Sent / Viewed" value={kpiSent} />
@@ -532,10 +913,10 @@ export function Proposals() {
             sub="Better-tier total"
           />
         </div>
-      )}
+          )}
 
-      {/* Status tabs */}
-      <div style={{ display: "flex", borderBottom: `1px solid ${BRAND.border}`, marginBottom: 20, overflowX: "auto" }}>
+          {/* Status tabs */}
+          <div style={{ display: "flex", borderBottom: `1px solid ${BRAND.border}`, marginBottom: 20, overflowX: "auto" }}>
         {STATUS_TABS.map(({ key, label }) => {
           const count = countByStatus(key);
           return (
@@ -552,15 +933,15 @@ export function Proposals() {
             </button>
           );
         })}
-      </div>
+          </div>
 
-      {actionError && <ErrorMsg>Action error: {actionError}</ErrorMsg>}
-      {pdfError && <ErrorMsg>PDF error: {pdfError}</ErrorMsg>}
+          {actionError && <ErrorMsg>Action error: {actionError}</ErrorMsg>}
+          {pdfError && <ErrorMsg>PDF error: {pdfError}</ErrorMsg>}
 
-      {loading && <Loading label="Loading proposals…" />}
-      {error && <ErrorMsg>Error: {error}</ErrorMsg>}
+          {loading && <Loading label="Loading proposals…" />}
+          {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
-      {!loading && !error && proposals.length === 0 && (
+          {!loading && !error && proposals.length === 0 && (
         <Card>
           <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
             {statusFilter !== "all"
@@ -568,9 +949,9 @@ export function Proposals() {
               : "No proposals yet. Build a quote in the Quoting tab and create a draft."}
           </p>
         </Card>
-      )}
+          )}
 
-      {!loading && !error && proposals.length > 0 && (
+          {!loading && !error && proposals.length > 0 && (
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
@@ -615,11 +996,18 @@ export function Proposals() {
           </table>
         </Card>
       )}
+        </>
+      )}
+
+      {workspaceTab === "legacy" && renderLegacyQuotes()}
 
       {/* Backdrop when drawer is open */}
-      {drawerProposal && (
+      {(drawerProposal || createOpen) && (
         <div
-          onClick={() => setDrawerProposal(null)}
+          onClick={() => {
+            setDrawerProposal(null);
+            setCreateOpen(false);
+          }}
           style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 199,
           }}
@@ -627,6 +1015,8 @@ export function Proposals() {
       )}
 
       {renderDrawer()}
+      {renderCreateDrawer()}
+      {renderImportDialog()}
     </main>
   );
 }
