@@ -1,5 +1,7 @@
 """REST endpoints for the Contract FAQ engine (F5 #321)."""
-from fastapi import APIRouter, Depends, HTTPException
+from io import BytesIO
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -18,6 +20,11 @@ class GenerateRequest(BaseModel):
     tc_version_id: int | None = None
 
 
+class AiPromptsRequest(BaseModel):
+    tc_text: str
+    include_existing_faqs: bool = True
+
+
 class UpdateRequest(BaseModel):
     question: str | None = None
     answer: str | None = None
@@ -33,6 +40,36 @@ def _entry_dict(e) -> dict:
         'status': e.status,
         'created_at': e.created_at.isoformat() if e.created_at else None,
     }
+
+
+def _extract_pdf_text(data: bytes) -> str:
+    """Extract text from a PDF upload using pypdf (no OCR).
+
+    Fail loud on encrypted/scanned/unreadable PDFs so the UI can tell the user to
+    paste text or upload a text-based PDF. This path handles the Knowify proposal
+    PDFs we have locally.
+    """
+    try:
+        from pypdf import PdfReader  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover - dependency installed in app/requirements
+        raise HTTPException(500, 'PDF extraction dependency pypdf is not installed') from exc
+
+    try:
+        reader = PdfReader(BytesIO(data))
+        if reader.is_encrypted:
+            raise HTTPException(422, 'PDF is encrypted; please upload an unlocked PDF or paste text')
+        pages = []
+        for page in reader.pages:
+            pages.append(page.extract_text() or '')
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(422, f'Could not extract PDF text: {type(exc).__name__}') from exc
+
+    text = '\n\n'.join(p.strip() for p in pages if p.strip()).strip()
+    if len(text) < TC_MIN_LEN:
+        raise HTTPException(422, 'PDF text extraction returned too little text; it may be scanned/image-only')
+    return text
 
 
 @router.post('/generate')
@@ -99,6 +136,44 @@ def generate_contract_faq(
         'skipped_duplicates': skipped_duplicates,
         'entries': entries,
     }
+
+
+@router.post('/extract-pdf')
+async def extract_contract_pdf(
+    file: UploadFile = File(...),
+    _: dict = Depends(require_role('manage_articles')),
+):
+    """Extract text from an uploaded contract/proposal PDF for FAQ generation."""
+    if file.content_type not in (None, '', 'application/pdf', 'application/octet-stream'):
+        raise HTTPException(422, 'Upload must be a PDF')
+    data = await file.read()
+    if not data:
+        raise HTTPException(422, 'Uploaded PDF is empty')
+    if len(data) > 15 * 1024 * 1024:
+        raise HTTPException(413, 'PDF is too large (max 15MB)')
+    text = _extract_pdf_text(data)
+    return {'filename': file.filename, 'chars': len(text), 'text': text}
+
+
+@router.post('/ai-prompts')
+def contract_ai_prompts(
+    body: AiPromptsRequest,
+    db: Session = Depends(get_db_session),
+    _: dict = Depends(require_role('kb_contract_faq_read')),
+):
+    """Return copy/paste AI prompts for contract explanation + FAQ cross-checking."""
+    from app.models import ContractFaqEntry  # noqa: PLC0415
+    from core.tc_ai_prompts import build_contract_review_prompt  # noqa: PLC0415
+
+    tc_text = body.tc_text or ''
+    if len(tc_text) < TC_MIN_LEN:
+        raise HTTPException(status_code=422, detail='tc_text too short (min 100 chars)')
+
+    faq_items = []
+    if body.include_existing_faqs:
+        rows = db.query(ContractFaqEntry).order_by(ContractFaqEntry.id).all()
+        faq_items = [{'question': r.question, 'answer': r.answer} for r in rows]
+    return build_contract_review_prompt(tc_text, faq_items)
 
 
 @router.get('')

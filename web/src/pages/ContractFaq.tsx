@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, apiFetchMultipart } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
 
 interface ContractFaqEntry {
@@ -18,6 +18,12 @@ interface GenerateResult {
   entries: Array<{ q: string; a: string; quote: string }>;
 }
 
+interface AiPromptsResult {
+  system_prompt: string;
+  user_prompt: string;
+  suggested_followups: string[];
+}
+
 const COUNT_OPTIONS = [5, 10, 15, 20] as const;
 type StatusFilter = "all" | "draft" | "approved";
 
@@ -27,6 +33,11 @@ export function ContractFaq() {
   const [generating, setGenerating] = useState(false);
   const [generateResult, setGenerateResult] = useState<GenerateResult | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractMsg, setExtractMsg] = useState<string | null>(null);
+  const [prompting, setPrompting] = useState(false);
+  const [aiPrompts, setAiPrompts] = useState<AiPromptsResult | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
 
   const [entries, setEntries] = useState<ContractFaqEntry[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -83,6 +94,50 @@ export function ContractFaq() {
       setGenerateError(e instanceof Error ? e.message : String(e));
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handlePdfUpload(file: File | null) {
+    if (!file) return;
+    setExtracting(true);
+    setExtractMsg(null);
+    setGenerateError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await apiFetchMultipart("/contract-faq/extract-pdf", { method: "POST", body: form });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error((err as { detail?: string }).detail ?? r.statusText);
+      }
+      const data: { filename: string; chars: number; text: string } = await r.json();
+      setTcText(data.text);
+      setExtractMsg(`Loaded ${data.chars.toLocaleString()} characters from ${data.filename}. Review/trim if needed, then generate FAQ.`);
+    } catch (e: unknown) {
+      setGenerateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function handleGeneratePrompts() {
+    setPrompting(true);
+    setPromptError(null);
+    setAiPrompts(null);
+    try {
+      const r = await apiFetch("/contract-faq/ai-prompts", {
+        method: "POST",
+        body: JSON.stringify({ tc_text: tcText, include_existing_faqs: true }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error((err as { detail?: string }).detail ?? r.statusText);
+      }
+      setAiPrompts(await r.json());
+    } catch (e: unknown) {
+      setPromptError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPrompting(false);
     }
   }
 
@@ -171,12 +226,40 @@ export function ContractFaq() {
       {/* Generate panel */}
       <Card style={{ marginBottom: 24 }}>
         <p style={{ margin: "0 0 12px", fontWeight: 600, color: BRAND.navyText, fontSize: 15 }}>
-          Generate FAQ from T&amp;C text
+          Generate FAQ from contract / T&amp;C
         </p>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.sub }}>
-          Paste your contract Terms &amp; Conditions below. The engine will extract homeowner-friendly
-          Q&amp;A pairs grounded in the exact contract language.
+          Upload a text-based proposal/contract PDF or paste Terms &amp; Conditions below. The engine
+          extracts homeowner-friendly Q&amp;A pairs grounded in exact contract language.
         </p>
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: extracting ? "wait" : "pointer" }}>
+            <span style={{
+              display: "inline-block",
+              padding: "8px 12px",
+              border: `1px solid ${BRAND.border ?? "#e3e7f0"}`,
+              borderRadius: 8,
+              color: BRAND.navyText,
+              fontSize: 13,
+              fontWeight: 700,
+              background: "#fff",
+            }}>
+              {extracting ? "Extracting PDF…" : "Upload contract PDF"}
+            </span>
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              disabled={extracting}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                void handlePdfUpload(f);
+                e.currentTarget.value = "";
+              }}
+              style={{ display: "none" }}
+            />
+          </label>
+          {extractMsg && <span style={{ fontSize: 12, color: "#1a7f4b" }}>{extractMsg}</span>}
+        </div>
         <textarea
           value={tcText}
           onChange={(e) => setTcText(e.target.value)}
@@ -218,6 +301,14 @@ export function ContractFaq() {
           >
             {generating ? "Generating…" : `Generate ${count} pairs`}
           </Button>
+          <Button
+            variant="ghost"
+            onClick={handleGeneratePrompts}
+            disabled={prompting || tcText.trim().length < 100}
+            style={{ fontSize: 13 }}
+          >
+            {prompting ? "Building prompts…" : "AI review prompts"}
+          </Button>
         </div>
         {generateError && (
           <div style={{ marginTop: 10 }}>
@@ -234,6 +325,29 @@ export function ContractFaq() {
               <> Rejected <strong>{generateResult.rejected_safety}</strong> (safety).</>
             )}
           </p>
+        )}
+        {promptError && (
+          <div style={{ marginTop: 10 }}>
+            <ErrorMsg>Prompt generation failed: {promptError}</ErrorMsg>
+          </div>
+        )}
+        {aiPrompts && (
+          <Card style={{ marginTop: 14, background: BRAND.bg }}>
+            <p style={{ margin: "0 0 8px", fontWeight: 700, color: BRAND.navyText, fontSize: 13 }}>
+              Copy/paste AI review prompts
+            </p>
+            <p style={{ margin: "0 0 10px", color: BRAND.sub, fontSize: 12 }}>
+              Use these in ChatGPT/Claude/Gemini to explain the contract and cross-check the FAQ both ways.
+            </p>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", marginBottom: 4 }}>System prompt</label>
+            <textarea readOnly value={aiPrompts.system_prompt} rows={3} style={{ ...inputStyle, width: "100%", fontSize: 12, fontFamily: "monospace", marginBottom: 10 }} />
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", marginBottom: 4 }}>User prompt</label>
+            <textarea readOnly value={aiPrompts.user_prompt} rows={8} style={{ ...inputStyle, width: "100%", fontSize: 12, fontFamily: "monospace", marginBottom: 10 }} />
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", marginBottom: 4 }}>Suggested follow-ups</label>
+            <ul style={{ margin: 0, paddingLeft: 18, color: BRAND.ink, fontSize: 13 }}>
+              {aiPrompts.suggested_followups.map((p) => <li key={p}>{p}</li>)}
+            </ul>
+          </Card>
         )}
       </Card>
 

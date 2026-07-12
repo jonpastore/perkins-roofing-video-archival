@@ -168,7 +168,9 @@ function TriToggle({
 }
 
 function DetailPanel({ video }: { video: ArchiveVideo }) {
+  const { navigate } = useContext(NavContext);
   const [state, setState] = useState<DetailState>({ kind: "loading" });
+  const [showTopicsModal, setShowTopicsModal] = useState(false);
 
   useEffect(() => {
     apiFetch(`/archive/${video.id}/detail`)
@@ -194,34 +196,65 @@ function DetailPanel({ video }: { video: ArchiveVideo }) {
   if (state.kind !== "ok") return null;
 
   const { topics, articles, social_posts } = state.data;
+  const inlineTopics = topics.slice(0, 8);
+
+  function searchTopic(label: string) {
+    setShowTopicsModal(false);
+    navigate("search-ask", { mode: "search", topic: label });
+  }
 
   return (
     <div style={panelStyle}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        {[
+          ["Topics", topics.length],
+          ["Articles", articles.length],
+          ["Social posts", social_posts.length],
+        ].map(([label, value]) => (
+          <div key={label} style={{ padding: "7px 10px", border: `1px solid ${BRAND.border}`, borderRadius: 8, background: "#fff" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: BRAND.navyText, lineHeight: 1 }}>{Number(value).toLocaleString()}</div>
+            <div style={{ marginTop: 2, fontSize: 10, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+          </div>
+        ))}
+      </div>
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
 
         {/* Topics */}
         <div style={{ minWidth: 220, flex: "1 1 220px" }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
-            Topics
+            Topics ({topics.length.toLocaleString()})
           </div>
           {topics.length === 0 ? (
             <span style={{ fontSize: 13, color: BRAND.sub }}>No topics mined.</span>
           ) : (
-            <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
-              {topics.map((t) => (
-                <li key={t.url} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13 }}>
-                  <a
-                    href={t.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: BRAND.red, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}
-                  >
-                    ▶ {hms(t.t)}
-                  </a>
-                  <span style={{ color: BRAND.ink }}>{t.label}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
+                {inlineTopics.map((t) => (
+                  <li key={t.url} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13 }}>
+                    <a
+                      href={t.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: BRAND.red, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}
+                    >
+                      ▶ {hms(t.t)}
+                    </a>
+                    <button
+                      onClick={() => searchTopic(t.label)}
+                      style={{ border: "none", background: "none", padding: 0, color: BRAND.ink, cursor: "pointer", textAlign: "left", textDecoration: "underline", textUnderlineOffset: 2 }}
+                      title="Find all videos for this topic"
+                    >
+                      {t.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {topics.length > inlineTopics.length && (
+                <Button variant="ghost" onClick={() => setShowTopicsModal(true)} style={{ marginTop: 10, fontSize: 12, padding: "5px 10px" }}>
+                  View all {topics.length.toLocaleString()} topics
+                </Button>
+              )}
+            </>
           )}
         </div>
 
@@ -305,6 +338,71 @@ function DetailPanel({ video }: { video: ArchiveVideo }) {
         </div>
 
       </div>
+
+      {showTopicsModal && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1200,
+          background: "rgba(16,24,40,0.24)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}>
+          <div style={{
+            width: "min(820px, 96vw)",
+            maxHeight: "86vh",
+            overflow: "auto",
+            background: "#fff",
+            border: `1px solid ${BRAND.border}`,
+            borderRadius: 12,
+            boxShadow: "0 16px 48px rgba(16,24,40,0.18)",
+            fontFamily: "inherit",
+          }}>
+            <div style={{ padding: "18px 22px", borderBottom: `1px solid ${BRAND.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: BRAND.navyText }}>
+                  All Topics — {video.title}
+                </div>
+                <div style={{ marginTop: 3, color: BRAND.sub, fontSize: 12 }}>
+                  {topics.length.toLocaleString()} mined topic{topics.length === 1 ? "" : "s"}. Click a topic to search all videos for it.
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTopicsModal(false)}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: BRAND.sub, lineHeight: 1 }}
+                aria-label="Close topics modal"
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: 22 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
+                {topics.map((t) => (
+                  <div key={t.url} style={{ border: `1px solid ${BRAND.border}`, borderRadius: 8, padding: 10, background: BRAND.bg }}>
+                    <a
+                      href={t.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: "inline-block", color: BRAND.red, fontWeight: 700, textDecoration: "none", fontSize: 12, marginBottom: 6 }}
+                    >
+                      ▶ {hms(t.t)}
+                    </a>
+                    <button
+                      onClick={() => searchTopic(t.label)}
+                      style={{ display: "block", border: "none", background: "none", padding: 0, color: BRAND.navyText, cursor: "pointer", textAlign: "left", fontWeight: 600, fontSize: 13, lineHeight: 1.35 }}
+                      title="Find all videos for this topic"
+                    >
+                      {t.label}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

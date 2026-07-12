@@ -167,6 +167,44 @@ def test_generate_requires_auth():
     assert _admin_client().post("/contract-faq/generate", json={"tc_text": TC_TEXT}).status_code == 401
 
 
+# POST /contract-faq/extract-pdf
+
+def test_extract_pdf_upload(monkeypatch):
+    import api.routes.contract_faq as mod
+    monkeypatch.setattr(mod, "_extract_pdf_text", lambda data: TC_TEXT)
+    r = _admin_client().post(
+        "/contract-faq/extract-pdf",
+        files={"file": ("contract.pdf", b"%PDF fake", "application/pdf")},
+        headers=AUTH,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["text"] == TC_TEXT
+
+
+def test_extract_pdf_requires_manage_articles():
+    r = _sales_client().post(
+        "/contract-faq/extract-pdf",
+        files={"file": ("contract.pdf", b"%PDF fake", "application/pdf")},
+        headers=AUTH,
+    )
+    assert r.status_code == 403
+
+
+# POST /contract-faq/ai-prompts
+
+def test_ai_prompts_include_existing_faq():
+    _seed_entries(1)
+    r = _admin_client().post("/contract-faq/ai-prompts", json={"tc_text": TC_TEXT}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "system_prompt" in data and "user_prompt" in data
+    assert "Question 1?" in data["user_prompt"]
+
+
+def test_ai_prompts_requires_read_role():
+    assert _sales_client().post("/contract-faq/ai-prompts", json={"tc_text": TC_TEXT}, headers=AUTH).status_code == 403
+
+
 # GET /contract-faq
 
 def _seed_entries(n=2):

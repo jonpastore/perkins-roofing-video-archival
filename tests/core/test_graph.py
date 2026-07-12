@@ -1,4 +1,4 @@
-from core.graph import build_extract_prompt, parse_nodes, secs
+from core.graph import TRANSCRIPT_PROMPT_CHAR_LIMIT, build_extract_prompt, parse_nodes, secs
 
 
 def test_secs_parses_mmss():
@@ -20,11 +20,18 @@ def test_build_extract_prompt_formats_timecodes_and_truncates():
     assert "TRANSCRIPT:" in p
 
 
-def test_build_extract_prompt_caps_transcript_at_9000_chars():
-    segs = [{"text": "x" * 20000, "start": 0}]
+def test_build_extract_prompt_caps_transcript_at_large_longform_budget():
+    segs = [{"text": "x" * (TRANSCRIPT_PROMPT_CHAR_LIMIT + 5000), "start": 0}]
     p = build_extract_prompt(segs)
-    # the transcript body is capped; total prompt = header + <=9000 body chars
-    assert "x" * 9001 not in p
+    # the transcript body is capped, but the budget is no longer the old 9k POC cap.
+    assert "x" * 9001 in p
+    assert "x" * (TRANSCRIPT_PROMPT_CHAR_LIMIT + 1) not in p
+
+
+def test_build_extract_prompt_does_not_cap_topics_at_8():
+    p = build_extract_prompt([{"text": "roof topic", "start": 0}])
+    assert "max 8" not in p.lower()
+    assert "25-60" in p
 
 
 def test_parse_nodes_all_kinds():

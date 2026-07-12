@@ -441,7 +441,7 @@ function TopicRow({
 }
 
 export function SearchAsk() {
-  const { navigate } = useContext(NavContext);
+  const { navigate, params } = useContext(NavContext);
 
   const [mode, setMode] = useState<"ask" | "search">("ask");
   const [query, setQuery] = useState("");
@@ -531,25 +531,35 @@ export function SearchAsk() {
     setCheckedUrls(new Set());
   }
 
-  async function run(q: string) {
+  async function run(q: string, runMode: "ask" | "search" = mode) {
     const question = q.trim();
     if (!question) return;
     setSuggestions([]);
     setLoading(true); setError(null); setAns(null); setRows(null); setCheckedUrls(new Set());
     try {
-      const r = await apiFetch(mode === "ask" ? "/ask" : "/search", {
+      const r = await apiFetch(runMode === "ask" ? "/ask" : "/search", {
         method: "POST",
         body: JSON.stringify({ query: question, k: 8 }),
       });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const data = await r.json();
-      if (mode === "ask") setAns(data); else setRows(data);
+      if (runMode === "ask") setAns(data); else setRows(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const topic = params.topic?.trim();
+    if (!topic) return;
+    setMode("search");
+    setQuery(topic);
+    setTopicOffset(0);
+    run(topic, "search");
+    // params is intentionally the trigger: Archive passes a topic when navigating here.
+  }, [params.topic]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleGenerateArticle(label: string) {
     setTopicStates((s) => ({ ...s, [label]: "generating" }));

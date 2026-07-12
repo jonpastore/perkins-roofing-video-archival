@@ -1,5 +1,6 @@
 fastapi>=0.139
 python-multipart>=0.0.32
+pypdf>=4
 uvicorn[standard]>=0.50
 pydantic[email]>=2.13
 SQLAlchemy>=2.0.51

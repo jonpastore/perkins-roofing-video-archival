@@ -3,6 +3,7 @@ from core.tc_ai_prompts import (
     ATTORNEY_DISCLAIMER,
     COVER_LETTER,
     RECOMMENDED_PROMPTS,
+    build_contract_review_prompt,
     get_tc_ai_prompts_block,
 )
 
@@ -38,6 +39,22 @@ def test_recommended_prompts_is_list():
 
 def test_recommended_prompts_has_at_least_6():
     assert len(RECOMMENDED_PROMPTS) >= 6
+
+
+def test_get_block_includes_contract_review_prompts():
+    block = get_tc_ai_prompts_block()
+    assert "contract_review_system_prompt" in block
+    assert "contract_review_user_prompts" in block
+
+
+def test_build_contract_review_prompt_includes_tc_and_faqs():
+    result = build_contract_review_prompt(
+        "Payment is due at dry-in.",
+        [{"question": "When do I pay?", "answer": "At dry-in."}],
+    )
+    assert "Payment is due at dry-in." in result["user_prompt"]
+    assert "When do I pay?" in result["user_prompt"]
+    assert "not a lawyer" in result["system_prompt"].lower()
 
 
 def test_each_recommended_prompt_is_nonempty():
