@@ -195,6 +195,20 @@ def test_401_without_token():
 # Publish endpoint
 # ---------------------------------------------------------------------------
 
+def test_article_update_returns_publish_at_with_explicit_utc_marker():
+    c = _admin_client()
+    c.post("/articles", json={"title": "Scheduled Article TZ"}, headers=AUTH)
+
+    r = c.put(
+        "/articles/scheduled-article-tz",
+        json={"status": "scheduled", "publish_at": "2026-07-15T13:00:00.000Z"},
+        headers=AUTH,
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["publish_at"] == "2026-07-15T13:00:00Z"
+
+
 def test_publish_sets_status_and_publish_at():
     c = _admin_client()
     c.post("/articles", json={"title": "Publish Me"}, headers=AUTH)
@@ -389,7 +403,6 @@ def test_get_article_wp_url_null_when_no_post_id():
 
 def test_get_article_wp_url_set_when_post_id_and_wp_url(monkeypatch):
     """GET /articles/{slug} returns full WP post URL when wp_post_id is set and WP_URL configured."""
-    import os
     monkeypatch.setenv("WP_URL", "https://perkinsroofing.net")
     # Reload settings so WP_URL is picked up
     import app.config as cfg

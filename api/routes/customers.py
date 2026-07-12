@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
-from app.models import Contact, Customer, Property
+from app.models import Contact, Customer, Measurement, Property
 
 router = APIRouter(prefix="/quoting", tags=["quoting_customers"])
 
@@ -86,8 +86,13 @@ class PropertyUpdate(BaseModel):
 # Serializers
 # ---------------------------------------------------------------------------
 
-def _customer_row(row: Customer) -> dict:
-    return {
+def _customer_row(
+    row: Customer,
+    *,
+    property_count: int | None = None,
+    measurement_count: int | None = None,
+) -> dict:
+    data = {
         "id": row.id,
         "tenant_id": row.tenant_id,
         "display_name": row.display_name,
@@ -100,6 +105,13 @@ def _customer_row(row: Customer) -> dict:
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
+    if property_count is not None:
+        data["property_count"] = property_count
+        data["has_properties"] = property_count > 0
+    if measurement_count is not None:
+        data["measurement_count"] = measurement_count
+        data["has_measurements"] = measurement_count > 0
+    return data
 
 
 def _contact_row(row: Contact) -> dict:
@@ -116,8 +128,13 @@ def _contact_row(row: Contact) -> dict:
     }
 
 
-def _property_row(row: Property) -> dict:
-    return {
+def _property_row(
+    row: Property,
+    *,
+    measurement_count: int | None = None,
+    latest_measurement_total_sq: float | None = None,
+) -> dict:
+    data = {
         "id": row.id,
         "tenant_id": row.tenant_id,
         "customer_id": row.customer_id,
@@ -132,6 +149,54 @@ def _property_row(row: Property) -> dict:
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
+    if measurement_count is not None:
+        data["measurement_count"] = measurement_count
+        data["has_measurements"] = measurement_count > 0
+        data["latest_measurement_total_sq"] = latest_measurement_total_sq
+    return data
+
+
+def _property_measurement_summary(
+    db: Session, tenant_id: int, property_ids: list[int]
+) -> dict[int, dict]:
+    """Per-property measurement rollup: count + latest total_sq.
+
+    Measurements link to properties via Measurement.property_id. Returns a map of
+    property_id -> {"measurement_count", "latest_measurement_total_sq"} for the
+    supplied ids (only ids with >=1 measurement appear). "latest" is by id desc
+    (measurement ids are monotonic per the autoincrement PK)."""
+    if not property_ids:
+        return {}
+    rows = db.execute(
+        select(
+            Measurement.property_id,
+            func.count(Measurement.id),
+            func.max(Measurement.id),
+        )
+        .where(
+            Measurement.tenant_id == tenant_id,
+            Measurement.property_id.in_(property_ids),
+        )
+        .group_by(Measurement.property_id)
+    ).all()
+    summary: dict[int, dict] = {}
+    latest_ids: dict[int, int] = {}
+    for prop_id, count, max_id in rows:
+        summary[prop_id] = {"measurement_count": int(count)}
+        if max_id is not None:
+            latest_ids[prop_id] = max_id
+    if latest_ids:
+        totals = dict(
+            db.execute(
+                select(Measurement.id, Measurement.total_sq).where(
+                    Measurement.tenant_id == tenant_id,
+                    Measurement.id.in_(list(latest_ids.values()))
+                )
+            ).all()
+        )
+        for prop_id, mid in latest_ids.items():
+            summary[prop_id]["latest_measurement_total_sq"] = totals.get(mid)
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -172,23 +237,65 @@ def list_customers(
     sort_col = _CUSTOMER_SORT_COLS.get(sort, Customer.display_name)
     sort_expr = sort_col.desc() if order == "desc" else sort_col.asc()
 
-    base = select(Customer).where(Customer.tenant_id == tenant_id)
+    filters = [Customer.tenant_id == tenant_id]
 
     if is_active is not None:
-        base = base.where(Customer.is_active == is_active)
+        filters.append(Customer.is_active == is_active)
 
     if search:
         term = search.lower()
-        base = base.where(
+        filters.append(
             func.lower(Customer.display_name).contains(term)
             | func.lower(Customer.company_name).contains(term)
             | func.lower(Customer.email).contains(term)
             | func.lower(Customer.phone).contains(term)
         )
 
-    total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
-    rows = db.execute(base.order_by(sort_expr).offset(offset).limit(limit)).scalars().all()
-    return {"items": [_customer_row(r) for r in rows], "total": total}
+    property_counts = (
+        select(
+            Property.customer_id.label("customer_id"),
+            func.count(Property.id).label("property_count"),
+        )
+        .where(Property.tenant_id == tenant_id)
+        .group_by(Property.customer_id)
+        .subquery()
+    )
+    measurement_counts = (
+        select(
+            Property.customer_id.label("customer_id"),
+            func.count(Measurement.id).label("measurement_count"),
+        )
+        .join(Measurement, Measurement.property_id == Property.id)
+        .where(Property.tenant_id == tenant_id, Measurement.tenant_id == tenant_id)
+        .group_by(Property.customer_id)
+        .subquery()
+    )
+
+    total = db.execute(select(func.count()).select_from(Customer).where(*filters)).scalar_one()
+    rows = db.execute(
+        select(
+            Customer,
+            func.coalesce(property_counts.c.property_count, 0),
+            func.coalesce(measurement_counts.c.measurement_count, 0),
+        )
+        .outerjoin(property_counts, property_counts.c.customer_id == Customer.id)
+        .outerjoin(measurement_counts, measurement_counts.c.customer_id == Customer.id)
+        .where(*filters)
+        .order_by(sort_expr)
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return {
+        "items": [
+            _customer_row(
+                customer,
+                property_count=int(property_count),
+                measurement_count=int(measurement_count),
+            )
+            for customer, property_count, measurement_count in rows
+        ],
+        "total": total,
+    }
 
 
 @router.post("/customers")
@@ -236,10 +343,31 @@ def get_customer(
     properties = db.execute(
         select(Property).where(Property.customer_id == customer_id)
     ).scalars().all()
+    measurement_summary = _property_measurement_summary(
+        db, tenant_id, [p.id for p in properties]
+    )
+    total_measurements = sum(
+        int(s.get("measurement_count", 0)) for s in measurement_summary.values()
+    )
 
-    result = _customer_row(row)
+    result = _customer_row(
+        row,
+        property_count=len(properties),
+        measurement_count=total_measurements,
+    )
     result["contacts"] = [_contact_row(c) for c in contacts]
-    result["properties"] = [_property_row(p) for p in properties]
+    result["properties"] = [
+        _property_row(
+            p,
+            measurement_count=int(
+                measurement_summary.get(p.id, {}).get("measurement_count", 0)
+            ),
+            latest_measurement_total_sq=measurement_summary.get(p.id, {}).get(
+                "latest_measurement_total_sq"
+            ),
+        )
+        for p in properties
+    ]
     return result
 
 

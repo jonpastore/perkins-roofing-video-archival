@@ -92,20 +92,18 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["comments", "Comments"],
           ["email", "Email"],
           ["video-approval", "Video Approval"],
-          ["status-view", "Status"],
         ],
       },
       {
         label: "Sales",
         tabs: [
-          ["squares", "Squares"],
+          ["customers", "Customers"],
           ["estimator", "Estimates"],
           ["quoting", "Estimator"],
           ["quotes", "Quotes"],
           ["proposals", "Proposals"],
-          ["customers", "Customers"],
-          ["payments", "Payments"],
           ["invoices", "Invoices"],
+          ["payments", "Payments"],
         ],
       },
     ],
@@ -143,20 +141,18 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["clip-studio", "Clip Studio"],
           ["comments", "Comments"],
           ["video-approval", "Video Approval"],
-          ["status-view", "Status"],
         ],
       },
       {
         label: "Sales",
         tabs: [
-          ["squares", "Squares"],
+          ["customers", "Customers"],
           ["estimator", "Estimates"],
           ["quoting", "Estimator"],
           ["quotes", "Quotes"],
           ["proposals", "Proposals"],
-          ["customers", "Customers"],
-          ["payments", "Payments"],
           ["invoices", "Invoices"],
+          ["payments", "Payments"],
         ],
       },
     ],
@@ -180,14 +176,13 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
           ["search-ask", "Search / Ask"],
           ["email", "Email"],
           ["archive", "Video Archive"],
-          ["squares", "Squares"],
+          ["customers", "Customers"],
           ["estimator", "Estimates"],
           ["quoting", "Estimator"],
           ["quotes", "Quotes"],
           ["proposals", "Proposals"],
-          ["customers", "Customers"],
-          ["payments", "Payments"],
           ["invoices", "Invoices"],
+          ["payments", "Payments"],
           ["legacy-data", "Legacy Data"],
         ],
       },
@@ -311,6 +306,7 @@ interface OpportunityCounts {
   unused_videos: number;
   pending_video_approvals?: number;
   scheduled_articles?: number;
+  scheduled_content?: number;
   comment_drafts?: number;
 }
 
@@ -337,11 +333,13 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
     : undefined;
   const approvalBadge = oppCounts?.pending_video_approvals;
   const scheduledArticlesBadge = oppCounts?.scheduled_articles;
+  const scheduledContentBadge = oppCounts?.scheduled_content;
   const commentBadge = oppCounts?.comment_drafts;
 
   function badgeFor(id: string): number | undefined {
     if (id === "opportunities") return oppBadge;
     if (id === "articles") return scheduledArticlesBadge;
+    if (id === "scheduling") return scheduledContentBadge;
     if (id === "video-approval") return approvalBadge;
     if (id === "comments") return commentBadge;
     return undefined;

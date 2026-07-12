@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   listInvoicesPaged,
   listInvoicePayments,
@@ -8,6 +8,7 @@ import {
   listQuotingCustomers,
 } from "../api";
 import type { Invoice, IssueInvoiceRequest, Payment, QuotingCustomer } from "../api";
+import { NavContext } from "../App";
 import { DataTable } from "../ui/DataTable";
 import type { QueryState } from "../ui/DataTable";
 import {
@@ -83,6 +84,30 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     }}>
       {children}
     </label>
+  );
+}
+
+function CustomerLink({ customerId, label }: { customerId: number; label: string }) {
+  const { navigate } = useContext(NavContext);
+  return (
+    <button
+      onClick={() => navigate("customers", { customerId: String(customerId) })}
+      style={{
+        background: "none",
+        border: "none",
+        padding: 0,
+        color: BRAND.navyText,
+        cursor: "pointer",
+        font: "inherit",
+        fontWeight: 600,
+        textAlign: "left",
+        textDecoration: "underline",
+        textUnderlineOffset: 2,
+      }}
+      title="Open customer"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -428,7 +453,12 @@ function InvoiceDrawer({ invoice, onClose, onPaymentSuccess }: DrawerProps) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Customer</div>
-            <div style={{ fontSize: 14, color: BRAND.navyText }}>{invoice.customer_display_name ?? `#${invoice.customer_id}`}</div>
+            <div style={{ fontSize: 14, color: BRAND.navyText }}>
+              <CustomerLink
+                customerId={invoice.customer_id}
+                label={invoice.customer_display_name ?? `#${invoice.customer_id}`}
+              />
+            </div>
           </div>
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Job</div>
@@ -634,7 +664,12 @@ export function Invoices() {
       key: "customer_display_name",
       header: "Customer",
       sortable: false,
-      render: (inv) => inv.customer_display_name ?? `#${inv.customer_id}`,
+      render: (inv) => (
+        <CustomerLink
+          customerId={inv.customer_id}
+          label={inv.customer_display_name ?? `#${inv.customer_id}`}
+        />
+      ),
     },
     {
       key: "status",

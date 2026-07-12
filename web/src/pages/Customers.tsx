@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useContext, useEffect, useState, useCallback, useRef } from "react";
 import {
   listQuotingCustomersPaged,
   getQuotingCustomer,
@@ -16,8 +16,9 @@ import type {
   ContactInput,
   PropertyInput,
 } from "../api";
+import { NavContext } from "../App";
 import { DataTable } from "../ui/DataTable";
-import type { QueryState } from "../ui/DataTable";
+import type { QueryState, ColDef } from "../ui/DataTable";
 import {
   BRAND,
   FONT,
@@ -30,6 +31,16 @@ import {
   inputStyle,
   SectionLabel,
 } from "../ui";
+
+type CustomerListRow = QuotingCustomer & {
+  property_count?: number;
+  measurement_count?: number;
+};
+
+type PropertyDetailRow = QuotingProperty & {
+  measurement_count?: number;
+  latest_measurement_total_sq?: number | null;
+};
 
 // ── New Customer form ─────────────────────────────────────────────────────────
 
@@ -426,29 +437,42 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
             <>
               <SectionLabel>Properties ({detail.properties.length})</SectionLabel>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {detail.properties.map((prop) => (
-                  <div
-                    key={prop.id}
-                    style={{
-                      padding: "10px 14px",
-                      background: BRAND.bg,
-                      borderRadius: 8,
-                      fontSize: 13,
-                      border: `1px solid ${BRAND.border}`,
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, color: BRAND.navyText }}>{prop.street}</div>
-                    <div style={{ color: BRAND.sub, marginTop: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span>{[prop.city, prop.state, prop.zip].filter(Boolean).join(", ")}</span>
-                      {prop.county && <span>· {prop.county} County</span>}
-                      {prop.code_zone && (
-                        <Badge tone={prop.code_zone.toUpperCase().includes("HVHZ") ? "amber" : "blue"}>
-                          {prop.code_zone}
-                        </Badge>
-                      )}
+                {detail.properties.map((prop) => {
+                  const propWithMeasurements = prop as PropertyDetailRow;
+                  return (
+                    <div
+                      key={prop.id}
+                      style={{
+                        padding: "10px 14px",
+                        background: BRAND.bg,
+                        borderRadius: 8,
+                        fontSize: 13,
+                        border: `1px solid ${BRAND.border}`,
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, color: BRAND.navyText }}>{prop.street}</div>
+                      <div style={{ color: BRAND.sub, marginTop: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span>{[prop.city, prop.state, prop.zip].filter(Boolean).join(", ")}</span>
+                        {prop.county && <span>· {prop.county} County</span>}
+                        {prop.code_zone && (
+                          <Badge tone={prop.code_zone.toUpperCase().includes("HVHZ") ? "amber" : "blue"}>
+                            {prop.code_zone}
+                          </Badge>
+                        )}
+                        {propWithMeasurements.measurement_count != null && (
+                          <Badge tone={propWithMeasurements.measurement_count > 0 ? "green" : "gray"}>
+                            {propWithMeasurements.measurement_count > 0
+                              ? `${propWithMeasurements.measurement_count} measurement${propWithMeasurements.measurement_count === 1 ? "" : "s"}`
+                              : "No measurements"}
+                          </Badge>
+                        )}
+                        {propWithMeasurements.latest_measurement_total_sq != null && (
+                          <span>· latest {propWithMeasurements.latest_measurement_total_sq.toFixed(1)} sq</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
@@ -467,6 +491,7 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function Customers() {
+  const { params } = useContext(NavContext);
   const [rows, setRows] = useState<QuotingCustomer[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -507,6 +532,13 @@ export function Customers() {
 
   useEffect(() => { doFetch(query, activeFilter); }, [doFetch, query, activeFilter]);
 
+  useEffect(() => {
+    const raw = params.customerId;
+    if (!raw) return;
+    const id = Number(raw);
+    if (Number.isFinite(id) && id > 0) setSelectedId(id);
+  }, [params.customerId]);
+
   function handleQueryChange(q: QueryState) {
     setQuery(q);
   }
@@ -522,12 +554,12 @@ export function Customers() {
   }
 
   // Columns — display_name uses a clickable button for row selection
-  const columns = [
+  const columns: ColDef<CustomerListRow>[] = [
     {
       key: "display_name" as const,
       header: "Name",
       sortable: true,
-      render: (r: QuotingCustomer) => (
+      render: (r: CustomerListRow) => (
         <button
           onClick={() => setSelectedId((prev) => (prev === r.id ? null : r.id))}
           style={{
@@ -551,25 +583,46 @@ export function Customers() {
       key: "company_name" as const,
       header: "Company",
       sortable: true,
-      render: (r: QuotingCustomer) => r.company_name ?? "—",
+      render: (r: CustomerListRow) => r.company_name ?? "—",
     },
     {
       key: "email" as const,
       header: "Email",
       sortable: true,
-      render: (r: QuotingCustomer) => r.email ?? "—",
+      render: (r: CustomerListRow) => r.email ?? "—",
     },
     {
       key: "phone" as const,
       header: "Phone",
       sortable: false,
-      render: (r: QuotingCustomer) => r.phone ?? "—",
+      render: (r: CustomerListRow) => r.phone ?? "—",
+    },
+    {
+      key: "property_count" as const,
+      header: "Property / Measure",
+      sortable: false,
+      render: (row: CustomerListRow) => {
+        // Flags only render when the API supplies the counts (older payloads omit them).
+        if (row.property_count == null && row.measurement_count == null) return "—";
+        const propCount = row.property_count ?? 0;
+        const measCount = row.measurement_count ?? 0;
+        return (
+          <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap" }}>
+            <Badge tone={propCount > 0 ? "blue" : "gray"}>
+              {propCount > 0 ? `${propCount} prop${propCount === 1 ? "" : "s"}` : "No property"}
+            </Badge>
+            <Badge tone={measCount > 0 ? "green" : "gray"}>
+              {measCount > 0 ? `${measCount} measure${measCount === 1 ? "" : "s"}` : "No measure"}
+            </Badge>
+          </span>
+        );
+      },
     },
     {
       key: "is_active" as const,
       header: "Status",
       sortable: false,
-      render: (r: QuotingCustomer) => (
+      render: (r: CustomerListRow) => (
         <Badge tone={r.is_active ? "green" : "gray"}>{r.is_active ? "Active" : "Inactive"}</Badge>
       ),
     },
@@ -631,7 +684,7 @@ export function Customers() {
 
       {err && <ErrorMsg>{err}</ErrorMsg>}
 
-      <DataTable<QuotingCustomer>
+      <DataTable<CustomerListRow>
         columns={columns}
         rows={rows}
         rowKey={(r) => r.id}

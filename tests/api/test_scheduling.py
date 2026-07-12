@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
 from api.routes.scheduling import router
-from app.models import Base, engine, init_db
+from app.models import init_db
 
 
 def _make_client(role: str) -> TestClient:
@@ -44,6 +44,55 @@ def test_admin_create_returns_201():
     assert data["status"] == "scheduled"
     assert data["target"] == "instagram"
     assert "id" in data
+
+
+def test_create_returns_publish_at_with_explicit_utc_marker():
+    client = _make_client("admin")
+    r = client.post(
+        "/scheduling",
+        json={
+            "kind": "reel",
+            "ref_id": "vid-utc-marker",
+            "publish_at": "2026-07-15T13:00:00.000Z",
+            "target": "instagram",
+        },
+        headers=ADMIN_HDR,
+    )
+    assert r.status_code == 201
+    assert r.json()["publish_at"] == "2026-07-15T13:00:00Z"
+
+
+def test_create_normalizes_offset_publish_at_to_utc():
+    client = _make_client("admin")
+    r = client.post(
+        "/scheduling",
+        json={
+            "kind": "article",
+            "ref_id": "roofing-article",
+            "publish_at": "2026-07-15T09:00:00-04:00",
+            "target": "wordpress",
+        },
+        headers=ADMIN_HDR,
+    )
+    assert r.status_code == 201
+    assert r.json()["publish_at"] == "2026-07-15T13:00:00Z"
+
+
+def test_create_treats_naive_publish_at_as_new_york_wall_time():
+    client = _make_client("admin")
+    r = client.post(
+        "/scheduling",
+        json={
+            "kind": "article",
+            "ref_id": "ny-wall-clock-article",
+            "publish_at": "2026-07-15T09:00:00",
+            "target": "wordpress",
+        },
+        headers=ADMIN_HDR,
+    )
+    assert r.status_code == 201
+    # July in America/New_York is UTC-04:00, so 9 AM local is 13:00 UTC.
+    assert r.json()["publish_at"] == "2026-07-15T13:00:00Z"
 
 
 def test_admin_list_returns_items():

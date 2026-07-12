@@ -554,6 +554,23 @@ class TestPaymentList:
         assert item["invoice_number"] == 9000
         assert f"JoinCo-{tag}" in item["customer_display_name"]
 
+    def test_list_includes_customer_id(self):
+        # customer_id lets the Payments UI deep-link a payment back to its customer.
+        db = SessionLocal()
+        db.info["tenant_id"] = 1
+        cust = _customer(db, display_name=f"LinkCo-{uuid.uuid4().hex[:6]}")
+        inv = _invoice(db, customer_id=cust.id)
+        _payment(db, invoice_id=inv.id, amount="50.00")
+        inv_id = inv.id
+        cid = cust.id
+        db.commit()
+        db.close()
+
+        c = _admin_client()
+        r = c.get(f"/payments?invoice_id={inv_id}", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["items"][0]["customer_id"] == cid
+
     def test_filter_by_invoice_id(self):
         db = SessionLocal()
         db.info["tenant_id"] = 1
@@ -663,6 +680,22 @@ class TestPaymentDetail:
         data = r.json()
         assert data["invoice_number"] == 8001
         assert f"DetailCo-{tag}" in data["customer_display_name"]
+
+    def test_get_payment_includes_customer_id(self):
+        db = SessionLocal()
+        db.info["tenant_id"] = 1
+        cust = _customer(db, display_name=f"DetailLink-{uuid.uuid4().hex[:6]}")
+        inv = _invoice(db, customer_id=cust.id)
+        p = _payment(db, invoice_id=inv.id, amount="75.00")
+        pid = p.id
+        cid = cust.id
+        db.commit()
+        db.close()
+
+        c = _admin_client()
+        r = c.get(f"/payments/{pid}", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["customer_id"] == cid
 
     def test_get_payment_404(self):
         c = _admin_client()

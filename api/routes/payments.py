@@ -39,6 +39,7 @@ def _payment_dict(
     invoice_number: int | None = None,
     knowify_invoice_number: str | None = None,
     customer_display_name: str | None = None,
+    customer_id: int | None = None,
 ) -> dict:
     return {
         "id": p.id,
@@ -53,6 +54,7 @@ def _payment_dict(
         "invoice_number": invoice_number,
         "knowify_invoice_number": knowify_invoice_number,
         "customer_display_name": customer_display_name,
+        "customer_id": customer_id,
     }
 
 
@@ -109,7 +111,7 @@ def list_payments(
         base
         .outerjoin(Invoice, Payment.invoice_id == Invoice.id)
         .outerjoin(Customer, Invoice.customer_id == Customer.id)
-        .add_columns(Invoice.invoice_number, Invoice.knowify_invoice_number, Customer.display_name)
+        .add_columns(Invoice.invoice_number, Invoice.knowify_invoice_number, Customer.display_name, Customer.id)
         .order_by(sort_expr)
         .offset(offset)
         .limit(limit)
@@ -122,8 +124,9 @@ def list_payments(
                 invoice_number=inv_num,
                 knowify_invoice_number=knowify_inv_num,
                 customer_display_name=cust_name,
+                customer_id=cust_id,
             )
-            for p, inv_num, knowify_inv_num, cust_name in rows
+            for p, inv_num, knowify_inv_num, cust_name, cust_id in rows
         ],
         "total": total,
     }
@@ -136,17 +139,18 @@ def get_payment(
     db: Session = Depends(get_db_session),
 ):
     row = db.execute(
-        select(Payment, Invoice.invoice_number, Invoice.knowify_invoice_number, Customer.display_name)
+        select(Payment, Invoice.invoice_number, Invoice.knowify_invoice_number, Customer.display_name, Customer.id)
         .outerjoin(Invoice, Payment.invoice_id == Invoice.id)
         .outerjoin(Customer, Invoice.customer_id == Customer.id)
         .where(Payment.id == payment_id)
     ).one_or_none()
     if row is None:
         raise HTTPException(404, "payment not found")
-    p, inv_num, knowify_inv_num, cust_name = row
+    p, inv_num, knowify_inv_num, cust_name, cust_id = row
     return _payment_dict(
         p,
         invoice_number=inv_num,
         knowify_invoice_number=knowify_inv_num,
         customer_display_name=cust_name,
+        customer_id=cust_id,
     )

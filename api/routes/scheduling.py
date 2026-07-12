@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from api.auth import get_db_session, require_role
 from api.routes.video import clean_label
 from app.models import Article, MiniSeries, ScheduledContent
+from core.timeutil import iso_utc, to_naive_utc
 
 router = APIRouter(prefix="/scheduling", tags=["scheduling"])
 
@@ -83,7 +84,7 @@ def _row_dict(r: ScheduledContent, db=None) -> dict:
         "kind": r.kind,
         "ref_id": r.ref_id,
         "display_name": display_name,
-        "publish_at": r.publish_at.isoformat() if r.publish_at else None,
+        "publish_at": iso_utc(r.publish_at),
         "status": r.status,
         "target": r.target,
         # Live link to where it was published (WordPress) — shown on published rows.
@@ -119,7 +120,7 @@ def create_scheduled(
         tenant_id=db.info["tenant_id"],
         kind=body.kind,
         ref_id=body.ref_id,
-        publish_at=body.publish_at,
+        publish_at=to_naive_utc(body.publish_at),
         status="scheduled",
         target=body.target,
     )
@@ -140,7 +141,7 @@ def update_scheduled(
     if item is None:
         raise HTTPException(status_code=404, detail="scheduled item not found")
     if body.publish_at is not None:
-        item.publish_at = body.publish_at
+        item.publish_at = to_naive_utc(body.publish_at)
     if body.target is not None:
         item.target = body.target
     db.flush()

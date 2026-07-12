@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from core.scheduler import due
 
@@ -32,4 +32,9 @@ def test_excludes_null_publish_at():
 
 def test_at_exact_now_is_due():
     r = Row("scheduled", NOW)
+    assert due([r], NOW) == [r]
+
+
+def test_due_handles_aware_publish_at_with_naive_utc_now():
+    r = Row("scheduled", datetime(2026, 7, 4, 12, 0, 0, tzinfo=timezone.utc))
     assert due([r], NOW) == [r]

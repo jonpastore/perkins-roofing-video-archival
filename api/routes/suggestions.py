@@ -153,6 +153,13 @@ def get_suggestion_counts(
         .count()
     )
 
+    # --- all queued/scheduled content items (sidebar badge on Scheduling) ---
+    scheduled_content = (
+        db.query(ScheduledContent)
+        .filter(ScheduledContent.status.in_(("queued", "scheduled")))
+        .count()
+    )
+
     # --- comment drafts awaiting action (needs a reply, not yet ready/dismissed) ---
     from app.models import CommentDraft  # local import — avoids a heavy top-level dep
     comment_drafts = (
@@ -171,6 +178,7 @@ def get_suggestion_counts(
         "unused_videos": unused_count,
         "pending_video_approvals": pending_video_approvals,
         "scheduled_articles": scheduled_articles,
+        "scheduled_content": scheduled_content,
         "comment_drafts": comment_drafts,
     }
 

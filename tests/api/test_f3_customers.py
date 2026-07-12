@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 import api.app as appmod
 from api.auth import set_verifier
-from app.models import SessionLocal, init_db
+from app.models import Measurement, SessionLocal, init_db
 
 # Mount F3 routers if not already present (idempotent guard)
 _MOUNTED = set(getattr(r, "prefix", None) for r in appmod.app.routes)
@@ -183,6 +183,33 @@ class TestListCustomers:
         names = [c["display_name"] for c in r.json()["items"]]
         assert "OtherTenant" not in names
 
+    def test_list_includes_property_and_measurement_flags(self, admin_client):
+        created = _create_customer(admin_client, name=f"Flags-{_uid()}")
+        prop = _create_property(admin_client, created["id"])
+        with SessionLocal() as db:
+            m = Measurement(
+                tenant_id=1,
+                property_id=prop["id"],
+                provider="manual",
+                status="complete",
+                total_sq=31.5,
+                created_by="test@example.com",
+            )
+            db.add(m)
+            db.commit()
+
+        r = admin_client.get(
+            f"/quoting/customers?search={created['display_name']}",
+            headers=AUTH,
+        )
+
+        assert r.status_code == 200, r.text
+        item = r.json()["items"][0]
+        assert item["property_count"] == 1
+        assert item["measurement_count"] == 1
+        assert item["has_properties"] is True
+        assert item["has_measurements"] is True
+
 
 # ---------------------------------------------------------------------------
 # GET /quoting/customers/{id} — Detail
@@ -209,6 +236,33 @@ class TestGetCustomer:
         assert "properties" in body
         assert len(body["contacts"]) >= 1
         assert len(body["properties"]) >= 1
+
+    def test_get_includes_measurement_summary_for_properties(self, admin_client):
+        created = _create_customer(admin_client)
+        prop = _create_property(admin_client, created["id"])
+        with SessionLocal() as db:
+            m = Measurement(
+                tenant_id=1,
+                property_id=prop["id"],
+                provider="google_solar",
+                status="complete",
+                total_sq=42.0,
+                created_by="test@example.com",
+            )
+            db.add(m)
+            db.commit()
+
+        r = admin_client.get(f"/quoting/customers/{created['id']}", headers=AUTH)
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["property_count"] == 1
+        assert body["measurement_count"] == 1
+        assert body["has_measurements"] is True
+        property_row = body["properties"][0]
+        assert property_row["measurement_count"] == 1
+        assert property_row["has_measurements"] is True
+        assert property_row["latest_measurement_total_sq"] == 42.0
 
     def test_get_404_unknown(self, admin_client):
         r = admin_client.get("/quoting/customers/999999", headers=AUTH)

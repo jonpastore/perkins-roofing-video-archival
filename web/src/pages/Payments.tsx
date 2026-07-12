@@ -1,6 +1,7 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useContext, useEffect, useState } from "react";
 import { listPayments, getPayment } from "../api";
 import type { Payment, ListPaymentsParams } from "../api";
+import { NavContext } from "../App";
 import type { QueryState } from "../ui/DataTable";
 import { DataTable } from "../ui/DataTable";
 import {
@@ -31,6 +32,34 @@ function invoiceLabel(p: Pick<Payment, "invoice_number" | "knowify_invoice_numbe
   if (p.invoice_number != null) return `#${p.invoice_number}`;
   if (p.knowify_invoice_number) return `Knowify #${p.knowify_invoice_number}`;
   return p.invoice_id != null ? `Invoice ${p.invoice_id}` : "—";
+}
+
+type PaymentWithCustomer = Payment & { customer_id?: number | null };
+
+function CustomerLink({ payment }: { payment: PaymentWithCustomer }) {
+  const { navigate } = useContext(NavContext);
+  const label = payment.customer_display_name ?? (payment.customer_id != null ? `#${payment.customer_id}` : "—");
+  if (payment.customer_id == null) return <>{label}</>;
+  return (
+    <button
+      onClick={() => navigate("customers", { customerId: String(payment.customer_id) })}
+      style={{
+        background: "none",
+        border: "none",
+        padding: 0,
+        color: BRAND.navyText,
+        cursor: "pointer",
+        font: "inherit",
+        fontWeight: 600,
+        textAlign: "left",
+        textDecoration: "underline",
+        textUnderlineOffset: 2,
+      }}
+      title="Open customer"
+    >
+      {label}
+    </button>
+  );
 }
 
 // ── Detail panel ───────────────────────────────────────────────────────────────
@@ -87,7 +116,14 @@ function PaymentDetail({ id, onClose }: { id: number; onClose: () => void }) {
             {field("Reference", payment.reference)}
             {field("Invoice #", invoiceLabel(payment))}
             {field("Invoice ID", payment.invoice_id)}
-            {field("Customer", payment.customer_display_name)}
+            <tr>
+              <td style={{ padding: "8px 0", color: BRAND.sub, fontSize: 13, fontWeight: 600, width: 160, verticalAlign: "top" }}>
+                Customer
+              </td>
+              <td style={{ padding: "8px 0 8px 12px", fontSize: 13, color: BRAND.ink, verticalAlign: "top" }}>
+                <CustomerLink payment={payment as PaymentWithCustomer} />
+              </td>
+            </tr>
             {field("Notes", payment.notes)}
           </tbody>
         </table>
@@ -237,7 +273,7 @@ export function Payments() {
       key: "customer_display_name" as const,
       header: "Customer",
       sortable: true,
-      render: (r: Payment) => r.customer_display_name ?? "—",
+      render: (r: Payment) => <CustomerLink payment={r as PaymentWithCustomer} />,
     },
     {
       key: "amount" as const,

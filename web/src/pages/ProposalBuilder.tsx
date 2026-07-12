@@ -411,7 +411,7 @@ export function ProposalBuilder() {
   useEffect(() => {
     setCustomersLoading(true);
     setCustomersError(null);
-    listQuotingCustomers()
+    listQuotingCustomers({ limit: 200 })
       .then((data) => setCustomers(Array.isArray(data) ? data : []))
       .catch((e: unknown) => setCustomersError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCustomersLoading(false));

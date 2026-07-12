@@ -16,6 +16,7 @@ Seeds a small dataset:
 """
 import os
 import tempfile
+from datetime import datetime
 
 import pytest
 from fastapi import FastAPI
@@ -33,8 +34,8 @@ from app.models import (  # noqa: E402
     Base,
     GraphNode,
     MiniSeries,
-    Segment,
     ScheduledContent,
+    Segment,
     SessionLocal,
     SocialPost,
     Video,
@@ -98,7 +99,7 @@ def seeded():
         db.add(Article(
             slug="roof-repair",
             title="Roof Repair",
-            content_md=f"See video vid_a for details.",
+            content_md="See video vid_a for details.",
             role="pillar",
             status="published",
         ))
@@ -473,9 +474,42 @@ def test_counts_shape(seeded):
     resp = client.get("/suggestions/counts", headers=ADMIN_HDR)
     assert resp.status_code == 200
     data = resp.json()
-    for key in ("article_topics", "reels", "faqs", "unused_videos"):
+    for key in ("article_topics", "reels", "faqs", "unused_videos", "scheduled_content"):
         assert key in data, f"missing key: {key}"
         assert isinstance(data[key], int), f"{key} must be int"
+
+
+def test_counts_scheduled_content_includes_queued_and_scheduled_only():
+    with SessionLocal() as db:
+        db.add_all([
+            ScheduledContent(
+                kind="article",
+                ref_id="article-a",
+                publish_at=datetime(2026, 7, 15, 13, 0, 0),
+                status="scheduled",
+                target="wordpress",
+            ),
+            ScheduledContent(
+                kind="reel",
+                ref_id="1",
+                publish_at=datetime(2026, 7, 15, 14, 0, 0),
+                status="queued",
+                target="instagram",
+            ),
+            ScheduledContent(
+                kind="article",
+                ref_id="article-b",
+                publish_at=datetime(2026, 7, 15, 15, 0, 0),
+                status="published",
+                target="wordpress",
+            ),
+        ])
+        db.commit()
+
+    client = _make_client("admin")
+    resp = client.get("/suggestions/counts", headers=ADMIN_HDR)
+    assert resp.status_code == 200
+    assert resp.json()["scheduled_content"] == 2
 
 
 def test_counts_match_suggestions_totals(seeded):

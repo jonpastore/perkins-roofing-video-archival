@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from api.auth import get_db_session, require_role
 from app.config import settings
 from app.models import Article
+from core.timeutil import iso_utc
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def _article_summary(a: Article) -> dict:
         "wp_post_id": a.wp_post_id,
         "wp_url": _wp_url_for(a.wp_post_id),
         "wp_admin_url": _wp_admin_url_for(a.wp_post_id),
-        "publish_at": a.publish_at.isoformat() if a.publish_at else None,
+        "publish_at": iso_utc(a.publish_at),
     }
 
 
@@ -92,7 +93,7 @@ def _article_full(a: Article) -> dict:
         "wp_url": _wp_url_for(a.wp_post_id),
         "wp_admin_url": _wp_admin_url_for(a.wp_post_id),
         "status": a.status,
-        "publish_at": a.publish_at.isoformat() if a.publish_at else None,
+        "publish_at": iso_utc(a.publish_at),
         # Rank Math SEO / AIO checks — surfaced in the Articles UI to stay ahead of gaps.
         "seo_checks": checks,
         "seo_passed": passed,

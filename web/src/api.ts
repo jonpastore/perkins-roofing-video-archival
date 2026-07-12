@@ -877,6 +877,7 @@ export interface Payment {
   invoice_number: number | null;
   knowify_invoice_number: string | null;
   customer_display_name: string | null;
+  customer_id: number | null;
 }
 
 export interface ListPaymentsParams {
