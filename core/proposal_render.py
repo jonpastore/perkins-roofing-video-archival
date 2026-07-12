@@ -50,6 +50,10 @@ class ProposalRenderContext:
     accept_url: str
     tc_summary_bullets: list[str] | None = field(default=None)
     tc_faq_items: list[dict] | None = field(default=None)
+    tc_text: str | None = field(default=None)
+    tc_review_prompts: list[str] | None = field(default=None)
+    tc_ai_disclaimer: str | None = field(default=None)
+    tc_cover_letter: str | None = field(default=None)
 
 
 class _SilentUndefined(jinja2.Undefined):
@@ -134,6 +138,18 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
         "accept_url": ctx.accept_url,
         "tc_summary_bullets": ctx.tc_summary_bullets,
         "tc_faq_items": ctx.tc_faq_items,
+        "tc_text": ctx.tc_text or "",
+        "tc_review_prompts": ctx.tc_review_prompts or [],
+        "tc_ai_disclaimer": ctx.tc_ai_disclaimer or "",
+        "tc_cover_letter": ctx.tc_cover_letter or "",
+        "tc": {
+            "text": ctx.tc_text or "",
+            "summary_bullets": ctx.tc_summary_bullets or [],
+            "faq_items": ctx.tc_faq_items or [],
+            "review_prompts": ctx.tc_review_prompts or [],
+            "ai_disclaimer": ctx.tc_ai_disclaimer or "",
+            "cover_letter": ctx.tc_cover_letter or "",
+        },
     }
 
 
@@ -285,33 +301,42 @@ DEFAULT_TEMPLATE_HTML = """\
 
   <div class="tc-block">
     <p><strong>Terms &amp; Conditions</strong></p>
+    {% if tc.text %}
+    <pre style="white-space:pre-wrap; font-family:Arial, Helvetica, sans-serif; margin:0;">{{ tc.text }}</pre>
+    {% else %}
     <p>
       [PLACEHOLDER — T&amp;C text pending Tim Perkins review and sign-off. This block will be
       replaced with the executed terms from the master service agreement before any proposals
       are sent to clients. Do not use this template in production until T&amp;C are approved.]
     </p>
+    {% endif %}
   </div>
 
-  {% if tc_summary_bullets %}
+  {% if tc.summary_bullets or tc.review_prompts %}
   <div class="tc-ai-cover">
+    {% if tc.cover_letter %}
+    <p>{{ tc.cover_letter }}</p>
+    {% elif tc.summary_bullets %}
     <p>While we recommend reading everything yourself and thoroughly understanding the agreement you&#39;re entering into, we&#39;ve created an FAQ for your review on the last page and here&#39;s a concise summary:</p>
+    {% endif %}
+    {% if tc.summary_bullets %}
     <ul>
-      {% for bullet in tc_summary_bullets %}
+      {% for bullet in tc.summary_bullets %}
       <li>{{ bullet }}</li>
       {% endfor %}
     </ul>
+    {% endif %}
+    {% if tc.review_prompts %}
     <div class="tc-ai-prompts">
       <p>Questions you might want to ask your AI assistant about this contract:</p>
       <ol>
-        <li>Summarize my obligations and what I&#39;m agreeing to.</li>
-        <li>What are the payment terms, deposits, and any penalties or late fees?</li>
-        <li>What are my cancellation/rescission rights and any fees?</li>
-        <li>What warranties and guarantees am I getting, and what voids them?</li>
-        <li>What happens in delays, weather, or unforeseen conditions?</li>
-        <li>What am I responsible for vs. the contractor?</li>
+        {% for prompt in tc.review_prompts %}
+        <li>{{ prompt }}</li>
+        {% endfor %}
       </ol>
     </div>
-    <p class="tc-ai-disclaimer">AI is not a replacement for legal counsel, and we always recommend for full validation and protection that you have an attorney review this agreement.</p>
+    {% endif %}
+    {% if tc.ai_disclaimer %}<p class="tc-ai-disclaimer">{{ tc.ai_disclaimer }}</p>{% endif %}
   </div>
   {% endif %}
 

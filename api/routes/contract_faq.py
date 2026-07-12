@@ -1,7 +1,9 @@
 """REST endpoints for the Contract FAQ engine (F5 #321)."""
+import re
+from datetime import datetime, timezone
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,8 +23,14 @@ class GenerateRequest(BaseModel):
 
 
 class AiPromptsRequest(BaseModel):
-    tc_text: str
+    tc_text: str = ""
     include_existing_faqs: bool = True
+
+
+class SaveTcVersionRequest(BaseModel):
+    tc_text: str
+    version_tag: str | None = None
+    source_pdf_gcs: str | None = None
 
 
 class UpdateRequest(BaseModel):
@@ -39,8 +47,118 @@ def _entry_dict(e) -> dict:
         'quote': e.quote,
         'status': e.status,
         'created_at': e.created_at.isoformat() if e.created_at else None,
+        'tc_version_id': getattr(e, 'tc_version_id', None),
     }
 
+
+def _tc_version_dict(v, text: str | None = None) -> dict:
+    data = {
+        'id': v.id,
+        'version_tag': v.version_tag,
+        'content_gcs': v.content_gcs,
+        'effective_at': v.effective_at.isoformat() if v.effective_at else None,
+        'created_at': v.created_at.isoformat() if v.created_at else None,
+    }
+    if text is not None:
+        data['tc_text'] = text
+        data['chars'] = len(text)
+    return data
+
+
+
+def _safe_tag(text: str) -> str:
+    tag = re.sub(r"[^a-zA-Z0-9_.-]+", "-", (text or "").strip()).strip("-._")
+    return tag[:80] or datetime.now(timezone.utc).strftime("tc-%Y%m%d-%H%M%S")
+
+
+def _contracts_bucket() -> str:
+    import os  # noqa: PLC0415
+    project = (
+        os.environ.get('GOOGLE_CLOUD_PROJECT')
+        or os.environ.get('GCLOUD_PROJECT')
+        or 'video-archival-and-content-gen'
+    )
+    return f'{project}-media'
+
+
+def _split_gs_uri(uri: str) -> tuple[str, str]:
+    if not uri or not uri.startswith('gs://'):
+        raise ValueError('not a gs:// URI')
+    rest = uri[5:]
+    bucket, _, key = rest.partition('/')
+    if not bucket or not key:
+        raise ValueError('invalid gs:// URI')
+    return bucket, key
+
+
+def _read_gcs_text(uri: str) -> str:
+    from google.cloud import storage  # noqa: PLC0415
+    bucket_name, key = _split_gs_uri(uri)
+    return storage.Client().bucket(bucket_name).blob(key).download_as_text()
+
+
+def _upload_bytes_to_gcs(data: bytes, uri: str, content_type: str) -> None:
+    from google.cloud import storage  # noqa: PLC0415
+    bucket_name, key = _split_gs_uri(uri)
+    storage.Client().bucket(bucket_name).blob(key).upload_from_string(data, content_type=content_type)
+
+
+def _text_sidecar_uri(uri: str) -> str:
+    if uri.endswith('.txt'):
+        return uri
+    return re.sub(r'\.[^./]+$', '.txt', uri) if '.' in uri.rsplit('/', 1)[-1] else f'{uri}.txt'
+
+
+def _save_tc_artifacts(
+    *,
+    tenant_id: int,
+    version_tag: str,
+    tc_text: str,
+    pdf_bytes: bytes | None = None,
+    pdf_filename: str | None = None,
+) -> tuple[str, str | None]:
+    safe = _safe_tag(version_tag)
+    base = f'gs://{_contracts_bucket()}/tenants/{tenant_id}/contracts/{safe}'
+    text_uri = f'{base}.txt'
+    _upload_bytes_to_gcs(tc_text.encode('utf-8'), text_uri, 'text/plain; charset=utf-8')
+    pdf_uri = None
+    if pdf_bytes:
+        suffix = '.pdf' if not pdf_filename or pdf_filename.lower().endswith('.pdf') else '.pdf'
+        pdf_uri = f'{base}{suffix}'
+        _upload_bytes_to_gcs(pdf_bytes, pdf_uri, 'application/pdf')
+    return text_uri, pdf_uri
+
+
+def _load_tc_text_for_version(version) -> str:
+    """Load saved T&C text for a TcVersion.
+
+    content_gcs may point directly to a .txt artifact or to an uploaded PDF. For
+    older rows that point at the PDF, prefer the adjacent .txt sidecar we store
+    during extraction/seeding, then fall back to extracting text from the PDF.
+    """
+    uri = getattr(version, 'content_gcs', None)
+    if not uri:
+        return ''
+    if uri.endswith('.txt'):
+        return _read_gcs_text(uri)
+    sidecar = _text_sidecar_uri(uri)
+    try:
+        return _read_gcs_text(sidecar)
+    except Exception:  # noqa: BLE001 - sidecar may not exist for older rows
+        pass
+    from google.cloud import storage  # noqa: PLC0415
+    bucket_name, key = _split_gs_uri(uri)
+    data = storage.Client().bucket(bucket_name).blob(key).download_as_bytes()
+    return _extract_pdf_text(data)
+
+
+def _latest_tc_version(db: Session):
+    from app.models import TcVersion  # noqa: PLC0415
+    return (
+        db.query(TcVersion)
+        .order_by(TcVersion.effective_at.desc(), TcVersion.id.desc())
+        .first()
+    )
 
 def _extract_pdf_text(data: bytes) -> str:
     """Extract text from a PDF upload using pypdf (no OCR).
@@ -141,9 +259,17 @@ def generate_contract_faq(
 @router.post('/extract-pdf')
 async def extract_contract_pdf(
     file: UploadFile = File(...),
+    save: bool = Query(False),
+    version_tag: str | None = Query(None),
+    db: Session = Depends(get_db_session),
     _: dict = Depends(require_role('manage_articles')),
 ):
-    """Extract text from an uploaded contract/proposal PDF for FAQ generation."""
+    """Extract text from an uploaded contract/proposal PDF for FAQ generation.
+
+    When save=true, the extracted text and original PDF are stored under the
+    tenant's contract artifact prefix and a TcVersion row is created. The UI uses
+    this as the versioned source text for repeat FAQ mining and AI prompts.
+    """
     if file.content_type not in (None, '', 'application/pdf', 'application/octet-stream'):
         raise HTTPException(422, 'Upload must be a PDF')
     data = await file.read()
@@ -152,7 +278,30 @@ async def extract_contract_pdf(
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(413, 'PDF is too large (max 15MB)')
     text = _extract_pdf_text(data)
-    return {'filename': file.filename, 'chars': len(text), 'text': text}
+    result = {'filename': file.filename, 'chars': len(text), 'text': text}
+    if save:
+        from app.models import TcVersion  # noqa: PLC0415
+        tenant_id = db.info['tenant_id']
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+        tag = version_tag or f"{(file.filename or 'contract').rsplit('.', 1)[0]}-{timestamp}"
+        text_uri, pdf_uri = _save_tc_artifacts(
+            tenant_id=tenant_id,
+            version_tag=tag,
+            tc_text=text,
+            pdf_bytes=data,
+            pdf_filename=file.filename,
+        )
+        version = TcVersion(
+            tenant_id=tenant_id,
+            version_tag=_safe_tag(tag),
+            content_gcs=pdf_uri or text_uri,
+            effective_at=datetime.now(timezone.utc),
+        )
+        db.add(version)
+        db.flush()
+        result['tc_version'] = _tc_version_dict(version, text=text)
+        result['text_gcs'] = text_uri
+    return result
 
 
 @router.post('/ai-prompts')
@@ -167,6 +316,10 @@ def contract_ai_prompts(
 
     tc_text = body.tc_text or ''
     if len(tc_text) < TC_MIN_LEN:
+        latest = _latest_tc_version(db)
+        if latest is not None:
+            tc_text = _load_tc_text_for_version(latest)
+    if len(tc_text) < TC_MIN_LEN:
         raise HTTPException(status_code=422, detail='tc_text too short (min 100 chars)')
 
     faq_items = []
@@ -175,6 +328,57 @@ def contract_ai_prompts(
         faq_items = [{'question': r.question, 'answer': r.answer} for r in rows]
     return build_contract_review_prompt(tc_text, faq_items)
 
+
+
+@router.get('/tc-versions')
+def list_tc_versions(
+    db: Session = Depends(get_db_session),
+    _: dict = Depends(require_role('kb_contract_faq_read')),
+):
+    from app.models import TcVersion  # noqa: PLC0415
+    rows = db.query(TcVersion).order_by(TcVersion.effective_at.desc(), TcVersion.id.desc()).all()
+    return [_tc_version_dict(v) for v in rows]
+
+
+@router.get('/tc-version/latest')
+def get_latest_tc_version(
+    db: Session = Depends(get_db_session),
+    _: dict = Depends(require_role('kb_contract_faq_read')),
+):
+    latest = _latest_tc_version(db)
+    if latest is None:
+        return None
+    text = _load_tc_text_for_version(latest)
+    return _tc_version_dict(latest, text=text)
+
+
+@router.post('/tc-version')
+def save_tc_version(
+    body: SaveTcVersionRequest,
+    db: Session = Depends(get_db_session),
+    _: dict = Depends(require_role('manage_articles')),
+):
+    from app.models import TcVersion  # noqa: PLC0415
+
+    tc_text = body.tc_text or ''
+    if len(tc_text) < TC_MIN_LEN:
+        raise HTTPException(status_code=422, detail='tc_text too short (min 100 chars)')
+    tenant_id = db.info['tenant_id']
+    tag = body.version_tag or datetime.now(timezone.utc).strftime('tc-%Y%m%d-%H%M%S')
+    text_uri, _pdf_uri = _save_tc_artifacts(
+        tenant_id=tenant_id,
+        version_tag=tag,
+        tc_text=tc_text,
+    )
+    version = TcVersion(
+        tenant_id=tenant_id,
+        version_tag=_safe_tag(tag),
+        content_gcs=text_uri,
+        effective_at=datetime.now(timezone.utc),
+    )
+    db.add(version)
+    db.flush()
+    return _tc_version_dict(version, text=tc_text)
 
 @router.get('')
 def list_contract_faq(

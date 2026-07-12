@@ -1007,11 +1007,41 @@ def _fallback_faq(keyword: str, content_md: str) -> list[dict]:
 
 
 def _ensure_video_link(content_md: str, keyword: str, db=None) -> str:
-    """Guarantee an embedded YouTube link (the 'video' check) by appending the top
-    grounded clip when the body has none. Best-effort — returns content unchanged on
-    any retrieval failure."""
-    if re.search(r"youtube\.com|youtu\.be", content_md or "", re.IGNORECASE):
+    """Guarantee an embedded YouTube player.
+
+    A plain citation link is not enough: the console preview and WordPress article
+    should show a real player. If the body already has a YouTube iframe, keep it.
+    Otherwise convert the first YouTube URL already present into a responsive
+    iframe; if none exists, append the top grounded clip from retrieval.
+    """
+    if re.search(r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)", content_md or "", re.IGNORECASE):
         return content_md
+
+    def _iframe(url: str) -> str | None:
+        parsed = _youtube_embed_src(url)
+        if parsed is None:
+            return None
+        src, title = parsed
+        return (
+            f'<div class="video-embed" style="position:relative;padding-bottom:56.25%;height:0;'
+            f'overflow:hidden;border-radius:8px;margin:16px 0">'
+            f'<iframe src="{src}" title="{title}" '
+            f'style="position:absolute;top:0;left:0;width:100%;height:100%;border:0" '
+            f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; '
+            f'gyroscope; picture-in-picture; web-share" '
+            f'allowfullscreen loading="lazy"></iframe></div>'
+        )
+
+    url_match = re.search(
+        r"https?://(?:www\.)?(?:youtube\.com/(?:watch|embed)|youtu\.be/)[^\s\"'<)]+",
+        content_md or "",
+        re.IGNORECASE,
+    )
+    if url_match:
+        embed = _iframe(url_match.group(0))
+        if embed:
+            return f"{embed}\n{content_md}"
+
     try:
         from app.retrieval import hybrid_search  # noqa: PLC0415
         chunks = (hybrid_search(keyword, k=1, db=db).get("chunks") or [])
@@ -1020,10 +1050,53 @@ def _ensure_video_link(content_md: str, keyword: str, db=None) -> str:
         chunk = chunks[0][0]
         from core.retrieval import link as _yt  # noqa: PLC0415
         url = _yt(chunk.video_id, chunk.start)
-        return f"{content_md}\n<h2>Watch: {keyword}</h2>\n<p>See it explained: <a href=\"{url}\">{url}</a></p>"
+        embed = _iframe(url)
+        if not embed:
+            return content_md
+        return f"{content_md}\n<h2>Watch: {keyword}</h2>\n{embed}"
     except Exception as exc:  # noqa: BLE001
         logger.warning("_ensure_video_link failed for %r: %s", keyword, exc)
         return content_md
+
+
+def _youtube_embed_src(url: str) -> tuple[str, str] | None:
+    """Return (embed_src, title) for a YouTube URL; None when not parseable."""
+    from html import escape  # noqa: PLC0415
+    from urllib.parse import parse_qs, urlparse  # noqa: PLC0415
+
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    video_id = ""
+    start = 0
+    if host.endswith("youtu.be"):
+        video_id = parsed.path.strip("/").split("/")[0]
+        t_vals = parse_qs(parsed.query).get("t") or ["0"]
+        start = _parse_youtube_time(t_vals[0])
+    elif host.endswith("youtube.com"):
+        if parsed.path == "/watch":
+            video_id = (parse_qs(parsed.query).get("v") or [""])[0]
+            start = _parse_youtube_time((parse_qs(parsed.query).get("t") or ["0"])[0])
+        elif parsed.path.startswith("/embed/"):
+            video_id = parsed.path.split("/embed/", 1)[1].split("/")[0]
+            start = _parse_youtube_time((parse_qs(parsed.query).get("start") or ["0"])[0])
+    if not re.fullmatch(r"[\w-]{6,}", video_id or ""):
+        return None
+    src = f"https://www.youtube.com/embed/{escape(video_id)}"
+    if start > 0:
+        src += f"?start={start}"
+    return src, f"YouTube video for {escape(video_id)}"
+
+
+def _parse_youtube_time(raw: str) -> int:
+    """Parse YouTube t/start values like '90', '90s', '1m30s', '1h2m3s'."""
+    raw = str(raw or "").strip().lower()
+    if raw.isdigit():
+        return int(raw)
+    m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?", raw)
+    if not m:
+        return 0
+    h, minutes, seconds = (int(x or 0) for x in m.groups())
+    return h * 3600 + minutes * 60 + seconds
 
 
 def _regen_faq(keyword: str, content_md: str, *, llm) -> list[dict]:
@@ -1299,7 +1372,8 @@ def _markdown_to_html(md: str) -> str:
     """Convert Markdown to sanitised HTML for WordPress post content.
 
     Uses the `markdown` library for conversion then `bleach` to strip any
-    unsafe tags/attributes (no script, iframe, on* event handlers, etc.).
+    unsafe tags/attributes (no script, on* event handlers, etc.). Safe YouTube
+    iframes are preserved so article video embeds survive publishing.
     """
     import bleach  # noqa: PLC0415
     import markdown  # noqa: PLC0415
@@ -1309,11 +1383,17 @@ def _markdown_to_html(md: str) -> str:
         "p", "h1", "h2", "h3", "h4",
         "ul", "ol", "li",
         "blockquote", "code", "pre",
-        "img", "table", "thead", "tbody", "tr", "td", "th",
+        "img", "iframe", "div", "span", "table", "thead", "tbody", "tr", "td", "th",
     ]
     allowed_attrs = dict(ALLOWED_ATTRIBUTES)
-    allowed_attrs["a"] = ["href", "title", "rel"]
-    allowed_attrs["img"] = ["src", "alt", "title"]
+    allowed_attrs["a"] = ["href", "title", "rel", "target"]
+    allowed_attrs["img"] = ["src", "alt", "title", "width", "height", "loading"]
+    allowed_attrs["iframe"] = [
+        "src", "allow", "allowfullscreen", "loading", "frameborder",
+        "width", "height", "title", "style",
+    ]
+    allowed_attrs["div"] = ["class", "style"]
+    allowed_attrs["span"] = ["class", "style"]
 
     html = markdown.markdown(md, extensions=["tables", "fenced_code"])
     return bleach.clean(html, tags=allowed_tags, attributes=allowed_attrs, strip=True)

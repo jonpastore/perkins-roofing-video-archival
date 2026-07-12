@@ -24,6 +24,16 @@ interface AiPromptsResult {
   suggested_followups: string[];
 }
 
+interface TcVersion {
+  id: number;
+  version_tag: string;
+  content_gcs: string | null;
+  effective_at: string | null;
+  created_at: string | null;
+  tc_text?: string;
+  chars?: number;
+}
+
 const COUNT_OPTIONS = [5, 10, 15, 20] as const;
 type StatusFilter = "all" | "draft" | "approved";
 
@@ -38,6 +48,11 @@ export function ContractFaq() {
   const [prompting, setPrompting] = useState(false);
   const [aiPrompts, setAiPrompts] = useState<AiPromptsResult | null>(null);
   const [promptError, setPromptError] = useState<string | null>(null);
+  const [tcVersion, setTcVersion] = useState<TcVersion | null>(null);
+  const [tcVersionLoading, setTcVersionLoading] = useState(false);
+  const [tcVersionMsg, setTcVersionMsg] = useState<string | null>(null);
+  const [tcVersionError, setTcVersionError] = useState<string | null>(null);
+  const [savingVersion, setSavingVersion] = useState(false);
 
   const [entries, setEntries] = useState<ContractFaqEntry[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -65,8 +80,30 @@ export function ContractFaq() {
       .finally(() => setListLoading(false));
   }
 
+  function loadLatestTcVersion() {
+    setTcVersionLoading(true);
+    setTcVersionError(null);
+    apiFetch("/contract-faq/tc-version/latest")
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((data: TcVersion | null) => {
+        if (!data) {
+          setTcVersion(null);
+          return;
+        }
+        setTcVersion(data);
+        setTcText(data.tc_text ?? "");
+        setTcVersionMsg(`Loaded saved T&C version ${data.version_tag} (${(data.chars ?? 0).toLocaleString()} chars).`);
+      })
+      .catch((e: unknown) => setTcVersionError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setTcVersionLoading(false));
+  }
+
   useEffect(() => {
     loadEntries();
+    loadLatestTcVersion();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleStatusFilter(f: StatusFilter) {
@@ -81,7 +118,7 @@ export function ContractFaq() {
     try {
       const r = await apiFetch("/contract-faq/generate", {
         method: "POST",
-        body: JSON.stringify({ tc_text: tcText, count }),
+        body: JSON.stringify({ tc_text: tcText, count, tc_version_id: tcVersion?.id }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({ detail: r.statusText }));
@@ -105,18 +142,46 @@ export function ContractFaq() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const r = await apiFetchMultipart("/contract-faq/extract-pdf", { method: "POST", body: form });
+      const tag = file.name.replace(/\.pdf$/i, "");
+      const r = await apiFetchMultipart(`/contract-faq/extract-pdf?save=true&version_tag=${encodeURIComponent(tag)}`, { method: "POST", body: form });
       if (!r.ok) {
         const err = await r.json().catch(() => ({ detail: r.statusText }));
         throw new Error((err as { detail?: string }).detail ?? r.statusText);
       }
-      const data: { filename: string; chars: number; text: string } = await r.json();
+      const data: { filename: string; chars: number; text: string; tc_version?: TcVersion } = await r.json();
       setTcText(data.text);
-      setExtractMsg(`Loaded ${data.chars.toLocaleString()} characters from ${data.filename}. Review/trim if needed, then generate FAQ.`);
+      if (data.tc_version) setTcVersion(data.tc_version);
+      setExtractMsg(`Saved and loaded ${data.chars.toLocaleString()} characters from ${data.filename}. Review/trim if needed, then generate more FAQs or AI prompts.`);
     } catch (e: unknown) {
       setGenerateError(e instanceof Error ? e.message : String(e));
     } finally {
       setExtracting(false);
+    }
+  }
+
+  async function handleSaveVersion() {
+    setSavingVersion(true);
+    setTcVersionError(null);
+    setTcVersionMsg(null);
+    try {
+      const tag = tcVersion?.version_tag
+        ? `${tcVersion.version_tag}-edited-${new Date().toISOString().slice(0, 10)}`
+        : `tc-${new Date().toISOString().slice(0, 10)}`;
+      const r = await apiFetch("/contract-faq/tc-version", {
+        method: "POST",
+        body: JSON.stringify({ tc_text: tcText, version_tag: tag }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error((err as { detail?: string }).detail ?? r.statusText);
+      }
+      const data: TcVersion = await r.json();
+      setTcVersion(data);
+      setTcVersionMsg(`Saved T&C version ${data.version_tag} (${(data.chars ?? tcText.length).toLocaleString()} chars).`);
+    } catch (e: unknown) {
+      setTcVersionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingVersion(false);
     }
   }
 
@@ -229,9 +294,16 @@ export function ContractFaq() {
           Generate FAQ from contract / T&amp;C
         </p>
         <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.sub }}>
-          Upload a text-based proposal/contract PDF or paste Terms &amp; Conditions below. The engine
-          extracts homeowner-friendly Q&amp;A pairs grounded in exact contract language.
+          Upload a text-based proposal/contract PDF or paste Terms &amp; Conditions below. The extracted
+          text is saved as a versioned T&amp;C source so you can mine more FAQs and generate AI review prompts later.
         </p>
+        <div style={{ marginBottom: 12, padding: 10, border: `1px solid ${BRAND.border ?? "#e3e7f0"}`, borderRadius: 8, background: BRAND.bg, fontSize: 12, color: BRAND.sub }}>
+          {tcVersionLoading ? "Loading latest saved T&C version…" : tcVersion ? (
+            <>Current saved version: <strong style={{ color: BRAND.navyText }}>{tcVersion.version_tag}</strong> · {(tcVersion.chars ?? tcText.length).toLocaleString()} chars</>
+          ) : "No saved T&C version loaded yet."}
+          {tcVersionMsg && <div style={{ marginTop: 4, color: "#1a7f4b" }}>{tcVersionMsg}</div>}
+          {tcVersionError && <div style={{ marginTop: 4, color: BRAND.red }}>T&amp;C version error: {tcVersionError}</div>}
+        </div>
         <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: extracting ? "wait" : "pointer" }}>
             <span style={{
@@ -258,6 +330,22 @@ export function ContractFaq() {
               style={{ display: "none" }}
             />
           </label>
+          <Button
+            variant="ghost"
+            onClick={handleSaveVersion}
+            disabled={savingVersion || tcText.trim().length < 100}
+            style={{ fontSize: 13, padding: "8px 12px" }}
+          >
+            {savingVersion ? "Saving…" : "Save T&C version"}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={loadLatestTcVersion}
+            disabled={tcVersionLoading}
+            style={{ fontSize: 13, padding: "8px 12px" }}
+          >
+            Reload latest saved
+          </Button>
           {extractMsg && <span style={{ fontSize: 12, color: "#1a7f4b" }}>{extractMsg}</span>}
         </div>
         <textarea

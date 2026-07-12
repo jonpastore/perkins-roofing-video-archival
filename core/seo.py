@@ -41,6 +41,25 @@ import re
 _TAG_RE = re.compile(r"<[^>]+>")
 _HEADING_RE = re.compile(r"(<h[23][\s/>])|(^#{2,3}\s)", re.IGNORECASE | re.MULTILINE)
 _VIDEO_RE = re.compile(r"youtube\.com|youtu\.be", re.IGNORECASE)
+# A real embedded video is an <iframe> pointing at YouTube, OR a bare YouTube URL
+# on its own line (WordPress oEmbed renders that as a player). A plain <a> citation
+# link is NOT an embed — it renders as text, so it must not satisfy this check.
+_VIDEO_IFRAME_RE = re.compile(
+    r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)[^\"']*[\"']",
+    re.IGNORECASE,
+)
+_VIDEO_BARE_URL_RE = re.compile(
+    r"(?:^|\n)\s*https?://(?:www\.)?(?:youtube\.com/(?:watch|embed)|youtu\.be/)\S*\s*(?:\n|$)",
+    re.IGNORECASE,
+)
+
+
+def _has_video_embed(content: str) -> bool:
+    """True when content contains a real video embed (iframe or bare oEmbed URL)."""
+    text = content or ""
+    return bool(_VIDEO_IFRAME_RE.search(text) or _VIDEO_BARE_URL_RE.search(text))
+
+
 # Answer-first: first 200 chars of body text contain a sentence-ending period or
 # a direct declarative phrase (not just a heading or blank space).
 _ANSWER_FIRST_RE = re.compile(r"\w{4,}.*?\.", re.DOTALL)
@@ -166,7 +185,7 @@ def score_article(
         {"key": "jsonld", "label": "Has JSON-LD structured data", "points": 15,
          "pass": bool(has_jsonld)},
         {"key": "video", "label": "Has embedded video link", "points": 10,
-         "pass": bool(_VIDEO_RE.search(content_md or ""))},
+         "pass": _has_video_embed(content_md or "")},
         {"key": "wordcount", "label": "Word count > 300", "points": 15,
          "pass": words > 300, "detail": f"{words} words"},
     ]

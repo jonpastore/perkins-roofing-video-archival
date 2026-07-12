@@ -401,12 +401,16 @@ function computeSeoScore(article: ArticleFull): SeoResult {
   );
   checks.push({ label: "Has JSON-LD structured data", points: 15, pass: hasJsonLd });
 
-  // 10. Has embedded YouTube link in content_md (10 pts)
-  const hasVideo = /youtube\.com|youtu\.be/i.test(article.content_md ?? "");
+  // 10. Has real embedded YouTube video (10 pts). A plain inline citation link
+  // is not enough; require an iframe or a bare YouTube URL on its own line that
+  // WordPress/the preview can oEmbed into a player.
+  const body = article.content_md ?? "";
+  const hasVideo = /<iframe\b[^>]*\bsrc=["'][^"']*(?:youtube\.com|youtu\.be)[^"']*["']/i.test(body)
+    || /(?:^|\n)\s*https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch|embed)|youtu\.be\/)\S*\s*(?:\n|$)/i.test(body);
   checks.push({ label: "Has embedded video link", points: 10, pass: hasVideo });
 
   // 11. Word count > 300 (15 pts) — strip HTML tags before counting
-  const wordCount = (article.content_md ?? "")
+  const wordCount = body
     .replace(/<[^>]+>/g, " ")
     .replace(/[#*>`_~\[\]]/g, " ")
     .split(/\s+/)

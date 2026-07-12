@@ -7,7 +7,7 @@ def _full_body():
         "<h2>Section</h2>"
         "<p>South Florida homeowners should prioritize roof maintenance annually.</p>"
         + ("<p>roofing miami word here </p>" * 90)
-        + ' <a href="https://youtu.be/abc?t=5">watch</a>'
+        + ' <iframe src="https://www.youtube.com/embed/abc123?start=5"></iframe>'
     )
 
 
@@ -38,8 +38,22 @@ def test_perfect_article_scores_100_no_keyword():
 def test_headings_check_is_html_aware():
     # HTML <h2> must count (regression: old check only matched markdown ##)
     r = score_article("A" * 40, "m" * 140, "<h2>x</h2>" + ("word " * 400) +
-                      "youtu.be/x", _four_faq(), True)
+                      '<iframe src="https://www.youtube.com/embed/abc123"></iframe>', _four_faq(), True)
     assert next(c["pass"] for c in r["checks"] if c["key"] == "headings") is True
+
+
+def test_plain_youtube_citation_is_not_video_embed():
+    body = "<h2>Section</h2><p>Sentence for answer first.</p>" + ("word " * 320) + '<a href="https://youtu.be/abc123?t=5">watch</a>'
+    r = score_article("A" * 40, "m" * 140, body, _four_faq(), True)
+    video = next(c for c in r["checks"] if c["key"] == "video")
+    assert video["pass"] is False
+
+
+def test_bare_youtube_url_line_counts_as_oembed_video():
+    body = "<h2>Section</h2><p>Sentence for answer first.</p>\nhttps://youtu.be/abc123?t=5\n" + ("word " * 320)
+    r = score_article("A" * 40, "m" * 140, body, _four_faq(), True)
+    video = next(c for c in r["checks"] if c["key"] == "video")
+    assert video["pass"] is True
 
 
 def test_word_count_strips_html_tags():
@@ -268,7 +282,7 @@ class TestDeterministicGuaranteesScore100:
 
         # Deliberately deficient: wrong title, no meta, no heading, no answer-first,
         # no FAQ. Video link is pre-seeded so we don't need live retrieval.
-        # word count: 310 "word" tokens + URL fragment → well over 300.
+        # word count: 310 "word" tokens plus an iframe embed → well over 300.
         body = "word " * 310 + ' <a href="https://youtu.be/abc123?t=5">watch</a>'
         fields = {
             "title": "R",             # too short, no keyword
@@ -301,7 +315,7 @@ class TestDeterministicGuaranteesScore100:
                 "<h2>Section</h2>"
                 "<p>South Florida roofers handle emergency situations quickly.</p>"
                 + ("word " * 310)
-                + ' <a href="https://youtu.be/abc">video</a>'
+                + ' <a href="https://youtu.be/abc123">video</a>'
             ),
             "faq_json": [{"q": f"Q{i}", "a": "A"} for i in range(4)],
         }
@@ -341,7 +355,7 @@ class TestDeterministicGuaranteesScore100:
         content_no_heading = (
             "<p>South Florida homeowners choose shingle replacement for value.</p>"
             + "<p>word </p>" * 310
-            + ' <a href="https://youtu.be/abc">video</a>'
+            + ' <a href="https://youtu.be/abc123">video</a>'
         )
         from jobs.article_job import _ensure_heading
         result_content = _ensure_heading(content_no_heading, keyword)

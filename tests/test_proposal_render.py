@@ -9,14 +9,11 @@ Tests cover:
 """
 from __future__ import annotations
 
-import pytest
-
 from core.proposal_render import (
     DEFAULT_TEMPLATE_HTML,
     ProposalRenderContext,
     render_proposal_html,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -264,6 +261,7 @@ class TestSilentUndefined:
 
     def test_silent_undefined_html_is_empty_markup(self):
         from markupsafe import Markup
+
         from core.proposal_render import _SilentUndefined
         u = _SilentUndefined()
         result = u.__html__()
@@ -318,6 +316,7 @@ class TestSandboxedRender:
     def test_ssti_attribute_access_is_blocked(self):
         import jinja2.exceptions
         import pytest as _pytest
+
         from core.proposal_render import ProposalRenderContext, render_proposal_html
         ctx = ProposalRenderContext(
             proposal_title="t", proposal_date="d", proposal_version=1,
@@ -417,6 +416,32 @@ class TestTcAiFaqRendering:
         )
         html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
         assert "<img" not in html
+
+    def test_tc_text_replaces_placeholder_when_present(self):
+        ctx = self._ctx(tc_text="Payment terms go here.")
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "Payment terms go here." in html
+        assert "PLACEHOLDER" not in html
+
+    def test_tc_review_prompts_render_from_context(self):
+        ctx = self._ctx(
+            tc_review_prompts=["Ask this contract question."],
+            tc_ai_disclaimer="AI disclaimer text.",
+            tc_cover_letter="Cover letter text.",
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "Ask this contract question." in html
+        assert "AI disclaimer text." in html
+        assert "Cover letter text." in html
+
+    def test_custom_template_can_access_nested_tc_namespace(self):
+        ctx = self._ctx(
+            tc_text="Saved terms",
+            tc_review_prompts=["Prompt one"],
+            tc_faq_items=[{"q": "Nested Q?", "a": "Nested A."}],
+        )
+        html = render_proposal_html("{{ tc.text }} / {{ tc.review_prompts[0] }} / {{ tc.faq_items[0].q }}", ctx)
+        assert "Saved terms / Prompt one / Nested Q?" in html
 
     def test_default_template_renders_when_both_none(self):
         ctx = self._ctx(tc_summary_bullets=None, tc_faq_items=None)

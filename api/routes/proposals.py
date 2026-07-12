@@ -81,21 +81,49 @@ _log = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=8)
-def _tc_ai_blocks(tc_text: str):
-    """Return (summary_bullets, faq_items) generated from a T&C text.
+def _tc_summary_bullets(tc_text: str):
+    """Return summary bullets generated from saved T&C text.
 
-    Cached: the T&C is versioned/static, so the two LLM calls run once per process
-    per distinct text — not on every PDF render. lru_cache never stores exceptions,
-    so a transient LLM failure isn't cached and retries on the next render.
+    Cached per distinct version text so proposal rendering does not call the LLM
+    repeatedly. FAQ rows come from contract_faq_entries instead of ad-hoc render-time
+    generation so proposal PDFs use reviewed/approved database content.
     """
     import app.llm as llm_mod  # noqa: PLC0415
-    from core.contract_faq import build_contract_faq_prompt, grounding_gate, parse_contract_faq  # noqa: PLC0415
     from core.tc_summary import build_tc_summary_prompt, parse_tc_summary  # noqa: PLC0415
 
-    bullets = parse_tc_summary(llm_mod.chat(build_tc_summary_prompt(tc_text))) or None
-    faq_items = parse_contract_faq(llm_mod.chat(build_contract_faq_prompt(tc_text)))
-    kept, _ = grounding_gate(faq_items, tc_text)
-    return bullets, (kept or None)
+    return parse_tc_summary(llm_mod.chat(build_tc_summary_prompt(tc_text))) or None
+
+
+def _load_tc_context(db: Session) -> dict:
+    """Load versioned T&C text, approved FAQ rows, and static AI prompts for proposals."""
+    from api.routes.contract_faq import _load_tc_text_for_version  # noqa: PLC0415
+    from app.models import ContractFaqEntry, TcVersion  # noqa: PLC0415
+    from core.tc_ai_prompts import get_tc_ai_prompts_block  # noqa: PLC0415
+
+    latest = (
+        db.query(TcVersion)
+        .order_by(TcVersion.effective_at.desc(), TcVersion.id.desc())
+        .first()
+    )
+    tc_text = _load_tc_text_for_version(latest) if latest is not None else ""
+    rows = (
+        db.query(ContractFaqEntry)
+        .filter(ContractFaqEntry.status == "approved")
+        .order_by(ContractFaqEntry.id)
+        .all()
+    )
+    prompt_block = get_tc_ai_prompts_block()
+    return {
+        "tc_text": tc_text or None,
+        "tc_summary_bullets": _tc_summary_bullets(tc_text) if tc_text else None,
+        "tc_faq_items": [
+            {"q": r.question, "a": r.answer or "", "quote": r.quote or ""}
+            for r in rows
+        ] or None,
+        "tc_review_prompts": prompt_block["recommended_prompts"],
+        "tc_ai_disclaimer": prompt_block["attorney_disclaimer"],
+        "tc_cover_letter": prompt_block["cover_letter"],
+    }
 
 router = APIRouter(tags=["quoting_proposals"])
 
@@ -799,12 +827,14 @@ def get_proposal_pdf(
         accept_url="",
     )
 
-    # Attach the AI-FAQ block (cached per T&C text; degrades gracefully on any failure)
+    # Attach versioned T&C text, reviewed contract FAQs, and AI review prompts.
+    # Degrade gracefully so proposal PDF generation is not blocked by GCS/LLM issues.
     try:
-        from core.tc_seed import DRAFT_TC_TEXT  # noqa: PLC0415
-        ctx.tc_summary_bullets, ctx.tc_faq_items = _tc_ai_blocks(DRAFT_TC_TEXT)
+        tc_ctx = _load_tc_context(db)
+        for key, value in tc_ctx.items():
+            setattr(ctx, key, value)
     except Exception as exc:
-        _log.warning("tc_ai_faq generation failed for proposal %s: %s", proposal_id, exc)
+        _log.warning("tc context loading failed for proposal %s: %s", proposal_id, exc)
 
     # Use default template if no template attached
     template_html = None

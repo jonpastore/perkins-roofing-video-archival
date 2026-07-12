@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
 from api.routes.contract_faq import router
-from app.models import ContractFaqEntry, SessionLocal, init_db
+from app.models import ContractFaqEntry, SessionLocal, TcVersion, init_db
 
 
 def _make_app():
@@ -71,12 +71,14 @@ def setup_module(module):
     init_db()
     with SessionLocal() as db:
         db.query(ContractFaqEntry).delete()
+        db.query(TcVersion).delete()
         db.commit()
 
 
 def teardown_module(module):
     with SessionLocal() as db:
         db.query(ContractFaqEntry).delete()
+        db.query(TcVersion).delete()
         db.commit()
 
 
@@ -84,10 +86,12 @@ def teardown_module(module):
 def _clean_entries():
     with SessionLocal() as db:
         db.query(ContractFaqEntry).delete()
+        db.query(TcVersion).delete()
         db.commit()
     yield
     with SessionLocal() as db:
         db.query(ContractFaqEntry).delete()
+        db.query(TcVersion).delete()
         db.commit()
 
 
@@ -189,6 +193,60 @@ def test_extract_pdf_requires_manage_articles():
     )
     assert r.status_code == 403
 
+
+
+# T&C version source endpoints
+
+def test_save_tc_version_and_load_latest(monkeypatch):
+    import api.routes.contract_faq as mod
+
+    saved = {}
+    def fake_save(**kw):
+        saved["args"] = kw
+        return "gs://bucket/tc.txt", None
+    monkeypatch.setattr(mod, "_save_tc_artifacts", fake_save)
+    monkeypatch.setattr(mod, "_read_gcs_text", lambda uri: TC_TEXT)
+
+    c = _admin_client()
+    r = c.post("/contract-faq/tc-version", json={"tc_text": TC_TEXT, "version_tag": "current terms"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["version_tag"] == "current-terms"
+    assert saved["args"]["tc_text"] == TC_TEXT
+
+    latest = c.get("/contract-faq/tc-version/latest", headers=AUTH)
+    assert latest.status_code == 200
+    assert latest.json()["tc_text"] == TC_TEXT
+    assert latest.json()["chars"] == len(TC_TEXT)
+
+
+def test_extract_pdf_save_creates_tc_version(monkeypatch):
+    import api.routes.contract_faq as mod
+
+    monkeypatch.setattr(mod, "_extract_pdf_text", lambda data: TC_TEXT)
+    monkeypatch.setattr(mod, "_save_tc_artifacts", lambda **kw: ("gs://bucket/proposal.txt", "gs://bucket/proposal.pdf"))
+    r = _admin_client().post(
+        "/contract-faq/extract-pdf?save=true&version_tag=josh proposal",
+        files={"file": ("contract.pdf", b"%PDF fake", "application/pdf")},
+        headers=AUTH,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["text"] == TC_TEXT
+    assert data["tc_version"]["version_tag"] == "josh-proposal"
+    with SessionLocal() as db:
+        assert db.query(TcVersion).count() == 1
+
+
+def test_ai_prompts_falls_back_to_latest_saved_tc(monkeypatch):
+    import api.routes.contract_faq as mod
+
+    monkeypatch.setattr(mod, "_read_gcs_text", lambda uri: TC_TEXT)
+    with SessionLocal() as db:
+        db.add(TcVersion(version_tag="v1", content_gcs="gs://bucket/tc.txt", effective_at=datetime.utcnow()))
+        db.commit()
+    r = _admin_client().post("/contract-faq/ai-prompts", json={"tc_text": ""}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert TC_TEXT in r.json()["user_prompt"]
 
 # POST /contract-faq/ai-prompts
 
