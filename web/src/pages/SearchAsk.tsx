@@ -557,8 +557,11 @@ export function SearchAsk() {
     setMode("search");
     setQuery(topic);
     setTopicOffset(0);
+    setDrillLabel(topic);
     run(topic, "search");
     // params is intentionally the trigger: Archive passes a topic when navigating here.
+    // Open the exact-topic video drilldown too, so the click shows all videos tagged
+    // with that mined topic instead of only the top vector-search hits.
   }, [params.topic]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleGenerateArticle(label: string) {

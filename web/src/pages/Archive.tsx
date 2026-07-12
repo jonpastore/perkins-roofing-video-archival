@@ -251,7 +251,7 @@ function DetailPanel({ video }: { video: ArchiveVideo }) {
               </ul>
               {topics.length > inlineTopics.length && (
                 <Button variant="ghost" onClick={() => setShowTopicsModal(true)} style={{ marginTop: 10, fontSize: 12, padding: "5px 10px" }}>
-                  View all {topics.length.toLocaleString()} topics
+                  Show all {topics.length.toLocaleString()} topics
                 </Button>
               )}
             </>
