@@ -469,16 +469,30 @@ export function SearchAsk() {
   const [drillLabel, setDrillLabel] = useState<string | null>(null);
   const [topicOffset, setTopicOffset] = useState(0);
   const [topicTotal, setTopicTotal] = useState(0);
+  const archiveTopicQuery = params.topic?.trim() ?? "";
+  const isArchiveTopicSearch =
+    mode === "search" && archiveTopicQuery.length > 0 && query.trim() === archiveTopicQuery;
 
   // Fetch topics when in "search" mode.
   // Strategy: when there is an active filter query, fetch ALL topics (no limit) so
   // client-side filtering covers the full corpus — topic labels are short strings and
   // the entire set fits in one response at any realistic scale (< 5 000 rows).
   // When there is no query, use normal pagination so the initial load stays fast.
-  const isFiltering = mode === "search" && query.trim().length > 0;
+  const isFiltering = mode === "search" && !isArchiveTopicSearch && query.trim().length > 0;
 
   useEffect(() => {
     if (mode !== "search") return;
+    if (isArchiveTopicSearch) {
+      // Archive topic clicks are free-text searches across video content. Do not
+      // also open/filter the global topic catalog: archive detail labels can be
+      // per-video graph topics rather than aggregated canonical topic labels, so
+      // the catalog can legitimately say "0 topics" while /search finds videos.
+      setTopics([]);
+      setTopicTotal(0);
+      setTopicsError(null);
+      setTopicsLoading(false);
+      return;
+    }
     setTopicsLoading(true);
     setTopicsError(null);
     const sortParam = topicSort === "alpha" ? "alpha" : topicSort === "videos" ? "videos" : "length";
@@ -498,7 +512,7 @@ export function SearchAsk() {
       })
       .catch((e) => setTopicsError(e instanceof Error ? e.message : String(e)))
       .finally(() => setTopicsLoading(false));
-  }, [mode, topicOffset, topicSort, isFiltering]);
+  }, [mode, topicOffset, topicSort, isFiltering, isArchiveTopicSearch]);
 
   // Debounced typeahead: fire /ask/suggest after 400 ms when >=8 chars typed in ask mode
   function handleQueryChange(val: string) {
@@ -557,11 +571,10 @@ export function SearchAsk() {
     setMode("search");
     setQuery(topic);
     setTopicOffset(0);
-    setDrillLabel(topic);
+    setDrillLabel(null);
     run(topic, "search");
     // params is intentionally the trigger: Archive passes a topic when navigating here.
-    // Open the exact-topic video drilldown too, so the click shows all videos tagged
-    // with that mined topic instead of only the top vector-search hits.
+    // Run a video-content search only; do not open the topic drilldown modal here.
   }, [params.topic]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleGenerateArticle(label: string) {
@@ -755,7 +768,7 @@ export function SearchAsk() {
         </div>
       )}
 
-      {loading && <Loading label={mode === "ask" ? "Searching Tim's videos…" : "Searching topics…"} />}
+      {loading && <Loading label={mode === "ask" ? "Searching Tim's videos…" : "Searching videos…"} />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
       {/* ---- ASK result (only in ask mode — switching to Search topics must hide it) ---- */}
@@ -848,7 +861,7 @@ export function SearchAsk() {
       )}
 
       {/* ---- SEARCH mode: pre-mined topic list ---- */}
-      {mode === "search" && (
+      {mode === "search" && !isArchiveTopicSearch && (
         <div>
           {/* Generate-article confirmation / error banner */}
           {generateMsg && (
