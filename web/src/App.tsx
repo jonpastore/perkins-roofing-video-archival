@@ -26,6 +26,7 @@ import { Quotes } from "./pages/Quotes";
 import { ContractFaq } from "./pages/ContractFaq";
 import { AdminConfig } from "./pages/AdminConfig";
 import { Knowify } from "./pages/Knowify";
+import { ProposalAcceptRoute } from "./pages/ProposalAccept";
 import { BRAND, FONT, Spinner } from "./ui";
 
 // ---------------------------------------------------------------------------
@@ -638,7 +639,7 @@ function LoginScreen() {
         style={{ height: 60, marginBottom: 20 }}
       />
       <p style={{ margin: "0 0 28px", color: BRAND.navyText, fontSize: 15, fontWeight: 600 }}>
-        Video Content Console
+        Sales and Marketing Platform
       </p>
       <button
         onClick={handleSignIn}
@@ -672,11 +673,16 @@ function LoginScreen() {
 // ---------------------------------------------------------------------------
 
 export default function App() {
+  const isPublicProposalRoute = /^\/p\/[^/]+\/?$/.test(window.location.pathname);
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role>(null);
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    if (isPublicProposalRoute) {
+      setAuthReady(true);
+      return;
+    }
     const unsubscribe = onAuthChanged(async (u) => {
       setUser(u);
       if (u) {
@@ -688,7 +694,9 @@ export default function App() {
       setAuthReady(true);
     });
     return unsubscribe;
-  }, []);
+  }, [isPublicProposalRoute]);
+
+  if (isPublicProposalRoute) return <ProposalAcceptRoute />;
 
   if (!authReady) {
     return (
