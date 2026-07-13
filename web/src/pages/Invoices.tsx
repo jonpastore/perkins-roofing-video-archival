@@ -48,7 +48,7 @@ function fmtDateShort(s: string | null | undefined): string {
 
 function invoiceLabel(inv: Pick<Invoice, "invoice_number" | "knowify_invoice_number" | "id">): string {
   if (inv.invoice_number != null) return `#${inv.invoice_number}`;
-  if (inv.knowify_invoice_number) return `Knowify #${inv.knowify_invoice_number}`;
+  if (inv.knowify_invoice_number) return String(inv.knowify_invoice_number);
   return `Invoice ${inv.id}`;
 }
 
@@ -477,7 +477,7 @@ function InvoiceDrawer({ invoice, onClose, onPaymentSuccess }: DrawerProps) {
             </div>
             {invoice.knowify_invoice_number && (
               <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
-                Knowify #{invoice.knowify_invoice_number}
+                #{invoice.knowify_invoice_number}
               </div>
             )}
           </div>

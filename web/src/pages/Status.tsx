@@ -297,7 +297,7 @@ function BillingSection() {
   const agingLabel = (bucket: string) => agingData.find((r) => r.key === bucket)?.name ?? bucket;
   const invoiceLabel = (row: { invoice_number: number | null; knowify_invoice_number: string | null; invoice_id: number }) => {
     if (row.invoice_number != null) return `#${row.invoice_number}`;
-    if (row.knowify_invoice_number) return `Knowify #${row.knowify_invoice_number}`;
+    if (row.knowify_invoice_number) return String(row.knowify_invoice_number);
     return `Invoice ${row.invoice_id}`;
   };
 

@@ -30,7 +30,7 @@ function fmtDate(s: string | null | undefined): string {
 
 function invoiceLabel(p: Pick<Payment, "invoice_number" | "knowify_invoice_number" | "invoice_id">): string {
   if (p.invoice_number != null) return `#${p.invoice_number}`;
-  if (p.knowify_invoice_number) return `Knowify #${p.knowify_invoice_number}`;
+  if (p.knowify_invoice_number) return String(p.knowify_invoice_number);
   return p.invoice_id != null ? `Invoice ${p.invoice_id}` : "—";
 }
 
