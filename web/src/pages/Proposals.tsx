@@ -151,6 +151,10 @@ export function Proposals() {
   const [drawerProposal, setDrawerProposal] = useState<ProposalRow | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
+  const [editingProposal, setEditingProposal] = useState<ProposalRow | null>(null);
+  const [editForm, setEditForm] = useState({ title: "", total: "", deposit: "", squares: "" });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Legacy quotes tab
   const [legacyQuotes, setLegacyQuotes] = useState<QuoteListItem[]>([]);
@@ -233,18 +237,21 @@ export function Proposals() {
     setStatusFilter(tab);
     setProposalPage(1);
     setDrawerProposal(null);
+    setEditingProposal(null);
     loadProposals(tab, 1);
   }
 
   function handleWorkspaceTabChange(tab: ProposalWorkspaceTab) {
     setWorkspaceTab(tab);
     setDrawerProposal(null);
+    setEditingProposal(null);
     setCreateOpen(false);
     if (tab === "legacy" && legacyQuotes.length === 0) loadLegacyQuotes();
   }
 
   function openCreateDrawer() {
     setDrawerProposal(null);
+    setEditingProposal(null);
     setCreateOpen(true);
   }
 
@@ -326,6 +333,75 @@ export function Proposals() {
       setDrawerError(e instanceof Error ? e.message : String(e));
     } finally {
       setDrawerLoading(false);
+    }
+  }
+
+  function openEditProposal(proposal: ProposalRow) {
+    const snap = (proposal.quote_snapshot ?? {}) as Record<string, unknown>;
+    const tiers = (snap.tiers ?? {}) as Record<string, { total?: number }>;
+    const legacy = tiers.legacy ?? {};
+    const dp = (snap.deposit_policy ?? {}) as { amount?: number | string; value?: number | string };
+    const total = Number(snap.total ?? legacy.total ?? proposal.amount ?? 0);
+    setEditingProposal(proposal);
+    setEditError(null);
+    setEditForm({
+      title: proposal.title ?? "",
+      total: Number.isFinite(total) && total > 0 ? String(total) : "",
+      deposit: dp.amount != null ? String(dp.amount) : dp.value != null ? String(dp.value) : "",
+      squares: snap.num_squares != null ? String(snap.num_squares) : "",
+    });
+    setCreateOpen(false);
+    setDrawerProposal(null);
+  }
+
+  async function handleSaveEditProposal() {
+    if (!editingProposal) return;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const baseSnap = (editingProposal.quote_snapshot ?? {}) as Record<string, unknown>;
+      const total = Number(editForm.total || 0);
+      const deposit = editForm.deposit === "" ? null : Number(editForm.deposit);
+      const squares = editForm.squares === "" ? baseSnap.num_squares : Number(editForm.squares);
+      const existingTiers = (baseSnap.tiers ?? {}) as Record<string, unknown>;
+      const currentLegacy = (existingTiers.legacy ?? {}) as Record<string, unknown>;
+      const tiers = {
+        ...existingTiers,
+        legacy: {
+          ...currentLegacy,
+          label: "Knowify Quote",
+          description: editForm.title || editingProposal.title,
+          total,
+        },
+      };
+      const snapshot = {
+        ...baseSnap,
+        total,
+        num_squares: squares,
+        tiers,
+        deposit_policy: {
+          ...((baseSnap.deposit_policy ?? {}) as Record<string, unknown>),
+          mode: deposit && deposit > 0 ? "fixed" : "none",
+          value: deposit ?? 0,
+          amount: deposit ?? 0,
+        },
+      };
+      const r = await apiFetch(`/quoting/proposals/${editingProposal.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: editForm.title, quote_snapshot: snapshot }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+      }
+      const updated: ProposalRow = await r.json();
+      setProposals((prev) => prev.map((p) => p.id === updated.id ? { ...p, ...updated, amount: total } : p));
+      setEditingProposal(null);
+      loadProposals(statusFilter, proposalPage);
+    } catch (e: unknown) {
+      setEditError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditSaving(false);
     }
   }
 
@@ -461,16 +537,27 @@ export function Proposals() {
           ⓘ
         </button>
         {(proposal.status === "draft") && (
-          <button
-            type="button"
-            title="Send"
-            aria-label="Send"
-            onClick={() => handleSend(id)}
-            disabled={sendingId === id}
-            style={proposalIconButtonStyle}
-          >
-            ✉
-          </button>
+          <>
+            <button
+              type="button"
+              title="Edit draft"
+              aria-label="Edit draft"
+              onClick={() => openEditProposal(proposal)}
+              style={proposalIconButtonStyle}
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              title="Send"
+              aria-label="Send"
+              onClick={() => handleSend(id)}
+              disabled={sendingId === id}
+              style={proposalIconButtonStyle}
+            >
+              ✉
+            </button>
+          </>
         )}
         {(proposal.status === "sent" || proposal.status === "viewed" || proposal.status === "revision_requested") && (
           <button
@@ -634,9 +721,14 @@ export function Proposals() {
               {pdfError && <ErrorMsg>PDF error: {pdfError}</ErrorMsg>}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {p.status === "draft" && (
-                  <Button onClick={() => handleSend(p.id)} disabled={sendingId === p.id} style={{ fontSize: 13 }}>
-                    {sendingId === p.id ? "Sending…" : "Send to customer"}
-                  </Button>
+                  <>
+                    <Button variant="ghost" onClick={() => openEditProposal(p)} style={{ fontSize: 13 }}>
+                      Edit draft
+                    </Button>
+                    <Button onClick={() => handleSend(p.id)} disabled={sendingId === p.id} style={{ fontSize: 13 }}>
+                      {sendingId === p.id ? "Sending…" : "Send to customer"}
+                    </Button>
+                  </>
                 )}
                 {(p.status === "sent" || p.status === "viewed" || p.status === "revision_requested") && (
                   <Button variant="ghost" onClick={() => handleRevise(p.id)} disabled={revisingId === p.id} style={{ fontSize: 13 }}>
@@ -721,6 +813,58 @@ export function Proposals() {
             onCreated={handleProposalCreated}
             onCancel={closeCreateDrawer}
           />
+        </div>
+      </div>
+    );
+  }
+
+  function renderEditDrawer() {
+    if (!editingProposal) return null;
+    return (
+      <div style={{
+        position: "fixed",
+        top: 0,
+        right: 0,
+        width: "min(560px, 96vw)",
+        height: "100vh",
+        background: "#fff",
+        borderLeft: `1px solid ${BRAND.border}`,
+        boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
+        overflowY: "auto",
+        zIndex: 200,
+        fontFamily: FONT,
+      }}>
+        <div style={{ padding: "18px 24px", borderBottom: `1px solid ${BRAND.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>
+          <div>
+            <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 16 }}>Edit Proposal #{editingProposal.id}</div>
+            <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>Draft revision v{editingProposal.version_number}</div>
+          </div>
+          <button onClick={() => setEditingProposal(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: BRAND.sub, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: 20, display: "grid", gap: 14 }}>
+          <div>
+            <SectionLabel>Title</SectionLabel>
+            <input style={{ ...inputStyle, width: "100%" }} value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} />
+          </div>
+          <div>
+            <SectionLabel>Total</SectionLabel>
+            <input type="number" step="0.01" min="0" style={{ ...inputStyle, width: "100%" }} value={editForm.total} onChange={(e) => setEditForm((f) => ({ ...f, total: e.target.value }))} />
+          </div>
+          <div>
+            <SectionLabel>Deposit</SectionLabel>
+            <input type="number" step="0.01" min="0" style={{ ...inputStyle, width: "100%" }} value={editForm.deposit} onChange={(e) => setEditForm((f) => ({ ...f, deposit: e.target.value }))} />
+          </div>
+          <div>
+            <SectionLabel>Squares</SectionLabel>
+            <input type="number" step="0.1" min="0" style={{ ...inputStyle, width: "100%" }} value={editForm.squares} onChange={(e) => setEditForm((f) => ({ ...f, squares: e.target.value }))} />
+          </div>
+          {editError && <ErrorMsg>Error: {editError}</ErrorMsg>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <Button variant="ghost" onClick={() => setEditingProposal(null)} disabled={editSaving}>Cancel</Button>
+            <Button onClick={handleSaveEditProposal} disabled={editSaving || !editForm.title.trim()}>
+              {editSaving ? "Saving…" : "Save draft"}
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -1084,11 +1228,12 @@ export function Proposals() {
       {workspaceTab === "legacy" && renderLegacyQuotes()}
 
       {/* Backdrop when drawer is open */}
-      {(drawerProposal || createOpen) && (
+      {(drawerProposal || createOpen || editingProposal) && (
         <div
           onClick={() => {
             setDrawerProposal(null);
             setCreateOpen(false);
+            setEditingProposal(null);
           }}
           style={{
             position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 199,
@@ -1098,6 +1243,7 @@ export function Proposals() {
 
       {renderDrawer()}
       {renderCreateDrawer()}
+      {renderEditDrawer()}
       {renderImportDialog()}
     </main>
   );

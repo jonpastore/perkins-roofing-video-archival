@@ -18,3 +18,13 @@ def test_proposals_table_uses_compact_proposal_column_and_wide_customer_address(
     assert "#{p.id}" in source
     assert "v{p.version_number}" in source
     assert "maxWidth: 300" in source
+
+
+def test_revision_opens_editable_draft_ui():
+    source = PROPOSALS.read_text()
+
+    assert "Create editable revision" in source
+    assert "Edit Proposal #" in source
+    assert "Save draft" in source
+    assert "Edit draft" in source
+    assert "handleSaveEditProposal" in source
