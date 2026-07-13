@@ -15,6 +15,7 @@ from core.dashboard import (
     open_ar_summary,
     payments_over_time,
     proposal_funnel,
+    proposal_funnel_over_time,
     receivables_due_next,
 )
 
@@ -483,3 +484,31 @@ class TestProposalFunnel:
         _proposal(s, status="revision_requested", created_at=_dt(2024, 2, 1))
         result = proposal_funnel(s, _dt(2024, 1, 1), _dt(2024, 3, 1))
         assert result["revision_requested"] == 1
+
+
+class TestProposalFunnelOverTime:
+    def test_groups_four_statuses_by_week(self):
+        e = _engine()
+        s = _session(e)
+        _proposal(s, status="draft", created_at=_dt(2024, 2, 1))
+        _proposal(s, status="sent", created_at=_dt(2024, 2, 2))
+        _proposal(s, status="viewed", created_at=_dt(2024, 2, 3))
+        _proposal(s, status="accepted", created_at=_dt(2024, 2, 9))
+        _proposal(s, status="declined", created_at=_dt(2024, 2, 10))
+
+        result = proposal_funnel_over_time(s, _dt(2024, 2, 1), _dt(2024, 2, 14), "week")
+
+        assert result[0]["period"] == "2024-01-29"
+        assert result[0]["draft"] == 1
+        assert result[0]["sent"] == 2  # sent + viewed combined
+        assert result[0]["accepted"] == 0
+        assert result[0]["declined"] == 0
+        assert result[1]["period"] == "2024-02-05"
+        assert result[1]["accepted"] == 1
+        assert result[1]["declined"] == 1
+
+    def test_includes_empty_periods_in_range(self):
+        s = _session(_engine())
+        result = proposal_funnel_over_time(s, _dt(2024, 2, 1), _dt(2024, 2, 3), "day")
+        assert [r["period"] for r in result] == ["2024-02-01", "2024-02-02", "2024-02-03"]
+        assert all(r["draft"] == 0 and r["sent"] == 0 for r in result)

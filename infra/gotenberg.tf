@@ -86,6 +86,14 @@ resource "google_cloud_run_v2_service_iam_member" "gotenberg_invoker" {
   member   = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+resource "google_cloud_run_v2_service_iam_member" "gotenberg_jobs_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.gotenberg.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.jobs_sa.email}"
+}
+
 output "gotenberg_url" {
   description = "Internal Cloud Run URL for the Gotenberg PDF rendering service. After terraform apply, export this value into GOTENBERG_URL before running scripts/deploy.sh: export GOTENBERG_URL=$(terraform output -raw gotenberg_url)"
   value       = google_cloud_run_v2_service.gotenberg.uri

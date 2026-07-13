@@ -51,6 +51,29 @@ def _bucket_key(dt: datetime, bucket: Bucket) -> str:
     return f"{d.year}-{d.month:02d}"
 
 
+def _period_keys_between(from_dt: datetime, to_dt: datetime, bucket: Bucket) -> list[str]:
+    """Return continuous period keys covering [from_dt, to_dt]."""
+    cur = from_dt.date()
+    end = to_dt.date()
+    if bucket == "week":
+        cur = cur - timedelta(days=cur.weekday())
+    elif bucket == "month":
+        cur = date(cur.year, cur.month, 1)
+
+    out: list[str] = []
+    while cur <= end:
+        out.append(_bucket_key(cur, bucket))
+        if bucket == "day":
+            cur += timedelta(days=1)
+        elif bucket == "week":
+            cur += timedelta(days=7)
+        else:
+            year = cur.year + (1 if cur.month == 12 else 0)
+            month = 1 if cur.month == 12 else cur.month + 1
+            cur = date(year, month, 1)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # payments_over_time
 # ---------------------------------------------------------------------------
@@ -363,3 +386,42 @@ def proposal_funnel(session: Session, from_dt: datetime, to_dt: datetime) -> dic
     win_rate = (counts["accepted"] / decided) if decided > 0 else 0.0
 
     return {**counts, "win_rate": win_rate}
+
+
+def proposal_funnel_over_time(
+    session: Session,
+    from_dt: datetime,
+    to_dt: datetime,
+    bucket: Bucket = "day",
+) -> list[dict]:
+    """Proposal status distribution by time bucket.
+
+    Uses the same selected range and bucket granularity as the dashboard
+    payments/invoices chart. Four bars are returned per period:
+    draft, sent/viewed, accepted, declined. Revision requests are not a funnel
+    terminal and are intentionally omitted from the grouped time-series view.
+    """
+    to_exclusive = to_dt + timedelta(days=1)
+    rows = session.execute(
+        select(Proposal.created_at, Proposal.status)
+        .where(Proposal.created_at >= from_dt, Proposal.created_at < to_exclusive)
+    ).all()
+
+    buckets: dict[str, dict] = {
+        period: {"period": period, "draft": 0, "sent": 0, "accepted": 0, "declined": 0}
+        for period in _period_keys_between(from_dt, to_dt, bucket)
+    }
+    for created_at, status in rows:
+        key = _bucket_key(created_at, bucket)
+        if key not in buckets:
+            buckets[key] = {"period": key, "draft": 0, "sent": 0, "accepted": 0, "declined": 0}
+        if status == "draft":
+            buckets[key]["draft"] += 1
+        elif status in ("sent", "viewed"):
+            buckets[key]["sent"] += 1
+        elif status == "accepted":
+            buckets[key]["accepted"] += 1
+        elif status == "declined":
+            buckets[key]["declined"] += 1
+
+    return sorted(buckets.values(), key=lambda r: r["period"])

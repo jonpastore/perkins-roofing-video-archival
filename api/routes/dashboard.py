@@ -21,6 +21,7 @@ from core.dashboard import (
     open_ar_summary,
     payments_over_time,
     proposal_funnel,
+    proposal_funnel_over_time,
     receivables_due_next,
 )
 
@@ -71,6 +72,7 @@ def billing_dashboard(
         "aging_buckets": aging_buckets(db, as_of),
         "receivables_due_next_30": receivables_due_next(db, as_of, days=30),
         "proposal_funnel": proposal_funnel(db, from_dt, to_dt),
+        "proposal_funnel_over_time": proposal_funnel_over_time(db, from_dt, to_dt, bucket),  # type: ignore[arg-type]
     }
 
 

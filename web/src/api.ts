@@ -1028,6 +1028,15 @@ export interface DashboardAgingBuckets {
   d90_plus: string;
 }
 
+
+export interface DashboardProposalFunnelPeriod {
+  period: string;
+  draft: number;
+  sent: number;
+  accepted: number;
+  declined: number;
+}
+
 export interface DashboardProposalFunnel {
   draft: number;
   sent: number;
@@ -1052,6 +1061,7 @@ export interface DashboardBilling {
     total: string;
   };
   proposal_funnel: DashboardProposalFunnel;
+  proposal_funnel_over_time: DashboardProposalFunnelPeriod[];
 }
 
 export async function getDashboardBilling(params: {

@@ -98,6 +98,23 @@ function usd(n: number | string | undefined): string {
   return (v as number).toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 });
 }
 
+const proposalIconButtonStyle: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  borderRadius: 7,
+  border: `1px solid ${BRAND.border}`,
+  background: "#fff",
+  color: BRAND.navyText,
+  cursor: "pointer",
+  fontFamily: FONT,
+  fontSize: 15,
+  fontWeight: 700,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+};
+
 function propertyLabel(p: QuotingProperty): string {
   return `${p.street}, ${p.city} ${p.state}${p.zip ? ` ${p.zip}` : ""}`;
 }
@@ -426,37 +443,50 @@ export function Proposals() {
   function renderRowActions(proposal: ProposalRow) {
     const id = proposal.id;
     return (
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <Button variant="ghost" onClick={() => openDrawer(proposal)} style={{ fontSize: 12, padding: "5px 10px" }}>
-          Details
-        </Button>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+        <button
+          type="button"
+          title="Details"
+          aria-label="Details"
+          onClick={() => openDrawer(proposal)}
+          style={proposalIconButtonStyle}
+        >
+          ⓘ
+        </button>
         {(proposal.status === "draft") && (
-          <Button
+          <button
+            type="button"
+            title="Send"
+            aria-label="Send"
             onClick={() => handleSend(id)}
             disabled={sendingId === id}
-            style={{ fontSize: 12, padding: "5px 10px" }}
+            style={proposalIconButtonStyle}
           >
-            {sendingId === id ? "Sending…" : "Send"}
-          </Button>
+            ✉
+          </button>
         )}
         {(proposal.status === "sent" || proposal.status === "viewed" || proposal.status === "revision_requested") && (
-          <Button
-            variant="ghost"
+          <button
+            type="button"
+            title="Revise"
+            aria-label="Revise"
             onClick={() => handleRevise(id)}
             disabled={revisingId === id}
-            style={{ fontSize: 12, padding: "5px 10px" }}
+            style={proposalIconButtonStyle}
           >
-            {revisingId === id ? "Revising…" : "Revise"}
-          </Button>
+            ↻
+          </button>
         )}
-        <Button
-          variant="ghost"
+        <button
+          type="button"
+          title="PDF"
+          aria-label="PDF"
           onClick={() => handleViewPdf(id)}
           disabled={pdfLoadingId === id}
-          style={{ fontSize: 12, padding: "5px 10px" }}
+          style={{ ...proposalIconButtonStyle, fontSize: 10, fontWeight: 800 }}
         >
-          {pdfLoadingId === id ? "Loading…" : "PDF"}
-        </Button>
+          PDF
+        </button>
       </div>
     );
   }
@@ -889,7 +919,7 @@ export function Proposals() {
   })();
 
   return (
-    <main style={{ maxWidth: 960, fontFamily: FONT }}>
+    <main style={{ maxWidth: 1240, fontFamily: FONT }}>
       <PageTitle
         right={
           <Button onClick={openCreateDrawer} style={{ fontSize: 13 }}>
@@ -962,19 +992,16 @@ export function Proposals() {
           )}
 
           {!loading && !error && proposals.length > 0 && (
-        <Card style={{ padding: 0, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+        <Card style={{ padding: 0, overflowX: "auto" }}>
+          <table style={{ width: "100%", minWidth: 1040, borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>#</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Customer</th>
+                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, width: 120 }}>Proposal</th>
+                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, width: 310 }}>Customer / Property</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, textAlign: "right" }}>Amount</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Ver.</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Created</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Sent</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -986,24 +1013,26 @@ export function Proposals() {
                     background: drawerProposal?.id === p.id ? "#f7f8fa" : undefined,
                   }}
                 >
-                  <td style={{ padding: "10px 16px", color: BRAND.sub, fontVariantNumeric: "tabular-nums" }}>{p.id}</td>
-                  <td style={{ padding: "10px 16px", fontWeight: 600, color: BRAND.navyText }}>
+                  <td style={{ padding: "12px 16px", color: BRAND.sub, fontVariantNumeric: "tabular-nums", verticalAlign: "top" }}>
+                    <div style={{ fontWeight: 800, color: BRAND.navyText }}>#{p.id}</div>
+                    <div style={{ marginTop: 7 }}>{statusBadge(p.status)}</div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: BRAND.sub }}>v{p.version_number}</div>
+                    {renderRowActions(p)}
+                  </td>
+                  <td style={{ padding: "12px 16px", fontWeight: 600, color: BRAND.navyText, verticalAlign: "top", lineHeight: 1.45 }}>
                     {p.customer_name ?? `#${p.customer_id}`}
                     {p.property_address && (
-                      <div style={{ fontWeight: 400, fontSize: 12, color: BRAND.sub }}>{p.property_address}</div>
+                      <div style={{ fontWeight: 400, fontSize: 13, color: BRAND.sub, marginTop: 3, maxWidth: 300, whiteSpace: "normal" }}>{p.property_address}</div>
                     )}
                   </td>
-                  <td style={{ padding: "10px 16px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "12px 16px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "top" }}>
                     {p.title}
                   </td>
-                  <td style={{ padding: "10px 16px", color: BRAND.navyText, fontWeight: 700, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "12px 16px", color: BRAND.navyText, fontWeight: 700, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", verticalAlign: "top" }}>
                     {usd(p.amount ?? 0)}
                   </td>
-                  <td style={{ padding: "10px 16px" }}>{statusBadge(p.status)}</td>
-                  <td style={{ padding: "10px 16px", color: BRAND.sub }}>v{p.version_number}</td>
-                  <td style={{ padding: "10px 16px", color: BRAND.sub, whiteSpace: "nowrap" }}>{fmtDate(p.created_at)}</td>
-                  <td style={{ padding: "10px 16px", color: BRAND.sub, whiteSpace: "nowrap" }}>{fmtDate(p.sent_at)}</td>
-                  <td style={{ padding: "10px 16px" }}>{renderRowActions(p)}</td>
+                  <td style={{ padding: "12px 16px", color: BRAND.sub, whiteSpace: "nowrap", verticalAlign: "top" }}>{fmtDate(p.created_at)}</td>
+                  <td style={{ padding: "12px 16px", color: BRAND.sub, whiteSpace: "nowrap", verticalAlign: "top" }}>{fmtDate(p.sent_at)}</td>
                 </tr>
               ))}
             </tbody>

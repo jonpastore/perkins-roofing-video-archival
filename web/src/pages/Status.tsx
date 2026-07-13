@@ -292,16 +292,7 @@ function BillingSection() {
       ]
     : [];
 
-  const funnelData = billing
-    ? [
-        { name: "Draft", value: billing.proposal_funnel.draft, color: "#667085" },
-        { name: "Sent", value: billing.proposal_funnel.sent, color: BRAND.navyText },
-        { name: "Viewed", value: billing.proposal_funnel.viewed, color: "#b45309" },
-        { name: "Accepted", value: billing.proposal_funnel.accepted, color: "#1a7f4b" },
-        { name: "Declined", value: billing.proposal_funnel.declined, color: BRAND.red },
-        { name: "Revision", value: billing.proposal_funnel.revision_requested, color: "#e07b39" },
-      ]
-    : [];
+  const funnelTimeData = billing?.proposal_funnel_over_time ?? [];
 
   const agingLabel = (bucket: string) => agingData.find((r) => r.key === bucket)?.name ?? bucket;
   const invoiceLabel = (row: { invoice_number: number | null; knowify_invoice_number: string | null; invoice_id: number }) => {
@@ -540,22 +531,25 @@ function BillingSection() {
             </div>
           )}
 
-          {/* Proposal funnel */}
+          {/* Proposal funnel over time */}
           <Card style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
-              Proposal Funnel
+            <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+              Proposal Funnel Over Time
             </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={funnelData} layout="vertical" margin={{ top: 0, right: 40, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: BRAND.sub }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: BRAND.sub }} width={64} />
-                <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Count"]} />
-                <Bar dataKey="value" name="Count" radius={[0, 4, 4, 0]}>
-                  {funnelData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Bar>
+            <div style={{ color: BRAND.sub, fontSize: 12, marginBottom: 12 }}>
+              Grouped on the same {lastRange?.bucket ?? "day"} time scale as Payments/Invoiced above. Sent includes viewed proposals.
+            </div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={funnelTimeData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
+                <XAxis dataKey="period" tick={{ fontSize: 11, fill: BRAND.sub }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: BRAND.sub }} width={44} />
+                <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name]} />
+                <Legend />
+                <Bar dataKey="draft" name="Draft" fill="#667085" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="sent" name="Sent / Viewed" fill={BRAND.navyText} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="accepted" name="Accepted" fill="#1a7f4b" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="declined" name="Declined" fill={BRAND.red} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </Card>
