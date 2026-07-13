@@ -1,5 +1,5 @@
-from pathlib import Path
 import re
+from pathlib import Path
 
 
 def test_proposal_builder_customer_load_caps_limit_to_backend_maximum():

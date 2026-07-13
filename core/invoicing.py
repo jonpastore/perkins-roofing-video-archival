@@ -22,6 +22,8 @@ from __future__ import annotations
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any
 
+from core.discounts import resolve_discounts
+
 _Q2 = Decimal("0.01")
 
 
@@ -101,7 +103,8 @@ def build_invoice_lines(
             "sort_order": order,
         })
         order += 1
-    for d in (discounts or []):
+    discount_base = sum((_dec(s["scope_value"]) for s in scopes), Decimal("0.00"))
+    for d in resolve_discounts(discounts or [], discount_base):
         amt = -draw_amount(d["amount"], p)  # negative, same pct
         lines.append({
             "line_type": "discount",

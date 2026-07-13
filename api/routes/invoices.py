@@ -123,7 +123,10 @@ class ScopeIn(BaseModel):
 
 class DiscountIn(BaseModel):
     description: str = "Discount"
-    amount: str                 # positive; billed negative
+    amount: str | None = None   # positive dollars; billed negative (legacy amount path)
+    discount_type: str | None = None
+    value: str | None = None
+    percent: str | None = None
 
 
 class IssueInvoiceRequest(BaseModel):

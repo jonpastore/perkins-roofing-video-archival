@@ -1,6 +1,5 @@
-from pathlib import Path
 import re
-
+from pathlib import Path
 
 PROPOSALS = Path("web/src/pages/Proposals.tsx")
 BUILDER = Path("web/src/pages/ProposalBuilder.tsx")

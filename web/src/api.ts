@@ -605,7 +605,10 @@ export interface ProposalExtraLine {
 }
 export interface ProposalDiscount {
   description: string;
-  amount: string;                 // positive; billed negative
+  amount?: string;                // positive dollars; billed negative (legacy amount path)
+  discount_type?: "amount" | "percent";
+  value?: string;                 // amount dollars or percent number, depending on discount_type
+  percent?: string;               // accepted alias for percent rows
 }
 export interface ProposalGenInputs {
   customer: string;               // name

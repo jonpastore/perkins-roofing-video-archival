@@ -209,7 +209,20 @@ function PaymentForm({ invoice, onSuccess, onCancel }: PaymentFormProps) {
 // ── Issue invoice form ─────────────────────────────────────────────────────────
 
 interface ScopeRow { description: string; scope_value: string; }
-interface DiscountRow { description: string; amount: string; }
+interface DiscountRow { description: string; amount: string; discount_type: "amount" | "percent"; }
+interface DiscountPreset { description: string; amount: string; discount_type: "amount" | "percent"; }
+
+const INVOICE_DISCOUNT_PRESETS_KEY = "perkins.discountPresets.v1";
+function loadDiscountPresets(): DiscountPreset[] {
+  try {
+    const raw = window.localStorage.getItem(INVOICE_DISCOUNT_PRESETS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((p) => p?.description && p?.amount) : [];
+  } catch { return []; }
+}
+function saveDiscountPresets(presets: DiscountPreset[]) {
+  window.localStorage.setItem(INVOICE_DISCOUNT_PRESETS_KEY, JSON.stringify(presets));
+}
 
 interface IssueFormProps {
   customers: QuotingCustomer[];
@@ -223,6 +236,7 @@ function IssueForm({ customers, onSuccess, onCancel }: IssueFormProps) {
   const [milestonePct, setMilestonePct] = useState("");
   const [scopes, setScopes] = useState<ScopeRow[]>([{ description: "", scope_value: "" }]);
   const [discounts, setDiscounts] = useState<DiscountRow[]>([]);
+  const [discountPresets, setDiscountPresets] = useState<DiscountPreset[]>(() => loadDiscountPresets());
   const [invoiceDate, setInvoiceDate] = useState("");
   const [comments, setComments] = useState("");
   const [saving, setSaving] = useState(false);
@@ -234,7 +248,17 @@ function IssueForm({ customers, onSuccess, onCancel }: IssueFormProps) {
     setScopes((prev) => prev.map((s, idx) => idx === i ? { ...s, [field]: val } : s));
   }
 
-  function addDiscount() { setDiscounts((prev) => [...prev, { description: "", amount: "" }]); }
+  function addDiscount() { setDiscounts((prev) => [...prev, { description: "", amount: "", discount_type: "amount" }]); }
+  function addDiscountPreset(preset: DiscountPreset) { setDiscounts((prev) => [...prev, { ...preset }]); }
+  function saveDiscountPreset(row: DiscountRow) {
+    if (!row.description.trim() || !row.amount.trim()) return;
+    const preset = { description: row.description.trim(), amount: row.amount.trim(), discount_type: row.discount_type };
+    setDiscountPresets((prev) => {
+      const next = [preset, ...prev.filter((p) => p.description.toLowerCase() !== preset.description.toLowerCase())].slice(0, 20);
+      saveDiscountPresets(next);
+      return next;
+    });
+  }
   function removeDiscount(i: number) { setDiscounts((prev) => prev.filter((_, idx) => idx !== i)); }
   function updateDiscount(i: number, field: keyof DiscountRow, val: string) {
     setDiscounts((prev) => prev.map((d, idx) => idx === i ? { ...d, [field]: val } : d));
@@ -259,7 +283,12 @@ function IssueForm({ customers, onSuccess, onCancel }: IssueFormProps) {
     };
     const validDiscounts = discounts.filter((d) => d.description.trim() && d.amount.trim());
     if (validDiscounts.length > 0) {
-      body.discounts = validDiscounts.map((d) => ({ description: d.description.trim(), amount: d.amount.trim() }));
+      body.discounts = validDiscounts.map((d) => ({
+        description: d.description.trim(),
+        discount_type: d.discount_type,
+        value: d.amount.trim(),
+        ...(d.discount_type === "amount" ? { amount: d.amount.trim() } : {}),
+      }));
     }
     setSaving(true);
     setErr(null);
@@ -333,13 +362,29 @@ function IssueForm({ customers, onSuccess, onCancel }: IssueFormProps) {
 
       <div>
         <SectionLabel>Discounts (optional)</SectionLabel>
+        {discountPresets.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {discountPresets.map((p) => (
+              <button key={`${p.description}-${p.discount_type}-${p.amount}`} onClick={() => addDiscountPreset(p)}
+                style={{ border: `1px solid ${BRAND.border}`, background: BRAND.bg, borderRadius: 999, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: BRAND.navyText }}>
+                + {p.description} ({p.discount_type === "percent" ? `${p.amount}%` : `$${p.amount}`})
+              </button>
+            ))}
+          </div>
+        )}
         {discounts.map((d, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 160px auto", gap: 8, marginBottom: 8 }}>
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 90px 130px auto auto", gap: 8, marginBottom: 8, alignItems: "center" }}>
             <input value={d.description} onChange={(e) => updateDiscount(i, "description", e.target.value)}
               style={{ ...inputStyle, fontSize: 13 }} placeholder="Description" />
-            <input type="number" min="0" step="0.01" value={d.amount}
+            <select value={d.discount_type} onChange={(e) => updateDiscount(i, "discount_type", e.target.value)}
+              style={{ ...inputStyle, fontSize: 13 }}>
+              <option value="amount">$</option>
+              <option value="percent">%</option>
+            </select>
+            <input type="number" min="0" max={d.discount_type === "percent" ? "100" : undefined} step="0.01" value={d.amount}
               onChange={(e) => updateDiscount(i, "amount", e.target.value)}
-              style={{ ...inputStyle, fontSize: 13 }} placeholder="Amount" />
+              style={{ ...inputStyle, fontSize: 13 }} placeholder={d.discount_type === "percent" ? "10" : "Amount"} />
+            <Button variant="ghost" onClick={() => saveDiscountPreset(d)} style={{ fontSize: 12, padding: "5px 8px" }}>Save</Button>
             <button onClick={() => removeDiscount(i)}
               style={{ background: "none", border: "none", color: BRAND.sub, cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>×</button>
           </div>

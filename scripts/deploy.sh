@@ -27,9 +27,7 @@ REGION="${GCP_REGION:-us-central1}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/app/platform:$(git rev-parse --short HEAD)"
 CONN="${PROJECT}:${REGION}:${PROJECT}-pg"
 GOTENBERG_URL="${GOTENBERG_URL:-$(cd infra && terraform output -raw gotenberg_url 2>/dev/null || true)}"
-# SIGN_PUBLIC_URL is intentionally left unset until sign.perkinsroofing.net DNS + cert are live.
-# When ready, export SIGN_PUBLIC_URL=https://sign.perkinsroofing.net before deploy to flip accept links.
-SIGN_PUBLIC_URL="${SIGN_PUBLIC_URL:-}"
+SIGN_PUBLIC_URL="${SIGN_PUBLIC_URL:-https://sign.perkinsroofing.net}"
 
 # Env built with a '|' delimiter (gcloud ^|^ form) so values with commas/@/() survive intact.
 # DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').

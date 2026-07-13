@@ -325,23 +325,48 @@ interface DiscountRow {
   key: number;
   description: string;
   amount: string;
+  discount_type: "amount" | "percent";
+}
+
+interface DiscountPreset {
+  description: string;
+  amount: string;
+  discount_type: "amount" | "percent";
+}
+
+const DISCOUNT_PRESETS_KEY = "perkins.discountPresets.v1";
+
+function loadDiscountPresets(): DiscountPreset[] {
+  try {
+    const raw = window.localStorage.getItem(DISCOUNT_PRESETS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((p) => p?.description && p?.amount) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDiscountPresets(presets: DiscountPreset[]) {
+  window.localStorage.setItem(DISCOUNT_PRESETS_KEY, JSON.stringify(presets));
 }
 
 function DiscountRowEditor({
   row,
   onChange,
   onRemove,
+  onSavePreset,
 }: {
   row: DiscountRow;
   onChange: (r: DiscountRow) => void;
   onRemove: () => void;
+  onSavePreset: (r: DiscountRow) => void;
 }) {
   const upd = (patch: Partial<DiscountRow>) => onChange({ ...row, ...patch });
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 120px auto",
+        gridTemplateColumns: "1fr 90px 120px auto auto",
         gap: 8,
         alignItems: "end",
         padding: "10px 0",
@@ -358,16 +383,34 @@ function DiscountRowEditor({
         />
       </div>
       <div>
-        <FieldLabel>Amount ($)</FieldLabel>
+        <FieldLabel>Type</FieldLabel>
+        <select
+          value={row.discount_type}
+          onChange={(e) => upd({ discount_type: e.target.value as "amount" | "percent" })}
+          style={selectStyle}
+        >
+          <option value="amount">$</option>
+          <option value="percent">%</option>
+        </select>
+      </div>
+      <div>
+        <FieldLabel>{row.discount_type === "percent" ? "Percent" : "Amount ($)"}</FieldLabel>
         <input
           type="number"
           min="0"
+          max={row.discount_type === "percent" ? "100" : undefined}
           step="0.01"
           value={row.amount}
           onChange={(e) => upd({ amount: e.target.value })}
-          placeholder="500.00"
+          placeholder={row.discount_type === "percent" ? "10" : "500.00"}
           style={{ ...inputStyle, width: "100%", fontSize: 13 }}
         />
+      </div>
+      <div style={{ paddingBottom: 2 }}>
+        <FieldLabel>&nbsp;</FieldLabel>
+        <Button variant="ghost" onClick={() => onSavePreset(row)} style={{ fontSize: 12, padding: "6px 10px" }}>
+          Save preset
+        </Button>
       </div>
       <div style={{ paddingBottom: 2 }}>
         <FieldLabel>&nbsp;</FieldLabel>
@@ -393,7 +436,7 @@ function emptyExtra(): ExtraRow {
   return { key: nextKey(), description: "", line_total: "", unit_price: "", qty: "", is_optional: false, is_metal: false };
 }
 function emptyDiscount(): DiscountRow {
-  return { key: nextKey(), description: "", amount: "" };
+  return { key: nextKey(), description: "", amount: "", discount_type: "amount" };
 }
 
 export function ProposalBuilder({
@@ -426,6 +469,7 @@ export function ProposalBuilder({
   const [scopes, setScopes] = useState<ScopeRow[]>([emptyScope()]);
   const [extras, setExtras] = useState<ExtraRow[]>([]);
   const [discounts, setDiscounts] = useState<DiscountRow[]>([]);
+  const [discountPresets, setDiscountPresets] = useState<DiscountPreset[]>(() => loadDiscountPresets());
 
   // Submit state
   const [submitting, setSubmitting] = useState(false);
@@ -504,6 +548,18 @@ export function ProposalBuilder({
   function removeDiscount(key: number) {
     setDiscounts((prev) => prev.filter((r) => r.key !== key));
   }
+  function addDiscountPreset(preset: DiscountPreset) {
+    setDiscounts((prev) => [...prev, { key: nextKey(), ...preset }]);
+  }
+  function saveDiscountPreset(row: DiscountRow) {
+    if (!row.description.trim() || !row.amount.trim()) return;
+    const preset = { description: row.description.trim(), amount: row.amount.trim(), discount_type: row.discount_type };
+    setDiscountPresets((prev) => {
+      const next = [preset, ...prev.filter((p) => p.description.toLowerCase() !== preset.description.toLowerCase())].slice(0, 20);
+      saveDiscountPresets(next);
+      return next;
+    });
+  }
 
   async function handleGenerate() {
     setValidationError(null);
@@ -552,7 +608,12 @@ export function ProposalBuilder({
     // Build discount inputs
     const discountInputs: ProposalDiscount[] = discounts
       .filter((d) => d.description.trim() && d.amount.trim())
-      .map((d) => ({ description: d.description.trim(), amount: d.amount.trim() }));
+      .map((d) => ({
+        description: d.description.trim(),
+        discount_type: d.discount_type,
+        value: d.amount.trim(),
+        ...(d.discount_type === "amount" ? { amount: d.amount.trim() } : {}),
+      }));
 
     setSubmitting(true);
     try {
@@ -843,7 +904,20 @@ export function ProposalBuilder({
             + Add discount
           </Button>
         </div>
-        <SectionLabel>Enter positive amounts — billed as negative deductions.</SectionLabel>
+        <SectionLabel>Enter a fixed dollar amount or a percent; percentages are frozen as dollar discounts in the proposal snapshot.</SectionLabel>
+        {discountPresets.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 4px" }}>
+            {discountPresets.map((p) => (
+              <button
+                key={`${p.description}-${p.discount_type}-${p.amount}`}
+                onClick={() => addDiscountPreset(p)}
+                style={{ border: `1px solid ${BRAND.border}`, background: BRAND.bg, borderRadius: 999, padding: "4px 10px", cursor: "pointer", fontSize: 12, color: BRAND.navyText }}
+              >
+                + {p.description} ({p.discount_type === "percent" ? `${p.amount}%` : fmtUSD(p.amount)})
+              </button>
+            ))}
+          </div>
+        )}
         {discounts.length === 0 && (
           <p style={{ margin: "8px 0 0", fontSize: 13, color: BRAND.sub }}>No discounts.</p>
         )}
@@ -853,6 +927,7 @@ export function ProposalBuilder({
             row={d}
             onChange={(r) => updateDiscount(d.key, r)}
             onRemove={() => removeDiscount(d.key)}
+            onSavePreset={saveDiscountPreset}
           />
         ))}
       </Card>

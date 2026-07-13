@@ -87,10 +87,8 @@ function fmtDateTime(iso: string | null | undefined): string {
 }
 
 function signPublicUrl(): string {
-  // Opt-in: set VITE_SIGN_PUBLIC_URL=https://sign.perkinsroofing.net at build time once the
-  // custom domain + cert are live. Until then, use the current origin so accept links resolve.
   const envUrl = import.meta.env.VITE_SIGN_PUBLIC_URL as string | undefined;
-  return (envUrl || window.location.origin).replace(/\/$/, "");
+  return (envUrl || "https://sign.perkinsroofing.net").replace(/\/$/, "");
 }
 
 function usd(n: number | string | undefined): string {

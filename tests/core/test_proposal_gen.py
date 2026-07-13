@@ -138,3 +138,20 @@ def test_freeze_quote_snapshot_without_price_book():
     assert "price_book_hash" not in snapshot
     assert snapshot["package_tables"] == {}
     assert h == compute_snapshot_hash(snapshot)
+
+
+def test_compose_proposal_percent_discount_resolves_to_frozen_amount():
+    from core.proposal_gen import compose_proposal
+
+    proposal = compose_proposal({
+        "customer": "A",
+        "property": "B",
+        "scopes": [{"roof_system": "shingle", "tier": "PROTECTOR", "squares": "10", "unit_price": "100"}],
+        "discounts": [{"description": "Veteran", "discount_type": "percent", "value": "10"}],
+    })
+
+    discount = [ln for ln in proposal["scope_lines"] if ln["description"] == "Veteran"][0]
+    assert discount["line_total"] == "-100.00"
+    assert discount["discount_type"] == "percent"
+    assert discount["discount_value"] == "10"
+    assert proposal["contract_total"] == "900.00"

@@ -12,6 +12,7 @@ import copy
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from core.discounts import resolve_discounts
 from core.perkins_packages import package_prices_snapshot, sell_price_per_sq
 from core.pricing_config import compute_snapshot_hash
 
@@ -212,8 +213,20 @@ def compose_proposal(
         })
         line_num += 1
 
+    # --- Totals helper (M1 fix: exclude is_optional=True lines unless included=True) ---
+    def _in_total(line: dict) -> bool:
+        if not line.get("is_optional", False):
+            return True
+        return bool(line.get("included", False))
+
     # --- Discount lines (always included, always negative) ---
-    for disc in inputs.get("discounts", []):
+    # Percent discounts resolve against the pre-discount included subtotal and are
+    # then frozen as explicit dollar amounts in the proposal snapshot.
+    pre_discount_subtotal = sum(
+        (Decimal(ln["line_total"]) for ln in scope_lines if _in_total(ln)),
+        Decimal("0.00"),
+    )
+    for disc in resolve_discounts(inputs.get("discounts", []), pre_discount_subtotal):
         amount = Decimal(str(disc["amount"]))
         scope_lines.append({
             "line_num": line_num,
@@ -225,14 +238,11 @@ def compose_proposal(
             "line_total": str((-amount).quantize(_Q2, rounding=ROUND_HALF_UP)),
             "is_optional": False,
             "included": True,
+            "discount_type": disc.get("discount_type"),
+            "discount_value": disc.get("value"),
+            "discount_amount": disc.get("amount"),
         })
         line_num += 1
-
-    # --- Totals (M1 fix: exclude is_optional=True lines unless included=True) ---
-    def _in_total(line: dict) -> bool:
-        if not line.get("is_optional", False):
-            return True
-        return bool(line.get("included", False))
 
     subtotal = sum(
         (Decimal(ln["line_total"]) for ln in scope_lines if _in_total(ln)),

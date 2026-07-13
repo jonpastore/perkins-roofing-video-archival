@@ -99,3 +99,17 @@ def test_derive_status_voided_precedence_and_refund_owed_case():
 
 def test_derive_status_zero_total_not_paid_without_payment():
     assert derive_invoice_status([{"event_type": "invoice_issued"}], "0") == "sent"
+
+
+def test_build_invoice_lines_percent_discount_resolves_before_draw():
+    from core.invoicing import build_invoice_lines
+
+    lines = build_invoice_lines(
+        [{"description": "Scope", "scope_value": "1000.00"}],
+        "0.30",
+        discounts=[{"description": "Veteran", "discount_type": "percent", "value": "10"}],
+    )
+
+    discount = [ln for ln in lines if ln["line_type"] == "discount"][0]
+    # 10% of the $1000 contract scope = $100 discount; this draw bills 30% = -$30.
+    assert discount["subtotal"] == "-30.00"
