@@ -35,3 +35,12 @@ scripts
 tests
 mockup
 *.md
+
+# ...but a few operational scripts DO run inside the image as Cloud Run Jobs.
+# Re-include only those (order matters: un-ignore after the broad `scripts` ignore).
+!scripts/
+scripts/*
+!scripts/render_proposal_pdfs_to_gcs.py
+!scripts/migrate_knowify_quotes_to_proposals.py
+!scripts/attach_knowify_contract_pdfs.py
+!scripts/knowify_backfill_contacts_properties.py
