@@ -15,6 +15,7 @@ COPY core ./core
 COPY adapters ./adapters
 COPY api ./api
 COPY jobs ./jobs
+COPY scripts ./scripts
 COPY app ./app
 
 ENV PORT=8080 PERKINS_ENV=prod
