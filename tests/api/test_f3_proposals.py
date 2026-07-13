@@ -461,6 +461,8 @@ class TestVersionChain:
         new_v = r.json()
         assert new_v["version_number"] == 2
         assert new_v["parent_id"] == sent["id"]
+        assert new_v["status"] == "draft"
+        assert new_v["sent_at"] is None
 
     def test_old_version_status_superseded(self, admin_client):
         """After revision, old proposal status must be 'superseded'."""

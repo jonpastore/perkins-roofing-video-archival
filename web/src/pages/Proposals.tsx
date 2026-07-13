@@ -138,6 +138,7 @@ export function Proposals() {
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
   const [proposals, setProposals] = useState<ProposalRow[]>([]);
   const [proposalTotal, setProposalTotal] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<Partial<Record<ProposalStatus, number>>>({});
   const [proposalPage, setProposalPage] = useState(1);
   const proposalPageSize = 100;
   const [loading, setLoading] = useState(false);
@@ -189,13 +190,14 @@ export function Proposals() {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((data: ProposalRow[] | { items?: ProposalRow[]; total?: number }) => {
+      .then((data: ProposalRow[] | { items?: ProposalRow[]; total?: number; status_counts?: Partial<Record<ProposalStatus, number>> }) => {
         if (Array.isArray(data)) {
           setProposals(data);
           setProposalTotal(data.length);
         } else {
           setProposals(Array.isArray(data.items) ? data.items : []);
           setProposalTotal(typeof data.total === "number" ? data.total : 0);
+          setStatusCounts(data.status_counts ?? {});
         }
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -355,9 +357,12 @@ export function Proposals() {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
       }
-      // Revise creates a new proposal; reload the full list
-      loadProposals();
-      setDrawerProposal(null);
+      const revised: ProposalRow = await r.json();
+      setWorkspaceTab("proposals");
+      setStatusFilter("draft");
+      setProposalPage(1);
+      loadProposals("draft", 1);
+      void openDrawer(revised);
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -436,8 +441,10 @@ export function Proposals() {
   }
 
   const countByStatus = (s: ProposalStatus | "all") => {
-    if (s === "all") return proposals.length;
-    return proposals.filter((p) => p.status === s).length;
+    if (s === "all") {
+      return Object.values(statusCounts).reduce((sum, n) => sum + (Number(n) || 0), 0) || proposalTotal;
+    }
+    return statusCounts[s] ?? 0;
   };
 
   function renderRowActions(proposal: ProposalRow) {
@@ -468,8 +475,8 @@ export function Proposals() {
         {(proposal.status === "sent" || proposal.status === "viewed" || proposal.status === "revision_requested") && (
           <button
             type="button"
-            title="Revise"
-            aria-label="Revise"
+            title="Create editable revision"
+            aria-label="Create editable revision"
             onClick={() => handleRevise(id)}
             disabled={revisingId === id}
             style={proposalIconButtonStyle}
@@ -633,7 +640,7 @@ export function Proposals() {
                 )}
                 {(p.status === "sent" || p.status === "viewed" || p.status === "revision_requested") && (
                   <Button variant="ghost" onClick={() => handleRevise(p.id)} disabled={revisingId === p.id} style={{ fontSize: 13 }}>
-                    {revisingId === p.id ? "Revising…" : "Create revision"}
+                    {revisingId === p.id ? "Creating…" : "Create editable revision"}
                   </Button>
                 )}
                 <Button variant="ghost" onClick={() => handleViewPdf(p.id)} disabled={pdfLoadingId === p.id} style={{ fontSize: 13 }}>
@@ -996,9 +1003,8 @@ export function Proposals() {
           <table style={{ width: "100%", minWidth: 1040, borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, width: 120 }}>Proposal</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, width: 310 }}>Customer / Property</th>
-                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
+                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, width: 150 }}>Proposal</th>
+                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, width: 430 }}>Customer / Property</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, textAlign: "right" }}>Amount</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Created</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Sent</th>
@@ -1014,9 +1020,14 @@ export function Proposals() {
                   }}
                 >
                   <td style={{ padding: "12px 16px", color: BRAND.sub, fontVariantNumeric: "tabular-nums", verticalAlign: "top" }}>
-                    <div style={{ fontWeight: 800, color: BRAND.navyText }}>#{p.id}</div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 800, color: BRAND.navyText }}>#{p.id}</span>
+                      <span style={{ fontSize: 12, color: BRAND.sub }}>v{p.version_number}</span>
+                    </div>
                     <div style={{ marginTop: 7 }}>{statusBadge(p.status)}</div>
-                    <div style={{ marginTop: 6, fontSize: 12, color: BRAND.sub }}>v{p.version_number}</div>
+                    <div title={p.title} style={{ marginTop: 6, fontSize: 12, color: BRAND.sub, maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.title}
+                    </div>
                     {renderRowActions(p)}
                   </td>
                   <td style={{ padding: "12px 16px", fontWeight: 600, color: BRAND.navyText, verticalAlign: "top", lineHeight: 1.45 }}>
@@ -1024,9 +1035,6 @@ export function Proposals() {
                     {p.property_address && (
                       <div style={{ fontWeight: 400, fontSize: 13, color: BRAND.sub, marginTop: 3, maxWidth: 300, whiteSpace: "normal" }}>{p.property_address}</div>
                     )}
-                  </td>
-                  <td style={{ padding: "12px 16px", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", verticalAlign: "top" }}>
-                    {p.title}
                   </td>
                   <td style={{ padding: "12px 16px", color: BRAND.navyText, fontWeight: 700, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", verticalAlign: "top" }}>
                     {usd(p.amount ?? 0)}

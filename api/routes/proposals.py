@@ -789,6 +789,12 @@ def list_proposals(
         base = base.where(Proposal.customer_id == customer_id)
 
     total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+    status_rows = db.execute(
+        select(Proposal.status, func.count())
+        .where(Proposal.tenant_id == tenant_id)
+        .group_by(Proposal.status)
+    ).all()
+    status_counts = {str(st): int(count) for st, count in status_rows}
     stmt = base.order_by(Proposal.created_at.desc()).offset(offset).limit(limit)
     results = db.execute(stmt).all()
 
@@ -802,7 +808,7 @@ def list_proposals(
         legacy = tiers.get("legacy") or {}
         d["amount"] = snap.get("total") or legacy.get("total") or 0
         out.append(d)
-    return {"items": out, "total": total}
+    return {"items": out, "total": total, "status_counts": status_counts}
 
 
 @router.post("/quoting/proposals")
@@ -1043,12 +1049,10 @@ def revise_proposal(
     Version chain rules (TRD §3.4):
       core.proposal.new_version() computes root_id, parent_id, version_number, token.
       core.proposal.supersede() returns the status update dict for the old row.
-      New row is sent immediately (status=sent), not left as draft — deliberate: the
-      revised proposal replaces the old one in the customer's inbox without a second send action.
+      New row is created as a draft so the user can edit/review it before sending.
     """
     tenant_id = _tenant_id(db)
     email = claims.get("email") or "unknown"
-    now = _utcnow()
     prev = db.execute(
         select(Proposal).where(
             Proposal.id == proposal_id,
@@ -1075,9 +1079,8 @@ def revise_proposal(
         title=body.title if body.title is not None else prev.title,
         quote_snapshot=(body.quote_snapshot if body.quote_snapshot is not None
                         else prev.quote_snapshot),
-        status="sent",
+        status="draft",
         accept_token=new_fields["accept_token"],
-        sent_at=now,
         created_by=email,
     )
     db.add(new_row)
@@ -1088,43 +1091,9 @@ def revise_proposal(
 
     db.flush()
 
-    # Fetch customer info for email (while session is open)
-    customer = db.get(Customer, prev.customer_id)
-    tenant_row = db.get(Tenant, tenant_id)
-    customer_email = customer.email if customer else None
-    tenant_name = tenant_row.name if tenant_row else "Your roofing contractor"
-
-    from core.tenant_settings import TenantSettings  # noqa: PLC0415
-    _ts2 = TenantSettings.load(dict(tenant_row.settings or {}) if tenant_row else {})
-    _reply_to2 = _ts2.get_workspace_admin_subject() or "info@perkinsroofing.net"
-
-    db.add(ProposalEvent(
-        tenant_id=tenant_id,
-        proposal_id=new_row.id,
-        event_type="sent",
-        occurred_at=now,
-        actor_email=email,
-    ))
     db.flush()
     db.refresh(new_row)
-    new_accept_token = new_row.accept_token
-    new_title = new_row.title
-    new_proposal_id = new_row.id
-    result = _proposal_row(new_row)
-
-    # Send updated accept-link email (degrades gracefully)
-    if customer_email:
-        _send_accept_link_email(
-            to_email=customer_email,
-            accept_token=new_accept_token,
-            tenant_name=tenant_name,
-            proposal_title=new_title,
-            reply_to=_reply_to2,
-        )
-    else:
-        _log.warning("revise_proposal: customer has no email for proposal %s", new_proposal_id)
-
-    return result
+    return _proposal_row(new_row)
 
 
 @router.get("/quoting/proposals/{proposal_id}/chain")

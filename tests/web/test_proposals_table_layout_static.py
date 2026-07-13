@@ -9,6 +9,9 @@ def test_proposals_table_uses_compact_proposal_column_and_wide_customer_address(
     assert "maxWidth: 1240" in source
     assert "minWidth: 1040" in source
     assert "Customer / Property" in source
+    assert ">Title</th>" not in source
+    assert "statusCounts" in source
+    assert "proposalTotal" in source
     assert "proposalIconButtonStyle" in source
     assert "title=\"Details\"" in source
     assert "title=\"PDF\"" in source
