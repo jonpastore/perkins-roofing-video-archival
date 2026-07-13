@@ -12,6 +12,7 @@ Public API:
 from __future__ import annotations
 
 import os
+import subprocess
 import urllib.error
 import urllib.request
 from email.mime.base import MIMEBase
@@ -39,8 +40,24 @@ def _oidc_token(audience: str) -> str:
         f"/default/identity?audience={audience}"
     )
     req = urllib.request.Request(url, headers={"Metadata-Flavor": "Google"})
-    with urllib.request.urlopen(req, timeout=5) as r:
-        return r.read().decode()
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.read().decode()
+    except Exception:
+        # Local/dev fallback for one-off scripts and smoke probes. Cloud Run uses the
+        # metadata-server path above.
+        try:
+            return subprocess.check_output(
+                ["gcloud", "auth", "print-identity-token", f"--audiences={audience}"],
+                timeout=15,
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
+        except Exception:
+            return subprocess.check_output(
+                ["gcloud", "auth", "print-identity-token"],
+                timeout=15,
+                stderr=subprocess.DEVNULL,
+            ).decode().strip()
 
 
 def _build_multipart(
@@ -120,7 +137,7 @@ def html_to_pdf(
         RuntimeError: If GOTENBERG_URL is not set, or Gotenberg returns a
             non-2xx response after all retries are exhausted.
     """
-    url = GOTENBERG_URL
+    url = GOTENBERG_URL.rstrip("/")
     if not url:
         raise RuntimeError(
             "GOTENBERG_URL environment variable is not set. "

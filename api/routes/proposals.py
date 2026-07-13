@@ -193,6 +193,44 @@ def _utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _media_bucket() -> str:
+    project = (
+        os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("GCLOUD_PROJECT")
+        or "video-archival-and-content-gen"
+    )
+    return f"{project}-media"
+
+
+def _proposal_pdf_key(row: Proposal) -> str:
+    stamp = (row.updated_at or row.created_at or _utcnow()).strftime("%Y%m%d%H%M%S")
+    return f"tenants/{row.tenant_id}/proposals/{row.id}/rendered-v{row.version_number}-{stamp}.pdf"
+
+
+def _split_gs_uri(uri: str) -> tuple[str, str]:
+    if not uri.startswith("gs://"):
+        raise ValueError("not a gs:// URI")
+    bucket_key = uri[5:]
+    bucket, _, key = bucket_key.partition("/")
+    if not bucket or not key:
+        raise ValueError("invalid gs:// URI")
+    return bucket, key
+
+
+def _download_gcs_bytes(uri: str) -> bytes:
+    from google.cloud import storage  # noqa: PLC0415
+
+    bucket, key = _split_gs_uri(uri)
+    return storage.Client().bucket(bucket).blob(key).download_as_bytes()
+
+
+def _upload_gcs_bytes(uri: str, data: bytes, content_type: str) -> None:
+    from google.cloud import storage  # noqa: PLC0415
+
+    bucket, key = _split_gs_uri(uri)
+    storage.Client().bucket(bucket).blob(key).upload_from_string(data, content_type=content_type)
+
+
 def _proposal_as_dict(row: Proposal) -> dict:
     """Convert ORM row → plain dict for core.proposal domain calls."""
     return {
@@ -1222,29 +1260,9 @@ def delete_template(
     return {"ok": True}
 
 
-@router.get("/quoting/proposals/{proposal_id}/pdf")
-def get_proposal_pdf(
-    proposal_id: int,
-    _claims=Depends(require_role("quoting_view")),
-    db: Session = Depends(get_db_session),
-):
-    """Render the current proposal as PDF via Gotenberg and stream it.
 
-    Returns 503 if GOTENBERG_URL is not configured.
-    """
-    gotenberg_url = os.environ.get("GOTENBERG_URL", "")
-    if not gotenberg_url:
-        raise HTTPException(503, "PDF rendering unavailable: GOTENBERG_URL is not configured")
-
-    tenant_id = _tenant_id(db)
-    row = db.execute(
-        select(Proposal).where(
-            Proposal.id == proposal_id,
-            Proposal.tenant_id == tenant_id,
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        raise HTTPException(404, f"Proposal {proposal_id} not found")
+def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
+    """Render a native proposal PDF, upload it to GCS, stamp quote_snapshot, return bytes."""
     customer = db.get(Customer, row.customer_id)
     prop = db.get(Property, row.property_id)
     tenant_row = db.get(Tenant, row.tenant_id)
@@ -1278,16 +1296,13 @@ def get_proposal_pdf(
         accept_url="",
     )
 
-    # Attach versioned T&C text, reviewed contract FAQs, and AI review prompts.
-    # Degrade gracefully so proposal PDF generation is not blocked by GCS/LLM issues.
     try:
         tc_ctx = _load_tc_context(db)
         for key, value in tc_ctx.items():
             setattr(ctx, key, value)
     except Exception as exc:
-        _log.warning("tc context loading failed for proposal %s: %s", proposal_id, exc)
+        _log.warning("tc context loading failed for proposal %s: %s", row.id, exc)
 
-    # Use default template if no template attached
     template_html = None
     if row.template_id:
         tpl = db.get(ProposalTemplate, row.template_id)
@@ -1305,6 +1320,59 @@ def get_proposal_pdf(
         pdf_bytes = gotenberg_adapter.html_to_pdf(html)
     except Exception as exc:
         raise HTTPException(503, f"PDF generation failed: {exc}") from exc
+
+    try:
+        gcs_uri = f"gs://{_media_bucket()}/{_proposal_pdf_key(row)}"
+        _upload_gcs_bytes(gcs_uri, pdf_bytes, "application/pdf")
+        row.quote_snapshot = {**snap, "rendered_pdf_gcs": gcs_uri}
+        db.flush()
+    except Exception as exc:
+        _log.warning("proposal pdf GCS upload failed id=%s err=%s", row.id, exc)
+
+    return pdf_bytes
+
+
+@router.get("/quoting/proposals/{proposal_id}/pdf")
+def get_proposal_pdf(
+    proposal_id: int,
+    _claims=Depends(require_role("quoting_view")),
+    db: Session = Depends(get_db_session),
+):
+    """Render the current proposal as PDF via Gotenberg and stream it.
+
+    Returns 503 if GOTENBERG_URL is not configured.
+    """
+    tenant_id = _tenant_id(db)
+    row = db.execute(
+        select(Proposal).where(
+            Proposal.id == proposal_id,
+            Proposal.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, f"Proposal {proposal_id} not found")
+    snap = row.quote_snapshot or {}
+
+    # Prefer original Knowify PDF bytes once archived, then cached rendered bytes.
+    for uri in (
+        ((snap.get("knowify_pdf") or {}).get("gcs_uri") if isinstance(snap.get("knowify_pdf"), dict) else None),
+        snap.get("rendered_pdf_gcs"),
+    ):
+        if isinstance(uri, str) and uri.startswith("gs://"):
+            try:
+                return Response(
+                    content=_download_gcs_bytes(uri),
+                    media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="proposal-{proposal_id}.pdf"'},
+                )
+            except Exception as exc:
+                _log.warning("proposal pdf GCS cache miss/read failed id=%s uri=%s err=%s", proposal_id, uri, exc)
+
+    gotenberg_url = os.environ.get("GOTENBERG_URL", "")
+    if not gotenberg_url:
+        raise HTTPException(503, "PDF rendering unavailable: GOTENBERG_URL is not configured")
+
+    pdf_bytes = render_and_cache_proposal_pdf(db, row)
 
     return Response(
         content=pdf_bytes,

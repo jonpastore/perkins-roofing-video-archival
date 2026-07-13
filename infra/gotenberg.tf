@@ -9,7 +9,11 @@
 resource "google_cloud_run_v2_service" "gotenberg" {
   name     = "gotenberg"
   location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"
+  # Service-to-service calls from the API run at the public *.run.app hostname (no VPC
+  # connector), so INTERNAL_ONLY returned a GFE 404. Ingress is ALL but IAM still gates
+  # every request — only api_run_sa holds roles/run.invoker (binding below), so this is
+  # authenticated-only, not public.
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   # Stateless HTML→PDF render service — no data to protect, and the provider default
   # of true blocks recreating a tainted/failed revision. Safe to allow deletion.
@@ -46,6 +50,9 @@ resource "google_cloud_run_v2_service" "gotenberg" {
       liveness_probe {
         http_get {
           path = "/health"
+          # Gotenberg listens on 3000; without this the probe defaults to $PORT (8080)
+          # and never succeeds.
+          port = 3000
         }
         period_seconds    = 30
         failure_threshold = 3

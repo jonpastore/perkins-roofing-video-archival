@@ -1300,6 +1300,30 @@ class TestMissingEndpoints:
             if env_backup is not None:
                 os.environ["GOTENBERG_URL"] = env_backup
 
+
+    def test_pdf_endpoint_serves_cached_gcs_without_gotenberg(self, admin_client, monkeypatch):
+        import os
+
+        import api.routes.proposals as mod
+
+        c, cust, prop, draft = _scaffold(admin_client)
+        with SessionLocal() as db:
+            db.info["tenant_id"] = 1
+            row = db.get(mod.Proposal, draft["id"])
+            row.quote_snapshot = {**row.quote_snapshot, "rendered_pdf_gcs": "gs://bucket/proposal.pdf"}
+            db.commit()
+
+        monkeypatch.setattr(mod, "_download_gcs_bytes", lambda uri: b"%PDF-1.4 cached")
+        env_backup = os.environ.pop("GOTENBERG_URL", None)
+        try:
+            r = admin_client.get(f"/quoting/proposals/{draft['id']}/pdf", headers=AUTH)
+        finally:
+            if env_backup is not None:
+                os.environ["GOTENBERG_URL"] = env_backup
+
+        assert r.status_code == 200, r.text
+        assert r.content.startswith(b"%PDF")
+
     def test_template_preview_endpoint_exists(self, admin_client):
         """POST /quoting/templates/{id}/preview returns 200 or known error (not 404/405)."""
         c, cust, prop, draft = _scaffold(admin_client)
