@@ -294,12 +294,12 @@ function BillingSection() {
 
   const funnelData = billing
     ? [
-        { name: "Draft", value: billing.proposal_funnel.draft },
-        { name: "Sent", value: billing.proposal_funnel.sent },
-        { name: "Viewed", value: billing.proposal_funnel.viewed },
-        { name: "Accepted", value: billing.proposal_funnel.accepted },
-        { name: "Declined", value: billing.proposal_funnel.declined },
-        { name: "Revision", value: billing.proposal_funnel.revision_requested },
+        { name: "Draft", value: billing.proposal_funnel.draft, color: "#667085" },
+        { name: "Sent", value: billing.proposal_funnel.sent, color: BRAND.navyText },
+        { name: "Viewed", value: billing.proposal_funnel.viewed, color: "#b45309" },
+        { name: "Accepted", value: billing.proposal_funnel.accepted, color: "#1a7f4b" },
+        { name: "Declined", value: billing.proposal_funnel.declined, color: BRAND.red },
+        { name: "Revision", value: billing.proposal_funnel.revision_requested, color: "#e07b39" },
       ]
     : [];
 
@@ -551,7 +551,11 @@ function BillingSection() {
                 <XAxis type="number" tick={{ fontSize: 11, fill: BRAND.sub }} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: BRAND.sub }} width={64} />
                 <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Count"]} />
-                <Bar dataKey="value" name="Count" fill={BRAND.navyText} radius={[0, 4, 4, 0]} />
+                <Bar dataKey="value" name="Count" radius={[0, 4, 4, 0]}>
+                  {funnelData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </Card>
