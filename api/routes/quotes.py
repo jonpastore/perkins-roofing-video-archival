@@ -52,6 +52,7 @@ _DELIVERABLE_FIELDS = (
     "ContractId",
     "Description",
     "Quantity",
+    "UnitName",
     "UnitPrice",
     "Price",
     "PriceBilled",

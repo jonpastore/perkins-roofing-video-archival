@@ -218,7 +218,7 @@ class ProposalCreate(BaseModel):
 
 
 class ProposalFromQuoteCreate(BaseModel):
-    customer_id: int
+    customer_id: Optional[int] = None
     property_id: Optional[int] = None
     title: Optional[str] = None
 
@@ -360,6 +360,54 @@ def _money(payload: dict, field: str) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _knowify_qty(row: dict) -> float:
+    """Knowify deliverable Quantity is scaled by 100 in the MCP/API layer.
+
+    Example observed live: a line named "(Qty.: 29 Squares)" has Quantity=2900.
+    Convert to human units before using it as proposal-facing measurements.
+    """
+    try:
+        return float(row.get("Quantity") or 0) / 100.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _knowify_legacy_measurements(line_items: list[dict]) -> dict:
+    """Derive quote-facing legacy measurements from Knowify deliverables.
+
+    These are not Roofr roof-plane measurements. They are the quantity/unit values
+    Knowify used to price the quote, which is enough to make imported proposals
+    native while preserving source provenance.
+    """
+    total_squares = 0.0
+    unit_breakdown: dict[str, float] = {}
+    square_items = []
+    for item in line_items:
+        qty = _knowify_qty(item)
+        if qty <= 0:
+            continue
+        unit = str(item.get("UnitName") or "").strip()
+        if unit:
+            unit_breakdown[unit] = unit_breakdown.get(unit, 0.0) + qty
+        if unit.lower() in {"square", "squares", "sq", "sq."}:
+            total_squares += qty
+            square_items.append({
+                "description": item.get("Description"),
+                "quantity": qty,
+                "unit": unit,
+            })
+    return {
+        "source": "knowify_deliverables",
+        "note": (
+            "Knowify did not expose Roofr roof-plane measurements through the MCP/API. "
+            "These values are legacy quote deliverable quantities used for pricing."
+        ),
+        "total_squares": total_squares,
+        "unit_breakdown": unit_breakdown,
+        "square_items": square_items,
+    }
 
 
 def _norm_addr(value) -> str:
@@ -535,31 +583,66 @@ def _resolve_import_property_id(
     raise HTTPException(422, "property_id is required; no safe Knowify project match found")
 
 
+def _resolve_import_customer_id(
+    db: Session,
+    *,
+    tenant_id: int,
+    customer_id: int | None,
+    contract: dict,
+) -> int:
+    if customer_id is not None:
+        row = db.execute(
+            select(Customer.id).where(
+                Customer.id == customer_id,
+                Customer.tenant_id == tenant_id,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(422, "customer_id must belong to this tenant")
+        return row
+
+    knowify_client_id = contract.get("ClientId")
+    if knowify_client_id is None:
+        raise HTTPException(422, "customer_id is required; Knowify quote has no ClientId")
+    row = db.execute(
+        select(Customer.id).where(
+            Customer.tenant_id == tenant_id,
+            Customer.knowify_customer_id == str(knowify_client_id),
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(422, "customer_id is required; Knowify ClientId is not backfilled")
+    return row
+
+
 def _build_knowify_quote_snapshot(quote: dict) -> dict:
     contract = quote["contract"]
+    line_items = quote["line_items"]
     total = _money(contract, "CurrentContractSum") or _money(contract, "OriginalContractSum")
     deposit = _money(contract, "DepositAmount")
     title = contract.get("ContractName") or f"Knowify quote {quote['contract_id']}"
+    legacy_measurements = _knowify_legacy_measurements(line_items)
 
     return {
         "source": "knowify_import",
         "source_ref": quote["contract_id"],
         "contract": contract,
-        "line_items": quote["line_items"],
+        "line_items": line_items,
         "total": total,
         "deposit": deposit,
         "project_address": quote["project_address"],
+        "legacy_measurements": legacy_measurements,
         # Compatibility fields expected by existing proposal rendering/send paths.
         "pricing_config_hash": quote.get("content_hash") or f"knowify_import:{quote['contract_id']}",
         "sent_at_iso": None,
         "roof_type": "legacy_knowify_quote",
-        "num_squares": 0,
+        "num_squares": legacy_measurements["total_squares"],
         "tiers": {
             "legacy": {
                 "label": "Knowify Quote",
                 "description": title,
                 "total": total,
-                "line_items": quote["line_items"],
+                "line_items": line_items,
             }
         },
         "optional_items": [],
@@ -662,19 +745,17 @@ def create_proposal_from_quote(
     if existing is not None:
         return _proposal_row(existing)
 
-    customer_exists = db.execute(
-        select(Customer.id).where(
-            Customer.id == body.customer_id,
-            Customer.tenant_id == tenant_id,
-        )
-    ).scalar_one_or_none()
-    if customer_exists is None:
-        raise HTTPException(422, "customer_id must belong to this tenant")
+    customer_id = _resolve_import_customer_id(
+        db,
+        tenant_id=tenant_id,
+        customer_id=body.customer_id,
+        contract=quote["contract"],
+    )
 
     property_id = _resolve_import_property_id(
         db,
         tenant_id=tenant_id,
-        customer_id=body.customer_id,
+        customer_id=customer_id,
         property_id=body.property_id,
         project_id=quote["project_id"],
         project_address=quote["project_address"],
@@ -684,7 +765,7 @@ def create_proposal_from_quote(
 
     row = Proposal(
         tenant_id=tenant_id,
-        customer_id=body.customer_id,
+        customer_id=customer_id,
         property_id=property_id,
         title=title,
         quote_snapshot=snapshot,

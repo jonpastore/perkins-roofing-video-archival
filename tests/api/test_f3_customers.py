@@ -421,3 +421,35 @@ class TestUpdateProperty:
                              json={"code_zone": "FBC"},
                              headers=AUTH)
         assert r.status_code == 404
+
+
+class TestDeleteProperty:
+    def test_delete_unlinked_property(self, admin_client):
+        customer = _create_customer(admin_client)
+        prop = _create_property(admin_client, customer["id"])
+
+        r = admin_client.delete(f"/quoting/properties/{prop['id']}", headers=AUTH)
+
+        assert r.status_code == 200, r.text
+        assert r.json()["deleted"] is True
+        detail = admin_client.get(f"/quoting/customers/{customer['id']}", headers=AUTH).json()
+        assert detail["properties"] == []
+
+    def test_delete_property_with_measurement_blocked(self, admin_client):
+        customer = _create_customer(admin_client)
+        prop = _create_property(admin_client, customer["id"])
+        with SessionLocal() as db:
+            db.add(Measurement(
+                tenant_id=1,
+                property_id=prop["id"],
+                provider="manual",
+                status="complete",
+                total_sq=31.5,
+                created_by="test@example.com",
+            ))
+            db.commit()
+
+        r = admin_client.delete(f"/quoting/properties/{prop['id']}", headers=AUTH)
+
+        assert r.status_code == 409
+        assert "linked" in r.json()["detail"]

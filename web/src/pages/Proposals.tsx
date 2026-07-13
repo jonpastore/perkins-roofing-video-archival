@@ -259,15 +259,12 @@ export function Proposals() {
   }
 
   async function handleCreateFromLegacyQuote() {
-    if (!importQuote || !importCustomerId) {
-      setImportError("Select a customer first.");
-      return;
-    }
+    if (!importQuote) return;
     setImportLoading(true);
     setImportError(null);
     try {
       await createProposalFromQuote(importQuote.contract_id, {
-        customer_id: importCustomerId as number,
+        ...(importCustomerId ? { customer_id: importCustomerId as number } : {}),
         ...(importPropertyId ? { property_id: importPropertyId as number } : {}),
         title: importQuote.ContractName ?? `Knowify quote ${importQuote.contract_id}`,
       });
@@ -685,7 +682,7 @@ export function Proposals() {
             <div>
               <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15 }}>Legacy Quotes</div>
               <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
-                Read-only imported contract/quote records from the legacy quote API.
+                Knowify quote records that can be migrated into native Perkins proposals.
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -766,7 +763,7 @@ export function Proposals() {
                         onClick={() => openImportQuote(q)}
                         style={{ fontSize: 12, padding: "5px 10px", whiteSpace: "nowrap" }}
                       >
-                        Import → Proposal
+                        Migrate → Native
                       </Button>
                     </td>
                   </tr>
@@ -810,9 +807,9 @@ export function Proposals() {
           </div>
 
           <p style={{ margin: "0 0 14px", color: BRAND.sub, fontSize: 13, lineHeight: 1.5 }}>
-            Choose the native customer/property to attach this Knowify quote to. If the property
-            is omitted, the backend will only import when it can safely match the Knowify project
-            address to exactly one property.
+            This will create a native draft proposal from the Knowify quote. Customer and property
+            are auto-matched from the Knowify ClientId/project address when possible; choose them
+            manually only if auto-match fails.
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
@@ -823,7 +820,7 @@ export function Proposals() {
                 onChange={(e) => void handleImportCustomerChange(e.target.value ? Number(e.target.value) : "")}
                 style={{ ...inputStyle, width: "100%" }}
               >
-                <option value="">— Select customer —</option>
+                <option value="">— Auto-match customer, or select —</option>
                 {importCustomers.map((c) => (
                   <option key={c.id} value={c.id}>{c.display_name}</option>
                 ))}
@@ -849,8 +846,8 @@ export function Proposals() {
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
             <Button variant="ghost" onClick={() => setImportQuote(null)} disabled={importLoading}>Cancel</Button>
-            <Button onClick={handleCreateFromLegacyQuote} disabled={importLoading || !importCustomerId}>
-              {importLoading ? "Importing…" : "Create proposal"}
+            <Button onClick={handleCreateFromLegacyQuote} disabled={importLoading}>
+              {importLoading ? "Migrating…" : "Migrate to native proposal"}
             </Button>
           </div>
         </Card>

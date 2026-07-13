@@ -420,6 +420,7 @@ export interface QuotingProperty {
   zip: string | null;
   county: string | null;
   code_zone: string;
+  notes?: string | null;
 }
 export interface QuotingCustomerDetail extends QuotingCustomer {
   properties: QuotingProperty[];
@@ -437,7 +438,7 @@ export interface ListCustomersParams {
 
 /** Returns bare array — backwards-compatible for existing callers (ProposalBuilder, Invoices). */
 export async function listQuotingCustomers(params?: ListCustomersParams): Promise<QuotingCustomer[]> {
-  const q = qs({ limit: 500, ...params });
+  const q = qs({ limit: 200, ...params });
   const r = await apiFetch(`/quoting/customers${q}`);
   if (!r.ok) throw new Error(await errText(r));
   const data: Paged<QuotingCustomer> = await r.json();
@@ -513,6 +514,11 @@ export async function updateProperty(propertyId: number, body: Partial<PropertyI
   const r = await apiFetch(`/quoting/properties/${propertyId}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function deleteProperty(propertyId: number): Promise<{ deleted: boolean; id: number }> {
+  const r = await apiFetch(`/quoting/properties/${propertyId}`, { method: "DELETE" });
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
@@ -915,6 +921,7 @@ export interface QuoteLineItem {
   ContractId: string | null;
   Description: string | null;
   Quantity: string | number | null;
+  UnitName: string | null;
   UnitPrice: string | null;
   Price: string | null;
   PriceBilled: string | null;
@@ -972,7 +979,7 @@ export async function listQuotes(params?: ListQuotesParams): Promise<Paged<Quote
 
 export async function createProposalFromQuote(
   contractId: string,
-  body: { customer_id: number; property_id?: number | null; title?: string },
+  body: { customer_id?: number | null; property_id?: number | null; title?: string },
 ): Promise<Record<string, unknown>> {
   const r = await apiFetch(`/quoting/proposals/from-quote/${encodeURIComponent(contractId)}`, {
     method: "POST",

@@ -146,7 +146,8 @@ def _seed_knowify_quote(contract_id, project_id, *, address=None, total="15000.0
             "Id": f"D-{contract_id}-1",
             "ContractId": contract_id,
             "Description": "Remove and replace shingle roof",
-            "Quantity": "30",
+            "Quantity": "3000",
+            "UnitName": "Squares",
             "UnitPrice": "450.00",
             "Price": "13500.00",
             "PriceBilled": "0.00",
@@ -158,7 +159,8 @@ def _seed_knowify_quote(contract_id, project_id, *, address=None, total="15000.0
             "Id": f"D-{contract_id}-2",
             "ContractId": contract_id,
             "Description": "Permit allowance",
-            "Quantity": "1",
+            "Quantity": "100",
+            "UnitName": "Each",
             "UnitPrice": "1500.00",
             "Price": "1500.00",
             "PriceBilled": "0.00",
@@ -289,6 +291,58 @@ class TestKnowifyQuoteImport:
         assert snap["project_address"]["Address1"] == address["Address1"]
         assert snap["tiers"]["legacy"]["total"] == 15000.0
         assert snap["deposit_policy"]["amount"] == 5000.0
+        assert snap["num_squares"] == 30.0
+        assert snap["legacy_measurements"]["source"] == "knowify_deliverables"
+        assert snap["legacy_measurements"]["unit_breakdown"]["Squares"] == 30.0
+
+
+    def test_from_quote_auto_resolves_customer_from_knowify_client_id(self, admin_client):
+        customer = _create_customer(admin_client)
+        address = {
+            "Address1": f"{_uid()} Auto Legacy Way",
+            "City": "Miami",
+            "StateProvince": "FL",
+            "Zip": "33101",
+        }
+        prop = _create_property_at(
+            admin_client, customer["id"], street=address["Address1"],
+            city=address["City"], state=address["StateProvince"],
+            zip_code=address["Zip"],
+        )
+        contract_id = f"KQ-{_uid()}"
+        _seed_knowify_quote(contract_id, f"KP-{_uid()}", address=address)
+
+        # Make the seeded Knowify quote point at the native customer's Knowify crosswalk.
+        knowify_client_id = f"KC-{_uid()}"
+        db = SessionLocal()
+        db.info["tenant_id"] = 1
+        try:
+            from app.models import Customer
+
+            cust_row = db.get(Customer, customer["id"])
+            cust_row.knowify_customer_id = knowify_client_id
+            row = db.execute(
+                select(KnowifyRawRecord).where(
+                    KnowifyRawRecord.entity == "contracts",
+                    KnowifyRawRecord.knowify_id == contract_id,
+                )
+            ).scalar_one()
+            row.payload = {**row.payload, "ClientId": knowify_client_id}
+            db.commit()
+        finally:
+            db.close()
+
+        r = admin_client.post(
+            f"/quoting/proposals/from-quote/{contract_id}",
+            json={},
+            headers=AUTH,
+        )
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["customer_id"] == customer["id"]
+        assert body["property_id"] == prop["id"]
+        assert body["quote_snapshot"]["num_squares"] == 30.0
 
     def test_from_quote_is_idempotent_for_same_tenant_source_ref(self, admin_client):
         cust = _create_customer(admin_client)

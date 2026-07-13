@@ -8,6 +8,8 @@ import {
   deactivateCustomer,
   addCustomerContact,
   addCustomerProperty,
+  updateProperty,
+  deleteProperty,
 } from "../api";
 import type {
   QuotingCustomer,
@@ -349,6 +351,66 @@ function AddPropertyForm({ customerId, onSaved, onCancel }: AddPropertyFormProps
   );
 }
 
+interface EditPropertyFormProps {
+  property: QuotingProperty;
+  onSaved: (p: QuotingProperty) => void;
+  onCancel: () => void;
+}
+
+function EditPropertyForm({ property, onSaved, onCancel }: EditPropertyFormProps) {
+  const [form, setForm] = useState<PropertyInput>({
+    street: property.street,
+    city: property.city,
+    state: property.state,
+    zip: property.zip,
+    county: property.county,
+    code_zone: property.code_zone,
+    notes: property.notes ?? null,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function set(field: keyof PropertyInput, value: string) {
+    setForm((f) => ({ ...f, [field]: value || null }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.street?.trim()) { setErr("Street address is required."); return; }
+    setSaving(true);
+    setErr(null);
+    try {
+      const p = await updateProperty(property.id, { ...form, street: form.street.trim() });
+      onSaved(p);
+    } catch (ex: unknown) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${BRAND.border}` }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <SectionLabel>Street *</SectionLabel>
+          <input style={{ ...inputStyle, width: "100%", fontSize: 13 }} value={form.street ?? ""} onChange={(e) => set("street", e.target.value)} autoFocus />
+        </div>
+        <div><SectionLabel>City</SectionLabel><input style={{ ...inputStyle, width: "100%", fontSize: 13 }} value={form.city ?? ""} onChange={(e) => set("city", e.target.value)} /></div>
+        <div><SectionLabel>State</SectionLabel><input style={{ ...inputStyle, width: "100%", fontSize: 13 }} value={form.state ?? ""} onChange={(e) => set("state", e.target.value)} /></div>
+        <div><SectionLabel>ZIP</SectionLabel><input style={{ ...inputStyle, width: "100%", fontSize: 13 }} value={form.zip ?? ""} onChange={(e) => set("zip", e.target.value)} /></div>
+        <div><SectionLabel>County</SectionLabel><input style={{ ...inputStyle, width: "100%", fontSize: 13 }} value={form.county ?? ""} onChange={(e) => set("county", e.target.value)} /></div>
+        <div><SectionLabel>Code Zone</SectionLabel><input style={{ ...inputStyle, width: "100%", fontSize: 13 }} value={form.code_zone ?? ""} onChange={(e) => set("code_zone", e.target.value)} /></div>
+      </div>
+      {err && <ErrorMsg>{err}</ErrorMsg>}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={saving} style={{ fontSize: 13 }}>Cancel</Button>
+        <Button type="submit" disabled={saving} style={{ fontSize: 13 }}>{saving ? "Saving…" : "Save Property"}</Button>
+      </div>
+    </form>
+  );
+}
+
 // ── Customer detail panel ─────────────────────────────────────────────────────
 
 interface DetailPanelProps {
@@ -366,6 +428,8 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
   const [subPanel, setSubPanel] = useState<DetailSubPanel>(null);
   const [deactivating, setDeactivating] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+  const [editingPropertyId, setEditingPropertyId] = useState<number | null>(null);
+  const [removingPropertyId, setRemovingPropertyId] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -390,6 +454,19 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
       setErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
       setDeactivating(false);
+    }
+  }
+
+  async function handleRemoveProperty(propertyId: number) {
+    setRemovingPropertyId(propertyId);
+    setErr(null);
+    try {
+      await deleteProperty(propertyId);
+      setDetail((d) => d ? { ...d, properties: d.properties.filter((p) => p.id !== propertyId) } : d);
+    } catch (ex: unknown) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    } finally {
+      setRemovingPropertyId(null);
     }
   }
 
@@ -498,7 +575,30 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
                         border: `1px solid ${BRAND.border}`,
                       }}
                     >
-                      <div style={{ fontWeight: 600, color: BRAND.navyText }}>{prop.street}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                        <div style={{ fontWeight: 600, color: BRAND.navyText }}>{prop.street}</div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            onClick={() => setEditingPropertyId((prev) => prev === prop.id ? null : prop.id)}
+                            style={{ background: "none", border: "none", color: BRAND.navyText, cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+                          >
+                            {editingPropertyId === prop.id ? "Cancel edit" : "Edit"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm("Remove this property? Properties linked to measurements/proposals will be blocked.")) {
+                                void handleRemoveProperty(prop.id);
+                              }
+                            }}
+                            disabled={removingPropertyId === prop.id}
+                            style={{ background: "none", border: "none", color: BRAND.redDark, cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+                          >
+                            {removingPropertyId === prop.id ? "Removing…" : "Remove"}
+                          </button>
+                        </div>
+                      </div>
                       <div style={{ color: BRAND.sub, marginTop: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span>{[prop.city, prop.state, prop.zip].filter(Boolean).join(", ")}</span>
                         {prop.county && <span>· {prop.county} County</span>}
@@ -518,6 +618,19 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
                           <span>· latest {propWithMeasurements.latest_measurement_total_sq.toFixed(1)} sq</span>
                         )}
                       </div>
+                      {editingPropertyId === prop.id && (
+                        <EditPropertyForm
+                          property={prop}
+                          onSaved={(updated) => {
+                            setDetail((d) => d ? {
+                              ...d,
+                              properties: d.properties.map((p) => p.id === updated.id ? updated : p),
+                            } : d);
+                            setEditingPropertyId(null);
+                          }}
+                          onCancel={() => setEditingPropertyId(null)}
+                        />
+                      )}
                     </div>
                   );
                 })}

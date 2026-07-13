@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
-from app.models import Contact, Customer, Measurement, Property
+from app.models import Contact, Customer, Measurement, Property, Proposal
 
 router = APIRouter(prefix="/quoting", tags=["quoting_customers"])
 
@@ -514,3 +514,55 @@ def update_property(
     db.flush()
     db.refresh(row)
     return _property_row(row)
+
+
+@router.delete("/properties/{property_id}")
+def delete_property(
+    property_id: int,
+    _claims=Depends(require_role("quoting_create")),
+    db: Session = Depends(get_db_session),
+):
+    """Remove a property only when it is not referenced by measurements/proposals.
+
+    This is intentionally guarded rather than cascading: historical measurements and
+    sent proposals must not be orphaned by a UI delete.
+    """
+    tenant_id = _tenant_id(db)
+    row = db.execute(
+        select(Property).where(
+            Property.id == property_id,
+            Property.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, f"Property {property_id} not found")
+
+    measurement_count = db.execute(
+        select(func.count())
+        .select_from(Measurement)
+        .where(
+            Measurement.tenant_id == tenant_id,
+            Measurement.property_id == property_id,
+        )
+    ).scalar_one()
+    proposal_count = db.execute(
+        select(func.count())
+        .select_from(Proposal)
+        .where(
+            Proposal.tenant_id == tenant_id,
+            Proposal.property_id == property_id,
+        )
+    ).scalar_one()
+    if measurement_count or proposal_count:
+        raise HTTPException(
+            409,
+            (
+                "Property is linked to "
+                f"{measurement_count} measurement(s) and {proposal_count} proposal(s); "
+                "edit it instead of removing it."
+            ),
+        )
+
+    db.delete(row)
+    db.flush()
+    return {"deleted": True, "id": property_id}
