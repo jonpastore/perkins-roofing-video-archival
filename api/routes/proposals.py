@@ -580,6 +580,20 @@ def _resolve_import_property_id(
         return next(iter(matches))
     if len(matches) > 1:
         raise HTTPException(422, "property_id is required; Knowify project matched multiple properties")
+
+    # Fallback for older Knowify quotes: many projects have no job-site address, but
+    # the customer has exactly one backfilled property from the client billing address.
+    # That is safe; multiple properties remains ambiguous and must be chosen manually.
+    customer_properties = db.execute(
+        select(Property.id).where(
+            Property.tenant_id == tenant_id,
+            Property.customer_id == customer_id,
+        )
+    ).all()
+    candidate_ids = [pid for (pid,) in customer_properties if pid is not None]
+    if len(candidate_ids) == 1:
+        return candidate_ids[0]
+
     raise HTTPException(422, "property_id is required; no safe Knowify project match found")
 
 

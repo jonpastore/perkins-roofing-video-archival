@@ -422,7 +422,17 @@ export interface QuotingProperty {
   code_zone: string;
   notes?: string | null;
 }
+export interface QuotingContact {
+  id: number;
+  customer_id: number;
+  name: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+  is_primary: boolean;
+}
 export interface QuotingCustomerDetail extends QuotingCustomer {
+  contacts: QuotingContact[];
   properties: QuotingProperty[];
 }
 
@@ -491,9 +501,16 @@ export async function updateCustomer(id: number, body: Partial<CustomerInput>): 
 export interface ContactInput {
   name: string; role?: string | null; email?: string | null; phone?: string | null; is_primary?: boolean;
 }
-export async function addCustomerContact(customerId: number, body: ContactInput): Promise<unknown> {
+export async function addCustomerContact(customerId: number, body: ContactInput): Promise<QuotingContact> {
   const r = await apiFetch(`/quoting/customers/${customerId}/contacts`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+export async function updateContact(contactId: number, body: Partial<ContactInput>): Promise<QuotingContact> {
+  const r = await apiFetch(`/quoting/contacts/${contactId}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error(await errText(r));
   return r.json();

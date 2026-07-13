@@ -7,6 +7,7 @@ import {
   updateCustomer,
   deactivateCustomer,
   addCustomerContact,
+  updateContact,
   addCustomerProperty,
   updateProperty,
   deleteProperty,
@@ -14,6 +15,7 @@ import {
 import type {
   QuotingCustomer,
   QuotingCustomerDetail,
+  QuotingContact,
   QuotingProperty,
   CustomerInput,
   ContactInput,
@@ -225,12 +227,12 @@ function EditCustomerForm({ customer, onSaved, onCancel }: EditCustomerFormProps
 
 interface AddContactFormProps {
   customerId: number;
-  onSaved: () => void;
+  onSaved: (c: QuotingContact) => void;
   onCancel: () => void;
 }
 
 function AddContactForm({ customerId, onSaved, onCancel }: AddContactFormProps) {
-  const [form, setForm] = useState<ContactInput>({ name: "", role: "", email: "", phone: "" });
+  const [form, setForm] = useState<ContactInput>({ name: "", role: "", email: "", phone: "", is_primary: false });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -244,8 +246,8 @@ function AddContactForm({ customerId, onSaved, onCancel }: AddContactFormProps) 
     setSaving(true);
     setErr(null);
     try {
-      await addCustomerContact(customerId, { ...form, name: form.name.trim() });
-      onSaved();
+      const contact = await addCustomerContact(customerId, { ...form, name: form.name.trim() });
+      onSaved(contact);
     } catch (ex: unknown) {
       setErr(ex instanceof Error ? ex.message : String(ex));
     } finally {
@@ -272,6 +274,14 @@ function AddContactForm({ customerId, onSaved, onCancel }: AddContactFormProps) 
           <SectionLabel>Phone</SectionLabel>
           <input type="tel" style={{ ...inputStyle, width: "100%", fontSize: 13 }} value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} />
         </div>
+        <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: BRAND.ink }}>
+          <input
+            type="checkbox"
+            checked={Boolean(form.is_primary)}
+            onChange={(e) => setForm((f) => ({ ...f, is_primary: e.target.checked }))}
+          />
+          Set as primary contact
+        </label>
       </div>
       {err && <ErrorMsg>{err}</ErrorMsg>}
       <div style={{ display: "flex", gap: 8 }}>
@@ -470,6 +480,19 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
     }
   }
 
+  async function handleSetPrimaryContact(contactId: number) {
+    setErr(null);
+    try {
+      const updated = await updateContact(contactId, { is_primary: true });
+      setDetail((d) => d ? {
+        ...d,
+        contacts: d.contacts.map((c) => ({ ...c, is_primary: c.id === updated.id })),
+      } : d);
+    } catch (ex: unknown) {
+      setErr(ex instanceof Error ? ex.message : String(ex));
+    }
+  }
+
   return (
     <Card style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -543,7 +566,16 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
           {subPanel === "addContact" && (
             <AddContactForm
               customerId={detail.id}
-              onSaved={() => setSubPanel(null)}
+              onSaved={(contact) => {
+                setDetail((d) => d ? {
+                  ...d,
+                  contacts: [
+                    ...(contact.is_primary ? d.contacts.map((c) => ({ ...c, is_primary: false })) : d.contacts),
+                    contact,
+                  ],
+                } : d);
+                setSubPanel(null);
+              }}
               onCancel={() => setSubPanel(null)}
             />
           )}
@@ -556,6 +588,35 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
               }}
               onCancel={() => setSubPanel(null)}
             />
+          )}
+
+          {detail.contacts.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <SectionLabel>Contacts ({detail.contacts.length})</SectionLabel>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {detail.contacts.map((contact) => (
+                  <div key={contact.id} style={{ padding: "10px 14px", background: BRAND.bg, borderRadius: 8, border: `1px solid ${BRAND.border}`, fontSize: 13 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, color: BRAND.navyText }}>{contact.name}</span>
+                      {contact.is_primary ? (
+                        <Badge tone="blue">Primary</Badge>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void handleSetPrimaryContact(contact.id)}
+                          style={{ background: "none", border: `1px solid ${BRAND.border}`, borderRadius: 999, color: BRAND.navyText, cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "2px 8px" }}
+                        >
+                          Set primary
+                        </button>
+                      )}
+                      {contact.role && <span style={{ color: BRAND.sub }}>{contact.role}</span>}
+                      {contact.email && <a href={`mailto:${contact.email}`} style={{ color: BRAND.navyText }}>{contact.email}</a>}
+                      {contact.phone && <span style={{ color: BRAND.sub }}>{contact.phone}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {detail.properties.length > 0 && (

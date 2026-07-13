@@ -234,6 +234,59 @@ function PropertyForm({
   );
 }
 
+function ContactForm({
+  onSave,
+  onCancel,
+  saving,
+}: {
+  onSave: (data: Pick<Contact, "name" | "role" | "email" | "phone" | "is_primary">) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [isPrimary, setIsPrimary] = useState(false);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <FieldLabel>Name *</FieldLabel>
+          <input value={name} onChange={(e) => setName(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="Contact name" />
+        </div>
+        <div>
+          <FieldLabel>Role</FieldLabel>
+          <input value={role} onChange={(e) => setRole(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="Owner, PM, board member…" />
+        </div>
+        <div>
+          <FieldLabel>Email</FieldLabel>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} />
+        </div>
+        <div>
+          <FieldLabel>Phone</FieldLabel>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} />
+        </div>
+        <label style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: BRAND.ink }}>
+          <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} />
+          Set as primary contact
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button
+          onClick={() => onSave({ name, role: role || null, email: email || null, phone: phone || null, is_primary: isPrimary })}
+          disabled={saving || !name.trim()}
+          style={{ fontSize: 13 }}
+        >
+          {saving ? "Saving…" : "Save contact"}
+        </Button>
+        <Button variant="ghost" onClick={onCancel} style={{ fontSize: 13 }}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
 function MeasurementForm({
   onSave,
   onCancel,
@@ -392,6 +445,9 @@ export function Quoting() {
   const [showNewProperty, setShowNewProperty] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
   const [propertyError, setPropertyError] = useState<string | null>(null);
+  const [showNewContact, setShowNewContact] = useState(false);
+  const [savingContact, setSavingContact] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
 
   // Measurements
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
@@ -518,6 +574,8 @@ export function Quoting() {
     setQuoteResult(null);
     setProposalCreated(null);
     setEditingCustomer(false);
+    setShowNewContact(false);
+    setContactError(null);
     loadCustomerDetail(c.id);
   }
 
@@ -580,6 +638,56 @@ export function Quoting() {
       setPropertyError(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingProperty(false);
+    }
+  }
+
+  async function handleAddContact(data: Pick<Contact, "name" | "role" | "email" | "phone" | "is_primary">) {
+    if (!selectedCustomer) return;
+    setSavingContact(true);
+    setContactError(null);
+    try {
+      const r = await apiFetch(`/quoting/customers/${selectedCustomer.id}/contacts`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+      }
+      const contact: Contact = await r.json();
+      setSelectedCustomer((prev) => prev ? {
+        ...prev,
+        contacts: [
+          ...(contact.is_primary ? prev.contacts.map((c) => ({ ...c, is_primary: false })) : prev.contacts),
+          contact,
+        ],
+      } : prev);
+      setShowNewContact(false);
+    } catch (e: unknown) {
+      setContactError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingContact(false);
+    }
+  }
+
+  async function handleSetPrimaryContact(contactId: number) {
+    setContactError(null);
+    try {
+      const r = await apiFetch(`/quoting/contacts/${contactId}`, {
+        method: "PUT",
+        body: JSON.stringify({ is_primary: true }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+      }
+      const updated: Contact = await r.json();
+      setSelectedCustomer((prev) => prev ? {
+        ...prev,
+        contacts: prev.contacts.map((c) => ({ ...c, is_primary: c.id === updated.id })),
+      } : prev);
+    } catch (e: unknown) {
+      setContactError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -828,22 +936,45 @@ export function Quoting() {
         </Card>
 
         {/* Contacts */}
-        {contacts.length > 0 && (
-          <Card style={{ marginBottom: 20 }}>
-            <div style={{ marginBottom: 12, fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Contacts</div>
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Contacts</div>
+            {!showNewContact && (
+              <Button variant="ghost" onClick={() => setShowNewContact(true)} style={{ fontSize: 12 }}>+ Add contact</Button>
+            )}
+          </div>
+          {contactError && <ErrorMsg>Error: {contactError}</ErrorMsg>}
+          {showNewContact && (
+            <div style={{ marginBottom: 16, padding: 16, background: BRAND.bg, borderRadius: 8 }}>
+              <ContactForm onSave={handleAddContact} onCancel={() => setShowNewContact(false)} saving={savingContact} />
+            </div>
+          )}
+          {contacts.length === 0 ? (
+            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No contacts yet. Add one before sending a proposal.</p>
+          ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {contacts.map((c) => (
-                <div key={c.id} style={{ display: "flex", gap: 16, fontSize: 13, padding: "6px 0", borderBottom: `1px solid ${BRAND.border}` }}>
+                <div key={c.id} style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", fontSize: 13, padding: "6px 0", borderBottom: `1px solid ${BRAND.border}` }}>
                   <span style={{ fontWeight: 600, color: BRAND.navyText, minWidth: 140 }}>{c.name}</span>
-                  {c.is_primary && <Badge tone="blue">Primary</Badge>}
+                  {c.is_primary ? (
+                    <Badge tone="blue">Primary</Badge>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleSetPrimaryContact(c.id)}
+                      style={{ background: "none", border: `1px solid ${BRAND.border}`, borderRadius: 999, color: BRAND.navyText, cursor: "pointer", fontSize: 12, fontWeight: 700, padding: "2px 8px" }}
+                    >
+                      Set primary
+                    </button>
+                  )}
                   {c.role && <span style={{ color: BRAND.sub }}>{c.role}</span>}
                   {c.email && <a href={`mailto:${c.email}`} style={{ color: BRAND.navyText }}>{c.email}</a>}
                   {c.phone && <span style={{ color: BRAND.sub }}>{c.phone}</span>}
                 </div>
               ))}
             </div>
-          </Card>
-        )}
+          )}
+        </Card>
 
         {/* Measurements */}
         <Card>

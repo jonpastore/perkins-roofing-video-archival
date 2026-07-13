@@ -523,19 +523,19 @@ _PROPOSAL_STATUS = SAEnum(
     "draft", "sent", "viewed", "accepted", "declined",
     "revision_requested", "superseded",
     name="proposal_status",
-    native_enum=False,
+    native_enum=True,
 )
 
 _PROPOSAL_EVENT_TYPE = SAEnum(
     "sent", "viewed", "accepted", "declined", "revision_requested", "reminder_sent",
     name="proposal_event_type",
-    native_enum=False,
+    native_enum=True,
 )
 
 _LEAD_STATUS = SAEnum(
     "new", "contacted", "qualified", "converted", "lost",
     name="lead_status",
-    native_enum=False,
+    native_enum=True,
 )
 
 _INET = String().with_variant(INET(), "postgresql")

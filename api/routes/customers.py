@@ -62,6 +62,14 @@ class ContactCreate(BaseModel):
     is_primary: bool = False
 
 
+class ContactUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    is_primary: Optional[bool] = None
+
+
 class PropertyCreate(BaseModel):
     street: str
     city: str
@@ -439,6 +447,15 @@ def add_contact(
     if cust is None:
         raise HTTPException(404, f"Customer {customer_id} not found")
 
+    if body.is_primary:
+        for existing in db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id,
+                Contact.customer_id == customer_id,
+            )
+        ).scalars().all():
+            existing.is_primary = False
+
     row = Contact(
         tenant_id=tenant_id,
         customer_id=customer_id,
@@ -449,6 +466,39 @@ def add_contact(
         is_primary=body.is_primary,
     )
     db.add(row)
+    db.flush()
+    db.refresh(row)
+    return _contact_row(row)
+
+
+@router.put("/contacts/{contact_id}")
+def update_contact(
+    contact_id: int,
+    body: ContactUpdate,
+    _claims=Depends(require_role("quoting_create")),
+    db: Session = Depends(get_db_session),
+):
+    tenant_id = _tenant_id(db)
+    row = db.execute(
+        select(Contact).where(
+            Contact.id == contact_id,
+            Contact.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(404, f"Contact {contact_id} not found")
+
+    updates = body.model_dump(exclude_none=True)
+    if updates.get("is_primary") is True:
+        for existing in db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id,
+                Contact.customer_id == row.customer_id,
+            )
+        ).scalars().all():
+            existing.is_primary = False
+    for field, value in updates.items():
+        setattr(row, field, value)
     db.flush()
     db.refresh(row)
     return _contact_row(row)

@@ -330,6 +330,50 @@ class TestAddContact:
         assert body["name"] == "Alice"
         assert body["customer_id"] == created["id"]
 
+
+    def test_primary_contact_unsets_existing_primary(self, admin_client):
+        created = _create_customer(admin_client)
+        first = admin_client.post(
+            f"/quoting/customers/{created['id']}/contacts",
+            json={"name": "Primary One", "is_primary": True},
+            headers=AUTH,
+        ).json()
+        second = admin_client.post(
+            f"/quoting/customers/{created['id']}/contacts",
+            json={"name": "Primary Two", "is_primary": True},
+            headers=AUTH,
+        ).json()
+
+        detail = admin_client.get(f"/quoting/customers/{created['id']}", headers=AUTH).json()
+        contacts = {c["id"]: c for c in detail["contacts"]}
+        assert contacts[first["id"]]["is_primary"] is False
+        assert contacts[second["id"]]["is_primary"] is True
+
+    def test_update_contact_sets_primary(self, admin_client):
+        created = _create_customer(admin_client)
+        first = admin_client.post(
+            f"/quoting/customers/{created['id']}/contacts",
+            json={"name": "Contact One", "is_primary": True},
+            headers=AUTH,
+        ).json()
+        second = admin_client.post(
+            f"/quoting/customers/{created['id']}/contacts",
+            json={"name": "Contact Two"},
+            headers=AUTH,
+        ).json()
+
+        r = admin_client.put(
+            f"/quoting/contacts/{second['id']}",
+            json={"is_primary": True},
+            headers=AUTH,
+        )
+
+        assert r.status_code == 200, r.text
+        detail = admin_client.get(f"/quoting/customers/{created['id']}", headers=AUTH).json()
+        contacts = {c["id"]: c for c in detail["contacts"]}
+        assert contacts[first["id"]]["is_primary"] is False
+        assert contacts[second["id"]]["is_primary"] is True
+
     def test_add_contact_requires_name(self, admin_client):
         created = _create_customer(admin_client)
         r = admin_client.post(f"/quoting/customers/{created['id']}/contacts",

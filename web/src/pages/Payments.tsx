@@ -91,44 +91,76 @@ function PaymentDetail({ id, onClose }: { id: number; onClose: () => void }) {
   );
 
   return (
-    <Card style={{ marginTop: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15 }}>Payment Detail</div>
-        <button
-          onClick={onClose}
-          style={{ background: "none", border: "none", cursor: "pointer", color: BRAND.sub, fontSize: 20, lineHeight: 1, padding: "2px 6px" }}
-          aria-label="Close"
-        >
-          ×
-        </button>
-      </div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Payment detail"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 500,
+        background: "rgba(16,24,40,0.25)",
+        display: "flex",
+        justifyContent: "flex-end",
+      }}
+    >
+      <aside
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(520px, 96vw)",
+          height: "100vh",
+          background: "#fff",
+          borderLeft: `1px solid ${BRAND.border}`,
+          boxShadow: "-8px 0 30px rgba(16,24,40,0.16)",
+          padding: 24,
+          overflowY: "auto",
+          fontFamily: FONT,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 16 }}>Payment Detail</div>
+            {payment && <div style={{ marginTop: 4, color: BRAND.sub, fontSize: 12 }}>{fmtUSD(payment.amount)} · {fmtDate(payment.payment_date)}</div>}
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", color: BRAND.sub, fontSize: 22, lineHeight: 1, padding: "2px 6px" }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
 
-      {loading && <Loading label="Loading payment…" />}
-      {err && <ErrorMsg>Error: {err}</ErrorMsg>}
+        {loading && <Loading label="Loading payment…" />}
+        {err && <ErrorMsg>Error: {err}</ErrorMsg>}
 
-      {payment && (
-        <table style={{ borderCollapse: "collapse", fontFamily: FONT }}>
-          <tbody>
-            {field("ID", payment.id)}
-            {field("Date", fmtDate(payment.payment_date))}
-            {field("Amount", fmtUSD(payment.amount))}
-            {field("Method", payment.method)}
-            {field("Reference", payment.reference)}
-            {field("Invoice #", invoiceLabel(payment))}
-            {field("Invoice ID", payment.invoice_id)}
-            <tr>
-              <td style={{ padding: "8px 0", color: BRAND.sub, fontSize: 13, fontWeight: 600, width: 160, verticalAlign: "top" }}>
-                Customer
-              </td>
-              <td style={{ padding: "8px 0 8px 12px", fontSize: 13, color: BRAND.ink, verticalAlign: "top" }}>
-                <CustomerLink payment={payment as PaymentWithCustomer} />
-              </td>
-            </tr>
-            {field("Notes", payment.notes)}
-          </tbody>
-        </table>
-      )}
-    </Card>
+        {payment && (
+          <Card style={{ boxShadow: "none" }}>
+            <table style={{ borderCollapse: "collapse", fontFamily: FONT, width: "100%" }}>
+              <tbody>
+                {field("ID", payment.id)}
+                {field("Date", fmtDate(payment.payment_date))}
+                {field("Amount", fmtUSD(payment.amount))}
+                {field("Method", payment.method)}
+                {field("Reference", payment.reference)}
+                {field("Invoice #", invoiceLabel(payment))}
+                {field("Invoice ID", payment.invoice_id)}
+                <tr>
+                  <td style={{ padding: "8px 0", color: BRAND.sub, fontSize: 13, fontWeight: 600, width: 160, verticalAlign: "top" }}>
+                    Customer
+                  </td>
+                  <td style={{ padding: "8px 0 8px 12px", fontSize: 13, color: BRAND.ink, verticalAlign: "top" }}>
+                    <CustomerLink payment={payment as PaymentWithCustomer} />
+                  </td>
+                </tr>
+                {field("Notes", payment.notes)}
+              </tbody>
+            </table>
+          </Card>
+        )}
+      </aside>
+    </div>
   );
 }
 
