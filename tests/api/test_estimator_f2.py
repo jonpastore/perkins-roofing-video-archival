@@ -633,6 +633,34 @@ class TestEstimatorQuote:
         )
         assert r.status_code == 404
 
+    def test_list_estimates_by_measurement_id(self, admin_client):
+        branch = _unique_branch("list-est")
+        _activate_config(admin_client, _create_config(admin_client, branch=branch)["id"])
+        measurement = admin_client.post(
+            "/measurements",
+            json={"total_sq": 12.0},
+            headers=AUTH,
+        ).json()
+        quote = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "HVHZ",
+                "roof_type": "dimensional_shingle",
+                "num_squares": 12.0,
+                "measurement_id": measurement["id"],
+            },
+            headers=AUTH,
+        )
+        assert quote.status_code == 200, quote.text
+
+        r = admin_client.get(f"/estimator/estimates?measurement_id={measurement['id']}", headers=AUTH)
+        assert r.status_code == 200, r.text
+        rows = r.json()
+        assert len(rows) >= 1
+        assert rows[0]["input_json"]["measurement_id"] == measurement["id"]
+        assert rows[0]["result_json"]["project_total"] == quote.json()["project_total"]
+
 
 # ---------------------------------------------------------------------------
 # POST/GET /measurements
@@ -707,6 +735,22 @@ class TestMeasurements:
         sc = _make_sales_client()
         r = sc.get(f"/measurements/{created['id']}", headers=AUTH)
         assert r.status_code == 200
+
+
+    def test_create_measurement_with_property_id_and_list_by_property(self, admin_client):
+        prop_id = 12345
+        created = admin_client.post(
+            "/measurements",
+            json={"property_id": prop_id, "total_sq": 31.0},
+            headers=AUTH,
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["property_id"] == prop_id
+
+        r = admin_client.get(f"/measurements?property_id={prop_id}", headers=AUTH)
+        assert r.status_code == 200, r.text
+        rows = r.json()
+        assert any(row["id"] == created.json()["id"] for row in rows)
 
     def test_measurement_unauthenticated_401(self):
         client = TestClient(appmod.app)

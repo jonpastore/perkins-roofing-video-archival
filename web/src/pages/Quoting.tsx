@@ -44,6 +44,7 @@ interface CustomerDetail extends Customer {
 
 interface Measurement {
   id: number;
+  property_id?: number | null;
   provider: string;
   status: string;
   total_sq: number | null;
@@ -73,6 +74,14 @@ interface QuoteResult {
   profit_pct: number;
   estimated_commission: number;
   margin_ok: boolean;
+}
+
+interface EstimateRecord {
+  id: number;
+  input_json: Record<string, unknown>;
+  result_json: Partial<QuoteResult> & { project_total?: number };
+  pricing_config_hash: string | null;
+  created_at: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -161,6 +170,63 @@ function CustomerForm({
       <div style={{ display: "flex", gap: 8 }}>
         <Button onClick={() => onSave({ display_name: displayName, company_name: companyName || null, email: email || null, phone: phone || null, notes: notes || null })} disabled={saving || !displayName.trim()} style={{ fontSize: 13 }}>
           {saving ? "Saving…" : "Save customer"}
+        </Button>
+        <Button variant="ghost" onClick={onCancel} style={{ fontSize: 13 }}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
+function PropertyForm({
+  onSave,
+  onCancel,
+  saving,
+}: {
+  onSave: (data: Partial<Property>) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [street, setStreet] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("FL");
+  const [zip, setZip] = useState("");
+  const [county, setCounty] = useState("");
+  const [codeZone, setCodeZone] = useState("FBC");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <FieldLabel>Street *</FieldLabel>
+          <input value={street} onChange={(e) => setStreet(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="123 Main St" />
+        </div>
+        <div>
+          <FieldLabel>City</FieldLabel>
+          <input value={city} onChange={(e) => setCity(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} />
+        </div>
+        <div>
+          <FieldLabel>State</FieldLabel>
+          <input value={state} onChange={(e) => setState(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} />
+        </div>
+        <div>
+          <FieldLabel>ZIP</FieldLabel>
+          <input value={zip} onChange={(e) => setZip(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} />
+        </div>
+        <div>
+          <FieldLabel>County</FieldLabel>
+          <input value={county} onChange={(e) => setCounty(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} />
+        </div>
+        <div>
+          <FieldLabel>Code Zone</FieldLabel>
+          <select value={codeZone} onChange={(e) => setCodeZone(e.target.value)} style={selectStyle}>
+            <option value="FBC">FBC</option>
+            <option value="HVHZ">HVHZ</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button onClick={() => onSave({ street, city, state, zip, county, code_zone: codeZone })} disabled={saving || !street.trim()} style={{ fontSize: 13 }}>
+          {saving ? "Saving…" : "Save property"}
         </Button>
         <Button variant="ghost" onClick={onCancel} style={{ fontSize: 13 }}>Cancel</Button>
       </div>
@@ -323,15 +389,21 @@ export function Quoting() {
   const [customerDetailError, setCustomerDetailError] = useState<string | null>(null);
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [savingCustomerEdit, setSavingCustomerEdit] = useState(false);
+  const [showNewProperty, setShowNewProperty] = useState(false);
+  const [savingProperty, setSavingProperty] = useState(false);
+  const [propertyError, setPropertyError] = useState<string | null>(null);
 
   // Measurements
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [measurementsLoading, setMeasurementsLoading] = useState(false);
   const [showNewMeasurement, setShowNewMeasurement] = useState(false);
   const [savingMeasurement, setSavingMeasurement] = useState(false);
   const [measurementError, setMeasurementError] = useState<string | null>(null);
 
   // Quote builder
   const [selectedMeasurement, setSelectedMeasurement] = useState<Measurement | null>(null);
+  const [estimateHistory, setEstimateHistory] = useState<EstimateRecord[]>([]);
+  const [estimatesLoading, setEstimatesLoading] = useState(false);
   const [quoteRegion, setQuoteRegion] = useState<"FBC" | "HVHZ">("FBC");
   const [quoteRoofType, setQuoteRoofType] = useState("dimensional_shingle");
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
@@ -387,7 +459,10 @@ export function Quoting() {
       .then((data: CustomerDetail) => {
         setSelectedCustomer(data);
         const props = data.properties ?? [];
-        if (props.length > 0) setSelectedPropertyId(props[0].id);
+        if (props.length > 0) {
+          setSelectedPropertyId(props[0].id);
+          setQuoteRegion(props[0].code_zone?.toUpperCase().includes("HVHZ") ? "HVHZ" : "FBC");
+        } else setSelectedPropertyId(null);
       })
       .catch((e: unknown) => setCustomerDetailError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCustomerDetailLoading(false));
@@ -437,6 +512,7 @@ export function Quoting() {
 
   function openCustomer(c: Customer) {
     setView("customer_detail");
+    setShowNewCustomer(false);
     setMeasurements([]);
     setSelectedMeasurement(null);
     setQuoteResult(null);
@@ -445,17 +521,80 @@ export function Quoting() {
     loadCustomerDetail(c.id);
   }
 
+
+  function loadMeasurementsForProperty(propertyId: number | null) {
+    if (!propertyId) {
+      setMeasurements([]);
+      setSelectedMeasurement(null);
+      return;
+    }
+    setMeasurementsLoading(true);
+    setMeasurementError(null);
+    apiFetch(`/measurements?property_id=${propertyId}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((rows: Measurement[]) => {
+        setMeasurements(Array.isArray(rows) ? rows : []);
+        setSelectedMeasurement(null);
+      })
+      .catch((e: unknown) => setMeasurementError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setMeasurementsLoading(false));
+  }
+
+  useEffect(() => {
+    if (view === "customer_detail" || view === "quote_builder") {
+      loadMeasurementsForProperty(selectedPropertyId);
+    }
+  }, [selectedPropertyId, view]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleSelectProperty(id: number) {
+    setSelectedPropertyId(id);
+    setShowNewMeasurement(false);
+    setQuoteResult(null);
+    setProposalCreated(null);
+    const prop = selectedCustomer?.properties?.find((p) => p.id === id);
+    if (prop?.code_zone?.toUpperCase().includes("HVHZ")) setQuoteRegion("HVHZ");
+    else if (prop) setQuoteRegion("FBC");
+  }
+
+  async function handleAddProperty(data: Partial<Property>) {
+    if (!selectedCustomer) return;
+    setSavingProperty(true);
+    setPropertyError(null);
+    try {
+      const r = await apiFetch(`/quoting/customers/${selectedCustomer.id}/properties`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+      }
+      const prop: Property = await r.json();
+      setSelectedCustomer((prev) => prev ? { ...prev, properties: [...(prev.properties ?? []), prop] } : prev);
+      setSelectedPropertyId(prop.id);
+      setShowNewProperty(false);
+    } catch (e: unknown) {
+      setPropertyError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingProperty(false);
+    }
+  }
+
   async function handleAddMeasurement(data: Omit<Measurement, "id" | "provider" | "status" | "created_at" | "created_by" | "confidence">) {
     setSavingMeasurement(true);
     setMeasurementError(null);
     try {
-      const r = await apiFetch("/measurements", { method: "POST", body: JSON.stringify(data) });
+      const r = await apiFetch("/measurements", { method: "POST", body: JSON.stringify({ ...data, property_id: selectedPropertyId }) });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
       }
       const m: Measurement = await r.json();
-      setMeasurements((prev) => [m, ...prev]);
+      setMeasurements((prev) => [m, ...prev.filter((row) => row.id !== m.id)]);
+      setSelectedMeasurement(m);
       setShowNewMeasurement(false);
     } catch (e: unknown) {
       setMeasurementError(e instanceof Error ? e.message : String(e));
@@ -463,6 +602,27 @@ export function Quoting() {
       setSavingMeasurement(false);
     }
   }
+
+
+  function loadEstimatesForMeasurement(measurementId: number | null) {
+    if (!measurementId) {
+      setEstimateHistory([]);
+      return;
+    }
+    setEstimatesLoading(true);
+    apiFetch(`/estimator/estimates?measurement_id=${measurementId}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((rows: EstimateRecord[]) => setEstimateHistory(Array.isArray(rows) ? rows : []))
+      .catch(() => setEstimateHistory([]))
+      .finally(() => setEstimatesLoading(false));
+  }
+
+  useEffect(() => {
+    loadEstimatesForMeasurement(selectedMeasurement?.id ?? null);
+  }, [selectedMeasurement?.id]);
 
   async function handleCalculateQuote() {
     if (!selectedMeasurement?.total_sq) {
@@ -478,6 +638,7 @@ export function Quoting() {
       region: quoteRegion,
       roof_type: quoteRoofType,
       num_squares: selectedMeasurement.total_sq,
+      measurement_id: selectedMeasurement.id,
       project_kind: "residential",
       roof_cuts: "low",
       roof_height: "1_story",
@@ -500,6 +661,7 @@ export function Quoting() {
       }
       const data: QuoteResult = await r.json();
       setQuoteResult(data);
+      loadEstimatesForMeasurement(selectedMeasurement.id);
     } catch (e: unknown) {
       setQuoteError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -627,10 +789,21 @@ export function Quoting() {
 
         {/* Properties */}
         <Card style={{ marginBottom: 20 }}>
-          <div style={{ marginBottom: 6, fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Property</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Property</div>
+            {!showNewProperty && (
+              <Button variant="ghost" onClick={() => setShowNewProperty(true)} style={{ fontSize: 12 }}>+ Add property</Button>
+            )}
+          </div>
           <p style={{ margin: "0 0 12px", color: BRAND.sub, fontSize: 12 }}>
-            Select the roof location for this estimate. Full consolidation needs measurements to persist against this property.
+            Select the roof location for this estimate. You can add a property if this customer has a new project address.
           </p>
+          {propertyError && <ErrorMsg>Error: {propertyError}</ErrorMsg>}
+          {showNewProperty && (
+            <div style={{ marginBottom: 16, padding: 16, background: BRAND.bg, borderRadius: 8 }}>
+              <PropertyForm onSave={handleAddProperty} onCancel={() => setShowNewProperty(false)} saving={savingProperty} />
+            </div>
+          )}
           {props.length === 0 ? (
             <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No properties yet. Add one to enable estimate building.</p>
           ) : (
@@ -644,7 +817,7 @@ export function Quoting() {
                   background: selectedPropertyId === p.id ? "#f0f3fa" : "#fff",
                   fontSize: 14,
                 }}
-                  onClick={() => setSelectedPropertyId(p.id)}
+                  onClick={() => handleSelectProperty(p.id)}
                 >
                   <div style={{ fontWeight: 600, color: BRAND.navyText }}>{p.street}, {p.city} {p.state} {p.zip ?? ""}</div>
                   <div style={{ color: BRAND.sub, fontSize: 12 }}>{p.county ? `${p.county} County · ` : ""}{p.code_zone}</div>
@@ -678,11 +851,13 @@ export function Quoting() {
             <div>
               <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Measurement</div>
               <div style={{ color: BRAND.sub, fontSize: 12, marginTop: 2 }}>
-                Add or select roof squares and pitch before calculating pricing.
+                Measurements are property-scoped. Roofr imports should land here when wired; manual entries are available now.
               </div>
             </div>
             {!showNewMeasurement && (
-              <Button variant="ghost" onClick={() => setShowNewMeasurement(true)} style={{ fontSize: 12 }}>+ Add measurement</Button>
+              <Button variant="ghost" onClick={() => setShowNewMeasurement(true)} disabled={!selectedPropertyId} style={{ fontSize: 12 }}>
+                {measurements.length > 0 ? "Replace / add measurement" : "+ Add measurement"}
+              </Button>
             )}
           </div>
 
@@ -695,11 +870,13 @@ export function Quoting() {
             </div>
           )}
 
-          {measurements.length === 0 && !showNewMeasurement && (
-            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No measurements yet. Add one to start estimating.</p>
+          {measurementsLoading && <Loading label="Loading measurements…" />}
+
+          {!measurementsLoading && measurements.length === 0 && !showNewMeasurement && (
+            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No measurements for this property yet. Add one to start estimating.</p>
           )}
 
-          {measurements.length > 0 && (
+          {!measurementsLoading && measurements.length > 0 && (
             <Card style={{ padding: 0, overflow: "hidden" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
@@ -855,6 +1032,27 @@ export function Quoting() {
             {quoteError && <div style={{ marginTop: 10 }}><ErrorMsg>Error: {quoteError}</ErrorMsg></div>}
           </Card>
 
+          {selectedMeasurement && (
+            <Card>
+              <SectionLabel>Estimates for this measurement</SectionLabel>
+              {estimatesLoading && <Loading label="Loading estimates…" />}
+              {!estimatesLoading && estimateHistory.length === 0 && (
+                <p style={{ margin: 0, color: BRAND.sub, fontSize: 13 }}>No estimates yet. Calculate a new estimate to save one.</p>
+              )}
+              {!estimatesLoading && estimateHistory.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {estimateHistory.map((est) => (
+                    <div key={est.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, padding: "6px 0", borderBottom: `1px solid ${BRAND.border}` }}>
+                      <span>Estimate #{est.id}</span>
+                      <span style={{ color: BRAND.sub }}>{est.created_at ? new Date(est.created_at).toLocaleString() : "—"}</span>
+                      <strong>{est.result_json?.project_total != null ? usd(est.result_json.project_total) : "—"}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Result panel */}
           <div>
             {quoting && <Card><Loading label="Building estimate…" /></Card>}
@@ -961,17 +1159,25 @@ export function Quoting() {
       {customersLoading && <Loading label="Loading customers…" />}
       {customersError && <ErrorMsg>Error: {customersError}</ErrorMsg>}
 
-      {!customersLoading && !customersError && filteredCustomers.length === 0 && (
+      {!customersLoading && !customersError && search.trim() && filteredCustomers.length === 0 && (
         <Card>
           <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
-            {search ? `No customers matching "${search}".` : "No customers yet. Create the first customer above to start an estimate."}
+            No customers matching "{search}". Use + New customer to add them.
           </p>
         </Card>
       )}
 
-      {filteredCustomers.length > 0 && (
+      {!search.trim() && !showNewCustomer && (
+        <Card>
+          <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
+            Start typing to find a customer, then choose the property, measurement, and estimate.
+          </p>
+        </Card>
+      )}
+
+      {search.trim() && filteredCustomers.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filteredCustomers.map((c) => (
+          {filteredCustomers.slice(0, 8).map((c) => (
             <Card
               key={c.id}
               style={{ padding: "14px 18px", cursor: "pointer" }}

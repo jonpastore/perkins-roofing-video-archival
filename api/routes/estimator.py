@@ -214,6 +214,40 @@ def quote(
     return result
 
 
+def _estimate_row(row: Estimate) -> dict:
+    return {
+        "id": row.id,
+        "pricing_config_id": row.pricing_config_id,
+        "pricing_config_hash": row.pricing_config_hash,
+        "branch": row.branch,
+        "code_zone": row.code_zone,
+        "county": row.county,
+        "input_json": row.input_json or {},
+        "result_json": row.result_json or {},
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "created_by": row.created_by,
+    }
+
+
+@router.get("/estimates")
+def list_estimates(
+    measurement_id: Optional[int] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
+):
+    rows = (
+        db.query(Estimate)
+        .filter(Estimate.tenant_id == db.info["tenant_id"])
+        .order_by(Estimate.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    if measurement_id is not None:
+        rows = [r for r in rows if (r.input_json or {}).get("measurement_id") == measurement_id]
+    return [_estimate_row(r) for r in rows]
+
+
 @router.get("/rates")
 def rates(
     branch: str = Query(default="miami"),

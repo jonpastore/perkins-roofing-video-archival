@@ -9,7 +9,7 @@ Authz: estimating_view for GET, estimating_manage for POST.
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/measurements", tags=["measurements"])
 
 
 class MeasurementCreateRequest(BaseModel):
+    property_id: Optional[int] = None
     total_sq: Optional[float] = None
     hips_lf: Optional[float] = None
     ridges_lf: Optional[float] = None
@@ -35,6 +36,7 @@ def _row_to_dict(row: Measurement) -> dict:
     return {
         "id": row.id,
         "tenant_id": row.tenant_id,
+        "property_id": row.property_id,
         "provider": row.provider,
         "status": row.status,
         "total_sq": row.total_sq,
@@ -67,6 +69,7 @@ def create_measurement(
 
     row = Measurement(
         tenant_id=db.info["tenant_id"],
+        property_id=body.property_id,
         provider="manual",
         status="complete",
         total_sq=body.total_sq,
@@ -85,6 +88,20 @@ def create_measurement(
     db.flush()
     db.refresh(row)
     return _row_to_dict(row)
+
+
+@router.get("")
+def list_measurements(
+    property_id: Optional[int] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
+):
+    q = db.query(Measurement).filter(Measurement.tenant_id == db.info["tenant_id"])
+    if property_id is not None:
+        q = q.filter(Measurement.property_id == property_id)
+    rows = q.order_by(Measurement.created_at.desc()).limit(limit).all()
+    return [_row_to_dict(r) for r in rows]
 
 
 @router.get("/{measurement_id}")

@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState, useCallback, useRef } from "react";
 import {
+  apiFetch,
   listQuotingCustomersPaged,
   getQuotingCustomer,
   createCustomer,
@@ -42,6 +43,20 @@ type PropertyDetailRow = QuotingProperty & {
   latest_measurement_total_sq?: number | null;
 };
 
+function ModalShell({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "32px 16px", overflowY: "auto" }}>
+      <div style={{ width: "min(860px, 96vw)", background: "#fff", borderRadius: 12, boxShadow: "0 20px 50px rgba(16,24,40,0.22)", fontFamily: FONT }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1px solid ${BRAND.border}` }}>
+          <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 16 }}>{title}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: BRAND.sub, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: 20 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 // ── New Customer form ─────────────────────────────────────────────────────────
 
 interface NewCustomerFormProps {
@@ -51,11 +66,17 @@ interface NewCustomerFormProps {
 
 function NewCustomerForm({ onSaved, onCancel }: NewCustomerFormProps) {
   const [form, setForm] = useState<CustomerInput>({ display_name: "", company_name: "", email: "", phone: "" });
+  const [property, setProperty] = useState<PropertyInput>({ street: "", city: "", state: "FL", zip: "", county: "", code_zone: "FBC" });
+  const [measurementSq, setMeasurementSq] = useState("");
+  const [measurementNote, setMeasurementNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   function set(field: keyof CustomerInput, value: string) {
     setForm((f) => ({ ...f, [field]: value || null }));
+  }
+  function setProp(field: keyof PropertyInput, value: string) {
+    setProperty((f) => ({ ...f, [field]: value || null }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -65,6 +86,19 @@ function NewCustomerForm({ onSaved, onCancel }: NewCustomerFormProps) {
     setErr(null);
     try {
       const c = await createCustomer({ ...form, display_name: form.display_name.trim() });
+      if (property.street?.trim()) {
+        const prop = await addCustomerProperty(c.id, { ...property, street: property.street.trim() });
+        if (measurementSq.trim()) {
+          await apiFetch("/measurements", {
+            method: "POST",
+            body: JSON.stringify({
+              property_id: prop.id,
+              total_sq: Number(measurementSq),
+              provenance_note: measurementNote.trim() || "Manual entry during customer setup",
+            }),
+          });
+        }
+      }
       onSaved(c);
     } catch (ex: unknown) {
       setErr(ex instanceof Error ? ex.message : String(ex));
@@ -93,6 +127,21 @@ function NewCustomerForm({ onSaved, onCancel }: NewCustomerFormProps) {
           <div>
             <SectionLabel>Phone</SectionLabel>
             <input type="tel" style={{ ...inputStyle, width: "100%" }} value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} placeholder="(555) 555-5555" />
+          </div>
+        </div>
+        <div style={{ borderTop: `1px solid ${BRAND.border}`, paddingTop: 14, marginTop: 14 }}>
+          <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 13, marginBottom: 8 }}>Initial property and measurement (optional)</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <SectionLabel>Property street</SectionLabel>
+              <input style={{ ...inputStyle, width: "100%" }} value={property.street ?? ""} onChange={(e) => setProp("street", e.target.value)} placeholder="123 Main St" />
+            </div>
+            <div><SectionLabel>City</SectionLabel><input style={{ ...inputStyle, width: "100%" }} value={property.city ?? ""} onChange={(e) => setProp("city", e.target.value)} /></div>
+            <div><SectionLabel>State</SectionLabel><input style={{ ...inputStyle, width: "100%" }} value={property.state ?? ""} onChange={(e) => setProp("state", e.target.value)} /></div>
+            <div><SectionLabel>ZIP</SectionLabel><input style={{ ...inputStyle, width: "100%" }} value={property.zip ?? ""} onChange={(e) => setProp("zip", e.target.value)} /></div>
+            <div><SectionLabel>Code Zone</SectionLabel><input style={{ ...inputStyle, width: "100%" }} value={property.code_zone ?? ""} onChange={(e) => setProp("code_zone", e.target.value)} /></div>
+            <div><SectionLabel>Roof squares</SectionLabel><input type="number" min="0" step="0.5" style={{ ...inputStyle, width: "100%" }} value={measurementSq} onChange={(e) => setMeasurementSq(e.target.value)} placeholder="Optional" /></div>
+            <div><SectionLabel>Measurement note</SectionLabel><input style={{ ...inputStyle, width: "100%" }} value={measurementNote} onChange={(e) => setMeasurementNote(e.target.value)} placeholder="Roofr, EagleView, manual…" /></div>
           </div>
         </div>
         {err && <ErrorMsg>{err}</ErrorMsg>}
@@ -126,7 +175,6 @@ function EditCustomerForm({ customer, onSaved, onCancel }: EditCustomerFormProps
   function set(field: keyof CustomerInput, value: string) {
     setForm((f) => ({ ...f, [field]: value || null }));
   }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.display_name.trim()) { setErr("Display name is required."); return; }
@@ -561,7 +609,7 @@ export function Customers() {
       sortable: true,
       render: (r: CustomerListRow) => (
         <button
-          onClick={() => setSelectedId((prev) => (prev === r.id ? null : r.id))}
+          onClick={() => { setShowNewForm(false); setSelectedId((prev) => (prev === r.id ? null : r.id)); }}
           style={{
             background: "none",
             border: "none",
@@ -632,10 +680,10 @@ export function Customers() {
     <main style={{ maxWidth: 1100, fontFamily: FONT }}>
       <PageTitle right={
         <Button
-          onClick={() => { setShowNewForm((s) => !s); setSelectedId(null); }}
+          onClick={() => { setShowNewForm(true); setSelectedId(null); }}
           style={{ fontSize: 13 }}
         >
-          {showNewForm ? "Cancel" : "New Customer"}
+          New Customer
         </Button>
       }>
         Customers
@@ -668,18 +716,22 @@ export function Customers() {
       </div>
 
       {showNewForm && (
-        <NewCustomerForm
-          onSaved={handleNewSaved}
-          onCancel={() => setShowNewForm(false)}
-        />
+        <ModalShell title="New Customer" onClose={() => setShowNewForm(false)}>
+          <NewCustomerForm
+            onSaved={handleNewSaved}
+            onCancel={() => setShowNewForm(false)}
+          />
+        </ModalShell>
       )}
 
       {selectedId !== null && (
-        <DetailPanel
-          customerId={selectedId}
-          onClose={() => setSelectedId(null)}
-          onCustomerUpdated={handleCustomerUpdated}
-        />
+        <ModalShell title="Customer" onClose={() => setSelectedId(null)}>
+          <DetailPanel
+            customerId={selectedId}
+            onClose={() => setSelectedId(null)}
+            onCustomerUpdated={handleCustomerUpdated}
+          />
+        </ModalShell>
       )}
 
       {err && <ErrorMsg>{err}</ErrorMsg>}
