@@ -540,3 +540,8 @@ class TestMcpMode:
             result = knowify_sync.run(refresh_only=True)
         mcp_refresh.assert_called_once()
         assert result["exit_code"] == 0
+
+
+def test_sync_entities_include_contacts_after_clients():
+    assert "contacts" in SYNC_ENTITIES
+    assert SYNC_ENTITIES.index("clients") < SYNC_ENTITIES.index("contacts") < SYNC_ENTITIES.index("projects")

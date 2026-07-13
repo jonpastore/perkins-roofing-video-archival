@@ -291,3 +291,19 @@ def test_post_initialize_and_query_over_mocked_http(monkeypatch):
     assert m.sid == "sess-1"
     assert m.query("Clients", fields=["Id"]) == payload
     assert seen["auth"] == "Bearer tok"  # bearer token sent, never logged
+
+
+def test_spec_has_contacts_entry():
+    spec = M._SPEC["contacts"]
+    assert spec["table"] == "Contacts"
+    for f in ("Id", "ClientId", "ContactName", "Email", "Phone", "ObjectState"):
+        assert f in spec["fields"], f"contacts spec missing field {f!r}"
+    assert spec["where"] == {"ObjectState": {"$in": ["Active", "Inactive"]}}
+
+
+def test_fetch_entity_contacts_uses_spec(monkeypatch):
+    cap: dict = {}
+    _stub_pull(monkeypatch, [{"Id": "1"}], capture=cap)
+    M.fetch_entity("contacts", "tok")
+    assert cap["table"] == "Contacts"
+    assert "ContactName" in cap["fields"]

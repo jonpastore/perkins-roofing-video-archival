@@ -41,6 +41,15 @@ _SPEC: dict[str, dict] = {
         # resolve to a real customer and ObjectState carries our is_active flag.
         "where": {"ObjectState": {"$in": ["Active", "Inactive"]}},
     },
+    "contacts": {
+        "table": "Contacts",
+        "fields": ["Id", "ClientId", "VendorId", "ContactName", "Email", "Phone",
+                   "ObjectState", "DateCreated", "DateModified"],
+        # Include inactive for the raw mirror's source completeness. Promotion skips
+        # inactive contacts because the native contacts table has no soft-delete flag.
+        "where": {"ObjectState": {"$in": ["Active", "Inactive"]}},
+        "order": [["Id", "DESC"]],
+    },
     "projects": {
         "table": "Projects",
         "fields": ["Id", "ProjectName", "ClientId", "ContractId", "DraftContractId",

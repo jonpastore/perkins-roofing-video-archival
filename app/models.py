@@ -461,10 +461,16 @@ class Contact(Base, TenantMixin):
     email       = Column(String(255))
     phone       = Column(String(50))
     is_primary  = Column(Boolean, nullable=False, default=False)
+    knowify_contact_id = Column(String(100))
     created_at  = Column(DateTime, nullable=False, default=_utcnow)
 
     __table_args__ = (
         Index("ix_contacts_customer", "customer_id"),
+        Index("ix_contacts_tenant_knowify", "tenant_id", "knowify_contact_id"),
+        Index(
+            "uq_contacts_tenant_knowify", "tenant_id", "knowify_contact_id",
+            unique=True, postgresql_where="knowify_contact_id IS NOT NULL",
+        ),
     )
 
 

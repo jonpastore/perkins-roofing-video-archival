@@ -46,11 +46,11 @@ def _pull_mode() -> str:
     return os.getenv("KNOWIFY_PULL_MODE", "rest").strip().lower()
 
 # Entities synced each run, in FK-safe order:
-# clients first (projects/contracts reference clients), then projects (contracts reference
-# projects), then contracts (deliverables reference contracts), then items/invoices/payments.
+# clients first (contacts/projects/contracts reference clients), then contacts and projects,
+# then contracts (deliverables reference contracts), then items/invoices/payments.
 # (payments.invoice_id is NOT NULL FK to invoices.id — 0030:99)
-# projects/contracts/deliverables are raw-mirror-only — promote_run is NOT called for them.
-SYNC_ENTITIES = ["clients", "projects", "contracts", "deliverables", "items", "invoices", "payments"]
+# contracts/deliverables are raw-mirror-only — promote_run is NOT called for them.
+SYNC_ENTITIES = ["clients", "contacts", "projects", "contracts", "deliverables", "items", "invoices", "payments"]
 
 # ObjectState filter appended to GET requests where supported.
 _OBJECT_STATE_FILTER = {"where[ObjectState][$in]": "Active,Cancelled,Deleted"}
@@ -193,6 +193,8 @@ def _sync_tenant(
         promote_run(
             db,
             clients=entity_data.get("clients"),
+            contacts=entity_data.get("contacts"),
+            projects=entity_data.get("projects"),
             items=entity_data.get("items"),
             invoices=entity_data.get("invoices"),
             payments=entity_data.get("payments"),

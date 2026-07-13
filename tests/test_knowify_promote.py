@@ -885,3 +885,127 @@ class TestPromoteMoneyPathPostgres:
         finally:
             sess.rollback()
             sess.close()
+
+
+PROJECT_WITH_ADDRESS = {
+    "Id": 7001,
+    "ProjectName": "Main Roof",
+    "ClientId": 555,
+    "Address1": "123 Main Street",
+    "City": "Miami",
+    "StateProvince": "FL",
+    "Zip": "33101",
+}
+
+CONTACT = {
+    "Id": 4697,
+    "ClientId": 555,
+    "ContactName": "Jane Buyer",
+    "Email": "jane@example.com",
+    "Phone": "305-555-2222",
+    "ObjectState": "Active",
+}
+
+
+class TestContactAndPropertyPromotionSQLite:
+    def test_client_primary_contact_promoted(self):
+        from app.models import Contact
+        from core.knowify.promote import promote_client_contacts
+
+        sess = _sqlite_session()
+        promote_clients(sess, [{**CLIENT, "ContactName": "Jane Primary", "PhoneNumberMobile": "305-555-9999"}])
+        sess.flush()
+        contact_source = {**CLIENT, "ContactName": "Jane Primary", "PhoneNumberMobile": "305-555-9999"}
+        assert promote_client_contacts(sess, [contact_source]) == 1
+        sess.flush()
+        row = sess.execute(select(Contact).where(Contact.knowify_contact_id == "client:555:primary")).scalar_one()
+        assert row.name == "Jane Primary"
+        assert row.email == "billing@anchor.example"
+        assert row.phone == "305-555-9999"
+        assert row.is_primary is True
+
+    def test_knowify_contact_promoted_and_rerun_no_duplicate(self):
+        from app.models import Contact
+        from core.knowify.promote import promote_contacts
+
+        sess = _sqlite_session()
+        promote_clients(sess, [CLIENT])
+        sess.flush()
+        assert promote_contacts(sess, [CONTACT]) == 1
+        assert promote_contacts(sess, [CONTACT]) == 1
+        sess.flush()
+        rows = sess.execute(select(Contact).where(Contact.knowify_contact_id == "4697")).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].name == "Jane Buyer"
+        assert rows[0].email == "jane@example.com"
+
+    def test_inactive_contact_skipped(self):
+        from app.models import Contact
+        from core.knowify.promote import promote_contacts
+
+        sess = _sqlite_session()
+        promote_clients(sess, [CLIENT])
+        sess.flush()
+        assert promote_contacts(sess, [{**CONTACT, "ObjectState": "Inactive"}]) == 0
+        assert sess.execute(select(func.count()).select_from(Contact)).scalar_one() == 0
+
+    def test_project_address_promoted_to_property_and_rerun_no_duplicate(self):
+        from app.models import Property
+        from core.knowify.promote import promote_properties
+
+        sess = _sqlite_session()
+        promote_clients(sess, [CLIENT])
+        sess.flush()
+        assert promote_properties(sess, projects=[PROJECT_WITH_ADDRESS]) == 1
+        sess.flush()
+        # rerun is idempotent: existing address-equivalent property is not re-inserted
+        assert promote_properties(sess, projects=[PROJECT_WITH_ADDRESS]) == 0
+        sess.flush()
+        rows = sess.execute(select(Property).where(Property.knowify_customer_id == "555")).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].street == "123 Main Street"
+        assert rows[0].city == "Miami"
+        assert rows[0].notes and "Knowify project 7001" in rows[0].notes
+
+
+    def test_property_zip_truncated_to_schema_limit(self):
+        from app.models import Property
+        from core.knowify.promote import promote_properties
+
+        sess = _sqlite_session()
+        promote_clients(sess, [CLIENT])
+        sess.flush()
+        project = {**PROJECT_WITH_ADDRESS, "Zip": "33101-123456789"}
+        assert promote_properties(sess, projects=[project]) == 1
+        prop = sess.execute(select(Property).where(Property.street == "123 Main Street")).scalar_one()
+        assert prop.zip == "33101-1234"
+
+    def test_client_address_promoted_to_fallback_property(self):
+        from app.models import Property
+        from core.knowify.promote import promote_properties
+
+        sess = _sqlite_session()
+        client = {**CLIENT, "Address1": "456 Oak Ave", "City": "Miami", "StateProvince": "FL", "Zip": "33102"}
+        promote_clients(sess, [client])
+        sess.flush()
+        assert promote_properties(sess, clients=[client]) == 1
+        prop = sess.execute(select(Property).where(Property.street == "456 Oak Ave")).scalar_one()
+        assert prop.knowify_customer_id == "555"
+        assert prop.code_zone == "FBC"
+
+    def test_promote_run_includes_contacts_and_properties(self):
+        from app.models import Contact, Property
+
+        sess = _sqlite_session()
+        counts = promote_run(
+            sess,
+            clients=[{**CLIENT, "Address1": "456 Oak Ave", "City": "Miami", "StateProvince": "FL"}],
+            contacts=[CONTACT],
+            projects=[PROJECT_WITH_ADDRESS],
+        )
+        sess.flush()
+        assert counts["clients"] == 1
+        assert counts["contacts"] >= 1
+        assert counts["properties"] == 2
+        assert sess.execute(select(func.count()).select_from(Contact)).scalar_one() >= 1
+        assert sess.execute(select(func.count()).select_from(Property)).scalar_one() == 2

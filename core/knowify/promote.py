@@ -146,6 +146,288 @@ def promote_clients(session: Session, records: list[dict[str, Any]]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# clients/contacts/projects → Contact + Property
+# ---------------------------------------------------------------------------
+
+def _clean_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
+def _clean_str_max(value: Any, max_len: int) -> str | None:
+    s = _clean_str(value)
+    return s[:max_len] if s else None
+
+
+def _norm(value: Any) -> str:
+    return (_clean_str(value) or "").casefold()
+
+
+def _state(value: Any) -> str:
+    return (_clean_str(value) or "FL").upper()[:2]
+
+
+def _contact_name(rec: dict[str, Any], fallback: str) -> str:
+    return (
+        _clean_str(rec.get("ContactName"))
+        or _clean_str(rec.get("ClientName"))
+        or _clean_str(rec.get("CompanyName"))
+        or _clean_str(rec.get("Email"))
+        or fallback
+    )
+
+
+def promote_client_contacts(session: Session, records: list[dict[str, Any]]) -> int:
+    """Promote the primary contact fields embedded on Knowify Clients.
+
+    Knowify has very few rows in its separate Contacts table for Perkins; most usable
+    contact data lives directly on Clients. Synthetic ids are stable and namespaced so
+    reruns update in place instead of duplicating contacts.
+    """
+    from app.models import Contact
+
+    n = 0
+    customer_map = _customer_ids_for(session, {str(r["Id"]) for r in records if r.get("Id") is not None})
+    source_keys = {f"client:{kid}:primary" for kid in customer_map}
+    existing = {
+        row.knowify_contact_id: row
+        for row in session.execute(
+            select(Contact).where(
+                Contact.tenant_id == session.info.get("tenant_id", 1),
+                Contact.knowify_contact_id.in_(source_keys),
+            )
+        ).scalars().all()
+    } if source_keys else {}
+    for rec in records:
+        kid = str(rec.get("Id", "unknown"))
+        try:
+            kid = str(rec["Id"])
+            email = _clean_str(rec.get("Email"))
+            phone = _clean_str(rec.get("PhoneNumberMobile")) or _clean_str(rec.get("PhoneNumber"))
+            name = _contact_name(rec, f"Knowify client {kid}")
+            if not (name or email or phone):
+                continue
+            customer_id = customer_map.get(kid)
+            if customer_id is None:
+                continue
+            xkey = f"client:{kid}:primary"
+            row = existing.get(xkey)
+            if row is None:
+                session.add(Contact(
+                    tenant_id=session.info.get("tenant_id", 1),
+                    knowify_contact_id=xkey,
+                    customer_id=customer_id,
+                    name=name,
+                    role="Primary",
+                    email=email,
+                    phone=phone,
+                    is_primary=True,
+                ))
+            else:
+                row.customer_id = customer_id
+                row.name = name
+                row.role = "Primary"
+                row.email = email
+                row.phone = phone
+                row.is_primary = True
+            n += 1
+            log.debug("knowify promote: client-contact id=%s", kid)
+        except Exception as exc:
+            log.error("knowify promote: client-contact id=%s error=%s", kid, type(exc).__name__)
+    session.flush()
+    return n
+
+
+def promote_contacts(session: Session, records: list[dict[str, Any]]) -> int:
+    """Upsert Knowify Contacts into native contacts keyed by knowify_contact_id."""
+    from app.models import Contact
+
+    n = 0
+    active = [r for r in records if r.get("ObjectState", "Active") == "Active" and r.get("ClientId") is not None]
+    customer_map = _customer_ids_for(session, {str(r["ClientId"]) for r in active})
+    source_keys = {str(r["Id"]) for r in active if r.get("Id") is not None}
+    existing = {
+        row.knowify_contact_id: row
+        for row in session.execute(
+            select(Contact).where(
+                Contact.tenant_id == session.info.get("tenant_id", 1),
+                Contact.knowify_contact_id.in_(source_keys),
+            )
+        ).scalars().all()
+    } if source_keys else {}
+    for rec in records:
+        kid = str(rec.get("Id", "unknown"))
+        try:
+            if rec.get("ObjectState", "Active") != "Active":
+                continue
+            if rec.get("ClientId") is None:
+                continue  # vendor/global contacts are not customer contacts
+            kid = str(rec["Id"])
+            customer_id = customer_map.get(str(rec["ClientId"]))
+            if customer_id is None:
+                continue
+            name = _contact_name(rec, f"Knowify contact {kid}")
+            email = _clean_str(rec.get("Email"))
+            phone = _clean_str(rec.get("Phone"))
+            row = existing.get(kid)
+            if row is None:
+                session.add(Contact(
+                    tenant_id=session.info.get("tenant_id", 1),
+                    knowify_contact_id=kid,
+                    customer_id=customer_id,
+                    name=name,
+                    role=None,
+                    email=email,
+                    phone=phone,
+                    is_primary=False,
+                ))
+            else:
+                row.customer_id = customer_id
+                row.name = name
+                row.role = None
+                row.email = email
+                row.phone = phone
+                row.is_primary = False
+            n += 1
+            log.debug("knowify promote: contact id=%s", kid)
+        except Exception as exc:
+            log.error("knowify promote: contact id=%s error=%s", kid, type(exc).__name__)
+    session.flush()
+    return n
+
+
+def _address_values(rec: dict[str, Any]) -> dict[str, str | None] | None:
+    street = _clean_str(rec.get("Address1"))
+    city = _clean_str(rec.get("City"))
+    if not street or not city:
+        return None
+    return {
+        "street": street[:255],
+        "city": city[:100],
+        "state": _state(rec.get("StateProvince") or rec.get("State")),
+        "zip": _clean_str_max(rec.get("Zip"), 10),
+    }
+
+
+def _property_key(customer_id: int, values: dict[str, str | None]) -> tuple[int, str, str, str, str]:
+    return (
+        customer_id,
+        _norm(values["street"]),
+        _norm(values["city"]),
+        _state(values["state"]),
+        _norm(values.get("zip")),
+    )
+
+
+def promote_properties(
+    session: Session,
+    *,
+    projects: list[dict[str, Any]] | None = None,
+    clients: list[dict[str, Any]] | None = None,
+) -> int:
+    """Promote Knowify project/client addresses into native properties.
+
+    Knowify's `Roofs` table is empty for Perkins, so this intentionally creates
+    property/address rows only. Measurements remain sourced from Roofr/manual entry.
+    """
+    from app.models import Property
+
+    tenant_id: int = session.info.get("tenant_id", 1)
+    n = 0
+    seen: set[tuple[int, str, str, str, str]] = set()
+    client_ids = {str(r["Id"]) for r in clients or [] if r.get("Id") is not None}
+    client_ids |= {str(r["ClientId"]) for r in projects or [] if r.get("ClientId") is not None}
+    customer_map = _customer_ids_for(session, client_ids)
+
+    existing_rows = session.execute(
+        select(Property).where(
+            Property.tenant_id == tenant_id,
+            Property.customer_id.in_(list(customer_map.values()) or [-1]),
+        )
+    ).scalars().all()
+    existing_keys = {
+        _property_key(prop.customer_id, {
+            "street": prop.street,
+            "city": prop.city,
+            "state": prop.state,
+            "zip": prop.zip,
+        })
+        for prop in existing_rows
+    }
+
+    for rec in projects or []:
+        kid = str(rec.get("Id", "unknown"))
+        try:
+            if rec.get("ClientId") is None:
+                continue
+            values = _address_values(rec)
+            if values is None:
+                continue
+            knowify_customer_id = str(rec["ClientId"])
+            customer_id = customer_map.get(knowify_customer_id)
+            if customer_id is None:
+                continue
+            key = _property_key(customer_id, values)
+            if key in seen or key in existing_keys:
+                continue
+            seen.add(key)
+            existing_keys.add(key)
+            label = _clean_str(rec.get("ProjectName"))
+            note = f"Knowify project {kid}" + (f": {label}" if label else "")
+            session.add(Property(
+                tenant_id=tenant_id,
+                customer_id=customer_id,
+                street=values["street"] or "",
+                city=values["city"] or "",
+                state=values["state"] or "FL",
+                zip=values.get("zip"),
+                code_zone="FBC",
+                knowify_customer_id=knowify_customer_id,
+                notes=note,
+            ))
+            n += 1
+            log.debug("knowify promote: project-property id=%s", kid)
+        except Exception as exc:
+            log.error("knowify promote: project-property id=%s error=%s", kid, type(exc).__name__)
+
+    for rec in clients or []:
+        kid = str(rec.get("Id", "unknown"))
+        try:
+            kid = str(rec["Id"])
+            values = _address_values(rec)
+            if values is None:
+                continue
+            customer_id = customer_map.get(kid)
+            if customer_id is None:
+                continue
+            key = _property_key(customer_id, values)
+            if key in seen or key in existing_keys:
+                continue
+            seen.add(key)
+            existing_keys.add(key)
+            session.add(Property(
+                tenant_id=tenant_id,
+                customer_id=customer_id,
+                street=values["street"] or "",
+                city=values["city"] or "",
+                state=values["state"] or "FL",
+                zip=values.get("zip"),
+                code_zone="FBC",
+                knowify_customer_id=kid,
+                notes=f"Knowify client address {kid}",
+            ))
+            n += 1
+            log.debug("knowify promote: client-property id=%s", kid)
+        except Exception as exc:
+            log.error("knowify promote: client-property id=%s error=%s", kid, type(exc).__name__)
+
+    session.flush()
+    return n
+
+
+# ---------------------------------------------------------------------------
 # items → PriceBookItem (NO stale OurCost — v2 pricing is authoritative)
 # ---------------------------------------------------------------------------
 
@@ -211,6 +493,35 @@ def _customer_id_for(session: Session, knowify_client_id: str | None) -> int | N
     session.add(cust)
     session.flush()
     return cust.id
+
+
+def _customer_ids_for(session: Session, knowify_client_ids: set[str]) -> dict[str, int]:
+    """Resolve many Knowify ClientIds to customer ids with one query.
+
+    Missing ids are materialized as the same inactive placeholders used by
+    _customer_id_for. This avoids thousands of per-row SELECTs during backfills.
+    """
+    from app.models import Customer
+
+    tenant_id: int = session.info.get("tenant_id", 1)
+    ids = {str(i) for i in knowify_client_ids if i is not None}
+    if not ids:
+        return {}
+    rows = session.execute(
+        select(Customer.knowify_customer_id, Customer.id).where(
+            Customer.tenant_id == tenant_id,
+            Customer.knowify_customer_id.in_(ids),
+        )
+    ).all()
+    out = {str(k): int(v) for k, v in rows if k is not None}
+    missing = ids - set(out)
+    for kid in missing:
+        cust = Customer(tenant_id=tenant_id, knowify_customer_id=kid,
+                        display_name=f"Knowify {kid}", is_active=False)
+        session.add(cust)
+        session.flush()
+        out[kid] = cust.id
+    return out
 
 
 def _job_id_for(session: Session, knowify_project_id: str | None) -> int:
@@ -526,6 +837,8 @@ def promote_run(
     session: Session,
     *,
     clients: list[dict] | None = None,
+    contacts: list[dict] | None = None,
+    projects: list[dict] | None = None,
     items: list[dict] | None = None,
     invoices: list[dict] | None = None,
     payments: list[dict] | None = None,
@@ -534,9 +847,15 @@ def promote_run(
 
     Items promote independently (no FK to the above).
     """
-    counts = {"clients": 0, "items": 0, "invoices": 0, "payments": 0}
+    counts = {"clients": 0, "contacts": 0, "properties": 0, "items": 0, "invoices": 0, "payments": 0}
     if clients:
         counts["clients"] = promote_clients(session, clients)
+        counts["contacts"] += promote_client_contacts(session, clients)
+        counts["properties"] += promote_properties(session, clients=clients)
+    if contacts:
+        counts["contacts"] += promote_contacts(session, contacts)
+    if projects:
+        counts["properties"] += promote_properties(session, projects=projects)
     if items:
         counts["items"] = promote_items(session, items)
     if invoices:
