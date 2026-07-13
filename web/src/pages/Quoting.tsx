@@ -74,6 +74,7 @@ interface QuoteResult {
   profit_pct: number;
   estimated_commission: number;
   margin_ok: boolean;
+  warnings?: string[];
 }
 
 interface EstimateRecord {
@@ -1220,6 +1221,14 @@ export function Quoting() {
                   <ResultRow label="Profit" value={usd(quoteResult.profit_dollars)} />
                   <ResultRow label="Profit %" value={(quoteResult.profit_pct * 100).toFixed(1) + "%"} />
                   <ResultRow label="Est. Commission" value={usd(quoteResult.estimated_commission)} />
+                  {quoteResult.warnings && quoteResult.warnings.length > 0 && (
+                    <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12, lineHeight: 1.5 }}>
+                      <div style={{ fontWeight: 800, marginBottom: 4 }}>Non-blocking estimate warning</div>
+                      {quoteResult.warnings.map((w, i) => (
+                        <div key={i}>{w}</div>
+                      ))}
+                    </div>
+                  )}
                 </Card>
 
                 <Card>

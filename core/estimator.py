@@ -244,6 +244,7 @@ class EstimateResult:
     estimated_commission: float = 0.0
     margin_ok: bool = True
     margin_warnings: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -283,6 +284,7 @@ class EstimateResult:
             "estimated_commission": round(self.estimated_commission, 2),
             "margin_ok": self.margin_ok,
             "margin_warnings": self.margin_warnings,
+            "warnings": self.warnings,
         }
 
 
@@ -593,7 +595,15 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
 
     # PM incentive
     tags = config.raw["cost_category_tags"]
-    pm_val = config.pm_incentive(zone, q.project_kind, q.num_squares)
+    warnings: list[str] = []
+    try:
+        pm_val = config.pm_incentive(zone, q.project_kind, q.num_squares)
+    except ConfigError as exc:
+        pm_val = 0.0
+        warnings.append(
+            f"pm_incentive_missing: {exc}. Estimate was calculated with PM Incentive = $0; "
+            "confirm the correct PM incentive band with Tim."
+        )
     pm_item = LineItem("pm_incentive", "PM Incentive", pm_val, tags["pm_incentive"])
 
     all_items = per_sq_items + fixed_items + optional_items + [pm_item]
@@ -655,6 +665,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
         estimated_commission=commission,
         margin_ok=margin.profit_floor_ok,
         margin_warnings=margin.margin_warnings,
+        warnings=warnings,
     )
 
 

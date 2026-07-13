@@ -8,15 +8,13 @@ All tests in this file operate on pure core/ logic — no DB, no I/O.
 """
 from __future__ import annotations
 
-import hashlib
 import json
-import math
 from pathlib import Path
 
+import jcs
 import pytest
 
-import jcs
-
+from core.estimator import QuoteInput, QuoteRequiresManualReview, estimate
 from core.pricing_config import (
     ConfigError,
     ConfigValidationError,
@@ -24,7 +22,6 @@ from core.pricing_config import (
     compute_hash,
     load_config,
 )
-from core.estimator import QuoteInput, estimate, QuoteRequiresManualReview
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1065,3 +1062,17 @@ def test_compute_config_hash_script():
     import json
     expected = compute_hash(json.loads(fixture.read_text()))
     assert digest == expected, f"Script output {digest[:16]}... != core {expected[:16]}..."
+
+
+def test_estimate_residential_ge20_pm_incentive_warns_not_blocks(cfg: PricingConfig):
+    """Golden proposals include many residential jobs >=20 SQ; missing PM incentive band is warning-only."""
+    q = QuoteInput(
+        code_zone="HVHZ",
+        roof_type="3tab_shingle",
+        num_squares=27.0,
+        project_kind="residential",
+    )
+    r = estimate(cfg, q)
+    assert r["project_total"] > 0
+    assert r["pm_incentive"] == 0.0
+    assert any("pm_incentive_missing" in w for w in r["warnings"])

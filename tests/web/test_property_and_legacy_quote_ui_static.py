@@ -45,3 +45,11 @@ def test_estimates_customer_detail_can_add_contacts_and_set_primary():
     assert "Set as primary contact" in source
     assert "handleSetPrimaryContact" in source
     assert "Set primary" in source
+
+
+def test_estimates_show_non_blocking_warnings():
+    source = Path("web/src/pages/Quoting.tsx").read_text()
+
+    assert "warnings?: string[]" in source
+    assert "Non-blocking estimate warning" in source
+    assert "quoteResult.warnings.map" in source
