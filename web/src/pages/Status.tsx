@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -210,6 +210,7 @@ function BillingSection() {
   const [agingDetail, setAgingDetail] = useState<AgingDetail | null>(null);
   const [agingLoading, setAgingLoading] = useState(false);
   const [agingError, setAgingError] = useState<string | null>(null);
+  const agingRequestId = useRef(0);
 
   function fetch(p: Preset, cf: string, ct: string) {
     setLoading(true);
@@ -222,15 +223,32 @@ function BillingSection() {
       .finally(() => setLoading(false));
   }
 
+  function closeAgingBucket() {
+    // Invalidate any in-flight drill-down request so a slow response cannot
+    // re-open the full-screen overlay after the user closes it.
+    agingRequestId.current += 1;
+    setAgingLoading(false);
+    setAgingDetail(null);
+    setAgingError(null);
+  }
+
   function openAgingBucket(bucket: AgingBucketKey) {
     const asOf = lastRange?.to;
+    const requestId = agingRequestId.current + 1;
+    agingRequestId.current = requestId;
     setAgingLoading(true);
     setAgingError(null);
     setAgingDetail(null);
     getAgingDetail(bucket, asOf)
-      .then(setAgingDetail)
-      .catch((e: unknown) => setAgingError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setAgingLoading(false));
+      .then((detail) => {
+        if (agingRequestId.current === requestId) setAgingDetail(detail);
+      })
+      .catch((e: unknown) => {
+        if (agingRequestId.current === requestId) setAgingError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (agingRequestId.current === requestId) setAgingLoading(false);
+      });
   }
 
   useEffect(() => { fetch(preset, customFrom, customTo); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -445,17 +463,23 @@ function BillingSection() {
           </Card>
 
           {(agingDetail || agingLoading || agingError) && (
-            <div style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 1200,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(16,24,40,0.24)",
-              padding: 24,
-            }}>
-              <Card style={{ width: "min(980px, 96vw)", maxHeight: "86vh", overflow: "auto", padding: 0 }}>
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="AR aging bucket detail"
+              onClick={closeAgingBucket}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 1200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(16,24,40,0.24)",
+                padding: 24,
+              }}
+            >
+              <Card onClick={(e) => e.stopPropagation()} style={{ width: "min(980px, 96vw)", maxHeight: "86vh", overflow: "auto", padding: 0 }}>
                 <div style={{ padding: "18px 22px", borderBottom: `1px solid ${BRAND.border}`, display: "flex", justifyContent: "space-between", gap: 12 }}>
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: BRAND.navyText }}>
@@ -468,7 +492,7 @@ function BillingSection() {
                     )}
                   </div>
                   <button
-                    onClick={() => { setAgingDetail(null); setAgingError(null); }}
+                    onClick={closeAgingBucket}
                     style={{ background: "none", border: "none", cursor: "pointer", fontSize: 20, color: BRAND.sub, lineHeight: 1 }}
                     aria-label="Close aging detail"
                   >

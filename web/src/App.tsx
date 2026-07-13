@@ -458,7 +458,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
             position: "fixed",
             top: 12,
             left: 12,
-            zIndex: 300,
+            zIndex: 1500,
             background: BRAND.navy,
             color: "#fff",
             border: "none",
@@ -482,7 +482,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
               position: "fixed",
               inset: 0,
               background: "rgba(0,0,0,0.45)",
-              zIndex: 199,
+              zIndex: 1350,
             }}
             className="sidebar-backdrop"
           />
@@ -501,6 +501,8 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
             padding: "18px 0",
             flexShrink: 0,
             overflowY: "auto",
+            position: "relative",
+            zIndex: 1400,
           }}
           className={`app-sidebar${sidebarOpen ? " sidebar-open" : ""}`}
         >
