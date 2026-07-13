@@ -58,6 +58,7 @@ interface ProposalRow {
   // Joined fields from list endpoint
   customer_name?: string;
   property_address?: string;
+  amount?: number | string | null;
   // Events — present only on detail fetch
   events?: ProposalEvent[];
 }
@@ -119,6 +120,9 @@ export function Proposals() {
   const [workspaceTab, setWorkspaceTab] = useState<ProposalWorkspaceTab>("proposals");
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
   const [proposals, setProposals] = useState<ProposalRow[]>([]);
+  const [proposalTotal, setProposalTotal] = useState(0);
+  const [proposalPage, setProposalPage] = useState(1);
+  const proposalPageSize = 100;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,17 +160,27 @@ export function Proposals() {
   // Copy-to-clipboard feedback
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
-  function loadProposals(status?: ProposalStatus | "all") {
+  function loadProposals(status?: ProposalStatus | "all", page = proposalPage) {
     setLoading(true);
     setError(null);
     const s = status ?? statusFilter;
-    const qs = s !== "all" ? `?status=${s}&limit=100` : "?limit=100";
+    const qs = s !== "all"
+      ? `?status=${s}&limit=${proposalPageSize}&page=${page}`
+      : `?limit=${proposalPageSize}&page=${page}`;
     apiFetch(`/quoting/proposals${qs}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
       })
-      .then((data: ProposalRow[]) => setProposals(data ?? []))
+      .then((data: ProposalRow[] | { items?: ProposalRow[]; total?: number }) => {
+        if (Array.isArray(data)) {
+          setProposals(data);
+          setProposalTotal(data.length);
+        } else {
+          setProposals(Array.isArray(data.items) ? data.items : []);
+          setProposalTotal(typeof data.total === "number" ? data.total : 0);
+        }
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }
@@ -198,8 +212,9 @@ export function Proposals() {
 
   function handleTabChange(tab: ProposalStatus | "all") {
     setStatusFilter(tab);
+    setProposalPage(1);
     setDrawerProposal(null);
-    loadProposals(tab);
+    loadProposals(tab, 1);
   }
 
   function handleWorkspaceTabChange(tab: ProposalWorkspaceTab) {
@@ -954,6 +969,7 @@ export function Proposals() {
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>#</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Customer</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Title</th>
+                <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600, textAlign: "right" }}>Amount</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Ver.</th>
                 <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Created</th>
@@ -980,6 +996,9 @@ export function Proposals() {
                   <td style={{ padding: "10px 16px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {p.title}
                   </td>
+                  <td style={{ padding: "10px 16px", color: BRAND.navyText, fontWeight: 700, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                    {usd(p.amount ?? 0)}
+                  </td>
                   <td style={{ padding: "10px 16px" }}>{statusBadge(p.status)}</td>
                   <td style={{ padding: "10px 16px", color: BRAND.sub }}>v{p.version_number}</td>
                   <td style={{ padding: "10px 16px", color: BRAND.sub, whiteSpace: "nowrap" }}>{fmtDate(p.created_at)}</td>
@@ -989,6 +1008,37 @@ export function Proposals() {
               ))}
             </tbody>
           </table>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 16px", borderTop: `1px solid ${BRAND.border}`, fontSize: 13, color: BRAND.sub }}>
+            <div>
+              Showing {(proposalPage - 1) * proposalPageSize + 1}–{Math.min(proposalPage * proposalPageSize, proposalTotal)} of {proposalTotal}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="ghost"
+                disabled={proposalPage <= 1 || loading}
+                onClick={() => {
+                  const next = Math.max(1, proposalPage - 1);
+                  setProposalPage(next);
+                  loadProposals(statusFilter, next);
+                }}
+                style={{ fontSize: 12, padding: "5px 10px" }}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={proposalPage * proposalPageSize >= proposalTotal || loading}
+                onClick={() => {
+                  const next = proposalPage + 1;
+                  setProposalPage(next);
+                  loadProposals(statusFilter, next);
+                }}
+                style={{ fontSize: 12, padding: "5px 10px" }}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </Card>
       )}
         </>

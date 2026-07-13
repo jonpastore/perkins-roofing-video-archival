@@ -46,7 +46,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
@@ -414,6 +414,55 @@ def _norm_addr(value) -> str:
     return str(value or "").strip().lower()
 
 
+def _parse_knowify_dt(raw):
+    """Parse a Knowify ISO datetime to a naive-UTC datetime (matches our columns)."""
+    from datetime import datetime, timezone
+
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+_STALE_SENT_DAYS = 90
+
+
+def knowify_proposal_state(contract: dict) -> dict:
+    """Map Knowify business/sign state to native proposal lifecycle."""
+    from datetime import datetime, timedelta, timezone
+
+    business_state = str(contract.get("BusinessState") or "").strip()
+    signed = bool(contract.get("IsSigned"))
+    created = _parse_knowify_dt(contract.get("DateCreated"))
+
+    status = "draft"
+    sent_at = None
+    accepted_at = None
+
+    if signed or business_state in ("Open", "Closed", "Completed"):
+        status = "accepted"
+        sent_at = created
+        accepted_at = created
+    elif business_state == "OutForSigning":
+        status = "sent"
+        sent_at = created
+    elif business_state in ("Lost", "Cancelled", "Declined"):
+        status = "declined"
+        sent_at = created
+
+    if status == "sent" and created is not None:
+        age = datetime.now(timezone.utc).replace(tzinfo=None) - created
+        if age > timedelta(days=_STALE_SENT_DAYS):
+            status = "declined"
+
+    return {"status": status, "created_at": created, "sent_at": sent_at, "accepted_at": accepted_at}
+
+
 def _load_knowify_quote(db: Session, contract_id: str) -> dict:
     tenant_id = _tenant_id(db)
     contract_row = db.execute(
@@ -684,23 +733,25 @@ def list_proposals(
     customer_id: Optional[int] = None,
     page: Optional[int] = Query(None, ge=1),
     skip: int = 0,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=200),
     _claims=Depends(require_role("quoting_view")),
     db: Session = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(db)
     offset = (page - 1) * limit if page is not None else skip
-    stmt = (
+    base = (
         select(Proposal, Customer.display_name, Property.street, Property.city, Property.state)
         .join(Customer, Proposal.customer_id == Customer.id)
         .join(Property, Proposal.property_id == Property.id)
         .where(Proposal.tenant_id == tenant_id)
     )
     if status:
-        stmt = stmt.where(Proposal.status == status)
+        base = base.where(Proposal.status == status)
     if customer_id:
-        stmt = stmt.where(Proposal.customer_id == customer_id)
-    stmt = stmt.order_by(Proposal.created_at.desc()).offset(offset).limit(limit)
+        base = base.where(Proposal.customer_id == customer_id)
+
+    total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+    stmt = base.order_by(Proposal.created_at.desc()).offset(offset).limit(limit)
     results = db.execute(stmt).all()
 
     out = []
@@ -708,8 +759,12 @@ def list_proposals(
         d = _proposal_row(row)
         d["customer_name"] = cname
         d["property_address"] = f"{street}, {city} {state}" if street else None
+        snap = row.quote_snapshot or {}
+        tiers = snap.get("tiers") or {}
+        legacy = tiers.get("legacy") or {}
+        d["amount"] = snap.get("total") or legacy.get("total") or 0
         out.append(d)
-    return out
+    return {"items": out, "total": total}
 
 
 @router.post("/quoting/proposals")
@@ -776,6 +831,7 @@ def create_proposal_from_quote(
     )
     snapshot = _build_knowify_quote_snapshot(quote)
     title = body.title or quote["contract"].get("ContractName") or f"Knowify quote {contract_id}"
+    state = knowify_proposal_state(quote["contract"])
 
     row = Proposal(
         tenant_id=tenant_id,
@@ -783,9 +839,13 @@ def create_proposal_from_quote(
         property_id=property_id,
         title=title,
         quote_snapshot=snapshot,
-        status="draft",
+        status=state["status"],
         accept_token=generate_accept_token(),
+        accepted_at=state["accepted_at"],
+        sent_at=state["sent_at"],
         created_by=email,
+        created_at=state["created_at"] or _utcnow(),
+        updated_at=state["created_at"] or _utcnow(),
         version_number=1,
     )
     db.add(row)

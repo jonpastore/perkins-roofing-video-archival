@@ -16,6 +16,7 @@ All tests run on SQLite via init_db(). Uses fake-verifier pattern from test_esti
 import base64
 import secrets
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -759,8 +760,12 @@ class TestProposalCRUD:
         c, cust, prop, draft = _scaffold(admin_client)
         r = admin_client.get("/quoting/proposals", headers=AUTH)
         assert r.status_code == 200
-        ids = [p["id"] for p in r.json()]
+        body = r.json()
+        assert "items" in body and "total" in body
+        ids = [p["id"] for p in body["items"]]
         assert draft["id"] in ids
+        row = next(p for p in body["items"] if p["id"] == draft["id"])
+        assert "amount" in row
 
     def test_get_proposal(self, admin_client):
         c, cust, prop, draft = _scaffold(admin_client)
@@ -817,7 +822,7 @@ class TestProposalCRUD:
             t2_id = prop2.id
 
         r = admin_client.get("/quoting/proposals", headers=AUTH)
-        ids = [p["id"] for p in r.json()]
+        ids = [p["id"] for p in r.json()["items"]]
         assert t2_id not in ids
 
 
@@ -971,7 +976,7 @@ class TestUISeamContracts:
         _scaffold(admin_client)
         r = admin_client.get("/quoting/proposals", headers=AUTH)
         assert r.status_code == 200
-        rows = r.json()
+        rows = r.json()["items"]
         assert len(rows) >= 1
         row = rows[0]
         assert "customer_name" in row
@@ -982,7 +987,7 @@ class TestUISeamContracts:
         _scaffold(admin_client)
         r = admin_client.get("/quoting/proposals", headers=AUTH)
         assert r.status_code == 200
-        rows = r.json()
+        rows = r.json()["items"]
         assert len(rows) >= 1
         row = rows[0]
         assert "property_address" in row
@@ -1003,11 +1008,11 @@ class TestUISeamContracts:
         r1 = admin_client.get("/quoting/proposals?page=1&limit=50", headers=AUTH)
         r2 = admin_client.get("/quoting/proposals?page=2&limit=50", headers=AUTH)
         assert r1.status_code == 200 and r2.status_code == 200
-        ids1 = {p["id"] for p in r1.json()}
-        ids2 = {p["id"] for p in r2.json()}
+        ids1 = {p["id"] for p in r1.json()["items"]}
+        ids2 = {p["id"] for p in r2.json()["items"]}
         assert ids1.isdisjoint(ids2)
         if len(ids1) < 50:
-            assert r2.json() == []
+            assert r2.json()["items"] == []
 
     def test_list_customers_page_param(self, admin_client):
         """GET /quoting/customers?page=1 returns same result as skip=0."""
@@ -1421,3 +1426,32 @@ class TestMoneyPathWiring:
                               json={}, headers=AUTH)
         # Must still succeed even when email fails
         assert r.status_code == 200
+
+
+class TestKnowifyStateMapping:
+    def test_signed_maps_to_accepted_with_created_date(self):
+        from api.routes.proposals import knowify_proposal_state
+        st = knowify_proposal_state({"BusinessState": "Open", "IsSigned": True, "DateCreated": "2024-01-15T10:00:00Z"})
+        assert st["status"] == "accepted"
+        assert st["created_at"].year == 2024 and st["created_at"].month == 1
+
+    def test_outforsigning_recent_is_sent(self):
+        from api.routes.proposals import knowify_proposal_state
+        recent = datetime.now(timezone.utc).date().isoformat()
+        c = {"BusinessState": "OutForSigning", "IsSigned": False, "DateCreated": recent}
+        assert knowify_proposal_state(c)["status"] == "sent"
+
+    def test_outforsigning_stale_autodeclines(self):
+        from api.routes.proposals import knowify_proposal_state
+        c = {"BusinessState": "OutForSigning", "IsSigned": False, "DateCreated": "2020-01-01T00:00:00Z"}
+        assert knowify_proposal_state(c)["status"] == "declined"
+
+    def test_lost_maps_to_declined(self):
+        from api.routes.proposals import knowify_proposal_state
+        st = knowify_proposal_state({"BusinessState": "Lost", "IsSigned": False, "DateCreated": "2024-01-01T00:00:00Z"})
+        assert st["status"] == "declined"
+
+    def test_draft_stays_draft(self):
+        from api.routes.proposals import knowify_proposal_state
+        c = {"BusinessState": "Draft", "IsSigned": False, "DateCreated": "2024-01-01T00:00:00Z"}
+        assert knowify_proposal_state(c)["status"] == "draft"

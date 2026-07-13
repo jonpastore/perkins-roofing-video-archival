@@ -15,7 +15,9 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import create_engine, select
+from datetime import datetime, timezone
+
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
 from core.tenant import register_tenant_session_events
@@ -101,6 +103,17 @@ def _quote_from_raw(contract_row, deliverables: dict[str, list[dict]], projects:
     }
 
 
+def _contract_total(contract: dict) -> float:
+    for field in ("CurrentContractSum", "OriginalContractSum"):
+        try:
+            value = float(contract.get(field) or 0)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            return value
+    return 0.0
+
+
 def _norm_addr(value: object) -> str:
     return str(value or "").strip().lower()
 
@@ -120,7 +133,7 @@ def _property_key(prop) -> tuple[str, str, str, str]:
 
 
 def run(args: argparse.Namespace) -> int:
-    from api.routes.proposals import _build_knowify_quote_snapshot
+    from api.routes.proposals import _build_knowify_quote_snapshot, knowify_proposal_state
     from app.models import Customer, Property, Proposal
     from core.proposal import generate_accept_token
 
@@ -157,14 +170,22 @@ def run(args: argparse.Namespace) -> int:
             properties_by_customer.setdefault(prop.customer_id, []).append(prop)
             properties_by_customer_key[(prop.customer_id, _property_key(prop))] = prop.id
 
+        imported_rows = db.execute(
+            select(Proposal.id, Proposal.quote_snapshot).where(Proposal.tenant_id == args.tenant_id)
+        ).all()
         existing_refs: set[str] = set()
-        for (snap,) in db.execute(
-            select(Proposal.quote_snapshot).where(Proposal.tenant_id == args.tenant_id)
-        ).all():
+        imported_ids: list[int] = []
+        for pid, snap in imported_rows:
             if isinstance(snap, dict) and snap.get("source") == "knowify_import":
+                imported_ids.append(pid)
                 ref = snap.get("source_ref")
                 if ref is not None:
                     existing_refs.add(str(ref))
+        if args.purge_existing_imports and imported_ids:
+            db.execute(delete(Proposal).where(Proposal.id.in_(imported_ids)))
+            db.flush()
+            print("purged_existing_imports", len(imported_ids), flush=True)
+            existing_refs.clear()
 
         print("prefetch", {
             "knowify_customers": len(customer_by_knowify),
@@ -175,6 +196,10 @@ def run(args: argparse.Namespace) -> int:
         for row in contracts:
             quote = _quote_from_raw(row, deliverables, projects)
             contract_id = quote["contract_id"]
+            if _contract_total(quote["contract"]) <= 0:
+                skipped += 1
+                errors["zero-value/default contract"] = errors.get("zero-value/default contract", 0) + 1
+                continue
             if contract_id in existing_refs:
                 existing += 1
                 continue
@@ -199,15 +224,21 @@ def run(args: argparse.Namespace) -> int:
 
                 snapshot = _build_knowify_quote_snapshot(quote)
                 title = quote["contract"].get("ContractName") or f"Knowify quote {contract_id}"
+                state = knowify_proposal_state(quote["contract"])
+                created_at = state["created_at"] or datetime.now(timezone.utc).replace(tzinfo=None)
                 db.add(Proposal(
                     tenant_id=args.tenant_id,
                     customer_id=customer_id,
                     property_id=property_id,
                     title=title,
                     quote_snapshot=snapshot,
-                    status="draft",
+                    status=state["status"],
                     accept_token=generate_accept_token(),
+                    accepted_at=state["accepted_at"],
+                    sent_at=state["sent_at"],
                     created_by="knowify_bulk_import",
+                    created_at=created_at,
+                    updated_at=created_at,
                     version_number=1,
                 ))
                 existing_refs.add(contract_id)
@@ -236,6 +267,7 @@ def run(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--purge-existing-imports", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--tenant-id", type=int, default=1)
     parser.add_argument("--db-url")
