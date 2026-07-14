@@ -48,6 +48,7 @@ class ProposalRenderContext:
     tenant_name: str
     tenant_license: str | None
     accept_url: str
+    payment_draws: list[dict[str, Any]] | None = field(default=None)
     tc_summary_bullets: list[str] | None = field(default=None)
     tc_faq_items: list[dict] | None = field(default=None)
     tc_text: str | None = field(default=None)
@@ -131,6 +132,9 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "amount": ctx.deposit_amount,
             "instructions": ctx.deposit_instructions,
         },
+        "payment": {
+            "draws": ctx.payment_draws or [],
+        },
         "tenant": {
             "name": ctx.tenant_name,
             "license": ctx.tenant_license or "",
@@ -177,192 +181,170 @@ DEFAULT_TEMPLATE_HTML = """\
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ proposal.title }}</title>
   <style>
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #222; margin: 0; padding: 0; }
-    .page { max-width: 820px; margin: 0 auto; padding: 40px 48px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #C0392B; padding-bottom: 16px; margin-bottom: 24px; }
-    .logo-area h1 { margin: 0; font-size: 22px; color: #C0392B; }
-    .logo-area p { margin: 2px 0; font-size: 12px; color: #555; }
-    .meta-block { text-align: right; font-size: 12px; color: #555; }
-    .meta-block .label { font-weight: bold; color: #333; }
-    h2 { font-size: 16px; color: #C0392B; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-top: 28px; }
-    .address-block { background: #f9f9f9; border-left: 4px solid #C0392B; padding: 12px 16px; margin-bottom: 20px; }
-    .tier-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    .tier-table th { background: #C0392B; color: #fff; padding: 10px 14px; text-align: left; font-size: 13px; }
-    .tier-table td { padding: 10px 14px; border-bottom: 1px solid #eee; }
-    .tier-table tr:last-child td { border-bottom: none; }
-    .tier-table .price { font-weight: bold; font-size: 16px; color: #C0392B; text-align: right; }
-    .line-items-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
-    .line-items-table th { background: #555; color: #fff; padding: 6px 10px; text-align: left; }
-    .line-items-table td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
-    .deposit-box { background: #fff8e1; border: 1px solid #f0c040; border-radius: 4px; padding: 14px 18px; margin-top: 20px; }
-    .deposit-box .amount { font-size: 20px; font-weight: bold; color: #333; }
-    .accept-section { margin-top: 28px; text-align: center; }
-    .accept-section a { display: inline-block; background: #C0392B; color: #fff; padding: 14px 32px; border-radius: 4px; text-decoration: none; font-size: 16px; font-weight: bold; letter-spacing: 0.5px; }
-    .tc-block { margin-top: 36px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 14px; }
-    .tc-ai-cover { margin-top: 24px; padding: 16px 20px; background: #f4f8ff; border-left: 4px solid #2471a3; font-size: 12px; color: #333; }
-    .tc-ai-cover p { margin: 0 0 10px 0; }
-    .tc-ai-cover ul { margin: 8px 0 12px 0; padding-left: 20px; }
-    .tc-ai-cover li { margin-bottom: 4px; }
-    .tc-ai-prompts { margin-top: 10px; }
-    .tc-ai-prompts p { font-weight: bold; margin: 0 0 4px 0; }
-    .tc-ai-prompts ol { margin: 0; padding-left: 20px; }
-    .tc-ai-prompts li { margin-bottom: 2px; font-style: italic; color: #555; }
-    .tc-ai-disclaimer { margin-top: 10px; font-size: 11px; color: #888; font-style: italic; }
-    .tc-ai-faq { margin-top: 24px; page-break-before: always; }
-    .tc-ai-faq h2 { font-size: 15px; color: #2471a3; border-bottom: 1px solid #cce; padding-bottom: 4px; margin-top: 0; }
-    .tc-ai-faq table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .tc-ai-faq th { background: #2471a3; color: #fff; padding: 8px 12px; text-align: left; }
-    .tc-ai-faq td { padding: 8px 12px; border-bottom: 1px solid #eee; vertical-align: top; }
-    .tc-ai-faq td:first-child { font-weight: bold; width: 35%; }
-    .footer { margin-top: 40px; font-size: 11px; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 12px; }
+    @page { size: Letter; margin: 0.45in; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.35; margin: 0; }
+    .page { max-width: 8in; margin: 0 auto; }
+    .top { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; border-bottom: 3px solid #ef3c1a; padding-bottom: 12px; margin-bottom: 12px; }
+    .brand { color: #1b2a52; font-size: 26px; font-weight: 900; letter-spacing: .02em; }
+    .brand small { display:block; color:#667085; font-size:10px; letter-spacing:0; margin-top:2px; font-weight:700; }
+    .meta { text-align: right; font-size: 11px; color:#344054; }
+    .meta div { margin-bottom: 3px; }
+    .label { color:#667085; font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size:9px; }
+    .info-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 16px; }
+    .info-box { border:1px solid #d0d5dd; border-radius:6px; padding:10px 12px; min-height:54px; }
+    h2 { color:#1b2a52; font-size:13px; text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid #d0d5dd; padding-bottom:5px; margin:18px 0 9px; }
+    .scope { border:1px solid #d0d5dd; border-radius:7px; margin: 10px 0 12px; break-inside: avoid; overflow:hidden; }
+    .scope-head { display:grid; grid-template-columns: 34px 1fr 130px; gap:10px; align-items:center; background:#f8fafc; border-bottom:1px solid #d0d5dd; padding:9px 12px; }
+    .scope-no { width:24px; height:24px; border-radius:50%; background:#1b2a52; color:white; display:flex; align-items:center; justify-content:center; font-weight:800; }
+    .scope-title { color:#1b2a52; font-weight:800; font-size:12px; text-transform:uppercase; }
+    .scope-price { text-align:right; color:#1b2a52; font-size:14px; font-weight:900; }
+    .scope-body { padding:10px 12px; }
+    .qty { color:#667085; margin-bottom:6px; font-size:10px; }
+    .spec { margin:0; color:#344054; }
+    .bonus { margin-top:8px; background:#f0f9ff; border-left:3px solid #1b2a52; padding:7px 9px; font-size:10px; color:#344054; }
+    .totals { margin-left:auto; width:260px; border:1px solid #d0d5dd; border-radius:7px; overflow:hidden; margin-top:14px; }
+    .totals-row { display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #eaecf0; }
+    .totals-row:last-child { border-bottom:0; background:#1b2a52; color:white; font-weight:900; font-size:14px; }
+    .payment { border:1px solid #f59e0b; background:#fffbeb; border-radius:7px; padding:10px 12px; margin: 14px 0; break-inside: avoid; }
+    .payment table, .tc-ai-faq table, .lumber table { width:100%; border-collapse:collapse; margin-top:7px; }
+    .payment th, .payment td, .tc-ai-faq th, .tc-ai-faq td, .lumber th, .lumber td { padding:5px 7px; border-bottom:1px solid #eaecf0; text-align:left; vertical-align:top; }
+    .payment th, .tc-ai-faq th, .lumber th { background:#f8fafc; color:#344054; font-size:9px; text-transform:uppercase; letter-spacing:.04em; }
+    .amt { text-align:right !important; white-space:nowrap; }
+    .accept { text-align:center; margin:16px 0 18px; padding:14px; border:1px solid #d0d5dd; border-radius:8px; }
+    .accept a { display:inline-block; background:#ef3c1a; color:#fff; text-decoration:none; padding:10px 22px; border-radius:6px; font-weight:800; }
+    .terms { margin-top:18px; font-size:9px; color:#475467; }
+    .terms pre { white-space:pre-wrap; font-family:Arial, Helvetica, sans-serif; margin:0; }
+    .tc-ai-cover { margin-top:14px; padding:12px 14px; background:#f4f8ff; border-left:4px solid #2471a3; font-size:10px; }
+    .tc-ai-cover p { margin: 0 0 8px 0; }
+    .tc-ai-faq { margin-top:18px; page-break-before: always; }
+    .tc-ai-faq h2 { color:#2471a3; }
+    .lumber { page-break-before: always; font-size:9px; color:#344054; }
+    .footer { margin-top:18px; border-top:1px solid #d0d5dd; padding-top:10px; font-size:10px; color:#667085; text-align:center; }
   </style>
 </head>
-<body>
-<div class="page">
-
-  <div class="header">
-    <div class="logo-area">
-      <h1>{{ tenant.name }}</h1>
-      {% if tenant.license %}<p>License #{{ tenant.license }}</p>{% endif %}
+<body><div class="page">
+  <div class="top">
+    <div>
+      <div class="brand">{{ tenant.name }}<small>{% if tenant.license %}License #{{ tenant.license }}{% endif %}</small></div>
     </div>
-    <div class="meta-block">
-      <p><span class="label">Proposal:</span> {{ proposal.title }}</p>
-      <p><span class="label">Date:</span> {{ proposal.date }}</p>
-      {% if proposal.version > 1 %}<p><span class="label">Revision:</span> v{{ proposal.version }}</p>{% endif %}
+    <div class="meta">
+      <div><span class="label">Project</span> {{ proposal.title }}</div>
+      <div><span class="label">Date</span> {{ proposal.date }}</div>
+      {% if proposal.version > 1 %}<div><span class="label">Revision</span> v{{ proposal.version }}</div>{% endif %}
     </div>
   </div>
 
-  <h2>Prepared For</h2>
-  <div class="address-block">
-    <strong>{{ customer.name }}</strong>{% if customer.company %} — {{ customer.company }}{% endif %}<br>
-    {{ property.address }}
-    {% if property.county %}<br>County: {{ property.county }}{% endif %}
-    {% if property.code_zone %}<br>Wind Zone: {{ property.code_zone }}{% endif %}
+  <div class="info-grid">
+    <div class="info-box"><div class="label">To</div><strong>{{ customer.name }}</strong>{% if customer.company %}<br>{{ customer.company }}{% endif %}</div>
+    <div class="info-box"><div class="label">Address</div><strong>{{ property.address }}</strong>{% if property.county %}<br>{{ property.county }} County{% endif %}{% if property.code_zone %}<br>{{ property.code_zone }}{% endif %}</div>
   </div>
 
-  <h2>Roof Replacement Options</h2>
-  <p>Roof type: <strong>{{ quote.roof_type }}</strong> &nbsp;|&nbsp; Area: <strong>{{ quote.num_squares }} squares</strong></p>
-
-  <table class="tier-table">
-    <tr>
-      <th>Option</th>
-      <th style="text-align:right">Investment</th>
-    </tr>
-    <tr>
-      <td><strong>Good</strong></td>
-      <td class="price">{{ quote.good_price }}</td>
-    </tr>
-    <tr>
-      <td><strong>Better</strong></td>
-      <td class="price">{{ quote.better_price }}</td>
-    </tr>
-    <tr>
-      <td><strong>Best</strong></td>
-      <td class="price">{{ quote.best_price }}</td>
-    </tr>
-  </table>
-
-  {% if quote.line_items %}
   <h2>Scope of Work</h2>
-  <table class="line-items-table">
-    <tr>
-      <th>Description</th>
-      <th>Qty</th>
-      <th>Unit</th>
-      <th style="text-align:right">Unit Price</th>
-      <th style="text-align:right">Total</th>
-    </tr>
+  {% if quote.line_items %}
     {% for item in quote.line_items %}
-    <tr>
-      <td>{{ item.label }}</td>
-      <td>{{ item.qty }}</td>
-      <td>{{ item.unit }}</td>
-      <td style="text-align:right">${{ "%.2f"|format(item.unit_price) }}</td>
-      <td style="text-align:right">${{ "%.2f"|format(item.total) }}</td>
-    </tr>
+    <div class="scope">
+      <div class="scope-head">
+        <div class="scope-no">{{ loop.index }}</div>
+        <div class="scope-title">{{ item.label }}</div>
+        <div class="scope-price">{{ item.price_display or ("$%.2f"|format(item.total)) }}</div>
+      </div>
+      <div class="scope-body">
+        {% if item.qty_display %}<div class="qty">Quantity: {{ item.qty_display }} {{ item.unit }}</div>{% endif %}
+        <p class="spec">{{ item.description }}</p>
+        <div class="bonus"><strong>PERKINS BONUS VALUES:</strong> standard cleanup, project supervision, and warranty support are included unless otherwise noted.</div>
+      </div>
+    </div>
     {% endfor %}
-  </table>
+  {% else %}
+    <div class="scope">
+      <div class="scope-head"><div class="scope-no">1</div><div class="scope-title">Roof Replacement Proposal</div><div class="scope-price">{{ quote.good_price }}</div></div>
+      <div class="scope-body"><p class="spec">Roof type: {{ quote.roof_type }}{% if quote.num_squares %}; area {{ quote.num_squares }} squares{% endif %}.</p></div>
+    </div>
+    {% if quote.better_price %}<div class="scope"><div class="scope-head"><div class="scope-no">2</div><div class="scope-title">Better Option</div><div class="scope-price">{{ quote.better_price }}</div></div></div>{% endif %}
+    {% if quote.best_price %}<div class="scope"><div class="scope-head"><div class="scope-no">3</div><div class="scope-title">Best Option</div><div class="scope-price">{{ quote.best_price }}</div></div></div>{% endif %}
   {% endif %}
 
-  <div class="deposit-box">
-    <p style="margin:0 0 6px 0"><strong>Deposit Required to Schedule</strong></p>
-    <p class="amount">{{ deposit.amount }}</p>
-    {% if deposit.instructions %}<p style="margin:6px 0 0 0; font-size:12px; color:#666;">{{ deposit.instructions }}</p>{% endif %}
+  {% if quote.better_price or quote.best_price %}
+  <h2>Alternate Package Options</h2>
+  <div class="scope">
+    <div class="scope-body">
+      <div style="display:grid;grid-template-columns:1fr 120px;gap:8px;">
+        {% if quote.good_price %}<div>Good</div><div style="text-align:right;font-weight:800;">{{ quote.good_price }}</div>{% endif %}
+        {% if quote.better_price %}<div>Better</div><div style="text-align:right;font-weight:800;">{{ quote.better_price }}</div>{% endif %}
+        {% if quote.best_price %}<div>Best</div><div style="text-align:right;font-weight:800;">{{ quote.best_price }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="totals">
+    <div class="totals-row"><span>Subtotal</span><span>{{ quote.good_price }}</span></div>
+    <div class="totals-row"><span>Tax</span><span>0%</span></div>
+    <div class="totals-row"><span>Total</span><span>{{ quote.good_price }}</span></div>
   </div>
 
-  <div class="accept-section">
-    <p>Ready to move forward? Review and accept your proposal online:</p>
-    <a href="{{ accept_url }}">Review &amp; Accept Proposal</a>
-    <p style="font-size:11px; color:#999; margin-top:8px;">{{ accept_url }}</p>
-  </div>
-
-  <div class="tc-block">
-    <p><strong>Terms &amp; Conditions</strong></p>
-    {% if tc.text %}
-    <pre style="white-space:pre-wrap; font-family:Arial, Helvetica, sans-serif; margin:0;">{{ tc.text }}</pre>
+  <div class="payment">
+    <strong>Payment Schedule</strong>
+    {% if payment.draws %}
+    <table>
+      <thead><tr><th>#</th><th>Milestone</th><th class="amt">%</th><th class="amt">Amount</th></tr></thead>
+      <tbody>
+        {% for draw in payment.draws %}
+        <tr><td>{{ draw.sequence }}</td><td>{{ draw.label }}</td><td class="amt">{{ draw.pct }}</td><td class="amt">{{ draw.amount }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% else %}
-    <p>
-      [PLACEHOLDER — T&amp;C text pending Tim Perkins review and sign-off. This block will be
-      replaced with the executed terms from the master service agreement before any proposals
-      are sent to clients. Do not use this template in production until T&amp;C are approved.]
-    </p>
+    <p>Deposit: <strong>{{ deposit.amount or "None" }}</strong></p>
     {% endif %}
+    {% if deposit.instructions %}<p>{{ deposit.instructions }}</p>{% endif %}
+  </div>
+
+  <div class="accept">
+    <p>Review and accept your proposal online:</p>
+    <a href="{{ accept_url }}">Review &amp; Accept Proposal</a>
+    <div style="font-size:9px;color:#667085;margin-top:6px;">{{ accept_url }}</div>
+  </div>
+
+  <div class="footer">Tim Kanak · Perkins Roofing Jupiter · 15658 Alexander Run, Jupiter, FL 33478</div>
+
+  <div class="terms">
+    <h2>Terms &amp; Conditions</h2>
+    {% if tc.text %}<pre>{{ tc.text }}</pre>{% else %}<p>Terms and conditions to be attached.</p>{% endif %}
   </div>
 
   {% if tc.summary_bullets or tc.review_prompts %}
   <div class="tc-ai-cover">
-    {% if tc.cover_letter %}
-    <p>{{ tc.cover_letter }}</p>
-    {% elif tc.summary_bullets %}
-    <p>While we recommend reading everything yourself and thoroughly understanding the agreement you&#39;re entering into, we&#39;ve created an FAQ for your review on the last page and here&#39;s a concise summary:</p>
-    {% endif %}
-    {% if tc.summary_bullets %}
-    <ul>
-      {% for bullet in tc.summary_bullets %}
-      <li>{{ bullet }}</li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-    {% if tc.review_prompts %}
-    <div class="tc-ai-prompts">
-      <p>Questions you might want to ask your AI assistant about this contract:</p>
-      <ol>
-        {% for prompt in tc.review_prompts %}
-        <li>{{ prompt }}</li>
-        {% endfor %}
-      </ol>
-    </div>
-    {% endif %}
-    {% if tc.ai_disclaimer %}<p class="tc-ai-disclaimer">{{ tc.ai_disclaimer }}</p>{% endif %}
+    {% if tc.cover_letter %}<p>{{ tc.cover_letter }}</p>{% elif tc.summary_bullets %}<p>While we recommend reading everything yourself and thoroughly understanding the agreement you&#39;re entering into, we&#39;ve created an FAQ for your review and here&#39;s a concise summary:</p>{% endif %}
+    {% if tc.summary_bullets %}<ul>{% for bullet in tc.summary_bullets %}<li>{{ bullet }}</li>{% endfor %}</ul>{% endif %}
+    {% if tc.review_prompts %}<p><strong>Helpful AI review prompts:</strong></p><ol>{% for prompt in tc.review_prompts %}<li>{{ prompt }}</li>{% endfor %}</ol>{% endif %}
+    {% if tc.ai_disclaimer %}<p><em>{{ tc.ai_disclaimer }}</em></p>{% endif %}
   </div>
   {% endif %}
 
-  {% if tc_faq_items %}
+  {% if tc.faq_items %}
   <div class="tc-ai-faq">
-    <h2>Frequently Asked Questions</h2>
+    <h2>Contract FAQ</h2>
     <table>
-      <tr>
-        <th>Question</th>
-        <th>Answer</th>
-      </tr>
-      {% for item in tc_faq_items %}
-      <tr>
-        <td>{{ item.q }}</td>
-        <td>{{ item.a }}</td>
-      </tr>
+      {% for item in tc.faq_items %}
+      <tr><td><strong>{{ item.q }}</strong></td><td>{{ item.a }}</td></tr>
       {% endfor %}
     </table>
   </div>
   {% endif %}
 
-  <div class="footer">
-    <p>{{ tenant.name }} &nbsp;|&nbsp; {% if tenant.license %}License #{{ tenant.license }} &nbsp;|&nbsp; {% endif %}This proposal is valid for 30 days from the date above.</p>
+  <div class="lumber">
+    <h2>Lumber Schedule / Additional Work Exhibit</h2>
+    <p>Wood replacement and unforeseen substrate repairs are billed as required by the contract. Standard proposals include the wood allotment stated in the scope; additional wood and extra work are billed at the schedule below unless otherwise written in the proposal.</p>
+    <table>
+      <tr><th>Category</th><th>Representative schedule</th></tr>
+      <tr><td>Decking</td><td>T&amp;G 1x6, T&amp;G 1x8, 1/2&quot;, 5/8&quot;, and 3/4&quot; plywood charged per published Perkins schedule.</td></tr>
+      <tr><td>Fascia / nailers</td><td>Yellow pine and cedar dimensional lumber billed per linear foot by actual size used.</td></tr>
+      <tr><td>Double demo / insulation</td><td>Additional interply, anchor sheet, self-adhered direct-to-deck, and insulation work billed per square foot where required.</td></tr>
+      <tr><td>Other unit work</td><td>Vents, drains, hurricane straps, flashing, stucco, and related extras billed by unit or time-and-materials as applicable.</td></tr>
+    </table>
   </div>
-
-</div>
-</body>
-</html>
+</div></body></html>
 """

@@ -295,6 +295,29 @@ class TestDefaultTemplate:
         assert "$21,200.00" in html
         assert "$24,800.00" in html
 
+    def test_default_template_contains_payment_draw_table(self):
+        ctx = _minimal_context(
+            payment_draws=[
+                {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": "30%", "amount": "$5,520.00"},
+                {
+                    "sequence": 4,
+                    "label": "Substantial completion (net balance)",
+                    "pct": "Balance",
+                    "amount": "$1,840.00",
+                },
+            ],
+        )
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "Payment Schedule" in html
+        assert "Acceptance / prior to permitting" in html
+        assert "Substantial completion (net balance)" in html
+
+    def test_default_template_contains_lumber_schedule_exhibit(self):
+        ctx = _minimal_context()
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "Lumber Schedule" in html
+        assert "Decking" in html
+
     def test_default_template_is_valid_html_fragment(self):
         ctx = _minimal_context()
         html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)

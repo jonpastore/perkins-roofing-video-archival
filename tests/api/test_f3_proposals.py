@@ -1312,7 +1312,11 @@ class TestMissingEndpoints:
         with SessionLocal() as db:
             db.info["tenant_id"] = 1
             row = db.get(mod.Proposal, draft["id"])
-            row.quote_snapshot = {**row.quote_snapshot, "rendered_pdf_gcs": "gs://bucket/proposal.pdf"}
+            row.quote_snapshot = {
+                **row.quote_snapshot,
+                "rendered_pdf_gcs": "gs://bucket/proposal.pdf",
+                "rendered_pdf_template_version": mod._PDF_TEMPLATE_VERSION,
+            }
             db.commit()
 
         monkeypatch.setattr(mod, "_download_gcs_bytes", lambda uri: b"%PDF-1.4 cached")
@@ -1325,6 +1329,28 @@ class TestMissingEndpoints:
 
         assert r.status_code == 200, r.text
         assert r.content.startswith(b"%PDF")
+
+    def test_pdf_helper_builds_standard_draws_from_total(self):
+        import api.routes.proposals as mod
+
+        draws = mod._proposal_payment_draws({"total": "18400.00"}, 18400.00)
+        assert [d["pct"] for d in draws] == ["30%", "30%", "30%", "Balance"]
+        assert draws[0]["amount"] == "$5,520.00"
+        assert draws[-1]["label"] == "Substantial completion (net balance)"
+        assert draws[-1]["amount"] == "$1,840.00"
+
+    def test_pdf_scope_lines_preserve_zero_price_lines(self):
+        import api.routes.proposals as mod
+
+        lines = mod._proposal_scope_lines({
+            "total": "127263.35",
+            "line_items": [
+                {"Description": "Comped gutter scope", "Quantity": "52000", "UnitName": "LF", "Price": "0.00"},
+            ],
+        })
+        assert lines[0]["label"] == "Comped gutter scope"
+        assert lines[0]["total"] == 0.0
+        assert lines[0]["price_display"] == "$0.00"
 
     def test_template_preview_endpoint_exists(self, admin_client):
         """POST /quoting/templates/{id}/preview returns 200 or known error (not 404/405)."""

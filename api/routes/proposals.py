@@ -207,6 +207,99 @@ def _proposal_pdf_key(row: Proposal) -> str:
     return f"tenants/{row.tenant_id}/proposals/{row.id}/rendered-v{row.version_number}-{stamp}.pdf"
 
 
+_PDF_TEMPLATE_VERSION = "perkins-scope-v2"
+
+
+def _fmt_money(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _line_money(value, proposal_total: float = 0.0) -> float:
+    raw = _fmt_money(value)
+    # Knowify document/query fields are inconsistent: contracts are dollars but
+    # some deliverable Price values arrive as cents (e.g. 680000 for $6,800).
+    if proposal_total > 0 and raw > proposal_total * 5:
+        return raw / 100.0
+    if raw > 100000:
+        return raw / 100.0
+    return raw
+
+
+def _first_present(item: dict, *keys: str):
+    for key in keys:
+        if key in item and item.get(key) is not None:
+            return item.get(key)
+    return None
+
+
+def _proposal_scope_lines(snap: dict) -> list[dict]:
+    total = _fmt_money(snap.get("total") or (snap.get("tiers") or {}).get("legacy", {}).get("total"))
+    raw_items = snap.get("line_items") or (snap.get("tiers") or {}).get("legacy", {}).get("line_items") or []
+    out: list[dict] = []
+    for idx, item in enumerate(raw_items, start=1):
+        description = item.get("Description") or item.get("label") or item.get("description") or f"Scope item {idx}"
+        qty = _knowify_qty(item) if "Quantity" in item else _fmt_money(item.get("qty"))
+        unit = item.get("UnitName") or item.get("unit") or ("Squares" if qty else "")
+        price = _line_money(_first_present(item, "Price", "total", "line_total"), total)
+        unit_price = _line_money(_first_present(item, "UnitPrice", "unit_price"), total)
+        if not unit_price and qty:
+            unit_price = price / qty if qty else 0
+        out.append({
+            "number": idx,
+            "label": str(description).split("—", 1)[0].strip(),
+            "description": description,
+            "qty": qty,
+            "unit": unit,
+            "unit_price": unit_price,
+            "total": price,
+            "price_display": f"${price:,.2f}",
+            "qty_display": f"{qty:g}" if qty else "",
+        })
+    return out
+
+
+def _proposal_payment_draws(snap: dict, total: float) -> list[dict]:
+    """Return a Perkins-style draw table for proposal PDFs.
+
+    Native proposal snapshots may already carry the JB3 payment schedule. Legacy
+    Knowify proposals usually do not, but the golden proposals Tim sent use a
+    30/30/30/net-balance schedule for the normal case, so render that instead
+    of a one-line "deposit" block when we have a contract total.
+    """
+    raw_draws = ((snap.get("payment_schedule") or {}).get("draws") or [])
+    if raw_draws:
+        out = []
+        for idx, draw in enumerate(raw_draws, start=1):
+            amount = _fmt_money(draw.get("amount"))
+            pct = draw.get("pct")
+            out.append({
+                "sequence": draw.get("sequence") or idx,
+                "label": draw.get("label") or "Milestone payment",
+                "pct": "Balance" if pct is None else f"{_fmt_money(pct):g}%",
+                "amount": f"${amount:,.2f}",
+            })
+        return out
+    if total <= 0:
+        return []
+    first_three = round(total * 0.30, 2)
+    balance = round(total - (first_three * 3), 2)
+    labels = [
+        "Acceptance / prior to permitting",
+        "Material delivery / mobilization",
+        "Completion of roof dry-in, prior to cap installation",
+        "Substantial completion (net balance)",
+    ]
+    amounts = [first_three, first_three, first_three, balance]
+    pcts = ["30%", "30%", "30%", "Balance"]
+    return [
+        {"sequence": idx, "label": label, "pct": pct, "amount": f"${amount:,.2f}"}
+        for idx, (label, pct, amount) in enumerate(zip(labels, pcts, amounts), start=1)
+    ]
+
+
 def _split_gs_uri(uri: str) -> tuple[str, str]:
     if not uri.startswith("gs://"):
         raise ValueError("not a gs:// URI")
@@ -1238,10 +1331,18 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
 
     snap = row.quote_snapshot or {}
     tiers = snap.get("tiers") or {}
+    scope_lines = _proposal_scope_lines(snap)
+    total = _fmt_money(
+        snap.get("total")
+        or tiers.get("legacy", {}).get("total")
+        or tiers.get("good", {}).get("total")
+    )
     dp = snap.get("deposit_policy") or {}
     address = (
         f"{prop.street}, {prop.city} {prop.state}" if prop and prop.street else ""
     )
+
+    public_url = os.environ.get("SIGN_PUBLIC_URL") or os.environ.get("PUBLIC_APP_URL", _SIGN_PUBLIC_URL)
 
     ctx = ProposalRenderContext(
         proposal_title=row.title,
@@ -1254,15 +1355,16 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         property_code_zone=prop.code_zone if prop else "",
         quote_roof_type=snap.get("roof_type", ""),
         quote_num_squares=float(snap.get("num_squares", 0)),
-        quote_good_price=str(tiers.get("good", {}).get("total", "")),
+        quote_good_price=f"${total:,.2f}" if total else str(tiers.get("good", {}).get("total", "")),
         quote_better_price=str(tiers.get("better", {}).get("total", "")),
         quote_best_price=str(tiers.get("best", {}).get("total", "")),
-        quote_line_items=[],
-        deposit_amount=str(dp.get("amount", "")),
+        quote_line_items=scope_lines,
+        deposit_amount=f"${_fmt_money(dp.get('amount')):,.2f}" if dp.get("amount") is not None else "",
         deposit_instructions=dp.get("instructions", ""),
         tenant_name=tenant_row.name if tenant_row else "",
         tenant_license=None,
-        accept_url="",
+        accept_url=f"{public_url.rstrip('/')}/p/{row.accept_token}",
+        payment_draws=_proposal_payment_draws(snap, total),
     )
 
     try:
@@ -1293,7 +1395,11 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
     try:
         gcs_uri = f"gs://{_media_bucket()}/{_proposal_pdf_key(row)}"
         _upload_gcs_bytes(gcs_uri, pdf_bytes, "application/pdf")
-        row.quote_snapshot = {**snap, "rendered_pdf_gcs": gcs_uri}
+        row.quote_snapshot = {
+            **snap,
+            "rendered_pdf_gcs": gcs_uri,
+            "rendered_pdf_template_version": _PDF_TEMPLATE_VERSION,
+        }
         db.flush()
     except Exception as exc:
         _log.warning("proposal pdf GCS upload failed id=%s err=%s", row.id, exc)
@@ -1325,7 +1431,7 @@ def get_proposal_pdf(
     # Prefer original Knowify PDF bytes once archived, then cached rendered bytes.
     for uri in (
         ((snap.get("knowify_pdf") or {}).get("gcs_uri") if isinstance(snap.get("knowify_pdf"), dict) else None),
-        snap.get("rendered_pdf_gcs"),
+        snap.get("rendered_pdf_gcs") if snap.get("rendered_pdf_template_version") == _PDF_TEMPLATE_VERSION else None,
     ):
         if isinstance(uri, str) and uri.startswith("gs://"):
             try:
