@@ -1,0 +1,294 @@
+{
+  "_meta": {
+    "date": "2026-07-08",
+    "description": "Committed seed pricing config for Perkins Roofing (tenant 1) \u2014 all three branches (miami, jupiter, naples). Null values are pending Tim confirmation; engine raises ConfigError on null access.",
+    "exhibit_version": "B-2026-07",
+    "schema_version": 1,
+    "source": "Exhibit B (Ez-Bids legal package)",
+    "tim_verify_open_items": [
+      "OI-1: low_slope.base_cost_lm \u2014 ALL cells null; Tim must supply Exhibit B \u00a74 base costs for TPO/coatings/silicone/BUR in both zones (blocks low-slope path)",
+      "OI-2: low_slope.overhead \u2014 ALL cells null; Tim must supply per-type OH for flat/TPO/coatings in both zones",
+      "OI-3: low_slope.insulation_tiers \u2014 empty; Tim must supply tiered insulation cost-per-sq breakpoints",
+      "OI-4: low_slope.tapered_cost_per_sq \u2014 null; Tim must supply tapered polyiso cost per sq",
+      "OI-5: low_slope.deck_types.plywood_replace \u2014 null; Tim must supply plywood deck replacement adder",
+      "OI-6: low_slope.tear_off_per_layer_per_sq \u2014 null; Tim must supply per-layer tear-off cost per sq",
+      "OI-7: commission_pct.sloped_hvhz \u2014 null; Tim must confirm whether sloped HVHZ jobs use 10% (sloped) or 15% (low_slope) rate (PC-1)",
+      "OI-8: pm_incentive \u2014 full matrix needs Tim verification before activation (PC matrix per PRD F2-11; current values from plan \u00a710.5)",
+      "OI-9: boundary_inclusive_lower / boundary_exclusive_upper \u2014 presumed lower-inclusive/upper-exclusive per Exhibit B wording (PC-2); config flag means answer is a data change only",
+      "OI-10: tile_dumpster_boundary_inclusive \u2014 default true; Tim to confirm (Adv-1 per PRD)"
+    ]
+  },
+  "_pending_boundary": "Tim \u2014 PC-2: confirm lower-inclusive/upper-exclusive sliding-scale boundary rule (OI-9)",
+  "_pending_tile_dumpster_boundary": "Tim \u2014 Adv-1: confirm whether threshold boundary SQ itself triggers next dumpster (default true = inclusive) (OI-10)",
+  "boundary_exclusive_upper": true,
+  "boundary_inclusive_lower": true,
+  "commission_pct": {
+    "_pending_sloped_hvhz": "Tim \u2014 PC-1: confirm sloped HVHZ commission rate (10% same as sloped, or 15% same as low_slope); engine defaults to sloped (0.10) until this is filled (OI-7)",
+    "low_slope": 0.15,
+    "sloped": 0.1,
+    "sloped_hvhz": null
+  },
+  "cost_category_tags": {
+    "base_cost_lm": "Materials",
+    "delivery_plywood_vents": "Materials",
+    "insulation": "Materials",
+    "metal_demo": "Labor",
+    "new_bonus_values": "Misc",
+    "overhead": "OH",
+    "penetrations": "Labor",
+    "permit_processing": "Misc",
+    "pitch_7_12_add": "Labor",
+    "pm_incentive": "Misc",
+    "profit": "Profit",
+    "ridge_vents": "Materials",
+    "roof_cuts": "Labor",
+    "roof_height": "Labor",
+    "secondary_water_barrier": "Materials",
+    "specialty_tile": "Materials",
+    "stucco_metal": "Labor",
+    "tapered": "Materials",
+    "tile_demo": "Labor",
+    "tile_dumpster": "Equipment",
+    "tile_pointing": "Labor",
+    "winterguard": "Materials"
+  },
+  "counties": {
+    "broward": "HVHZ",
+    "lee": "FBC",
+    "miami_dade": "HVHZ",
+    "palm_beach": "FBC",
+    "st_lucie": "FBC"
+  },
+  "county_overrides": {
+    "broward": {
+      "extra_line_items": {},
+      "materials_tax_7pct_tile": false,
+      "permit_fee_add": 0
+    },
+    "lee": {
+      "extra_line_items": {},
+      "materials_tax_7pct_tile": false,
+      "permit_fee_add": 0
+    },
+    "miami_dade": {
+      "extra_line_items": {},
+      "materials_tax_7pct_tile": false,
+      "permit_fee_add": 0
+    },
+    "palm_beach": {
+      "extra_line_items": {},
+      "materials_tax_7pct_tile": false,
+      "permit_fee_add": 0
+    },
+    "st_lucie": {
+      "extra_line_items": {},
+      "materials_tax_7pct_tile": false,
+      "permit_fee_add": 0
+    }
+  },
+  "delivery_plywood_vents": 650,
+  "exhibit_version": "B-2026-07",
+  "floor_excluded_categories": {
+    "insulation": [
+      "Profit"
+    ],
+    "tapered": [
+      "OH",
+      "Profit"
+    ]
+  },
+  "line_items": {
+    "FBC": {
+      "blown_in_iso_r19": 135,
+      "solar_vents": 1489.0,
+      "turbine_vents": 257.5
+    },
+    "HVHZ": {
+      "blown_in_iso_r19": 135,
+      "solar_vents": 1339.0,
+      "turbine_vents": 257.5
+    }
+  },
+  "low_slope": {
+    "_pending_insulation_tiers": "Tim \u2014 Exhibit B \u00a74: insulation tier breakpoints as [[max_sq, cost_per_sq], ...]; no profit added per Exhibit B (OI-3)",
+    "_pending_tapered_cost_per_sq": "Tim \u2014 Exhibit B \u00a74: tapered polyiso cost per sq; no OH or profit per Exhibit B (OI-4)",
+    "_pending_tear_off_per_layer_per_sq": "Tim \u2014 Exhibit B \u00a74: per-layer tear-off cost per sq (OI-6)",
+    "base_cost_lm": {
+      "FBC": {
+        "_pending_bur_fbc": "Tim \u2014 Exhibit B \u00a74: BUR base cost per sq in FBC zone (OI-1)",
+        "_pending_coatings_fbc": "Tim \u2014 Exhibit B \u00a74: coatings base cost per sq in FBC zone (OI-1)",
+        "_pending_silicone_fbc": "Tim \u2014 Exhibit B \u00a74: silicone base cost per sq in FBC zone (OI-1)",
+        "_pending_tpo_fbc": "Tim \u2014 Exhibit B \u00a74: TPO base cost per sq in FBC zone (OI-1)",
+        "bur": null,
+        "coatings": null,
+        "silicone": null,
+        "tpo": null
+      },
+      "HVHZ": {
+        "_pending_bur_hvhz": "Tim \u2014 Exhibit B \u00a74: BUR base cost per sq in HVHZ zone (OI-1)",
+        "_pending_coatings_hvhz": "Tim \u2014 Exhibit B \u00a74: coatings base cost per sq in HVHZ zone (OI-1)",
+        "_pending_silicone_hvhz": "Tim \u2014 Exhibit B \u00a74: silicone base cost per sq in HVHZ zone (OI-1)",
+        "_pending_tpo_hvhz": "Tim \u2014 Exhibit B \u00a74: TPO base cost per sq in HVHZ zone (OI-1)",
+        "bur": null,
+        "coatings": null,
+        "silicone": null,
+        "tpo": null
+      }
+    },
+    "crane_threshold_stories": 3,
+    "deck_types": {
+      "_pending_plywood_replace": "Tim \u2014 Exhibit B \u00a74: plywood deck replacement adder per sq (OI-5)",
+      "existing_concrete": 0,
+      "plywood_replace": null
+    },
+    "insulation_tiers": [],
+    "overhead": {
+      "FBC": {
+        "_pending_coatings_oh_fbc": "Tim \u2014 Exhibit B \u00a74: coatings overhead per sq FBC (OI-2)",
+        "_pending_flat_oh_fbc": "Tim \u2014 Exhibit B \u00a74: flat/BUR overhead per sq FBC (OI-2)",
+        "_pending_tpo_oh_fbc": "Tim \u2014 Exhibit B \u00a74: TPO overhead per sq FBC (OI-2)",
+        "coatings_oh": null,
+        "flat_oh": null,
+        "tpo_oh": null
+      },
+      "HVHZ": {
+        "_pending_coatings_oh_hvhz": "Tim \u2014 Exhibit B \u00a74: coatings overhead per sq HVHZ (OI-2)",
+        "_pending_flat_oh_hvhz": "Tim \u2014 Exhibit B \u00a74: flat/BUR overhead per sq HVHZ (OI-2)",
+        "_pending_tpo_oh_hvhz": "Tim \u2014 Exhibit B \u00a74: TPO overhead per sq HVHZ (OI-2)",
+        "coatings_oh": null,
+        "flat_oh": null,
+        "tpo_oh": null
+      }
+    },
+    "tapered_cost_per_sq": null,
+    "tear_off_per_layer_per_sq": null,
+    "trash_chute_flat_add": 1200
+  },
+  "metal_demo_add": 60,
+  "new_bonus_values": 1350,
+  "penetration_each": 75,
+  "permit_commercial_add": 500,
+  "permit_processing": 500,
+  "pitch_7_12_add": 200,
+  "pm_incentive": {
+    "FBC": {
+      "commercial_20_50": 100,
+      "commercial_gt50": 250,
+      "residential_lt20": 50
+    },
+    "HVHZ": {
+      "commercial_20_50": 300,
+      "commercial_gt50": 300,
+      "residential_lt20": 150
+    },
+    "_pending_verify": "Tim \u2014 full matrix must be verified before activation (OI-8); values from PRD F2-11 plan \u00a710.5"
+  },
+  "profit_floor_pct": 0.13,
+  "profit_plus_oh_floor_pct": 0.33,
+  "profit_scale": [
+    [
+      1,
+      400
+    ],
+    [
+      4,
+      200
+    ],
+    [
+      7,
+      160
+    ],
+    [
+      14,
+      140
+    ],
+    [
+      20,
+      120
+    ],
+    [
+      29,
+      110
+    ],
+    [
+      null,
+      100
+    ]
+  ],
+  "ridge_vent_per_lf": 9.79,
+  "roof_cuts": {
+    "high": 50,
+    "low": 0,
+    "medium": 25
+  },
+  "roof_height": {
+    "1_story": 0,
+    "2_stories": 50,
+    "3_5_stories": null,
+    "6_plus": null
+  },
+  "roof_height_3_5_flat_add": 1200,
+  "schema_version": 1,
+  "secondary_water_barrier_add": 75,
+  "sloped_base_cost_lm": {
+    "FBC": {
+      "13_tile": 770,
+      "3tab_shingle": 395,
+      "barrel_tile": 1435,
+      "dimensional_shingle": 420,
+      "standing_seam_metal": 750
+    },
+    "HVHZ": {
+      "13_tile": 780,
+      "3tab_shingle": 395,
+      "barrel_tile": 1455,
+      "dimensional_shingle": 420,
+      "standing_seam_metal": 1020
+    }
+  },
+  "sloped_overhead": {
+    "FBC": {
+      "13_tile": 185,
+      "3tab_shingle": 105,
+      "barrel_tile": 350,
+      "dimensional_shingle": 105,
+      "standing_seam_metal": 205
+    },
+    "HVHZ": {
+      "13_tile": 270,
+      "3tab_shingle": 125,
+      "barrel_tile": 420,
+      "dimensional_shingle": 125,
+      "standing_seam_metal": 280
+    }
+  },
+  "specialty_tile_upgrade": {
+    "FBC": {
+      "santa_fe_clay_s": 160,
+      "terracottagres_s_rustic": 120,
+      "verea_s": 195
+    },
+    "HVHZ": {
+      "santa_fe_clay_s": 160,
+      "verea_caribbean_s": 120,
+      "verea_s": 195
+    }
+  },
+  "stucco_metal_per_lf": 9,
+  "tile_demo_add": 40,
+  "tile_dumpster_boundary_inclusive": true,
+  "tile_dumpster_cost": 300,
+  "tile_dumpster_threshold": {
+    "FBC": 30,
+    "HVHZ": 15
+  },
+  "tile_pointing": {
+    "no": 0,
+    "yes": 200
+  },
+  "winterguard_add": 140,
+  "zones": [
+    "HVHZ",
+    "FBC"
+  ]
+}

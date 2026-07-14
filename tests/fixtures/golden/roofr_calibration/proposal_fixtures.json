@@ -1,0 +1,644 @@
+[
+  {
+    "proposal_id": "palmer-2026-07-10",
+    "customer_name": "Justin Palmer",
+    "property_address": "503 Xanadu Place, Jupiter, FL 33477",
+    "proposal_date": "2026-07-10",
+    "project_name": "Palmer Metal Re-Roof (3 Story & 6/12 Slope)",
+    "roof_system": "metal",
+    "package_tier": "PERKINS PROTECTOR + PERKINS COASTAL",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "PERKINS PROTECTOR - Metal Re-Roof (24 GA MIL FINISH GALVALUME STEEL, 1.5\" Mechanical Seam)",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "26 squares",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 38380.00,
+        "is_optional": false,
+        "notes": "3-story, 6/12 slope; harnesses required; 1-yr Perkins warranty + 20-yr RoofNado underlayment"
+      },
+      {
+        "line_num": 2,
+        "description": "PERKINS COASTAL - Metal Re-Roof (upgrade to .032 Aluminum Kynar Fluropon coated panels)",
+        "system_package": "PERKINS COASTAL",
+        "squares_or_qty": "26 squares",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 7410.00,
+        "is_optional": true,
+        "notes": "Upgrade from mil finish steel to aluminum; 10-yr Perkins warranty + 40-yr Kynar / 25-yr substrate corrosion Metal Alliance warranty. Listed as 'INCLUDED' per proposal text — price bundled."
+      }
+    ],
+    "contract_total": 45790.00,
+    "payment_schedule": {
+      "variant": "palmer-5-draw-custom",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 15, "amount": 6868.50},
+        {"sequence": 2, "label": "Justin acquiring financing", "pct": 15, "amount": 6868.50},
+        {"sequence": 3, "label": "Material delivery / mobilization", "pct": 30, "amount": 13737.00},
+        {"sequence": 4, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 13737.00},
+        {"sequence": 5, "label": "Substantial completion (net balance)", "pct": 10, "amount": 4579.00}
+      ],
+      "notes": "5-draw structure unique to Palmer. Draws 1+2 both at 15% (second contingent on Palmer securing financing). Late fees apply after 30 days overdue."
+    },
+    "warranty_years": 10,
+    "warranty_years_detail": "1-yr base (PROTECTOR) upgrades to 10-yr with COASTAL aluminum; 20-yr RoofNado underlayment; 25-yr Metal Alliance substrate corrosion; 40-yr Kynar (non-coastal)",
+    "expiry_days": 15,
+    "expiry_notes": "Metal roofs: 15-day acceptance window; standard 30-day quote expiry also stated",
+    "hvhz_coastal_language": false,
+    "hvhz_notes": "Coastal upgrade recommended (within 1,500 ft salt/brackish water) but no HVHZ FBC compliance language",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true
+    },
+    "invoice_cross_reference": {
+      "invoice_number": "#652",
+      "draw_amount": 6868.50,
+      "draw_pct": 15,
+      "implied_contract_from_invoice": 45790.00,
+      "match": "exact"
+    }
+  },
+  {
+    "proposal_id": "butterworth-2026-05-14",
+    "customer_name": "Melissa Butterworth",
+    "property_address": "332 Pilgrim Road, West Palm Beach, FL 33405",
+    "proposal_date": "2026-05-14",
+    "project_name": "Butterworth 332 Pilgrim Roofing Project",
+    "roof_system": "flat/BUR + tile (multi-scope)",
+    "package_tier": "PERKINS PROTECTOR + PERKINS PREMIUM (Caribbean)",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "PERKINS PROTECTOR - Flat Re-Roofs (Both Structures) — Polyglass SAP modified bitumen, main house + guest house",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "24 squares (main: ~18.9 sq / guest: ~5.1 sq breakdown not explicitly stated; breakdown: main $22,370 / guest $5,950)",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 28320.00,
+        "is_optional": false,
+        "notes": "Double demo included for rear roof (no direct access). 7-yr Perkins warranty + 20-yr Polyglass material warranty. Breakdown: main house $22,370 / guest house $5,950."
+      },
+      {
+        "line_num": 2,
+        "description": "PERKINS PROTECTOR - Tile Re-Roof (Back Only) — Eagle concrete tile, Polyglass TU Plus 80 mil, ACH-160 foam",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "5.5 squares",
+        "unit_price_per_sq_or_unit": 1380.00,
+        "line_total": 7590.00,
+        "is_optional": false,
+        "notes": "Back sloped section only. 7-yr Perkins warranty + 20-yr Polyglass TU material warranty."
+      },
+      {
+        "line_num": 3,
+        "description": "PERKINS PREMIUM (Caribbean) - Tile Re-Roof upgrade — double-layer Polyglass MTS Plus + TU Plus, Verea Caribbean tile, colored mortar",
+        "system_package": "PERKINS PREMIUM",
+        "squares_or_qty": "8 squares (note: larger than line 2 — covers tile area with premium)",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 1622.50,
+        "is_optional": false,
+        "notes": "SWR credit eligible. 12-yr Perkins warranty + 30-yr Polyglass MTS + 50-yr Verea tile or lifetime."
+      },
+      {
+        "line_num": 4,
+        "description": "Re-Paint Guest House & Stucco Repairs — 2 coats exterior paint, crack/spall repair, pressure clean",
+        "system_package": null,
+        "squares_or_qty": null,
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 4997.00,
+        "is_optional": false,
+        "notes": "Non-roofing scope. 2-yr Perkins Construction warranty + 5-yr material warranty on paint."
+      }
+    ],
+    "contract_total": 42529.50,
+    "payment_schedule": {
+      "variant": "standard-30-30-30-balance",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 30, "amount": 12758.85},
+        {"sequence": 2, "label": "Material delivery / mobilization", "pct": 30, "amount": 12758.85},
+        {"sequence": 3, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 12758.85},
+        {"sequence": 4, "label": "Substantial completion (net balance)", "pct": 10, "amount": 4252.95}
+      ],
+      "notes": "Standard 30/30/30/balance schedule."
+    },
+    "warranty_years": 7,
+    "warranty_years_detail": "7-yr base (PROTECTOR flat + tile); upgrades to 12-yr with PREMIUM (Caribbean); 20-yr Polyglass material; 30-yr Polyglass MTS on premium layer; 50-yr/lifetime on Verea tile",
+    "expiry_days": 30,
+    "expiry_notes": "Standard 30-day expiry; metal roofs 15-day (no metal here so standard applies)",
+    "hvhz_coastal_language": false,
+    "hvhz_notes": "No HVHZ language; coastal metal note mentioned in flat scope but not applicable",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true
+    },
+    "invoice_cross_reference": {
+      "invoice_number": "#608",
+      "draw_amount": 12758.85,
+      "draw_pct": 30,
+      "implied_contract_from_invoice": 42529.50,
+      "match": "exact"
+    }
+  },
+  {
+    "proposal_id": "allen-2026-06-23",
+    "customer_name": "Glenn Allen",
+    "property_address": "1251 Holly Cove Drive, Jupiter, FL 33458",
+    "proposal_date": "2026-06-23",
+    "project_name": "Glenn Allen Shingle ReRoof",
+    "roof_system": "shingle + flat/BUR (multi-scope)",
+    "package_tier": "PERKINS PROTECTOR",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "PERKINS PROTECTOR - Shingle Re-Roof — IR-XE 60 mil Water Barrier base + Landmark Pro architectural shingles",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "30 squares",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 22840.47,
+        "is_optional": false,
+        "notes": "7-yr Perkins warranty. PREMIUM Landmark Pros upgrade available (not selected)."
+      },
+      {
+        "line_num": 2,
+        "description": "PERKINS PROTECTOR - Flat Re-Roof — Polyglass SAP modified bitumen",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "5.5 squares",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 4875.15,
+        "is_optional": false,
+        "notes": "7-yr Perkins warranty + 20-yr Polyglass material warranty."
+      },
+      {
+        "line_num": 3,
+        "description": "Copper Metal Install — labor and overhead included in sloped roof price; copper flashing/valley upgrade",
+        "system_package": null,
+        "squares_or_qty": null,
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 4477.58,
+        "is_optional": false,
+        "notes": "Coastal-adjacent non-corrosive metal upgrade. Cost of labor overhead already in shingle line."
+      },
+      {
+        "line_num": 4,
+        "description": "(OPTIONAL) Unfiltered CT Shingle Ridge Vents",
+        "system_package": null,
+        "squares_or_qty": "60 feet",
+        "unit_price_per_sq_or_unit": 12.50,
+        "line_total": 750.00,
+        "is_optional": true,
+        "notes": "1-yr Perkins warranty on vents."
+      }
+    ],
+    "contract_total": 32943.20,
+    "payment_schedule": {
+      "variant": "standard-30-30-30-balance",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 30, "amount": 9882.96},
+        {"sequence": 2, "label": "Material delivery / mobilization", "pct": 30, "amount": 9882.96},
+        {"sequence": 3, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 9882.96},
+        {"sequence": 4, "label": "Substantial completion (net balance)", "pct": 10, "amount": 3294.32}
+      ],
+      "notes": "Standard 30/30/30/balance schedule."
+    },
+    "warranty_years": 7,
+    "warranty_years_detail": "7-yr Perkins (shingle + flat); 20-yr Polyglass material; 1-yr on vents",
+    "expiry_days": 30,
+    "expiry_notes": "Standard 30-day expiry; metal 15-day note present in T&C (copper accent, not full metal roof)",
+    "hvhz_coastal_language": false,
+    "hvhz_notes": "Coastal metal language present (copper recommended within 1,500 ft salt); no HVHZ FBC compliance statement",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true
+    },
+    "invoice_cross_reference": {
+      "invoice_number": "#639",
+      "draw_amount": 9882.96,
+      "draw_pct": 30,
+      "implied_contract_from_invoice": 32943.20,
+      "match": "exact"
+    }
+  },
+  {
+    "proposal_id": "malooley-2026-05-18",
+    "customer_name": "Jim Malooley",
+    "property_address": "309 Palm Trail, Delray Beach, FL 33483",
+    "proposal_date": "2026-05-18",
+    "project_name": "Malooley Tile Re-Roof",
+    "roof_system": "tile",
+    "package_tier": "PERKINS PROTECTOR + PERKINS PREMIUM (Mediterranean) + PERKINS COASTAL UPGRADE",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "PERKINS PROTECTOR - Tile Re-Roof — Eagle/standard concrete tile, Polyglass TU Plus 80 mil",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "76 squares",
+        "unit_price_per_sq_or_unit": 1243.42,
+        "line_total": 94460.00,
+        "is_optional": false,
+        "notes": "7-yr Perkins warranty. Includes ramp build to access back/lower roof."
+      },
+      {
+        "line_num": 2,
+        "description": "PERKINS PREMIUM (Mediterranean) - Tile Re-Roof upgrade — Verea or Santa Fe Mediterranean tile, double-layer Polyglass MTS Plus + TU Plus, colored mortar, SWR eligible",
+        "system_package": "PERKINS PREMIUM",
+        "squares_or_qty": "76 squares",
+        "unit_price_per_sq_or_unit": 393.82,
+        "line_total": 29930.00,
+        "is_optional": false,
+        "notes": "12-yr Perkins warranty + 30-yr Polyglass MTS + 50-yr/lifetime tile warranty."
+      },
+      {
+        "line_num": 3,
+        "description": "PERKINS COASTAL UPGRADE - Add to Any Tile Re-Roof — non-corrosive metals, drip edge, valley metal",
+        "system_package": "PERKINS COASTAL",
+        "squares_or_qty": "76 squares",
+        "unit_price_per_sq_or_unit": 37.81,
+        "line_total": 2873.35,
+        "is_optional": false,
+        "notes": "Coastal/wind resistance upgrade. 5-yr Perkins warranty extension on metals."
+      },
+      {
+        "line_num": 4,
+        "description": "New Seamless Aluminum Gutter and Downspout System — 520 ft, 2-story, 7\" K-style",
+        "system_package": null,
+        "squares_or_qty": "520 feet",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 0.00,
+        "is_optional": false,
+        "notes": "Listed at $0.00 — included/comp'd or pending pricing. Scope clearly defined (520 ft, reconnect 8 downspouts). Flag: contract_total does not include gutter value."
+      }
+    ],
+    "contract_total": 127263.35,
+    "payment_schedule": {
+      "variant": "standard-30-30-30-balance",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 30, "amount": 38179.01},
+        {"sequence": 2, "label": "Material delivery / mobilization", "pct": 30, "amount": 38179.01},
+        {"sequence": 3, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 38179.01},
+        {"sequence": 4, "label": "Substantial completion (net balance)", "pct": 10, "amount": 12726.32}
+      ],
+      "notes": "Standard 30/30/30/balance. Gutter line at $0 does not affect draw math."
+    },
+    "warranty_years": 12,
+    "warranty_years_detail": "7-yr base (PROTECTOR) upgrades to 12-yr with PREMIUM (Mediterranean) + COASTAL; 30-yr Polyglass MTS; 50-yr/lifetime tile warranty",
+    "expiry_days": 30,
+    "expiry_notes": "Standard 30-day expiry; 15-day metal note in T&C (not applicable — tile job)",
+    "hvhz_coastal_language": false,
+    "hvhz_notes": "Coastal upgrade included; no HVHZ FBC compliance language",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true
+    },
+    "invoice_cross_reference": {
+      "invoice_number": "#611",
+      "draw_amount": 38179.01,
+      "draw_pct": 30,
+      "implied_contract_from_invoice": 127263.37,
+      "match": "exact (rounding: $127,263.35 proposal vs $127,263.37 implied from invoice — $0.02 rounding)"
+    }
+  },
+  {
+    "proposal_id": "thompson-2026-05-05",
+    "customer_name": "Fred Thompson",
+    "property_address": "3699 Northeast 6th Drive, Boca Raton, FL 33431",
+    "proposal_date": "2026-05-05",
+    "project_name": "Thompson Metal Re-Roof",
+    "roof_system": "metal + flat/BUR (multi-scope)",
+    "package_tier": "PERKINS PROTECTOR + PERKINS COASTAL",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "PERKINS PROTECTOR - Metal Re-Roof — 24 GA MIL FINISH GALVALUME STEEL (1.5\" Standing Seam), Roofnado AnchorDeck PSU HT 50 mil",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "33 squares",
+        "unit_price_per_sq_or_unit": 1211.97,
+        "line_total": 39985.00,
+        "is_optional": false,
+        "notes": "Tear off existing mortar-set concrete tile. 7-yr Perkins warranty + 20-yr Polyglass underlayment + 25-yr Metal Alliance substrate."
+      },
+      {
+        "line_num": 2,
+        "description": "Discount — Current Special through 5/1/2026 ($1,000 off any re-roof)",
+        "system_package": null,
+        "squares_or_qty": null,
+        "unit_price_per_sq_or_unit": null,
+        "line_total": -1000.00,
+        "is_optional": false,
+        "notes": "Promotional discount applied."
+      },
+      {
+        "line_num": 3,
+        "description": "PERKINS COASTAL - Metal Re-Roof — upgrade to .032 Aluminum Kynar Fluropon coated (Solar White)",
+        "system_package": "PERKINS COASTAL",
+        "squares_or_qty": "33 squares",
+        "unit_price_per_sq_or_unit": 214.36,
+        "line_total": 7073.88,
+        "is_optional": false,
+        "notes": "12-yr Perkins warranty + 40-yr Kynar + 25-yr Metal Alliance corrosion."
+      },
+      {
+        "line_num": 4,
+        "description": "PERKINS PROTECTOR - Flat Re-Roof — Polyglass SAP modified bitumen (garage/small section)",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "3.5 squares",
+        "unit_price_per_sq_or_unit": 890.00,
+        "line_total": 3115.00,
+        "is_optional": false,
+        "notes": "7-yr Perkins warranty + 20-yr Polyglass material."
+      },
+      {
+        "line_num": 5,
+        "description": "New Seamless Aluminum Gutter and Downspout System — 7\" K-style, 75 ft rear gutters only",
+        "system_package": null,
+        "squares_or_qty": "105 feet total (75 ft gutters + 2 downspouts reconnected)",
+        "unit_price_per_sq_or_unit": 13.60,
+        "line_total": 1428.00,
+        "is_optional": false,
+        "notes": "5-yr Perkins warranty. Qty shown as 105 ft but narrative says 75 ft fabricated — 105 ft likely includes downspout run."
+      }
+    ],
+    "contract_total": 50601.88,
+    "payment_schedule": {
+      "variant": "standard-30-30-30-balance",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 30, "amount": 15180.56},
+        {"sequence": 2, "label": "Material delivery / mobilization", "pct": 30, "amount": 15180.56},
+        {"sequence": 3, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 15180.56},
+        {"sequence": 4, "label": "Substantial completion (net balance)", "pct": 10, "amount": 5060.20}
+      ],
+      "notes": "Standard 30/30/30/balance."
+    },
+    "warranty_years": 12,
+    "warranty_years_detail": "7-yr base (PROTECTOR metal + flat) upgrades to 12-yr with COASTAL aluminum; 20-yr Polyglass underlayment; 25-yr Metal Alliance substrate corrosion; 40-yr Kynar; 5-yr on gutters",
+    "expiry_days": 15,
+    "expiry_notes": "Metal roof — 15-day acceptance window applies",
+    "hvhz_coastal_language": false,
+    "hvhz_notes": "Coastal upgrade (aluminum panels) included; no HVHZ FBC compliance language",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true
+    },
+    "invoice_cross_reference": {
+      "invoice_number": "#601",
+      "draw_amount": 15180.56,
+      "draw_pct": 30,
+      "implied_contract_from_invoice": 50601.87,
+      "match": "exact (rounding: $50,601.88 proposal vs $50,601.87 implied — $0.01)"
+    }
+  },
+  {
+    "proposal_id": "mazzeo-2026-03-10",
+    "customer_name": "Joseph Mazzeo",
+    "property_address": "3549 Moon Bay Circle, Wellington, FL 33414",
+    "proposal_date": "2026-03-10",
+    "project_name": "Mazzeo Tile Roof",
+    "roof_system": "tile",
+    "package_tier": "PERKINS PROTECTOR",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "PERKINS PROTECTOR - Tile Re-Roof — Eagle concrete tile (1 & 2 story), Polyglass 6\" SA Flashing + TU Plus 80 mil underlayment, polyfoam tile adhesive",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "37.5 squares",
+        "unit_price_per_sq_or_unit": 1171.68,
+        "line_total": 43938.00,
+        "is_optional": false,
+        "notes": "7-yr Perkins warranty + 20-yr Polyglass TU material warranty."
+      },
+      {
+        "line_num": 2,
+        "description": "(OPTIONAL) New Seamless Aluminum Gutter and Downspout System — 285 ft",
+        "system_package": null,
+        "squares_or_qty": "285 feet",
+        "unit_price_per_sq_or_unit": 12.50,
+        "line_total": 3563.75,
+        "is_optional": true,
+        "notes": "5-yr Perkins warranty. Optional — included in subtotal but flagged optional."
+      },
+      {
+        "line_num": 3,
+        "description": "Discount",
+        "system_package": null,
+        "squares_or_qty": null,
+        "unit_price_per_sq_or_unit": null,
+        "line_total": -2000.00,
+        "is_optional": false,
+        "notes": "General discount applied."
+      }
+    ],
+    "contract_total": 45501.75,
+    "payment_schedule": {
+      "variant": "standard-30-30-30-balance",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 30, "amount": 13650.53},
+        {"sequence": 2, "label": "Material delivery / mobilization", "pct": 30, "amount": 13650.53},
+        {"sequence": 3, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 13650.53},
+        {"sequence": 4, "label": "Substantial completion (net balance)", "pct": 10, "amount": 4550.16}
+      ],
+      "notes": "Standard 30/30/30/balance."
+    },
+    "warranty_years": 7,
+    "warranty_years_detail": "7-yr Perkins (PROTECTOR tile); 20-yr Polyglass TU material; 5-yr on optional gutters",
+    "expiry_days": 30,
+    "expiry_notes": "Standard 30-day expiry",
+    "hvhz_coastal_language": false,
+    "hvhz_notes": "No HVHZ or coastal language",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true
+    },
+    "invoice_cross_reference": {
+      "invoice_number": "#573",
+      "draw_amount": 13650.53,
+      "draw_pct": 30,
+      "implied_contract_from_invoice": 45501.77,
+      "match": "exact (rounding: $45,501.75 proposal vs $45,501.77 implied — $0.02)"
+    }
+  },
+  {
+    "proposal_id": "person-2026-02-04",
+    "customer_name": "Doug Person",
+    "property_address": "302 Ridge Road, Jupiter, FL 33477",
+    "proposal_date": "2026-02-04",
+    "project_name": "Person Shingle Re-Roof",
+    "roof_system": "shingle",
+    "package_tier": "PERKINS PROTECTOR + PERKINS COASTAL",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "PERKINS PROTECTOR - Shingle Re-Roof — Roofnado Spyder PSU 40 mil ice/water barrier + Landmark Pro architectural shingles",
+        "system_package": "PERKINS PROTECTOR",
+        "squares_or_qty": "36 squares",
+        "unit_price_per_sq_or_unit": 684.44,
+        "line_total": 24640.00,
+        "is_optional": false,
+        "notes": "7-yr Perkins warranty. PREMIUM Landmark Pros upgrade available (not selected)."
+      },
+      {
+        "line_num": 2,
+        "description": "PERKINS COASTAL - Shingle Re-Roof — non-corrosive metals upgrade, drip edge/valley/vent upgrades",
+        "system_package": "PERKINS COASTAL",
+        "squares_or_qty": "36 squares",
+        "unit_price_per_sq_or_unit": 225.00,
+        "line_total": 8100.00,
+        "is_optional": false,
+        "notes": "12-yr Perkins warranty."
+      },
+      {
+        "line_num": 3,
+        "description": "New Seamless Aluminum Gutter and Downspout System — 2 sections 4\"x5\" aluminum downspout, 30 ft",
+        "system_package": null,
+        "squares_or_qty": "94 feet",
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 1092.08,
+        "is_optional": false,
+        "notes": "5-yr Perkins warranty."
+      },
+      {
+        "line_num": 4,
+        "description": "Valentine's Day Discount",
+        "system_package": null,
+        "squares_or_qty": null,
+        "unit_price_per_sq_or_unit": null,
+        "line_total": -1700.16,
+        "is_optional": false,
+        "notes": "Promotional seasonal discount."
+      },
+      {
+        "line_num": 5,
+        "description": "(OPTIONAL) Solatube Replacement (as needed) — HVHZ-rated Solatube skylights",
+        "system_package": null,
+        "squares_or_qty": null,
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 3280.79,
+        "is_optional": true,
+        "notes": "Not included in base contract total. Total replacement price if selected: $3,280.79 additional."
+      }
+    ],
+    "contract_total": 35412.71,
+    "payment_schedule": {
+      "variant": "standard-30-30-30-balance",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 30, "amount": 10623.81},
+        {"sequence": 2, "label": "Material delivery / mobilization", "pct": 30, "amount": 10623.81},
+        {"sequence": 3, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 10623.81},
+        {"sequence": 4, "label": "Substantial completion (net balance)", "pct": 10, "amount": 3541.28}
+      ],
+      "notes": "Standard 30/30/30/balance. Note: contract total $35,412.71 excludes the optional Solatube line."
+    },
+    "warranty_years": 12,
+    "warranty_years_detail": "7-yr base (PROTECTOR shingle) upgrades to 12-yr with COASTAL; 5-yr on gutters",
+    "expiry_days": 30,
+    "expiry_notes": "Standard 30-day expiry; 15-day metal note in T&C (not applicable — shingle job)",
+    "hvhz_coastal_language": true,
+    "hvhz_notes": "Shingle scope states 'All roof work done in accordance with HVHZ Florida Building Code.' Person is in Jupiter — check if within HVHZ boundary (typically Miami-Dade + Broward). May be template language applied broadly.",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true,
+      "hoa_acc_approval": "XN35540770 — The Ridge at The Bluffs HOA, approved pending inspection, 2026-02-04, scope: 'Gutters, Asphalt Roof and Skylights'"
+    }
+  },
+  {
+    "proposal_id": "meharg-2025-10-08",
+    "customer_name": "David Meharg",
+    "property_address": "404 South M St, Lake Worth Beach, FL 33460",
+    "proposal_date": "2025-10-08",
+    "project_name": "Mehang 3-Ply Flat Re-Roof w/ Stucco Repairs, Waterproofing and Optional Insulation",
+    "roof_system": "flat/BUR (3-ply Polyglass built-up)",
+    "package_tier": "Non-branded (no PERKINS PROTECTOR tier label — oldest/different template)",
+    "scope_lines": [
+      {
+        "line_num": 1,
+        "description": "Polyglass 3-Ply Built-Up Roofing System (Wood Deck) — Elastobase nailable base + Elastobase SAV interply + Polyglass SAP modified bitumen cap, tear off existing siliconed roof",
+        "system_package": null,
+        "squares_or_qty": "18 squares (inc. 500 SF up walls)",
+        "unit_price_per_sq_or_unit": 1103.89,
+        "line_total": 19870.00,
+        "is_optional": false,
+        "notes": "HVHZ FBC compliant. 7-yr Perkins warranty + 15-yr Polyglass material warranty (note: 15-yr here vs 20-yr on newer proposals). ABC Supply tapered insulation pre-bid (Sept 2025, $2,222.34) informed this pricing."
+      },
+      {
+        "line_num": 2,
+        "description": "Stucco Repairs & PB 70 Vertical Wall Waterproofing — re-stucco void at wall top, 2 coats PB 70 acrylic waterproofing on alamo structures",
+        "system_package": null,
+        "squares_or_qty": null,
+        "unit_price_per_sq_or_unit": null,
+        "line_total": 4000.00,
+        "is_optional": false,
+        "notes": "Non-roofing scope included in contract."
+      },
+      {
+        "line_num": 3,
+        "description": "(OPTIONAL) Insulation Package — flat/tapered ISO insulation system",
+        "system_package": null,
+        "squares_or_qty": "13 squares",
+        "unit_price_per_sq_or_unit": 682.31,
+        "line_total": 0.00,
+        "is_optional": true,
+        "notes": "Listed at $0 in contract total; optional upgrade price: $8,870.00. Not included in contract total of $26,370."
+      },
+      {
+        "line_num": 4,
+        "description": "Install Perimeter Hurricane Straps — remove eave decking, install roof-to-wall hurricane straps, re-install decking",
+        "system_package": null,
+        "squares_or_qty": "50 straps",
+        "unit_price_per_sq_or_unit": 50.00,
+        "line_total": 2500.00,
+        "is_optional": false,
+        "notes": "Structural safety work. Unit price $50/strap matches lumber schedule unit price."
+      }
+    ],
+    "contract_total": 26370.00,
+    "payment_schedule": {
+      "variant": "standard-30-30-30-balance",
+      "draws": [
+        {"sequence": 1, "label": "Acceptance / prior to permitting", "pct": 30, "amount": 7911.00},
+        {"sequence": 2, "label": "Material delivery / mobilization", "pct": 30, "amount": 7911.00},
+        {"sequence": 3, "label": "Completion of roof dry-in, prior to cap installation", "pct": 30, "amount": 7911.00},
+        {"sequence": 4, "label": "Substantial completion (net balance)", "pct": 10, "amount": 2637.00}
+      ],
+      "notes": "Standard 30/30/30/balance."
+    },
+    "warranty_years": 7,
+    "warranty_years_detail": "7-yr Perkins; 15-yr Polyglass material (older template — newer proposals show 20-yr)",
+    "expiry_days": 30,
+    "expiry_notes": "Standard 30-day expiry; 15-day metal note in T&C (not applicable — flat/BUR job)",
+    "hvhz_coastal_language": true,
+    "hvhz_notes": "Explicit: 'All roof work done in accordance with the high velocity hurricane zone section of the Florida Building Code.' Lake Worth Beach is in Palm Beach County — border of HVHZ. This is genuine HVHZ compliance language, not template boilerplate.",
+    "notable_exhibits": {
+      "tc_clause_count": 49,
+      "lumber_schedule": true,
+      "marketing_appendix": false,
+      "emergency_cancellation_clause": true,
+      "hurricane_strapping_clause": true,
+      "abc_supply_quote": "Quote RA2037661X1 — tapered insulation system pre-bid, $2,222.34, ABC Supply Stuart, 09/23/2025"
+    },
+    "invoice_cross_reference": {
+      "invoice_number": "#413",
+      "draw_amount": 7911.00,
+      "draw_pct": 30,
+      "implied_contract_from_invoice": 26370.00,
+      "match": "exact"
+    }
+  }
+]
