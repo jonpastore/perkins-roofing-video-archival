@@ -485,10 +485,13 @@ export function Quoting() {
     return roofTypes.find((r) => r.value === key)?.label ?? key.replace(/_/g, " ");
   }
 
-  function loadCustomers() {
+  function loadCustomers(searchTerm = "") {
     setCustomersLoading(true);
     setCustomersError(null);
-    apiFetch("/quoting/customers?limit=200")
+    const params = new URLSearchParams({ limit: "50" });
+    const q = searchTerm.trim();
+    if (q) params.set("search", q);
+    apiFetch(`/quoting/customers?${params.toString()}`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
         return r.json();
@@ -502,8 +505,9 @@ export function Quoting() {
   }
 
   useEffect(() => {
-    loadCustomers();
-  }, []);
+    const timer = window.setTimeout(() => loadCustomers(search), search.trim() ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   function loadCustomerDetail(id: number) {
     setCustomerDetailLoading(true);
@@ -1296,7 +1300,7 @@ export function Quoting() {
         />
       </Card>
 
-      {customersLoading && <Loading label="Loading customers…" />}
+      {customersLoading && <Loading label={search.trim() ? "Searching all customers…" : "Loading customers…"} />}
       {customersError && <ErrorMsg>Error: {customersError}</ErrorMsg>}
 
       {!customersLoading && !customersError && search.trim() && filteredCustomers.length === 0 && (

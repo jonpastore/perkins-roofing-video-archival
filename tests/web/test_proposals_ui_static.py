@@ -44,3 +44,11 @@ def test_proposal_builder_exposes_embedded_mode_callbacks():
     assert re.search(r"export function ProposalBuilder\(\{[^}]*embedded = false", source, re.DOTALL)
     assert "onCreated?.(res)" in source
     assert "{!embedded && <PageTitle>New Proposal</PageTitle>}" in source
+
+
+def test_proposal_edit_preserves_native_tier_instead_of_always_legacy():
+    source = PROPOSALS.read_text()
+
+    assert "const selectedTier = proposal.selected_tier && tiers[proposal.selected_tier]" in source
+    assert "const primaryTierKey = currentLegacy.total != null" in source
+    assert "[primaryTierKey]" in source

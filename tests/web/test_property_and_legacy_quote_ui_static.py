@@ -53,3 +53,12 @@ def test_estimates_show_non_blocking_warnings():
     assert "warnings?: string[]" in source
     assert "Non-blocking estimate warning" in source
     assert "quoteResult.warnings.map" in source
+
+
+def test_estimates_customer_search_uses_server_side_search():
+    source = Path("web/src/pages/Quoting.tsx").read_text()
+
+    assert 'new URLSearchParams({ limit: "50" })' in source
+    assert 'params.set("search", q)' in source
+    assert 'apiFetch(`/quoting/customers?${params.toString()}`)' in source
+    assert "Searching all customers" in source

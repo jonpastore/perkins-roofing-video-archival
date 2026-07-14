@@ -300,6 +300,32 @@ def _proposal_payment_draws(snap: dict, total: float) -> list[dict]:
     ]
 
 
+def _proposal_amount(row: Proposal) -> float:
+    """Return the display/contract amount for a proposal row.
+
+    Native estimate-created proposals store totals under tiers.good/better/best
+    and Knowify imports store either top-level total or tiers.legacy.total. The
+    selected_tier wins after e-sign; otherwise show top-level/legacy/good in
+    that order so draft proposals created from estimates do not display as $0.
+    """
+    snap = row.quote_snapshot or {}
+    tiers = snap.get("tiers") or {}
+    selected_tier = row.selected_tier if isinstance(row.selected_tier, str) else None
+    candidates = [
+        (tiers.get(selected_tier) or {}).get("total") if selected_tier else None,
+        snap.get("total"),
+        (tiers.get("legacy") or {}).get("total"),
+        (tiers.get("good") or {}).get("total"),
+        (tiers.get("better") or {}).get("total"),
+        (tiers.get("best") or {}).get("total"),
+    ]
+    for value in candidates:
+        amount = _fmt_money(value)
+        if amount:
+            return amount
+    return 0.0
+
+
 def _split_gs_uri(uri: str) -> tuple[str, str]:
     if not uri.startswith("gs://"):
         raise ValueError("not a gs:// URI")
@@ -896,10 +922,7 @@ def list_proposals(
         d = _proposal_row(row)
         d["customer_name"] = cname
         d["property_address"] = f"{street}, {city} {state}" if street else None
-        snap = row.quote_snapshot or {}
-        tiers = snap.get("tiers") or {}
-        legacy = tiers.get("legacy") or {}
-        d["amount"] = snap.get("total") or legacy.get("total") or 0
+        d["amount"] = _proposal_amount(row)
         out.append(d)
     return {"items": out, "total": total, "status_counts": status_counts}
 

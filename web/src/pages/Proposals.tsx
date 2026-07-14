@@ -340,8 +340,20 @@ export function Proposals() {
     const snap = (proposal.quote_snapshot ?? {}) as Record<string, unknown>;
     const tiers = (snap.tiers ?? {}) as Record<string, { total?: number }>;
     const legacy = tiers.legacy ?? {};
+    const selectedTier = proposal.selected_tier && tiers[proposal.selected_tier]
+      ? proposal.selected_tier
+      : tiers.legacy
+        ? "legacy"
+        : tiers.good
+          ? "good"
+          : tiers.better
+            ? "better"
+            : tiers.best
+              ? "best"
+              : "";
+    const selectedTierTotal = selectedTier ? tiers[selectedTier]?.total : undefined;
     const dp = (snap.deposit_policy ?? {}) as { amount?: number | string; value?: number | string };
-    const total = Number(snap.total ?? legacy.total ?? proposal.amount ?? 0);
+    const total = Number(snap.total ?? selectedTierTotal ?? legacy.total ?? proposal.amount ?? 0);
     setEditingProposal(proposal);
     setEditError(null);
     setEditForm({
@@ -365,12 +377,26 @@ export function Proposals() {
       const squares = editForm.squares === "" ? baseSnap.num_squares : Number(editForm.squares);
       const existingTiers = (baseSnap.tiers ?? {}) as Record<string, unknown>;
       const currentLegacy = (existingTiers.legacy ?? {}) as Record<string, unknown>;
+      const primaryTierKey = currentLegacy.total != null
+        ? "legacy"
+        : editingProposal.selected_tier && existingTiers[editingProposal.selected_tier]
+          ? editingProposal.selected_tier
+          : existingTiers.good
+            ? "good"
+            : existingTiers.better
+              ? "better"
+              : existingTiers.best
+                ? "best"
+                : "good";
+      const currentPrimaryTier = (existingTiers[primaryTierKey] ?? {}) as Record<string, unknown>;
       const tiers = {
         ...existingTiers,
-        legacy: {
-          ...currentLegacy,
-          label: "Knowify Quote",
-          description: editForm.title || editingProposal.title,
+        [primaryTierKey]: {
+          ...currentPrimaryTier,
+          label: (currentPrimaryTier.label as string | undefined)
+            ?? (primaryTierKey === "legacy" ? "Knowify Quote" : primaryTierKey),
+          description: (currentPrimaryTier.description as string | undefined)
+            ?? (editForm.title || editingProposal.title),
           total,
         },
       };

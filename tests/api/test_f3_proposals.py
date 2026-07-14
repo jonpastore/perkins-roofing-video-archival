@@ -768,6 +768,7 @@ class TestProposalCRUD:
         assert draft["id"] in ids
         row = next(p for p in body["items"] if p["id"] == draft["id"])
         assert "amount" in row
+        assert row["amount"] == 18400.0
 
     def test_get_proposal(self, admin_client):
         c, cust, prop, draft = _scaffold(admin_client)
