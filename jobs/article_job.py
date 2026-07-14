@@ -380,13 +380,12 @@ def _chat_article(llm, prompt: str) -> dict:
     return parsed if isinstance(parsed, dict) and parsed.get("content") else {}
 
 
-def _expand_prompt(base_prompt: str, draft: str, words: int, target_words: int) -> str:
-    from core.seo import RM_MIN_WORDS  # noqa: PLC0415
+def _expand_prompt(base_prompt: str, draft: str, words: int, target_words: int, goal: int) -> str:
     return (
         f"{base_prompt}\n\n"
         f"═══ EXPAND THIS DRAFT ═══\n"
         f"Your previous draft is only {words} words — far short of the {target_words}-word "
-        f"target, and below the {RM_MIN_WORDS}-word minimum this article must clear.\n"
+        f"target. It must reach at least {goal} words.\n"
         f"Rewrite it LONGER. Keep every existing section, heading, YouTube URL and ?t= "
         f"timestamp EXACTLY as written — those are video-grounding citations and must survive "
         f"verbatim. Add depth under each heading: worked examples, specific costs, materials, "
@@ -396,16 +395,35 @@ def _expand_prompt(base_prompt: str, draft: str, words: int, target_words: int) 
     )
 
 
+# Expansion rounds before shipping whatever we have. Each round is one LLM call, so this
+# trades spend for length — enough to walk a ~400-word first draft up to an 1800-word target,
+# bounded so a model that plateaus can't loop forever.
+_EXPAND_ROUNDS = 4
+
+
+def _word_goal(target_words: int) -> int:
+    """Word count an article must reach: the same lower bound the prompt already asks for
+    (see core.article_prompt's lo = target_words * 0.9), floored at Rank Math's minimum so a
+    small target can never drag an article under the green line."""
+    from core.seo import RM_MIN_WORDS  # noqa: PLC0415
+    return max(RM_MIN_WORDS, round(target_words * 0.9))
+
+
 def _generate_article_json(llm, prompt: str, keyword: str, target_words: int) -> dict:
-    """Generate an article dict: retry unparseable JSON, then expand until it clears the
-    Rank Math word floor.
+    """Generate an article dict: retry unparseable JSON, then expand until it reaches the
+    planned word target.
 
     The expansion pass exists because Gemini reliably under-delivers on a one-shot word
     target (~400 words against an 1800-word ask) and nothing downstream re-asked — which is
-    how 350-450-word articles reached WordPress while scoring green. Bounded at 2 rounds;
-    keeps the longest draft seen and warns rather than blocking if still short.
+    how 350-450-word articles reached WordPress while scoring green.
+
+    Aims for the plan's target (via _word_goal), not merely Rank Math's floor — clearing 600
+    would score green while still shipping a third of the commissioned article. Bounded at
+    _EXPAND_ROUNDS; keeps the longest draft seen and warns rather than blocking.
     """
     from core.seo import RM_MIN_WORDS, _word_count  # noqa: PLC0415
+
+    goal = _word_goal(target_words)
 
     article: dict = {}
     for _ in range(3):
@@ -415,20 +433,23 @@ def _generate_article_json(llm, prompt: str, keyword: str, target_words: int) ->
     if not article:
         raise RuntimeError(f"LLM returned unparseable JSON for keyword '{keyword}'")
 
-    for _ in range(2):
+    for _ in range(_EXPAND_ROUNDS):
         words = _word_count(article.get("content") or "")
-        if words >= RM_MIN_WORDS:
+        if words >= goal:
             return article
         expanded = _chat_article(
-            llm, _expand_prompt(prompt, article.get("content") or "", words, target_words))
+            llm, _expand_prompt(prompt, article.get("content") or "", words, target_words, goal))
         if _word_count(expanded.get("content") or "") <= words:
             break  # no progress — keep the longer draft rather than regress
         article = expanded
 
     final = _word_count(article.get("content") or "")
     if final < RM_MIN_WORDS:
-        logger.warning("article for %r is %d words, still under the %d-word floor after expansion",
-                       keyword, final, RM_MIN_WORDS)
+        logger.warning("article for %r is %d words — under Rank Math's %d-word floor after %d "
+                       "expansion rounds", keyword, final, RM_MIN_WORDS, _EXPAND_ROUNDS)
+    elif final < goal:
+        logger.info("article for %r is %d words, short of the %d-word goal (target %d) after %d "
+                    "expansion rounds", keyword, final, goal, target_words, _EXPAND_ROUNDS)
     return article
 
 
