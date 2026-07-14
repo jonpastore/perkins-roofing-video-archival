@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -30,6 +32,33 @@ def _auth() -> tuple[str, str]:
 
 def _base_url() -> str:
     return os.environ["WP_URL"].rstrip("/")
+
+
+@lru_cache(maxsize=8)
+def _rest_base_url(configured_base: str) -> str:
+    """Return the canonical base host for WordPress REST writes.
+
+    Some GoDaddy staging URLs (for example jhk.14f.myftpupload.com) redirect to a
+    different myftpupload.com host. requests intentionally strips Basic Auth on
+    cross-host redirects, which makes WordPress Application Password writes fail
+    with 401 even though the credential is valid. Resolve the REST root once, then
+    send authenticated requests directly to the final host.
+    """
+    base = configured_base.rstrip("/")
+    try:
+        resp = requests.get(f"{base}/wp-json/", timeout=10, allow_redirects=True)
+        resp.raise_for_status()
+    except requests.RequestException:
+        return base
+    final = resp.url.rstrip("/")
+    parsed = urlparse(final)
+    if not parsed.scheme or not parsed.netloc:
+        return base
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _wp_api_url(path: str) -> str:
+    return urljoin(f"{_rest_base_url(_base_url())}/", path.lstrip("/"))
 
 
 def _author_id() -> int:
@@ -66,7 +95,7 @@ def publish(
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
-    url = f"{_base_url()}/wp-json/wp/v2/posts"
+    url = _wp_api_url("/wp-json/wp/v2/posts")
     payload = {
         "title": title,
         "content": html,
@@ -102,7 +131,7 @@ def update(
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
-    url = f"{_base_url()}/wp-json/wp/v2/posts/{post_id}"
+    url = _wp_api_url(f"/wp-json/wp/v2/posts/{post_id}")
     payload = {
         "title": title,
         "content": html,
@@ -127,7 +156,7 @@ def update_status(post_id: int, status: str) -> None:
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
-    url = f"{_base_url()}/wp-json/wp/v2/posts/{post_id}"
+    url = _wp_api_url(f"/wp-json/wp/v2/posts/{post_id}")
     resp = requests.post(url, json={"status": status}, auth=_auth(), timeout=30)
     resp.raise_for_status()
 
@@ -140,7 +169,7 @@ def find_page_by_title(title: str) -> int | None:
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
-    url = f"{_base_url()}/wp-json/wp/v2/pages"
+    url = _wp_api_url("/wp-json/wp/v2/pages")
     params = {"search": title, "per_page": 20, "status": "any"}
     resp = requests.get(url, params=params, auth=_auth(), timeout=30)
     resp.raise_for_status()
@@ -178,7 +207,7 @@ def create_page(
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
-    url = f"{_base_url()}/wp-json/wp/v2/pages"
+    url = _wp_api_url("/wp-json/wp/v2/pages")
     payload = {
         "title": title,
         "content": html,
@@ -214,7 +243,7 @@ def update_page(
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
-    url = f"{_base_url()}/wp-json/wp/v2/pages/{page_id}"
+    url = _wp_api_url(f"/wp-json/wp/v2/pages/{page_id}")
     payload = {
         "title": title,
         "content": html,
@@ -240,6 +269,6 @@ def trash(post_id: int) -> None:
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
-    url = f"{_base_url()}/wp-json/wp/v2/posts/{post_id}"
+    url = _wp_api_url(f"/wp-json/wp/v2/posts/{post_id}")
     resp = requests.delete(url, auth=_auth(), timeout=30)
     resp.raise_for_status()
