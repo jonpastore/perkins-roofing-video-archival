@@ -412,7 +412,7 @@ def _rm_good_slug(kw: str = "roof repair miami") -> str:
 class TestRankMathChecksAllPass:
     """A well-formed article should pass all 15 Rank Math checks."""
 
-    def test_all_15_checks_pass(self):
+    def test_all_16_checks_pass(self):
         kw = "roof repair miami"
         checks = rank_math_checks(
             title=_rm_good_title(kw),
@@ -421,16 +421,16 @@ class TestRankMathChecksAllPass:
             content_md=_rm_good_body(kw),
             focus_keyword=kw,
         )
-        assert len(checks) == 15
+        assert len(checks) == 16
         failures = [c["key"] for c in checks if not c["pass"]]
         assert failures == [], f"Unexpected failures: {failures}"
 
-    def test_returns_15_check_dicts(self):
+    def test_returns_16_check_dicts(self):
         checks = rank_math_checks(
             _rm_good_title(), _rm_good_meta(), _rm_good_slug(),
             _rm_good_body(), "roof repair miami",
         )
-        assert len(checks) == 15
+        assert len(checks) == 16
         for c in checks:
             assert "key" in c
             assert "label" in c
@@ -744,7 +744,29 @@ class TestRankMathEmptyKeyword:
         checks = rank_math_checks(
             _rm_good_title(), _rm_good_meta(), _rm_good_slug(), _rm_good_body(), None,
         )
-        assert len(checks) == 15
+        assert len(checks) == 16
+
+
+class TestRankMathContentLength:
+    """The 350-450-word articles that reached WordPress scored green because no
+    content-length check existed. Guard the floor in both directions."""
+
+    def test_short_article_fails_content_length(self):
+        kw = "roof repair miami"
+        short = f"<h2>{kw}</h2><p>{'word ' * 300}</p>"
+        checks = rank_math_checks(
+            _rm_good_title(kw), _rm_good_meta(kw), _rm_good_slug(kw), short, kw)
+        cl = next(c for c in checks if c["key"] == "rm_content_length")
+        assert cl["pass"] is False
+        assert "303 words" in cl["detail"]  # 300 body words + the 3-word <h2>
+
+
+    def test_content_length_is_a_hard_failure(self):
+        from core.qa_gate import seo_hard_failures
+        kw = "roof repair miami"
+        short = f"<h2>{kw}</h2><p>{'word ' * 300}</p>"
+        assert "rm_content_length" in seo_hard_failures(
+            _rm_good_title(kw), _rm_good_meta(kw), _rm_good_slug(kw), short, kw)
 
 
 class TestRankMathHardFailuresQaGate:

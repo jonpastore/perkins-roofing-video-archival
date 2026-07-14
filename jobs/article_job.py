@@ -370,6 +370,68 @@ ARTICLE_SCHEMA = {
 }
 
 
+def _chat_article(llm, prompt: str) -> dict:
+    """One schema-controlled article call → parsed dict, or {} when unparseable."""
+    try:
+        raw = llm.chat(prompt, want_json=True, response_schema=ARTICLE_SCHEMA)
+    except TypeError:  # llm without response_schema support (e.g. a test fake)
+        raw = llm.chat(prompt, want_json=True)
+    parsed = parse_model_json(raw)
+    return parsed if isinstance(parsed, dict) and parsed.get("content") else {}
+
+
+def _expand_prompt(base_prompt: str, draft: str, words: int, target_words: int) -> str:
+    from core.seo import RM_MIN_WORDS  # noqa: PLC0415
+    return (
+        f"{base_prompt}\n\n"
+        f"═══ EXPAND THIS DRAFT ═══\n"
+        f"Your previous draft is only {words} words — far short of the {target_words}-word "
+        f"target, and below the {RM_MIN_WORDS}-word minimum this article must clear.\n"
+        f"Rewrite it LONGER. Keep every existing section, heading, YouTube URL and ?t= "
+        f"timestamp EXACTLY as written — those are video-grounding citations and must survive "
+        f"verbatim. Add depth under each heading: worked examples, specific costs, materials, "
+        f"edge cases, local detail. Do not pad with filler and do not repeat yourself.\n"
+        f"Return the SAME JSON shape.\n\n"
+        f"PREVIOUS DRAFT:\n{draft}"
+    )
+
+
+def _generate_article_json(llm, prompt: str, keyword: str, target_words: int) -> dict:
+    """Generate an article dict: retry unparseable JSON, then expand until it clears the
+    Rank Math word floor.
+
+    The expansion pass exists because Gemini reliably under-delivers on a one-shot word
+    target (~400 words against an 1800-word ask) and nothing downstream re-asked — which is
+    how 350-450-word articles reached WordPress while scoring green. Bounded at 2 rounds;
+    keeps the longest draft seen and warns rather than blocking if still short.
+    """
+    from core.seo import RM_MIN_WORDS, _word_count  # noqa: PLC0415
+
+    article: dict = {}
+    for _ in range(3):
+        article = _chat_article(llm, prompt)
+        if article:
+            break
+    if not article:
+        raise RuntimeError(f"LLM returned unparseable JSON for keyword '{keyword}'")
+
+    for _ in range(2):
+        words = _word_count(article.get("content") or "")
+        if words >= RM_MIN_WORDS:
+            return article
+        expanded = _chat_article(
+            llm, _expand_prompt(prompt, article.get("content") or "", words, target_words))
+        if _word_count(expanded.get("content") or "") <= words:
+            break  # no progress — keep the longer draft rather than regress
+        article = expanded
+
+    final = _word_count(article.get("content") or "")
+    if final < RM_MIN_WORDS:
+        logger.warning("article for %r is %d words, still under the %d-word floor after expansion",
+                       keyword, final, RM_MIN_WORDS)
+    return article
+
+
 def generate_article_content(
     keyword: str,
     ctx: dict,
@@ -434,21 +496,10 @@ def generate_article_content(
             lvl = logger.critical if isinstance(exc, RuntimeError) else logger.warning
             lvl("video grounding failed for %r, continuing: %s", keyword, exc)
 
-    # ── Call LLM (retry up to 3×) ─────────────────────────────────────────────
+    # ── Call LLM (retry on unparseable JSON, then expand to the word floor) ───
     prompt = f"{sys_prompt}\n\n{user_prompt}"
-    article: dict = {}
-    for _ in range(3):
-        try:
-            raw = llm.chat(prompt, want_json=True, response_schema=ARTICLE_SCHEMA)
-        except TypeError:
-            raw = llm.chat(prompt, want_json=True)
-        parsed = parse_model_json(raw)
-        if isinstance(parsed, dict) and parsed.get("content"):
-            article = parsed
-            break
-
-    if not article.get("content"):
-        raise RuntimeError(f"LLM returned unparseable JSON for keyword '{keyword}'")
+    article = _generate_article_json(
+        llm, prompt, keyword, int(enriched.get("target_words", 1800)))
 
     faq = [{"q": it["q"], "a": it.get("a", "")}
            for it in (article.get("faq") or [])
@@ -565,23 +616,12 @@ def generate_article(
             lvl = logger.critical if isinstance(exc, RuntimeError) else logger.warning
             lvl("video grounding failed, continuing without it: %s", exc)
 
-    # ── 3. Call LLM (schema-controlled → guaranteed-valid JSON; retry on any fluke) ──────
+    # ── 3. Call LLM (schema-controlled JSON; retry on fluke, expand to the word floor) ───
     prompt = f"{sys_prompt}\n\n{user_prompt}"
-    article: dict = {}
-    for _ in range(3):
-        try:
-            raw = llm.chat(prompt, want_json=True, response_schema=ARTICLE_SCHEMA)
-        except TypeError:  # llm without response_schema support (e.g. a test fake)
-            raw = llm.chat(prompt, want_json=True)
-        parsed = parse_model_json(raw)
-        if isinstance(parsed, dict) and parsed.get("content"):
-            article = parsed
-            break
+    article = _generate_article_json(
+        llm, prompt, keyword, int(enriched.get("target_words", 1800)))
 
     # ── 4. Validate ───────────────────────────────────────────────────────────
-    if not article.get("content"):
-        raise RuntimeError(f"LLM returned unparseable JSON for keyword '{keyword}'")
-
     title = article.get("title") or keyword
     content = markdownish_to_html(article.get("content") or "")
     # Embed a real WordPress video player for the top source clip (bare URL on its own line →

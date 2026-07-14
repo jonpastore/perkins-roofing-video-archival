@@ -99,6 +99,7 @@ _RM_HARD_CHECKS = frozenset({
     "rm_kw_in_body",
     "rm_kw_in_heading",
     "rm_kw_density",
+    "rm_content_length",
     "rm_slug_length",
     "rm_internal_link",
     "rm_external_link",

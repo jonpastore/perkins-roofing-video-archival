@@ -17,7 +17,7 @@ Checks (11 total, 100 pts):
   video           10  Has embedded video link
   wordcount       15  Word count > 300
 
-Rank Math checks (15 total) — see rank_math_checks():
+Rank Math checks (16 total) — see rank_math_checks():
   rm_kw_in_title        focus keyword in SEO title
   rm_kw_in_meta         focus keyword in meta description
   rm_kw_in_slug         focus keyword in URL slug
@@ -26,6 +26,7 @@ Rank Math checks (15 total) — see rank_math_checks():
   rm_kw_in_heading      focus keyword in at least one H2/H3/H4
   rm_kw_in_img_alt      focus keyword in at least one img alt attribute
   rm_kw_density         keyword density 0.5%–1.5%
+  rm_content_length     content ≥ 600 words (Rank Math's floor)
   rm_slug_length        URL slug < 75 chars
   rm_internal_link      at least one internal (relative) link
   rm_external_link      at least one external DoFollow link
@@ -83,6 +84,12 @@ _NEGATIVE_WORDS = {
     "never", "stop", "fail", "risk", "problem", "costly", "harmful",
     "shocking", "beware", "critical", "urgent", "hidden", "scam",
 }
+# Rank Math's content-length threshold — under this it reports "Content is X words long.
+# Consider using at least 600 words." Generation targets far more (see core/article_plan
+# target_words), but this is the floor an article must clear to score green. Public because
+# jobs/article_job expands drafts up to it.
+RM_MIN_WORDS = 600
+
 _POWER_WORDS = {
     "secret", "proven", "guaranteed", "instantly", "exclusive", "ultimate",
     "powerful", "shocking", "remarkable", "incredible", "essential", "definitive",
@@ -208,7 +215,7 @@ def rank_math_checks(
     content_md: str,
     focus_keyword: str,
 ) -> list[dict]:
-    """Check an article against all 15 Rank Math SEO requirements.
+    """Check an article against all 16 Rank Math SEO requirements.
 
     Pure function — no I/O. Returns a list of check dicts, each with:
         key     (str)   — machine-readable identifier
@@ -233,6 +240,7 @@ def rank_math_checks(
     plain_lower = plain.lower()
     intro_chars = max(200, len(plain) // 10)
     intro_text = plain_lower[:intro_chars]
+    content_words = _word_count(content_md)
 
     # ── Basic SEO ──────────────────────────────────────────────────────────────
     # 1. Keyword in SEO title
@@ -311,6 +319,9 @@ def rank_math_checks(
          "pass": kw_in_img_alt, "detail": f"{len(img_alts)} img alt(s) found"},
         {"key": "rm_kw_density", "label": "Keyword density 0.5%–1.5%",
          "pass": density_ok, "detail": density_pct},
+        {"key": "rm_content_length", "label": f"Content length ≥ {RM_MIN_WORDS} words",
+         "pass": content_words >= RM_MIN_WORDS,
+         "detail": f"{content_words} words"},
         {"key": "rm_slug_length", "label": "URL slug < 75 chars",
          "pass": slug_len_ok, "detail": f"{len(slug)} chars"},
         {"key": "rm_internal_link", "label": "At least one internal (relative) link",
