@@ -137,8 +137,16 @@ resource "cloudflare_record" "txt_spf" {
   name    = "perkinsroofing.net"
   type    = "TXT"
   # Matches the live record (imported 2026-07-10). servers.mcsv.net = Mailchimp
-  # (active: k2/k3 DKIM CNAMEs exist); secureserver.net = GoDaddy legacy — candidate
-  # for removal once confirmed nothing sends via GoDaddy (old site contact form?).
+  # (active: k2/k3 DKIM CNAMEs exist).
+  #
+  # secureserver.net = GoDaddy. KEEP IT. 2026-07-14: the "old site contact form?"
+  # guess is real — perkinsroofing.net / www still resolve to 160.153.0.31, which
+  # is GoDaddy shared hosting. Only `app` is ours. Dropping this include risks
+  # silently breaking mail the marketing site sends.
+  # 14 DMARC aggregate reports (199 msgs, Jul 10-14) show ZERO GoDaddy-range
+  # senders — but that is 4 days of a low-volume domain, not proof: a contact
+  # form can trivially send nothing for 4 days. Remove only after the site is off
+  # GoDaddy, or after a long report window plus a direct check of the form.
   content = "v=spf1 include:_spf.google.com include:servers.mcsv.net include:secureserver.net ~all"
   ttl     = 3600
   proxied = false
@@ -161,15 +169,58 @@ resource "cloudflare_record" "txt_dkim" {
 # DMARC — p=quarantine since 2026-07-10 (Google DKIM record live + "Start
 # authentication" clicked by Jon). rua reports to dmarc@perkinsroofing.net
 # (create the group in Google Admin if it doesn't exist yet).
+#
+# ruf (forensic) added 2026-07-14. No `fo` tag = fo=0 = report only when NO
+# aligned mechanism passes. Do NOT set fo=1 here: Mailchimp mail is aligned on
+# DKIM but always SPF-fails on its mcdlv.net envelope, so fo=1 would emit a
+# forensic copy of every campaign send (noise + recipient PII). fo=0 reports
+# real DMARC failures only — i.e. the spoofing we actually want to see.
+#
+# rua/ruf are same-domain (perkinsroofing.net), so RFC 7489 §7.1 external
+# destination verification does not apply — no _report._dmarc record needed.
 resource "cloudflare_record" "txt_dmarc" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "_dmarc"
   type    = "TXT"
-  content = "v=DMARC1; p=quarantine; rua=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
+  content = "v=DMARC1; p=quarantine; rua=mailto:dmarc@perkinsroofing.net; ruf=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
   ttl     = 3600
   proxied = false
 }
+
+# TLS-RPT — receivers report inbound SMTP TLS negotiation failures to dmarc@.
+# Reporting only: no enforcement, so this cannot affect mail delivery. Stands
+# alone (does not require MTA-STS); it is the visibility half of the pair.
+# MTA-STS itself is NOT provisioned — see the MTA-STS note below.
+resource "cloudflare_record" "txt_tlsrpt" {
+  count   = var.cloudflare_zone_id != "" ? 1 : 0
+  zone_id = var.cloudflare_zone_id
+  name    = "_smtp._tls"
+  type    = "TXT"
+  content = "v=TLSRPTv1; rua=mailto:dmarc@perkinsroofing.net"
+  ttl     = 3600
+  proxied = false
+}
+
+# ---------------------------------------------------------------------------
+# MTA-STS — DEFERRED, blocked on two things only Jon can provision:
+#
+#   1. var.cloudflare_account_id — not declared anywhere yet (the zone is
+#      referenced by zone_id; Workers are an ACCOUNT-scoped resource).
+#   2. An API token carrying Account -> Workers Scripts:Edit. The current token
+#      (see var.cloudflare_api_token) is Zone:Edit + DNS:Edit + Firewall:Edit,
+#      which cannot deploy a Worker.
+#
+# Why a Worker at all: RFC 8461 §3.3 requires the policy be fetched from
+# https://mta-sts.perkinsroofing.net/.well-known/mta-sts.txt over valid TLS and
+# forbids following 3xx redirects — so a CF Redirect Rule cannot serve it. The
+# origin site is GoDaddy shared hosting (160.153.0.31) and is not ours to use.
+#
+# Worth questioning before building it: in `mode: testing` MTA-STS enforces
+# nothing and only produces reports — which txt_tlsrpt above already delivers.
+# The payoff arrives at `mode: enforce`, which is also where misconfiguration
+# starts bouncing inbound mail. Decide deliberately; don't build it by reflex.
+# ---------------------------------------------------------------------------
 
 # app.perkinsroofing.net — proxied (orange cloud); points to Firebase Hosting.
 # CF Transform Rule (§ below) splits /api/* traffic to Cloud Run at the edge.
