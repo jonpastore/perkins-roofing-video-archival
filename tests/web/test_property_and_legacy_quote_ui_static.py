@@ -73,3 +73,5 @@ def test_estimates_expose_pricing_drivers_discounts_and_estimate_linkage():
     assert "Discounts affect total and margin" in source
     assert "estimate_id: quoteResult.estimate_id" in source
     assert "recommended_tier: recommendedTier" in source
+    assert "tierTotalsForQuote" in source
+    assert "Bridge tier math to Perkins package adders" in source

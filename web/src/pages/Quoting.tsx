@@ -553,6 +553,38 @@ export function Quoting() {
     return roofTypes.find((r) => r.value === key)?.label ?? key.replace(/_/g, " ");
   }
 
+  function tierTotalsForQuote(q: QuoteResult): { good: number; better: number; best: number } {
+    const sq = q.num_squares || 0;
+    // Bridge tier math to Perkins package adders instead of arbitrary 15/30%.
+    // The proposal engine can still override line prices exactly for migrated/golden proposals.
+    if (q.roof_type === "13_tile" || q.roof_type === "barrel_tile") {
+      return {
+        good: q.project_total,
+        better: Math.round(q.project_total + 47.5 * sq),       // COASTAL tile metals upgrade
+        best: Math.round(q.project_total + 365 * sq),          // PREMIUM_MEDITERRANEAN add
+      };
+    }
+    if (q.roof_type === "standing_seam_metal") {
+      return {
+        good: q.project_total,
+        better: Math.round(q.project_total + 430 * sq),        // COASTAL aluminum Kynar
+        best: Math.round(q.project_total + 545 * sq),          // COASTAL + preferred/premium allowance
+      };
+    }
+    if (q.roof_type === "3tab_shingle" || q.roof_type === "dimensional_shingle") {
+      return {
+        good: q.project_total,
+        better: Math.round(q.project_total + 215 * sq),        // COASTAL non-corrosive metals
+        best: Math.round(q.project_total + 380 * sq),          // COASTAL + premium shingle allowance
+      };
+    }
+    return {
+      good: q.project_total,
+      better: Math.round(q.project_total + 175 * sq),          // flat preferred
+      best: Math.round(q.project_total + 315 * sq),            // flat premium
+    };
+  }
+
   function loadCustomers(searchTerm = "") {
     setCustomersLoading(true);
     setCustomersError(null);
@@ -871,9 +903,7 @@ export function Quoting() {
     setCreatingProposal(true);
     setProposalError(null);
 
-    const goodTotal = quoteResult.project_total;
-    const betterTotal = Math.round(quoteResult.project_total * 1.15);
-    const bestTotal = Math.round(quoteResult.project_total * 1.30);
+    const { good: goodTotal, better: betterTotal, best: bestTotal } = tierTotalsForQuote(quoteResult);
     const selectedTotal = recommendedTier === "best" ? bestTotal : recommendedTier === "better" ? betterTotal : goodTotal;
     const snapshot = {
       estimate_id: quoteResult.estimate_id ?? null,
@@ -1370,9 +1400,9 @@ export function Quoting() {
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <TierCard label="Good" value={usd(quoteResult.project_total)} recommended={recommendedTier === "good"} />
-                    <TierCard label="Better" value={usd(Math.round(quoteResult.project_total * 1.15))} recommended={recommendedTier === "better"} />
-                    <TierCard label="Best" value={usd(Math.round(quoteResult.project_total * 1.30))} recommended={recommendedTier === "best"} />
+                    <TierCard label="Good" value={usd(tierTotalsForQuote(quoteResult).good)} recommended={recommendedTier === "good"} />
+                    <TierCard label="Better" value={usd(tierTotalsForQuote(quoteResult).better)} recommended={recommendedTier === "better"} />
+                    <TierCard label="Best" value={usd(tierTotalsForQuote(quoteResult).best)} recommended={recommendedTier === "best"} />
                   </div>
                   <div style={{ marginTop: 8, fontSize: 12, color: BRAND.sub }}>
                     Estimate #{quoteResult.estimate_id ?? "—"} · recommended/default tier: <strong>{recommendedTier.toUpperCase()}</strong>
