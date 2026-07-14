@@ -250,7 +250,7 @@ def compute_deposit(snapshot: dict[str, Any]) -> dict[str, Any]:
 # Selection capture (TRD §1.5 — captured at accept time)
 # ---------------------------------------------------------------------------
 
-_VALID_TIERS = frozenset({"good", "better", "best"})
+_DEFAULT_VALID_TIERS = frozenset({"good", "better", "best"})
 
 
 def capture_selection(
@@ -261,9 +261,12 @@ def capture_selection(
     """Validate and return the selection fields to apply to a proposal on acceptance.
 
     *proposal* must have status in ('sent', 'viewed').
-    *selected_tier* must be one of 'good', 'better', 'best'.
-    *selected_options* is an optional list of optional-item dicts
-      (each with at least 'id' and 'qty').
+    *selected_tier* must exist in proposal.quote_snapshot.tiers when a snapshot
+    is present; legacy imported proposals may use a single "legacy" tier. For
+    older tests/callers without a snapshot, the historical good/better/best set
+    is used.
+    *selected_options* is an optional list of optional-item dicts (each with at
+    least 'id' and 'qty') or a list of option id strings from the public SPA.
 
     Returns a dict with: {selected_tier, selected_options} to be merged into
     the proposal row at accept time.
@@ -273,17 +276,37 @@ def capture_selection(
             f"Cannot capture selection on a proposal with status '{proposal.get('status')}'."
         )
 
-    if selected_tier not in _VALID_TIERS:
+    snapshot = proposal.get("quote_snapshot") or {}
+    tiers = snapshot.get("tiers") if isinstance(snapshot, dict) else None
+    valid_tiers = (
+        frozenset(str(k) for k in tiers.keys())
+        if isinstance(tiers, dict) and tiers
+        else _DEFAULT_VALID_TIERS
+    )
+    if selected_tier not in valid_tiers:
         raise ValueError(
-            f"'{selected_tier}' is not a valid tier. Must be one of: {sorted(_VALID_TIERS)}"
+            f"'{selected_tier}' is not a valid tier. Must be one of: {sorted(valid_tiers)}"
         )
 
-    opts = selected_options if selected_options is not None else []
-    for i, item in enumerate(opts):
+    raw_opts = selected_options if selected_options is not None else []
+    snapshot_options = snapshot.get("optional_items") if isinstance(snapshot, dict) else None
+    qty_by_id = {
+        str(item.get("id")): item.get("qty", 1)
+        for item in (snapshot_options or [])
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    opts: list[dict[str, Any]] = []
+    for i, item in enumerate(raw_opts):
+        if isinstance(item, str):
+            opts.append({"id": item, "qty": qty_by_id.get(item, 1)})
+            continue
+        if not isinstance(item, dict):
+            raise ValueError(f"selected_options[{i}] must be an option id string or object.")
         if "id" not in item:
             raise ValueError(f"selected_options[{i}] is missing required key 'id'.")
         if "qty" not in item:
             raise ValueError(f"selected_options[{i}] is missing required key 'qty'.")
+        opts.append(item)
 
     return {
         "selected_tier": selected_tier,

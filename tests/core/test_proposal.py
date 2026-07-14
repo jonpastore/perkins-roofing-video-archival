@@ -422,6 +422,22 @@ class TestCaptureSelection:
         result = capture_selection(p, "best")
         assert result["selected_tier"] == "best"
 
+    def test_legacy_snapshot_tier(self):
+        p = _proposal("viewed")
+        p["quote_snapshot"] = _minimal_snapshot(
+            tiers={"legacy": {"label": "Knowify Quote", "total": 42905.0}},
+        )
+        result = capture_selection(p, "legacy")
+        assert result["selected_tier"] == "legacy"
+
+    def test_rejects_tier_absent_from_snapshot(self):
+        p = _proposal("viewed")
+        p["quote_snapshot"] = _minimal_snapshot(
+            tiers={"legacy": {"label": "Knowify Quote", "total": 42905.0}},
+        )
+        with pytest.raises(ValueError, match="not a valid tier"):
+            capture_selection(p, "good")
+
     def test_invalid_tier(self):
         p = _proposal("sent")
         with pytest.raises(ValueError, match="not a valid tier"):
@@ -443,6 +459,14 @@ class TestCaptureSelection:
         result = capture_selection(p, "good", opts)
         assert len(result["selected_options"]) == 2
         assert result["selected_options"][0]["id"] == "ridge_vent"
+
+    def test_string_options_from_spa_are_normalized(self):
+        p = _proposal("sent")
+        p["quote_snapshot"] = _minimal_snapshot(
+            optional_items=[{"id": "ridge_vent", "label": "Ridge Vent", "qty": 42}]
+        )
+        result = capture_selection(p, "good", ["ridge_vent"])
+        assert result["selected_options"] == [{"id": "ridge_vent", "qty": 42}]
 
     def test_option_missing_id_raises(self):
         p = _proposal("sent")

@@ -105,23 +105,54 @@ function TerminalPage({ icon, headline, body }: { icon: string; headline: string
 
 // ── Tier selector ─────────────────────────────────────────────────────────────
 
+type TierKey = string;
+
+const TIER_STYLE: Record<string, { color: string; border: string }> = {
+  good: { color: "#1a7f4b", border: "#d1fae5" },
+  better: { color: BRAND.navyText, border: "#dbeafe" },
+  best: { color: BRAND.red, border: "#fee2e2" },
+  legacy: { color: BRAND.navyText, border: "#dbeafe" },
+};
+
+function orderedTierKeys(snapshot: QuoteSnapshot): TierKey[] {
+  const keys = Object.keys(snapshot.tiers || {});
+  const preferred = ["good", "better", "best", "legacy"];
+  return [
+    ...preferred.filter((key) => keys.includes(key)),
+    ...keys.filter((key) => !preferred.includes(key)).sort(),
+  ];
+}
+
+function tierLabel(key: string): string {
+  if (key === "good") return "Good";
+  if (key === "better") return "Better";
+  if (key === "best") return "Best";
+  if (key === "legacy") return "Proposal";
+  return key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 interface TierSelectorProps {
   snapshot: QuoteSnapshot;
-  selected: "good" | "better" | "best" | null;
-  onSelect: (tier: "good" | "better" | "best") => void;
+  selected: TierKey | null;
+  onSelect: (tier: TierKey) => void;
 }
 
 function TierSelector({ snapshot, selected, onSelect }: TierSelectorProps) {
-  const tiers = [
-    { key: "good" as const, color: "#1a7f4b", border: "#d1fae5" },
-    { key: "better" as const, color: BRAND.navyText, border: "#dbeafe" },
-    { key: "best" as const, color: BRAND.red, border: "#fee2e2" },
-  ];
+  const tierKeys = orderedTierKeys(snapshot);
+  if (tierKeys.length === 0) {
+    return (
+      <div style={{ color: BRAND.red, fontSize: 14 }}>
+        This proposal is missing pricing information. Please contact Perkins Roofing for an updated link.
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {tiers.map(({ key, color, border }) => {
+      {tierKeys.map((key) => {
         const tier = snapshot.tiers[key];
+        if (!tier) return null;
+        const { color, border } = TIER_STYLE[key] || { color: BRAND.navyText, border: "#dbeafe" };
         const isSelected = selected === key;
         return (
           <label
@@ -148,14 +179,16 @@ function TierSelector({ snapshot, selected, onSelect }: TierSelectorProps) {
             />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontWeight: 700, fontSize: 15, color }}>{tier.label}</span>
+                <span style={{ fontWeight: 700, fontSize: 15, color }}>{tier.label || tierLabel(key)}</span>
                 <span style={{ fontWeight: 700, fontSize: 16, color, fontVariantNumeric: "tabular-nums" }}>
-                  {usd(tier.total)}
+                  {usd(Number(tier.total || 0))}
                 </span>
               </div>
-              <p style={{ margin: "4px 0 0", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
-                {tier.description}
-              </p>
+              {tier.description && (
+                <p style={{ margin: "4px 0 0", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
+                  {tier.description}
+                </p>
+              )}
             </div>
           </label>
         );
@@ -173,12 +206,13 @@ interface OptionalItemsProps {
 }
 
 function OptionalItems({ snapshot, selected, onToggle }: OptionalItemsProps) {
-  if (snapshot.optional_items.length === 0) return null;
+  const optionalItems = Array.isArray(snapshot.optional_items) ? snapshot.optional_items : [];
+  if (optionalItems.length === 0) return null;
   return (
     <SectionCard>
       <SectionTitle>Optional Add-ons</SectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {snapshot.optional_items.map((item) => {
+        {optionalItems.map((item) => {
           const checked = selected.includes(item.id);
           return (
             <label
@@ -203,11 +237,11 @@ function OptionalItems({ snapshot, selected, onToggle }: OptionalItemsProps) {
               <div style={{ flex: 1 }}>
                 <span style={{ fontWeight: 600, fontSize: 14, color: BRAND.navyText }}>{item.label}</span>
                 <span style={{ marginLeft: 8, fontSize: 13, color: BRAND.sub }}>
-                  {usd(item.unit_price)}{item.qty > 1 ? ` × ${item.qty}` : ""}
+                  {usd(Number(item.unit_price || 0))}{Number(item.qty || 1) > 1 ? ` × ${Number(item.qty || 1)}` : ""}
                 </span>
               </div>
               <span style={{ fontWeight: 700, fontSize: 14, color: BRAND.navyText, fontVariantNumeric: "tabular-nums" }}>
-                {usd(item.unit_price * item.qty)}
+                {usd(Number(item.unit_price || 0) * Number(item.qty || 1))}
               </span>
             </label>
           );
@@ -231,7 +265,7 @@ export function ProposalAccept({ token }: ProposalAcceptProps) {
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
   // Form state
-  const [selectedTier, setSelectedTier] = useState<"good" | "better" | "best" | null>(null);
+  const [selectedTier, setSelectedTier] = useState<TierKey | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [consentChecked, setConsentChecked] = useState(false);
   const [signedName, setSignedName] = useState("");
@@ -246,6 +280,8 @@ export function ProposalAccept({ token }: ProposalAcceptProps) {
         if (d.status === "accepted") { setPageState("already_accepted"); return; }
         if (d.status === "declined") { setPageState("declined"); return; }
         setData(d);
+        const tierKeys = orderedTierKeys(d.quote_snapshot);
+        if (tierKeys.length === 1) setSelectedTier(tierKeys[0]);
         setPageState("ready");
       })
       .catch((e: unknown) => {
@@ -263,7 +299,7 @@ export function ProposalAccept({ token }: ProposalAcceptProps) {
   }
 
   async function handleAccept() {
-    if (!selectedTier) { setSubmitErr("Please select a tier (Good, Better, or Best)."); return; }
+    if (!selectedTier) { setSubmitErr("Please select a proposal package."); return; }
     if (!consentChecked) { setSubmitErr("Please check the electronic signature consent box."); return; }
     if (!signedName.trim()) { setSubmitErr("Please type your full name to sign."); return; }
 
@@ -373,18 +409,21 @@ export function ProposalAccept({ token }: ProposalAcceptProps) {
   const { title, customer_name, property_address, quote_snapshot, tenant_name } = data;
 
   // Compute total = selected tier + selected options
-  const tierTotal = selectedTier ? quote_snapshot.tiers[selectedTier].total : null;
+  const optionalItems = Array.isArray(quote_snapshot.optional_items) ? quote_snapshot.optional_items : [];
+  const tierTotal = selectedTier && quote_snapshot.tiers[selectedTier]
+    ? Number(quote_snapshot.tiers[selectedTier].total || 0)
+    : null;
   const optionsTotal = selectedOptions.reduce((sum, id) => {
-    const item = quote_snapshot.optional_items.find((i) => i.id === id);
-    return sum + (item ? item.unit_price * item.qty : 0);
+    const item = optionalItems.find((i) => i.id === id);
+    return sum + (item ? Number(item.unit_price || 0) * Number(item.qty || 1) : 0);
   }, 0);
   const grandTotal = tierTotal !== null ? tierTotal + optionsTotal : null;
 
   const depositAmt =
-    tierTotal !== null && quote_snapshot.deposit_policy.mode === "percent"
-      ? (tierTotal * quote_snapshot.deposit_policy.value) / 100
-      : quote_snapshot.deposit_policy.mode === "fixed"
-      ? quote_snapshot.deposit_policy.value
+    tierTotal !== null && quote_snapshot.deposit_policy?.mode === "percent"
+      ? (tierTotal * Number(quote_snapshot.deposit_policy.value || 0)) / 100
+      : quote_snapshot.deposit_policy?.mode === "fixed"
+      ? Number(quote_snapshot.deposit_policy.value || 0)
       : null;
 
   return (
@@ -410,16 +449,16 @@ export function ProposalAccept({ token }: ProposalAcceptProps) {
         <SectionCard>
           <SectionTitle>Summary</SectionTitle>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: BRAND.ink, marginBottom: 6 }}>
-            <span>{quote_snapshot.tiers[selectedTier!].label} package</span>
+            <span>{quote_snapshot.tiers[selectedTier!]?.label || tierLabel(selectedTier!)} package</span>
             <span style={{ fontVariantNumeric: "tabular-nums" }}>{usd(tierTotal!)}</span>
           </div>
           {selectedOptions.map((id) => {
-            const item = quote_snapshot.optional_items.find((i) => i.id === id);
+            const item = optionalItems.find((i) => i.id === id);
             if (!item) return null;
             return (
               <div key={id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: BRAND.sub, marginBottom: 4 }}>
                 <span>{item.label}</span>
-                <span style={{ fontVariantNumeric: "tabular-nums" }}>{usd(item.unit_price * item.qty)}</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>{usd(Number(item.unit_price || 0) * Number(item.qty || 1))}</span>
               </div>
             );
           })}
@@ -439,9 +478,10 @@ export function ProposalAccept({ token }: ProposalAcceptProps) {
           {depositAmt !== null && (
             <div style={{ marginTop: 10, background: "#fffbe6", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "#92400e" }}>
-                Deposit due: {usd(depositAmt)} ({quote_snapshot.deposit_policy.value}%)
+                Deposit due: {usd(depositAmt)}
+                {quote_snapshot.deposit_policy?.mode === "percent" ? ` (${quote_snapshot.deposit_policy.value}%)` : ""}
               </div>
-              {quote_snapshot.deposit_policy.instructions && (
+              {quote_snapshot.deposit_policy?.instructions && (
                 <div style={{ fontSize: 12, color: "#92400e", marginTop: 3 }}>
                   {quote_snapshot.deposit_policy.instructions}
                 </div>
