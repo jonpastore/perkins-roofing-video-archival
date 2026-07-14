@@ -13,6 +13,7 @@ a unique branch name (branch=<test-scoped-uuid-prefix>) to avoid cross-test
 version counter pollution — init_db() creates the schema once and tests share
 the same SQLite file across the suite.
 """
+import copy
 import hashlib
 import uuid
 
@@ -632,6 +633,46 @@ class TestEstimatorQuote:
             headers=AUTH,
         )
         assert r.status_code == 404
+
+    def test_api_quote_low_slope_roof_type_routes_to_low_slope_calculator(self, admin_client):
+        branch = _unique_branch("quote-low")
+        cfg = copy.deepcopy(SAMPLE_CONFIG)
+        cfg["low_slope"]["base_cost_lm"]["FBC"]["bur"] = 850
+        cfg["low_slope"]["overhead"]["FBC"]["flat_oh"] = 100
+        cfg["low_slope"]["tear_off_per_layer_per_sq"] = 25
+        created = _create_config(admin_client, branch=branch, config=cfg)
+        _activate_config(admin_client, created["id"])
+
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "bur",
+                "slope_type": "sloped",  # should be corrected by roof_type family
+                "num_squares": 10.0,
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["slope_type"] == "low_slope"
+        assert body["roof_type"] == "bur"
+        assert body["project_total"] > 0
+
+    def test_rates_exposes_only_priced_low_slope_types(self, admin_client):
+        branch = _unique_branch("rates-low")
+        cfg = copy.deepcopy(SAMPLE_CONFIG)
+        cfg["low_slope"]["base_cost_lm"]["FBC"]["bur"] = 850
+        created = _create_config(admin_client, branch=branch, config=cfg)
+        _activate_config(admin_client, created["id"])
+
+        r = admin_client.get(f"/estimator/rates?branch={branch}&region=FBC", headers=AUTH)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "bur" in body["low_slope_roof_types"]
+        assert "bur" in body["roof_types"]
+        assert body["low_slope_pending"] is False
 
     def test_list_estimates_by_measurement_id(self, admin_client):
         branch = _unique_branch("list-est")

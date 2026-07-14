@@ -75,3 +75,12 @@ def test_estimates_expose_pricing_drivers_discounts_and_estimate_linkage():
     assert "recommended_tier: recommendedTier" in source
     assert "tierTotalsForQuote" in source
     assert "Bridge tier math to Perkins package adders" in source
+
+
+def test_estimates_auto_route_roofr_low_slope_when_rates_available():
+    source = Path("web/src/pages/Quoting.tsx").read_text()
+
+    assert "low_slope_roof_types" in source
+    assert 'slope_type: isLowSlopeRoofType ? "low_slope" : "sloped"' in source
+    assert "Roofr pitch is" in source
+    assert "Low-slope pricing is pending in the active config" in source

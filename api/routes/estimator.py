@@ -47,6 +47,10 @@ class DiscountInput(BaseModel):
 
 router = APIRouter(prefix="/estimator", tags=["estimator"])
 
+# Low-slope systems route to the low-slope calculator regardless of the slope_type
+# flag, so a caller can never mismatch roof_type and calculator.
+LOW_SLOPE_ROOF_TYPES = frozenset({"tpo", "coatings", "silicone", "bur"})
+
 
 def _get_active_config_row(branch: str, db: Session) -> Optional[PricingConfig]:
     """Fetch the active PricingConfig row for (current tenant, branch), or None."""
@@ -69,7 +73,8 @@ class QuoteRequest(BaseModel):
     county: Optional[str] = None
     slope_type: Literal["sloped", "low_slope"] = "sloped"
     roof_type: Literal[
-        "13_tile", "barrel_tile", "3tab_shingle", "dimensional_shingle", "standing_seam_metal"
+        "13_tile", "barrel_tile", "3tab_shingle", "dimensional_shingle", "standing_seam_metal",
+        "tpo", "coatings", "silicone", "bur",
     ] = "13_tile"
     num_squares: float = Field(..., gt=0)
     roof_cuts: Literal["low", "medium", "high"] = "low"
@@ -141,8 +146,10 @@ def quote(
             ),
         )
 
+    effective_slope_type = "low_slope" if body.roof_type in LOW_SLOPE_ROOF_TYPES else body.slope_type
+
     # Validate specialty_tile against the active config
-    if body.specialty_tile is not None:
+    if body.specialty_tile is not None and effective_slope_type == "sloped":
         valid = (cfg_row.config.get("specialty_tile_upgrade") or {}).get(body.code_zone, {})
         if not valid:
             # Schema lacks specialty_tile_upgrade — re-export from legacy with explicit TODO
@@ -154,7 +161,7 @@ def quote(
     # Build QuoteInput
     q = E.QuoteInput(
         code_zone=body.code_zone,
-        slope_type=body.slope_type,
+        slope_type=effective_slope_type,
         roof_type=body.roof_type,
         num_squares=body.num_squares,
         county=body.county,
@@ -208,6 +215,7 @@ def quote(
     result["branch"] = body.branch
     result["code_zone"] = body.code_zone
     result["county"] = body.county
+    result["slope_type"] = effective_slope_type
     result["selected_tier"] = body.selected_tier
 
     # Discounts are sales concessions. They reduce project_total and available
@@ -226,7 +234,7 @@ def quote(
         oh_dollars = float((result.get("margin") or {}).get("oh_dollars") or 0)
         profit_pct = (adjusted_profit / eligible_base) if eligible_base else 0.0
         combined_pct = ((adjusted_profit + oh_dollars) / eligible_base) if eligible_base else 0.0
-        commission_rate = config.commission_rate(q.slope_type, body.code_zone)
+        commission_rate = config.commission_rate(effective_slope_type, body.code_zone)
         warnings = list(result.get("margin_warnings") or [])
         if adjusted_profit < 0 and "discount_exceeds_profit" not in warnings:
             warnings.append("discount_exceeds_profit")
@@ -312,6 +320,14 @@ def _estimate_row(row: Estimate) -> dict:
     }
 
 
+def _priced_low_slope_types(cfg: dict, zone: str) -> list[str]:
+    base = ((cfg.get("low_slope") or {}).get("base_cost_lm") or {}).get(zone, {})
+    return [
+        key for key, value in base.items()
+        if not key.startswith("_") and value is not None
+    ]
+
+
 @router.get("/estimates")
 def list_estimates(
     measurement_id: Optional[int] = Query(default=None),
@@ -347,14 +363,23 @@ def rates(
     if cfg_row and cfg_row.config:
         cfg = cfg_row.config
         zone = region
+        sloped_roof_types = [
+            key for key in (cfg.get("sloped_base_cost_lm") or {}).get(zone, {}).keys()
+            if not key.startswith("_")
+        ]
+        low_slope_roof_types = _priced_low_slope_types(cfg, zone)
         return {
             "branch": branch,
             "region": zone,
             "config_id": cfg_row.id,
             "config_hash": cfg_row.config_hash,
-            "roof_types": list((cfg.get("sloped_base_cost_lm") or {}).get(zone, {}).keys()),
+            "roof_types": sloped_roof_types + low_slope_roof_types,
+            "sloped_roof_types": sloped_roof_types,
+            "low_slope_roof_types": low_slope_roof_types,
+            "low_slope_pending": low_slope_roof_types == [],
             "base_cost_lm": (cfg.get("sloped_base_cost_lm") or {}).get(zone, {}),
             "overhead": (cfg.get("sloped_overhead") or {}).get(zone, {}),
+            "low_slope": cfg.get("low_slope") or {},
             "profit_scale": cfg.get("profit_scale", []),
             "roof_cuts": cfg.get("roof_cuts", {}),
             "tile_pointing": cfg.get("tile_pointing", {}),

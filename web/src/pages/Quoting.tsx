@@ -103,6 +103,13 @@ interface EstimateDiscountRow {
   value: string;
 }
 
+interface EstimatorRates {
+  roof_types?: string[];
+  sloped_roof_types?: string[];
+  low_slope_roof_types?: string[];
+  low_slope_pending?: boolean;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function usd(n: number): string {
@@ -519,6 +526,8 @@ export function Quoting() {
   const [estimatesLoading, setEstimatesLoading] = useState(false);
   const [quoteRegion, setQuoteRegion] = useState<"FBC" | "HVHZ">("FBC");
   const [quoteRoofType, setQuoteRoofType] = useState("dimensional_shingle");
+  const [rates, setRates] = useState<EstimatorRates | null>(null);
+  const [ratesError, setRatesError] = useState<string | null>(null);
   const [quoteRoofCuts, setQuoteRoofCuts] = useState<"low" | "medium" | "high">("low");
   const [quoteRoofHeight, setQuoteRoofHeight] = useState<"1_story" | "2_stories" | "3_5_stories">("1_story");
   const [quoteDemo, setQuoteDemo] = useState(false);
@@ -541,16 +550,32 @@ export function Quoting() {
   // Selected property for proposal creation
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
 
-  const roofTypes = [
+  const roofTypeLabels: Record<string, string> = {
+    "13_tile": "13\" Flat Tile",
+    barrel_tile: "Barrel Tile",
+    "3tab_shingle": "3-Tab Shingle",
+    dimensional_shingle: "Dimensional Shingle",
+    standing_seam_metal: "Standing Seam Metal",
+    tpo: "TPO (Low-slope)",
+    coatings: "Coatings (Low-slope)",
+    silicone: "Silicone (Low-slope)",
+    bur: "BUR / Modified Bitumen (Low-slope)",
+  };
+  const defaultSlopedRoofTypes = [
     { value: "13_tile", label: "13\" Flat Tile" },
     { value: "barrel_tile", label: "Barrel Tile" },
     { value: "3tab_shingle", label: "3-Tab Shingle" },
     { value: "dimensional_shingle", label: "Dimensional Shingle" },
     { value: "standing_seam_metal", label: "Standing Seam Metal" },
   ];
+  const lowSlopeTypes = rates?.low_slope_roof_types ?? [];
+  const roofTypes = rates?.roof_types?.length
+    ? rates.roof_types.map((value) => ({ value, label: roofTypeLabels[value] ?? value.replace(/_/g, " ") }))
+    : defaultSlopedRoofTypes;
+  const isLowSlopeRoofType = lowSlopeTypes.includes(quoteRoofType);
 
   function labelRoofType(key: string): string {
-    return roofTypes.find((r) => r.value === key)?.label ?? key.replace(/_/g, " ");
+    return roofTypeLabels[key] ?? roofTypes.find((r) => r.value === key)?.label ?? key.replace(/_/g, " ");
   }
 
   function tierTotalsForQuote(q: QuoteResult): { good: number; better: number; best: number } {
@@ -608,6 +633,17 @@ export function Quoting() {
     const timer = window.setTimeout(() => loadCustomers(search), search.trim() ? 250 : 0);
     return () => window.clearTimeout(timer);
   }, [search]);
+
+  useEffect(() => {
+    setRatesError(null);
+    apiFetch(`/estimator/rates?branch=miami&region=${quoteRegion}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        return r.json();
+      })
+      .then((data: EstimatorRates) => setRates(data))
+      .catch((e: unknown) => setRatesError(e instanceof Error ? e.message : String(e)));
+  }, [quoteRegion]);
 
   function loadCustomerDetail(id: number) {
     setCustomerDetailLoading(true);
@@ -837,6 +873,14 @@ export function Quoting() {
     loadEstimatesForMeasurement(selectedMeasurement?.id ?? null);
   }, [selectedMeasurement?.id]);
 
+  useEffect(() => {
+    if (!selectedMeasurement?.pitch_primary) return;
+    const pitch = Number(selectedMeasurement.pitch_primary);
+    if (pitch <= 2 && lowSlopeTypes.length > 0 && !lowSlopeTypes.includes(quoteRoofType)) {
+      setQuoteRoofType(lowSlopeTypes[0]);
+    }
+  }, [selectedMeasurement?.pitch_primary, lowSlopeTypes.join(","), quoteRoofType]);
+
   async function handleCalculateQuote() {
     if (!selectedMeasurement?.total_sq) {
       setQuoteError("Select a measurement with total squares filled in.");
@@ -851,6 +895,7 @@ export function Quoting() {
       region: quoteRegion,
       code_zone: quoteRegion,
       roof_type: quoteRoofType,
+      slope_type: isLowSlopeRoofType ? "low_slope" : "sloped",
       num_squares: selectedMeasurement.total_sq,
       measurement_id: selectedMeasurement.id,
       project_kind: "residential",
@@ -1281,6 +1326,15 @@ export function Quoting() {
                     <option key={rt.value} value={rt.value}>{rt.label}</option>
                   ))}
                 </select>
+                {selectedMeasurement?.pitch_primary != null && Number(selectedMeasurement.pitch_primary) <= 2 && (
+                  <div style={{ marginTop: 5, fontSize: 11, color: lowSlopeTypes.length ? BRAND.sub : BRAND.red }}>
+                    Roofr pitch is {selectedMeasurement.pitch_primary}/12, so this should use the low-slope calculator.
+                    {lowSlopeTypes.length === 0
+                      ? " Low-slope pricing is pending in the active config; Tim must fill those rates before it can calculate."
+                      : " Low-slope calculator selected automatically."}
+                  </div>
+                )}
+                {ratesError && <div style={{ marginTop: 5, fontSize: 11, color: BRAND.red }}>Rates unavailable: {ratesError}</div>}
               </div>
             </div>
 
