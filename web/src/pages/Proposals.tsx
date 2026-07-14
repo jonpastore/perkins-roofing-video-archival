@@ -376,6 +376,35 @@ export function Proposals() {
       const total = Number(editForm.total || 0);
       const deposit = editForm.deposit === "" ? null : Number(editForm.deposit);
       const squares = editForm.squares === "" ? baseSnap.num_squares : Number(editForm.squares);
+      let linkedEstimateId = editingProposal.estimate_id ?? null;
+      let revisedEstimateResult = (baseSnap.estimate_result ?? null) as Record<string, unknown> | null;
+      let revisedEstimateInput = (baseSnap.estimate_input ?? null) as Record<string, unknown> | null;
+      if (editingProposal.estimate_id && revisedEstimateInput && revisedEstimateResult) {
+        const oldProjectTotal = Number(revisedEstimateResult.project_total ?? total);
+        const oldProfit = Number(revisedEstimateResult.profit_dollars ?? 0);
+        const estimateBody: Record<string, unknown> = {
+          ...revisedEstimateInput,
+          num_squares: Number(squares ?? revisedEstimateInput.num_squares ?? 0),
+          parent_estimate_id: editingProposal.estimate_id,
+          source_proposal_id: editingProposal.id,
+        };
+        if (Number.isFinite(total) && total > 0 && Number.isFinite(oldProjectTotal)) {
+          estimateBody.profit_mode = "flat";
+          estimateBody.flat_profit_dollars = Math.max(0, oldProfit + (total - oldProjectTotal));
+        }
+        const estRes = await apiFetch("/estimator/quote", {
+          method: "POST",
+          body: JSON.stringify(estimateBody),
+        });
+        if (!estRes.ok) {
+          const err = await estRes.json().catch(() => ({}));
+          throw new Error((err as { detail?: string }).detail ?? `${estRes.status} ${estRes.statusText}`);
+        }
+        revisedEstimateResult = await estRes.json() as Record<string, unknown>;
+        revisedEstimateInput = estimateBody;
+        linkedEstimateId = Number((revisedEstimateResult as Record<string, unknown>).estimate_id ?? editingProposal.estimate_id);
+      }
+      const effectiveTotal = Number(revisedEstimateResult?.project_total ?? total);
       const existingTiers = (baseSnap.tiers ?? {}) as Record<string, unknown>;
       const currentLegacy = (existingTiers.legacy ?? {}) as Record<string, unknown>;
       const primaryTierKey = currentLegacy.total != null
@@ -398,12 +427,15 @@ export function Proposals() {
             ?? (primaryTierKey === "legacy" ? "Knowify Quote" : primaryTierKey),
           description: (currentPrimaryTier.description as string | undefined)
             ?? (editForm.title || editingProposal.title),
-          total,
+          total: effectiveTotal,
         },
       };
       const snapshot = {
         ...baseSnap,
-        total,
+        total: effectiveTotal,
+        estimate_id: linkedEstimateId,
+        estimate_input: revisedEstimateInput ?? baseSnap.estimate_input,
+        estimate_result: revisedEstimateResult ?? baseSnap.estimate_result,
         num_squares: squares,
         tiers,
         deposit_policy: {
@@ -415,14 +447,14 @@ export function Proposals() {
       };
       const r = await apiFetch(`/quoting/proposals/${editingProposal.id}`, {
         method: "PUT",
-        body: JSON.stringify({ title: editForm.title, quote_snapshot: snapshot }),
+        body: JSON.stringify({ title: editForm.title, quote_snapshot: snapshot, estimate_id: linkedEstimateId }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
       }
       const updated: ProposalRow = await r.json();
-      setProposals((prev) => prev.map((p) => p.id === updated.id ? { ...p, ...updated, amount: total } : p));
+      setProposals((prev) => prev.map((p) => p.id === updated.id ? { ...p, ...updated, amount: effectiveTotal } : p));
       setEditingProposal(null);
       loadProposals(statusFilter, proposalPage);
     } catch (e: unknown) {

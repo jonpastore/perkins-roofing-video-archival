@@ -499,6 +499,7 @@ export function Quoting() {
   const [recommendedTier, setRecommendedTier] = useState<"good" | "better" | "best">("good");
   const [estimateDiscounts, setEstimateDiscounts] = useState<EstimateDiscountRow[]>([]);
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
+  const [lastQuoteInput, setLastQuoteInput] = useState<Record<string, unknown> | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [creatingProposal, setCreatingProposal] = useState(false);
@@ -814,6 +815,7 @@ export function Quoting() {
     };
 
     try {
+      setLastQuoteInput(body);
       const r = await apiFetch("/estimator/quote", { method: "POST", body: JSON.stringify(body) });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -844,6 +846,7 @@ export function Quoting() {
     const snapshot = {
       estimate_id: quoteResult.estimate_id ?? null,
       estimate_version: quoteResult.estimate_version ?? null,
+      estimate_input: lastQuoteInput,
       recommended_tier: recommendedTier,
       selected_tier_default: recommendedTier,
       total: selectedTotal,

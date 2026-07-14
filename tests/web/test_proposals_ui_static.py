@@ -52,3 +52,5 @@ def test_proposal_edit_preserves_native_tier_instead_of_always_legacy():
     assert "const selectedTier = proposal.selected_tier && tiers[proposal.selected_tier]" in source
     assert "const primaryTierKey = currentLegacy.total != null" in source
     assert "[primaryTierKey]" in source
+    assert 'apiFetch("/estimator/quote"' in source
+    assert "parent_estimate_id: editingProposal.estimate_id" in source

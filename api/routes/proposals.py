@@ -385,6 +385,7 @@ class ProposalUpdate(BaseModel):
     title: Optional[str] = None
     quote_snapshot: Optional[dict] = None
     template_id: Optional[int] = None
+    estimate_id: Optional[int] = None
 
 
 class SendRequest(BaseModel):
