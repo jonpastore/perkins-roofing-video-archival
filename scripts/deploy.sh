@@ -36,7 +36,7 @@ BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|
 # existing pipeline consumers (articles, faq, scheduling, jobs) still read os.environ. Full
 # per-tenant migration (Tenant.settings.integrations) is deferred to a later wave. The proposals
 # accept-link email (proposals.py) already reads from Tenant.settings.integrations exclusively.
-CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}|GOTENBERG_URL=${GOTENBERG_URL:-}|SIGN_PUBLIC_URL=${SIGN_PUBLIC_URL:-}"
+CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}|GOTENBERG_URL=${GOTENBERG_URL:-}|SIGN_PUBLIC_URL=${SIGN_PUBLIC_URL:-}|EMAIL_SEND_MODE=${EMAIL_SEND_MODE:-test}|EMAIL_TEST_RECIPIENT_ALLOWLIST=${EMAIL_TEST_RECIPIENT_ALLOWLIST:-jon@degenito.ai}"
 
 # Vault-backed secrets (resettable in the Config UI). One source of truth: Secret Manager.
 SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest"

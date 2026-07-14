@@ -211,14 +211,19 @@ def _send_invite_email(
         inviter_name=(inviter_claims or {}).get("name"),
     )
     try:
-        resend.send(
+        msg_id = resend.send(
             from_name="Perkins Roofing",
             reply_to=inviter_email or "info@perkinsroofing.net",
             to=to_email,
             subject=subject,
             html=html,
+            tenant_id=(inviter_claims or {}).get("tenant_id") or (inviter_claims or {}).get("tenantId"),
+            send_type="user_invite",
+            metadata={"role": role},
         )
-        return True, None
+        return (not resend.is_blocked_message_id(msg_id)), (
+            "blocked by outbound email gate" if resend.is_blocked_message_id(msg_id) else None
+        )
     except Exception as exc:  # noqa: BLE001 — mail is best-effort; pre-auth already succeeded
         log("invite_email_failed", email=to_email, error=str(exc))
         return False, str(exc)

@@ -1146,6 +1146,7 @@ def send_proposal(
             tenant_name=tenant_name,
             proposal_title=proposal_title,
             reply_to=_reply_to,
+            tenant_id=tenant_id,
         )
     else:
         email_sent = False
@@ -1590,6 +1591,7 @@ def _send_accept_link_email(
     tenant_name: str,
     proposal_title: str,
     reply_to: str = "info@perkinsroofing.net",
+    tenant_id: int | None = None,
 ) -> bool:
     """Send the accept-link email via Resend. Returns True on success, False if email absent.
 
@@ -1620,14 +1622,17 @@ Review &amp; Accept Proposal</a></p>
 """
     try:
         import adapters.resend as resend_adapter  # noqa: PLC0415
-        resend_adapter.send(
+        msg_id = resend_adapter.send(
             from_name=tenant_name,
             reply_to=reply_to,
             to=to_email,
             subject=f"Your proposal from {tenant_name} is ready",
             html=html,
+            tenant_id=tenant_id,
+            send_type="proposal_accept_link",
+            metadata={"has_accept_token": True},
         )
-        return True
+        return not resend_adapter.is_blocked_message_id(msg_id)
     except Exception as exc:
         _log.warning("accept-link email failed for token %s: %s", accept_token, exc)
         return False

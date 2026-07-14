@@ -228,13 +228,20 @@ def run_reminders(session: Any = None) -> dict[str, int]:
                     reminder_number=decision.reminder_number,
                 )
 
-                resend.send(
+                msg_id = resend.send(
                     from_name=tenant_name,
                     reply_to=os.getenv("REMINDER_REPLY_TO", "info@perkinsroofing.net"),
                     to=email,
                     subject=f"Reminder: Your proposal is waiting — {tenant_name}",
                     html=html_body,
+                    tenant_id=proposal.tenant_id,
+                    send_type="proposal_reminder",
+                    metadata={"proposal_id": proposal.id, "reminder_number": decision.reminder_number},
                 )
+                if resend.is_blocked_message_id(msg_id):
+                    session.rollback()
+                    skipped += 1
+                    continue
 
                 _insert_reminder_event(
                     session=session,

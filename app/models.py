@@ -135,6 +135,34 @@ class EmailTemplate(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_email_templates_tenant_id", "tenant_id"),)
 
+
+class EmailLog(Base, TenantMixin):
+    """Audit trail for every outbound email attempt.
+
+    Rows are written by adapters/resend.py for sent, blocked, failed, and
+    dry-run attempts. The body is intentionally not stored; subjects/recipients
+    are enough for operational audit while limiting PII/content retention.
+    """
+    __tablename__ = "email_logs"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    created_at          = Column(DateTime, nullable=False, default=_utcnow)
+    provider            = Column(String(50), nullable=False, default="resend")
+    send_type           = Column(String(100), nullable=False, default="resend")
+    from_email          = Column(String(255), nullable=False)
+    to_email            = Column(String(255), nullable=False)
+    subject             = Column(Text, nullable=False)
+    status              = Column(String(30), nullable=False)
+    provider_message_id = Column(String(255), nullable=True)
+    error               = Column(Text, nullable=True)
+    email_metadata      = Column("metadata", JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_email_logs_tenant_created", "tenant_id", "created_at"),
+        Index("ix_email_logs_tenant_status", "tenant_id", "status"),
+        Index("ix_email_logs_tenant_send_type", "tenant_id", "send_type"),
+    )
+
 class Cluster(Base):
     __tablename__ = "clusters"
     id = Column(Integer, primary_key=True, autoincrement=True)

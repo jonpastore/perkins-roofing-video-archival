@@ -10,7 +10,7 @@ Role requirements (from core.authz):
 import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ import adapters.resend as resend_adapter
 from api.auth import get_db_session, require_role
 from app.config import settings
 from app.llm import chat
-from app.models import EmailTemplate, PlatformConfig, PlatformSessionLocal
+from app.models import EmailLog, EmailTemplate, PlatformConfig, PlatformSessionLocal
 from core.email_proof import build_proof_prompt, diff_suggestions
 from core.email_template import wrap_email
 
@@ -197,7 +197,38 @@ def send_email(req: SendRequest, claims=Depends(require_role("email_send"))):
         subject=safe_subject,
         html=wrapped_html,
     )
-    return {"id": msg_id}
+    status = "blocked" if resend_adapter.is_blocked_message_id(msg_id) else "sent"
+    return {"id": msg_id, "status": status}
+
+
+@router.get("/logs")
+def list_email_logs(
+    status: Optional[str] = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    claims=Depends(require_role("email_send")),
+    db: Session = Depends(get_db_session),
+):
+    """Return recent outbound email attempts for audit/debugging."""
+    q = db.query(EmailLog)
+    if status:
+        q = q.filter(EmailLog.status == status)
+    rows = q.order_by(EmailLog.created_at.desc()).limit(limit).all()
+    return [
+        {
+            "id": row.id,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "provider": row.provider,
+            "send_type": row.send_type,
+            "from_email": row.from_email,
+            "to_email": row.to_email,
+            "subject": row.subject,
+            "status": row.status,
+            "provider_message_id": row.provider_message_id,
+            "error": row.error,
+            "metadata": row.email_metadata or {},
+        }
+        for row in rows
+    ]
 
 
 @router.post("/preview", response_class=HTMLResponse)
