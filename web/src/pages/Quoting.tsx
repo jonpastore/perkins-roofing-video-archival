@@ -149,6 +149,38 @@ function ResultRow({ label, value, bold }: { label: string; value: string; bold?
   );
 }
 
+function EstimateCheckbox({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 12,
+      color: BRAND.sub,
+      minHeight: 38,
+      lineHeight: 1.3,
+      cursor: "pointer",
+      whiteSpace: "normal",
+    }}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 15, height: 15, flexShrink: 0, accentColor: BRAND.red }}
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
+
 // ── Sub-views ─────────────────────────────────────────────────────────────────
 
 function CustomerForm({
@@ -1249,10 +1281,10 @@ export function Quoting() {
               </div>
             </div>
 
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
-              <label style={{ fontSize: 12, color: BRAND.sub }}><input type="checkbox" checked={quoteDemo} onChange={(e) => setQuoteDemo(e.target.checked)} /> Demo / tear-off</label>
-              <label style={{ fontSize: 12, color: BRAND.sub }}><input type="checkbox" checked={quoteSecondaryWater} onChange={(e) => setQuoteSecondaryWater(e.target.checked)} /> SWR</label>
-              <label style={{ fontSize: 12, color: BRAND.sub }}><input type="checkbox" checked={quoteWinterguard} onChange={(e) => setQuoteWinterguard(e.target.checked)} /> WinterGuard</label>
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px 1fr", gap: 10, alignItems: "end" }}>
+              <EstimateCheckbox checked={quoteDemo} onChange={setQuoteDemo} label="Demo / tear-off" />
+              <EstimateCheckbox checked={quoteSecondaryWater} onChange={setQuoteSecondaryWater} label="SWR" />
+              <EstimateCheckbox checked={quoteWinterguard} onChange={setQuoteWinterguard} label="WinterGuard" />
               <div><FieldLabel>Layers</FieldLabel><input type="number" min="0" step="1" value={quoteLayersToRemove} onChange={(e) => setQuoteLayersToRemove(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               <div><FieldLabel>Penetrations</FieldLabel><input type="number" min="0" step="1" value={quotePenetrations} onChange={(e) => setQuotePenetrations(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
             </div>

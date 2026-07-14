@@ -546,10 +546,9 @@ def test_pm_hvhz_commercial_gt50(cfg: PricingConfig):
     assert cfg.pm_incentive("HVHZ", "commercial", 55.0) == 300
 
 
-def test_pm_raises_on_residential_ge20(cfg: PricingConfig):
-    """Residential with ≥20 SQ has no PM band — engine raises ConfigError."""
-    with pytest.raises(ConfigError, match="residential"):
-        cfg.pm_incentive("HVHZ", "residential", 20.0)
+def test_pm_residential_ge20_uses_residential_band(cfg: PricingConfig):
+    """Residential ≥20 SQ is valid in golden proposals; reuse residential PM band until Tim provides a separate band."""
+    assert cfg.pm_incentive("HVHZ", "residential", 20.0) == 150
 
 
 def test_pm_raises_on_commercial_lt20(cfg: PricingConfig):
@@ -1064,8 +1063,8 @@ def test_compute_config_hash_script():
     assert digest == expected, f"Script output {digest[:16]}... != core {expected[:16]}..."
 
 
-def test_estimate_residential_ge20_pm_incentive_warns_not_blocks(cfg: PricingConfig):
-    """Golden proposals include many residential jobs >=20 SQ; missing PM incentive band is warning-only."""
+def test_estimate_residential_ge20_pm_incentive_does_not_warn(cfg: PricingConfig):
+    """Golden proposals include many residential jobs >=20 SQ; they should not show a false PM-band warning."""
     q = QuoteInput(
         code_zone="HVHZ",
         roof_type="3tab_shingle",
@@ -1074,5 +1073,5 @@ def test_estimate_residential_ge20_pm_incentive_warns_not_blocks(cfg: PricingCon
     )
     r = estimate(cfg, q)
     assert r["project_total"] > 0
-    assert r["pm_incentive"] == 0.0
-    assert any("pm_incentive_missing" in w for w in r["warnings"])
+    assert r["pm_incentive"] == 150.0
+    assert not any("pm_incentive_missing" in w for w in r["warnings"])

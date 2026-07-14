@@ -68,6 +68,7 @@ def test_estimates_expose_pricing_drivers_discounts_and_estimate_linkage():
     source = Path("web/src/pages/Quoting.tsx").read_text()
 
     assert "Recommended tier" in source
+    assert "EstimateCheckbox" in source
     assert "Demo / tear-off" in source
     assert "Discounts affect total and margin" in source
     assert "estimate_id: quoteResult.estimate_id" in source

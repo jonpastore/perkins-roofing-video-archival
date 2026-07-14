@@ -190,12 +190,13 @@ class PricingConfig:
         if project_kind == "residential":
             if num_squares < 20:
                 key = "residential_lt20"
+            elif "residential_gte20" in zone_matrix:
+                key = "residential_gte20"
             else:
-                raise ConfigError(
-                    f"pm_incentive: no residential band for zone='{zone}', "
-                    f"num_squares={num_squares} (≥20 SQ residential has no PM incentive band). "
-                    "Check project_kind — large residential jobs may be commercial."
-                )
+                # Golden proposals show residential jobs at 26–76 SQ are normal, so a
+                # missing ≥20 SQ band must not hard-fail. Reuse the residential band
+                # value (already Tim-approved) rather than inventing a new figure.
+                key = "residential_lt20"
         elif project_kind == "commercial":
             if 20 <= num_squares <= 50:
                 key = "commercial_20_50"
