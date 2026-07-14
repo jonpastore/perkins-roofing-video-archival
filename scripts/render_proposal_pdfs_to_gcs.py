@@ -65,7 +65,7 @@ def _gcs_exists(uri: str) -> bool:
 
 
 def run(args: argparse.Namespace) -> int:
-    from api.routes.proposals import render_and_cache_proposal_pdf
+    from api.routes.proposals import _PDF_TEMPLATE_VERSION, render_and_cache_proposal_pdf
     from app.models import Proposal
 
     factory, close = _make_factory(args)
@@ -87,7 +87,13 @@ def run(args: argparse.Namespace) -> int:
         for row in rows:
             snap = row.quote_snapshot or {}
             cached = snap.get("rendered_pdf_gcs")
-            if not args.force and isinstance(cached, str) and _gcs_exists(cached):
+            cached_version = snap.get("rendered_pdf_template_version")
+            if (
+                not args.force
+                and cached_version == _PDF_TEMPLATE_VERSION
+                and isinstance(cached, str)
+                and _gcs_exists(cached)
+            ):
                 skipped += 1
                 continue
             if not args.apply:
