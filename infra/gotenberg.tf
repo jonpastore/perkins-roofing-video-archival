@@ -113,6 +113,11 @@ resource "google_cloud_scheduler_job" "proposal_reminders" {
   time_zone        = "UTC"
   attempt_deadline = "300s"
 
+  # DISABLED 2026-07-14: proposal reminder emails are turned off pending review of
+  # outbound customer email. Re-enable by setting paused = false (and confirm the
+  # EMAIL_SEND_MODE gate on the api service is configured as intended).
+  paused = true
+
   http_target {
     uri         = "${google_cloud_run_v2_service.api.uri}/internal/proposal-reminders"
     http_method = "POST"
