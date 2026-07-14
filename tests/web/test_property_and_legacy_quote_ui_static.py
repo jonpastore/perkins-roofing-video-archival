@@ -62,3 +62,13 @@ def test_estimates_customer_search_uses_server_side_search():
     assert 'params.set("search", q)' in source
     assert 'apiFetch(`/quoting/customers?${params.toString()}`)' in source
     assert "Searching all customers" in source
+
+
+def test_estimates_expose_pricing_drivers_discounts_and_estimate_linkage():
+    source = Path("web/src/pages/Quoting.tsx").read_text()
+
+    assert "Recommended tier" in source
+    assert "Demo / tear-off" in source
+    assert "Discounts affect total and margin" in source
+    assert "estimate_id: quoteResult.estimate_id" in source
+    assert "recommended_tier: recommendedTier" in source

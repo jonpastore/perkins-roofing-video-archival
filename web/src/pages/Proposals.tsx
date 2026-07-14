@@ -37,6 +37,7 @@ interface ProposalRow {
   tenant_id: number;
   customer_id: number;
   property_id: number;
+  estimate_id?: number | null;
   template_id: number | null;
   root_id: number | null;
   parent_id: number | null;
@@ -864,6 +865,11 @@ export function Proposals() {
           <div>
             <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 16 }}>Edit Proposal #{editingProposal.id}</div>
             <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>Draft revision v{editingProposal.version_number}</div>
+            {editingProposal.estimate_id && (
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+                Linked estimate #{editingProposal.estimate_id}; pricing changes should be made as an estimate revision.
+              </div>
+            )}
           </div>
           <button onClick={() => setEditingProposal(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: BRAND.sub, lineHeight: 1 }}>×</button>
         </div>

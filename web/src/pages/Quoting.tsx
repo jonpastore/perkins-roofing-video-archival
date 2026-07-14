@@ -70,19 +70,37 @@ interface QuoteResult {
   line_items: Record<string, number>;
   pm_incentive: number;
   project_total: number;
+  pre_discount_total?: number;
+  discount_total?: number;
+  discounts?: Array<{ description: string; amount: string; discount_type?: string; value?: string }>;
   profit_dollars: number;
   profit_pct: number;
   estimated_commission: number;
   margin_ok: boolean;
+  margin_warnings?: string[];
   warnings?: string[];
+  estimate_id?: number;
+  estimate_version?: number;
+  selected_tier?: "good" | "better" | "best";
 }
 
 interface EstimateRecord {
   id: number;
+  version_number?: number;
+  parent_id?: number | null;
+  root_id?: number | null;
+  source_proposal_id?: number | null;
   input_json: Record<string, unknown>;
   result_json: Partial<QuoteResult> & { project_total?: number };
   pricing_config_hash: string | null;
   created_at: string | null;
+}
+
+interface EstimateDiscountRow {
+  key: number;
+  description: string;
+  discount_type: "amount" | "percent";
+  value: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -98,6 +116,12 @@ const selectStyle: React.CSSProperties = {
   cursor: "pointer",
   width: "100%",
 };
+
+let estimateDiscountKey = 0;
+function newEstimateDiscount(): EstimateDiscountRow {
+  estimateDiscountKey += 1;
+  return { key: estimateDiscountKey, description: "", discount_type: "amount", value: "" };
+}
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -463,6 +487,17 @@ export function Quoting() {
   const [estimatesLoading, setEstimatesLoading] = useState(false);
   const [quoteRegion, setQuoteRegion] = useState<"FBC" | "HVHZ">("FBC");
   const [quoteRoofType, setQuoteRoofType] = useState("dimensional_shingle");
+  const [quoteRoofCuts, setQuoteRoofCuts] = useState<"low" | "medium" | "high">("low");
+  const [quoteRoofHeight, setQuoteRoofHeight] = useState<"1_story" | "2_stories" | "3_5_stories">("1_story");
+  const [quoteDemo, setQuoteDemo] = useState(false);
+  const [quoteLayersToRemove, setQuoteLayersToRemove] = useState("0");
+  const [quoteSecondaryWater, setQuoteSecondaryWater] = useState(false);
+  const [quoteWinterguard, setQuoteWinterguard] = useState(false);
+  const [quoteStuccoMetalLf, setQuoteStuccoMetalLf] = useState("");
+  const [quotePenetrations, setQuotePenetrations] = useState("");
+  const [quoteRidgeVentLf, setQuoteRidgeVentLf] = useState("");
+  const [recommendedTier, setRecommendedTier] = useState<"good" | "better" | "best">("good");
+  const [estimateDiscounts, setEstimateDiscounts] = useState<EstimateDiscountRow[]>([]);
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -749,21 +784,33 @@ export function Quoting() {
 
     const body = {
       region: quoteRegion,
+      code_zone: quoteRegion,
       roof_type: quoteRoofType,
       num_squares: selectedMeasurement.total_sq,
       measurement_id: selectedMeasurement.id,
       project_kind: "residential",
-      roof_cuts: "low",
-      roof_height: "1_story",
+      roof_cuts: quoteRoofCuts,
+      roof_height: quoteRoofHeight,
       tile_pointing: "no",
       pitch_7_12: false,
-      demo: false,
-      secondary_water_barrier: false,
-      winterguard: false,
+      demo: quoteDemo,
+      layers_to_remove: Number(quoteLayersToRemove || 0),
+      secondary_water_barrier: quoteSecondaryWater,
+      winterguard: quoteWinterguard,
       include_dumpster: false,
-      stucco_metal_lf: 0,
-      penetrations: 0,
-      ridge_vent_lf: 0,
+      stucco_metal_lf: Number(quoteStuccoMetalLf || 0),
+      penetrations: Number(quotePenetrations || 0),
+      ridge_vent_lf: Number(quoteRidgeVentLf || 0),
+      selected_tier: recommendedTier,
+      discounts: estimateDiscounts
+        .filter((d) => d.description.trim() && d.value.trim())
+        .map((d) => ({
+          description: d.description.trim(),
+          discount_type: d.discount_type,
+          value: Number(d.value || 0),
+          ...(d.discount_type === "amount" ? { amount: Number(d.value || 0) } : {}),
+          ...(d.discount_type === "percent" ? { percent: Number(d.value || 0) } : {}),
+        })),
     };
 
     try {
@@ -790,15 +837,27 @@ export function Quoting() {
     setCreatingProposal(true);
     setProposalError(null);
 
+    const goodTotal = quoteResult.project_total;
+    const betterTotal = Math.round(quoteResult.project_total * 1.15);
+    const bestTotal = Math.round(quoteResult.project_total * 1.30);
+    const selectedTotal = recommendedTier === "best" ? bestTotal : recommendedTier === "better" ? betterTotal : goodTotal;
     const snapshot = {
+      estimate_id: quoteResult.estimate_id ?? null,
+      estimate_version: quoteResult.estimate_version ?? null,
+      recommended_tier: recommendedTier,
+      selected_tier_default: recommendedTier,
+      total: selectedTotal,
+      estimate_result: quoteResult,
       region: quoteResult.region,
+      code_zone: quoteResult.region,
       roof_type: quoteResult.roof_type,
       num_squares: quoteResult.num_squares,
       tiers: {
-        good: { label: "Good", description: "Standard materials", total: quoteResult.project_total },
-        better: { label: "Better", description: "Enhanced materials", total: Math.round(quoteResult.project_total * 1.15) },
-        best: { label: "Best", description: "Premium materials", total: Math.round(quoteResult.project_total * 1.30) },
+        good: { label: "Good", description: "Standard materials", total: goodTotal },
+        better: { label: "Better", description: "Enhanced materials", total: betterTotal },
+        best: { label: "Best", description: "Premium materials", total: bestTotal },
       },
+      discounts: quoteResult.discounts ?? [],
       deposit_policy: { mode: "percent", value: 50, instructions: "Check payable to Perkins Roofing" },
     };
 
@@ -810,6 +869,7 @@ export function Quoting() {
           property_id: selectedPropertyId,
           title: `Roof Proposal — ${selectedCustomer.display_name}`,
           quote_snapshot: snapshot,
+          estimate_id: quoteResult.estimate_id ?? null,
         }),
       });
       if (!r.ok) {
@@ -1159,6 +1219,64 @@ export function Quoting() {
               </div>
             </div>
 
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+              <div>
+                <FieldLabel>Recommended tier</FieldLabel>
+                <select value={recommendedTier} onChange={(e) => setRecommendedTier(e.target.value as "good" | "better" | "best")} style={selectStyle}>
+                  <option value="good">Good</option>
+                  <option value="better">Better</option>
+                  <option value="best">Best</option>
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Roof cuts</FieldLabel>
+                <select value={quoteRoofCuts} onChange={(e) => setQuoteRoofCuts(e.target.value as "low" | "medium" | "high")} style={selectStyle}>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Height</FieldLabel>
+                <select value={quoteRoofHeight} onChange={(e) => setQuoteRoofHeight(e.target.value as "1_story" | "2_stories" | "3_5_stories")} style={selectStyle}>
+                  <option value="1_story">1 story</option>
+                  <option value="2_stories">2 stories</option>
+                  <option value="3_5_stories">3–5 stories</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+              <label style={{ fontSize: 12, color: BRAND.sub }}><input type="checkbox" checked={quoteDemo} onChange={(e) => setQuoteDemo(e.target.checked)} /> Demo / tear-off</label>
+              <label style={{ fontSize: 12, color: BRAND.sub }}><input type="checkbox" checked={quoteSecondaryWater} onChange={(e) => setQuoteSecondaryWater(e.target.checked)} /> SWR</label>
+              <label style={{ fontSize: 12, color: BRAND.sub }}><input type="checkbox" checked={quoteWinterguard} onChange={(e) => setQuoteWinterguard(e.target.checked)} /> WinterGuard</label>
+              <div><FieldLabel>Layers</FieldLabel><input type="number" min="0" step="1" value={quoteLayersToRemove} onChange={(e) => setQuoteLayersToRemove(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+              <div><FieldLabel>Penetrations</FieldLabel><input type="number" min="0" step="1" value={quotePenetrations} onChange={(e) => setQuotePenetrations(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+            </div>
+
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div><FieldLabel>Stucco metal LF</FieldLabel><input type="number" min="0" step="1" value={quoteStuccoMetalLf} onChange={(e) => setQuoteStuccoMetalLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+              <div><FieldLabel>Ridge vent LF</FieldLabel><input type="number" min="0" step="1" value={quoteRidgeVentLf} onChange={(e) => setQuoteRidgeVentLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <SectionLabel>Discounts affect total and margin</SectionLabel>
+                <Button variant="ghost" onClick={() => setEstimateDiscounts((prev) => [...prev, newEstimateDiscount()])} style={{ fontSize: 12 }}>+ Add discount</Button>
+              </div>
+              {estimateDiscounts.map((d) => (
+                <div key={d.key} style={{ display: "grid", gridTemplateColumns: "1fr 110px 110px auto", gap: 8, marginBottom: 8 }}>
+                  <input value={d.description} onChange={(e) => setEstimateDiscounts((prev) => prev.map((x) => x.key === d.key ? { ...x, description: e.target.value } : x))} placeholder="Referral, veteran, current special…" style={{ ...inputStyle, width: "100%" }} />
+                  <select value={d.discount_type} onChange={(e) => setEstimateDiscounts((prev) => prev.map((x) => x.key === d.key ? { ...x, discount_type: e.target.value as "amount" | "percent" } : x))} style={selectStyle}>
+                    <option value="amount">$ amount</option>
+                    <option value="percent">% percent</option>
+                  </select>
+                  <input type="number" min="0" max={d.discount_type === "percent" ? "100" : undefined} step="0.01" value={d.value} onChange={(e) => setEstimateDiscounts((prev) => prev.map((x) => x.key === d.key ? { ...x, value: e.target.value } : x))} placeholder={d.discount_type === "percent" ? "10" : "500"} style={{ ...inputStyle, width: "100%" }} />
+                  <Button variant="danger" onClick={() => setEstimateDiscounts((prev) => prev.filter((x) => x.key !== d.key))} style={{ fontSize: 12 }}>✕</Button>
+                </div>
+              ))}
+            </div>
+
             <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
               <Button onClick={handleCalculateQuote} disabled={quoting || !selectedMeasurement} style={{ fontSize: 13 }}>
                 {quoting ? "Calculating…" : "Calculate estimate"}
@@ -1217,14 +1335,28 @@ export function Quoting() {
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    <TierCard label="Good" value={usd(quoteResult.project_total)} />
-                    <TierCard label="Better" value={usd(Math.round(quoteResult.project_total * 1.15))} recommended />
-                    <TierCard label="Best" value={usd(Math.round(quoteResult.project_total * 1.30))} />
+                    <TierCard label="Good" value={usd(quoteResult.project_total)} recommended={recommendedTier === "good"} />
+                    <TierCard label="Better" value={usd(Math.round(quoteResult.project_total * 1.15))} recommended={recommendedTier === "better"} />
+                    <TierCard label="Best" value={usd(Math.round(quoteResult.project_total * 1.30))} recommended={recommendedTier === "best"} />
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: BRAND.sub }}>
+                    Estimate #{quoteResult.estimate_id ?? "—"} · recommended/default tier: <strong>{recommendedTier.toUpperCase()}</strong>
                   </div>
                   <SectionLabel>Profitability</SectionLabel>
+                  {quoteResult.pre_discount_total != null && (
+                    <ResultRow label="Pre-discount total" value={usd(quoteResult.pre_discount_total)} />
+                  )}
+                  {quoteResult.discount_total != null && quoteResult.discount_total > 0 && (
+                    <ResultRow label="Discounts" value={"-" + usd(quoteResult.discount_total)} />
+                  )}
                   <ResultRow label="Profit" value={usd(quoteResult.profit_dollars)} />
                   <ResultRow label="Profit %" value={(quoteResult.profit_pct * 100).toFixed(1) + "%"} />
                   <ResultRow label="Est. Commission" value={usd(quoteResult.estimated_commission)} />
+                  {quoteResult.margin_warnings && quoteResult.margin_warnings.length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: BRAND.red }}>
+                      Margin warnings: {quoteResult.margin_warnings.join(", ")}
+                    </div>
+                  )}
                   {quoteResult.warnings && quoteResult.warnings.length > 0 && (
                     <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12, lineHeight: 1.5 }}>
                       <div style={{ fontWeight: 800, marginBottom: 4 }}>Non-blocking estimate warning</div>

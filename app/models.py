@@ -374,6 +374,10 @@ class Estimate(Base):
     branch              = Column(String, nullable=True)
     code_zone           = Column(String, nullable=True)
     county              = Column(String, nullable=True)
+    parent_id           = Column(Integer, ForeignKey("estimates.id"), nullable=True)
+    root_id             = Column(Integer, ForeignKey("estimates.id"), nullable=True)
+    version_number      = Column(Integer, nullable=False, default=1, server_default="1")
+    source_proposal_id  = Column(Integer, ForeignKey("proposals.id"), nullable=True)
     input_json          = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     result_json         = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     created_at          = Column(DateTime, nullable=False, default=_utcnow)
@@ -381,6 +385,8 @@ class Estimate(Base):
 
     __table_args__ = (
         Index("ix_estimates_tenant_id", "tenant_id"),
+        Index("ix_estimates_root", "root_id"),
+        Index("ix_estimates_source_proposal", "source_proposal_id"),
     )
 
 
@@ -547,6 +553,7 @@ class Proposal(Base, TenantMixin):
     id                   = Column(Integer, primary_key=True, autoincrement=True)
     customer_id          = Column(Integer, ForeignKey("customers.id"), nullable=False)
     property_id          = Column(Integer, ForeignKey("properties.id"), nullable=False)
+    estimate_id          = Column(Integer, ForeignKey("estimates.id"), nullable=True)
     template_id          = Column(Integer, ForeignKey("proposal_templates.id"))
     root_id              = Column(Integer, ForeignKey("proposals.id"))
     parent_id            = Column(Integer, ForeignKey("proposals.id"))
@@ -572,6 +579,7 @@ class Proposal(Base, TenantMixin):
     __table_args__ = (
         Index("ix_proposals_tenant", "tenant_id"),
         Index("ix_proposals_customer", "customer_id"),
+        Index("ix_proposals_estimate", "estimate_id"),
         Index("ix_proposals_root", "root_id"),
         Index("ix_proposals_token", "accept_token"),
         Index("ix_proposals_status", "tenant_id", "status"),

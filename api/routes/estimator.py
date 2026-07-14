@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from api.auth import get_db_session, require_role
 from app.models import Estimate, PricingConfig
 from core import estimator as E
+from core.discounts import resolve_discounts
 from core.estimator import DailyOverheadSeries
 from core.pricing_config import ConfigError, load_config
 
@@ -35,6 +36,14 @@ class DailySeriesItem(BaseModel):
                 f"days must be a multiple of 0.5 (half-day increments); got {v!r}"
             )
         return v
+
+
+class DiscountInput(BaseModel):
+    description: str = "Discount"
+    amount: Optional[float] = Field(default=None, ge=0)
+    discount_type: Literal["amount", "percent"] = "amount"
+    value: Optional[float] = Field(default=None, ge=0)
+    percent: Optional[float] = Field(default=None, ge=0, le=100)
 
 router = APIRouter(prefix="/estimator", tags=["estimator"])
 
@@ -91,6 +100,10 @@ class QuoteRequest(BaseModel):
     daily_series: list[DailySeriesItem] = Field(default_factory=list)
     profit_mode: Literal["scale", "flat"] = "scale"
     flat_profit_dollars: Optional[float] = Field(default=None, ge=0)
+    discounts: list[DiscountInput] = Field(default_factory=list)
+    selected_tier: Literal["good", "better", "best"] = "good"
+    parent_estimate_id: Optional[int] = None
+    source_proposal_id: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -195,8 +208,62 @@ def quote(
     result["branch"] = body.branch
     result["code_zone"] = body.code_zone
     result["county"] = body.county
+    result["selected_tier"] = body.selected_tier
+
+    # Discounts are sales concessions. They reduce project_total and available
+    # profit/margin, while preserving the pre-discount engine total for audit.
+    discount_rows = [d.model_dump(exclude_none=True) for d in body.discounts]
+    try:
+        resolved_discounts = resolve_discounts(discount_rows, result["project_total"])
+    except ValueError as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+    if resolved_discounts:
+        discount_total = round(sum(float(d["amount"]) for d in resolved_discounts), 2)
+        pre_discount_total = float(result["project_total"])
+        adjusted_total = round(pre_discount_total - discount_total, 2)
+        adjusted_profit = round(float(result["profit_dollars"]) - discount_total, 2)
+        eligible_base = float((result.get("margin") or {}).get("eligible_base") or 0)
+        oh_dollars = float((result.get("margin") or {}).get("oh_dollars") or 0)
+        profit_pct = (adjusted_profit / eligible_base) if eligible_base else 0.0
+        combined_pct = ((adjusted_profit + oh_dollars) / eligible_base) if eligible_base else 0.0
+        commission_rate = config.commission_rate(q.slope_type, body.code_zone)
+        warnings = list(result.get("margin_warnings") or [])
+        if adjusted_profit < 0 and "discount_exceeds_profit" not in warnings:
+            warnings.append("discount_exceeds_profit")
+        if profit_pct < config.raw["profit_floor_pct"] and "profit_floor" not in warnings:
+            warnings.append("profit_floor")
+        if combined_pct < config.raw["profit_plus_oh_floor_pct"] and "combined_floor" not in warnings:
+            warnings.append("combined_floor")
+        result["pre_discount_total"] = round(pre_discount_total, 2)
+        result["discount_total"] = discount_total
+        result["discounts"] = resolved_discounts
+        result["project_total"] = adjusted_total
+        result["profit_dollars"] = adjusted_profit
+        result["profit_pct"] = round(profit_pct, 4)
+        result["estimated_commission"] = round(adjusted_profit * commission_rate, 2)
+        result["margin_ok"] = profit_pct >= config.raw["profit_floor_pct"]
+        result["margin_warnings"] = warnings
+        result["margin"] = {
+            **(result.get("margin") or {}),
+            "profit_dollars": adjusted_profit,
+            "profit_pct": round(profit_pct, 4),
+            "combined_pct": round(combined_pct, 4),
+            "profit_floor_ok": profit_pct >= config.raw["profit_floor_pct"],
+            "combined_floor_ok": combined_pct >= config.raw["profit_plus_oh_floor_pct"],
+            "margin_warnings": warnings,
+        }
 
     # Persist estimate row for audit reproduction (TRD §2.2)
+    parent_id = body.parent_estimate_id
+    root_id = None
+    version_number = 1
+    if parent_id is not None:
+        parent = db.get(Estimate, parent_id)
+        if parent is None or parent.tenant_id != db.info["tenant_id"]:
+            raise HTTPException(404, f"Parent estimate {parent_id} not found")
+        root_id = parent.root_id or parent.id
+        version_number = int(parent.version_number or 1) + 1
+
     est = Estimate(
         tenant_id=db.info["tenant_id"],
         branch=body.branch,
@@ -204,11 +271,23 @@ def quote(
         county=body.county,
         pricing_config_id=cfg_row.id,
         pricing_config_hash=cfg_row.config_hash,
+        parent_id=parent_id,
+        root_id=root_id,
+        version_number=version_number,
+        source_proposal_id=body.source_proposal_id,
         input_json=body.model_dump(),
         result_json=result,
         created_by=claims.get("email") or "unknown",
     )
     db.add(est)
+    db.flush()
+    if est.root_id is None:
+        est.root_id = est.id
+        db.flush()
+    result["estimate_id"] = est.id
+    result["estimate_root_id"] = est.root_id
+    result["estimate_version"] = est.version_number
+    est.result_json = result
     db.flush()
 
     return result
@@ -222,6 +301,10 @@ def _estimate_row(row: Estimate) -> dict:
         "branch": row.branch,
         "code_zone": row.code_zone,
         "county": row.county,
+        "parent_id": row.parent_id,
+        "root_id": row.root_id,
+        "version_number": row.version_number,
+        "source_proposal_id": row.source_proposal_id,
         "input_json": row.input_json or {},
         "result_json": row.result_json or {},
         "created_at": row.created_at.isoformat() if row.created_at else None,

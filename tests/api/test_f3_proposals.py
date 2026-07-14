@@ -758,6 +758,31 @@ class TestProposalCRUD:
         assert draft["id"] is not None
         assert draft["tenant_id"] == 1
 
+    def test_create_draft_proposal_preserves_estimate_id(self, admin_client):
+        from app.models import Estimate
+
+        cust = _create_customer(admin_client)
+        prop = _create_property(admin_client, cust["id"])
+        with SessionLocal() as db:
+            db.info["tenant_id"] = 1
+            est = Estimate(tenant_id=1, input_json={}, result_json={}, created_by="test")
+            db.add(est)
+            db.commit()
+            estimate_id = est.id
+        r = admin_client.post(
+            "/quoting/proposals",
+            json={
+                "customer_id": cust["id"],
+                "property_id": prop["id"],
+                "title": "Estimate linked proposal",
+                "quote_snapshot": _SAMPLE_SNAPSHOT,
+                "estimate_id": estimate_id,
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["estimate_id"] == estimate_id
+
     def test_list_proposals(self, admin_client):
         c, cust, prop, draft = _scaffold(admin_client)
         r = admin_client.get("/quoting/proposals", headers=AUTH)

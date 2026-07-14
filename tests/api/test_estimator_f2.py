@@ -661,6 +661,59 @@ class TestEstimatorQuote:
         assert rows[0]["input_json"]["measurement_id"] == measurement["id"]
         assert rows[0]["result_json"]["project_total"] == quote.json()["project_total"]
 
+    def test_api_quote_applies_discount_to_total_and_margin(self, admin_client):
+        branch = _unique_branch("quote-disc")
+        _activate_config(admin_client, _create_config(admin_client, branch=branch)["id"])
+        base = admin_client.post(
+            "/estimator/quote",
+            json={"branch": branch, "code_zone": "FBC", "roof_type": "dimensional_shingle", "num_squares": 10.0},
+            headers=AUTH,
+        )
+        discounted = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "dimensional_shingle",
+                "num_squares": 10.0,
+                "discounts": [{"description": "Referral", "discount_type": "amount", "value": 500}],
+            },
+            headers=AUTH,
+        )
+        assert base.status_code == 200, base.text
+        assert discounted.status_code == 200, discounted.text
+        b = base.json()
+        d = discounted.json()
+        assert d["estimate_id"]
+        assert d["pre_discount_total"] == b["project_total"]
+        assert d["discount_total"] == 500.0
+        assert d["project_total"] == b["project_total"] - 500.0
+        assert d["profit_dollars"] == b["profit_dollars"] - 500.0
+
+    def test_api_quote_can_create_estimate_revision(self, admin_client):
+        branch = _unique_branch("quote-rev")
+        _activate_config(admin_client, _create_config(admin_client, branch=branch)["id"])
+        first = admin_client.post(
+            "/estimator/quote",
+            json={"branch": branch, "code_zone": "FBC", "roof_type": "dimensional_shingle", "num_squares": 10.0},
+            headers=AUTH,
+        ).json()
+        second = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "dimensional_shingle",
+                "num_squares": 11.0,
+                "parent_estimate_id": first["estimate_id"],
+            },
+            headers=AUTH,
+        )
+        assert second.status_code == 200, second.text
+        body = second.json()
+        assert body["estimate_version"] == first["estimate_version"] + 1
+        assert body["estimate_root_id"] == first["estimate_root_id"]
+
 
 # ---------------------------------------------------------------------------
 # POST/GET /measurements

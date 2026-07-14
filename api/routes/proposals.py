@@ -372,6 +372,7 @@ class ProposalCreate(BaseModel):
     title: str
     quote_snapshot: dict
     template_id: Optional[int] = None
+    estimate_id: Optional[int] = None
 
 
 class ProposalFromQuoteCreate(BaseModel):
@@ -469,6 +470,7 @@ def _proposal_row(row: Proposal, events: list | None = None) -> dict:
         "tenant_id": row.tenant_id,
         "customer_id": row.customer_id,
         "property_id": row.property_id,
+        "estimate_id": row.estimate_id,
         "template_id": row.template_id,
         "root_id": row.root_id,
         "parent_id": row.parent_id,
@@ -939,6 +941,7 @@ def create_proposal(
         tenant_id=tenant_id,
         customer_id=body.customer_id,
         property_id=body.property_id,
+        estimate_id=body.estimate_id,
         template_id=body.template_id,
         title=body.title,
         quote_snapshot=body.quote_snapshot,
