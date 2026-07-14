@@ -120,6 +120,7 @@ def _run_for_tenant(
                     meta_description=meta or "",
                     jsonld=jsonld_out if isinstance(jsonld_out, list) else [],
                     status="publish",
+                    focus_keyword=kw,
                 )
                 out["republished"] += 1
             except Exception as exc:  # noqa: BLE001

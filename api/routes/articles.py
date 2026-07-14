@@ -273,6 +273,7 @@ def reprocess_article(
                     meta_description=a.meta or "",
                     jsonld=list(a.jsonld_json) if a.jsonld_json else [],
                     status=a.status or "draft",
+                    focus_keyword=a.focus_keyword,
                 )
                 logger.info("wp reprocess update post_id=%d slug=%s", a.wp_post_id, slug)
             except Exception as exc:  # noqa: BLE001
@@ -362,6 +363,7 @@ def fix_seo_check(
                 meta_description=a.meta or "",
                 jsonld=list(a.jsonld_json) if a.jsonld_json else [],
                 status="publish",
+                focus_keyword=a.focus_keyword,
             )
         except Exception as exc:  # noqa: BLE001 — DB is source of truth; WP is best-effort
             wp_error = str(exc)
@@ -417,6 +419,7 @@ def publish_article(
                     meta_description=meta_desc,
                     jsonld=jsonld,
                     status="publish",
+                    focus_keyword=a.focus_keyword,
                 )
                 logger.info("wp update post_id=%d slug=%s", a.wp_post_id, slug)
             else:
@@ -426,6 +429,7 @@ def publish_article(
                     meta_description=meta_desc,
                     jsonld=jsonld,
                     status="publish",
+                    focus_keyword=a.focus_keyword,
                 )
                 a.wp_post_id = post_id
                 logger.info("wp publish post_id=%d slug=%s", post_id, slug)

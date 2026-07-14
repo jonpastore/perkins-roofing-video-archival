@@ -253,7 +253,7 @@ class TestReprocessEndpoint:
 
         wp_update_calls = []
 
-        def _fake_update(post_id, *, title, html, meta_description, jsonld, status):
+        def _fake_update(post_id, *, title, html, meta_description, jsonld, status, focus_keyword=None):
             wp_update_calls.append({"post_id": post_id, "title": title})
 
         monkeypatch.setattr("adapters.wordpress.update", _fake_update)
@@ -273,7 +273,7 @@ class TestReprocessEndpoint:
 
         wp_update_calls = []
 
-        def _fake_update(post_id, *, title, html, meta_description, jsonld, status):
+        def _fake_update(post_id, *, title, html, meta_description, jsonld, status, focus_keyword=None):
             wp_update_calls.append(post_id)
 
         monkeypatch.setattr("adapters.wordpress.update", _fake_update)
@@ -292,7 +292,7 @@ class TestReprocessEndpoint:
 
         wp_update_calls = []
 
-        def _fake_update(post_id, *, title, html, meta_description, jsonld, status):
+        def _fake_update(post_id, *, title, html, meta_description, jsonld, status, focus_keyword=None):
             wp_update_calls.append(post_id)
 
         monkeypatch.setattr("adapters.wordpress.update", _fake_update)
@@ -405,7 +405,7 @@ class TestReprocessJob:
 
         wp_calls = []
 
-        def _fake_update(post_id, *, title, html, meta_description, jsonld, status):
+        def _fake_update(post_id, *, title, html, meta_description, jsonld, status, focus_keyword=None):
             wp_calls.append(post_id)
 
         monkeypatch.setattr("adapters.wordpress.update", _fake_update)

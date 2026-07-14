@@ -22,6 +22,25 @@ add_action( 'init', function () {
     ] );
 } );
 
+/**
+ * Register Rank Math's SEO meta keys for the REST API so Application-Password
+ * publishing can set the focus keyword + SEO title/description. Rank Math stores
+ * these as normal post-meta but does not expose them over REST, and its own
+ * admin REST route (rankmath/v1/updateMeta) is blocked by the managed-hosting
+ * WAF for non-browser calls — so we register them here and write via wp/v2.
+ */
+add_action( 'init', function () {
+    $rank_math_keys = [ 'rank_math_focus_keyword', 'rank_math_title', 'rank_math_description' ];
+    foreach ( $rank_math_keys as $key ) {
+        register_post_meta( 'post', $key, [
+            'single'        => true,
+            'type'          => 'string',
+            'show_in_rest'  => true,
+            'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
+        ] );
+    }
+} );
+
 add_action( 'wp_head', function () {
     if ( ! is_singular( 'post' ) ) {
         return;

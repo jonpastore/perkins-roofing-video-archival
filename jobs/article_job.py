@@ -688,6 +688,7 @@ def generate_article(
             meta_description=article.get("metaDescription") or "",
             jsonld=jsonld_list,
             status=status,
+            focus_keyword=keyword,
         )
         post_id = existing_article.wp_post_id
         logger.info("updated existing post_id=%d keyword=%r status=%s", post_id, keyword, status)
@@ -698,6 +699,7 @@ def generate_article(
             meta_description=article.get("metaDescription") or "",
             jsonld=jsonld_list,
             status=status,
+            focus_keyword=keyword,
         )
         logger.info("published post_id=%d keyword=%r status=%s", post_id, keyword, status)
 

@@ -4,7 +4,7 @@
  * Description: Registers the _perkins_jsonld post-meta (so the REST API accepts it) and echoes the
  *              stored JSON-LD inside a <script type="application/ld+json"> tag in wp_head for singular
  *              posts. WordPress strips <script> from post content, so this is the safe injection point.
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      DeGenito
  *
  * NOTE: This is the uploadable-plugin form of wp-mu-plugin/perkins-jsonld.php. Prefer the mu-plugin
@@ -13,12 +13,21 @@
  */
 
 add_action( 'init', function () {
-    register_post_meta( 'post', '_perkins_jsonld', [
-        'single'        => true,
-        'type'          => 'string',
-        'show_in_rest'  => true,
-        'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
-    ] );
+    $keys = [
+        '_perkins_jsonld',
+        'rank_math_focus_keyword',
+        'rank_math_title',
+        'rank_math_description',
+    ];
+
+    foreach ( $keys as $key ) {
+        register_post_meta( 'post', $key, [
+            'single'        => true,
+            'type'          => 'string',
+            'show_in_rest'  => true,
+            'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
+        ] );
+    }
 } );
 
 add_action( 'wp_head', function () {

@@ -71,6 +71,32 @@ def _author_id() -> int:
         return 3
 
 
+def _rank_math_meta(*, title: str, meta_description: str, focus_keyword: str | None = None) -> dict[str, str]:
+    """Rank Math post-meta values written via wp/v2 once registered by our plugin."""
+    focus = (focus_keyword or os.getenv("WP_FOCUS_KEYWORD", "")).strip()
+    return {
+        "rank_math_focus_keyword": focus,
+        "rank_math_title": title,
+        "rank_math_description": meta_description,
+    }
+
+
+def _post_meta(
+    *,
+    title: str,
+    meta_description: str,
+    jsonld: list[dict],
+    focus_keyword: str | None = None,
+) -> dict[str, str]:
+    meta = {"_perkins_jsonld": json.dumps(jsonld)}
+    rm = _rank_math_meta(title=title, meta_description=meta_description, focus_keyword=focus_keyword)
+    if rm["rank_math_focus_keyword"]:
+        meta.update(rm)
+    else:
+        meta.update({k: v for k, v in rm.items() if k != "rank_math_focus_keyword"})
+    return meta
+
+
 def publish(
     *,
     title: str,
@@ -78,6 +104,7 @@ def publish(
     meta_description: str,
     jsonld: list[dict],
     status: str = "draft",
+    focus_keyword: str | None = None,
 ) -> int:
     """Create a WordPress post and return the new post id.
 
@@ -102,7 +129,7 @@ def publish(
         "status": status,
         "excerpt": meta_description,
         "author": _author_id(),  # policy: always Tim Kanak
-        "meta": {"_perkins_jsonld": json.dumps(jsonld)},
+        "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
@@ -117,6 +144,7 @@ def update(
     meta_description: str,
     jsonld: list[dict],
     status: str = "draft",
+    focus_keyword: str | None = None,
 ) -> None:
     """Update an existing WordPress post (PUT /wp-json/wp/v2/posts/{id}).
 
@@ -138,7 +166,7 @@ def update(
         "status": status,
         "excerpt": meta_description,
         "author": _author_id(),  # policy: always Tim Kanak
-        "meta": {"_perkins_jsonld": json.dumps(jsonld)},
+        "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
@@ -191,6 +219,7 @@ def create_page(
     meta_description: str,
     jsonld: list[dict],
     status: str = "publish",
+    focus_keyword: str | None = None,
 ) -> int:
     """Create a WordPress PAGE and return the new page id.
 
@@ -214,7 +243,7 @@ def create_page(
         "status": status,
         "excerpt": meta_description,
         "author": _author_id(),  # policy: always Tim Kanak
-        "meta": {"_perkins_jsonld": json.dumps(jsonld)},
+        "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
@@ -229,6 +258,7 @@ def update_page(
     meta_description: str,
     jsonld: list[dict],
     status: str = "publish",
+    focus_keyword: str | None = None,
 ) -> None:
     """Update an existing WordPress PAGE.
 
@@ -250,7 +280,7 @@ def update_page(
         "status": status,
         "excerpt": meta_description,
         "author": _author_id(),  # policy: always Tim Kanak
-        "meta": {"_perkins_jsonld": json.dumps(jsonld)},
+        "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()

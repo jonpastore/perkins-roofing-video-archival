@@ -66,12 +66,12 @@ _update_status_calls: list[dict] = []
 _FAKE_POST_ID = 42
 
 
-def _fake_publish(*, title, html, meta_description, jsonld, status="draft"):
+def _fake_publish(*, title, html, meta_description, jsonld, status="draft", focus_keyword=None):
     _publish_calls.append({"title": title, "status": status, "jsonld": jsonld})
     return _FAKE_POST_ID
 
 
-def _fake_update(post_id, *, title, html, meta_description, jsonld, status="draft"):
+def _fake_update(post_id, *, title, html, meta_description, jsonld, status="draft", focus_keyword=None):
     _update_calls.append({"post_id": post_id, "title": title, "status": status})
 
 

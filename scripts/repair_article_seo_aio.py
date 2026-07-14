@@ -303,6 +303,7 @@ def run(args: argparse.Namespace) -> int:
                         meta_description=row.meta or "",
                         jsonld=list(row.jsonld_json) if row.jsonld_json else [],
                         status=status,
+                        focus_keyword=row.focus_keyword,
                     )
                     synced += 1
         if args.apply:

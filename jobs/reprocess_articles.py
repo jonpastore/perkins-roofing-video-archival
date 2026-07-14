@@ -85,6 +85,7 @@ def _run_for_tenant(
                             meta_description=article.meta or "",
                             jsonld=list(article.jsonld_json) if article.jsonld_json else [],
                             status=article.status or "draft",
+                            focus_keyword=article.focus_keyword,
                         )
                         wp_synced += 1
                         logger.info("wp synced slug=%s post_id=%d", article.slug, article.wp_post_id)

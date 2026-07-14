@@ -32,3 +32,24 @@ def test_auth_strips_spaces_from_app_password(monkeypatch):
     monkeypatch.setenv("WP_APP_PWD", "abcd efgh ijkl")
 
     assert wp._auth() == ("jon", "abcdefghijkl")
+
+
+def test_post_meta_includes_rank_math_when_focus_keyword_set(monkeypatch):
+    monkeypatch.delenv("WP_FOCUS_KEYWORD", raising=False)
+    meta = wp._post_meta(
+        title="7 Roof Tips",
+        meta_description="desc",
+        jsonld=[{"@type": "Article"}],
+        focus_keyword="roof estimate vs inspection report",
+    )
+    assert meta["rank_math_focus_keyword"] == "roof estimate vs inspection report"
+    assert meta["rank_math_title"] == "7 Roof Tips"
+    assert meta["rank_math_description"] == "desc"
+    assert "_perkins_jsonld" in meta
+
+
+def test_post_meta_omits_empty_focus_keyword(monkeypatch):
+    monkeypatch.delenv("WP_FOCUS_KEYWORD", raising=False)
+    meta = wp._post_meta(title="t", meta_description="d", jsonld=[], focus_keyword=None)
+    assert "rank_math_focus_keyword" not in meta
+    assert meta["rank_math_title"] == "t"
