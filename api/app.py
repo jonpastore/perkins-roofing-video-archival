@@ -6,11 +6,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from api.audit_mw import AuditMiddleware
 from api.auth import current_claims, get_db_session, require_internal_tenants, require_role, require_role_db
 from api.middleware.cors import DynamicCORSMiddleware
 from api.routes.admin_metrics import router as admin_metrics_router
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
+from api.routes.audit import router as audit_router
 from api.routes.clips import router as clips_router
 from api.routes.comments import router as comments_router
 from api.routes.config import router as config_router
@@ -74,6 +76,11 @@ def _assert_rls_enforceable() -> None:
 
 app.add_middleware(DynamicCORSMiddleware)
 
+# Audit every mutating request (migration 0036). Added here rather than per-route: there are
+# 86 mutating endpoints across 25 modules, and hand-instrumenting them covers 86 and misses
+# the 87th the day it is added. Fail-open by construction — see api/audit_mw.py.
+app.add_middleware(AuditMiddleware)
+
 
 @app.middleware("http")
 async def _reset_cost_per_request(request, call_next):
@@ -111,6 +118,7 @@ app.include_router(customers_router)
 app.include_router(proposals_router)
 app.include_router(squares_router)
 app.include_router(admin_metrics_router)
+app.include_router(audit_router)
 
 
 class Query(BaseModel):

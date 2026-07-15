@@ -205,16 +205,47 @@ def _verify_with_db(authorization: str, db_session) -> dict:
 # FastAPI dependencies
 # ---------------------------------------------------------------------------
 
-def current_claims(authorization: str = Header(default="")):
+def _stash(request: Optional[Request], claims: dict) -> dict:
+    """Publish the caller's identity to the two places the audit trail reads it.
+
+    - request.state: for the audit middleware, which sits outside FastAPI's dependency system
+      and cannot see a dependency's return value. Without this every request is recorded as
+      actor=None with no tenant, which RLS has nowhere to store — an audit log that is
+      silently empty.
+    - core.audit.current_actor: for the ORM change tracker, which sees a row mutate but has no
+      idea who asked. The middleware seeds the request id before the handler runs; the actor
+      is only known here, once the token has actually been verified.
+
+    Done at every point claims are minted rather than in each of 86 endpoints.
+    """
+    if request is not None:
+        request.state.claims = claims
+    try:
+        from core.audit import current_actor  # noqa: PLC0415
+        current_actor.set({
+            **(current_actor.get() or {}),
+            "email": claims.get("email"),
+            "role": claims.get("role"),
+            "impersonating": bool(claims.get("impersonating")),
+            "impersonating_as": claims.get("impersonating_as"),
+        })
+    except Exception:  # noqa: BLE001 — identity publishing must never fail a request
+        log.warning("audit actor not published", exc_info=True)
+    return claims
+
+
+def current_claims(request: Request = None, authorization: str = Header(default="")):
     """Any authenticated user — no role gate. Returns claims + effective role. Use for /me."""
-    return _verify(authorization)
+    return _stash(request, _verify(authorization))
 
 
 def require_role(action):
     """FastAPI dependency factory — allow the request only if the caller's role `can(action)`."""
-    def dep(authorization: str = Header(default="")):
-        claims = _verify(authorization)
+    def dep(request: Request = None, authorization: str = Header(default="")):
+        claims = _stash(request, _verify(authorization))
         if not can(claims["role"], action):
+            # Stash BEFORE the gate: a 403 nobody can explain is the main thing the audit log
+            # is for, and it can only name the actor if the claims were published first.
             raise HTTPException(status_code=403, detail="forbidden")
         return claims
     return dep
@@ -236,20 +267,23 @@ def require_role_db(action):
 # Tenant-scoped session dependency (TRD-F4 §3.2) — the authoritative F4 path
 # ---------------------------------------------------------------------------
 
-def current_claims_with_db(authorization: str = Header(default="")):
+def current_claims_with_db(request: Request = None, authorization: str = Header(default="")):
     """Verify a token through the DB-backed F4 path (GCIP tenant resolution +
     platform_admins lookup + tenant_default_admins effective_role).
 
     Opens a short-lived PLATFORM-scoped session (no tenant GUC) solely for the
     pre-tenant lookups — this is the lookup that determines tenant_id, so it must
     run before any tenant GUC is set. Returns fully-populated F4 claims.
+
+    Claims are published on request.state (see _stash) — this is the F4 path, so it is where
+    the audit trail learns the caller's resolved tenant.
     """
     from app.models import PlatformSessionLocal
 
     db = PlatformSessionLocal()
     db.info["platform_scope"] = True
     try:
-        return _verify_with_db(authorization, db)
+        return _stash(request, _verify_with_db(authorization, db))
     finally:
         db.close()
 

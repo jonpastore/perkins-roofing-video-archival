@@ -21,6 +21,12 @@ def pytest_configure(config):
         "markers",
         "postgres: requires a real PostgreSQL instance (TENANCY_PG_URL or Docker)",
     )
+    # Audit writes open a SECOND connection on purpose, so the row survives the request's
+    # rollback. Postgres (prod) handles that; SQLite is single-writer and every request
+    # instead waits out a "database is locked" timeout — it turned a ~6min suite into a
+    # >30min one. The audit machinery has its own tests (tests/core/test_audit*.py,
+    # tests/api/test_audit_mw.py), which opt back in explicitly.
+    os.environ.setdefault("AUDIT_ENABLED", "0")
 
 
 # ---------------------------------------------------------------------------

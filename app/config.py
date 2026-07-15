@@ -7,6 +7,13 @@ class Settings:
     # Data layer — sqlite for dev, postgresql+psycopg://… (with pgvector) for prod
     DB_URL = os.getenv("DB_URL", "sqlite:///" + os.path.join(os.path.dirname(__file__), "dev.db"))
 
+    # Audit trail (migration 0036). On by default; a kill switch for the rare case the
+    # trail itself misbehaves in prod, and off under pytest — the audit write opens a SECOND
+    # connection so the row survives the request's rollback, which Postgres handles fine and
+    # SQLite (single-writer) blocks on until timeout. The machinery has its own tests; the
+    # rest of the suite should not pay a lock wait per request.
+    AUDIT_ENABLED = os.getenv("AUDIT_ENABLED", "1").lower() not in ("0", "false", "no")
+
     # Model backends — 'ollama' (dev/cerberus) | 'vertex' | 'anthropic' (prod, see llm.py)
     EMBED_BACKEND = os.getenv("EMBED_BACKEND", "ollama")
     LLM_BACKEND   = os.getenv("LLM_BACKEND", "ollama")

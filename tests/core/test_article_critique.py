@@ -137,3 +137,82 @@ def test_run_critics_grounding_check_is_silent_with_no_transcript():
 
     out = _run_critics({"content_md": "<p>Use the SuperFlash 9000.</p>"}, "kw", "", llm=_LLM())
     assert [f for f in out if f.get("lens") == "grounding-check"] == []
+
+
+def test_audit_grounding_is_pure_and_uses_the_caller_s_transcript():
+    from jobs.article_job import _audit_grounding
+    fields = {"content_md": "<p>Fit the SuperFlash 9000 first.</p>"}
+    tim = "you cut the stucco and put the wall flashing into the block"
+    assert "SuperFlash 9000" in _audit_grounding(fields, "wall flashings", tim)
+    # no evidence -> no claims of fabrication (and no retrieval)
+    assert _audit_grounding(fields, "wall flashings", "") == []
+
+
+def test_enforce_grounding_costs_nothing_when_the_article_is_clean():
+    # The whole reason this can run on every path: a grounded article never calls the LLM.
+    from jobs.article_job import _enforce_grounding
+
+    class _LLM:
+        def chat(self, *a, **k):
+            raise AssertionError("a clean article must not trigger a revision")
+
+    fields = {"content_md": "<p>You cut the stucco and set the wall flashing.</p>"}
+    out = _enforce_grounding(fields, "wall flashings",
+                             "you cut the stucco and put the wall flashing in", llm=_LLM())
+    assert out is fields
+
+
+def test_enforce_grounding_revises_away_an_unsourced_term():
+    import json
+
+    from jobs.article_job import _enforce_grounding
+
+    clean = json.dumps({
+        "title": "T", "slug": "s", "metaDescription": "m",
+        "content": "<p>You cut the stucco and set the wall flashing into the block properly.</p>",
+        "faq": [{"q": "q", "a": "a"}],
+    })
+
+    class _LLM:
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, prompt, want_json=False, **kw):
+            self.calls += 1
+            assert "SuperFlash 9000" in prompt, "the reviser must be told which term to remove"
+            return clean
+
+    llm = _LLM()
+    fields = {"content_md": "<p>You cut the stucco and set the SuperFlash 9000 in the block.</p>",
+              "title": "T", "slug": "s", "meta": "m", "faq_json": []}
+    out = _enforce_grounding(fields, "wall flashings",
+                             "you cut the stucco and set the wall flashing into the block "
+                             "properly every time", llm=llm)
+    assert llm.calls == 1
+    assert "SuperFlash" not in out["content_md"]
+
+
+def test_enforce_grounding_ships_loudly_rather_than_looping_forever(caplog):
+    import json
+
+    from jobs.article_job import _enforce_grounding
+
+    stubborn = json.dumps({
+        "title": "T", "slug": "s", "metaDescription": "m",
+        "content": "<p>You cut the stucco and set the SuperFlash 9000 in the block anyway.</p>",
+        "faq": [{"q": "q", "a": "a"}],
+    })
+
+    class _LLM:
+        def chat(self, prompt, want_json=False, **kw):
+            return stubborn          # reviser refuses to drop it
+
+    fields = {"content_md": "<p>You cut the stucco and set the SuperFlash 9000 in.</p>",
+              "title": "T", "slug": "s", "meta": "m", "faq_json": []}
+    with caplog.at_level("ERROR"):
+        out = _enforce_grounding(fields, "wall flashings",
+                                 "you cut the stucco and set the wall flashing in the block",
+                                 llm=_LLM())
+    assert out["content_md"]
+    assert "GROUNDING UNRESOLVED" in caplog.text
+

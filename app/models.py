@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -162,6 +163,57 @@ class EmailLog(Base, TenantMixin):
         Index("ix_email_logs_tenant_status", "tenant_id", "status"),
         Index("ix_email_logs_tenant_send_type", "tenant_id", "send_type"),
     )
+
+
+class AuditLog(Base, TenantMixin):
+    """Who did what, when, to which entity, and what happened. Migration 0036.
+
+    Written for EVERY mutating HTTP request by api/audit_mw.py rather than per-route: there
+    are 86 mutating endpoints across 25 modules, and per-route calls guarantee the 87th is
+    forgotten. Domain code layers semantic rows on top via core.audit.record() where the route
+    alone does not say what happened ("proposal.sign" means more than "POST /proposals/3/sign").
+
+    Failed requests are recorded too — an unexplainable 403 is the main thing this is for — so
+    rows are written in their own transaction and survive the request's rollback.
+
+    `detail` is redacted before write (core.audit.redact): never passwords, tokens, or request
+    bodies. An audit log that leaks credentials is a liability, not a control.
+    """
+    __tablename__ = "audit_log"
+
+    # BIGSERIAL in Postgres; plain INTEGER on SQLite, which only autoincrements an
+    # "INTEGER PRIMARY KEY" — a BIGINT pk silently yields id=NULL and every insert dies with
+    # "NOT NULL constraint failed: audit_log.id". Prod looked fine, so only the tests caught it.
+    id               = Column(BigInteger().with_variant(Integer, "sqlite"),
+                              primary_key=True, autoincrement=True)
+    occurred_at      = Column(DateTime, nullable=False, default=_utcnow)
+
+    actor_email      = Column(String(320), nullable=True)
+    actor_role       = Column(String(50), nullable=True)
+    impersonating    = Column(Boolean, nullable=False, default=False)
+    impersonating_as = Column(Integer, nullable=True)
+
+    action           = Column(String(120), nullable=False)
+    entity_type      = Column(String(60), nullable=True)
+    entity_id        = Column(String(255), nullable=True)
+
+    method           = Column(String(10), nullable=True)
+    route            = Column(String(255), nullable=True)
+    path             = Column(String(1024), nullable=True)
+    status_code      = Column(Integer, nullable=True)
+    request_id       = Column(String(64), nullable=True)
+    source           = Column(String(20), nullable=False, default="api")
+
+    detail           = Column(JSON().with_variant(JSONB, "postgresql"),
+                              nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_audit_log_tenant_time", "tenant_id", "occurred_at"),
+        Index("ix_audit_log_tenant_actor", "tenant_id", "actor_email", "occurred_at"),
+        Index("ix_audit_log_tenant_entity", "tenant_id", "entity_type", "entity_id"),
+        Index("ix_audit_log_tenant_action", "tenant_id", "action", "occurred_at"),
+    )
+
 
 class Cluster(Base):
     __tablename__ = "clusters"
@@ -1155,6 +1207,14 @@ from core.tenant import register_tenant_session_events  # noqa: E402
 # RLS (NOSUPERUSER NOBYPASSRLS role + 29 FORCED tables) remains the primary guard;
 # strict converts "wrong default" into "loud failure" so tenant #2 can onboard.
 register_tenant_session_events(SessionLocal, strict=True)
+
+# Before/after capture for every audited business object (migration 0036). Attached to the
+# session rather than to routes: the "before" values only exist during flush, and there are 86
+# mutating endpoints — per-route snapshots would cover the ones someone remembered, and the
+# revert you need would be the one that was missed.
+from core.audit_orm import register_change_tracking  # noqa: E402
+
+register_change_tracking(SessionLocal)
 
 # Platform-scoped session factory — no after_begin tenant GUC hook.
 # Used exclusively by endpoints that touch RLS-exempt platform-level tables

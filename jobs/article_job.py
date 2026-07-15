@@ -527,11 +527,13 @@ def generate_article_content(
     user_prompt = template_prompt(enriched)
 
     # ── Video grounding (best-effort) ─────────────────────────────────────────
+    grounded_on = ""
     if ground_videos:
         try:
             sources = source_transcripts(keyword, db=db)
             if sources:
                 user_prompt = _append_video_grounding(user_prompt, sources)
+                grounded_on = "\n\n".join(s["transcript"] for s in sources)
         except Exception as exc:  # noqa: BLE001
             # RuntimeError here is the strict unstamped-session guard — never bury it
             lvl = logger.critical if isinstance(exc, RuntimeError) else logger.warning
@@ -552,6 +554,9 @@ def generate_article_content(
         "meta":       article.get("metaDescription") or "",
         "content_md": markdownish_to_html(article.get("content") or ""),
         "faq_json":   faq,
+        # The evidence this article was written from, carried out for the grounding audit so it
+        # re-reads nothing. Underscore-prefixed: transient, never persisted to articles.*.
+        "_source_transcript": grounded_on,
     }
 
 
@@ -1620,6 +1625,61 @@ def _refine_without_regressing_length(fields: dict, keyword: str, *, llm=None) -
     return refined
 
 
+GROUNDING_ROUNDS = 2
+
+
+def _audit_grounding(fields: dict, keyword: str, transcript: str) -> list[str]:
+    """Proper nouns the article names that its source transcripts never mention.
+
+    Pure: no retrieval. An audit that re-queried would add a network call to every generation
+    (and hung the test suite when I first wrote it that way). `transcript` is the evidence the
+    generator actually used, held by the caller — no evidence in hand -> no claims of fabrication.
+    """
+    from core.grounding import unsourced_terms  # noqa: PLC0415
+
+    if not transcript:
+        return []
+    return unsourced_terms(fields.get("content_md", ""), transcript, ignore=keyword)
+
+
+def _enforce_grounding(fields: dict, keyword: str, transcript: str, *, llm,
+                       target_words: int = 1800, rounds: int = GROUNDING_ROUNDS) -> dict:
+    """Strip terms the sources don't support, by revision. Runs on every generation path.
+
+    Free when the article is clean: the check is a string comparison, so a grounded article
+    never triggers an LLM call. Only a detected fabrication costs a round-trip — which is why
+    this can be enforced everywhere without making the app's generate endpoint pay for the
+    critique loop.
+
+    If terms survive `rounds` revisions the article still ships, but loudly: the alternative is
+    failing a generation the caller cannot retry into success, and a logged fabrication a human
+    can grep beats a silent one. Never returns a shorter article than it was given
+    (_revise_without_regressing_length owns that guarantee).
+    """
+    for i in range(1, rounds + 1):
+        terms = _audit_grounding(fields, keyword, transcript)
+        if not terms:
+            return fields
+        logger.warning("grounding round %d for %r: %d unsourced term(s) %s — revising",
+                       i, keyword, len(terms), terms)
+        findings = [{
+            "severity": "blocker",
+            "issue": f"The article names {t!r}, which appears nowhere in the source transcripts.",
+            "fix": f"Remove {t!r} or replace it with the term Tim actually uses. Do not keep it "
+                   f"because it sounds plausible — if Tim did not say it, it is not ours to claim.",
+        } for t in terms]
+        fields = _revise_without_regressing_length(
+            fields, keyword, findings, _word_goal(target_words), llm=llm)
+
+    left = _audit_grounding(fields, keyword, transcript)
+    if left:
+        logger.error(
+            "GROUNDING UNRESOLVED: %r still names %d unsourced term(s) after %d revision(s): "
+            "%s — shipping anyway; these are inventions unless Tim says them elsewhere",
+            keyword, len(left), rounds, left)
+    return fields
+
+
 def generate_scored_article(
     keyword: str,
     ctx: dict,
@@ -1652,6 +1712,11 @@ def generate_scored_article(
         llm = get_default()
 
     fields = generate_article_content(keyword, ctx, llm=llm, db=db)
+    # Hold the evidence in a LOCAL, not in `fields`. Every refine/revise step rebuilds the dict
+    # from a fixed set of keys, so anything carried inside it is silently dropped — and a
+    # grounding audit with no evidence reports "clean". That is the same way every other check
+    # failed today: it stopped working and said nothing.
+    transcript = fields.pop("_source_transcript", "") or ""
     fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
 
     def _score(f: dict, jl: list) -> dict:
@@ -1700,9 +1765,17 @@ def generate_scored_article(
     if critique:
         fields = critique_and_revise(
             fields, keyword, llm=llm,
-            transcript=_grounding_transcript(keyword, db=db),
+            transcript=transcript or _grounding_transcript(keyword, db=db),
             target_words=int(ctx.get("target_words", 1800)))
         fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
+
+    # ── Grounding is enforced on EVERY path, not just critique=True ──────────
+    # api/routes/topics.py — the app's own "generate article" button, and where future content
+    # comes from — calls this with critique off. Leaving the guard advisory there meant the one
+    # path that matters had no fabrication check at all. This costs an LLM round-trip ONLY when
+    # something is actually unsourced; a clean article pays nothing.
+    fields = _enforce_grounding(fields, keyword, transcript, llm=llm,
+                               target_words=int(ctx.get("target_words", 1800)))
 
     # ── Final deterministic guarantees ──────────────────────────────────────
     # Applied AFTER the refine loop so the returned article provably passes every
@@ -1765,6 +1838,7 @@ def generate_scored_article(
 
     fields["jsonld_json"] = jsonld
     fields["seo_score"] = result["score"]
+    fields["unsourced_terms"] = _audit_grounding(fields, keyword, transcript)
     logger.info(
         "generate_scored_article %r → score %d/100 (%d iters) failing=%s",
         keyword, result["score"], it,
