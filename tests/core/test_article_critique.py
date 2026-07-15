@@ -106,3 +106,34 @@ def test_revise_prompt_orders_blockers_before_majors():
 def test_revise_prompt_forbids_inventing_facts_to_satisfy_a_finding():
     p = revise_prompt(_ARTICLE, [{"severity": "major", "issue": "i", "fix": "f"}], 1620)
     assert "Do not invent facts" in p
+
+
+def test_run_critics_adds_a_deterministic_blocker_for_unsourced_terms():
+    # The LLM lenses judge a model with a model and say "clean" a lot. The string check is the
+    # one finding that cannot be talked out of.
+    from jobs.article_job import _run_critics
+
+    class _LLM:
+        def chat(self, prompt, want_json=False, **kw):
+            return '{"findings": []}'          # every lens passes it
+
+    fields = {"content_md": "<p>Use the SuperFlash 9000 membrane on the deck.</p>",
+              "title": "T", "meta": "m"}
+    out = _run_critics(fields, "wall flashings", "you cut the stucco and put the wall flashing "
+                       "into the actual concrete block", llm=_LLM())
+    gc = [f for f in out if f.get("lens") == "grounding-check"]
+    assert gc, "an invented product name must be flagged even when every LLM lens passes"
+    assert gc[0]["severity"] == "blocker"
+    assert "SuperFlash 9000" in gc[0]["issue"]
+
+
+def test_run_critics_grounding_check_is_silent_with_no_transcript():
+    # No evidence base -> no claims of fabrication (it would flag an entire article).
+    from jobs.article_job import _run_critics
+
+    class _LLM:
+        def chat(self, prompt, want_json=False, **kw):
+            return '{"findings": []}'
+
+    out = _run_critics({"content_md": "<p>Use the SuperFlash 9000.</p>"}, "kw", "", llm=_LLM())
+    assert [f for f in out if f.get("lens") == "grounding-check"] == []

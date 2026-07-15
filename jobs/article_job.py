@@ -381,15 +381,37 @@ def _chat_article(llm, prompt: str) -> dict:
 
 
 def _expand_prompt(base_prompt: str, draft: str, words: int, target_words: int, goal: int) -> str:
+    """Ask for more of TIM — never for more words.
+
+    This prompt used to say "Rewrite it LONGER ... add worked examples, specific costs,
+    materials, edge cases" against a ~{target}-word target, without requiring any of it to come
+    from the transcripts. That instructs the model to invent costs and code details to hit a
+    number, which is precisely the failure the grounding critic calls unshippable. It worked:
+    45,945 published words rested on 4,564 words of source.
+
+    So the ask is now "what did Tim cover that you left out?", and running out of Tim is a
+    legitimate place to stop.
+    """
     return (
         f"{base_prompt}\n\n"
-        f"═══ EXPAND THIS DRAFT ═══\n"
-        f"Your previous draft is only {words} words — far short of the {target_words}-word "
-        f"target. It must reach at least {goal} words.\n"
-        f"Rewrite it LONGER. Keep every existing section, heading, YouTube URL and ?t= "
-        f"timestamp EXACTLY as written — those are video-grounding citations and must survive "
-        f"verbatim. Add depth under each heading: worked examples, specific costs, materials, "
-        f"edge cases, local detail. Do not pad with filler and do not repeat yourself.\n"
+        f"═══ EXPAND THIS DRAFT — FROM THE SOURCE TRANSCRIPTS ONLY ═══\n"
+        f"The draft is {words} words. The plan plotted this article at about {target_words} "
+        f"words ({goal}+ is the guide), and there is likely more in the SOURCE TRANSCRIPTS "
+        f"above that it has not used yet — but that number is only reachable if Tim's material "
+        f"reaches it.\n\n"
+        f"Re-read the transcripts and add ONLY what Tim actually covers and the draft omits: "
+        f"his specific techniques, materials, brand names, code points, numbers, and the "
+        f"examples he walks through on real roofs.\n\n"
+        f"ABSOLUTE RULES:\n"
+        f"- DO NOT invent anything to reach a length. No costs, code references, measurements, "
+        f"  timeframes or product claims that are not in the transcripts above. A fabricated "
+        f"  price or code cite is the worst thing this article can contain.\n"
+        f"- If the transcripts contain nothing further of substance, RETURN THE DRAFT AS-IS. "
+        f"  Stopping short is correct and expected — {goal} words is a guide, not a quota, and "
+        f"  a shorter article that is all Tim beats a longer one that is partly invented.\n"
+        f"- No filler, no restating a point in new words, no marketing language.\n"
+        f"- Keep every section, heading, YouTube URL and ?t= timestamp EXACTLY as written — "
+        f"  those are the grounding citations and must survive verbatim.\n"
         f"Return the SAME JSON shape.\n\n"
         f"PREVIOUS DRAFT:\n{draft}"
     )
@@ -507,11 +529,9 @@ def generate_article_content(
     # ── Video grounding (best-effort) ─────────────────────────────────────────
     if ground_videos:
         try:
-            from app.retrieval import hybrid_search  # noqa: PLC0415
-            result = hybrid_search(keyword, k=4, db=db)
-            video_chunks = result.get("chunks") or []
-            if video_chunks:
-                user_prompt = _append_video_grounding(user_prompt, video_chunks)
+            sources = source_transcripts(keyword, db=db)
+            if sources:
+                user_prompt = _append_video_grounding(user_prompt, sources)
         except Exception as exc:  # noqa: BLE001
             # RuntimeError here is the strict unstamped-session guard — never bury it
             lvl = logger.critical if isinstance(exc, RuntimeError) else logger.warning
@@ -628,10 +648,13 @@ def generate_article(
         try:
             from app.retrieval import hybrid_search  # noqa: PLC0415
             with _stamped_session(tenant_id) as _gs:
+                # chunks drive the jsonld + oembed picks; the PROMPT gets whole topic slices.
                 result = hybrid_search(keyword, k=4, db=_gs)
-            video_chunks = result.get("chunks") or []
+                video_chunks = result.get("chunks") or []
+                sources = source_transcripts(keyword, db=_gs)
+            if sources:
+                user_prompt = _append_video_grounding(user_prompt, sources)
             if video_chunks:
-                user_prompt = _append_video_grounding(user_prompt, video_chunks)
                 jsonld_video_list = _build_video_jsonld(video_chunks, tenant_id=tenant_id)
         except Exception as exc:  # noqa: BLE001
             lvl = logger.critical if isinstance(exc, RuntimeError) else logger.warning
@@ -953,9 +976,17 @@ def refine_article_content(fields: dict, keyword: str, *, llm=None) -> dict:
         f"You are an expert SEO and AIO (AI-answer optimized) content editor.\n"
         f"Primary keyword: {keyword}\n\n"
         f"Revise the article below to be FULLY AIO-optimized and SEO-optimized:\n"
-        f"- Use clear question-led headings (e.g. ## What is X? ## How does X work?)\n"
+        f"- Use clear question-led headings that name the ACTUAL SUBJECT of their section\n"
+        f"  (e.g. '## What does a permit cost?', '## How long does installation take?')\n"
+        f"- Do NOT bolt the keyword onto every heading. AT MOST TWO headings in the whole\n"
+        f"  article may contain '{keyword}', and only where it is what the section is really\n"
+        f"  about. Headings like 'What Happens on Installation Day When You Need a New Roof?'\n"
+        f"  or 'What Does Cleanup Entail After You Need a New Roof?' are exactly what to avoid:\n"
+        f"  no human writes that, and it reads as spam to readers and to Google.\n"
         f"- Provide concise, direct answers immediately after each heading\n"
-        f"- Ensure the target keyword and semantic variants appear naturally throughout\n"
+        f"- Use the keyword where it genuinely fits and SEMANTIC VARIANTS everywhere else\n"
+        f"  (pronouns, 'the roof', 'this'). Repetition past ~1% density is over-optimisation:\n"
+        f"  it reads robotic and Rank Math penalises it above 1.5%.\n"
         f"- Improve the meta description to be compelling and keyword-rich (≤160 chars)\n"
         f"- Add or improve a FAQ section with common questions and concise answers\n"
         f"- Preserve all factual content; only improve structure and clarity\n"
@@ -1347,12 +1378,24 @@ def _ensure_title(title: str, keyword: str) -> str:
             candidate = kw_tc
         title = candidate
 
-    # Step 2: enforce 30–65 char band
+    # Step 2: enforce 30–65 char band.
+    # Cut at a CLAUSE boundary, never mid-clause. Trimming at the last space ≤65 kept the length
+    # and the keyword valid while destroying the meaning — it turned
+    #   "7 Essential Fire and Water Barrier Tips: Protect Your Florida Home from Disaster"
+    # into "...Tips: Protect Your Florida", a dangling fragment. Dropping the whole trailing
+    # clause instead yields "7 Essential Fire and Water Barrier Tips" — still true, still has the
+    # keyword, and reads like a title a human wrote. If no clause boundary gives a usable title,
+    # leave it long: an over-length title costs one length check, a butchered one costs the reader.
     if len(title) > 65:
-        # Trim at last space ≤65 so we don't split mid-word
-        trimmed = title[:65]
-        space_pos = trimmed.rfind(" ")
-        title = trimmed[:space_pos].rstrip() if space_pos > 0 else trimmed.rstrip()
+        best = None
+        for m in re.finditer(r"\s*[:–—|,]\s*", title):
+            head = title[:m.start()].rstrip()
+            # No lower bound here: a short head ("Fix Roof") is a fine title once the pad step
+            # below extends it. Gating on >=30 rejected the good answer and left the title long.
+            if len(head) <= 65 and kw_lower in head.lower():
+                best = head  # keep scanning; the longest qualifying prefix wins
+        if best:
+            title = best
 
     if len(title) < 30:
         # Pad with a short descriptor; trim back to 65 if we overshoot
@@ -1419,22 +1462,26 @@ def _ensure_answer_first(content_md: str, keyword: str, faq: list) -> str:
 
 
 def _grounding_transcript(keyword: str, db=None) -> str:
-    """Source-video transcript for the grounding critic — the same chunks the article was built
-    from, so the critic judges against the article's actual evidence.
+    """Evidence base for the grounding critic — the SAME topic slices the generator was given.
 
-    Slices are much larger than the generation prompt's 300 chars: the critic has to verify
-    claims against this text, and a truncated transcript would make it flag true statements as
-    invented. Best-effort — no transcript means the grounding critic reviews structure only.
+    This used to run its own `hybrid_search(k=6)` with 1200-char slices, which meant the critic
+    judged a 3,900-word article against ~250 words of source. It could not tell "Tim never said
+    this" from "that isn't in my excerpt", so it passed invented content as clean. A critic
+    holding less evidence than the writer cannot catch the writer inventing.
     """
     try:
-        from app.retrieval import hybrid_search  # noqa: PLC0415
-        from core.retrieval import link as video_link  # noqa: PLC0415
-        chunks = (hybrid_search(keyword, k=6, db=db) or {}).get("chunks") or []
+        sources = source_transcripts(keyword, db=db)
     except Exception as exc:  # noqa: BLE001
         logger.warning("grounding transcript unavailable for %r: %s", keyword, exc)
         return ""
-    return "\n".join(f"- {video_link(c.video_id, c.start)} : {c.text[:1200]}"
-                      for c, _score in chunks)
+    if not sources:
+        logger.warning("grounding transcript EMPTY for %r — the grounding critic is blind "
+                       "and will pass anything; treat its verdict as unproven", keyword)
+        return ""
+    return "\n\n".join(
+        f"- {s['url']} ({s['title']}{' — ' + s['label'] if s.get('label') else ''}):\n"
+        f"  {s['transcript']}"
+        for s in sources)
 
 
 CRITIQUE_ROUNDS = 3
@@ -1471,6 +1518,25 @@ def _run_critics(fields: dict, keyword: str, transcript: str, *, llm) -> list[di
             f["lens"] = lens
         findings.extend(got)
         logger.info("critic %s on %r: %d finding(s)", lens, keyword, len(got))
+
+    # Deterministic grounding pass. The three lenses above are models judging a model, and they
+    # say "clean" a lot; this one is a string comparison and cannot be reasoned with. It only
+    # speaks about proper nouns — brands, products, codes — because those are the inventions
+    # that carry real-world consequences on a licensed roofer's site.
+    if transcript:
+        from core.grounding import unsourced_terms  # noqa: PLC0415
+        for term in unsourced_terms(fields.get("content_md", ""), transcript, ignore=keyword):
+            findings.append({
+                "severity": "blocker",
+                "lens": "grounding-check",
+                "issue": f"The article names {term!r}, which does not appear anywhere in the "
+                         f"source transcripts for this article.",
+                "fix": f"Remove {term!r}, or replace it with the term Tim actually uses. Do not "
+                       f"keep it on the grounds that it sounds plausible — if Tim did not say "
+                       f"it here, it is not this article's to claim.",
+            })
+        logger.info("grounding-check on %r: %d unsourced term(s)", keyword,
+                    sum(1 for f in findings if f.get("lens") == "grounding-check"))
     return findings
 
 
@@ -1754,19 +1820,136 @@ def _duration_iso(seconds: float | None) -> str:
     return f"PT{secs}S"
 
 
-def _append_video_grounding(user_prompt: str, chunks: list[tuple]) -> str:
-    """Append a SOURCE VIDEOS section to the user prompt."""
+SOURCE_MAX_SLICES = 14
+SOURCE_MAX_WORDS = 24000
+_NO_TOPIC_PAD_SECS = 90.0
+
+
+def _topic_windows(video_id: str, db) -> list[tuple[float, float | None, str]]:
+    """A video's topic markers as (start, end, label) windows, in playback order.
+
+    content_graph stores a topic's start but no end, so a topic runs until the next one begins
+    (the last runs to the end of the video, hence None).
+    """
+    from app.models import GraphNode  # noqa: PLC0415
+
+    tops = (db.query(GraphNode)
+            .filter(GraphNode.video_id == video_id, GraphNode.kind == "topics")
+            .order_by(GraphNode.start).all())
+    return [((t.start or 0.0),
+             (tops[i + 1].start if i + 1 < len(tops) else None),
+             (t.label or ""))
+            for i, t in enumerate(tops)]
+
+
+def source_transcripts(keyword: str, db=None, *, max_slices: int = SOURCE_MAX_SLICES,
+                       max_words: int = SOURCE_MAX_WORDS) -> list[dict]:
+    """Tim's actual words on this topic: the transcript of the RELEVANT TIME SLICES.
+
+    Retrieval finds where Tim discusses the keyword; each hit is then widened to the whole
+    TOPIC it sits inside (content_graph kind=topics marks topic starts; a topic runs until the
+    next one begins). The result is contiguous, on-topic speech — Tim's complete thought, not a
+    300-char fragment of it, and not a 14,000-word video where 3 minutes are on point.
+
+    Why slices and not whole videos: "How to Install a Metal Roof in Florida" is 14,834 words,
+    of which maybe a single passage covers ventilation. Feeding the whole thing buries the
+    relevant material in noise and invites the model to drift off-topic.
+
+    Why not the old way: `hybrid_search(k=4)` + `chunk.text[:300]` handed the generator ~200
+    words of Tim and asked for an 1800-word article. There is only one way to close a gap that
+    size, and it is invention — measured across the last regen, 45,945 published words had
+    4,564 words of retrievable source behind them (~10%).
+
+    Returns [{video_id, title, url, label, transcript}], most relevant first.
+    """
+    from app.models import Chunk, Video  # noqa: PLC0415
+    from app.retrieval import hybrid_search  # noqa: PLC0415
     from core.retrieval import link as video_link  # noqa: PLC0415
+
+    hits = (hybrid_search(keyword, k=40, db=db) or {}).get("chunks") or []
+    if not hits:
+        return []
+
+    # Map each hit onto the topic window containing it, so several hits inside one topic collapse
+    # to a single slice and score it higher rather than repeating it.
+    windows: dict[tuple, dict] = {}
+    topic_cache: dict[str, list] = {}
+    for chunk, score in hits:
+        vid = chunk.video_id
+        if vid not in topic_cache:
+            topic_cache[vid] = _topic_windows(vid, db)
+        cstart = chunk.start or 0.0
+        window = next((w for w in reversed(topic_cache[vid]) if w[0] <= cstart), None)
+        if window is None:  # no topic marks this region — fall back to a pad around the hit
+            window = (max(0.0, cstart - _NO_TOPIC_PAD_SECS), cstart + _NO_TOPIC_PAD_SECS, "")
+        key = (vid, window[0])
+        entry = windows.setdefault(key, {"vid": vid, "win": window, "score": 0.0})
+        entry["score"] += float(score or 0.0)
+
+    out: list[dict] = []
+    budget = max_words
+    for entry in sorted(windows.values(), key=lambda e: e["score"], reverse=True)[:max_slices]:
+        vid, (wstart, wend, label) = entry["vid"], entry["win"]
+        q = db.query(Chunk).filter(Chunk.video_id == vid, Chunk.end > wstart)
+        if wend is not None:
+            q = q.filter(Chunk.start < wend)
+        rows = q.order_by(Chunk.start).all()
+        if not rows:
+            continue
+        text = " ".join((c.text or "").strip() for c in rows).strip()
+        words = text.split()
+        if not words:
+            continue
+        if len(words) > budget:
+            text = " ".join(words[:budget])
+        budget -= min(len(words), budget)
+        video = db.get(Video, vid)
+        out.append({
+            "video_id": vid,
+            "title": (video.title if video else "") or vid,
+            "url": video_link(vid, wstart),
+            "label": label,
+            "transcript": text,
+        })
+        if budget <= 0:
+            logger.info("source_transcripts %r: hit the %d-word budget at %d slice(s)",
+                        keyword, max_words, len(out))
+            break
+    return out
+
+
+def _append_video_grounding(user_prompt: str, sources: list[dict]) -> str:
+    """Append Tim's on-topic transcript slices + the grounding rules to the user prompt."""
     lines = [
         "",
-        "SOURCE VIDEOS from Perkins Roofing's own YouTube channel (Tim's expert content). You MUST "
-        "reference at least two of these in the article body as inline markdown links using the exact "
-        "?t= URLs below — e.g. [what Tim says about X](URL) — and weave their specific insights into "
-        "the copy. These first-party expert videos are the article's strongest E-E-A-T + AIO signal:",
+        "=" * 70,
+        "SOURCE TRANSCRIPTS — Tim Kanak's own words, from Perkins Roofing's YouTube channel.",
+        "Each block is the transcript of the section of a video where Tim actually discusses",
+        "this topic. This is the ONLY material this article may be built from.",
+        "",
+        "HARD RULES — these override every other instruction, including length:",
+        "1. EVERY specific fact — price, material, brand, code, measurement, timeframe,",
+        "   technique, recommendation — MUST come from the transcripts below. If Tim does not",
+        "   say it, DO NOT write it. No general roofing knowledge. No 'typical' figures.",
+        "2. If the transcripts do not cover something a section would need, CUT THE SECTION.",
+        "   A shorter article that is entirely Tim beats a longer one that is partly invented.",
+        "3. NO FILLER. Marketing lines ('peace of mind', 'superior protection', 'complete",
+        "   line of defense'), restating a point in new words, and throat-clearing are defects.",
+        "   If a sentence carries no information from Tim, delete it.",
+        "4. WRITE IN TIM'S VOICE — a working South Florida roofer explaining it plainly, using",
+        "   the words and examples he actually uses. Not an SEO agency, not a brochure.",
+        "5. Cite with the exact ?t= URLs given below, as inline markdown links, at least twice.",
+        "6. Length is an OUTCOME of how much Tim covers, never a target to pad toward.",
+        "=" * 70,
     ]
-    for chunk, _score in chunks:
-        yt_link = video_link(chunk.video_id, chunk.start)
-        lines.append(f"- {yt_link} : {chunk.text[:300]}")
+    for i, s in enumerate(sources, 1):
+        topic = f" — topic: {s['label']}" if s.get("label") else ""
+        lines += [
+            "",
+            f"--- SOURCE {i}: {s['title']}{topic}",
+            f"    CITE AS: {s['url']}",
+            f"    TIM SAYS: {s['transcript']}",
+        ]
     return user_prompt + "\n".join(lines)
 
 

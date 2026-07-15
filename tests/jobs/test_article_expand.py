@@ -200,6 +200,34 @@ def test_ensure_title_number_never_drops_the_keyword():
     assert "wall flashings" in out.lower(), "trimming for the year cut the keyword out"
 
 
+def test_ensure_title_cuts_at_a_clause_boundary_not_mid_clause():
+    # Regression: trimming at the last space <=65 produced the dangling fragment
+    # "7 Essential Fire and Water Barrier Tips: Protect Your Florida" (observed in prod).
+    # Dropping the whole trailing clause keeps a title that still reads like English.
+    from jobs.article_job import _ensure_title
+    out = _ensure_title(
+        "7 Essential Fire and Water Barrier Tips: Protect Your Florida Home from Disaster",
+        "fire and water barrier")
+    assert out == "7 Essential Fire and Water Barrier Tips"
+    assert len(out) <= 65
+
+
+def test_ensure_title_leaves_a_long_title_alone_when_no_clause_boundary_helps():
+    # No separator to cut at -> leave it long rather than butcher it. Failing one length
+    # check beats shipping a fragment.
+    from jobs.article_job import _ensure_title
+    t = "Wall Flashings Are The Single Most Important Detail On Any Florida Roof Today"
+    assert _ensure_title(t, "wall flashings") == t
+
+
+def test_ensure_title_never_cuts_the_keyword_out_when_shortening():
+    from jobs.article_job import _ensure_title
+    out = _ensure_title(
+        "A Homeowner's Complete Reference: Wall Flashings And Why They Fail So Often",
+        "wall flashings")
+    assert "wall flashings" in out.lower()
+
+
 def test_ensure_title_number_never_truncates_a_title_to_fit_the_year():
     # Regression: trimming at a word boundary to make room for " (2026)" cut the final noun and
     # shipped "...Preventing Water (2026)" / "...to a Cooler (2026)" to the live site. Length and
@@ -360,3 +388,60 @@ def test_one_broken_critic_does_not_kill_the_review():
                               "kw", llm=llm, target_words=1000)
     assert out["title"] == "T"
     assert len(llm.prompts) == 3
+
+
+def test_expand_prompt_forbids_inventing_to_reach_length():
+    # The old prompt said "Rewrite it LONGER ... add specific costs" with no requirement that
+    # any of it came from Tim. That is an instruction to fabricate: 45,945 published words rested
+    # on 4,564 words of source. Expansion must ask for more of Tim, and allow stopping.
+    from jobs.article_job import _expand_prompt
+    p = _expand_prompt("BASE", "draft text", 600, 1800, 1620)
+    low = p.lower()
+    assert "do not invent" in low
+    assert "return the draft as-is" in low
+    assert "source transcripts" in low
+    assert "stopping short is correct" in low
+    # must not order the model to simply write more
+    assert "rewrite it longer" not in low
+
+
+def test_topic_windows_end_where_the_next_topic_starts():
+    from jobs.article_job import _topic_windows
+
+    class _N:
+        def __init__(self, s, label):
+            self.start, self.label = s, label
+
+    class _Q:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def filter(self, *a, **k):
+            return self
+
+        def order_by(self, *a, **k):
+            return self
+
+        def all(self):
+            return self._rows
+
+    class _DB:
+        def query(self, *a, **k):
+            return _Q([_N(0.0, "intro"), _N(30.0, "flashings"), _N(90.0, "outro")])
+
+    assert _topic_windows("v1", _DB()) == [
+        (0.0, 30.0, "intro"), (30.0, 90.0, "flashings"), (90.0, None, "outro"),
+    ]
+
+
+def test_video_grounding_block_states_the_hard_rules():
+    from jobs.article_job import _append_video_grounding
+    out = _append_video_grounding("PROMPT", [{
+        "video_id": "v1", "title": "Wall Flashings 101", "url": "https://youtu.be/v1?t=10",
+        "label": "poly flash details", "transcript": "you cut the poly flash six inches up",
+    }])
+    assert "you cut the poly flash six inches up" in out
+    assert "https://youtu.be/v1?t=10" in out
+    assert "poly flash details" in out
+    assert "If Tim does not" in out and "DO NOT write it" in out
+    assert "CUT THE SECTION" in out

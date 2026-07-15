@@ -105,6 +105,7 @@ def publish(
     jsonld: list[dict],
     status: str = "draft",
     focus_keyword: str | None = None,
+    slug: str | None = None,
 ) -> int:
     """Create a WordPress post and return the new post id.
 
@@ -115,6 +116,10 @@ def publish(
         jsonld:           List of schema.org dicts to store as post-meta.
                           Rendered in <head> by the perkins-jsonld mu-plugin.
         status:           WP post status — "draft", "publish", "future", etc.
+        slug:             Post permalink. Pass the article's own slug so the WP permalink
+                          matches our DB key: the focus keyword is derived FROM that slug, so
+                          letting WordPress invent one from the title instead is what makes
+                          Rank Math's kw-in-slug judgement disagree with core.seo's.
 
     Returns:
         Integer post id of the newly created post.
@@ -131,6 +136,8 @@ def publish(
         "author": _author_id(),  # policy: always Tim Kanak
         "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
+    if slug:
+        payload["slug"] = slug
     resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return resp.json()["id"]

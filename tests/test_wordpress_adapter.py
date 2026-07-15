@@ -53,3 +53,55 @@ def test_post_meta_omits_empty_focus_keyword(monkeypatch):
     meta = wp._post_meta(title="t", meta_description="d", jsonld=[], focus_keyword=None)
     assert "rank_math_focus_keyword" not in meta
     assert meta["rank_math_title"] == "t"
+
+
+def test_publish_sends_the_slug_so_the_permalink_matches_our_article(monkeypatch):
+    # The focus keyword is derived FROM the article slug, so the WP permalink must be that same
+    # slug — otherwise WordPress invents one from the title and Rank Math's kw-in-slug check
+    # disagrees with core.seo's.
+    sent = {}
+
+    class _R:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"id": 4242}
+
+    def fake_post(url, json=None, auth=None, timeout=None):
+        sent.update(json)
+        return _R()
+
+    monkeypatch.setenv("WP_URL", "https://example.com")
+    monkeypatch.setenv("WP_USER", "jon")
+    monkeypatch.setenv("WP_APP_PWD", "x")
+    monkeypatch.setattr(wp, "_rest_base_url", lambda b: "https://example.com")
+    monkeypatch.setattr(wp, "_author_id", lambda: 1)
+    monkeypatch.setattr(wp.requests, "post", fake_post)
+
+    pid = wp.publish(title="T", html="<p>x</p>", meta_description="d", jsonld=[],
+                     focus_keyword="wall flashings", slug="wall-flashings")
+    assert pid == 4242
+    assert sent["slug"] == "wall-flashings"
+    assert sent["status"] == "draft"
+
+
+def test_publish_omits_slug_when_not_given(monkeypatch):
+    sent = {}
+
+    class _R:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"id": 1}
+
+    monkeypatch.setenv("WP_URL", "https://example.com")
+    monkeypatch.setenv("WP_USER", "jon")
+    monkeypatch.setenv("WP_APP_PWD", "x")
+    monkeypatch.setattr(wp, "_rest_base_url", lambda b: "https://example.com")
+    monkeypatch.setattr(wp, "_author_id", lambda: 1)
+    monkeypatch.setattr(wp.requests, "post",
+                        lambda url, json=None, auth=None, timeout=None: (sent.update(json), _R())[1])
+    wp.publish(title="T", html="<p>x</p>", meta_description="d", jsonld=[])
+    assert "slug" not in sent
