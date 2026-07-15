@@ -160,3 +160,203 @@ def test_refine_that_preserves_length_is_accepted():
         {"title": "old", "slug": "s", "meta": "m", "content_md": body, "faq_json": []},
         "kw", llm=llm)
     assert out["title"] == "improved"
+
+
+# ── deterministic guarantees (rm_title_number, rm_kw_in_img_alt, title punctuation) ──
+
+def test_title_keyword_match_tolerates_punctuation():
+    """The bug that produced 'Roof Estimate Vs Inspection: Roof Estimate vs. Inspection: Key':
+    'roof estimate vs inspection' is not a literal substring of 'Roof Estimate vs. Inspection'."""
+    from jobs.article_job import _ensure_title
+
+    out = _ensure_title("Roof Estimate vs. Inspection: Key Differences", "roof estimate vs inspection")
+    assert not out.lower().startswith("roof estimate vs inspection: roof estimate")
+    assert out.lower().count("estimate") == 1, f"keyword duplicated into title: {out!r}"
+
+
+def test_title_still_gets_keyword_when_genuinely_absent():
+    from jobs.article_job import _ensure_title
+    out = _ensure_title("A Guide To Attic Airflow For Homeowners", "roof ventilation")
+    assert "roof ventilation" in out.lower()
+
+
+def test_ensure_title_number_adds_a_digit():
+    from jobs.article_job import _ensure_title_number
+    out = _ensure_title_number("Wall Flashings: Your Essential Guide", "wall flashings")
+    assert any(ch.isdigit() for ch in out)
+    assert 30 <= len(out) <= 65
+
+
+def test_ensure_title_number_leaves_titles_that_already_have_one():
+    from jobs.article_job import _ensure_title_number
+    t = "7 Essential Wall Flashing Tips for Florida Roofs"
+    assert _ensure_title_number(t, "wall flashings") == t
+
+
+def test_ensure_title_number_never_drops_the_keyword():
+    from jobs.article_job import _ensure_title_number
+    t = "A Really Quite Long Title About Wall Flashings Indeed Yes"
+    out = _ensure_title_number(t, "wall flashings")
+    assert "wall flashings" in out.lower(), "trimming for the year cut the keyword out"
+
+
+def test_ensure_title_number_never_truncates_a_title_to_fit_the_year():
+    # Regression: trimming at a word boundary to make room for " (2026)" cut the final noun and
+    # shipped "...Preventing Water (2026)" / "...to a Cooler (2026)" to the live site. Length and
+    # keyword were both still satisfied — only the meaning was destroyed. Leave it alone instead.
+    from jobs.article_job import _ensure_title_number
+    for title, kw in [
+        ("Wall Flashings: Your Essential Guide to Preventing Water Damage", "wall flashings"),
+        ("Roof Ventilation: Your Essential Guide to a Cooler, Healthier Home", "roof ventilation"),
+    ]:
+        out = _ensure_title_number(title, kw)
+        assert out == title, f"title was mangled to fit the year: {out!r}"
+
+
+def test_ensure_article_image_uses_the_source_video_thumbnail():
+    from jobs.article_job import _ensure_article_image
+    body = "<p>intro</p>\nhttps://www.youtube.com/watch?v=BnsaVtCb0GU\n<p>rest</p>"
+    out = _ensure_article_image(body, "wall flashings")
+    assert "img.youtube.com/vi/BnsaVtCb0GU/hqdefault.jpg" in out
+    assert 'alt="Wall Flashings — Perkins Roofing"' in out
+    assert body in out, "original body must be preserved"
+
+
+def test_ensure_article_image_is_not_fabricated_without_a_video():
+    # No video to take a thumbnail from -> no image. Never invent one (the old repair script
+    # injected the same generic perkins-roofing-seo-guide.jpg into every article).
+    from jobs.article_job import _ensure_article_image
+    body = "<p>no video here</p>"
+    assert _ensure_article_image(body, "wall flashings") == body
+
+
+def test_ensure_article_image_does_not_add_a_second_image():
+    from jobs.article_job import _ensure_article_image
+    body = '<img src="real.jpg" alt="a real photo">\nhttps://youtu.be/BnsaVtCb0GU'
+    out = _ensure_article_image(body, "wall flashings")
+    assert out.count("<img") == 1, "existing image must not be duplicated"
+
+
+def test_article_image_then_alt_caption_satisfies_rank_math():
+    # The two helpers compose: supply the real image, then caption it with the keyword.
+    from core.seo import rank_math_checks
+    from jobs.article_job import _ensure_article_image, _ensure_img_alt_keyword
+    body = "<p>intro</p>\nhttps://youtu.be/BnsaVtCb0GU\n<p>rest</p>"
+    out = _ensure_img_alt_keyword(_ensure_article_image(body, "wall flashings"), "wall flashings")
+    checks = {c["key"]: c["pass"] for c in rank_math_checks(
+        "Wall Flashings Guide 2026", "m", "wall-flashings", out, "wall flashings")}
+    assert checks["rm_kw_in_img_alt"] is True
+
+
+def test_img_alt_gets_the_keyword_when_an_image_exists():
+    from jobs.article_job import _ensure_img_alt_keyword
+    html = '<p>x</p><img src="a.jpg" alt="a roof">'
+    out = _ensure_img_alt_keyword(html, "roof ventilation")
+    assert 'alt="Roof Ventilation"' in out
+
+
+def test_img_alt_is_not_fabricated_when_there_is_no_image():
+    # Inventing an <img> would render as a broken image on Tim's site.
+    from jobs.article_job import _ensure_img_alt_keyword
+    html = "<h2>H</h2><p>no images here</p>"
+    assert _ensure_img_alt_keyword(html, "roof ventilation") == html
+
+
+def test_img_alt_left_alone_when_keyword_already_present():
+    from jobs.article_job import _ensure_img_alt_keyword
+    html = '<img src="a.jpg" alt="Roof Ventilation baffles">'
+    assert _ensure_img_alt_keyword(html, "roof ventilation") == html
+
+
+# ── the critique loop driver (3 lenses x 3 rounds) ───────────────────────────
+
+def _critique(*findings):
+    return json.dumps({"findings": list(findings)})
+
+
+def _finding(sev="major", issue="an issue"):
+    return {"severity": sev, "issue": issue, "fix": "a fix"}
+
+
+_CLEAN = _critique()
+
+
+def test_loop_stops_early_when_all_critics_are_clean():
+    from jobs.article_job import critique_and_revise
+    # 3 clean critics -> no revision, no further rounds
+    llm = _ScriptedLLM(_CLEAN, _CLEAN, _CLEAN)
+    fields = {"title": "T", "slug": "s", "meta": "m",
+              "content_md": "<h2>H</h2><p>" + ("word " * 900) + "</p>", "faq_json": []}
+    out = critique_and_revise(fields, "kw", llm=llm, target_words=1000)
+    assert out is fields
+    assert len(llm.prompts) == 3, "clean critics must not trigger a revision"
+
+
+def test_minor_only_findings_do_not_trigger_a_revision():
+    from jobs.article_job import critique_and_revise
+    llm = _ScriptedLLM(_critique(_finding("minor")), _critique(_finding("minor")), _CLEAN)
+    fields = {"title": "T", "slug": "s", "meta": "m",
+              "content_md": "<h2>H</h2><p>" + ("word " * 900) + "</p>", "faq_json": []}
+    critique_and_revise(fields, "kw", llm=llm, target_words=1000)
+    assert len(llm.prompts) == 3, "minor findings must not spin the loop"
+
+
+def test_blocking_finding_triggers_a_revision_round():
+    from jobs.article_job import critique_and_revise
+    body = "<h2>H</h2><p>" + ("word " * 900) + "</p>"
+    longer = json.dumps({"title": "revised", "slug": "s", "metaDescription": "m",
+                         "content": "<h2>H</h2><p>" + ("word " * 1000) + "</p>",
+                         "faq": [{"q": "q", "a": "a"}]})
+    llm = _ScriptedLLM(_critique(_finding("blocker")), _CLEAN, _CLEAN,  # round 1 critics
+                       longer,                                          # revise
+                       _CLEAN, _CLEAN, _CLEAN)                          # round 2 critics: clean
+    out = critique_and_revise({"title": "old", "slug": "s", "meta": "m",
+                               "content_md": body, "faq_json": []},
+                              "kw", llm=llm, target_words=1000)
+    assert out["title"] == "revised"
+    assert len(llm.prompts) == 7  # 3 critics + 1 revise + 3 critics
+
+
+def test_loop_is_bounded_at_three_rounds():
+    from jobs.article_job import CRITIQUE_ROUNDS, critique_and_revise
+    assert CRITIQUE_ROUNDS == 3
+    body = "<h2>H</h2><p>" + ("word " * 900) + "</p>"
+    def grow(n):
+        return json.dumps({"title": f"r{n}", "slug": "s", "metaDescription": "m",
+                           "content": "<h2>H</h2><p>" + ("word " * (900 + n * 50)) + "</p>",
+                           "faq": [{"q": "q", "a": "a"}]})
+    # a critic that ALWAYS finds a blocker must still terminate
+    replies = []
+    for n in range(1, CRITIQUE_ROUNDS + 1):
+        replies += [_critique(_finding("blocker")), _CLEAN, _CLEAN, grow(n)]
+    llm = _ScriptedLLM(*replies)
+    critique_and_revise({"title": "old", "slug": "s", "meta": "m",
+                         "content_md": body, "faq_json": []},
+                        "kw", llm=llm, target_words=1000)
+    assert len(llm.prompts) == CRITIQUE_ROUNDS * 4  # (3 critics + 1 revise) x 3
+
+
+def test_revision_that_loses_content_is_rejected():
+    from jobs.article_job import critique_and_revise
+    body = "<h2>H</h2><p>" + ("word " * 900) + "</p>"
+    shorter = json.dumps({"title": "shrunk", "slug": "s", "metaDescription": "m",
+                          "content": "<h2>H</h2><p>" + ("word " * 100) + "</p>",
+                          "faq": [{"q": "q", "a": "a"}]})
+    llm = _ScriptedLLM(_critique(_finding("blocker")), _CLEAN, _CLEAN, shorter,
+                       _CLEAN, _CLEAN, _CLEAN)
+    out = critique_and_revise({"title": "keep", "slug": "s", "meta": "m",
+                               "content_md": body, "faq_json": []},
+                              "kw", llm=llm, target_words=1000)
+    assert out["title"] == "keep", "a revision that drops 90% must not be accepted"
+
+
+def test_one_broken_critic_does_not_kill_the_review():
+    from jobs.article_job import critique_and_revise
+    body = "<h2>H</h2><p>" + ("word " * 900) + "</p>"
+    # first critic returns junk; the other two still run
+    llm = _ScriptedLLM("not json at all", _CLEAN, _CLEAN)
+    out = critique_and_revise({"title": "T", "slug": "s", "meta": "m",
+                               "content_md": body, "faq_json": []},
+                              "kw", llm=llm, target_words=1000)
+    assert out["title"] == "T"
+    assert len(llm.prompts) == 3

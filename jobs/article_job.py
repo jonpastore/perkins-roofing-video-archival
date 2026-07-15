@@ -1201,6 +1201,104 @@ def _title_case_keyword(keyword: str) -> str:
     return " ".join(w.capitalize() for w in keyword.split())
 
 
+def _kw_span_re(keyword: str):
+    """Regex matching the keyword where words may be separated by punctuation as well as space,
+    so "roof estimate vs inspection" still matches "Roof Estimate vs. Inspection"."""
+    import re as _re  # noqa: PLC0415
+    parts = [_re.escape(w) for w in (keyword or "").split() if w]
+    if not parts:
+        return None
+    return _re.compile(r"\b" + r"[\s.,:;'\"()\[\]/–—-]+".join(parts) + r"\b", _re.IGNORECASE)
+
+
+def _ensure_title_number(title: str, keyword: str) -> str:
+    """rm_title_number: Rank Math wants a digit in the title. Deterministic, no LLM.
+
+    Appends the current year — the standard SEO convention for this ("Roof Costs 2026"), honest,
+    and it works for evergreen topics where an invented item count ("7 Things...") would be a lie
+    about the article's structure.
+
+    If the year does not fit inside the 65-char band, the title is returned UNCHANGED and
+    rm_title_number simply fails. This used to trim the title at a word boundary to make room,
+    which cut the final noun and shipped dangling nonsense to the live site:
+        "Wall Flashings: ... to Preventing Water Damage" -> "... to Preventing Water (2026)"
+        "Roof Ventilation: ... to a Cooler, Healthier Home" -> "... to a Cooler (2026)"
+    Length and the keyword were both still "valid" — only the meaning was destroyed, which no
+    length check can catch. A readable title that fails one SEO check beats a broken one that
+    passes: rewrite the title by hand if the number matters.
+    """
+    import re as _re  # noqa: PLC0415
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    title = (title or "").strip()
+    if _re.search(r"\d", title):
+        return title
+
+    suffix = f" ({datetime.now(timezone.utc).year})"
+    if len(title) + len(suffix) <= 65:
+        return title + suffix
+    return title  # no room for the year; never truncate to make room
+
+
+_YT_ID_RE = re.compile(
+    r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([A-Za-z0-9_-]{6,})", re.IGNORECASE)
+
+
+def _ensure_article_image(content_md: str, keyword: str) -> str:
+    """Give the article a real image: the thumbnail of the video it was built from.
+
+    rm_kw_in_img_alt needs an <img> with the keyword in its alt, and these articles ship with
+    none. The honest source is already in the body — every article embeds Tim's video, so its
+    thumbnail is a genuinely relevant image rather than decoration.
+
+    Deliberately NOT the retired approach (the old SEO/AIO repair script, removed in this
+    change), which injected one generic `perkins-roofing-seo-guide.jpg` into every article
+    purely to turn the check green. The same stock image on unrelated posts is decoration that
+    lies about its own content.
+
+    No video in the body -> no image. We never invent one.
+    """
+    if not content_md or re.search(r"<img\b", content_md, re.IGNORECASE):
+        return content_md  # already has an image; neither duplicate nor overwrite it
+    m = _YT_ID_RE.search(content_md)
+    if not m:
+        return content_md
+    alt = _title_case_keyword(keyword) if keyword else "Perkins Roofing"
+    img = (f'<img src="https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg" '
+           f'alt="{alt} — Perkins Roofing" loading="lazy" '
+           f'style="max-width:100%;height:auto;border-radius:8px;margin:16px 0" />')
+    return f"{img}\n{content_md}"
+
+
+def _ensure_img_alt_keyword(content_md: str, keyword: str) -> str:
+    """rm_kw_in_img_alt: put the focus keyword into the first <img> alt.
+
+    Only rewrites an alt on an image that already exists — we never invent an <img>, because a
+    fabricated image tag would render as a broken image on Tim's site. Articles with no images
+    keep failing this check, which is the honest outcome. `_ensure_article_image` runs first and
+    supplies a real one when the body has a video to take it from.
+    """
+    import re as _re  # noqa: PLC0415
+
+    if not keyword or not content_md:
+        return content_md
+    if any(keyword.lower() in m.group(1).lower()
+           for m in _re.finditer(r'<img[^>]*\balt="([^"]*)"', content_md, _re.IGNORECASE)):
+        return content_md
+
+    imgs = list(_re.finditer(r"<img\b[^>]*>", content_md, _re.IGNORECASE))
+    if not imgs:
+        return content_md  # nothing to caption; do not fabricate one
+
+    tag = imgs[0].group(0)
+    kw_tc = _title_case_keyword(keyword)
+    if _re.search(r'\balt="[^"]*"', tag, _re.IGNORECASE):
+        new_tag = _re.sub(r'\balt="[^"]*"', f'alt="{kw_tc}"', tag, count=1, flags=_re.IGNORECASE)
+    else:
+        new_tag = tag[:-1].rstrip() + f' alt="{kw_tc}">'
+    return content_md[:imgs[0].start()] + new_tag + content_md[imgs[0].end():]
+
+
 def _ensure_title(title: str, keyword: str) -> str:
     """Guarantee the title:
     - contains the keyword (case-insensitive), AND
@@ -1225,6 +1323,19 @@ def _ensure_title(title: str, keyword: str) -> str:
 
     kw_lower = keyword.strip().lower()
     title = (title or "").strip()
+
+    # Step 0: punctuation-tolerant match. The literal `in` test below is defeated by punctuation
+    # the model adds — keyword "roof estimate vs inspection" is NOT a substring of "Roof Estimate
+    # vs. Inspection" because of the period. That prepended the keyword to a title that already
+    # said it, and the 65-char trim produced the observed
+    #   "Roof Estimate Vs Inspection: Roof Estimate vs. Inspection: Key"
+    # If the keyword is present apart from punctuation, rewrite that span to the exact spelling
+    # so the literal checks (and Rank Math itself) see it, rather than prepending a duplicate.
+    if kw_lower not in title.lower():
+        span = _kw_span_re(keyword)
+        m = span.search(title) if span else None
+        if m:
+            title = title[:m.start()] + _title_case_keyword(keyword) + title[m.end():]
 
     # Step 1: ensure keyword present
     if kw_lower not in title.lower():
@@ -1307,6 +1418,122 @@ def _ensure_answer_first(content_md: str, keyword: str, faq: list) -> str:
     return lede + (content_md or "")
 
 
+def _grounding_transcript(keyword: str, db=None) -> str:
+    """Source-video transcript for the grounding critic — the same chunks the article was built
+    from, so the critic judges against the article's actual evidence.
+
+    Slices are much larger than the generation prompt's 300 chars: the critic has to verify
+    claims against this text, and a truncated transcript would make it flag true statements as
+    invented. Best-effort — no transcript means the grounding critic reviews structure only.
+    """
+    try:
+        from app.retrieval import hybrid_search  # noqa: PLC0415
+        from core.retrieval import link as video_link  # noqa: PLC0415
+        chunks = (hybrid_search(keyword, k=6, db=db) or {}).get("chunks") or []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("grounding transcript unavailable for %r: %s", keyword, exc)
+        return ""
+    return "\n".join(f"- {video_link(c.video_id, c.start)} : {c.text[:1200]}"
+                      for c, _score in chunks)
+
+
+CRITIQUE_ROUNDS = 3
+
+
+def _run_critics(fields: dict, keyword: str, transcript: str, *, llm) -> list[dict]:
+    """Run all three critic lenses over the article; return their pooled findings.
+
+    A critic that errors or returns junk contributes nothing rather than aborting the round —
+    losing one lens degrades the review, but killing the revision loses the whole article.
+    """
+    from core.article_critique import (  # noqa: PLC0415
+        CRITICS,
+        CRITIQUE_SCHEMA,
+        critique_prompt,
+        parse_findings,
+    )
+    from core.json_repair import parse_model_json  # noqa: PLC0415
+
+    article = {**fields, "focus_keyword": keyword}
+    findings: list[dict] = []
+    for lens in CRITICS:
+        try:
+            prompt = critique_prompt(lens, article, transcript)
+            try:
+                raw = llm.chat(prompt, want_json=True, response_schema=CRITIQUE_SCHEMA)
+            except TypeError:  # llm without response_schema support (e.g. a test fake)
+                raw = llm.chat(prompt, want_json=True)
+            got = parse_findings(parse_model_json(raw) if isinstance(raw, str) else raw)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("critic %r failed for %r, skipping: %s", lens, keyword, exc)
+            continue
+        for f in got:
+            f["lens"] = lens
+        findings.extend(got)
+        logger.info("critic %s on %r: %d finding(s)", lens, keyword, len(got))
+    return findings
+
+
+def critique_and_revise(fields: dict, keyword: str, *, llm, transcript: str = "",
+                        target_words: int = 1800, rounds: int = CRITIQUE_ROUNDS) -> dict:
+    """Generate -> critique (3 lenses) -> revise, up to `rounds` times.
+
+    Stops early when no critic raises a blocking finding — the common case once the article is
+    good, and what keeps this from costing 3 rounds every time.
+
+    Every revision goes through the same no-regress guard as refine: the reviser is another
+    fail-open LLM call, and a revision that drops half the article is not an improvement no
+    matter how many findings it claims to fix.
+    """
+    from core.article_critique import blocking  # noqa: PLC0415
+
+    goal = _word_goal(target_words)
+    for i in range(1, rounds + 1):
+        findings = _run_critics(fields, keyword, transcript, llm=llm)
+        blockers = blocking(findings)
+        if not blockers:
+            logger.info("critique round %d for %r: clean, stopping", i, keyword)
+            return fields
+        logger.info("critique round %d for %r: %d blocking finding(s), revising",
+                    i, keyword, len(blockers))
+        fields = _revise_without_regressing_length(fields, keyword, blockers, goal, llm=llm)
+    return fields
+
+
+def _revise_without_regressing_length(fields: dict, keyword: str, findings: list[dict],
+                                      goal: int, *, llm) -> dict:
+    """Apply reviewer findings, keeping the previous draft if the reviser loses content."""
+    from core.article_critique import revise_prompt  # noqa: PLC0415
+    from core.seo import _word_count  # noqa: PLC0415
+
+    before = _word_count(fields.get("content_md", ""))
+    try:
+        revised = _chat_article(llm, revise_prompt({**fields, "focus_keyword": keyword},
+                                                   findings, goal))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("revise failed for %r, keeping draft: %s", keyword, exc)
+        return fields
+    if not revised:
+        logger.warning("revise returned no content for %r, keeping draft", keyword)
+        return fields
+
+    out = {
+        "title":      revised.get("title") or fields.get("title"),
+        "slug":       revised.get("slug") or fields.get("slug"),
+        "meta":       revised.get("metaDescription") or fields.get("meta"),
+        "content_md": markdownish_to_html(revised.get("content") or fields.get("content_md", "")),
+        "faq_json":   [{"q": it["q"], "a": it.get("a", "")}
+                       for it in (revised.get("faq") or [])
+                       if isinstance(it, dict) and it.get("q")] or fields.get("faq_json"),
+    }
+    after = _word_count(out["content_md"])
+    if after < before:
+        logger.warning("revise for %r returned %d words vs %d — keeping the longer draft",
+                       keyword, after, before)
+        return fields
+    return out
+
+
 def _refine_without_regressing_length(fields: dict, keyword: str, *, llm=None) -> dict:
     """refine_article_content, but never accept a revision that loses content.
 
@@ -1335,6 +1562,7 @@ def generate_scored_article(
     max_iters: int = 3,
     llm=None,
     db=None,
+    critique: bool = False,
 ) -> dict:
     """Generate an article, then loop (generate → score → refine) until the SEO/AIO
     score reaches ``target`` (default 100) or ``max_iters`` is hit.
@@ -1344,6 +1572,12 @@ def generate_scored_article(
     final pass so a finished draft never ships below 100 on fixable dimensions.
 
     Returns the generate_article_content fields plus ``jsonld_json`` and ``seo_score``.
+
+    ``critique`` (default OFF) runs the 3-lens adversarial loop (core.article_critique) before the
+    deterministic guarantees. It is OPT-IN because it is expensive — up to CRITIQUE_ROUNDS x
+    (3 critics + 1 revision) extra LLM round-trips per article on top of generation — and because
+    turning it on globally silently changes every existing caller's cost, latency, and LLM-call
+    surface. Callers that want it ask for it (see jobs/regen_articles_seo).
     """
     from core.seo import failing_keys, score_article  # noqa: PLC0415
 
@@ -1394,6 +1628,16 @@ def generate_scored_article(
         jsonld = _build_article_jsonld(fields, ctx)
         result = _score(fields, jsonld)
 
+    # ── Adversarial critique: 3 lenses x up to CRITIQUE_ROUNDS rounds ────────
+    # Runs BEFORE the deterministic guarantees below so those still get the last word and can
+    # repair anything the reviser breaks (title band, meta length, a dropped heading).
+    if critique:
+        fields = critique_and_revise(
+            fields, keyword, llm=llm,
+            transcript=_grounding_transcript(keyword, db=db),
+            target_words=int(ctx.get("target_words", 1800)))
+        fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
+
     # ── Final deterministic guarantees ──────────────────────────────────────
     # Applied AFTER the refine loop so the returned article provably passes every
     # fixable check regardless of LLM behaviour.
@@ -1416,8 +1660,16 @@ def generate_scored_article(
             if item["q"].lower() not in existing_qs and len(fields["faq_json"]) < 4:
                 fields["faq_json"].append(item)
 
-    # 4. Title: keyword_in_title + title_len (30–65 chars)
+    # 4. Title: keyword_in_title + title_len (30–65 chars), then rm_title_number.
+    #    Order matters: _ensure_title owns the 30-65 band and the keyword, so the number goes on
+    #    after and re-checks both rather than fighting it.
     fields["title"] = _ensure_title(fields.get("title", ""), keyword)
+    fields["title"] = _ensure_title_number(fields["title"], keyword)
+
+    # 4b. rm_kw_in_img_alt — give the article its source video's thumbnail (a real, relevant
+    #     image), then caption it. Order matters: supply the image before captioning it.
+    fields["content_md"] = _ensure_article_image(fields.get("content_md", ""), keyword)
+    fields["content_md"] = _ensure_img_alt_keyword(fields.get("content_md", ""), keyword)
 
     # 5. Headings: ensure ≥1 <h2> in content_md
     fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
@@ -1431,7 +1683,8 @@ def generate_scored_article(
         logger.warning(
             "generate_scored_article %r: body still ≤300 words before final score; "
             "attempting emergency refine", keyword)
-        fields = refine_article_content(fields, keyword, llm=llm)
+        # Same seam as the main loop: refine is fail-open and shortens, so go through the guard.
+        fields = _refine_without_regressing_length(fields, keyword, llm=llm)
         fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
         fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
         fields["content_md"] = _ensure_answer_first(

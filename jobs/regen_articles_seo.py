@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 
 _STOPWORDS = {"and", "or", "the", "a", "an", "to", "of", "for", "vs", "your", "from", "with"}
 
+# articles.status uses three spellings across the codebase ("publish", "published", "draft").
+# Map to WordPress's vocabulary. Anything unrecognised -> "draft": regenerating an article must
+# never be what PUBLISHES it. This used to be a hardcoded status="publish", which took post 7884
+# (trashed in WP, draft in our DB) and published it live.
+_WP_STATUS = {"publish": "publish", "published": "publish", "draft": "draft"}
+
+
+def _wp_status_for(status: str | None) -> str:
+    """WordPress status to send when republishing an article we regenerated."""
+    return _WP_STATUS.get((status or "").strip().lower(), "draft")
+
 
 def _keyword_from_slug(slug: str, title: str, llm) -> str:
     """A clean 2-4 word focus keyword that is a substring of the slug (so kw-in-slug passes)."""
@@ -50,8 +61,8 @@ def _run_for_tenant(
     """Per-tenant SEO regen body. Called by for_each_tenant via run()."""
     from adapters.llm import get_default  # noqa: PLC0415
     from app.models import Article, SessionLocal  # noqa: PLC0415
-    from core.seo import rank_math_failures  # noqa: PLC0415
-    from jobs.article_job import generate_scored_article  # noqa: PLC0415
+    from core.seo import _word_count, rank_math_failures  # noqa: PLC0415
+    from jobs.article_job import _word_goal, generate_scored_article  # noqa: PLC0415
 
     llm = get_default()
     q = db.query(Article)
@@ -63,7 +74,32 @@ def _run_for_tenant(
     if limit:
         slugs = slugs[:limit]
 
-    out: dict = {"processed": 0, "passing": 0, "republished": 0, "still_failing": {}}
+    # Skip articles that are already healthy. Regeneration is non-deterministic: re-rolling a
+    # good article can make it worse (observed: wall-flashings 2809 -> 2460 words, and a title
+    # that had passed rm_title_number came back without a number). Only touch what is actually
+    # failing. --slug is an explicit override and always regenerates.
+    if not only_slug:
+        skipped = []
+        keep = []
+        for slug in slugs:
+            a = db.get(Article, slug)
+            if a is None:
+                continue
+            fails = rank_math_failures(a.title or "", a.meta or "", slug,
+                                       a.content_md or "", a.focus_keyword or "")
+            if not fails and _word_count(a.content_md or "") >= _word_goal(1800):
+                skipped.append(slug)
+            else:
+                keep.append(slug)
+        if skipped:
+            logger.info("skipping %d already-healthy article(s): %s", len(skipped), skipped)
+        out_skipped = skipped
+        slugs = keep
+    else:
+        out_skipped = []
+
+    out: dict = {"processed": 0, "passing": 0, "republished": 0,
+                 "skipped_healthy": out_skipped, "still_failing": {}}
     for slug in slugs:
         with SessionLocal() as sdb:
             sdb.info["tenant_id"] = tenant_id
@@ -78,7 +114,10 @@ def _run_for_tenant(
             best_fails = None
             for _ in range(3):
                 try:
-                    f = generate_scored_article(kw, ctx, llm=llm, db=db)
+                    # critique=True: the backfill is where the adversarial pass earns its
+                    # cost — these articles are republished to a live site, and a human is
+                    # not reading every one. [REQ #334]
+                    f = generate_scored_article(kw, ctx, llm=llm, db=db, critique=True)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("regen failed for %s: %s", slug, exc)
                     break
@@ -108,6 +147,7 @@ def _run_for_tenant(
                 out["still_failing"][slug] = best_fails
             wp_post_id = a.wp_post_id
             title, meta, content, jsonld_out = a.title, a.meta, a.content_md, (a.jsonld_json or [])
+            wp_status = _wp_status_for(a.status)
 
         if wp_post_id:
             try:
@@ -119,7 +159,7 @@ def _run_for_tenant(
                     html=_markdown_to_html(content or ""),
                     meta_description=meta or "",
                     jsonld=jsonld_out if isinstance(jsonld_out, list) else [],
-                    status="publish",
+                    status=wp_status,
                     focus_keyword=kw,
                 )
                 out["republished"] += 1
