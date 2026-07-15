@@ -12,8 +12,11 @@ Read `docs/ENGINEERING_RULES.md` — it is binding for every change in this repo
   never the reverse.
 - **R4** Every wave runs `scripts/drift_check.sh` and shows no drift (terraform plan clean +
   ansible `--check` changed=0).
-- **R5** Ansible handles what Terraform can't (cerberus Whisper node, GPU dedication, systemd).
+- **R5** Ansible handles what Terraform can't (cerberus Whisper node, systemd units, packages).
 
-Operational: the cerberus RTX 5090 is dedicated to Whisper for this project (ollama disabled
-via `ansible/whisper.yml`). Waves + architecture live in `docs/superpowers/{specs,plans}/`.
+Operational: the cerberus-ai RTX 5090 is **not** reserved for this project — that dedication was
+temporary and ended when prod STT moved to Vertex (2026-07-06). The GPU is general-purpose ollama
+capacity; start Whisper on-demand for dev only (`systemctl start whisper-perkins`), and do not
+re-dedicate without an Ansible apply + `drift_check` (ENGINEERING_RULES.md R5).
+Waves + architecture live in `docs/superpowers/{specs,plans}/`.
 Backlog to scope: `docs/BACKLOG.md`.

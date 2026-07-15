@@ -54,8 +54,9 @@ Current staging = `https://jhk.14f.myftpupload.com` (GoDaddy temp domain). Produ
   Cloud Run uses the attached `api-run-sa`/`jobs-sa` (no key). Migrate dev to WIF when convenient.
 - **DB schema.** App-managed via SQLAlchemy `create_all` (run on job startup / `scripts/db_bootstrap.py`).
   pgvector extension is enabled. `PERKINS_ENV=prod` env var enforces Vertex + Cloud SQL (fail-fast).
-- **cerberus GPU** is dedicated to Whisper for the project (`ansible/whisper.yml`, ollama disabled).
-  Release with `-e dedicate_gpu=false` when done.
+- **cerberus GPU** is *not* reserved for this project. The Whisper dedication was temporary and ended
+  when prod STT moved to Vertex (2026-07-06); the 5090 is general-purpose ollama capacity. Start
+  Whisper on-demand for dev (`systemctl start whisper-perkins`) — see ENGINEERING_RULES.md R5.
 
 ## ACTIVATE LOGIN — do this to unblock visual review (≈10 min)
 The platform is deployed; login needs two console steps only you can do:
