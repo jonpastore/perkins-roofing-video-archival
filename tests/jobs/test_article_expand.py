@@ -110,3 +110,53 @@ def test_unparseable_json_still_raises():
     llm = _ScriptedLLM("not json", "not json", "not json")
     with pytest.raises(RuntimeError, match="unparseable"):
         _generate_article_json(llm, "base", "roof repair miami", 1800)
+
+
+# ── the refine seam (regression guards for the 2208 -> 949 defect) ────────────
+
+def test_refine_prompt_is_not_truncated():
+    """refine used to send content_md[:4000] — the editor saw only the first ~600 words of a
+    2000+ word article, rewrote that fragment, and returned it as the whole piece."""
+    from jobs.article_job import refine_article_content
+
+    long_body = "<h2>H</h2><p>" + ("word " * 3000) + "</p>"   # ~15k chars, way past 4000
+    llm = _ScriptedLLM(json.dumps({
+        "title": "T", "slug": "s", "metaDescription": "m",
+        "content": long_body, "faq": [{"q": "q", "a": "a"}],
+    }))
+    refine_article_content({"title": "T", "slug": "s", "meta": "m",
+                            "content_md": long_body, "faq_json": []}, "kw", llm=llm)
+    sent = llm.prompts[0]
+    tail_marker = long_body[-200:].strip()[-40:]
+    assert tail_marker in sent, "refine prompt dropped the tail of the article"
+
+
+def test_refine_that_shortens_the_article_is_rejected():
+    from jobs.article_job import _refine_without_regressing_length
+
+    long_body = "<h2>H</h2><p>" + ("word " * 2000) + "</p>"
+    llm = _ScriptedLLM(json.dumps({
+        "title": "shrunk", "slug": "s", "metaDescription": "m",
+        "content": "<h2>H</h2><p>" + ("word " * 200) + "</p>",   # editor lost 90%
+        "faq": [{"q": "q", "a": "a"}],
+    }))
+    before = {"title": "keep", "slug": "s", "meta": "m",
+              "content_md": long_body, "faq_json": []}
+    out = _refine_without_regressing_length(before, "kw", llm=llm)
+    assert out["title"] == "keep", "a refine that drops content must not be accepted"
+    assert _word_count(out["content_md"]) == _word_count(long_body)
+
+
+def test_refine_that_preserves_length_is_accepted():
+    from jobs.article_job import _refine_without_regressing_length
+
+    body = "<h2>H</h2><p>" + ("word " * 800) + "</p>"
+    better = "<h2>Q?</h2><p>" + ("word " * 900) + "</p>"
+    llm = _ScriptedLLM(json.dumps({
+        "title": "improved", "slug": "s", "metaDescription": "m",
+        "content": better, "faq": [{"q": "q", "a": "a"}],
+    }))
+    out = _refine_without_regressing_length(
+        {"title": "old", "slug": "s", "meta": "m", "content_md": body, "faq_json": []},
+        "kw", llm=llm)
+    assert out["title"] == "improved"

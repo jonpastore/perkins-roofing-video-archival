@@ -958,12 +958,20 @@ def refine_article_content(fields: dict, keyword: str, *, llm=None) -> dict:
         f"- Ensure the target keyword and semantic variants appear naturally throughout\n"
         f"- Improve the meta description to be compelling and keyword-rich (≤160 chars)\n"
         f"- Add or improve a FAQ section with common questions and concise answers\n"
-        f"- Preserve all factual content; only improve structure and clarity\n\n"
+        f"- Preserve all factual content; only improve structure and clarity\n"
+        f"- Return the article in FULL. Do not shorten it, do not summarise it, and do not\n"
+        f"  drop sections: the revision must be at least as long as the article below, and\n"
+        f"  must keep every YouTube URL and ?t= timestamp verbatim (they are citations).\n\n"
         f"Return a JSON object with exactly these keys: title, slug, metaDescription, content, faq\n"
         f"where faq is an array of {{q, a}} objects.\n\n"
         f"CURRENT TITLE: {fields.get('title', '')}\n"
         f"CURRENT META: {fields.get('meta', '')}\n"
-        f"CURRENT CONTENT:\n{fields.get('content_md', '')[:4000]}\n"
+        # NOT truncated. This used to be content_md[:4000], which silently fed the editor
+        # only the first ~600 words of a 2000+ word article — it then "revised" that fragment
+        # and returned it as the whole piece (2208 -> 949 words observed). That truncation was
+        # a major cause of the short articles in #334. Gemini's context is ~1M tokens; a long
+        # article is ~3k, so there is nothing to save here.
+        f"CURRENT CONTENT:\n{fields.get('content_md', '')}\n"
         f"CURRENT FAQ: {fields.get('faq_json', [])}"
     )
 
@@ -1299,6 +1307,26 @@ def _ensure_answer_first(content_md: str, keyword: str, faq: list) -> str:
     return lede + (content_md or "")
 
 
+def _refine_without_regressing_length(fields: dict, keyword: str, *, llm=None) -> dict:
+    """refine_article_content, but never accept a revision that loses content.
+
+    The editor pass rewrites the article wholesale and is fail-open by design, so a bad
+    revision silently replaces a good draft — that is how an expanded 2208-word article
+    came back as 949. Length is the cheap proxy for "did the editor drop half the piece";
+    if the revision is shorter, keep the draft we already had.
+    """
+    from core.seo import _word_count  # noqa: PLC0415
+
+    before = _word_count(fields.get("content_md", ""))
+    refined = refine_article_content(fields, keyword, llm=llm)
+    after = _word_count(refined.get("content_md", ""))
+    if after < before:
+        logger.warning("refine for %r returned %d words vs %d — keeping the longer draft",
+                       keyword, after, before)
+        return fields
+    return refined
+
+
 def generate_scored_article(
     keyword: str,
     ctx: dict,
@@ -1350,7 +1378,7 @@ def generate_scored_article(
                      "keyword_in_title"}) \
                 or has_residual_markdown(fields.get("content_md", "")) \
                 or has_placeholder(fields.get("content_md", "")):
-            fields = refine_article_content(fields, keyword, llm=llm)
+            fields = _refine_without_regressing_length(fields, keyword, llm=llm)
         # FAQ gap (any) → one targeted FAQ generation
         if fails & {"faq", "faq_count"}:
             regen = _regen_faq(keyword, fields.get("content_md", ""), llm=llm)
