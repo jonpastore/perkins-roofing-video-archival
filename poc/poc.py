@@ -3,7 +3,7 @@
 Perkins Roofing — Video Intelligence POC
 Local proof-of-concept of the production pipeline, using only free compute:
   - yt-dlp                : pull video + word-level auto-captions (stands in for cloud STT)
-  - cerberus Ollama       : nomic-embed-text (embeddings) + mistral-small3.2 (LLM)  [DEV ONLY]
+  - cerberus Ollama       : nomic-embed-text (embeddings) + qwen3.6:27b (LLM)  [DEV ONLY]
   - SQLite + numpy        : stands in for Cloud SQL Postgres + pgvector
 
 Proves end to end: ingest -> timed transcript (sentence + word) -> Content Graph
@@ -27,7 +27,7 @@ DATA = os.path.join(HERE, "data")
 DB   = os.path.join(HERE, "perkins_poc.db")
 OLLAMA = "http://cerberus-ai:11434"
 EMBED_MODEL = "nomic-embed-text"
-LLM_MODEL   = "mistral-small3.2:24b"
+LLM_MODEL   = "qwen3.6:27b"
 os.makedirs(DATA, exist_ok=True)
 
 # ---------------------------------------------------------------- cerberus (Ollama)

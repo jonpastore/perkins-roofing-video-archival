@@ -35,7 +35,12 @@ def chat(prompt, want_json=False, timeout=300):
         raise RuntimeError(f"LLM call cap reached ({_LLM_CAP}) — cost guardrail")
     Cost.add_llm()
     if settings.LLM_BACKEND == "ollama":
+        # think=False is REQUIRED: the dev model (qwen3.6) is a hybrid reasoning model and will
+        # otherwise burn a few hundred reasoning tokens before every answer (126 eval tokens to
+        # say "OK" vs 2 with it off). Ollama returns that reasoning in a separate `thinking`
+        # field, so the <think> strip below does NOT catch it.
         out = _ollama("/api/generate", {"model": settings.LLM_MODEL, "prompt": prompt, "stream": False,
+                                        "think": False,
                                         "options": {"temperature": 0.1 if want_json else 0.4, "num_ctx": 8192}})
         txt = re.sub(r"<think>.*?</think>", "", out.get("response", ""), flags=re.S).strip()
     elif settings.LLM_BACKEND == "anthropic":

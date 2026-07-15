@@ -17,7 +17,7 @@ class Settings:
     # silently no-op'ing the nomic→gemini re-embed under `EMBED_BACKEND=vertex` with EMBED_MODEL unset.
     EMBED_MODEL   = os.getenv("EMBED_MODEL",
                               "gemini-embedding-001" if EMBED_BACKEND == "vertex" else "nomic-embed-text")
-    LLM_MODEL     = os.getenv("LLM_MODEL", "mistral-small3.2:24b")
+    LLM_MODEL     = os.getenv("LLM_MODEL", "qwen3.6:27b")
 
     # Transcript source policy — 'caption_first' (use YouTube captions, STT fallback) | 'stt_only'
     TRANSCRIPT_POLICY = os.getenv("TRANSCRIPT_POLICY", "caption_first")

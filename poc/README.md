@@ -12,7 +12,7 @@ Content Graph → embeddings → semantic timecoded search → grounded RAG answ
 | POC (dev only) | Production (client's own GCP) |
 |---|---|
 | `yt-dlp` + YouTube word-level `json3` auto-captions | yt-dlp + managed Speech-to-Text v2 (word + confidence) |
-| cerberus Ollama: `nomic-embed-text` (768d) + `mistral-small3.2` | Vertex AI / Anthropic + embeddings |
+| cerberus Ollama: `nomic-embed-text` (768d) + `qwen3.6:27b` | Vertex AI / Anthropic + embeddings |
 | SQLite + numpy cosine | Cloud SQL Postgres + pgvector |
 
 > NOTE: cerberus is OUR dev box, never part of the client architecture. This POC only proves
