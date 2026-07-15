@@ -4,7 +4,6 @@ Against a real SQLAlchemy session, because the claim is about SQLAlchemy's behav
 old values are still readable at before_flush, that a rollback leaves no trail, and that
 writing the audit row cannot recurse into auditing itself.
 """
-import os
 
 import pytest
 from sqlalchemy import Column, Integer, String, create_engine

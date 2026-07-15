@@ -1524,24 +1524,20 @@ def _run_critics(fields: dict, keyword: str, transcript: str, *, llm) -> list[di
         findings.extend(got)
         logger.info("critic %s on %r: %d finding(s)", lens, keyword, len(got))
 
-    # Deterministic grounding pass. The three lenses above are models judging a model, and they
-    # say "clean" a lot; this one is a string comparison and cannot be reasoned with. It only
-    # speaks about proper nouns — brands, products, codes — because those are the inventions
-    # that carry real-world consequences on a licensed roofer's site.
+    # Deterministic grounding pass — REPORTS ONLY, never a blocking finding.
+    #
+    # It used to append one `blocker` per flagged term, which forced a revision round. The
+    # detector flags Title-Case heading words and plural mismatches ('Costs', 'Risk', 'Value'),
+    # so the reviser was ordered to strip legitimate prose and the article got worse while
+    # every check reported success. Token presence is not claim support — "Tim recommends
+    # replacing shingles every 10 years" uses only his words and is still invented — so this
+    # cannot be tuned into a gate. It is a lead for a human, not an instruction to a model.
     if transcript:
         from core.grounding import unsourced_terms  # noqa: PLC0415
-        for term in unsourced_terms(fields.get("content_md", ""), transcript, ignore=keyword):
-            findings.append({
-                "severity": "blocker",
-                "lens": "grounding-check",
-                "issue": f"The article names {term!r}, which does not appear anywhere in the "
-                         f"source transcripts for this article.",
-                "fix": f"Remove {term!r}, or replace it with the term Tim actually uses. Do not "
-                       f"keep it on the grounds that it sounds plausible — if Tim did not say "
-                       f"it here, it is not this article's to claim.",
-            })
-        logger.info("grounding-check on %r: %d unsourced term(s)", keyword,
-                    sum(1 for f in findings if f.get("lens") == "grounding-check"))
+        terms = unsourced_terms(fields.get("content_md", ""), transcript, ignore=keyword)
+        if terms:
+            logger.info("grounding-check on %r: %d unsourced term(s) (reported, not blocking): "
+                        "%s", keyword, len(terms), terms[:8])
     return findings
 
 
@@ -1642,41 +1638,36 @@ def _audit_grounding(fields: dict, keyword: str, transcript: str) -> list[str]:
     return unsourced_terms(fields.get("content_md", ""), transcript, ignore=keyword)
 
 
-def _enforce_grounding(fields: dict, keyword: str, transcript: str, *, llm,
+def _enforce_grounding(fields: dict, keyword: str, transcript: str, *, llm=None,
                        target_words: int = 1800, rounds: int = GROUNDING_ROUNDS) -> dict:
-    """Strip terms the sources don't support, by revision. Runs on every generation path.
+    """REPORT unsourced terms. Does not edit the article — deliberately.
 
-    Free when the article is clean: the check is a string comparison, so a grounded article
-    never triggers an LLM call. Only a detected fabrication costs a round-trip — which is why
-    this can be enforced everywhere without making the app's generate endpoint pay for the
-    critique loop.
+    This used to feed each flagged term to an LLM reviser as a `blocker` ("Remove 'X', Tim
+    never said it") for up to 2 rounds. In production that flagged 'Costs', 'Risk', 'Value',
+    'Durability' and 10 more on a single article — Title-Case headings make every heading word
+    a candidate, and "cost" vs "Costs" fails a plural-naive token test. So the reviser was
+    ordered to strip legitimate words, twice per article, at ~10 minutes a round. Articles got
+    worse while every check reported success.
 
-    If terms survive `rounds` revisions the article still ships, but loudly: the alternative is
-    failing a generation the caller cannot retry into success, and a logged fabrication a human
-    can grep beats a silent one. Never returns a shorter article than it was given
-    (_revise_without_regressing_length owns that guarantee).
+    The deeper reason it stays report-only: TOKEN PRESENCE IS NOT CLAIM SUPPORT. "Tim
+    recommends replacing all shingles every 10 years" can be built entirely from words Tim has
+    said and still be pure invention — so this detector's precision ceiling is low by
+    construction, not by tuning. A noisy detector must never drive automated edits: the reviser
+    optimises for satisfying the finding, not for truth, and cannot tell a bad flag from a good
+    one. (Reviewed independently by GPT-5 and Grok; both reached this conclusion.)
+
+    Real claim-grounding needs typed checks — numbers, named entities, "Tim says/recommends"
+    attributions — each requiring a matched evidence span from the source. That is a different
+    instrument and is not built yet. Until it is, the honest defence is upstream: give the
+    generator enough real transcript (source_transcripts) and forbid invention in the prompt.
     """
-    for i in range(1, rounds + 1):
-        terms = _audit_grounding(fields, keyword, transcript)
-        if not terms:
-            return fields
-        logger.warning("grounding round %d for %r: %d unsourced term(s) %s — revising",
-                       i, keyword, len(terms), terms)
-        findings = [{
-            "severity": "blocker",
-            "issue": f"The article names {t!r}, which appears nowhere in the source transcripts.",
-            "fix": f"Remove {t!r} or replace it with the term Tim actually uses. Do not keep it "
-                   f"because it sounds plausible — if Tim did not say it, it is not ours to claim.",
-        } for t in terms]
-        fields = _revise_without_regressing_length(
-            fields, keyword, findings, _word_goal(target_words), llm=llm)
-
-    left = _audit_grounding(fields, keyword, transcript)
-    if left:
-        logger.error(
-            "GROUNDING UNRESOLVED: %r still names %d unsourced term(s) after %d revision(s): "
-            "%s — shipping anyway; these are inventions unless Tim says them elsewhere",
-            keyword, len(left), rounds, left)
+    terms = _audit_grounding(fields, keyword, transcript)
+    if terms:
+        logger.warning(
+            "GROUNDING: %r names %d term(s) absent from its sources: %s — reported, NOT edited "
+            "(this detector is too noisy to drive revisions; check by hand if it matters)",
+            keyword, len(terms), terms[:12])
+    fields["unsourced_terms"] = terms
     return fields
 
 

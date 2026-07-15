@@ -108,9 +108,10 @@ def test_revise_prompt_forbids_inventing_facts_to_satisfy_a_finding():
     assert "Do not invent facts" in p
 
 
-def test_run_critics_adds_a_deterministic_blocker_for_unsourced_terms():
-    # The LLM lenses judge a model with a model and say "clean" a lot. The string check is the
-    # one finding that cannot be talked out of.
+def test_run_critics_never_blocks_on_the_noisy_grounding_check():
+    # It used to append a `blocker` per flagged term, forcing a revision. The detector flags
+    # Title-Case heading words and plural mismatches ('Costs', 'Risk'), so the reviser was told
+    # to strip legitimate prose. Token presence is not claim support; this reports only.
     from jobs.article_job import _run_critics
 
     class _LLM:
@@ -121,10 +122,9 @@ def test_run_critics_adds_a_deterministic_blocker_for_unsourced_terms():
               "title": "T", "meta": "m"}
     out = _run_critics(fields, "wall flashings", "you cut the stucco and put the wall flashing "
                        "into the actual concrete block", llm=_LLM())
-    gc = [f for f in out if f.get("lens") == "grounding-check"]
-    assert gc, "an invented product name must be flagged even when every LLM lens passes"
-    assert gc[0]["severity"] == "blocker"
-    assert "SuperFlash 9000" in gc[0]["issue"]
+    assert [f for f in out if f.get("lens") == "grounding-check"] == [], \
+        "a noisy detector must not drive automated edits"
+    assert out == [], "no findings at all when every LLM lens passes"
 
 
 def test_run_critics_grounding_check_is_silent_with_no_transcript():
@@ -162,57 +162,4 @@ def test_enforce_grounding_costs_nothing_when_the_article_is_clean():
     assert out is fields
 
 
-def test_enforce_grounding_revises_away_an_unsourced_term():
-    import json
-
-    from jobs.article_job import _enforce_grounding
-
-    clean = json.dumps({
-        "title": "T", "slug": "s", "metaDescription": "m",
-        "content": "<p>You cut the stucco and set the wall flashing into the block properly.</p>",
-        "faq": [{"q": "q", "a": "a"}],
-    })
-
-    class _LLM:
-        def __init__(self):
-            self.calls = 0
-
-        def chat(self, prompt, want_json=False, **kw):
-            self.calls += 1
-            assert "SuperFlash 9000" in prompt, "the reviser must be told which term to remove"
-            return clean
-
-    llm = _LLM()
-    fields = {"content_md": "<p>You cut the stucco and set the SuperFlash 9000 in the block.</p>",
-              "title": "T", "slug": "s", "meta": "m", "faq_json": []}
-    out = _enforce_grounding(fields, "wall flashings",
-                             "you cut the stucco and set the wall flashing into the block "
-                             "properly every time", llm=llm)
-    assert llm.calls == 1
-    assert "SuperFlash" not in out["content_md"]
-
-
-def test_enforce_grounding_ships_loudly_rather_than_looping_forever(caplog):
-    import json
-
-    from jobs.article_job import _enforce_grounding
-
-    stubborn = json.dumps({
-        "title": "T", "slug": "s", "metaDescription": "m",
-        "content": "<p>You cut the stucco and set the SuperFlash 9000 in the block anyway.</p>",
-        "faq": [{"q": "q", "a": "a"}],
-    })
-
-    class _LLM:
-        def chat(self, prompt, want_json=False, **kw):
-            return stubborn          # reviser refuses to drop it
-
-    fields = {"content_md": "<p>You cut the stucco and set the SuperFlash 9000 in.</p>",
-              "title": "T", "slug": "s", "meta": "m", "faq_json": []}
-    with caplog.at_level("ERROR"):
-        out = _enforce_grounding(fields, "wall flashings",
-                                 "you cut the stucco and set the wall flashing in the block",
-                                 llm=_LLM())
-    assert out["content_md"]
-    assert "GROUNDING UNRESOLVED" in caplog.text
 

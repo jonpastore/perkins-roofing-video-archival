@@ -5,7 +5,6 @@ and the last place a credential should ever land.
 """
 from core.audit import action_for, entity_from, is_secretish, redact, template_path
 
-
 # ── redaction: deny by default ────────────────────────────────────────────────
 
 def test_secrets_are_never_stored():

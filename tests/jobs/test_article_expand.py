@@ -445,3 +445,24 @@ def test_video_grounding_block_states_the_hard_rules():
     assert "poly flash details" in out
     assert "If Tim does not" in out and "DO NOT write it" in out
     assert "CUT THE SECTION" in out
+
+
+def test_enforce_grounding_reports_but_never_edits_the_article():
+    """Regression: this fed each flagged term to an LLM reviser as a blocker.
+
+    On a real article it flagged 'Costs', 'Risk', 'Value', 'Durability' and 10 more — Title-Case
+    headings make every heading word a candidate and "cost" vs "Costs" fails a plural-naive
+    test — so the reviser was ordered to strip legitimate words, twice per article. Token
+    presence is not claim support, so its precision cannot be tuned into a gate.
+    """
+    from jobs.article_job import _enforce_grounding
+
+    class _LLM:
+        def chat(self, *a, **k):
+            raise AssertionError("the grounding report must never trigger a revision")
+
+    body = "<p>Fit the SuperFlash 9000 to the deck.</p>"
+    out = _enforce_grounding({"content_md": body, "title": "T"}, "wall flashings",
+                             "you cut the stucco and set the wall flashing", llm=_LLM())
+    assert out["content_md"] == body, "the article must be returned unmodified"
+    assert "SuperFlash 9000" in out["unsourced_terms"], "it must still be reported"

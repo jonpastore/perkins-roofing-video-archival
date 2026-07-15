@@ -6,7 +6,6 @@ actor. The first version of this middleware read claims from request.state, whic
 — so it would have recorded every request as actor=None with no tenant, written nothing, and
 looked exactly like an empty audit log.
 """
-import os
 
 import pytest
 from fastapi import Depends, FastAPI, Request
