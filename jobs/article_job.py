@@ -741,18 +741,27 @@ def generate_article(
     # _author_id, which always assigns WP author id 3 = Tim Kanak). A named Person author is the
     # per-article E-E-A-T signal that actually helps AI-answer-engine attribution; a generic org
     # name does not. Enrichment may not override the byline.
-    author_name = "Tim Kanak"
     wp_url = _wp_base_url()
     canonical_url = f"{wp_url}/blog/{slug}"
 
+    # Canonical business identity: one @id-addressed Organization node + a Person author node with
+    # @id/sameAs (E-E-A-T). The Article references the org by @id via publisher — Google's pattern,
+    # no NAP duplication. See core.brand_identity.
+    from core.brand_identity import AUTHOR, ORG_ID, ORGANIZATION  # noqa: PLC0415
+    from core.jsonld import build_organization, build_person  # noqa: PLC0415
+
     jsonld_list: list[dict] = [
+        build_organization(ORGANIZATION),
         build_article(
             headline=title,
             description=article.get("metaDescription") or "",
-            author_name=author_name,
+            author_name=AUTHOR["name"],
+            author=build_person(AUTHOR),
+            publisher_id=ORG_ID,
             date_published=today,
+            date_modified=today,
             url=canonical_url,
-        )
+        ),
     ]
     if faq:
         jsonld_list.append(build_faq_page(faq))

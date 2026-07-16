@@ -215,9 +215,12 @@ class TestBuildArticle:
         assert isinstance(obj, dict)
 
     def test_exact_top_level_keys(self):
+        # Base call (no author node / publisher / dateModified) adds mainEntityOfPage for
+        # AI-answer-engine extraction; publisher and dateModified appear only when supplied.
         obj = self._make()
         assert set(obj.keys()) == {
             "@context", "@type", "headline", "description", "author", "datePublished", "url",
+            "mainEntityOfPage",
         }
 
     def test_author_exact_keys(self):
@@ -259,3 +262,34 @@ class TestFaqPageDefensive:
     def test_standard_q_a_still_works(self):
         page = build_faq_page([{"q": "Q?", "a": "A"}])
         assert page["mainEntity"][0]["name"] == "Q?"
+
+
+def test_build_organization_has_id_and_nap():
+    from core.brand_identity import ORGANIZATION
+    from core.jsonld import build_organization
+    n = build_organization(ORGANIZATION)
+    assert n["@id"] == "https://perkinsroofing.net/#organization"
+    assert n["@type"] == "RoofingContractor"
+    assert n["telephone"] == "+1-305-642-7663"
+    assert n["address"]["addressLocality"] == "Miami"
+    assert "sameAs" in n and len(n["sameAs"]) >= 4
+
+
+def test_build_person_author_has_id_and_sameas():
+    from core.brand_identity import AUTHOR
+    from core.jsonld import build_person
+    p = build_person(AUTHOR)
+    assert p["@id"].endswith("#person")
+    assert p["name"] == "Tim Kanak"
+    assert p["worksFor"] == {"@id": "https://perkinsroofing.net/#organization"}
+    assert p["sameAs"] == ["https://www.linkedin.com/in/timkanak/"]
+
+
+def test_build_article_references_publisher_and_person():
+    from core.brand_identity import AUTHOR, ORG_ID
+    from core.jsonld import build_article, build_person
+    a = build_article("H", "d", AUTHOR["name"], "2026-07-16", "https://x/blog/y",
+                      author=build_person(AUTHOR), publisher_id=ORG_ID, date_modified="2026-07-16")
+    assert a["publisher"] == {"@id": ORG_ID}
+    assert a["author"]["@id"].endswith("#person")
+    assert a["dateModified"] == "2026-07-16"
