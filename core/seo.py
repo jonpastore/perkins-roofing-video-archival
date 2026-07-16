@@ -25,7 +25,7 @@ Rank Math checks (16 total) — see rank_math_checks():
   rm_kw_in_body         focus keyword in body content
   rm_kw_in_heading      focus keyword in at least one H2/H3/H4
   rm_kw_in_img_alt      focus keyword in at least one img alt attribute
-  rm_kw_density         keyword density 0.5%–1.5%
+  rm_kw_density         keyword density 1.0%–1.5%
   rm_content_length     content ≥ 600 words (Rank Math's floor)
   rm_slug_length        URL slug < 75 chars
   rm_internal_link      at least one internal (relative) link
@@ -280,9 +280,11 @@ def rank_math_checks(
     img_alts = [m.group(1).lower() for m in _IMG_ALT_RE.finditer(content_md)]
     kw_in_img_alt = bool(kw) and any(kw in alt for alt in img_alts)
 
-    # 8. Keyword density 0.5%–1.5%
+    # 8. Keyword density 1.0%–1.5%. Real Rank Math awards full marks at 1.0–1.5%; our old 0.5%
+    # floor was LOOSER than the plugin that scores the live site, so regen kept passing here
+    # while undershooting the real check (measured 2026-07-16 against 4 published posts).
     density = _kw_density(content_md, kw)
-    density_ok = bool(kw) and (0.005 <= density <= 0.015)
+    density_ok = bool(kw) and (0.010 <= density <= 0.015)
     density_pct = f"{density * 100:.2f}%"
 
     # 9. URL slug < 75 chars
@@ -328,7 +330,7 @@ def rank_math_checks(
          "pass": kw_in_heading, "detail": f"{len(heading_texts)} headings found"},
         {"key": "rm_kw_in_img_alt", "label": "Focus keyword in an image alt attribute",
          "pass": kw_in_img_alt, "detail": f"{len(img_alts)} img alt(s) found"},
-        {"key": "rm_kw_density", "label": "Keyword density 0.5%–1.5%",
+        {"key": "rm_kw_density", "label": "Keyword density 1.0%–1.5%",
          "pass": density_ok, "detail": density_pct},
         {"key": "rm_content_length", "label": f"Content length ≥ {RM_MIN_WORDS} words",
          "pass": content_words >= RM_MIN_WORDS,
