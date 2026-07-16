@@ -466,3 +466,21 @@ def test_enforce_grounding_reports_but_never_edits_the_article():
                              "you cut the stucco and set the wall flashing", llm=_LLM())
     assert out["content_md"] == body, "the article must be returned unmodified"
     assert "SuperFlash 9000" in out["unsourced_terms"], "it must still be reported"
+
+
+def test_article_updated_at_stamps_on_every_write_path():
+    """Provenance must not depend on each caller remembering.
+
+    articles had only generated_at, set once at insert, so all 31 rows read "2026-07-09" no
+    matter how often they were rewritten — there was no way to ask which pipeline produced an
+    article. Hand-stamping it in the regen job covered 1 of the 7 modules that write
+    content_md, and clobbered the creation date the column is named for. onupdate is
+    SQLAlchemy's, so it fires for any UPDATE from any caller.
+    """
+    from app.models import Article
+
+    updated = Article.__table__.columns["updated_at"]
+    assert updated.onupdate is not None, "updated_at must stamp itself on every UPDATE"
+    assert updated.default is not None, "and be set on insert"
+    # generated_at means first generation and must NOT re-stamp on update
+    assert Article.__table__.columns["generated_at"].onupdate is None

@@ -13,7 +13,6 @@ Run locally with the Cloud SQL proxy up + vertex + WP creds in .env:
 """
 import argparse
 import logging
-from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -140,13 +139,10 @@ def _run_for_tenant(
                 a.faq_json = best["faq_json"]
             if best.get("jsonld_json"):
                 a.jsonld_json = best["jsonld_json"]
-            # Stamp provenance. Regeneration replaces the body wholesale, so `generated_at` is
-            # exactly when this text was written — leaving it at the original value made every
-            # article read "2026-07-09" no matter how many times it had been rewritten, so
-            # there was no way to tell which pipeline produced which article. That mattered the
-            # day the pipeline changed: the only record of what was regenerated lived in a
-            # scratch log.
-            a.generated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            # Provenance is articles.updated_at, stamped by SQLAlchemy's onupdate on every
+            # write path (migration 0037). This job used to hand-stamp generated_at instead,
+            # which clobbered the creation date the column is named for and covered only the
+            # one caller that remembered — six other modules write content_md.
             sdb.commit()
             out["processed"] += 1
             if not best_fails:

@@ -240,6 +240,11 @@ class Article(Base):
     priority = Column(Integer, nullable=True)
     scheduled_at = Column(DateTime, nullable=True)
     generated_at = Column(DateTime, default=_utcnow)
+    # Last write, on EVERY path. `onupdate` is SQLAlchemy's, so it fires for any UPDATE from
+    # any caller — seven modules write content_md, and a stamp each one has to remember is a
+    # stamp six of them will miss. Matches the convention already on six other tables here.
+    # generated_at stays what its name says: first generation. Migration 0037.
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_articles_tenant_status", "tenant_id", "status"),)
 
