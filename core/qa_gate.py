@@ -91,6 +91,12 @@ def dedup_jaccard(text_a: str, text_b: str, n: int = 5) -> float:
 
 # Checks that are HARD failures (block regeneration if ALL fail).
 # Soft checks (image alt, power word, sentiment, number) are warnings only.
+#
+# rm_kw_density is DELIBERATELY NOT hard (de-gated 2026-07-16). Google has stated for over a
+# decade that keyword density is not a ranking factor (Mueller/Cutts); a 2026 Ahrefs study put
+# word-count↔AI-citation correlation at 0.04. Real Rank Math also counts keyword VARIATIONS, so
+# our exact-phrase count is stricter than the plugin and over-reports. Density stays computed and
+# shown as advisory; it must never block or drive a regeneration. See seo-aio-research memory.
 _RM_HARD_CHECKS = frozenset({
     "rm_kw_in_title",
     "rm_kw_in_meta",
@@ -98,7 +104,6 @@ _RM_HARD_CHECKS = frozenset({
     "rm_kw_in_intro",
     "rm_kw_in_body",
     "rm_kw_in_heading",
-    "rm_kw_density",
     "rm_content_length",
     "rm_slug_length",
     "rm_internal_link",

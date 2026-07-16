@@ -825,6 +825,23 @@ class TestRankMathHardFailuresQaGate:
         )
         assert "rm_internal_link" in failures
 
+    def test_density_is_not_a_hard_failure(self):
+        """Keyword density is advisory, not a gate (de-gated 2026-07-16). Google has stated for
+        a decade it is not a ranking factor, and our exact-phrase count is stricter than the real
+        plugin (which counts variations). A density miss must never block or drive regeneration."""
+        from core.qa_gate import seo_hard_failures
+        kw = "roof repair miami"
+        # Good article in every respect EXCEPT the keyword appears once → density far below band.
+        body = f"<p>{kw}</p>" + "<p>word </p>" * 997 + (
+            '<a href="/blog/x">internal</a>'
+            '<a href="https://example.com/guide">external</a>'
+            "<h2>Roof Repair Miami Details</h2>"
+        )
+        failures = seo_hard_failures(
+            _rm_good_title(kw), _rm_good_meta(kw), _rm_good_slug(kw), body, kw,
+        )
+        assert "rm_kw_density" not in failures
+
     def test_soft_checks_not_in_hard_failures(self):
         from core.qa_gate import seo_hard_failures
         kw = "roof repair miami"
