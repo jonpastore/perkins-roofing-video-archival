@@ -1,38 +1,87 @@
-Resume the Perkins v2 platform after a /clear. Read IN ORDER:
-CONTINUATION-2026-07-11-eve.md (canonical — the Knowify data-mirror was BUILT, DEPLOYED to
-prod, and SEEDED with the full real dataset this session), then the auto-loaded memory index
-(esp. knowify-mirror-build, knowify-oauth-outage, billing-schema-numbering, perkins-v2-platform),
-then docs/ENGINEERING_RULES.md (R1–R5 binding). Then `mcp__jarvis-memory__sync` + my_tasks.
+Resume Perkins / video-archival after a /clear.
 
-STATE (all committed + PUSHED on main, tree clean): The full Knowify data-mirror is LIVE IN PROD.
-- Migrations 0030+0031+0032 applied to Cloud SQL (invoice counter untouched at 18732).
-- Terraform (targeted) created knowify-sync/keepwarm Cloud Run Jobs + `0 8-18 * * *` ET scheduler
-  + knowify-tokens secret + IaC log-metric alert. API+jobs deployed. Web redeployed → the admin
-  console "Knowify" tab is LIVE at https://video-archival-and-content-gen.web.app.
-- PROD SEEDED with the full real Perkins data: 7,404 customers (18 inactive via customers.is_active),
-  4,484 invoices (4,037 paid; #18732=$6,678 paid), 4,629 payments, 8,747 synthesized ledger events.
-  Money-verified (counter never advanced). Seeded via scripts/knowify/mcp_pull.py (Claude MCP OAuth
-  token → Knowify MCP endpoint, headless) + an in-region Cloud Run job (WAN was too slow).
+READ FIRST: CONTINUATION-2026-07-16.md — it is the full state of the CURRENT track (article
+grounding, audit trail, claim verification). Then the auto-loaded memory index, especially
+article-grounding, grounding-vs-vocabulary, use-the-council, rank-math-gaming,
+perkins-wp-creds, article-regen-bugs. docs/ENGINEERING_RULES.md (R1-R5) is binding.
 
-DO THESE (priority order — from CONTINUATION-2026-07-11-eve.md "Outstanding"):
-1. HOURLY AUTO-SYNC can't pull yet: Knowify's REST OAuth 500s on the RFC 8707 `resource` binding
-   (their server bug — knowify-oauth-outage memory; support email DRAFTED not sent in
-   docs/perkins-analysis/knowify-support-oauth500.md). Decide: wait for Knowify fix, email support,
-   OR wire the sync job to the MCP-token stopgap (token must move to Secret Manager + refresh). The
-   mirror is a point-in-time snapshot until this is resolved.
-2. promote_items reads wrong Knowify field names (rec["Name"] etc.) — same bug class as the client
-   fix; audit vs the real item schema (items are secondary; Tim's sheet is authoritative for costs).
-3. Pre-existing TF drift (cloudflare placeholder token, gotenberg, domain mapping) — NOT from this
-   work; a full scripts/drift_check.sh is not clean because of it. Reconcile separately (Jon-gated).
-4. Confirm R1 core coverage ≥97 in CI (an ad-hoc stripped-env run showed ~94% because pre-existing
-   billing/proposal PG tests didn't run together; the new core/knowify/* modules are 100%).
+A SEPARATE TRACK IS ALSO OPEN: the Knowify data-mirror. See CONTINUATION-2026-07-11-eve.md —
+hourly auto-sync still can't pull (Knowify's REST OAuth 500s on the RFC 8707 `resource` bind;
+support email drafted-not-sent), promote_items reads wrong field names, pre-existing TF drift.
+Untouched yesterday. Don't confuse the two tracks.
 
-NON-NEGOTIABLE DISCIPLINE:
-- Gate = pytest --cov=core (≥97) + scripts/validate_*.py + ruff on a clean tree. Subagents = FILE
-  EDITS ONLY, never git; sonnet for implementation, opus for money/migration/OAuth/security/review.
-- R2 (architect+critic) every wave; fix HIGH/CRITICAL before done. Money/legal code stays on Claude.
-- Deploy: git→apply (R3). Migrations via scripts/apply_migrations_connector.py (needs `gcloud auth
-  application-default login`; sets app.tenant_id=1 for RLS seeds). Terraform: TARGET the knowify
-  resources to avoid the pre-existing cloudflare/gotenberg drift. deploy.sh needs a clean tree.
-- Knowify money units: REST=DOLLARS (no ÷100); MCP/raw layer payments=CENTS (÷100). AIA skipped.
-- Analysis artifacts (client PII) in docs/perkins-analysis/ (gitignored). Do NOT commit PII.
+STATE: branch main, pushed, clean, HEAD 23572e5. Suite 4000 pass / 8 skip / 0 fail. Migrations
+0036 (audit_log), 0037 (articles.updated_at), 0038 (platform_audit_log) applied to prod.
+
+WHY ANY OF THIS MATTERS, IN ONE PARAGRAPH: articles must be built from Tim's own 801 YouTube
+transcripts — grounding IS the product; general roofing knowledge is commodity his competitors
+generate in an afternoon. They were ~90% invented (measured: 45,945 published words on 4,564
+words of retrievable source) because retrieval was starved: k=4 chunks truncated to 300 chars,
+so ~200 words of Tim in and 1800+ demanded out. Fixed via topic-slice retrieval (b9a0b65) —
+now 4.5k-19k words of real transcript per article, ratio ~10x invented -> 0.11-0.50x. That
+upstream fix is what actually works; everything else is a check on the remainder. 31 articles
+are in WordPress (27 drafts + 4 live). The 123 pre-existing published posts MUST stay
+untouched — that is Jon's guardrail and it has held.
+
+FIRST THING: a regen of 18 articles was running at hand-off (density fix). Check
+  ps -eo cmd | grep "[r]egen_articles_seo" | wc -l
+and the scratchpad logs regen3_a.log / regen3_b.log. The scratchpad is session-scoped and may
+be GONE — if so just re-read state from the DB. Regen is idempotent; nothing is lost.
+
+THEN, IN ORDER:
+1. Measure rm_kw_density across ALL 18 regenerated articles. DO NOT tune the density prompt on
+   one or two — I did that three times and missed from both sides each time (ceiling-only ->
+   0.16-0.48%; count-anchored -> 1.60%; ratio -> 1 of 2 in band). The prompt has contradictory
+   pressure: "aim 0.9%" vs "at most two headings" + "use variants for everything else". Measure
+   18, then decide. Rank Math is 13/31 and that is the HONEST number — the old 31/31 was
+   literal keyword-stuffing blocks plus one stock image reused across unrelated posts.
+2. rm_external_link (2 articles): the honest fix already exists — Tim's own source video IS the
+   external citation. Nothing in the generator guarantees an <a href> today.
+3. Hand-label scripts/eval_claims.py --verify for precision per claim type (~$1 for all 31).
+   The claim checker gates NOTHING and edits NOTHING until that number exists.
+   Read docs/superpowers/specs/claim-grounding.md before touching it.
+4. Evidence-first generation — both reviewers said post-hoc verification fights entropy.
+   COUNCIL-REVIEW THAT DESIGN BEFORE CODING IT.
+
+HARD-WON LAWS — violating these is exactly how yesterday went wrong:
+- Token presence is NOT claim support. "Tim recommends replacing shingles every 10 years" is
+  100% his vocabulary and 100% invented. Vocabulary-overlap has a low precision ceiling BY
+  CONSTRUCTION — no tuning fixes it.
+- A noisy detector must NEVER drive automated LLM edits. A guard I shipped told the reviser to
+  strip 'Costs', 'Risk', 'Value'; articles got worse, timed out at 30 min, and every check
+  reported success. Report-only now.
+- CONSULT THE COUNCIL BEFORE BUILDING: mcp__chatgpt5__gpt5_chat and
+  mcp__grok-4__chat_completion, independently, "be blunt, what am I not seeing". In ~90 seconds
+  they killed a shipped guard AND my planned fix for it AND my replacement design. Jon had to
+  ask why I hadn't.
+- NEVER game a metric. Candidates that "fix" density are 'in', 'new', 'season' — that is
+  gaming. Never invent an item count ("8 Signs") unless the article really is a listicle.
+- A deterministic fix can satisfy its checker while destroying meaning: two title trimmers cut
+  mid-clause; a de-repeater rewrote the keyword inside <img alt>; my guard's _normalise deleted
+  hyphens and called "L-flashing" a hallucination when Tim says "L flashings". RE-SCORE ALL
+  CHECKS AFTER ANY FIX AND READ THE OUTPUT. Dry-run every content mutation.
+- Verify the real call path before calling anything broken. I was wrong out loud 5+ times
+  yesterday (passed db=None then declared a critic blind; called the real product 'Polyblast' a
+  hallucination — Tim says it, video WK6ufUjnicc t=57; called routes unregistered when FastAPI
+  0.139's include_router is merely lazy). Every one died to checking, none to reasoning.
+
+ENVIRONMENT GOTCHAS (each cost real time):
+- unset GOOGLE_APPLICATION_CREDENTIALS — .env points it at infra/vertex-dev-sa.json, which does
+  NOT exist, and it overrides working ADC.
+- articles is RLS-protected: session.info["tenant_id"] = 1 or every query errors with
+  'unrecognized configuration parameter "app.tenant_id"'. Only tenant 1 exists.
+- ALTER TABLE articles needs ACCESS EXCLUSIVE; regen holds a transaction open across its ~12-min
+  LLM call. A queued ALTER blocks every later query, and killing the client does NOT kill the
+  server-side statement (use pg_cancel_backend). Apply DDL only when regen is stopped.
+- pgrep -f matches this shell's OWN wrapper. Use ps -eo cmd | grep "[r]egen..." | wc -l.
+- WP REST needs WP_APP_PWD from Secret Manager; .env WP_PWD is the WEB login and 401s on REST
+  BY DESIGN. Only ONE WP site exists (1205166.us6.myftpupload.com); perkinsroofing.com is on
+  AWS and unreachable from this repo.
+- No cloud-sql-proxy binary by default; download v2.14.1 (recipe in the continuation).
+- AUDIT_ENABLED=0 under pytest: audit writes open a second connection so rows survive a
+  rollback — right on Postgres, but SQLite is single-writer and waits out a lock, which turned
+  a ~6-min suite into >30 min.
+
+COST: ~$0.33/article, ~$19 for a full day (12.09M Vertex tokens, measured from Cloud
+Monitoring). Output is 92% of spend — grounding is nearly free, the writing is what costs. A
+28-article regen is ~$9. Don't wake Jon for that; he said so.

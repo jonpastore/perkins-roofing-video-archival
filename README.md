@@ -113,9 +113,11 @@ Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/E
 - [2026-07-07 — comprehensive review (frontend / tests / adversarial / perf / SAST)](docs/reviews/2026-07-07-comprehensive-review.md)
 
 ### Session history / continuations
-- **Most recent:** [CONTINUATION-2026-07-11-eve.md](CONTINUATION-2026-07-11-eve.md) (Knowify data-mirror BUILT via ralplan → 8 TDD waves, DEPLOYED to prod, and SEEDED with the full real dataset — 7,404 customers / 4,484 invoices / 4,629 payments; admin Knowify tab LIVE; hourly auto-sync gated on Knowify's REST-OAuth outage)
-- [CONTINUATION-2026-07-11-pm.md](CONTINUATION-2026-07-11-pm.md) · [CONTINUATION-2026-07-11.md](CONTINUATION-2026-07-11.md)
-- Archived: [docs/continuations/CONTINUATION-2026-07-10-pm.md](docs/continuations/CONTINUATION-2026-07-10-pm.md) ·
+- **Most recent:** [CONTINUATION-2026-07-16.md](CONTINUATION-2026-07-16.md) (articles were ~90% invented — 45,945 published words on 4,564 words of source — because retrieval fed the generator k=4 chunks x 300 chars; fixed with topic-slice retrieval, ratio now 0.11–0.50x. Audit trail live over all 86 mutating endpoints + ORM before/after. Typed claim-grounding built as a measurement layer that gates nothing until precision is labelled. Rank Math 13/31 — the honest number; the old 31/31 was keyword-stuffing blocks + a reused stock image)
+- [CONTINUATION-2026-07-11-eve.md](CONTINUATION-2026-07-11-eve.md) (Knowify data-mirror BUILT, DEPLOYED, SEEDED — 7,404 customers / 4,484 invoices / 4,629 payments; hourly auto-sync still gated on Knowify's REST-OAuth outage)
+- [CONTINUATION-2026-07-11.md](CONTINUATION-2026-07-11.md)
+- Archived: [docs/continuations/CONTINUATION-2026-07-11-pm.md](docs/continuations/CONTINUATION-2026-07-11-pm.md) ·
+  [docs/continuations/CONTINUATION-2026-07-10-pm.md](docs/continuations/CONTINUATION-2026-07-10-pm.md) ·
   [docs/continuations/CONTINUATION-2026-07-10.md](docs/continuations/CONTINUATION-2026-07-10.md) ·
   [docs/continuations/CONTINUATION-2026-07-09.md](docs/continuations/CONTINUATION-2026-07-09.md) ·
   [docs/continuations/CONTINUATION-2026-07-08-pm.md](docs/continuations/CONTINUATION-2026-07-08-pm.md) ·
