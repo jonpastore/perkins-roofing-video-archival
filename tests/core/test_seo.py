@@ -852,3 +852,44 @@ class TestRankMathHardFailuresQaGate:
         )
         soft_keys = {"rm_kw_in_img_alt", "rm_title_sentiment", "rm_title_power_word", "rm_title_number"}
         assert not any(k in failures for k in soft_keys)
+
+
+class TestAioSignals:
+    """Advisory AIO signals (core.seo.aio_signals) — never a gate, but must be correct."""
+
+    def _sig(self, content, **kw):
+        from core.seo import aio_signals
+        return {s["key"]: s for s in aio_signals(content, **kw)}
+
+    def test_answer_first_detects_direct_answer_section(self):
+        # H2 followed by ≥30 words of prose = a direct answer
+        body = "<h2>What is flashing?</h2><p>" + "word " * 40 + "</p>"
+        assert self._sig(body)["aio_answer_first"]["pass"] is True
+
+    def test_answer_first_fails_when_section_is_thin(self):
+        body = "<h2>What is flashing?</h2><p>Metal.</p>"
+        assert self._sig(body)["aio_answer_first"]["pass"] is False
+
+    def test_entity_clarity_counts_specific_brands_and_models(self):
+        body = "<p>We use GAF Timberline HDZ and Polyglass ASTM D226 underlayment.</p>"
+        assert self._sig(body)["aio_entity_clarity"]["pass"] is True
+
+    def test_entity_clarity_fails_on_generic_prose(self):
+        body = "<p>We install good shingles on the roof with quality materials.</p>"
+        assert self._sig(body)["aio_entity_clarity"]["pass"] is False
+
+    def test_fact_density_counts_quantities(self):
+        body = "<p>" + " ".join(f"lasts {n} years" for n in range(10)) + " and " + "x " * 100 + "</p>"
+        assert self._sig(body)["aio_fact_density"]["pass"] is True
+
+    def test_short_paragraphs_flags_a_long_paragraph(self):
+        body = "<p>" + "word " * 130 + "</p>"
+        assert self._sig(body)["rm_short_paragraphs"]["pass"] is False
+
+    def test_length_tier_matches_rank_math_bands(self):
+        s = self._sig("<p>" + "word " * 2600 + "</p>")["rm_length_tier"]
+        assert "100%" in s["detail"]
+
+    def test_freshness_unknown_does_not_falsely_fail(self):
+        assert self._sig("<p>hi</p>", date_modified_days=None)["aio_freshness"]["pass"] is True
+        assert self._sig("<p>hi</p>", date_modified_days=800)["aio_freshness"]["pass"] is False

@@ -362,3 +362,108 @@ def rank_math_failures(
     """Return list of failing Rank Math check keys."""
     checks = rank_math_checks(title, meta, slug, content_md, focus_keyword)
     return [c["key"] for c in checks if not c["pass"]]
+
+
+# ---------------------------------------------------------------------------
+# AIO signals (advisory) — what actually drives AI-Overview / LLM citation
+# ---------------------------------------------------------------------------
+# These are ADVISORY, never a gate. Research (2026, see seo-aio-research memory): answer-first
+# structure, extractable passages, entity clarity, and fact density are the signals that
+# correlate with AI-answer-engine citation — NOT keyword density. Plus the real Rank Math checks
+# our scorer was missing (graduated length tiers, short paragraphs, media count, TOC). Kept
+# deterministic and pure so they can run in the generation loop without I/O.
+
+# Specific roofing entities Tim actually names — "GAF Timberline HDZ", not "shingles" — are the
+# entity-clarity signal. Curated from the corpus vocabulary; a model-number/code regex catches
+# the long tail. Grounded in Tim's real usage (see article-grounding memory).
+_ROOFING_ENTITIES = frozenset({
+    "gaf", "timberline", "tamko", "polyglass", "polyflash", "polyblast", "elastobase",
+    "owens corning", "certainteed", "boral", "eagle", "verea", "malarkey", "atlas",
+    "miami-dade", "noa", "hvhz", "astm", "florida building code", "fbc", "peel and stick",
+    "self-adhered", "modified bitumen", "tpo", "sbs", "epdm", "underlayment", "pb77",
+    "master elite", "solar reflectance",
+})
+# Model-number / code tokens: ASTM D226, PB77, Timberline HDZ, ISO PT4M — an uppercase run with a
+# digit, or a letter-digit compound. Catches specific product/spec identifiers generically.
+_MODEL_TOKEN_RE = re.compile(r"\b(?:[A-Z]{2,}[- ]?\d{1,4}[A-Z]?|[A-Z][a-z]+\s[A-Z]{2,}\d*)\b")
+_QUANT_RE = re.compile(r"\b\d+(?:\.\d+)?\s?(?:%|\$|years?|yrs?|mils?|inch(?:es)?|feet|ft|"
+                       r"squares?|mph|degrees?|°|dollars?|psi|lbs?|pounds?|months?|days?)\b",
+                       re.IGNORECASE)
+_TABLE_OR_LIST_RE = re.compile(r"<(?:table|ul|ol)\b|^\s*(?:[-*]|\d+\.)\s", re.IGNORECASE | re.MULTILINE)
+_ANCHOR_LINK_RE = re.compile(r'<a\s[^>]*href=["\']#', re.IGNORECASE)
+_QUESTION_HEAD_RE = re.compile(
+    r"^\s*(?:how|what|why|when|where|which|who|can|do|does|is|are|should|will)\b|\?",
+    re.IGNORECASE)
+_PARA_RE = re.compile(r"<p\b[^>]*>(.*?)</p>", re.IGNORECASE | re.DOTALL)
+
+
+def _sections_with_direct_answer(content_md: str) -> tuple[int, int]:
+    """(sections_with_a_direct_answer, total_H2_sections). A 'direct answer' = ≥30 words of prose
+    immediately after an H2 before the next heading — the extractable passage AI engines quote."""
+    parts = re.split(r"<h2\b[^>]*>.*?</h2>", content_md or "", flags=re.IGNORECASE | re.DOTALL)
+    bodies = parts[1:]  # text after each H2, up to the next H2
+    if not bodies:
+        return (0, 0)
+    good = 0
+    for body in bodies:
+        lead = re.split(r"<h[34]\b", body, flags=re.IGNORECASE)[0]
+        if len(_plain_text(lead).split()) >= 30:
+            good += 1
+    return (good, len(bodies))
+
+
+def _length_tier(words: int) -> tuple[int, str]:
+    """Rank Math's graduated content-length score (verified 2026-07-16)."""
+    for floor, pct in ((2500, 100), (2000, 70), (1500, 60), (1000, 40), (600, 20)):
+        if words >= floor:
+            return (pct, f"{words} words → {pct}% RM length tier")
+    return (0, f"{words} words → 0% (below 600)")
+
+
+def aio_signals(content_md: str, *, date_modified_days: int | None = None) -> list[dict]:
+    """Advisory AI-optimization + Rank Math-fidelity signals. Never a gate — display only.
+
+    date_modified_days: age of the content in days (from Article.updated_at) for the freshness
+    signal; None = unknown (freshness auto-passes rather than falsely accusing).
+    """
+    c = content_md or ""
+    plain = _plain_text(c)
+    words = max(1, len(plain.split()))
+    text_low = plain.lower()
+
+    answered, total_sec = _sections_with_direct_answer(c)
+    heads = [_plain_text(h) for h in _H_ANY_RE.findall(c)]
+    q_heads = sum(1 for h in heads if _QUESTION_HEAD_RE.search(h))
+    entities = {e for e in _ROOFING_ENTITIES if e in text_low} | set(_MODEL_TOKEN_RE.findall(c))
+    quant = len(_QUANT_RE.findall(plain))
+    facts_per_1k = quant / (words / 1000)
+    paras = [len(_plain_text(p).split()) for p in _PARA_RE.findall(c)]
+    longest_para = max(paras) if paras else 0
+    media = len(_IMG_ALT_RE.findall(c)) + (1 if _has_video_embed(c) else 0)
+    tier_pct, tier_detail = _length_tier(words)
+
+    return [
+        {"key": "aio_answer_first", "label": "H2 sections open with a direct answer (≥30 words)",
+         "pass": total_sec == 0 or answered / total_sec >= 0.7,
+         "detail": f"{answered}/{total_sec} sections"},
+        {"key": "aio_question_headings", "label": "≥1 question-phrased heading",
+         "pass": q_heads >= 1, "detail": f"{q_heads} of {len(heads)}"},
+        {"key": "aio_entity_clarity", "label": "Names ≥3 specific entities (brands/products/codes)",
+         "pass": len(entities) >= 3, "detail": f"{len(entities)} distinct"},
+        {"key": "aio_fact_density", "label": "≥2 quantitative facts per 1000 words",
+         "pass": facts_per_1k >= 2, "detail": f"{facts_per_1k:.1f}/1k ({quant} total)"},
+        {"key": "aio_multimodal", "label": "Has a table or list (AI extracts these more)",
+         "pass": bool(_TABLE_OR_LIST_RE.search(c))},
+        {"key": "aio_freshness", "label": "Content fresh (dateModified ≤ 365 days)",
+         "pass": date_modified_days is None or date_modified_days <= 365,
+         "detail": "unknown" if date_modified_days is None else f"{date_modified_days}d"},
+        {"key": "rm_length_tier", "label": "Rank Math content-length tier",
+         "pass": tier_pct >= 40, "detail": tier_detail},
+        {"key": "rm_short_paragraphs", "label": "No paragraph over 120 words",
+         "pass": longest_para <= 120, "detail": f"longest {longest_para} words"},
+        {"key": "rm_media_count", "label": "Has media (≥4 images/videos for full RM credit)",
+         "pass": media >= 1, "detail": f"{media} media"},
+        {"key": "rm_toc", "label": "Table of contents (in-page anchor links)",
+         "pass": len(_ANCHOR_LINK_RE.findall(c)) >= 3,
+         "detail": f"{len(_ANCHOR_LINK_RE.findall(c))} anchor links"},
+    ]
