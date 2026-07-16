@@ -737,7 +737,11 @@ def generate_article(
     # ── 6. Build JSON-LD ──────────────────────────────────────────────────────
     import datetime  # noqa: PLC0415
     today = datetime.date.today().isoformat()
-    author_name = (enriched.get("author") or {}).get("name") or "Perkins Roofing"
+    # Policy: Tim Kanak is the author of record for every article (matches adapters.wordpress
+    # _author_id, which always assigns WP author id 3 = Tim Kanak). A named Person author is the
+    # per-article E-E-A-T signal that actually helps AI-answer-engine attribution; a generic org
+    # name does not. Enrichment may not override the byline.
+    author_name = "Tim Kanak"
     wp_url = _wp_base_url()
     canonical_url = f"{wp_url}/blog/{slug}"
 
