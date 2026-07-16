@@ -45,6 +45,26 @@ def test_failing_row_does_not_revert_prior_promotions(monkeypatch):
     assert by_ref["bad"] == "error"
 
 
+def test_promotion_syncs_article_status(monkeypatch):
+    """Promoting an article must also set Article.status='published', not just the
+    ScheduledContent row. Otherwise the article stays status='scheduled' and a later regen
+    (which derives WP status from Article.status) silently reverts the live post to draft."""
+    s = SessionLocal()
+    _seed_article(s, "post", 303)
+    s.commit()
+    s.close()
+
+    monkeypatch.setattr(PJ.wordpress, "update_status", lambda pid, st: None)
+    PJ.run()
+
+    s = SessionLocal()
+    art = s.query(Article).filter(Article.slug == "post").one()
+    sc = s.query(ScheduledContent).filter(ScheduledContent.ref_id == "post").one()
+    s.close()
+    assert sc.status == "published"
+    assert art.status == "published"   # kept in sync — the desync-prevention fix
+
+
 def test_reel_moves_to_awaiting_social(monkeypatch):
     s = SessionLocal()
     s.add(ScheduledContent(kind="reel", ref_id="7", status="scheduled",

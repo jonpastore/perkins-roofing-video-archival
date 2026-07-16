@@ -31,6 +31,13 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
             article = db.get(Article, r.ref_id) if r.kind == "article" else None
             if article and article.wp_post_id:
                 wordpress.update_status(article.wp_post_id, "publish")
+            # Keep Article.status in sync with the ScheduledContent row. Without this the article
+            # stays status="scheduled" after promotion, and a later regen (which sets WP status
+            # from Article.status) silently reverts a live post back to draft — the desync that
+            # left 9 promoted articles showing "draft" on WordPress.
+            if article and article.status != "published":
+                article.status = "published"
+                db.add(article)
             r.status = "published"
             db.add(r)
             db.commit()
