@@ -48,23 +48,27 @@ class ClaimResult:
         return f"https://youtu.be/{self.video_id}?t={int(self.start)}" if self.video_id else ""
 
 
+# Vertex controlled generation takes the proto type names (UPPERCASE), not JSON Schema's
+# lowercase. Lowercase raises KeyError: 'object' inside the SDK — which read_span used to
+# swallow, turning a config bug into 80 silent "unreadable span" results and a clean-looking
+# worksheet built on zero evidence. Keep these uppercase; ARTICLE_SCHEMA is the reference.
 _SLOT_SCHEMA = {
-    "type": "object",
+    "type": "OBJECT",
     "properties": {
-        "states_anything": {"type": "boolean"},
-        "subject": {"type": "string"},
-        "measure": {"type": "string"},
-        "value_lo": {"type": "number"},
-        "value_hi": {"type": "number"},
-        "unit": {"type": "string"},
-        "qualifier": {"type": "string"},
-        "condition": {"type": "string"},
-        "entity": {"type": "string"},
-        "speaker": {"type": "string"},
-        "stance": {"type": "string",
+        "states_anything": {"type": "BOOLEAN"},
+        "subject": {"type": "STRING"},
+        "measure": {"type": "STRING"},
+        "value_lo": {"type": "NUMBER"},
+        "value_hi": {"type": "NUMBER"},
+        "unit": {"type": "STRING"},
+        "qualifier": {"type": "STRING"},
+        "condition": {"type": "STRING"},
+        "entity": {"type": "STRING"},
+        "speaker": {"type": "STRING"},
+        "stance": {"type": "STRING",
                    "enum": ["asserts", "rejects", "reports_others", "offers_option", "none"]},
-        "force": {"type": "string"},
-        "proposition": {"type": "string"},
+        "force": {"type": "STRING"},
+        "proposition": {"type": "STRING"},
     },
     "required": ["states_anything"],
 }

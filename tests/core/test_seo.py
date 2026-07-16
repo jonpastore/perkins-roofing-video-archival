@@ -583,6 +583,30 @@ class TestRankMathDensityAndSlug:
         c = next(x for x in checks if x["key"] == "rm_kw_density")
         assert c["pass"] is True
 
+    def test_density_counts_keyword_ending_a_sentence(self):
+        """A keyword followed by punctuation still counts.
+
+        Regression: _plain_text leaves '.' attached, so "roof repair miami." tokenised to
+        [..., "miami."] and never matched [..., "miami"] — every occurrence ending a sentence
+        was invisible, while the sibling substring checks saw it fine. Every case above trails
+        the keyword with a space, which is why this survived. Density here is IDENTICAL to
+        test_density_in_range_pass; only the punctuation differs.
+        """
+        kw = "roof repair miami"
+        body = f"<p>We handle {kw}. </p>" * 9 + "<p>word </p>" * 846
+        checks = rank_math_checks(_rm_good_title(), _rm_good_meta(), _rm_good_slug(), body, kw)
+        c = next(x for x in checks if x["key"] == "rm_kw_density")
+        assert c["pass"] is True, f"punctuation hid the keyword: {c['detail']}"
+
+    def test_density_keeps_hyphenated_terms_distinct(self):
+        """'L-flashing' is not 'L flashing'. Collapsing hyphens has previously produced false
+        calls against real terms, so the punctuation strip must leave them alone."""
+        kw = "l flashing"
+        body = "<p>We install l-flashing here. </p>" * 30 + "<p>word </p>" * 70
+        checks = rank_math_checks(_rm_good_title(), _rm_good_meta(), _rm_good_slug(), body, kw)
+        c = next(x for x in checks if x["key"] == "rm_kw_density")
+        assert c["pass"] is False, "hyphenated term was silently collapsed into the keyword"
+
     def test_density_too_low_fail(self):
         kw = "roof repair miami"
         # keyword once in 1000 words → 0.1% density

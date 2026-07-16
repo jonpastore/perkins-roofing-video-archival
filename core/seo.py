@@ -118,16 +118,27 @@ def _plain_text_head(content: str, chars: int = 200) -> str:
     return _plain_text(content)[:chars]
 
 
+# _plain_text strips markdown/HTML but leaves sentence punctuation attached, so "roof leaks."
+# tokenised to ["roof", "leaks."] and never matched ["roof", "leaks"] — every occurrence ending
+# a sentence or clause was invisible to density alone. Every sibling check here (kw_in_title /
+# _meta / _intro / _body / _heading / _img_alt) uses substring matching and never had that blind
+# spot, so the same phrase could pass kw_in_body and be uncountable for density.
+#
+# Hyphens are deliberately KEPT: "L-flashing" and "L flashing" are not interchangeable, and
+# collapsing them has previously produced false calls against real terms Tim uses.
+_DENSITY_PUNCT_RE = re.compile(r"[^a-z0-9'\- ]+")
+
+
 def _kw_density(content: str, keyword: str) -> float:
     """Return keyword density as a fraction (0.0–1.0)."""
     if not keyword:
         return 0.0
-    text = _plain_text(content).lower()
+    text = _DENSITY_PUNCT_RE.sub(" ", _plain_text(content).lower())
     words = [w for w in text.split() if w]
     total = len(words)
     if total == 0:
         return 0.0
-    kw_words = keyword.lower().split()
+    kw_words = _DENSITY_PUNCT_RE.sub(" ", keyword.lower()).split()
     kw_len = len(kw_words)
     count = 0
     for i in range(len(words) - kw_len + 1):

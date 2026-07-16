@@ -27,6 +27,7 @@ Usage:
     LLM_BACKEND=vertex .venv/bin/python scripts/eval_claims.py --verify 3
 """
 import argparse
+import logging
 import os
 import sys
 from collections import Counter
@@ -177,7 +178,25 @@ def run_extract() -> None:
     print("  by a human reading the worksheet from --verify. Do not read a count as a problem.")
 
 
-def run_verify(n: int) -> None:
+class _SpanReadFailures(logging.Handler):
+    """Count swallowed span-read failures.
+
+    A malformed response_schema once made every span read raise inside the SDK; read_span's
+    broad `except Exception` turned that into 80 unreadable spans, and this harness printed a
+    worksheet and exited 0. Verdicts computed against zero evidence are not data — they are the
+    predecessor's bug wearing the evaluator's clothes. Count them, and refuse to report.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.count = 0
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if "span read failed" in record.getMessage():
+            self.count += 1
+
+
+def run_verify(n: int) -> int:
     """Full verification. Prints a hand-labelling worksheet — precision is a human call."""
     os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
     from adapters.llm import get_default
@@ -185,6 +204,8 @@ def run_verify(n: int) -> None:
     from core.claim_verify import verify_claim
     from jobs.article_job import _corpus_vocabulary
 
+    failures = _SpanReadFailures()
+    logging.getLogger("core.claim_verify").addHandler(failures)
     llm = get_default()
     print("=" * 78)
     print(f"VERIFY — {n} article(s), full pipeline (COSTS LLM CALLS)")
@@ -193,6 +214,15 @@ def run_verify(n: int) -> None:
         db.info["tenant_id"] = 1
         vocab = _corpus_vocabulary()
         print(f"  corpus vocabulary: {len(vocab)} tokens\n")
+        # _corpus_vocabulary swallows DB errors and returns empty. An empty vocabulary makes
+        # _in_corpus() answer True for everything ("never accuse on missing evidence"), which
+        # silently disables OUT_OF_CORPUS — the verdict that catches the Solar Reflectance Index
+        # case this whole checker exists for. Observed for real: a dead cloud-sql-proxy printed
+        # "0 tokens" and the run carried on emitting confident-looking verdicts.
+        if not vocab:
+            print("  !! corpus vocabulary is EMPTY — OUT_OF_CORPUS cannot fire, so every")
+            print("     'in Tim's words' judgement below is vacuous. Fix the DB, re-run.")
+            return 1
         rows = db.query(Article).order_by(Article.slug).limit(n).all()
         tally: Counter = Counter()
         for a in rows:
@@ -202,14 +232,28 @@ def run_verify(n: int) -> None:
                 r = verify_claim(c, db, llm=llm, vocab=vocab)
                 tally[r.verdict.value] += 1
                 flag = "" if r.verdict is Verdict.SUPPORTED else "   <-- REVIEW"
-                print(f"  [{r.verdict.value:<14}] {c.type.value:<12} {c.sentence[:64]}{flag}")
+                print(f"  [{r.verdict.value:<14}] {c.type.value:<12}{flag}")
+                # A verdict is not labellable without BOTH sides of the comparison. Printing the
+                # claim truncated to 64 chars and a YouTube link means the labeller has to open
+                # 20+ tabs to judge one article — so nobody labels, and the number never exists.
+                # Print what was compared, in full, next to each other.
+                print(f"       claim: {c.sentence.strip()[:300]}")
+                if r.span_text:
+                    print(f"       span : {' '.join(r.span_text.split())[:300]}")
                 if r.url:
                     print(f"       source: {r.url}")
                 if r.note:
                     print(f"       note: {r.note}")
         print(f"\n  verdicts: {dict(tally)}")
+        if failures.count:
+            print(f"\n  !! {failures.count} span read(s) FAILED — the model was never asked, or")
+            print("     never answered. Every verdict above that rests on a failed read is an")
+            print("     artefact of the failure, not a measurement of the article.")
+            print("     DO NOT hand-label this run. Fix the reads, re-run.")
+            return 1
         print("\n  HAND-LABEL each non-SUPPORTED line: is it a REAL problem or a false alarm?")
         print("  precision = real / (real + false). Nothing gates until that number is known.")
+    return 0
 
 
 if __name__ == "__main__":
@@ -226,5 +270,5 @@ if __name__ == "__main__":
     if args.extract:
         run_extract()
     if args.verify:
-        run_verify(args.verify)
+        rc += run_verify(args.verify)
     sys.exit(1 if rc else 0)
