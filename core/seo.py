@@ -434,6 +434,57 @@ RM_COSMETIC_CHECKS = frozenset({
 })
 
 
+_H2_TAG_RE = re.compile(r"<h2\b([^>]*)>(.*?)</h2>", re.IGNORECASE | re.DOTALL)
+_ID_ATTR_RE = re.compile(r'\bid\s*=\s*["\'][^"\']*["\']', re.IGNORECASE)
+
+
+def _heading_slug(text: str) -> str:
+    s = re.sub(r"[^a-z0-9\s-]", "", _plain_text(text).lower()).strip()
+    return re.sub(r"\s+", "-", s)[:60] or "section"
+
+
+def ensure_toc(content_md: str) -> str:
+    """Prepend a table-of-contents nav with in-page anchor links, and give every <h2> an id.
+
+    Idempotent: returns content unchanged if it already has in-page anchor links, or has fewer
+    than 3 H2 sections (a TOC on a 2-section article is noise). The TOC uses a <div>/<strong>
+    heading, NOT an <h2>, so it doesn't create a headingless section that fails the answer-first
+    check. AI answer engines and Rank Math both credit an anchored TOC.
+    """
+    c = content_md or ""
+    if _ANCHOR_LINK_RE.search(c):
+        return c  # already has anchor links (a TOC or jump links) — don't double up
+    h2s = list(_H2_TAG_RE.finditer(c))
+    if len(h2s) < 3:
+        return c
+
+    used: set[str] = set()
+    items: list[str] = []
+
+    def _add_id(m: "re.Match") -> str:
+        attrs, inner = m.group(1), m.group(2)
+        slug = _heading_slug(inner)
+        i, base = 2, slug
+        while slug in used:
+            slug = f"{base}-{i}"
+            i += 1
+        used.add(slug)
+        items.append(f'<li><a href="#{slug}">{_plain_text(inner)}</a></li>')
+        attrs = _ID_ATTR_RE.sub("", attrs).rstrip()
+        return f'<h2 {attrs} id="{slug}">{inner}</h2>'.replace("<h2  ", "<h2 ")
+
+    body = _H2_TAG_RE.sub(_add_id, c)
+    toc = ('<div class="toc"><p><strong>In This Article</strong></p><ul>'
+           + "".join(items) + "</ul></div>\n")
+    # Insert the TOC right BEFORE the first <h2> — after the intro/answer-first lede — so it does
+    # not displace the lede from the first-200-chars answer-first check or the keyword-in-intro check.
+    first_h2 = re.search(r"<h2\b", body, re.IGNORECASE)
+    if not first_h2:
+        return c
+    i = first_h2.start()
+    return body[:i] + toc + body[i:]
+
+
 def check_tier(key: str) -> str:
     """'aio' (modern best practice), 'cosmetic' (Rank Math gamification), or 'ranking'."""
     if key.startswith("aio_"):

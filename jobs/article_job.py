@@ -1889,6 +1889,12 @@ def generate_scored_article(
     fields["content_md"] = _ensure_answer_first(
         fields.get("content_md", ""), keyword, fields.get("faq_json") or [])
 
+    # 7. Table of contents (REQUIRED): anchor-linked TOC + <h2> ids. Inserted after the intro so
+    #    it doesn't displace the answer-first lede. AI answer engines and Rank Math both credit it;
+    #    the live site had none. Idempotent and a no-op below 3 sections.
+    from core.seo import ensure_toc  # noqa: PLC0415
+    fields["content_md"] = ensure_toc(fields.get("content_md", ""))
+
     # 7. Wordcount > 300: if still short after all fixes, attempt one more refine
     if _word_count_str(fields.get("content_md", "")) <= 300:
         logger.warning(

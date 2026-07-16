@@ -893,3 +893,30 @@ class TestAioSignals:
     def test_freshness_unknown_does_not_falsely_fail(self):
         assert self._sig("<p>hi</p>", date_modified_days=None)["aio_freshness"]["pass"] is True
         assert self._sig("<p>hi</p>", date_modified_days=800)["aio_freshness"]["pass"] is False
+
+
+class TestEnsureToc:
+    def test_adds_toc_and_ids_for_multi_section(self):
+        from core.seo import ensure_toc
+        body = "<p>Intro answer here.</p><h2>First</h2><p>a</p><h2>Second</h2><p>b</p><h2>Third</h2><p>c</p>"
+        out = ensure_toc(body)
+        assert out.count('href="#') == 3
+        assert out.count("<h2 ") == 3 and out.count("id=") == 3
+        # TOC sits after the intro, before the first h2 (lede not displaced)
+        assert out.index("Intro answer") < out.index('class="toc"') < out.index("First")
+
+    def test_idempotent(self):
+        from core.seo import ensure_toc
+        body = "<p>i</p><h2>A</h2><p>x</p><h2>B</h2><p>y</p><h2>C</h2><p>z</p>"
+        once = ensure_toc(body)
+        assert ensure_toc(once) == once
+
+    def test_skips_when_fewer_than_three_sections(self):
+        from core.seo import ensure_toc
+        body = "<h2>Only</h2><p>x</p><h2>Two</h2><p>y</p>"
+        assert ensure_toc(body) == body
+
+    def test_skips_when_anchor_links_already_present(self):
+        from core.seo import ensure_toc
+        body = '<p><a href="#a">jump</a></p><h2>A</h2><h2>B</h2><h2>C</h2>'
+        assert ensure_toc(body) == body
