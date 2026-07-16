@@ -2,7 +2,7 @@
 
 Selects proposals in 'sent' or 'viewed' status past their reminder threshold
 and sends a nudge email via Resend. Uses SELECT FOR UPDATE SKIP LOCKED for
-idempotent, concurrent-safe operation (same pattern as publish_job.py).
+idempotent, concurrent-safe operation (same pattern as promote_job.py).
 
 Cadence config in tenants.settings.reminder_cadence_days (JSONB array).
 Default cadence if not configured: [3, 7, 14] days.
