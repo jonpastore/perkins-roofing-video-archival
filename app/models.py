@@ -355,15 +355,49 @@ class PlatformAdmin(Base):
 
 
 class PlatformAuditLog(Base):
-    """Audit log for every platform_admin impersonation request (TRD-F4 sec 4.4 #3)."""
+    """Platform-level audit trail: actions ABOUT tenants, or about the platform itself.
+
+    Started as impersonation-only (TRD-F4 §4.4 #3); generalised by migration 0038 to cover the
+    admin-portal surface — tenant provisioning/offboarding, platform_admin grants, SSO/IdP
+    config, billing plans, feature flags — none of which have a tenant_id.
+
+    Deliberately a SEPARATE table from audit_log rather than a nullable tenant_id on it.
+    audit_log is RLS tenant-scoped; a NULL-tenant row fails its policy for everyone, and the
+    policy needed to fix that ("... OR platform_scope AND tenant_id IS NULL") would guard the
+    schema's most sensitive rows with a GUC the app sets on itself, inside the table every
+    tenant reads daily. Table separation makes that leak structurally impossible and matches
+    the boundary already drawn here: this table, tenants, platform_admins and
+    tenant_offboard_log are RLS-exempt and reachable only via PlatformSessionLocal.
+
+    The two are unioned at the READ layer (GET /audit?scope=all) and correlate on request_id,
+    so one request spanning both — a platform admin impersonating a tenant, then editing — is
+    still a single story.
+    """
     __tablename__ = "platform_audit_log"
     id                   = Column(Integer, primary_key=True, autoincrement=True)
     platform_admin_email = Column(String, nullable=False)
-    target_tenant_id     = Column(Integer, nullable=False)
+    # Nullable since 0038: impersonation has a target, "create tenant" does not.
+    target_tenant_id     = Column(Integer, nullable=True)
     route                = Column(String, nullable=False)
     method               = Column(String, nullable=False)
     occurred_at          = Column(DateTime, nullable=False, default=_utcnow)
-    __table_args__       = (Index("ix_platform_audit_log_admin", "platform_admin_email"),)
+
+    action               = Column(String(120), nullable=True)
+    entity_type          = Column(String(60), nullable=True)
+    entity_id            = Column(String(255), nullable=True)
+    status_code          = Column(Integer, nullable=True)
+    request_id           = Column(String(64), nullable=True)
+    source               = Column(String(20), nullable=False, default="api")
+    path                 = Column(String(1024), nullable=True)
+    detail               = Column(JSON().with_variant(JSONB, "postgresql"),
+                                  nullable=False, default=dict)
+
+    __table_args__       = (
+        Index("ix_platform_audit_log_admin", "platform_admin_email"),
+        Index("ix_platform_audit_log_time", "occurred_at"),
+        Index("ix_platform_audit_log_action", "action", "occurred_at"),
+        Index("ix_platform_audit_log_req", "request_id"),
+    )
 
 
 class TenantOffboardLog(Base):

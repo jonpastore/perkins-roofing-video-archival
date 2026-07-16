@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import re
 from contextlib import contextmanager
+from functools import lru_cache
 
 from core.article_prompt import system_prompt, template_prompt
 from core.json_repair import parse_model_json
@@ -989,9 +990,17 @@ def refine_article_content(fields: dict, keyword: str, *, llm=None) -> dict:
         f"  or 'What Does Cleanup Entail After You Need a New Roof?' are exactly what to avoid:\n"
         f"  no human writes that, and it reads as spam to readers and to Google.\n"
         f"- Provide concise, direct answers immediately after each heading\n"
-        f"- Use the keyword where it genuinely fits and SEMANTIC VARIANTS everywhere else\n"
-        f"  (pronouns, 'the roof', 'this'). Repetition past ~1% density is over-optimisation:\n"
-        f"  it reads robotic and Rank Math penalises it above 1.5%.\n"
+        f"- KEYWORD DENSITY — aim for the BAND, from both sides. The exact phrase '{keyword}'\n"
+        f"  should be roughly 1% of the article's words: about ONE MENTION PER 100-120 WORDS,\n"
+        f"  so ~18-22 times in a 2,000-word article. Rank Math flags BOTH ends — under 0.5% is\n"
+        f"  under-optimised, over 1.5% is stuffing.\n"
+        f"  This instruction previously warned only about the ceiling ('repetition past ~1% is\n"
+        f"  over-optimisation'), and the model dutifully landed at 0.16-0.48% on 12 of 31\n"
+        f"  articles — an article genuinely about '{keyword}' naming it 7 times in 2,300 words\n"
+        f"  is not restraint, it is avoidance. One mention per ~110 words is how a human writes\n"
+        f"  about their own subject.\n"
+        f"  Use semantic variants (pronouns, 'the roof', 'this') for the REST of the mentions —\n"
+        f"  never repeat the phrase back-to-back, in filler, or in a list to hit the number.\n"
         f"- Improve the meta description to be compelling and keyword-rich (≤160 chars)\n"
         f"- Add or improve a FAQ section with common questions and concise answers\n"
         f"- Preserve all factual content; only improve structure and clarity\n"
@@ -1624,18 +1633,73 @@ def _refine_without_regressing_length(fields: dict, keyword: str, *, llm=None) -
 GROUNDING_ROUNDS = 2
 
 
+@lru_cache(maxsize=1)
+def _corpus_vocabulary(_tenant: int = 1) -> frozenset[str]:
+    """Every word Tim has ever said, across all 801 videos (~11,300 tokens).
+
+    Cached per process: it is one scan of 14,592 chunks and the answer does not change during
+    a run. Opens its own stamped session — callers reach this from inside a generation and
+    should not have to thread a session down for a diagnostic.
+    """
+    import re as _re  # noqa: PLC0415
+
+    try:
+        from app.models import Chunk, SessionLocal  # noqa: PLC0415
+        with SessionLocal() as db:
+            db.info["tenant_id"] = _tenant
+            vocab: set[str] = set()
+            for (text,) in db.query(Chunk.text).all():
+                vocab |= set(_re.findall(r"[a-z0-9]+", (text or "").lower()))
+        return frozenset(vocab)
+    except Exception as exc:  # noqa: BLE001 — a diagnostic must never break generation
+        logger.warning("corpus vocabulary unavailable: %s", exc)
+        return frozenset()
+
+
 def _audit_grounding(fields: dict, keyword: str, transcript: str) -> list[str]:
     """Proper nouns the article names that its source transcripts never mention.
 
-    Pure: no retrieval. An audit that re-queried would add a network call to every generation
-    (and hung the test suite when I first wrote it that way). `transcript` is the evidence the
-    generator actually used, held by the caller — no evidence in hand -> no claims of fabrication.
+    `transcript` is the evidence the generator actually used, held by the caller — no evidence
+    in hand -> no claims of fabrication. Deliberately does not re-retrieve: an audit that
+    re-queried would add a network call to every generation (and hung the test suite when I
+    first wrote it that way).
+
+    TWO TIERS, because they mean very different things (measured across 31 articles):
+
+      absent from THIS ARTICLE'S SLICES  — weak. Mostly Title-Case headings and plural
+        mismatches ('Costs', 'Underlayment'), sometimes the model reaching outside its evidence
+        onto something real ('PB77', 'Polyblast' — both things Tim genuinely says elsewhere).
+        ~9 per article. Noise.
+
+      absent from the WHOLE 801-VIDEO CORPUS — strong. Tim has never said this word in his
+        life, so the article invented it: 'Solar Reflectance Index' has 0 hits in 14,592
+        chunks. ~1 per article.
+
+    The corpus tier is a severity ESCALATOR, not a replacement — GPT-5 and Grok both rejected
+    swapping the slice check for it, correctly: "Tim said it somewhere across 801 videos" is
+    not evidence for THIS article, and trading the grounding signal away to hide false
+    positives is worse than the false positives. Both tiers report; neither edits. Token
+    presence still is not claim support ([[grounding-vs-vocabulary]]).
     """
-    from core.grounding import unsourced_terms  # noqa: PLC0415
+    from core.grounding import _normalise, unsourced_terms  # noqa: PLC0415
 
     if not transcript:
         return []
-    return unsourced_terms(fields.get("content_md", ""), transcript, ignore=keyword)
+    terms = unsourced_terms(fields.get("content_md", ""), transcript, ignore=keyword)
+    if not terms:
+        return []
+
+    vocab = _corpus_vocabulary()
+    if vocab:
+        never = [t for t in terms if not all(w in vocab for w in _normalise(t).split())]
+        if never:
+            logger.error(
+                "GROUNDING (corpus): %r names %d term(s) Tim has NEVER said in 801 videos: "
+                "%s — likely invented; verify before this ships", keyword, len(never), never)
+    fields["never_said_terms"] = [
+        t for t in terms if vocab and not all(w in vocab for w in _normalise(t).split())
+    ]
+    return terms
 
 
 def _enforce_grounding(fields: dict, keyword: str, transcript: str, *, llm=None,

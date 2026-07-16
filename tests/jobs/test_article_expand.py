@@ -484,3 +484,63 @@ def test_article_updated_at_stamps_on_every_write_path():
     assert updated.default is not None, "and be set on insert"
     # generated_at means first generation and must NOT re-stamp on update
     assert Article.__table__.columns["generated_at"].onupdate is None
+
+
+def test_refine_prompt_targets_the_density_band_from_both_sides():
+    """Regression: the refine prompt warned only about the ceiling.
+
+    It said "repetition past ~1% density is over-optimisation" with no floor, and the model
+    obeyed into 0.16-0.48% against Rank Math's 0.5-1.5% band — 12 of 31 articles failed
+    rm_kw_density. Generation (core/article_prompt) had it right; refine ran afterwards and
+    pushed density back down. Both ends must be stated.
+    """
+    from jobs.article_job import refine_article_content
+
+    class _LLM:
+        def __init__(self):
+            self.prompts = []
+
+        def chat(self, prompt, want_json=False, **kw):
+            self.prompts.append(prompt)
+            return '{"title":"T","slug":"s","metaDescription":"m","content":"<p>x</p>","faq":[]}'
+
+    llm = _LLM()
+    refine_article_content({"title": "T", "slug": "s", "meta": "m",
+                            "content_md": "<p>body</p>", "faq_json": []}, "wall flashings", llm=llm)
+    p = llm.prompts[0].lower()
+    assert "0.5%" in p and "1.5%" in p, "both ends of the band must be stated"
+    assert "under-optimised" in p or "under 0.5%" in p, "the FLOOR must be explicit"
+    assert "wall flashings" in p
+
+
+def test_grounding_audit_escalates_terms_tim_has_never_said():
+    """Two tiers, because they mean different things.
+
+    Absent from THIS article's slices is weak (headings, plurals, or the model reaching onto
+    something real like 'PB77', which Tim does say elsewhere). Absent from all 801 videos is
+    strong: 'Solar Reflectance Index' has 0 hits in 14,592 chunks, so the article invented it.
+    The corpus tier ESCALATES; it never replaces the slice check — "Tim said it somewhere" is
+    not evidence for this article.
+    """
+    from jobs import article_job
+
+    article_job._corpus_vocabulary.cache_clear()
+    try:
+        article_job._corpus_vocabulary.__wrapped__  # sanity: it is cached
+        fields = {"content_md": "<p>Use the SuperFlash 9000 and the Polyblast primer.</p>"}
+        tim = "you set the polyblast primer against the stucco"
+        # vocabulary knows 'polyblast' but has never heard 'superflash'
+        article_job._corpus_vocabulary.cache_clear()
+        orig = article_job._corpus_vocabulary
+        article_job._corpus_vocabulary = lambda _t=1: frozenset(
+            {"polyblast", "primer", "stucco", "you", "set", "the", "against"})
+        try:
+            terms = article_job._audit_grounding(fields, "wall flashings", tim)
+        finally:
+            article_job._corpus_vocabulary = orig
+        assert any("SuperFlash" in t for t in terms)
+        never = fields.get("never_said_terms") or []
+        assert any("SuperFlash" in t for t in never), "never-said term must escalate"
+        assert not any("Polyblast" in t for t in never), "a word Tim says must NOT escalate"
+    finally:
+        article_job._corpus_vocabulary.cache_clear()

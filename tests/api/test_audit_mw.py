@@ -160,3 +160,38 @@ def test_before_after_changes_survive_the_write_redactor(monkeypatch):
     changes = {"content_md": {"from": "old body", "to": "new body"}}
     assert mw.write(tenant_id=1, action="article.update", detail={"changes": changes})
     assert captured["detail"]["changes"] == changes, "before/after was destroyed by redact()"
+
+
+def test_platform_actions_go_to_the_platform_trail_not_the_tenant_one(monkeypatch):
+    """A platform admin acting with no tenant context must still be audited.
+
+    audit_log is RLS tenant-scoped with tenant_id NOT NULL, so these have nowhere to go there —
+    and giving it a nullable tenant_id would mean guarding the schema's most sensitive rows
+    (who was granted platform_admin, which tenant was provisioned) with a GUC the app sets on
+    itself, inside the table every tenant queries. Separate table; merged at the read layer.
+    """
+    tenant_rows, platform_rows = [], []
+    import api.audit_mw as mw
+    monkeypatch.setattr(mw, "write", lambda **kw: tenant_rows.append(kw) or True)
+    monkeypatch.setattr(mw, "write_platform", lambda **kw: platform_rows.append(kw) or True)
+
+    # platform_admin without impersonation: tenant_id is None
+    client = TestClient(_app({"tenant_id": None, "email": "jon@degenito.ai",
+                              "role": "platform_admin"}))
+    client.post("/articles/wall-flashings/fix-seo")
+
+    assert tenant_rows == [], "a no-tenant action must not be forced into the tenant trail"
+    assert len(platform_rows) == 1
+    assert platform_rows[0]["actor_email"] == "jon@degenito.ai"
+    assert platform_rows[0]["action"] == "article.fix-seo"
+    assert platform_rows[0]["request_id"], "request_id is the join key across both trails"
+
+
+def test_impersonation_target_is_recorded_on_the_platform_row(monkeypatch):
+    platform_rows = []
+    import api.audit_mw as mw
+    monkeypatch.setattr(mw, "write_platform", lambda **kw: platform_rows.append(kw) or True)
+    client = TestClient(_app({"tenant_id": None, "email": "jon@degenito.ai",
+                              "role": "platform_admin", "impersonating_as": 7}))
+    client.post("/articles/wall-flashings/fix-seo")
+    assert platform_rows[0]["target_tenant_id"] == 7

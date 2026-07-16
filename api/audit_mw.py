@@ -100,6 +100,56 @@ def write(
         return False
 
 
+def write_platform(
+    *,
+    actor_email: str | None,
+    action: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    target_tenant_id: int | None = None,
+    method: str | None = None,
+    route: str | None = None,
+    path: str | None = None,
+    status_code: int | None = None,
+    request_id: str | None = None,
+    source: str = "api",
+    detail: dict | None = None,
+) -> bool:
+    """Persist a PLATFORM-level audit row (no tenant context).
+
+    Its own table and its own PLATFORM-scoped session: platform_audit_log is RLS-exempt, so it
+    must not go through the tenant session factory (which stamps app.tenant_id and would fail
+    the strict unstamped-session guard here). Same fail-open contract as write().
+    """
+    try:
+        from app.config import settings  # noqa: PLC0415
+        if not settings.AUDIT_ENABLED:
+            return False
+        from app.models import PlatformAuditLog, PlatformSessionLocal  # noqa: PLC0415
+
+        with PlatformSessionLocal() as s:
+            s.info["platform_scope"] = True
+            s.add(PlatformAuditLog(
+                platform_admin_email=(actor_email or "anonymous"),
+                target_tenant_id=target_tenant_id,
+                route=(route or path or "")[:255] or "/",
+                method=(method or "")[:10] or "?",
+                action=action,
+                entity_type=entity_type,
+                entity_id=(str(entity_id)[:255] if entity_id is not None else None),
+                status_code=status_code,
+                request_id=request_id,
+                source=source,
+                path=(path or "")[:1024] or None,
+                detail=redact(detail or {}),
+            ))
+            s.commit()
+        return True
+    except Exception as exc:  # noqa: BLE001 — auditing must never break the caller
+        log.error("PLATFORM AUDIT WRITE FAILED action=%r: %s", action, exc)
+        return False
+
+
 class AuditMiddleware(BaseHTTPMiddleware):
     """Write an audit row for every mutating request, success or failure."""
 
@@ -142,12 +192,21 @@ class AuditMiddleware(BaseHTTPMiddleware):
         params = request.scope.get("path_params") or {}
 
         if tenant_id is None:
-            # Platform-admin without tenant context, or an unauthenticated/rejected request.
-            # audit_log is tenant-scoped (RLS) and has nowhere to put these; platform-admin
-            # impersonation already has its own trail in platform_audit_log. Log rather than
-            # silently drop, so the gap is visible instead of looking like inactivity.
-            log.info("audit(no-tenant) %s %s -> %s actor=%s", method, path, status_code,
-                     claims.get("email"))
+            # No tenant context: a platform admin acting on the platform itself (provisioning,
+            # admin grants, SSO, billing), or an unauthenticated/rejected request. audit_log is
+            # RLS tenant-scoped and has nowhere to put these, so they go to the platform trail
+            # — a separate table on purpose (see PlatformAuditLog). Correlates back on
+            # request_id.
+            write_platform(
+                actor_email=claims.get("email"),
+                action=action_for(method, route),
+                entity_type=entity_from(route, params)[0],
+                entity_id=entity_from(route, params)[1],
+                target_tenant_id=claims.get("impersonating_as"),
+                method=method, route=route, path=path,
+                status_code=status_code, request_id=request_id,
+                detail={"query": dict(request.query_params)} if request.query_params else {},
+            )
             return
 
         etype, eid = entity_from(route, params)
