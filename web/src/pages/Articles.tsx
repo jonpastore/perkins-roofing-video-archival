@@ -60,6 +60,15 @@ interface RankMathCheck {
   label: string;
   pass: boolean;
   detail?: string;
+  // "ranking" (helps Google) | "cosmetic" (Rank Math gamification) | "aio" (modern best practice)
+  tier?: string;
+}
+
+interface ScoreNote {
+  ranking_fail: string[];
+  cosmetic_fail: string[];
+  aio_fail: string[];
+  summary: string;
 }
 
 interface ArticleFull extends ArticleSummary {
@@ -72,6 +81,11 @@ interface ArticleFull extends ArticleSummary {
   seo_checks?: RankMathCheck[];
   seo_passed?: number;
   seo_total?: number;
+  // AIO signals (core/seo.aio_signals) — what actually drives AI-Overview citation
+  aio_checks?: RankMathCheck[];
+  aio_passed?: number;
+  aio_total?: number;
+  score_note?: ScoreNote;
   // wp_url is already on ArticleSummary via extends
 }
 
@@ -1017,18 +1031,27 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                           {groupChecks.map((c) => {
                             const busy = fixingKey === c.key;
-                            const clickable = !c.pass && fixingKey === null;
+                            // Cosmetic checks (density, power/sentiment words) are Rank Math
+                            // gamification, not ranking factors — a miss is safe to ignore and
+                            // must NOT drive an AI "fix". Only ranking-relevant checks are actionable.
+                            const cosmetic = c.tier === "cosmetic";
+                            const clickable = !c.pass && !cosmetic && fixingKey === null;
+                            const failBg = cosmetic ? "#fafafa" : "#fff7f7";
+                            const failBorder = cosmetic ? "#e5e7eb" : "#fecaca";
                             return (
                               <div
                                 key={c.key}
                                 onClick={clickable ? () => handleFixSeo(c.key) : undefined}
-                                title={!c.pass ? "Click to fix this with AI (Gemini)" : undefined}
-                                style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", borderRadius: 8, background: c.pass ? "#f0fdf4" : "#fff7f7", border: `1px solid ${c.pass ? "#bbf7d0" : "#fecaca"}`, cursor: clickable ? "pointer" : busy ? "wait" : "default", opacity: fixingKey !== null && !busy ? 0.6 : 1 }}
+                                title={clickable ? "Click to fix this with AI (Gemini)" : cosmetic ? "Cosmetic Rank Math check — not a ranking factor, safe to ignore" : undefined}
+                                style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", borderRadius: 8, background: c.pass ? "#f0fdf4" : failBg, border: `1px solid ${c.pass ? "#bbf7d0" : failBorder}`, cursor: clickable ? "pointer" : busy ? "wait" : "default", opacity: fixingKey !== null && !busy ? 0.6 : 1 }}
                               >
-                                <span style={{ fontSize: 14, flexShrink: 0, color: c.pass ? "#16a34a" : "#dc2626" }}>{c.pass ? "✓" : "✗"}</span>
+                                <span style={{ fontSize: 14, flexShrink: 0, color: c.pass ? "#16a34a" : cosmetic ? "#9ca3af" : "#dc2626" }}>{c.pass ? "✓" : cosmetic ? "–" : "✗"}</span>
                                 <span style={{ flex: 1, fontSize: 13, color: BRAND.ink }}>{c.label}</span>
                                 {c.detail && <span style={{ fontSize: 11, color: BRAND.sub }}>{c.detail}</span>}
-                                {!c.pass && (
+                                {!c.pass && cosmetic && (
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af", flexShrink: 0 }}>cosmetic · safe to ignore</span>
+                                )}
+                                {clickable && (
                                   <span style={{ fontSize: 11, fontWeight: 700, color: busy ? BRAND.sub : "#dc2626", flexShrink: 0 }}>
                                     {busy ? "Fixing…" : "Fix with AI →"}
                                   </span>
@@ -1041,6 +1064,41 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                     );
                   })}
                   {fixMsg && <p style={{ fontSize: 12, color: BRAND.red, marginTop: 8 }}>{fixMsg}</p>}
+                  {article.score_note && (article.score_note.cosmetic_fail.length > 0 || article.score_note.ranking_fail.length === 0) && (
+                    <p style={{ fontSize: 12, color: BRAND.sub, marginTop: 8, lineHeight: 1.5, background: "#f8fafc", padding: "8px 12px", borderRadius: 8, border: `1px solid ${BRAND.border}` }}>
+                      <strong>Why not 100%?</strong> {article.score_note.ranking_fail.length === 0
+                        ? "Every ranking-relevant check passes. "
+                        : `${article.score_note.ranking_fail.length} ranking-relevant check(s) to fix. `}
+                      {article.score_note.cosmetic_fail.length > 0 && `The remaining ${article.score_note.cosmetic_fail.length} miss(es) are cosmetic Rank Math gamification (keyword density, power/sentiment words) — not ranking factors, safe to ignore. `}
+                      Modern best practices (AIO, below) matter more than a full Rank Math score.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* AIO signals — what actually drives AI-Overview / LLM citation (core/seo.aio_signals) */}
+              {article.aio_checks && article.aio_checks.length > 0 && (
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      AIO · AI-Overview Readiness
+                    </h4>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: (article.aio_passed ?? 0) === (article.aio_total ?? 0) ? "#16a34a" : "#d97706" }}>
+                      {article.aio_passed}/{article.aio_total} passed
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 11, color: BRAND.sub, margin: "0 0 8px" }}>
+                    These signals — answer-first structure, entity clarity, fact density — correlate with citation in Google AI Overviews / ChatGPT / Perplexity. They matter more than Rank Math for 2026 visibility.
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {article.aio_checks.map((c) => (
+                      <div key={c.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", borderRadius: 8, background: c.pass ? "#f0fdf4" : "#fffbeb", border: `1px solid ${c.pass ? "#bbf7d0" : "#fde68a"}` }}>
+                        <span style={{ fontSize: 14, flexShrink: 0, color: c.pass ? "#16a34a" : "#d97706" }}>{c.pass ? "✓" : "!"}</span>
+                        <span style={{ flex: 1, fontSize: 13, color: BRAND.ink }}>{c.label}</span>
+                        {c.detail && <span style={{ fontSize: 11, color: BRAND.sub }}>{c.detail}</span>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
