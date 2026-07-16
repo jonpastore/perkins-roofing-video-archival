@@ -420,6 +420,29 @@ def _length_tier(words: int) -> tuple[int, str]:
     return (0, f"{words} words → 0% (below 600)")
 
 
+# Rank Math checks that are Google RANKING-relevant vs. COSMETIC. Cosmetic = a Rank Math UI
+# gamification / CTR heuristic with no documented effect on Google ranking or AI-answer-engine
+# citation (research 2026, see seo-aio-research memory). A non-100 Rank Math score is EXPECTED and
+# fine when the only misses are cosmetic — modern best practices (aio_signals) matter more. The UI
+# uses this to explain WHY a score isn't full instead of chasing it.
+RM_COSMETIC_CHECKS = frozenset({
+    "rm_kw_density",        # not a ranking factor (Google/Mueller/Cutts, >decade); we count stricter than RM
+    "rm_kw_in_img_alt",     # forcing keyword into alt text is against Google's image guidelines
+    "rm_title_power_word",  # PRO-only, undisclosed wordlist, CTR heuristic not a ranking signal
+    "rm_title_sentiment",   # PRO-only, CTR heuristic
+    "rm_title_number",      # CTR heuristic
+})
+
+
+def check_tier(key: str) -> str:
+    """'aio' (modern best practice), 'cosmetic' (Rank Math gamification), or 'ranking'."""
+    if key.startswith("aio_"):
+        return "aio"
+    if key in RM_COSMETIC_CHECKS:
+        return "cosmetic"
+    return "ranking"
+
+
 def aio_signals(content_md: str, *, date_modified_days: int | None = None) -> list[dict]:
     """Advisory AI-optimization + Rank Math-fidelity signals. Never a gate — display only.
 

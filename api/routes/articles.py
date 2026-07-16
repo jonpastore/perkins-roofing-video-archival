@@ -74,11 +74,30 @@ def _article_summary(a: Article) -> dict:
 
 
 def _article_full(a: Article) -> dict:
-    from core.seo import rank_math_checks  # local import — pure, cheap, avoids import churn
+    # local import — pure, cheap, avoids import churn
+    from core.seo import aio_signals, check_tier, rank_math_checks  # noqa: PLC0415
+
     checks = rank_math_checks(
         a.title or "", a.meta or "", a.slug or "", a.content_md or "", a.focus_keyword or ""
     )
+    for c in checks:
+        c["tier"] = check_tier(c["key"])
+
+    # Freshness needs the content's age in days (Article.updated_at).
+    days = None
+    if a.updated_at:
+        u = a.updated_at if a.updated_at.tzinfo else a.updated_at.replace(tzinfo=timezone.utc)
+        days = (datetime.now(timezone.utc) - u).days
+    aio = aio_signals(a.content_md or "", date_modified_days=days)
+    for c in aio:
+        c["tier"] = "aio"
+
     passed = sum(1 for c in checks if c["pass"])
+    # A non-100 Rank Math score is fine when the only misses are COSMETIC (density, power word —
+    # Rank Math gamification, not ranking factors). What matters is ranking-relevant + AIO.
+    ranking_fail = [c["key"] for c in checks if not c["pass"] and c["tier"] == "ranking"]
+    cosmetic_fail = [c["key"] for c in checks if not c["pass"] and c["tier"] == "cosmetic"]
+    aio_fail = [c["key"] for c in aio if not c["pass"]]
     return {
         "slug": a.slug,
         "title": a.title,
@@ -95,9 +114,25 @@ def _article_full(a: Article) -> dict:
         "status": a.status,
         "publish_at": iso_utc(a.publish_at),
         # Rank Math SEO / AIO checks — surfaced in the Articles UI to stay ahead of gaps.
+        # Each check carries a `tier`: "ranking" (helps Google), "cosmetic" (Rank Math
+        # gamification, no ranking effect), or "aio" (modern best practice, drives AI citation).
         "seo_checks": checks,
         "seo_passed": passed,
         "seo_total": len(checks),
+        "aio_checks": aio,
+        "aio_passed": sum(1 for c in aio if c["pass"]),
+        "aio_total": len(aio),
+        # Actionable triage: cosmetic failures are safe to ignore; ranking + AIO are the work.
+        "score_note": {
+            "ranking_fail": ranking_fail,
+            "cosmetic_fail": cosmetic_fail,
+            "aio_fail": aio_fail,
+            "summary": (
+                "Modern best practices (AIO) matter more than a full Rank Math score. "
+                "Cosmetic Rank Math misses (keyword density, power/sentiment words) are not "
+                "ranking factors and are safe to ignore; focus on ranking-relevant and AIO checks."
+            ),
+        },
     }
 
 
