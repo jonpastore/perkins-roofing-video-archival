@@ -511,6 +511,11 @@ def test_refine_prompt_targets_the_density_band_from_both_sides():
     assert "0.5%" in p and "1.5%" in p, "both ends of the band must be stated"
     assert "under-optimised" in p or "under 0.5%" in p, "the FLOOR must be explicit"
     assert "wall flashings" in p
+    # A bare count anchors the model regardless of the length it actually writes: given
+    # "~18-22 in a 2,000-word article" it wrote 23 into a 1,440-word piece -> 1.60%, over the
+    # ceiling. The instruction must bind to the finished length.
+    assert "ratio" in p and "finished article" in p
+    assert "1,200-word" in p and "2,400-word" in p, "worked both ways, so length stays free"
 
 
 def test_grounding_audit_escalates_terms_tim_has_never_said():
