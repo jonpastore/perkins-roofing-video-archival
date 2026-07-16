@@ -3,6 +3,7 @@ and JSON-LD completeness helpers in jobs/article_job.py."""
 
 from core.jsonld import build_breadcrumb_list
 from jobs.article_job import (
+    _markdown_to_html,
     has_placeholder,
     has_residual_markdown,
     markdownish_to_html,
@@ -163,6 +164,49 @@ class TestSanitizeArticleHtml:
         html = "<h2>Already HTML</h2><p>Content here.</p>"
         result = markdownish_to_html(html)
         assert result == html
+
+
+# ---------------------------------------------------------------------------
+# _markdown_to_html — the auto-publish path (article_job + regen_articles_seo).
+# Regression guard: it must be no weaker than the manual-editor sanitize_html.
+# ---------------------------------------------------------------------------
+
+class TestMarkdownToHtmlSanitizes:
+    def test_strips_script_and_inner_text(self):
+        out = _markdown_to_html('<script>alert(1)</script>Hello')
+        assert "<script" not in out
+        assert "alert(1)" not in out  # two-pass: inner text dropped, not just the tag
+
+    def test_strips_onerror_handler(self):
+        out = _markdown_to_html('<img src="https://x/y.png" onerror="alert(1)">')
+        assert "onerror" not in out.lower()
+
+    def test_strips_javascript_uri(self):
+        out = _markdown_to_html('<a href="javascript:alert(1)">click</a>')
+        assert "javascript:" not in out.lower()
+
+    def test_strips_inline_css(self):
+        # bleach 6 empties style (no css_sanitizer), so the CSS overlay/exfil
+        # payload cannot survive even though a bare style="" may remain.
+        out = _markdown_to_html('<div style="position:fixed;background:url(https://evil/x)">x</div>')
+        assert "position:fixed" not in out.lower()
+        assert "evil" not in out.lower()
+
+    def test_preserves_youtube_iframe(self):
+        md = '<iframe src="https://www.youtube.com/embed/abc" allowfullscreen></iframe>'
+        out = _markdown_to_html(md)
+        assert "https://www.youtube.com/embed/abc" in out
+
+    def test_strips_offhost_iframe_src(self):
+        # An https iframe to any non-YouTube host (phishing/clickjacking frame)
+        # must lose its src — scheme alone is not sufficient for a full-page embed.
+        out = _markdown_to_html('<iframe src="https://evil.com/phish"></iframe>')
+        assert "evil.com" not in out
+
+    def test_preserves_normal_article_html(self):
+        out = _markdown_to_html("## Roof Repair\n\nExpert **service** in Miami.")
+        assert "<h2>Roof Repair</h2>" in out
+        assert "<strong>service</strong>" in out
 
 
 # ---------------------------------------------------------------------------

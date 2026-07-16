@@ -182,6 +182,15 @@ _BLEACH_ALLOWED_ATTRS: dict = {
 
 _SAFE_URI_RE = re.compile(r"^(https?:|/|#|mailto:)", re.IGNORECASE)
 
+# An <iframe> is a full embedding of another page — a scheme check is not enough
+# (any https host would be embeddable → clickjacking/phishing frame on the public
+# site if an iframe is ever hallucinated or injected). Restrict iframe src to the
+# only host the pipeline ever emits: YouTube embeds (see _embed_iframe / _inject_oembed,
+# which build https://www.youtube.com/embed/<id>).
+_SAFE_IFRAME_SRC_RE = re.compile(
+    r"^https://(www\.)?(youtube\.com|youtube-nocookie\.com)/embed/", re.IGNORECASE
+)
+
 # Tags whose entire content (inner text + children) should be dropped, not just the tag.
 _STRIP_CONTENT_RE = re.compile(
     r"<(script|style|noscript|object|embed|applet|base|meta|link)"
@@ -197,9 +206,13 @@ _STRIP_CONTENT_OPEN_RE = re.compile(
 
 def _allow_safe_attrs(tag: str, name: str, value: str) -> bool:
     """Bleach attribute callback: block on* handlers and unsafe URI schemes."""
-    if name.lower().startswith("on"):
+    n = name.lower()
+    if n.startswith("on"):
         return False
-    if name.lower() in ("href", "src", "action", "data"):
+    if tag == "iframe" and n == "src":
+        # Bad src → drop the attribute (bleach keeps a src-less, inert iframe).
+        return bool(_SAFE_IFRAME_SRC_RE.match(value.strip()))
+    if n in ("href", "src", "action", "data"):
         return bool(_SAFE_URI_RE.match(value.strip()))
     return True
 
@@ -1931,34 +1944,20 @@ def _strip_html(text: str) -> str:
 
 
 def _markdown_to_html(md: str) -> str:
-    """Convert Markdown to sanitised HTML for WordPress post content.
+    """Convert Markdown to HTML, then run the article allow-list sanitizer.
 
-    Uses the `markdown` library for conversion then `bleach` to strip any
-    unsafe tags/attributes (no script, on* event handlers, etc.). Safe YouTube
-    iframes are preserved so article video embeds survive publishing.
+    Sanitization is delegated to ``sanitize_html()`` — the SAME policy the manual
+    editor route enforces — so this unattended auto-publish path (article_job +
+    regen_articles_seo) can no longer be weaker than the human-in-the-loop path.
+    sanitize_html disallows inline ``style`` and drops the inner text of
+    script/style blocks (two-pass), closing the CSS-injection / arbitrary-embed
+    gap this path previously carried via its own looser bleach allow-list.
+    Legitimate YouTube iframes (https src) still survive.
     """
-    import bleach  # noqa: PLC0415
     import markdown  # noqa: PLC0415
-    from bleach.sanitizer import ALLOWED_ATTRIBUTES, ALLOWED_TAGS  # noqa: PLC0415
-
-    allowed_tags = list(ALLOWED_TAGS) + [
-        "p", "h1", "h2", "h3", "h4",
-        "ul", "ol", "li",
-        "blockquote", "code", "pre",
-        "img", "iframe", "div", "span", "table", "thead", "tbody", "tr", "td", "th",
-    ]
-    allowed_attrs = dict(ALLOWED_ATTRIBUTES)
-    allowed_attrs["a"] = ["href", "title", "rel", "target"]
-    allowed_attrs["img"] = ["src", "alt", "title", "width", "height", "loading"]
-    allowed_attrs["iframe"] = [
-        "src", "allow", "allowfullscreen", "loading", "frameborder",
-        "width", "height", "title", "style",
-    ]
-    allowed_attrs["div"] = ["class", "style"]
-    allowed_attrs["span"] = ["class", "style"]
 
     html = markdown.markdown(md, extensions=["tables", "fenced_code"])
-    return bleach.clean(html, tags=allowed_tags, attributes=allowed_attrs, strip=True)
+    return sanitize_html(html)
 
 
 def _duration_iso(seconds: float | None) -> str:
