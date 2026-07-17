@@ -85,6 +85,7 @@ interface MarginInfo {
 
 interface QuoteResult {
   region: string;
+  branch?: string;
   roof_type: string;
   num_squares: number;
   per_square_total: number;
@@ -933,6 +934,7 @@ export function Quoting() {
       .map(([series, days]) => ({ series, days: Number(days || 0) }))
       .filter((s) => s.days > 0);
     return {
+      branch: selectedCustomer?.branch || "miami",
       region: quoteRegion,
       code_zone: quoteRegion,
       roof_type: quoteRoofType,
@@ -1296,6 +1298,8 @@ export function Quoting() {
   if (view === "quote_builder" && selectedCustomer) {
     const props = selectedCustomer.properties ?? [];
     const activeProp = props.find((p) => p.id === selectedPropertyId) ?? props[0] ?? null;
+    const customerBranchKey = selectedCustomer.branch || "miami";
+    const customerBranchLabel = branches.find((b) => b.key === customerBranchKey)?.name ?? customerBranchKey;
 
     return (
       <main style={{ maxWidth: 960, fontFamily: FONT }}>
@@ -1353,7 +1357,10 @@ export function Quoting() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
           <Card>
-            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 14 }}>Estimate inputs</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Estimate inputs</div>
+              <div style={{ fontSize: 12, color: BRAND.sub }}>Pricing: <strong style={{ color: BRAND.navyText }}>{customerBranchLabel}</strong> branch</div>
+            </div>
 
             {/* Measurement selector */}
             <div style={{ marginBottom: 16 }}>
@@ -1647,6 +1654,7 @@ export function Quoting() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
                       {labelRoofType(quoteResult.roof_type)} · {quoteResult.num_squares} sq
+                      {quoteResult.branch && ` · ${branches.find((b) => b.key === quoteResult.branch)?.name ?? quoteResult.branch} branch`}
                     </div>
                     <span style={{
                       fontSize: 12, fontWeight: 700, padding: "3px 12px", borderRadius: 20,
