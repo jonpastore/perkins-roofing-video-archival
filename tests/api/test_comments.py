@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
-from api.routes.comments import router, _crawl_guard
+from api.routes.comments import _crawl_guard, router
 from app.models import CommentDraft, SessionLocal, Video, init_db
 
 
@@ -358,3 +358,63 @@ class TestCrawlEndpoint:
         assert r.status_code == 200
         data = r.json()
         assert data["drafted"] <= 1
+
+
+# ---------------------------------------------------------------------------
+# POST /comments/{id}/post — E1 safety gate (plan 2026-07-17 Phase 1.0)
+# ---------------------------------------------------------------------------
+
+class TestPostReplySafetyGate:
+    def _seed(self, text="Thanks! Polyglass is a great choice for that."):
+        with SessionLocal() as db:
+            row = CommentDraft(
+                video_id=_VIDEO_ID, comment_id="yt-c-gate", author="A",
+                comment_text="what underlayment?", needs_reply=True,
+                draft_reply=text, status="ready",
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return row.id
+
+    def _cleanup(self):
+        with SessionLocal() as db:
+            db.query(CommentDraft).filter(CommentDraft.comment_id == "yt-c-gate").delete()
+            db.commit()
+
+    def test_blocked_reply_never_posts(self, monkeypatch):
+        # Gate fails → 422, post_reply NOT called, status unchanged.
+        rid = self._seed()
+        try:
+            class _Fail:
+                passed = False
+                reason = "unprofessional tone"
+            monkeypatch.setattr("adapters.safety.run_gate", lambda text, kind: _Fail())
+            called = {}
+            monkeypatch.setattr(
+                "adapters.youtube_comments.post_reply",
+                lambda cid, text: called.setdefault("posted", True),
+            )
+            r = _admin_client().post(f"/comments/{rid}/post", headers=AUTH)
+            assert r.status_code == 422
+            assert "safety gate" in r.json()["detail"]
+            assert "posted" not in called
+            with SessionLocal() as db:
+                assert db.get(CommentDraft, rid).status == "ready"
+        finally:
+            self._cleanup()
+
+    def test_clean_reply_posts(self, monkeypatch):
+        rid = self._seed()
+        try:
+            class _Pass:
+                passed = True
+                reason = ""
+            monkeypatch.setattr("adapters.safety.run_gate", lambda text, kind: _Pass())
+            monkeypatch.setattr("adapters.youtube_comments.post_reply", lambda cid, text: {"id": "r1"})
+            r = _admin_client().post(f"/comments/{rid}/post", headers=AUTH)
+            assert r.status_code == 200
+            with SessionLocal() as db:
+                assert db.get(CommentDraft, rid).status == "posted"
+        finally:
+            self._cleanup()

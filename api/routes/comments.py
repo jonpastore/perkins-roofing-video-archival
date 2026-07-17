@@ -218,6 +218,16 @@ def post_reply_to_youtube(
     if not reply_text:
         raise HTTPException(status_code=400, detail="no draft reply to post")
 
+    # E1 content-safety gate (fail-closed) — the reply is a generated artifact and MUST
+    # pass BEFORE it reaches YouTube, same as every caption in jobs/distribute_job.py.
+    # Human approval is not a substitute: the gate is the platform-wide invariant.
+    from adapters.safety import run_gate  # noqa: PLC0415
+    gate_result = run_gate(reply_text, "social")
+    if not gate_result.passed:
+        log.warning("post_reply_to_youtube: reply BLOCKED by safety gate for %d: %s",
+                    comment_id, gate_result.reason)
+        raise HTTPException(status_code=422, detail=f"reply blocked by safety gate: {gate_result.reason}")
+
     try:
         post_reply(row.comment_id, reply_text)
     except RuntimeError as exc:
