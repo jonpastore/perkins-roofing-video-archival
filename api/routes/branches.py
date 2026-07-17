@@ -56,7 +56,9 @@ def create_branch(
     exists = db.execute(select(Branch).where(Branch.key == body.key)).scalar_one_or_none()
     if exists:
         raise HTTPException(409, f"branch key {body.key!r} already exists")
-    b = Branch(key=body.key, name=body.name, sort=body.sort)
+    # Stamp the verified tenant explicitly (matches customers.py) — the column default
+    # (=1) is only coincidentally right for tenant 1; RLS WITH CHECK would 500 tenant 2.
+    b = Branch(key=body.key, name=body.name, sort=body.sort, tenant_id=db.info["tenant_id"])
     db.add(b)
     db.flush()
     return _dict(b)
