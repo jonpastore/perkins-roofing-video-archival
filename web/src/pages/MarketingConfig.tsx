@@ -18,6 +18,7 @@ import {
   type SocialAccountStatus,
   type MarketingSettings,
 } from "../api";
+import { errText } from "../lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -271,15 +272,20 @@ interface ReplyConfig {
   connect_path: string | null;
 }
 
-function YouTubeConnectRow({ replyCfg, onConnect }: { replyCfg: ReplyConfig | null; onConnect: () => void }) {
+function YouTubeConnectRow({
+  replyCfg,
+  onConnect,
+  error,
+}: {
+  replyCfg: ReplyConfig | null;
+  onConnect: () => void;
+  error: string | null;
+}) {
   const connected = replyCfg?.can_post ?? false;
 
   return (
     <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
         padding: "10px 14px",
         borderRadius: 8,
         border: `1px solid ${BRAND.border}`,
@@ -287,26 +293,29 @@ function YouTubeConnectRow({ replyCfg, onConnect }: { replyCfg: ReplyConfig | nu
         background: "#fff",
       }}
     >
-      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: BRAND.navyText }}>YouTube</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: BRAND.navyText }}>YouTube</span>
 
-      {!replyCfg ? (
-        <Badge tone="gray">Loading…</Badge>
-      ) : connected ? (
-        <>
-          <Badge tone="green">Connected</Badge>
-          <span style={{ fontSize: 11, color: BRAND.sub, fontFamily: "monospace" }}>
-            {replyCfg.channel_title}
-          </span>
-        </>
-      ) : (
-        <Badge tone="amber">Reconnect needed</Badge>
-      )}
+        {!replyCfg ? (
+          <Badge tone="gray">Loading…</Badge>
+        ) : connected ? (
+          <>
+            <Badge tone="green">Connected</Badge>
+            <span style={{ fontSize: 11, color: BRAND.sub, fontFamily: "monospace" }}>
+              {replyCfg.channel_title}
+            </span>
+          </>
+        ) : (
+          <Badge tone="amber">Reconnect needed</Badge>
+        )}
 
-      {replyCfg?.can_reconnect && (
-        <Button variant="ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={onConnect}>
-          {connected ? "Switch account" : "Connect YouTube"}
-        </Button>
-      )}
+        {replyCfg?.can_reconnect && (
+          <Button variant="ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={onConnect}>
+            {connected ? "Switch account" : "Connect YouTube"}
+          </Button>
+        )}
+      </div>
+      {error && <ErrorMsg>{error}</ErrorMsg>}
     </div>
   );
 }
@@ -465,6 +474,7 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [replyCfg, setReplyCfg] = useState<ReplyConfig | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch("/comments/reply-config")
@@ -475,12 +485,15 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
 
   async function handleConnectYouTube() {
     if (!replyCfg?.connect_path) return;
+    setConnectError(null);
     try {
       const r = await apiFetch(replyCfg.connect_path);
+      if (!r.ok) throw new Error(await errText(r));
       const d = await r.json();
       if (d.auth_url) window.location.href = d.auth_url as string;
-    } catch {
-      // Button just won't navigate — no separate error surface needed here.
+      else setConnectError("Could not start the YouTube connect flow.");
+    } catch (e: unknown) {
+      setConnectError(e instanceof Error ? e.message : "Could not start the YouTube connect flow.");
     }
   }
 
@@ -914,7 +927,7 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
         <div style={{ marginTop: 14 }}>
           {SOCIAL_PLATFORMS.map((p) =>
             p === "youtube" ? (
-              <YouTubeConnectRow key={p} replyCfg={replyCfg} onConnect={handleConnectYouTube} />
+              <YouTubeConnectRow key={p} replyCfg={replyCfg} onConnect={handleConnectYouTube} error={connectError} />
             ) : (
               <SocialAccountRow
                 key={p}
