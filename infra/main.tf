@@ -922,6 +922,10 @@ locals {
     "youtube-oauth-refresh-token",
     "vertex-dev-sa-key",             # deepsec M1: local-dev Vertex SA key (value added out-of-band)
     "cloudflare-degenito-api-token", # ez-bids: degenito.ai zone DNS (value from 1Password, added out-of-band)
+    "pexels-api-key",                # Clip Studio b-roll (adapters/pexels.py, PEXELS_API_KEY): no
+    # value here — Jon adds the real key out-of-band via
+    # `gcloud secrets versions add pexels-api-key --data-file=-`,
+    # never in git/tfvars.
   ])
 }
 

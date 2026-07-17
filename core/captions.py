@@ -229,11 +229,47 @@ def caption_events(
 # ---------------------------------------------------------------------------
 
 
+def _hex_to_ass_bgr(hex_color: str) -> str:
+    """Convert a ``#RRGGBB`` (or ``RRGGBB``) hex colour to an ASS ``&H00BBGGRR``.
+
+    ASS/SSA colours are little-endian BGR with a leading alpha byte; we always
+    emit opaque (``00``) since caption text should never be translucent.
+    """
+    h = hex_color.lstrip("#")
+    r, g, b = h[0:2], h[2:4], h[4:6]
+    return f"&H00{b}{g}{r}".upper()
+
+
+def _apply_brand_style_overrides(
+    style_line: str,
+    *,
+    brand_font: str | None,
+    brand_primary_color: str | None,
+) -> str:
+    """Return *style_line* with Fontname/PrimaryColour swapped for brand values.
+
+    Only the fields with a brand override set are changed — size, outline,
+    alignment, etc. keep whatever the preset style defines. Returns
+    *style_line* unchanged when neither override is given (today's default,
+    pre-brand-kit behaviour).
+    """
+    if not brand_font and not brand_primary_color:
+        return style_line
+    fields = style_line.split(",")
+    if brand_font:
+        fields[1] = brand_font
+    if brand_primary_color:
+        fields[3] = _hex_to_ass_bgr(brand_primary_color)
+    return ",".join(fields)
+
+
 def to_ass_karaoke(
     lines: list[dict],
     style: str = "default",
     *,
     emoji_map: dict[str, str] | None = None,
+    brand_font: str | None = None,
+    brand_primary_color: str | None = None,
 ) -> str:
     """Render caption lines as an ASS subtitle file with per-word \\k karaoke tags.
 
@@ -250,10 +286,19 @@ def to_ass_karaoke(
     processing with no matches.  Pass ``None`` (default) to skip emoji lookup
     entirely and use the bare ``\\k`` serialisation path.
 
+    *brand_font* and *brand_primary_color* optionally override the preset
+    style's Fontname / PrimaryColour (e.g. from ``core.brand_kit.load_brand_kit``
+    — ``font_heading``/``font_body`` and ``primary_color`` "#RRGGBB"). Both
+    default to ``None``, which reproduces the exact preset style unchanged.
+
     Returns the full ASS file content as a string.
     """
     style_key = style if style in _ASS_STYLES else "default"
-    style_line = _ASS_STYLES[style_key]
+    style_line = _apply_brand_style_overrides(
+        _ASS_STYLES[style_key],
+        brand_font=brand_font,
+        brand_primary_color=brand_primary_color,
+    )
     style_name = style_line.split(",")[0].replace("Style: ", "")
 
     header = _ASS_HEADER.format(style_line=style_line)

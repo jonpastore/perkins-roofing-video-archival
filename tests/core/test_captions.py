@@ -342,3 +342,62 @@ def test_caption_styles_frozenset_contains_all_presets():
     assert "shorts_editorial" in CAPTION_STYLES
     assert "default" in CAPTION_STYLES
     assert "bold_yellow" in CAPTION_STYLES
+
+
+# ---------------------------------------------------------------------------
+# Brand-kit caption theming (font/primary-color override)
+# ---------------------------------------------------------------------------
+
+
+def test_hex_to_ass_bgr_conversion():
+    from core.captions import _hex_to_ass_bgr
+    assert _hex_to_ass_bgr("#1a3c5e") == "&H005E3C1A"
+
+
+def test_hex_to_ass_bgr_without_hash():
+    from core.captions import _hex_to_ass_bgr
+    assert _hex_to_ass_bgr("f4a226") == "&H0026A2F4"
+
+
+def test_to_ass_karaoke_no_brand_args_unchanged():
+    words = make_words(("roofing", 0.0, 0.5))
+    lines = group_caption_lines(words)
+    with_brand = to_ass_karaoke(lines)
+    without_brand = to_ass_karaoke(lines, brand_font=None, brand_primary_color=None)
+    assert with_brand == without_brand
+    assert "Arial" in with_brand
+
+
+def test_to_ass_karaoke_brand_font_override():
+    words = make_words(("roofing", 0.0, 0.5))
+    lines = group_caption_lines(words)
+    ass = to_ass_karaoke(lines, style="default", brand_font="Montserrat")
+    assert "Style: Default,Montserrat," in ass
+    assert "Arial" not in ass.split("[Events]")[0].replace("Montserrat", "")
+
+
+def test_to_ass_karaoke_brand_primary_color_override():
+    words = make_words(("roofing", 0.0, 0.5))
+    lines = group_caption_lines(words)
+    ass = to_ass_karaoke(lines, style="default", brand_primary_color="#1a3c5e")
+    assert "&H005E3C1A" in ass
+    assert "&H00FFFFFF" not in ass
+
+
+def test_to_ass_karaoke_brand_overrides_leave_other_fields_intact():
+    words = make_words(("roofing", 0.0, 0.5))
+    lines = group_caption_lines(words)
+    ass = to_ass_karaoke(
+        lines, style="default", brand_font="Montserrat", brand_primary_color="#1a3c5e"
+    )
+    # Fontsize (48) and the rest of the style row are untouched.
+    assert "Style: Default,Montserrat,48,&H005E3C1A,&H0000FFFF,&H00000000,&H80000000" in ass
+
+
+def test_apply_brand_style_overrides_noop_when_neither_set():
+    from core.captions import _apply_brand_style_overrides, _ASS_STYLES
+    style_line = _ASS_STYLES["default"]
+    result = _apply_brand_style_overrides(
+        style_line, brand_font=None, brand_primary_color=None
+    )
+    assert result == style_line

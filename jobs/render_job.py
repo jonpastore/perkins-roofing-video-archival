@@ -320,6 +320,7 @@ def _apply_track_a_engines(
     hook_text: str | None = None,
     aspects: list[str] | None = None,
     tenant_id: int | None = None,
+    brand_kit: dict | None = None,
 ) -> str:
     """Apply Track A engines to *clip_path* in TRD sequence; return output path.
 
@@ -351,6 +352,9 @@ def _apply_track_a_engines(
                      triggers a 1:1 1080×1080 second-pass render.  Ignored
                      here — caller handles multi-aspect from the returned path.
         tenant_id:   Tenant id (informational; session stamping is done by caller).
+        brand_kit:   Optional brand kit dict (core.brand_kit.load_brand_kit) providing
+                     caption font/primary-color overrides. None/empty -> no overrides,
+                     captions use exactly the preset style (today's behaviour).
 
     Returns:
         Path to the (possibly transformed) clip MP4.  May be the original
@@ -491,7 +495,15 @@ def _apply_track_a_engines(
                 if getattr(spec, "emoji_highlights", False):
                     from core.captions_emoji import KEYWORD_EMOJI_MAP  # noqa: PLC0415
                     _emoji_map = KEYWORD_EMOJI_MAP
-                ass_content = to_ass_karaoke(events, style=spec.captions.style, emoji_map=_emoji_map)
+                # Brand-kit theming: optional font/primary-color override (None/empty
+                # brand_kit -> both None -> to_ass_karaoke renders the preset unchanged).
+                _bk = brand_kit or {}
+                _brand_font = _bk.get("font_heading") or _bk.get("font_body") or None
+                _brand_primary_color = _bk.get("primary_color") or None
+                ass_content = to_ass_karaoke(
+                    events, style=spec.captions.style, emoji_map=_emoji_map,
+                    brand_font=_brand_font, brand_primary_color=_brand_primary_color,
+                )
                 ass_path = os.path.join(scratch, f"captions_{suffix}.ass")
                 with open(ass_path, "w", encoding="utf-8") as f:
                     f.write(ass_content)
@@ -575,11 +587,15 @@ def _apply_track_a_engines(
             logger.warning("music_mix skipped (non-fatal): %s", exc)
 
     # ── A9–A11: clip_fx (transitions / overlays / floating text) ─────────────
-    # build_transition_filter / build_overlay_filter / build_floating_text_filter
-    # are pure builders from core/clip_fx.py.  The multi-clip xfade transition
-    # is applied at the brand-fusion step (brand intro+clip+outro = 3 clips).
-    # For single-clip use here, a fade-in/fade-out vf filter is sufficient;
-    # xfade (two-stream) is intentionally deferred to the fuse step (#326).
+    # #344 honesty fix: core/clip_fx.py's build_transition_filter (wipe/slide/
+    # dissolve) is xfade-based and needs TWO clip streams — it cannot honestly
+    # apply to this single-clip render, so those kinds were removed from
+    # ClipRenderSpec/_VALID_TRANSITIONS and the ClipStudio UI dropdown. The
+    # only transition kind left here is "fade", which genuinely is a single-
+    # clip effect (ffmpeg's own `fade` filter, not xfade). Multi-clip xfade
+    # transitions belong at the brand-fusion step (intro+clip+outro / future
+    # multi-clip series) — see adapters.ffmpeg.fuse_videos and
+    # core.clip_fx.build_concat_with_transitions for that future wiring.
     if spec.fx.transition not in ("cut", "none") or spec.fx.color_grade not in ("none", ""):
         try:
             from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
@@ -854,6 +870,12 @@ def render_part(
         # Load the render spec saved by Clip Studio (defaults reproduce current behaviour).
         render_spec = get_render_spec(series.parts_json)
 
+        # Brand-kit caption theming: optional font/primary-color override, sourced from
+        # the tenant's brand kit (core.brand_kit). Absent/empty brand kit -> no overrides,
+        # captions render exactly as they do today.
+        from core.brand_kit import load_brand_kit  # noqa: PLC0415
+        brand_kit = load_brand_kit(tenant_id or 1, db) or {}
+
         # Load Video row here so we can check archive_uri in _source_video_path.
         video_row = db.get(Video, video_id)
         # Snapshot the archive_uri — the ORM object will be detached after db.close().
@@ -907,6 +929,7 @@ def render_part(
                 clip_end=end,
                 db=_words_db,
                 hook_text=part.get("hook") or None,
+                brand_kit=brand_kit,
             )
         finally:
             _words_db.close()
@@ -949,39 +972,38 @@ def render_part(
         # clip_duration is the part's wall-clock length; convert seconds → minutes.
         metering.add("render_minutes", clip_duration / 60.0)
 
-        # ── Multi-aspect export (Item 6) ──────────────────────────────────────
-        # When the render spec includes "square" in aspects, produce a second
-        # 1:1 1080×1080 output from the finished reel (scale+pad, black bars).
-        # The square variant is uploaded to GCS under a sibling key and recorded
-        # in a separate SocialPost row with platform tagged as "{platform}:square".
-        # Default: 9:16 only (no aspects field → no second pass).
+        # ── Multi-aspect export (Item 6 + 16:9 parity) ─────────────────────────
+        # When the render spec includes "square" and/or "wide" in aspects, produce
+        # an extra export from the finished reel (scale+pad, black bars — see
+        # core.render_spec.aspect_export_vf). Each variant is uploaded to GCS
+        # under a sibling key and recorded in a separate SocialPost row with
+        # platform tagged as "{platform}:{aspect}".
+        # Default: 9:16 only (no aspects field → no extra passes).
         aspects = list(render_spec.aspects) if hasattr(render_spec, "aspects") else []
-        square_gcs_url: str | None = None
-        if "square" in aspects:
+        extra_aspect_gcs_urls: dict[str, str] = {}
+        for _aspect in ("square", "wide"):
+            if _aspect not in aspects:
+                continue
             try:
                 from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+                from core.render_spec import aspect_export_vf  # noqa: PLC0415
 
-                square_path = os.path.join(scratch, f"square_{series_id}_{part_index}.mp4")
-                square_vf = (
-                    "scale=1080:1080:force_original_aspect_ratio=decrease,"
-                    "pad=1080:1080:(ow-iw)/2:(oh-ih)/2:color=black,"
-                    "setsar=1"
-                )
+                aspect_path = os.path.join(scratch, f"{_aspect}_{series_id}_{part_index}.mp4")
                 run_ffmpeg_cmd([
                     "ffmpeg", "-y", "-i", reel_path,
-                    "-vf", square_vf,
+                    "-vf", aspect_export_vf(_aspect),
                     "-c:v", "libx264", "-profile:v", "high",
                     "-pix_fmt", "yuv420p", "-c:a", "copy",
-                    square_path,
+                    aspect_path,
                 ])
-                sq_key = _gcs_object_key(series_id, part_index, tenant_id=tenant_id or 1).replace(
-                    ".mp4", "_square.mp4"
+                aspect_key = _gcs_object_key(series_id, part_index, tenant_id=tenant_id or 1).replace(
+                    ".mp4", f"_{_aspect}.mp4"
                 )
-                bucket_name_sq = _reels_bucket()
-                square_gcs_url = _upload_to_gcs(square_path, bucket_name_sq, sq_key)
-                logger.info("square export uploaded: %s", square_gcs_url)
+                bucket_name_extra = _reels_bucket()
+                extra_aspect_gcs_urls[_aspect] = _upload_to_gcs(aspect_path, bucket_name_extra, aspect_key)
+                logger.info("%s export uploaded: %s", _aspect, extra_aspect_gcs_urls[_aspect])
             except Exception as exc:  # noqa: BLE001
-                logger.warning("square export skipped (non-fatal): %s", exc)
+                logger.warning("%s export skipped (non-fatal): %s", _aspect, exc)
 
         # 8. Upload to GCS (private bucket — returns gs:// URI)
         bucket_name = _reels_bucket()
