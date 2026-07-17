@@ -9,6 +9,7 @@ Role requirements (from core.authz):
 Endpoints
 ---------
 POST /clips/suggest              — LLM suggests the best clippable moments from a video's transcript.
+POST /clips/search               — Natural-language clip search across the whole video corpus.
 POST /clips/save                 — Upsert a curated MiniSeries (approved=1) from chosen clips.
 GET  /clips/renderable           — Approved MiniSeries without a SocialPost (ready to render).
 POST /clips/{series_id}/render   — Trigger the Cloud Run render JOB for a single series.
@@ -29,11 +30,12 @@ import google.auth
 import google.auth.transport.requests
 import requests as _requests
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from app.models import GraphNode, MiniSeries, PlatformConfig, PlatformSessionLocal, Segment, SocialPost, Video
+from core.clip_search import search_to_clips
 from core.render_spec import ClipRenderSpec, get_clips, get_render_spec, set_render_spec
 
 # GCP coordinates — read from env so deploy.sh / Terraform own the values.
@@ -83,6 +85,11 @@ class SuggestResponse(BaseModel):
     video_id: str
     video_title: str
     suggestions: list[ClipSuggestion]
+
+
+class ClipSearchRequest(BaseModel):
+    prompt: str
+    k: int = Field(default=8, ge=1, le=20)
 
 
 class ClipPart(BaseModel):
@@ -635,6 +642,43 @@ def suggest_clips(
         video_title=video_title,
         suggestions=suggestions,
     )
+
+
+@router.post("/search")
+def search_clips(
+    body: ClipSearchRequest,
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
+    """Natural-language clip search across the whole video corpus (cross-video ClipAnything).
+
+    Retrieves candidate transcript chunks via app.retrieval.hybrid_search (over-fetching
+    3x the requested count so windowing/dedup has room to work with), converts them into
+    clip-length candidate windows, then LLM-ranks them against the viral-moment rubric —
+    falling back to plain retrieval-score ordering if the LLM call fails or is unavailable.
+
+    Returns: {"results": [{video_id, start, end, score, reason, text}, ...]}
+    """
+    from app.retrieval import hybrid_search  # noqa: PLC0415
+
+    hits = hybrid_search(body.prompt, k=max(body.k * 3, 24), db=db)
+    chunks = [
+        {
+            "video_id": ch.video_id,
+            "start": ch.start,
+            "end": ch.end,
+            "text": ch.text or "",
+            "score": score,
+        }
+        for ch, score in hits.get("chunks", [])
+    ]
+
+    def _score_fn(prompt: str) -> str:
+        from app.llm import chat  # noqa: PLC0415
+        return chat(prompt, want_json=False)
+
+    results = search_to_clips(body.prompt, chunks, score_fn=_score_fn)
+    return {"results": results[:body.k]}
 
 
 @router.post("/save")
