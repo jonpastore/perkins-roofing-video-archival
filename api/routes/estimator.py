@@ -235,6 +235,12 @@ def quote(
     result["county"] = body.county
     result["slope_type"] = effective_slope_type
     result["selected_tier"] = body.selected_tier
+    # Config floor percentages, exposed so clients (proposal snapshot "floors") stay
+    # config-driven per branch instead of hardcoding 13%/33%.
+    result["floors"] = {
+        "min_profit_pct": config.raw["profit_floor_pct"],
+        "min_profit_plus_oh_pct": config.raw["profit_plus_oh_floor_pct"],
+    }
 
     # Discounts are sales concessions. They reduce project_total and available
     # profit/margin, while preserving the pre-discount engine total for audit.
