@@ -689,14 +689,14 @@ export function Quoting() {
 
   useEffect(() => {
     setRatesError(null);
-    apiFetch(`/estimator/rates?branch=miami&region=${quoteRegion}`)
+    apiFetch(`/estimator/rates?branch=${selectedCustomer?.branch || "miami"}&region=${quoteRegion}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: EstimatorRates) => setRates(data))
       .catch((e: unknown) => setRatesError(e instanceof Error ? e.message : String(e)));
-  }, [quoteRegion]);
+  }, [quoteRegion, selectedCustomer?.branch]);
 
   function loadCustomerDetail(id: number) {
     setCustomerDetailLoading(true);
