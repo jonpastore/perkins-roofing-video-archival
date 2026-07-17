@@ -1334,6 +1334,10 @@ export function EstimatingConfig({ role }: EstimatingConfigProps) {
   }, [selectedId]);
 
   function handleBranchChange(b: string) {
+    if (b === branch) return;
+    // Switching branch reloads the config and drops in-progress edits — confirm first.
+    if (isDirty && !window.confirm("Discard unsaved changes to this branch's config?")) return;
+    setIsDirty(false);
     setBranch(b);
   }
 

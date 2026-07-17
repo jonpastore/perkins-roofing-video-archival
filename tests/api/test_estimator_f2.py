@@ -1085,6 +1085,19 @@ class TestV2APIValidation:
         _activate_config(client, created["id"])
         return branch
 
+    def test_gutter_accessories_without_lf_return_422(self, admin_client):
+        """Elbows / leaf guard / 2-story without gutter_lf must 422, not silently price $0."""
+        branch = self._branch_with_v2_config(admin_client)
+        base = {"branch": branch, "code_zone": "FBC", "roof_type": "3tab_shingle", "num_squares": 10.0}
+        for extra in ({"gutter_elbows": 8}, {"leaf_guard": "std"}, {"gutter_two_story": True}):
+            r = admin_client.post("/estimator/quote", json={**base, **extra}, headers=AUTH)
+            assert r.status_code == 422, f"{extra}: expected 422, got {r.status_code}: {r.text}"
+        # sanity: same body WITH gutter_lf does not trip the guard (may 200 or config-503,
+        # but must not be the gutter-422)
+        r = admin_client.post("/estimator/quote",
+                              json={**base, "gutter_elbows": 8, "gutter_lf": 100}, headers=AUTH)
+        assert not (r.status_code == 422 and "gutter_lf" in r.text), r.text
+
     def test_daily_series_non_half_increment_returns_422(self, admin_client):
         """days=1.3 is not a 0.5 multiple — must return 422, not 500."""
         branch = self._branch_with_v2_config(admin_client)

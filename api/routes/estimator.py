@@ -140,7 +140,7 @@ def quote(
     # Resolve the config row
     if body.config_id is not None:
         cfg_row = db.get(PricingConfig, body.config_id)
-        if cfg_row is None:
+        if cfg_row is None or cfg_row.tenant_id != db.info.get("tenant_id"):
             raise HTTPException(404, f"Config {body.config_id} not found")
     else:
         cfg_row = _get_active_config_row(body.branch, db)
@@ -210,6 +210,14 @@ def quote(
     )
 
     config = load_config(cfg_row.config)
+
+    # Gutter accessories (elbows, leaf guard, 2-story uplift) only price alongside a
+    # gutter run — reject them without gutter_lf so they can't silently drop to $0.
+    if (body.gutter_elbows or body.leaf_guard != "none" or body.gutter_two_story) and not body.gutter_lf:
+        raise HTTPException(
+            422,
+            detail="gutter_elbows, leaf_guard, and gutter_two_story require gutter_lf > 0.",
+        )
 
     # Validate daily series names against config before engine call (→422, not 500)
     if body.daily_series:
@@ -291,7 +299,8 @@ def quote(
     # with the discounted headline number ("Discounts affect total and margin").
     from core.perkins_packages import package_options  # noqa: PLC0415
     result["package_options"] = package_options(
-        body.roof_type, float(body.num_squares), float(result["project_total"])
+        body.roof_type, float(body.num_squares), float(result["project_total"]),
+        discount_total=float(result.get("discount_total") or 0),
     )
 
     # Persist estimate row for audit reproduction (TRD §2.2)

@@ -141,7 +141,8 @@ _TIER_LABELS: dict[str, str] = {
 }
 
 
-def package_options(roof_type: str, num_squares: float, protector_total: float) -> list[dict]:
+def package_options(roof_type: str, num_squares: float, protector_total: float,
+                    discount_total: float = 0.0) -> list[dict]:
     """Full package menu for a quote (Zoom 2026-07-17 [51:56]: offer ALL premiums + coastal).
 
     PROTECTOR's total comes from the ESTIMATOR ENGINE (cuts/OH/profit aware) — the
@@ -149,6 +150,12 @@ def package_options(roof_type: str, num_squares: float, protector_total: float) 
     prices × squares layered on the engine total (upgrades don't re-price cuts —
     "it's just a swap of materials" [24:00]). Standalone bases (CARIBBEAN metal,
     PROLONG flat) are their own catalog price × squares.
+
+    protector_total is already POST-discount, so additive tiers inherit the discount
+    through it. Standalone bases don't build on protector, so the same resolved
+    discount_total ($) is subtracted from them explicitly — otherwise a discounted
+    metal/flat quote would lose its discount the moment the customer picked a
+    standalone tier.
     """
     system = _ROOF_TYPE_SYSTEM.get(roof_type)
     if system is None:
@@ -157,6 +164,7 @@ def package_options(roof_type: str, num_squares: float, protector_total: float) 
     standalone = _STANDALONE[system]
     sq = Decimal(str(num_squares))
     prot = Decimal(str(protector_total))
+    disc = Decimal(str(discount_total))
     out = [{
         "key": "PROTECTOR", "label": _TIER_LABELS["PROTECTOR"], "system": system,
         "adder_per_sq": None, "addl_price": 0.0, "total": float(prot), "standalone": False,
@@ -165,10 +173,10 @@ def package_options(roof_type: str, num_squares: float, protector_total: float) 
         if tier == "PROTECTOR":
             continue
         if tier in standalone:
-            total = price * sq
+            total = price * sq - disc
             addl = total - prot
         elif system == "metal" and tier == "COASTAL_CARIBBEAN":
-            total = (table["CARIBBEAN"] + price) * sq
+            total = (table["CARIBBEAN"] + price) * sq - disc
             addl = total - prot
         else:
             addl = price * sq

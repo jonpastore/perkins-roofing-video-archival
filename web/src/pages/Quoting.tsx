@@ -950,7 +950,6 @@ export function Quoting() {
       .filter((s) => s.days > 0);
     return {
       branch: selectedCustomer?.branch || "miami",
-      region: quoteRegion,
       code_zone: quoteRegion,
       roof_type: quoteRoofType,
       slope_type: isLowSlopeRoofType ? "low_slope" : "sloped",
@@ -1672,8 +1671,10 @@ export function Quoting() {
             </Card>
           )}
 
-          {/* Result panel */}
-          <div>
+          {/* Result panel — span the full grid width so the package cards + margin panel
+              render below the inputs/history row (not squeezed into the 380px rail, and
+              not dropped bottom-left by CSS auto-placement when a measurement is selected). */}
+          <div style={{ gridColumn: "1 / -1" }}>
             {quoting && <Card><Loading label="Building estimate…" /></Card>}
 
             {!quoting && !quoteResult && (
@@ -1759,7 +1760,11 @@ export function Quoting() {
                       </div>
                       <SectionLabel>Target profit</SectionLabel>
                       <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
-                        <PillButton active={activeProfitPreset === 13} onClick={() => void applyTargetProfit(13)}>Min 13%</PillButton>
+                        {(() => {
+                          // "Min" reflects the active config's profit floor, not a hardcoded 13%.
+                          const minPct = Math.round((quoteResult.floors?.min_profit_pct ?? 0.13) * 100);
+                          return <PillButton active={activeProfitPreset === minPct} onClick={() => void applyTargetProfit(minPct)}>Min {minPct}%</PillButton>;
+                        })()}
                         <PillButton active={activeProfitPreset === 15} onClick={() => void applyTargetProfit(15)}>15%</PillButton>
                         <PillButton active={activeProfitPreset === 20} onClick={() => void applyTargetProfit(20)}>20%</PillButton>
                       </div>

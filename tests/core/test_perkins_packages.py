@@ -79,3 +79,24 @@ def test_package_options_standalone_metal_caribbean():
 def test_package_options_unknown_roof_type_empty():
     from core.perkins_packages import package_options
     assert package_options("mystery", 10, 1000.0) == []
+
+
+def test_package_options_standalone_reflects_discount():
+    """Standalone bases (metal CARIBBEAN, flat PROLONG) must subtract the resolved
+    discount too — else a discounted quote loses its discount on those tiers."""
+    from core.perkins_packages import package_options
+    # metal: PROTECTOR total already post-discount ($200 off a $12,000 base)
+    opts = {o["key"]: o for o in package_options("standing_seam_metal", 10, 11800.0, discount_total=200.0)}
+    # CARIBBEAN standalone = 1000*10 - 200 discount = 9800 (not 10000)
+    assert opts["CARIBBEAN"]["total"] == 1000 * 10 - 200
+    # COASTAL_CARIBBEAN = (1000+225)*10 - 200 = 12050
+    assert opts["COASTAL_CARIBBEAN"]["total"] == (1000 + 225) * 10 - 200
+    # additive tier inherits discount through protector, not double-counted
+    assert opts["PREFERRED"]["total"] == 11800.0 + opts["PREFERRED"]["adder_per_sq"] * 10
+
+
+def test_package_options_no_discount_unchanged():
+    from core.perkins_packages import package_options
+    a = package_options("standing_seam_metal", 10, 12000.0)
+    b = package_options("standing_seam_metal", 10, 12000.0, discount_total=0.0)
+    assert a == b
