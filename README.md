@@ -113,10 +113,10 @@ Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/E
 - [2026-07-07 — comprehensive review (frontend / tests / adversarial / perf / SAST)](docs/reviews/2026-07-07-comprehensive-review.md)
 
 ### Session history / continuations
-- **Most recent:** [CONTINUATION-2026-07-16.md](CONTINUATION-2026-07-16.md) (articles were ~90% invented — 45,945 published words on 4,564 words of source — because retrieval fed the generator k=4 chunks x 300 chars; fixed with topic-slice retrieval, ratio now 0.11–0.50x. Audit trail live over all 86 mutating endpoints + ORM before/after. Typed claim-grounding built as a measurement layer that gates nothing until precision is labelled. Rank Math 13/31 — the honest number; the old 31/31 was keyword-stuffing blocks + a reused stock image)
+- **Most recent:** [CONTINUATION-2026-07-17.md](CONTINUATION-2026-07-17.md) (perkins-deploy-sa ends the interactive reauth loop permanently — all gcloud/terraform/firebase run under a non-expiring SA. OAuth health ALARM + capture backend live (emails admins on integration-broken). Production-readiness panel on the dashboard + Admin Config — prod eval READY, 0 blockers, 4 expected warnings. Phase 2 comment platform column (migration 0040). Clip-studio parity + A2 speaker tracking + prompt-to-clip. Remaining gaps: docs/KNOWN_GAPS.md)
+- [CONTINUATION-2026-07-16.md](CONTINUATION-2026-07-16.md) (articles were ~90% invented — 45,945 published words on 4,564 words of source — because retrieval fed the generator k=4 chunks x 300 chars; fixed with topic-slice retrieval, ratio now 0.11–0.50x. Audit trail live over all 86 mutating endpoints + ORM before/after. Rank Math 13/31 — the honest number)
 - [CONTINUATION-2026-07-11-eve.md](CONTINUATION-2026-07-11-eve.md) (Knowify data-mirror BUILT, DEPLOYED, SEEDED — 7,404 customers / 4,484 invoices / 4,629 payments; hourly auto-sync still gated on Knowify's REST-OAuth outage)
-- [CONTINUATION-2026-07-11.md](CONTINUATION-2026-07-11.md)
-- Archived: [docs/continuations/CONTINUATION-2026-07-11-pm.md](docs/continuations/CONTINUATION-2026-07-11-pm.md) ·
+- Archived: [docs/continuations/CONTINUATION-2026-07-11.md](docs/continuations/CONTINUATION-2026-07-11.md) · [docs/continuations/CONTINUATION-2026-07-11-pm.md](docs/continuations/CONTINUATION-2026-07-11-pm.md) ·
   [docs/continuations/CONTINUATION-2026-07-10-pm.md](docs/continuations/CONTINUATION-2026-07-10-pm.md) ·
   [docs/continuations/CONTINUATION-2026-07-10.md](docs/continuations/CONTINUATION-2026-07-10.md) ·
   [docs/continuations/CONTINUATION-2026-07-09.md](docs/continuations/CONTINUATION-2026-07-09.md) ·

@@ -1,87 +1,60 @@
-Resume Perkins / video-archival after a /clear.
+Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-16.md — it is the full state of the CURRENT track (article
-grounding, audit trail, claim verification). Then the auto-loaded memory index, especially
-article-grounding, grounding-vs-vocabulary, use-the-council, rank-math-gaming,
-perkins-wp-creds, article-regen-bugs. docs/ENGINEERING_RULES.md (R1-R5) is binding.
+READ FIRST: CONTINUATION-2026-07-17.md and docs/KNOWN_GAPS.md — full state.
+docs/ENGINEERING_RULES.md (R1-R5) is binding. HEAD b609fe3 (or later); branch main, clean.
 
-A SEPARATE TRACK IS ALSO OPEN: the Knowify data-mirror. See CONTINUATION-2026-07-11-eve.md —
-hourly auto-sync still can't pull (Knowify's REST OAuth 500s on the RFC 8707 `resource` bind;
-support email drafted-not-sent), promote_items reads wrong field names, pre-existing TF drift.
-Untouched yesterday. Don't confuse the two tracks.
+CREDENTIALS — THIS IS DIFFERENT NOW (2026-07-17):
+- All Google automation runs under a NON-EXPIRING service account. Before any gcloud/terraform/
+  firebase: `export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json`
+  (also in ~/.bashrc). NO interactive login is EVER needed — do NOT ask Jon to reauth; if a
+  Google call 401s, re-export the SA key, don't start an OAuth flow. Key backup: Secret Manager
+  `perkins-deploy-sa-key`. (Note: sourcing .env resets GOOGLE_APPLICATION_CREDENTIALS to a
+  nonexistent infra/vertex-dev-sa.json — re-export the SA key after any `source .env`.)
 
-STATE: branch main, pushed, clean, HEAD 23572e5. Suite 4000 pass / 8 skip / 0 fail. Migrations
-0036 (audit_log), 0037 (articles.updated_at), 0038 (platform_audit_log) applied to prod.
+GOAL: finish the remaining gaps in docs/KNOWN_GAPS.md, in order (confirm drift scope with Jon first):
+1. Least-privilege the deploy SA — replace roles/owner with scoped roles (secretmanager.admin,
+   run.admin, cloudscheduler.admin, monitoring.editor, cloudsql.client, artifactregistry.writer,
+   cloudbuild.builds.editor, iam.serviceAccountUser), verify a deploy still works, drop owner,
+   codify in infra/main.tf.
+2. Migration-replay robustness — swap scripts/apply_migrations.sh's naive ;-split for sqlparse
+   (or psql -f); verify a full replay against prod runs clean (idempotent).
+3. Terraform drift (7 resources: cloudflare WAF/rate-limit/routing, zone settings, api domain
+   mapping, gotenberg) — review intent WITH JON, then apply deliberately or codify. Do NOT
+   blind-apply (changes prod networking/WAF).
+4. Real Pexels key (Jon provides): `printf '<key>' | gcloud secrets versions add pexels-api-key --data-file=-`.
+5. Only if #319 progressed: OAuth capture UI — build web/src/pages/Connections.tsx, wire
+   OAUTH_STATE_HMAC_KEY value + OAUTH_REDIRECT_BASE into deploy.sh, register /oauth/{platform}/callback
+   redirect URIs per provider (see docs/plans/2026-07-17-social-app-registrations.md).
 
-WHY ANY OF THIS MATTERS, IN ONE PARAGRAPH: articles must be built from Tim's own 801 YouTube
-transcripts — grounding IS the product; general roofing knowledge is commodity his competitors
-generate in an afternoon. They were ~90% invented (measured: 45,945 published words on 4,564
-words of retrievable source) because retrieval was starved: k=4 chunks truncated to 300 chars,
-so ~200 words of Tim in and 1800+ demanded out. Fixed via topic-slice retrieval (b9a0b65) —
-now 4.5k-19k words of real transcript per article, ratio ~10x invented -> 0.11-0.50x. That
-upstream fix is what actually works; everything else is a check on the remainder. 31 articles
-are in WordPress (27 drafts + 4 live). The 123 pre-existing published posts MUST stay
-untouched — that is Jon's guardrail and it has held.
+WHAT'S ALREADY LIVE (don't rebuild): the OAuth health ALARM (integration_status + 30-min scheduler +
+Cloud Monitoring, emails admins on integration-broken); production-readiness panel (dashboard top +
+Admin Config; prod eval = READY, 0 blockers, 4 expected warnings); Phase 2 comment platform column
+(migration 0040); A2 speaker tracking; prompt-to-clip; clip-studio parity; comments E1 gate.
 
-FIRST THING: a regen of 18 articles was running at hand-off (density fix). Check
-  ps -eo cmd | grep "[r]egen_articles_seo" | wc -l
-and the scratchpad logs regen3_a.log / regen3_b.log. The scratchpad is session-scoped and may
-be GONE — if so just re-read state from the DB. Regen is idempotent; nothing is lost.
+OPERATE:
+- Prod DB: `/tmp/cloud-sql-proxy --port 5432 video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg &`
+  then DB_URL=postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins.
+  cloud-sql-proxy v2 binary is at /tmp/cloud-sql-proxy (re-download v2.14.1 if gone).
+- Deploy (non-interactive now): `bash scripts/deploy.sh` (API+jobs; needs CLEAN git tree); SPA:
+  `cd web && npm run build && npx --no-install firebase deploy --only hosting --project video-archival-and-content-gen`.
+- Migrations 0039+0040 applied to prod. Apply future migrations DIRECTLY (full replay has a
+  documented ;-splitter gap). RLS: platform-level tables (integration_status, oauth_state_nonces,
+  tenant_offboard_log) are exempt via _RLS_EXEMPT_PLATFORM_TABLES in app/models.py — tenant tables
+  get auto-RLS from the _rls_on_create hook.
+- Offload bulk/non-security work to the FREE fleet: `llm -m gpt-oss-120b "..."` (sync, ~0.3s) and
+  `mcp__hermes__submit_task` (async, free CF tier). Security-critical code + review stay on Claude.
 
-THEN, IN ORDER:
-1. Measure rm_kw_density across ALL 18 regenerated articles. DO NOT tune the density prompt on
-   one or two — I did that three times and missed from both sides each time (ceiling-only ->
-   0.16-0.48%; count-anchored -> 1.60%; ratio -> 1 of 2 in band). The prompt has contradictory
-   pressure: "aim 0.9%" vs "at most two headings" + "use variants for everything else". Measure
-   18, then decide. Rank Math is 13/31 and that is the HONEST number — the old 31/31 was
-   literal keyword-stuffing blocks plus one stock image reused across unrelated posts.
-2. rm_external_link (2 articles): the honest fix already exists — Tim's own source video IS the
-   external citation. Nothing in the generator guarantees an <a href> today.
-3. Hand-label scripts/eval_claims.py --verify for precision per claim type (~$1 for all 31).
-   The claim checker gates NOTHING and edits NOTHING until that number exists.
-   Read docs/superpowers/specs/claim-grounding.md before touching it.
-4. Evidence-first generation — both reviewers said post-hoc verification fights entropy.
-   COUNCIL-REVIEW THAT DESIGN BEFORE CODING IT.
-
-HARD-WON LAWS — violating these is exactly how yesterday went wrong:
-- Token presence is NOT claim support. "Tim recommends replacing shingles every 10 years" is
-  100% his vocabulary and 100% invented. Vocabulary-overlap has a low precision ceiling BY
-  CONSTRUCTION — no tuning fixes it.
-- A noisy detector must NEVER drive automated LLM edits. A guard I shipped told the reviser to
-  strip 'Costs', 'Risk', 'Value'; articles got worse, timed out at 30 min, and every check
-  reported success. Report-only now.
-- CONSULT THE COUNCIL BEFORE BUILDING: mcp__chatgpt5__gpt5_chat and
-  mcp__grok-4__chat_completion, independently, "be blunt, what am I not seeing". In ~90 seconds
-  they killed a shipped guard AND my planned fix for it AND my replacement design. Jon had to
-  ask why I hadn't.
-- NEVER game a metric. Candidates that "fix" density are 'in', 'new', 'season' — that is
-  gaming. Never invent an item count ("8 Signs") unless the article really is a listicle.
-- A deterministic fix can satisfy its checker while destroying meaning: two title trimmers cut
-  mid-clause; a de-repeater rewrote the keyword inside <img alt>; my guard's _normalise deleted
-  hyphens and called "L-flashing" a hallucination when Tim says "L flashings". RE-SCORE ALL
-  CHECKS AFTER ANY FIX AND READ THE OUTPUT. Dry-run every content mutation.
-- Verify the real call path before calling anything broken. I was wrong out loud 5+ times
-  yesterday (passed db=None then declared a critic blind; called the real product 'Polyblast' a
-  hallucination — Tim says it, video WK6ufUjnicc t=57; called routes unregistered when FastAPI
-  0.139's include_router is merely lazy). Every one died to checking, none to reasoning.
-
-ENVIRONMENT GOTCHAS (each cost real time):
-- unset GOOGLE_APPLICATION_CREDENTIALS — .env points it at infra/vertex-dev-sa.json, which does
-  NOT exist, and it overrides working ADC.
-- articles is RLS-protected: session.info["tenant_id"] = 1 or every query errors with
+ENVIRONMENT GOTCHAS (each cost real time — still true):
+- articles/videos are RLS-protected: session.info["tenant_id"]=1 or queries error with
   'unrecognized configuration parameter "app.tenant_id"'. Only tenant 1 exists.
-- ALTER TABLE articles needs ACCESS EXCLUSIVE; regen holds a transaction open across its ~12-min
-  LLM call. A queued ALTER blocks every later query, and killing the client does NOT kill the
-  server-side statement (use pg_cancel_backend). Apply DDL only when regen is stopped.
-- pgrep -f matches this shell's OWN wrapper. Use ps -eo cmd | grep "[r]egen..." | wc -l.
-- WP REST needs WP_APP_PWD from Secret Manager; .env WP_PWD is the WEB login and 401s on REST
-  BY DESIGN. Only ONE WP site exists (1205166.us6.myftpupload.com); perkinsroofing.com is on
-  AWS and unreachable from this repo.
-- No cloud-sql-proxy binary by default; download v2.14.1 (recipe in the continuation).
-- AUDIT_ENABLED=0 under pytest: audit writes open a second connection so rows survive a
-  rollback — right on Postgres, but SQLite is single-writer and waits out a lock, which turned
-  a ~6-min suite into >30 min.
+- `pgrep -f <pat>` / `pkill -f <pat>` MATCH THIS SHELL'S OWN command line — use ps + a bracketed
+  grep (`ps -eo pid,cmd | grep "[c]loud-sql-proxy"`), never pkill -f a pattern in your own command.
+- No foreground `sleep` (blocked); for "wait until X" use Bash run_in_background + an until-loop.
+- WP REST needs WP_APP_PWD from Secret Manager; .env WP_PWD is the WEB login and 401s on REST.
+  Prod WP is a GoDaddy STAGING site (myftpupload host) — the readiness panel flags this (#317 cutover
+  clears noindex). Don't touch the 123 pre-existing published posts.
+- PERKINS_ENV=prod requires EMBED_BACKEND=LLM_BACKEND=vertex + GOOGLE_CLOUD_PROJECT + a non-sqlite DB_URL.
 
-COST: ~$0.33/article, ~$19 for a full day (12.09M Vertex tokens, measured from Cloud
-Monitoring). Output is 92% of spend — grounding is nearly free, the writing is what costs. A
-28-article regen is ~$9. Don't wake Jon for that; he said so.
+Delegate parallelizable build work to worktree agents (model=sonnet). WATCH FOR: agents this session
+repeatedly went idle WITHOUT committing and forked from stale bases — always verify the worktree is
+committed + rebased, run the tests YOURSELF, then merge. Verify in prod (proxy + real facts), don't assert.
