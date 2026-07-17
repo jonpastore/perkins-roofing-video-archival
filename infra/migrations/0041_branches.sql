@@ -22,7 +22,10 @@ CREATE POLICY branches_tenant_isolation ON branches
     USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::int)
     WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::int);
 
--- Seed tenant 1 branches (gc = Tim's fourth company, no pricing config yet)
+-- Seed tenant 1 branches (gc = Tim's fourth company, no pricing config yet).
+-- FORCE RLS applies to the owner too: stamp the tenant GUC for this transaction
+-- or the seed INSERT is rejected (same class as the price-book seed, 8b40b4a).
+SET LOCAL app.tenant_id = '1';
 INSERT INTO branches (tenant_id, key, name, sort) VALUES
     (1, 'miami',   'Miami',   1),
     (1, 'jupiter', 'Jupiter', 2),
