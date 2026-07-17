@@ -28,6 +28,10 @@ IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/app/platform:$(git rev-parse --short 
 CONN="${PROJECT}:${REGION}:${PROJECT}-pg"
 GOTENBERG_URL="${GOTENBERG_URL:-$(cd infra && terraform output -raw gotenberg_url 2>/dev/null || true)}"
 SIGN_PUBLIC_URL="${SIGN_PUBLIC_URL:-https://sign.perkinsroofing.net}"
+# OAuth self-service capture (connections.py): consent redirects come back to the API.
+# The SAME URL must be registered as an authorized redirect URI on the Google OAuth
+# client (<OAUTH_CLIENT_ID>) as {OAUTH_REDIRECT_BASE}/oauth/{platform}/callback.
+OAUTH_REDIRECT_BASE="${OAUTH_REDIRECT_BASE:-https://api-jnr6bsxyea-uc.a.run.app}"
 
 # Env built with a '|' delimiter (gcloud ^|^ form) so values with commas/@/() survive intact.
 # DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
@@ -36,10 +40,10 @@ BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|
 # existing pipeline consumers (articles, faq, scheduling, jobs) still read os.environ. Full
 # per-tenant migration (Tenant.settings.integrations) is deferred to a later wave. The proposals
 # accept-link email (proposals.py) already reads from Tenant.settings.integrations exclusively.
-CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}|GOTENBERG_URL=${GOTENBERG_URL:-}|SIGN_PUBLIC_URL=${SIGN_PUBLIC_URL:-}|EMAIL_SEND_MODE=${EMAIL_SEND_MODE:-test}|EMAIL_TEST_RECIPIENT_ALLOWLIST=${EMAIL_TEST_RECIPIENT_ALLOWLIST:-jpastore79@gmail.com,@degenito.ai,@perkinsroofing.net}"
+CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}|GOTENBERG_URL=${GOTENBERG_URL:-}|SIGN_PUBLIC_URL=${SIGN_PUBLIC_URL:-}|OAUTH_REDIRECT_BASE=${OAUTH_REDIRECT_BASE:-}|EMAIL_SEND_MODE=${EMAIL_SEND_MODE:-test}|EMAIL_TEST_RECIPIENT_ALLOWLIST=${EMAIL_TEST_RECIPIENT_ALLOWLIST:-jpastore79@gmail.com,@degenito.ai,@perkinsroofing.net}"
 
 # Vault-backed secrets (resettable in the Config UI). One source of truth: Secret Manager.
-SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest"
+SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest,OAUTH_STATE_HMAC_KEY=oauth-state-hmac:latest"
 # YouTube reply posting (docs/YOUTUBE_REPLY_OAUTH.md): refresh token minted by Jon and
 # stored 2026-07-10 (Cloud Run refuses a :latest ref on an empty secret — version exists).
 SECRETS="${SECRETS},YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:latest"

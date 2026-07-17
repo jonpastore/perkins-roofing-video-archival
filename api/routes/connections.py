@@ -51,7 +51,9 @@ PROVIDERS: dict[str, dict] = {
         "scopes": "https://www.googleapis.com/auth/youtube.force-ssl",
         "client_id_env": "OAUTH_CLIENT_ID",
         "client_secret_env": "OAUTH_CLIENT_SECRET",
-        "extra_auth_params": {"access_type": "offline", "prompt": "consent"},
+        # select_account: always show Google's account chooser so "switch account"
+        # from the Comments UI really lets the user sign in as someone else.
+        "extra_auth_params": {"access_type": "offline", "prompt": "consent select_account"},
     },
     "tiktok": {
         "auth_url": "https://www.tiktok.com/v2/auth/authorize/",

@@ -63,6 +63,9 @@ export function Comments() {
     reason: string; can_reconnect: boolean; connect_path: string | null;
   }>({ oauth_configured: false, can_post: false, channel_title: "", reason: "", can_reconnect: false, connect_path: null });
   const [postingId, setPostingId]     = useState<number | null>(null);
+  // Two-step post: first click opens an inline "post as WHO?" confirmation with a
+  // switch-account escape hatch; only the explicit confirm actually posts.
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
 
   function loadItems(status: StatusFilter, needsOnly: boolean, off: number) {
     setLoading(true);
@@ -128,7 +131,7 @@ export function Comments() {
   async function handlePost(item: CommentItem) {
     const text = draftValue(item).trim();
     if (!text) { setActionMsg("Nothing to post — the draft is empty."); return; }
-    if (!confirm(`Post this reply to YouTube?\n\n"${text}"`)) return;
+    setConfirmingId(null);
     setPostingId(item.id);
     setActionMsg(null);
     try {
@@ -235,6 +238,15 @@ export function Comments() {
             <strong>Posting enabled:</strong> review or edit a draft, then <em>Post to YouTube</em> —
             replies publish as <strong>{replyCfg.channel_title || "the channel"}</strong>.
           </p>
+          {replyCfg.can_reconnect && (
+            <Button
+              variant="ghost"
+              onClick={handleConnectYouTube}
+              style={{ marginTop: 8, fontSize: 12, padding: "4px 10px" }}
+            >
+              Sign out / switch YouTube account
+            </Button>
+          )}
         </Card>
       ) : replyCfg.oauth_configured ? (
         <Card style={{ marginBottom: 20, background: "#fef2f2", borderLeft: `4px solid #ef4444` }}>
@@ -442,10 +454,10 @@ export function Comments() {
                           Mark Ready
                         </Button>
                       )}
-                      {replyCfg.can_post && item.status !== "posted" && (
+                      {replyCfg.can_post && item.status !== "posted" && confirmingId !== item.id && (
                         <Button
                           disabled={postingId === item.id || !draftValue(item).trim()}
-                          onClick={() => handlePost(item)}
+                          onClick={() => setConfirmingId(item.id)}
                           style={{
                             fontSize: 12, padding: "5px 12px",
                             background: "#0ea5e9", borderColor: "#0ea5e9",
@@ -453,6 +465,35 @@ export function Comments() {
                         >
                           {postingId === item.id ? "Posting…" : "Post to YouTube"}
                         </Button>
+                      )}
+                      {confirmingId === item.id && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: "#075985" }}>
+                            Post as <strong>{replyCfg.channel_title || "the connected channel"}</strong>?
+                          </span>
+                          <Button
+                            onClick={() => handlePost(item)}
+                            style={{ fontSize: 12, padding: "5px 12px", background: "#0ea5e9", borderColor: "#0ea5e9" }}
+                          >
+                            Confirm &amp; post
+                          </Button>
+                          {replyCfg.can_reconnect && (
+                            <Button
+                              variant="ghost"
+                              onClick={handleConnectYouTube}
+                              style={{ fontSize: 12, padding: "5px 10px" }}
+                            >
+                              Switch account
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            onClick={() => setConfirmingId(null)}
+                            style={{ fontSize: 12, padding: "5px 10px" }}
+                          >
+                            Cancel
+                          </Button>
+                        </span>
                       )}
                       <Button
                         variant="danger"
