@@ -127,10 +127,11 @@ def main() -> None:
         s.close()
         return
 
-    # Upsert items for tenant 1 (no ON CONFLICT shortcut — SessionLocal is strict;
-    # stamp tenant_id manually since we're in a script context, not a request).
-    # ponytail: no stamping seam yet for scripts — use platform_scope bypass
-    s.info["platform_scope"] = True  # RLS enforcement skipped; rows carry tenant_id=1
+    # Upsert items for tenant 1. price_book_items/price_books are RLS-FORCED, so the
+    # session must be tenant-stamped: session.info["tenant_id"] drives the after_begin
+    # SET LOCAL app.tenant_id hook. (platform_scope only skips the strict check — it
+    # does NOT set the GUC, and the app role cannot bypass RLS.)
+    s.info["tenant_id"] = 1
 
     # Insert all items (dedup already done in build_items)
     orm_items = []
