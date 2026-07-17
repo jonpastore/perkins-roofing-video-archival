@@ -21,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     event,
+    text,
 )
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import INET, JSONB
@@ -398,6 +399,47 @@ class PlatformAuditLog(Base):
         Index("ix_platform_audit_log_action", "action", "occurred_at"),
         Index("ix_platform_audit_log_req", "request_id"),
     )
+
+
+class IntegrationStatus(Base):
+    """Per-integration health status (plan 2026-07-17 Phase 1.2). PLATFORM-LEVEL:
+    no RLS (migration 0039; same boundary as tenant_offboard_log — a NULL-tenant
+    row is invisible under the standard RLS policy, and shared-integration probes
+    run with no tenant GUC). tenant_id NULL = shared integration (knowify, resend,
+    wordpress); per-tenant OAuth rows carry tenant_id. Filter in-query. Deliberately
+    NOT in core/offboard.py _TENANT_SCOPED_TABLES (shared rows must survive
+    offboarding; status strings are not tenant content)."""
+    __tablename__ = "integration_status"
+    id                   = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id            = Column(Integer, nullable=True)   # NULL = platform-level shared
+    integration          = Column(String, nullable=False)
+    status               = Column(String, nullable=False, default="unconfigured")
+    last_checked         = Column(DateTime)
+    last_ok              = Column(DateTime)
+    last_error           = Column(Text)
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    updated_at           = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+    __table_args__ = (
+        Index("uq_integration_status_tenant", "tenant_id", "integration", unique=True,
+              postgresql_where=text("tenant_id IS NOT NULL"),
+              sqlite_where=text("tenant_id IS NOT NULL")),
+        Index("uq_integration_status_shared", "integration", unique=True,
+              postgresql_where=text("tenant_id IS NULL"),
+              sqlite_where=text("tenant_id IS NULL")),
+    )
+
+
+class OAuthStateNonce(Base):
+    """Single-use OAuth capture-flow nonce (plan Phase 1.5). PLATFORM-LEVEL, no RLS
+    (0039): the callback is an unauthenticated browser GET — the signed state plus
+    this row ARE the tenant binding. Burned atomically (DELETE ... RETURNING) at the
+    callback; expires_at fails closed. Not in _TENANT_SCOPED_TABLES (short-lived)."""
+    __tablename__ = "oauth_state_nonces"
+    nonce      = Column(String, primary_key=True)
+    tenant_id  = Column(Integer, nullable=False)
+    platform   = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+    expires_at = Column(DateTime, nullable=False)
 
 
 class TenantOffboardLog(Base):
