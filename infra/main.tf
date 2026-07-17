@@ -119,6 +119,25 @@ resource "google_service_account" "scheduler_sa" {
   project      = var.project_id
 }
 
+# Deploy/ops identity — non-expiring, used from the workstation so terraform/deploy
+# never depend on Jon's interactive Google login (which the Workspace reauth policy
+# expires and refuses to refresh non-interactively). Bootstrapped via gcloud
+# 2026-07-17 then imported into state (owner-scoped per Jon's call — "fast" over
+# least-privilege). Its JSON key is backed up in the perkins-deploy-sa-key secret;
+# the key value is NEVER in git. To rotate: mint a new key, update the secret, and
+# re-activate (gcloud auth activate-service-account).
+resource "google_service_account" "deploy_sa" {
+  account_id   = "perkins-deploy-sa"
+  display_name = "Perkins deploy/ops SA (non-expiring; owner-scoped per Jon 2026-07-17)"
+  project      = var.project_id
+}
+
+resource "google_project_iam_member" "deploy_sa_owner" {
+  project = var.project_id
+  role    = "roles/owner"
+  member  = "serviceAccount:${google_service_account.deploy_sa.email}"
+}
+
 # ---------------------------------------------------------------------------
 # 3. IAM bindings — api-run-sa
 # ---------------------------------------------------------------------------
@@ -1005,6 +1024,8 @@ locals {
     # value here — Jon adds the real key out-of-band via
     # `gcloud secrets versions add pexels-api-key --data-file=-`,
     # never in git/tfvars.
+    "oauth-state-hmac",      # OAuth capture-flow state HMAC key (core/oauth_state.py): value out-of-band.
+    "perkins-deploy-sa-key", # perkins-deploy-sa JSON key backup (bootstrapped 2026-07-17): value out-of-band.
   ])
 }
 
