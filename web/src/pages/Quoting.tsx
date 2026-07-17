@@ -86,6 +86,7 @@ interface MarginInfo {
 interface QuoteResult {
   region: string;
   branch?: string;
+  pricing_config_hash?: string;
   roof_type: string;
   num_squares: number;
   per_square_total: number;
@@ -1049,6 +1050,14 @@ export function Quoting() {
       package_options: quoteResult.package_options ?? [],
       discounts: quoteResult.discounts ?? [],
       deposit_policy: { mode: "percent", value: 50, instructions: "Check payable to Perkins Roofing" },
+      // Required by core/proposal.py validate_snapshot (fires on SEND, not draft-create).
+      pricing_config_hash: quoteResult.pricing_config_hash ?? "",
+      estimator_version: "1.0.0",
+      // ponytail: floor pcts aren't in the estimator response yet (only the ok/warning
+      // booleans are); hardcoded to match the live pricing config's profit_floor_pct/
+      // profit_plus_oh_floor_pct (infra/fixtures/pricing_config_exhibit_b.json). Add a
+      // /estimator/quote field for these if a branch ever configures different floors.
+      floors: { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
     };
 
     try {
