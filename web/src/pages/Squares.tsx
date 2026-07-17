@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Button, Card, ErrorMsg, FONT, Loading, PageTitle, inputStyle } from "../ui";
+import { errText } from "../lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -86,8 +87,8 @@ export function Squares() {
     setHistoryLoading(true);
     setHistoryError(null);
     apiFetch("/squares/measurements")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: MeasurementRow[]) => setHistory(data))
@@ -117,10 +118,7 @@ export function Squares() {
         body: JSON.stringify({ address: addr }),
       });
       if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        throw new Error(
-          (detail as { detail?: string }).detail ?? `${r.status} ${r.statusText}`
-        );
+                throw new Error(await errText(r));
       }
       const data: MeasureResult = await r.json();
       setResult(data);

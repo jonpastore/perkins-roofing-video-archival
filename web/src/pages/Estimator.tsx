@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, TierCard, SectionLabel, PillButton } from "../ui";
+import { errText } from "../lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -249,8 +250,8 @@ export function Estimator() {
     setRates(null);
     setResult(null);
     apiFetch(`/estimator/rates?region=${r}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await errText(res));
         return res.json();
       })
       .then((data: RatesResponse) => {
@@ -330,8 +331,7 @@ export function Estimator() {
         body: JSON.stringify(body),
       });
       if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        throw new Error((detail as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const data: QuoteResult = await r.json();
       setResult(data);

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useContext } from "react";
 import { apiFetch } from "../api";
 import { hms, ytLink, BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
+import { errText } from "../lib/errors";
 
 interface Reel {
   series_id: number;
@@ -120,8 +121,8 @@ function TopicVideoModal({
 
   useEffect(() => {
     apiFetch(`/topics/videos?label=${encodeURIComponent(label)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: TopicVideo[]) => setVideos(data))
@@ -130,8 +131,8 @@ function TopicVideoModal({
 
   useEffect(() => {
     apiFetch("/articles")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: TopicArticle[]) => {
@@ -502,8 +503,8 @@ export function Opportunities() {
     setTopicError(null);
     const generatedParam = filter === "not_generated" ? "no" : filter === "generated" ? "yes" : "all";
     apiFetch(`/topics?sort=${sort}&limit=${TOPIC_PAGE_SIZE}&offset=${offset}&generated=${generatedParam}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((d: { total: number; items: TopicItem[] }) => {
@@ -532,8 +533,8 @@ export function Opportunities() {
     setReelsLoading(true);
     setReelsError(null);
     apiFetch(`/suggestions?limit=200&bucket=reels`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((d: ReelsBucket) => setReels(d.reels ?? []))
@@ -546,8 +547,8 @@ export function Opportunities() {
     setUnusedError(null);
     const offset = page * BUCKET_PAGE_SIZE;
     apiFetch(`/suggestions?limit=${BUCKET_PAGE_SIZE}&offset=${offset}&bucket=unused`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((d: UnusedBucket) => {

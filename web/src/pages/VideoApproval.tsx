@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, hms, ytLink } from "../ui";
 import { NavContext } from "../App";
+import { errText } from "../lib/errors";
 
 interface Part {
   title: string;
@@ -87,7 +88,7 @@ function ProposalCard({
         method: "POST",
         body: JSON.stringify({ parts }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       setApproved(true);
       setTimeout(() => onApproved(proposal.id), 800);
     } catch (e) {
@@ -102,7 +103,7 @@ function ProposalCard({
     setError(null);
     try {
       const r = await apiFetch(`/video/${proposal.id}/repropose`, { method: "POST" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const fresh: Proposal = await r.json();
       setParts(fresh.parts.map((p) => ({ ...p })));
       onReproposed(fresh);
@@ -247,8 +248,8 @@ export function VideoApproval() {
     setLoading(true);
     setError(null);
     apiFetch("/video/proposals")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then(setProposals)

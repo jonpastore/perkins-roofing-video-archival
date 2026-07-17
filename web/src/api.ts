@@ -1,4 +1,5 @@
 import { getIdToken } from "./auth";
+import { errText } from "./lib/errors";
 
 const BASE = import.meta.env.VITE_API_BASE as string;
 
@@ -34,21 +35,21 @@ export interface PricingConfigDiff {
 /** List all versions for a branch, newest first. */
 export async function listPricingConfigs(branch: string): Promise<PricingConfigVersion[]> {
   const res = await apiFetch(`/estimator/configs?branch=${encodeURIComponent(branch)}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await errText(res));
   return res.json();
 }
 
 /** Get full detail (including config JSONB) for one version. */
 export async function getPricingConfig(id: number): Promise<PricingConfigDetail> {
   const res = await apiFetch(`/estimator/configs/${id}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await errText(res));
   return res.json();
 }
 
 /** Get the currently active config for a branch (detail + config JSONB). */
 export async function getActivePricingConfig(branch: string): Promise<PricingConfigDetail> {
   const res = await apiFetch(`/estimator/configs/active?branch=${encodeURIComponent(branch)}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await errText(res));
   return res.json();
 }
 
@@ -63,8 +64,7 @@ export async function createPricingConfig(payload: {
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+        throw new Error(await errText(res));
   }
   return res.json();
 }
@@ -73,8 +73,7 @@ export async function createPricingConfig(payload: {
 export async function activatePricingConfig(id: number): Promise<PricingConfigVersion> {
   const res = await apiFetch(`/estimator/configs/${id}/activate`, { method: "POST" });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+        throw new Error(await errText(res));
   }
   return res.json();
 }
@@ -82,7 +81,7 @@ export async function activatePricingConfig(id: number): Promise<PricingConfigVe
 /** Field-level diff between two versions. */
 export async function diffPricingConfigs(fromId: number, toId: number): Promise<PricingConfigDiff> {
   const res = await apiFetch(`/estimator/configs/diff?from_id=${fromId}&to_id=${toId}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await errText(res));
   return res.json();
 }
 
@@ -167,7 +166,7 @@ export interface AcceptPageData {
 
 export async function getAcceptPage(token: string): Promise<AcceptPageData> {
   const res = await fetch(`${BASE}/p/${encodeURIComponent(token)}`);
-  if (!res.ok) throw new Error(`accept page ${res.status}`);
+  if (!res.ok) throw new Error(`accept page: ${await errText(res)}`);
   return res.json();
 }
 
@@ -180,7 +179,7 @@ export async function submitAccept(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`accept ${res.status}`);
+  if (!res.ok) throw new Error(`accept: ${await errText(res)}`);
   return res.json();
 }
 
@@ -193,7 +192,7 @@ export async function submitDecline(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`decline ${res.status}`);
+  if (!res.ok) throw new Error(`decline: ${await errText(res)}`);
   return res.json();
 }
 
@@ -234,7 +233,7 @@ export interface KbSettings {
 
 export async function getAdminTenantSettings(): Promise<Record<string, unknown>> {
   const res = await apiFetch("/admin/tenant/settings");
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(await errText(res));
   return res.json();
 }
 
@@ -246,8 +245,7 @@ export async function getMarketingSettings(): Promise<MarketingSettings> {
 export async function putMarketingSettings(settings: MarketingSettings): Promise<MarketingSettings> {
   const res = await apiFetch("/admin/tenant/settings/marketing", { method: "PUT", body: JSON.stringify(settings) });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+        throw new Error(await errText(res));
   }
   const data = await res.json();
   return (data["marketing"] ?? data) as MarketingSettings;
@@ -261,8 +259,7 @@ export async function getKbSettings(): Promise<KbSettings> {
 export async function putKbSettings(settings: KbSettings): Promise<KbSettings> {
   const res = await apiFetch("/admin/tenant/settings/kb", { method: "PUT", body: JSON.stringify(settings) });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+        throw new Error(await errText(res));
   }
   const data = await res.json();
   return (data["kb"] ?? data) as KbSettings;
@@ -289,8 +286,7 @@ export async function getBrandUploadUrl(
     body: JSON.stringify({ asset_name, content_type }),
   });
   if (!res.ok) {
-    const detail = await res.json().catch(() => ({}));
-    throw new Error((detail as { detail?: string }).detail ?? `${res.status} ${res.statusText}`);
+        throw new Error(await errText(res));
   }
   const data = await res.json();
   return { url: data.upload_url, gcs_path: data.gcs_uri };
@@ -365,21 +361,6 @@ export interface Paged<T> {
 }
 
 // ── Shared helpers ───────────────────────────────────────────────────────────
-
-/** Read the FastAPI `detail` off a failed response, falling back to status text. */
-async function errText(res: Response): Promise<string> {
-  const d = await res.json().catch(() => null);
-  if (typeof d === "string" && d.trim()) return d;
-  if (d && typeof d === "object") {
-    const body = d as { detail?: unknown; message?: unknown; error?: unknown };
-    for (const v of [body.detail, body.message, body.error]) {
-      if (typeof v === "string" && v.trim()) return v;
-      if (Array.isArray(v)) return v.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join("; ");
-      if (v && typeof v === "object") return JSON.stringify(v);
-    }
-  }
-  return `${res.status} ${res.statusText}`;
-}
 
 /** Serialize a params object to a query string, skipping undefined/null values. */
 function qs(params: Record<string, string | number | boolean | undefined | null>): string {

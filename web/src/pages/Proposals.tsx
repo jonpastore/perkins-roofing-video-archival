@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, StatusPill, StatCard, TierCard, SectionLabel } from "../ui";
 import { ProposalBuilder } from "./ProposalBuilder";
+import { errText } from "../lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -191,8 +192,8 @@ export function Proposals() {
       ? `?status=${s}&limit=${proposalPageSize}&page=${page}`
       : `?limit=${proposalPageSize}&page=${page}`;
     apiFetch(`/quoting/proposals${qs}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: ProposalRow[] | { items?: ProposalRow[]; total?: number; status_counts?: Partial<Record<ProposalStatus, number>> }) => {
@@ -327,7 +328,7 @@ export function Proposals() {
     setDrawerLoading(true);
     try {
       const r = await apiFetch(`/quoting/proposals/${proposal.id}`);
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const data: ProposalRow = await r.json();
       setDrawerProposal(data);
     } catch (e: unknown) {
@@ -397,8 +398,7 @@ export function Proposals() {
           body: JSON.stringify(estimateBody),
         });
         if (!estRes.ok) {
-          const err = await estRes.json().catch(() => ({}));
-          throw new Error((err as { detail?: string }).detail ?? `${estRes.status} ${estRes.statusText}`);
+                    throw new Error(await errText(estRes));
         }
         revisedEstimateResult = await estRes.json() as Record<string, unknown>;
         revisedEstimateInput = estimateBody;
@@ -450,8 +450,7 @@ export function Proposals() {
         body: JSON.stringify({ title: editForm.title, quote_snapshot: snapshot, estimate_id: linkedEstimateId }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: ProposalRow = await r.json();
       setProposals((prev) => prev.map((p) => p.id === updated.id ? { ...p, ...updated, amount: effectiveTotal } : p));
@@ -470,8 +469,7 @@ export function Proposals() {
     try {
       const r = await apiFetch(`/quoting/proposals/${id}/send`, { method: "POST", body: JSON.stringify({}) });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: ProposalRow = await r.json();
       setProposals((prev) => prev.map((p) => p.id === id ? { ...p, ...updated } : p));
@@ -489,8 +487,7 @@ export function Proposals() {
     try {
       const r = await apiFetch(`/quoting/proposals/${id}/revise`, { method: "POST", body: JSON.stringify({}) });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const revised: ProposalRow = await r.json();
       setWorkspaceTab("proposals");
@@ -511,8 +508,7 @@ export function Proposals() {
     try {
       const r = await apiFetch(`/quoting/proposals/${id}/pdf`);
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);

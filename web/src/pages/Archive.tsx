@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { NavContext } from "../App";
 import { BRAND, Badge, Button, Loading, ErrorMsg, Spinner, hms, inputStyle } from "../ui";
+import { errText } from "../lib/errors";
 
 interface ArchiveVideo {
   id: string;
@@ -174,8 +175,8 @@ function DetailPanel({ video }: { video: ArchiveVideo }) {
 
   useEffect(() => {
     apiFetch(`/archive/${video.id}/detail`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: VideoDetail) => setState({ kind: "ok", data }))
@@ -439,7 +440,7 @@ export function Archive() {
     setHidingId(video.id);
     try {
       const r = await apiFetch(`/archive/${video.id}/hide`, { method: "POST" });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      if (!r.ok) throw new Error(await errText(r));
       fetchVideos(committed, includeHidden);
     } catch (e) {
       alert(`Hide failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -452,7 +453,7 @@ export function Archive() {
     setHidingId(video.id);
     try {
       const r = await apiFetch(`/archive/${video.id}/unhide`, { method: "POST" });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      if (!r.ok) throw new Error(await errText(r));
       fetchVideos(committed, includeHidden);
     } catch (e) {
       alert(`Unhide failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -484,7 +485,7 @@ export function Archive() {
     setNameMsg(null);
     try {
       const r = await apiFetch(`/archive/${v.id}/rename`, { method: "POST", body: JSON.stringify({ title: t }) });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      if (!r.ok) throw new Error(await errText(r));
       const upd = await r.json();
       setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, title: upd.title } : x)));
       cancelRename();
@@ -497,7 +498,7 @@ export function Archive() {
     try {
       const path = kind === "yt" ? `/archive/${v.id}/youtube-name` : `/archive/${v.id}/suggest-name`;
       const r = await apiFetch(path, { method: kind === "yt" ? "GET" : "POST" });
-      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail ?? r.statusText); }
+      if (!r.ok) throw new Error(await errText(r));
       const d = await r.json();
       setEditTitle(kind === "yt" ? (d.youtube_title ?? "") : (d.suggested_title ?? ""));
     } catch (e) { setNameMsg(e instanceof Error ? e.message : String(e)); }
@@ -521,8 +522,8 @@ export function Archive() {
     if (f.social !== "all") params.set("social", f.social);
     if (withHidden) params.set("include_hidden", "true");
     apiFetch(`/archive/videos?${params}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: ArchiveVideo[]) => {
@@ -554,7 +555,7 @@ export function Archive() {
     setDownloading(video.id);
     try {
       const r = await apiFetch(`/archive/${video.id}/download`);
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const { download_url } = await r.json();
       window.open(download_url, "_blank", "noopener,noreferrer");
     } catch (e) {
@@ -573,7 +574,7 @@ export function Archive() {
     setCheckResult(null);
     try {
       const r = await apiFetch("/archive/check-new");
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const data = await r.json();
       setCheckResult(data);
       setCheckState("done");
@@ -588,7 +589,7 @@ export function Archive() {
     setBackfillResult(null);
     try {
       const r = await apiFetch("/archive/backfill", { method: "POST" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const data = await r.json();
       setBackfillResult(data);
       setBackfillState("done");
@@ -605,7 +606,7 @@ export function Archive() {
     setKpiResult(null);
     try {
       const r = await apiFetch("/archive/poll-kpis", { method: "POST" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const data = await r.json();
       setKpiResult(data);
       setKpiState("done");

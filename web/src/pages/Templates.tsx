@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
+import { errText } from "../lib/errors";
 
 interface EmailTemplate {
   id: number;
@@ -33,8 +34,8 @@ export function Templates() {
     setLoading(true);
     setError(null);
     apiFetch("/email/templates")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then(setTemplates)
@@ -82,7 +83,7 @@ export function Templates() {
           body: JSON.stringify({ name: form.name, subject: form.subject, body: form.body }),
         }
       );
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       cancelForm();
       load();
     } catch (e: unknown) {
@@ -97,7 +98,7 @@ export function Templates() {
     setDeletingId(t.id);
     try {
       const r = await apiFetch(`/email/templates/${t.id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       load();
     } catch (e: unknown) {
       alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);

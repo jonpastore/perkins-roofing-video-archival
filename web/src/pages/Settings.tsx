@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, getProductionReadiness, type ProductionReadiness, type GateState } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
+import { errText } from "../lib/errors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -380,7 +381,7 @@ export function Settings() {
     setLoadingConfig(true);
     setConfigErr(null);
     apiFetch("/config")
-      .then((r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); })
+      .then(async (r) => { if (!r.ok) throw new Error(await errText(r)); return r.json(); })
       .then((d: ConfigData) => setConfig(d))
       .catch((e: unknown) => setConfigErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingConfig(false));
@@ -390,7 +391,7 @@ export function Settings() {
     setLoadingSecrets(true);
     setSecretsErr(null);
     apiFetch("/config/secrets")
-      .then((r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); })
+      .then(async (r) => { if (!r.ok) throw new Error(await errText(r)); return r.json(); })
       .then((d: SecretsData) => setSecrets(d))
       .catch((e: unknown) => setSecretsErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoadingSecrets(false));
@@ -400,7 +401,7 @@ export function Settings() {
     setHealthLoading(true);
     setHealthErr(null);
     apiFetch("/config/health-checks")
-      .then((r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json(); })
+      .then(async (r) => { if (!r.ok) throw new Error(await errText(r)); return r.json(); })
       .then((d: { results: HealthResult[] }) => setHealthResults(d.results ?? []))
       .catch((e: unknown) => setHealthErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setHealthLoading(false));
@@ -429,8 +430,7 @@ export function Settings() {
         body: JSON.stringify({ key, value }),
       });
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { detail?: string })?.detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       // Refresh config data to reflect updated source/updated_by
       loadConfig();
@@ -445,8 +445,7 @@ export function Settings() {
       body: JSON.stringify({ key, value }),
     });
     if (!r.ok) {
-      const body = await r.json().catch(() => ({}));
-      throw new Error((body as { detail?: string })?.detail ?? `${r.status} ${r.statusText}`);
+            throw new Error(await errText(r));
     }
     return r.json() as Promise<{ last_set: string | null; last_set_by: string | null }>;
   }

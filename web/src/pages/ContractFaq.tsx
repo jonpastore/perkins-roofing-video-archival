@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, apiFetchMultipart } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
+import { errText } from "../lib/errors";
 
 interface ContractFaqEntry {
   id: number;
@@ -71,8 +72,8 @@ export function ContractFaq() {
     setListError(null);
     const params = filter !== "all" ? `?status=${filter}` : "";
     apiFetch(`/contract-faq${params}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: ContractFaqEntry[]) => setEntries(data))
@@ -84,8 +85,8 @@ export function ContractFaq() {
     setTcVersionLoading(true);
     setTcVersionError(null);
     apiFetch("/contract-faq/tc-version/latest")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: TcVersion | null) => {
@@ -121,8 +122,7 @@ export function ContractFaq() {
         body: JSON.stringify({ tc_text: tcText, count, tc_version_id: tcVersion?.id }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error((err as { detail?: string }).detail ?? r.statusText);
+                throw new Error(await errText(r));
       }
       const data: GenerateResult = await r.json();
       setGenerateResult(data);
@@ -145,8 +145,7 @@ export function ContractFaq() {
       const tag = file.name.replace(/\.pdf$/i, "");
       const r = await apiFetchMultipart(`/contract-faq/extract-pdf?save=true&version_tag=${encodeURIComponent(tag)}`, { method: "POST", body: form });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error((err as { detail?: string }).detail ?? r.statusText);
+                throw new Error(await errText(r));
       }
       const data: { filename: string; chars: number; text: string; tc_version?: TcVersion } = await r.json();
       setTcText(data.text);
@@ -172,8 +171,7 @@ export function ContractFaq() {
         body: JSON.stringify({ tc_text: tcText, version_tag: tag }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error((err as { detail?: string }).detail ?? r.statusText);
+                throw new Error(await errText(r));
       }
       const data: TcVersion = await r.json();
       setTcVersion(data);
@@ -195,8 +193,7 @@ export function ContractFaq() {
         body: JSON.stringify({ tc_text: tcText, include_existing_faqs: true }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error((err as { detail?: string }).detail ?? r.statusText);
+                throw new Error(await errText(r));
       }
       setAiPrompts(await r.json());
     } catch (e: unknown) {
@@ -225,7 +222,7 @@ export function ContractFaq() {
         method: "PUT",
         body: JSON.stringify({ question: editQ, answer: editA }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const updated: ContractFaqEntry = await r.json();
       setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
       setEditingId(null);
@@ -243,7 +240,7 @@ export function ContractFaq() {
         method: "PUT",
         body: JSON.stringify({ status: "approved" }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const updated: ContractFaqEntry = await r.json();
       setEntries((prev) => prev.map((e) => (e.id === id ? updated : e)));
     } catch (e: unknown) {
@@ -257,7 +254,7 @@ export function ContractFaq() {
     setDeletingId(id);
     try {
       const r = await apiFetch(`/contract-faq/${id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       setEntries((prev) => prev.filter((e) => e.id !== id));
     } catch (e: unknown) {
       setListError(e instanceof Error ? e.message : String(e));

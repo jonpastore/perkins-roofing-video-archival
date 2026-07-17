@@ -4,6 +4,7 @@ import { apiFetch } from "../api";
 import { richEditorInit } from "../lib/richEditor";
 import { BRAND, Card, Button, PageTitle, Loading, ErrorMsg, Badge, inputStyle } from "../ui";
 import { getAuth } from "firebase/auth";
+import { errText } from "../lib/errors";
 
 interface FirebaseUser {
   uid: string;
@@ -271,8 +272,8 @@ export function Users() {
     setLoading(true);
     setError(null);
     apiFetch("/admin/users")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: FirebaseUser[]) => {
@@ -317,8 +318,7 @@ export function Users() {
         body: JSON.stringify({ email: user.email, role: newRole || null }),
       });
       if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: FirebaseUser = await r.json();
       setUsers((prev) =>
@@ -349,8 +349,7 @@ export function Users() {
         body: JSON.stringify({ email: user.email, signature: html.trim() || null }),
       });
       if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: { email: string; signature: string | null } = await r.json();
       setUsers((prev) =>
@@ -383,8 +382,7 @@ export function Users() {
         }),
       });
       if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const created: FirebaseUser & { email_sent?: boolean; email_error?: string | null } =
         await r.json();
@@ -427,8 +425,7 @@ export function Users() {
         body: JSON.stringify({ email: user.email }),
       });
       if (!r.ok) {
-        const detail = await r.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       setUsers((prev) => prev.filter((u) => u.uid !== user.uid));
     } catch (e: unknown) {

@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { apiFetch, apiFetchMultipart } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, Spinner } from "../ui";
 import { NavContext } from "../App";
+import { errText } from "../lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -224,8 +225,8 @@ function VideoPicker({ onSelect, onVideosLoaded }: VideoPickerProps) {
     const qs = new URLSearchParams();
     if (search) qs.set("q", search);
     apiFetch(`/archive/videos?${qs}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: ArchiveVideo[]) => {
@@ -358,8 +359,8 @@ function ClipCard({
       apiFetch(
         `/clips/transcript?video_id=${encodeURIComponent(videoId)}&start=${clip.start}&end=${clip.end}`
       )
-        .then((r) => {
-          if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        .then(async (r) => {
+          if (!r.ok) throw new Error(await errText(r));
           return r.json();
         })
         .then((data: { segments: TranscriptSegment[] }) => {
@@ -547,8 +548,7 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
         body: form,
       });
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+                throw new Error(await errText(r));
       }
       const data = await r.json() as { gcs_path: string };
       setPath(data.gcs_path);
@@ -569,8 +569,7 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
         body: JSON.stringify({ key: configKey, value: "" }),
       });
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+                throw new Error(await errText(r));
       }
       setPath("");
       onCleared();
@@ -670,8 +669,7 @@ function ReelSettingsPanel() {
       body: JSON.stringify({ key, value }),
     });
     if (!r.ok) {
-      const body = await r.json().catch(() => ({}));
-      throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+            throw new Error(await errText(r));
     }
   }
 
@@ -845,7 +843,7 @@ function RenderOptionsPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(spec),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const saved: ClipRenderSpec = await r.json();
       setSpec(saved);
       setMsg("Options saved.");
@@ -1159,8 +1157,7 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
     try {
       const r = await apiFetch(`/clips/${s.id}/preview-url`);
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${r.status}`);
+                throw new Error(await errText(r));
       }
       const data = await r.json() as { preview_url: string };
       setPreviewUrl(data.preview_url);
@@ -1193,7 +1190,7 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
     setMsg(null);
     try {
       const r = await apiFetch(`/clips/${s.id}/render`, { method: "POST" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       setMsg("Rendering started…");
       setPolling(true);
       setTimeout(() => pollStatus(0), 5000);
@@ -1292,8 +1289,8 @@ function RenderablePanel() {
 
   useEffect(() => {
     apiFetch("/clips/renderable")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then(setSeries)
@@ -1435,9 +1432,8 @@ export function ClipStudio() {
         body: JSON.stringify({ video_id: video.id }),
       });
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        const detail = (body as { detail?: string }).detail;
-        if (r.status === 404 && detail?.includes("transcript")) {
+        const detail = await errText(r);
+        if (r.status === 404 && detail.includes("transcript")) {
           throw new Error("This video has no transcript, so clips can't be suggested. Pick a different video.");
         }
         throw new Error(detail ?? `${r.status} ${r.statusText}`);
@@ -1480,7 +1476,7 @@ export function ClipStudio() {
           parts: selected.map(({ title: partTitle, start, end, hook }) => ({ title: partTitle, start, end, hook: hook ?? "" })),
         }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       setStep({ kind: "saved", seriesTitle: title });
     } catch (e: unknown) {
       setSaveError(e instanceof Error ? e.message : String(e));

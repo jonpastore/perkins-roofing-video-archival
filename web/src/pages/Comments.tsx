@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Button, Card, ErrorMsg, Loading, PageTitle, inputStyle } from "../ui";
+import { errText } from "../lib/errors";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,8 +75,8 @@ export function Comments() {
     if (needsOnly) params.set("needs_reply", "true");
 
     apiFetch(`/comments?${params}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((d: ListResponse) => {
@@ -135,8 +136,7 @@ export function Comments() {
       await apiFetch(`/comments/${item.id}`, { method: "PUT", body: JSON.stringify({ draft_reply: text }) });
       const r = await apiFetch(`/comments/${item.id}/post`, { method: "POST" });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error(err.detail || r.statusText);
+                throw new Error(await errText(r));
       }
       const updated: CommentItem = await r.json();
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
@@ -156,8 +156,7 @@ export function Comments() {
         body: JSON.stringify({ limit: crawlLimit }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error(err.detail || r.statusText);
+                throw new Error(await errText(r));
       }
       const d = await r.json();
       const errorSuffix = d.errors > 0
@@ -182,8 +181,7 @@ export function Comments() {
     try {
       const r = await apiFetch(`/comments/${item.id}/draft`, { method: "POST" });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error(err.detail || r.statusText);
+                throw new Error(await errText(r));
       }
       const updated: CommentItem = await r.json();
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
@@ -208,8 +206,7 @@ export function Comments() {
         body: JSON.stringify(body),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error(err.detail || r.statusText);
+                throw new Error(await errText(r));
       }
       const updated: CommentItem = await r.json();
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));

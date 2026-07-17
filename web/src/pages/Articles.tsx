@@ -6,6 +6,7 @@ import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
 import { richEditorInit } from "../lib/richEditor";
+import { errText } from "../lib/errors";
 
 // Detect user's local timezone once at module load
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -519,8 +520,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
         body: JSON.stringify({ check_key: checkKey }),
       });
       if (!r.ok) {
-        const b = await r.json().catch(() => ({}));
-        throw new Error((b as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: ArticleFull & { wp_error?: string | null } = await r.json();
       setArticle(updated);
@@ -536,8 +536,8 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     setLoading(true);
     setError(null);
     apiFetch(`/articles/${slug}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: ArticleFull) => setArticle(data))
@@ -552,8 +552,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
     try {
       const r = await apiFetch(`/articles/${slug}/publish`, { method: "POST" });
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: ArticleFull & { wp_published?: boolean; wp_error?: string | null } = await r.json();
       setArticle(updated);
@@ -593,8 +592,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
         }),
       });
       if (!sr.ok) {
-        const body = await sr.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${sr.status} ${sr.statusText}`);
+                throw new Error(await errText(sr));
       }
 
       const ar = await apiFetch(`/articles/${slug}`, {
@@ -602,8 +600,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
         body: JSON.stringify({ status: "scheduled", publish_at: isoAt }),
       });
       if (!ar.ok) {
-        const body = await ar.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${ar.status} ${ar.statusText}`);
+                throw new Error(await errText(ar));
       }
       const updated: ArticleFull = await ar.json();
       setArticle(updated);
@@ -1429,8 +1426,8 @@ export function Articles() {
     setLoading(true);
     setError(null);
     apiFetch("/articles")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then(setArticles)
@@ -1504,8 +1501,7 @@ export function Articles() {
         }
       );
       if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error((body as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       cancelForm();
       load();
@@ -1521,7 +1517,7 @@ export function Articles() {
     setDeletingSlug(a.slug);
     try {
       const r = await apiFetch(`/articles/${a.slug}`, { method: "DELETE" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       load();
     } catch (e: unknown) {
       alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);

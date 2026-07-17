@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, hms, ytLink } from "../ui";
 import { ComposeEmailModal } from "../components/ComposeEmailModal";
+import { errText } from "../lib/errors";
 
 // Render an FAQ answer: turn `[link n](url)` markdown citations into clickable links.
 function renderAnswer(text: string): ReactNode[] {
@@ -122,8 +123,8 @@ export function Faq() {
     setUnminedError(null);
     const off = page * UNMINED_PAGE_SIZE;
     apiFetch(`/suggestions?bucket=faqs&limit=${UNMINED_PAGE_SIZE}&offset=${off}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((d: { faqs?: UnminedFaqItem[]; faqs_total?: number }) => {
@@ -167,8 +168,8 @@ export function Faq() {
     });
     if (q) params.set("q", q);
     apiFetch(`/faq?${params}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((d: FaqListResponse) => {
@@ -217,7 +218,7 @@ export function Faq() {
     setActionMsg(null);
     try {
       const r = await apiFetch("/faq/mine", { method: "POST", body: JSON.stringify({ limit: mineBatchSize }) });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const d = await r.json();
       setActionMsg(`Mined ${d.mined} new questions and answered ${d.answered ?? 0}. ${d.remaining_uncovered} content items still available.`);
       loadCoverage();
@@ -235,7 +236,7 @@ export function Faq() {
     setActionMsg(null);
     try {
       const r = await apiFetch("/faq/answer-batch", { method: "POST", body: JSON.stringify({ limit: answerBatchSize }) });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const d = await r.json();
       setActionMsg(`Generated ${d.answered} answers. ${d.remaining} still unanswered.`);
       loadCoverage();
@@ -252,7 +253,7 @@ export function Faq() {
     setAnsweringId(item.id);
     try {
       const r = await apiFetch(`/faq/${item.id}/answer`, { method: "POST" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const updated: FaqItem = await r.json();
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
       loadCoverage();
@@ -270,8 +271,7 @@ export function Faq() {
     try {
       const r = await apiFetch("/faq/publish-wordpress", { method: "POST" });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({ detail: r.statusText }));
-        throw new Error(err.detail || r.statusText);
+                throw new Error(await errText(r));
       }
       const d: PublishResult = await r.json();
       setPublishResult(d);

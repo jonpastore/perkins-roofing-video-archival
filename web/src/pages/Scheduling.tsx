@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
+import { errText } from "../lib/errors";
 
 interface ScheduledItem {
   id: number;
@@ -89,8 +90,8 @@ export function Scheduling() {
     setError(null);
     const qs = (filter ?? statusFilter) ? `?status=${filter ?? statusFilter}` : "";
     apiFetch(`/scheduling${qs}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then(setItems)
@@ -197,7 +198,7 @@ export function Scheduling() {
           }),
         });
       }
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       cancelForm();
       load();
     } catch (e: unknown) {
@@ -212,7 +213,7 @@ export function Scheduling() {
     setDeletingId(item.id);
     try {
       const r = await apiFetch(`/scheduling/${item.id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       load();
     } catch (e: unknown) {
       alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);

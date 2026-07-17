@@ -15,6 +15,7 @@ import {
 import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, getProductionReadiness, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse, type ProductionReadiness, type GateState } from "../api";
 import { NavContext } from "../App";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg, StatCard, inputStyle } from "../ui";
+import { errText } from "../lib/errors";
 
 type ToastTone = "green" | "red";
 interface Toast { message: string; tone: ToastTone; }
@@ -763,8 +764,8 @@ export function Status() {
     setLoading(true);
     setError(null);
     apiFetch("/status")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((d: StatusData) => setData(d))
@@ -780,7 +781,7 @@ export function Status() {
       body: JSON.stringify({ video_id, stage }),
     })
       .then((r) => {
-        if (!r.ok) return r.json().then((d: { detail?: string }) => { throw new Error(d.detail ?? `${r.status}`); });
+        if (!r.ok) return errText(r).then((m) => { throw new Error(m); });
         return r.json();
       })
       .then((d: { reset: number }) => {

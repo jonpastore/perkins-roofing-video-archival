@@ -4,6 +4,7 @@ import { auth } from "../auth";
 import { apiFetch } from "../api";
 import { richEditorInit } from "../lib/richEditor";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg } from "../ui";
+import { errText } from "../lib/errors";
 
 interface EmailTemplate {
   id: number;
@@ -45,8 +46,8 @@ export function ComposeEmail() {
 
   useEffect(() => {
     apiFetch("/email/templates")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: EmailTemplate[]) => setTemplates(data))
@@ -84,7 +85,7 @@ export function ComposeEmail() {
         method: "POST",
         body: JSON.stringify({ name: name.trim(), subject, body }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const created: EmailTemplate = await r.json();
       setTemplates((prev) => [...prev, created]);
     } catch (e) {
@@ -108,7 +109,7 @@ export function ComposeEmail() {
         method: "POST",
         body: JSON.stringify({ draft: body }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const data: ProofResult = await r.json();
       setProofResult(data);
     } catch (e) {
@@ -127,7 +128,7 @@ export function ComposeEmail() {
         method: "POST",
         body: JSON.stringify({ to, subject, html: body }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const data: { id: string } = await r.json();
       setSentId(data.id);
       setTo("");

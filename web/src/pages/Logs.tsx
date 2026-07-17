@@ -1,3 +1,4 @@
+import { errText } from "../lib/errors";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Badge, Button, Card, ErrorMsg, Loading, PageTitle } from "../ui";
@@ -100,7 +101,7 @@ export function Logs() {
     });
     apiFetch(`/logs?${params}`)
       .then((r) => {
-        if (!r.ok) return r.json().then((d: { detail?: string }) => { throw new Error(d.detail ?? `${r.status} ${r.statusText}`); });
+        if (!r.ok) return errText(r).then((m) => { throw new Error(m); });
         return r.json();
       })
       .then((d: LogsResponse) => setData(d))

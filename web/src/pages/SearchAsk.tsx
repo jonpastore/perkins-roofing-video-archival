@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { BRAND, Card, Button, inputStyle, Loading, ErrorMsg, hms, ytLink } from "../ui";
 import { ComposeEmailModal } from "../components/ComposeEmailModal";
 import { NavContext } from "../App";
+import { errText } from "../lib/errors";
 
 // ---- types matching the live API ----
 interface Source {
@@ -142,8 +143,8 @@ function TopicVideosModal({
 
   useEffect(() => {
     apiFetch(`/topics/videos?label=${encodeURIComponent(label)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: TopicVideo[]) => setVideos(data))
@@ -153,8 +154,8 @@ function TopicVideosModal({
   useEffect(() => {
     // Load articles for this topic's cluster (filter by pillar_slug client-side)
     apiFetch("/articles")
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: TopicArticle[]) => {
@@ -501,8 +502,8 @@ export function SearchAsk() {
       ? `/topics?sort=${sortParam}`
       : `/topics?sort=${sortParam}&limit=${TOPIC_PAGE_SIZE}&offset=${topicOffset}`;
     apiFetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: { total?: number; items?: TopicItem[] } | TopicItem[]) => {
@@ -555,7 +556,7 @@ export function SearchAsk() {
         method: "POST",
         body: JSON.stringify({ query: question, k: 8 }),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      if (!r.ok) throw new Error(await errText(r));
       const data = await r.json();
       if (runMode === "ask") setAns(data); else setRows(data);
     } catch (e) {

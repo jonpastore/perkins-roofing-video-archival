@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, TierCard, SectionLabel } from "../ui";
+import { errText } from "../lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -617,8 +618,8 @@ export function Quoting() {
     const q = searchTerm.trim();
     if (q) params.set("search", q);
     apiFetch(`/quoting/customers?${params.toString()}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: Customer[] | { items?: Customer[] }) => {
@@ -637,8 +638,8 @@ export function Quoting() {
   useEffect(() => {
     setRatesError(null);
     apiFetch(`/estimator/rates?branch=miami&region=${quoteRegion}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: EstimatorRates) => setRates(data))
@@ -649,8 +650,8 @@ export function Quoting() {
     setCustomerDetailLoading(true);
     setCustomerDetailError(null);
     apiFetch(`/quoting/customers/${id}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((data: CustomerDetail) => {
@@ -671,8 +672,7 @@ export function Quoting() {
     try {
       const r = await apiFetch("/quoting/customers", { method: "POST", body: JSON.stringify(data) });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const created: Customer = await r.json();
       setCustomers((prev) => [...prev, created].sort((a, b) => a.display_name.localeCompare(b.display_name)));
@@ -693,8 +693,7 @@ export function Quoting() {
         body: JSON.stringify({ display_name: data.display_name, company_name: data.company_name, email: data.email, phone: data.phone, notes: data.notes }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: Customer = await r.json();
       setSelectedCustomer((prev) => prev ? { ...prev, ...updated } : prev);
@@ -730,8 +729,8 @@ export function Quoting() {
     setMeasurementsLoading(true);
     setMeasurementError(null);
     apiFetch(`/measurements?property_id=${propertyId}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((rows: Measurement[]) => {
@@ -768,8 +767,7 @@ export function Quoting() {
         body: JSON.stringify(data),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const prop: Property = await r.json();
       setSelectedCustomer((prev) => prev ? { ...prev, properties: [...(prev.properties ?? []), prop] } : prev);
@@ -792,8 +790,7 @@ export function Quoting() {
         body: JSON.stringify(data),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const contact: Contact = await r.json();
       setSelectedCustomer((prev) => prev ? {
@@ -819,8 +816,7 @@ export function Quoting() {
         body: JSON.stringify({ is_primary: true }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const updated: Contact = await r.json();
       setSelectedCustomer((prev) => prev ? {
@@ -838,8 +834,7 @@ export function Quoting() {
     try {
       const r = await apiFetch("/measurements", { method: "POST", body: JSON.stringify({ ...data, property_id: selectedPropertyId }) });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const m: Measurement = await r.json();
       setMeasurements((prev) => [m, ...prev.filter((row) => row.id !== m.id)]);
@@ -860,8 +855,8 @@ export function Quoting() {
     }
     setEstimatesLoading(true);
     apiFetch(`/estimator/estimates?measurement_id=${measurementId}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
       .then((rows: EstimateRecord[]) => setEstimateHistory(Array.isArray(rows) ? rows : []))
@@ -927,8 +922,7 @@ export function Quoting() {
       setLastQuoteInput(body);
       const r = await apiFetch("/estimator/quote", { method: "POST", body: JSON.stringify(body) });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const data: QuoteResult = await r.json();
       setQuoteResult(data);
@@ -983,8 +977,7 @@ export function Quoting() {
         }),
       });
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error((err as { detail?: string }).detail ?? `${r.status} ${r.statusText}`);
+                throw new Error(await errText(r));
       }
       const proposal = await r.json();
       setProposalCreated({ id: proposal.id });

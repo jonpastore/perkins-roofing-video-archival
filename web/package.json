@@ -10,7 +10,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tinymce/tinymce-react": "^6.3.0",
@@ -30,6 +31,7 @@
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
-    "vite-plugin-static-copy": "^4.1.1"
+    "vite-plugin-static-copy": "^4.1.1",
+    "vitest": "^4.1.10"
   }
 }
