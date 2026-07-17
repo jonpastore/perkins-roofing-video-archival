@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
@@ -44,16 +44,16 @@ def _item_dict(it: PriceBookItem) -> dict:
 
 
 class ItemUpsert(BaseModel):
-    name: str
-    unit: str | None = None
+    name: str = Field(max_length=255)
+    unit: str | None = Field(default=None, max_length=50)
     unit_coverage: str | None = None
     unit_price: str | None = None            # NULL = not stocked (never 0)
     tax_rate: str = "0.07"
     waste_rate: str = "0.10"
-    supplier: str | None = None
-    item_type: str | None = "material"
-    sku: str | None = None
-    knowify_item_id: str | None = None
+    supplier: str | None = Field(default=None, max_length=100)
+    item_type: str | None = Field(default="material", max_length=30)
+    sku: str | None = Field(default=None, max_length=100)
+    knowify_item_id: str | None = Field(default=None, max_length=100)
 
 
 @router.get("/items")
@@ -105,7 +105,7 @@ def list_versions(claims=Depends(require_role(_ROLE)), db: Session = Depends(get
 
 
 class VersionCreate(BaseModel):
-    supplier: str = "DEFAULT"
+    supplier: str = Field(default="DEFAULT", max_length=100)
     label: str | None = None
     activate: bool = True
 

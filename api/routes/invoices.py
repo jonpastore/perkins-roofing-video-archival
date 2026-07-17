@@ -144,13 +144,13 @@ class IssueInvoiceRequest(BaseModel):
 
 class PaymentRequest(BaseModel):
     amount: str
-    method: str = "check"       # check|ach|card|cash|other
-    reference: str | None = None
+    method: str = Field(default="check", max_length=5)  # check|ach|card|cash|other
+    reference: str | None = Field(default=None, max_length=255)
     notes: str | None = None
     # REQUIRED: a null key defeats dedup (Postgres treats NULLs as distinct), so a
     # double-submit would double-count the payment (security review H1). The client sends
     # one stable key per payment attempt; a replay collides on UNIQUE(tenant, key) → no-op.
-    idempotency_key: str = Field(min_length=8)
+    idempotency_key: str = Field(min_length=8, max_length=255)
 
 
 # ---------------------------------------------------------------------------

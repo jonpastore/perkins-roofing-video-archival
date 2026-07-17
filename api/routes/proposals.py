@@ -45,7 +45,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -369,7 +369,7 @@ def _proposal_as_dict(row: Proposal) -> dict:
 class ProposalCreate(BaseModel):
     customer_id: int
     property_id: int
-    title: str
+    title: str = Field(max_length=500)
     quote_snapshot: dict
     template_id: Optional[int] = None
     estimate_id: Optional[int] = None
@@ -378,11 +378,11 @@ class ProposalCreate(BaseModel):
 class ProposalFromQuoteCreate(BaseModel):
     customer_id: Optional[int] = None
     property_id: Optional[int] = None
-    title: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=500)
 
 
 class ProposalUpdate(BaseModel):
-    title: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=500)
     quote_snapshot: Optional[dict] = None
     template_id: Optional[int] = None
     estimate_id: Optional[int] = None
@@ -393,13 +393,13 @@ class SendRequest(BaseModel):
 
 
 class ReviseRequest(BaseModel):
-    title: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=500)
     quote_snapshot: Optional[dict] = None
     template_id: Optional[int] = None
 
 
 class AcceptRequest(BaseModel):
-    selected_tier: str
+    selected_tier: str = Field(max_length=50)
     selected_options: Optional[list] = None
     consent_electronic: bool
     signed_name: str
@@ -428,24 +428,24 @@ class RevisionRequest(BaseModel):
 
 
 class TemplateCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=255)
     html_body: str
     is_default: bool = False
-    logo_url: Optional[str] = None
-    primary_color: Optional[str] = None
-    accent_color: Optional[str] = None
+    logo_url: Optional[str] = Field(default=None, max_length=1000)
+    primary_color: Optional[str] = Field(default=None, max_length=7)
+    accent_color: Optional[str] = Field(default=None, max_length=7)
     footer_text: Optional[str] = None
-    tc_attachment_gcs: Optional[str] = None
+    tc_attachment_gcs: Optional[str] = Field(default=None, max_length=1000)
     cover_page_html: Optional[str] = None
 
 
 class TemplateUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
     html_body: Optional[str] = None
     is_default: Optional[bool] = None
-    logo_url: Optional[str] = None
-    primary_color: Optional[str] = None
-    accent_color: Optional[str] = None
+    logo_url: Optional[str] = Field(default=None, max_length=1000)
+    primary_color: Optional[str] = Field(default=None, max_length=7)
+    accent_color: Optional[str] = Field(default=None, max_length=7)
     footer_text: Optional[str] = None
     cover_page_html: Optional[str] = None
 

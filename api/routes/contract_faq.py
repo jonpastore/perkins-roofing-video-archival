@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
@@ -29,14 +29,14 @@ class AiPromptsRequest(BaseModel):
 
 class SaveTcVersionRequest(BaseModel):
     tc_text: str
-    version_tag: str | None = None
+    version_tag: str | None = Field(default=None, max_length=50)
     source_pdf_gcs: str | None = None
 
 
 class UpdateRequest(BaseModel):
     question: str | None = None
     answer: str | None = None
-    status: str | None = None
+    status: str | None = Field(default=None, max_length=20)
 
 
 def _entry_dict(e) -> dict:

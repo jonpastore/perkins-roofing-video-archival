@@ -38,35 +38,35 @@ def _tenant_id(db: Session) -> int:
 # ---------------------------------------------------------------------------
 
 class CustomerCreate(BaseModel):
-    display_name: str
-    company_name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    knowify_customer_id: Optional[str] = None
+    display_name: str = Field(max_length=255)
+    company_name: Optional[str] = Field(default=None, max_length=255)
+    email: Optional[str] = Field(default=None, max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    knowify_customer_id: Optional[str] = Field(default=None, max_length=100)
     notes: Optional[str] = None
 
 
 class CustomerUpdate(BaseModel):
-    display_name: Optional[str] = None
-    company_name: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, max_length=255)
+    company_name: Optional[str] = Field(default=None, max_length=255)
+    email: Optional[str] = Field(default=None, max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = None
 
 
 class ContactCreate(BaseModel):
-    name: str
-    role: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    name: str = Field(max_length=255)
+    role: Optional[str] = Field(default=None, max_length=100)
+    email: Optional[str] = Field(default=None, max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=50)
     is_primary: bool = False
 
 
 class ContactUpdate(BaseModel):
-    name: Optional[str] = None
-    role: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=255)
+    role: Optional[str] = Field(default=None, max_length=100)
+    email: Optional[str] = Field(default=None, max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=50)
     is_primary: Optional[bool] = None
 
 
