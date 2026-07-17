@@ -143,7 +143,10 @@ def output_args() -> list[str]:
 _VALID_CAPTION_STYLES: frozenset[str] = frozenset(
     {"default", "bold_yellow", "tiktok_pop", "reels_clean", "shorts_editorial"}
 )
-_VALID_TRANSITIONS: frozenset[str] = frozenset({"cut", "fade", "wipe", "slide", "dissolve"})
+# wipe/slide/dissolve removed (#344): those xfade kinds only make sense between
+# two clips (see core/clip_fx.py) and are not honestly renderable on a single
+# clip. Cut/fade remain — fade is a genuine single-clip fade-in/out.
+_VALID_TRANSITIONS: frozenset[str] = frozenset({"cut", "fade"})
 _VALID_COLOR_GRADES: frozenset[str] = frozenset({"none", "vivid", "warm", "cool"})
 _VALID_BROLL_SOURCES: frozenset[str] = frozenset({"pexels", "none"})
 _VALID_MUSIC_CATALOGS: frozenset[str] = frozenset({"pixabay", "ytaudio", "fma", "none"})

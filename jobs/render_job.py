@@ -556,11 +556,15 @@ def _apply_track_a_engines(
             logger.warning("music_mix skipped (non-fatal): %s", exc)
 
     # ── A9–A11: clip_fx (transitions / overlays / floating text) ─────────────
-    # build_transition_filter / build_overlay_filter / build_floating_text_filter
-    # are pure builders from core/clip_fx.py.  The multi-clip xfade transition
-    # is applied at the brand-fusion step (brand intro+clip+outro = 3 clips).
-    # For single-clip use here, a fade-in/fade-out vf filter is sufficient;
-    # xfade (two-stream) is intentionally deferred to the fuse step (#326).
+    # #344 honesty fix: core/clip_fx.py's build_transition_filter (wipe/slide/
+    # dissolve) is xfade-based and needs TWO clip streams — it cannot honestly
+    # apply to this single-clip render, so those kinds were removed from
+    # ClipRenderSpec/_VALID_TRANSITIONS and the ClipStudio UI dropdown. The
+    # only transition kind left here is "fade", which genuinely is a single-
+    # clip effect (ffmpeg's own `fade` filter, not xfade). Multi-clip xfade
+    # transitions belong at the brand-fusion step (intro+clip+outro / future
+    # multi-clip series) — see adapters.ffmpeg.fuse_videos and
+    # core.clip_fx.build_concat_with_transitions for that future wiring.
     if spec.fx.transition not in ("cut", "none") or spec.fx.color_grade not in ("none", ""):
         try:
             from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415

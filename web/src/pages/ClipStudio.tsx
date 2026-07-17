@@ -1088,11 +1088,12 @@ function RenderOptionsPanel({
                   onChange={(e) => setSpec({ ...spec, fx: { ...spec.fx, transition: e.target.value } })}
                   style={selectStyle}
                 >
+                  {/* wipe/slide/dissolve removed (#344): those are xfade transitions
+                      between two clips (see core/clip_fx.py) — only meaningful at the
+                      brand-fuse step (intro+clip+outro), not on a single clip's render.
+                      Fade is a genuine single-clip fade-in/out, so it stays. */}
                   <option value="cut">Cut (none)</option>
                   <option value="fade">Fade</option>
-                  <option value="wipe">Wipe</option>
-                  <option value="slide">Slide</option>
-                  <option value="dissolve">Dissolve</option>
                 </select>
                 <label style={labelStyle}>Color grade</label>
                 <select
