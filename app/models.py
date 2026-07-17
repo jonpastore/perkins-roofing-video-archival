@@ -462,6 +462,7 @@ class CommentDraft(Base):
     id           = Column(Integer, primary_key=True, autoincrement=True)
     video_id     = Column(String, nullable=False, index=True)
     comment_id   = Column(String, nullable=False)
+    platform     = Column(String, nullable=False, default="youtube")
     author       = Column(String)
     comment_text = Column(Text, nullable=False)
     published_at = Column(DateTime)
@@ -471,7 +472,7 @@ class CommentDraft(Base):
     created_at   = Column(DateTime, default=_utcnow)
     tenant_id    = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (
-        UniqueConstraint("comment_id", name="uq_comment_drafts_comment_id"),
+        UniqueConstraint("tenant_id", "platform", "comment_id", name="uq_comment_drafts_tenant_platform_comment"),
         Index("ix_comment_drafts_tenant_status", "tenant_id", "status"),
     )
 

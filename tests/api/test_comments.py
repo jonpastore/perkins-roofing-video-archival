@@ -6,10 +6,19 @@ Uses a fresh FastAPI app + the shared temp SQLite DB from conftest.py.
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import UniqueConstraint
 
 from api.auth import set_verifier
 from api.routes.comments import _crawl_guard, router
 from app.models import CommentDraft, SessionLocal, Video, init_db
+
+
+def test_unique_constraint_is_tenant_platform_comment():
+    """migration 0040: dedup key is (tenant_id, platform, comment_id), not comment_id alone."""
+    uqs = [c for c in CommentDraft.__table__.constraints if isinstance(c, UniqueConstraint)]
+    assert len(uqs) == 1
+    assert uqs[0].name == "uq_comment_drafts_tenant_platform_comment"
+    assert {col.name for col in uqs[0].columns} == {"tenant_id", "platform", "comment_id"}
 
 
 @pytest.fixture(autouse=True)
@@ -116,6 +125,34 @@ class TestListComments:
         assert r.status_code == 200
         data = r.json()
         assert len(data["items"]) <= 1
+
+    def test_platform_defaults_to_youtube(self):
+        with SessionLocal() as db:
+            db.add(CommentDraft(
+                video_id=_VIDEO_ID, comment_id="yt_test_platform_default",
+                author="Frank", comment_text="Nice roof job!",
+                needs_reply=False, status="pending",
+            ))
+            db.commit()
+
+        c = _admin_client()
+        r = c.get("/comments", headers=AUTH)
+        assert r.status_code == 200
+        items = r.json()["items"]
+        row = next(i for i in items if i["comment_id"] == "yt_test_platform_default")
+        assert row["platform"] == "youtube"
+
+    def test_filter_by_platform(self):
+        c = _admin_client()
+        r = c.get("/comments?platform=youtube", headers=AUTH)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total"] >= 1
+        assert all(item["platform"] == "youtube" for item in data["items"])
+
+        r = c.get("/comments?platform=instagram", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["total"] == 0
 
     def test_video_title_joined(self):
         c = _admin_client()

@@ -38,6 +38,7 @@ def _row_to_dict(row: CommentDraft, video_title: Optional[str] = None) -> dict:
         "video_title": video_title or row.video_id,
         "video_url": f"https://youtu.be/{row.video_id}",
         "comment_id": row.comment_id,
+        "platform": row.platform,
         "author": row.author,
         "comment_text": row.comment_text,
         "published_at": row.published_at.isoformat() if row.published_at else None,
@@ -56,13 +57,14 @@ def _row_to_dict(row: CommentDraft, video_title: Optional[str] = None) -> dict:
 def list_comments(
     status: Optional[str] = Query(None, description="Filter by status: pending|drafted|ready|dismissed"),
     needs_reply: Optional[bool] = Query(None, description="Filter by needs_reply flag"),
+    platform: Optional[str] = Query(None, description="Filter by platform, e.g. youtube"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     _claims=Depends(require_role("article_read")),
     db: Session = Depends(get_db_session),
 ):
     """Paginated list of comment drafts.
-    Returns {total, items: [{id, video_id, video_title, comment_text, draft_reply, status, ...}]}.
+    Returns {total, items: [{id, video_id, video_title, comment_text, draft_reply, status, platform, ...}]}.
     """
     query = db.query(CommentDraft)
 
@@ -70,6 +72,8 @@ def list_comments(
         query = query.filter(CommentDraft.status == status)
     if needs_reply is not None:
         query = query.filter(CommentDraft.needs_reply == needs_reply)
+    if platform is not None:
+        query = query.filter(CommentDraft.platform == platform)
 
     total = query.count()
     rows = (

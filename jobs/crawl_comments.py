@@ -115,16 +115,19 @@ def _run_for_tenant(db, tenant_id: int, limit: int = 20, max_drafts: int = _DEFA
             has_reply = item["has_owner_reply"]
             flag = needs_reply(item["text"], has_reply)
 
-            # Upsert: skip if this comment_id already exists
+            # Upsert: skip if this comment_id already exists for this platform.
+            # (platform in the filter prevents a future cross-platform comment_id
+            # collision from false-deduping — YouTube-only today, defaulted below.)
             existing = (
                 db.query(CommentDraft)
-                .filter(CommentDraft.comment_id == item["comment_id"])
+                .filter(CommentDraft.comment_id == item["comment_id"], CommentDraft.platform == "youtube")
                 .first()
             )
             if existing is None:
                 row = CommentDraft(
                     video_id=video.id,
                     comment_id=item["comment_id"],
+                    platform="youtube",
                     author=item["author"],
                     comment_text=item["text"],
                     published_at=item["published_at"],
@@ -145,7 +148,7 @@ def _run_for_tenant(db, tenant_id: int, limit: int = 20, max_drafts: int = _DEFA
                     # Another concurrent run inserted this comment first — use theirs.
                     row = (
                         db.query(CommentDraft)
-                        .filter(CommentDraft.comment_id == item["comment_id"])
+                        .filter(CommentDraft.comment_id == item["comment_id"], CommentDraft.platform == "youtube")
                         .first()
                     )
                     if row is None:

@@ -181,6 +181,65 @@ def test_kpi_stats_stamped_after_crawl():
         assert v.kpis_polled_at is not None, "kpis_polled_at must be set after KPI refresh"
 
 
+# ---------------------------------------------------------------------------
+# Platform column tests (migration 0040)
+# ---------------------------------------------------------------------------
+
+def _fake_comment(comment_id: str) -> dict:
+    return {
+        "comment_id": comment_id,
+        "author": "Viewer",
+        "author_channel_id": "someone_else",
+        "text": "Great video, thanks!",
+        "published_at": None,
+        "has_owner_reply": False,
+    }
+
+
+def test_new_comment_defaults_to_youtube_platform():
+    """Rows created by the crawl are stamped platform='youtube'."""
+    with SessionLocal() as db:
+        db.add(_make_video("plat_vid", crawled_at=None))
+        db.commit()
+
+    import jobs.crawl_comments as cc
+    with (
+        patch.object(cc, "fetch_comments", return_value=[_fake_comment("yt_plat_1")]),
+        patch.object(cc, "fetch_stats", return_value={}),
+        patch.object(cc, "chat", return_value="draft"),
+    ):
+        cc.run(limit=1, max_drafts=999)
+
+    with SessionLocal() as db:
+        row = db.query(CommentDraft).filter(CommentDraft.comment_id == "yt_plat_1").first()
+        assert row is not None
+        assert row.platform == "youtube"
+
+
+def test_upsert_dedupes_within_same_platform():
+    """Re-crawling the same comment_id does not create a second row."""
+    with SessionLocal() as db:
+        db.add(_make_video("dedupe_vid", crawled_at=None))
+        db.commit()
+
+    import jobs.crawl_comments as cc
+    with (
+        patch.object(cc, "fetch_comments", return_value=[_fake_comment("yt_dedupe_1")]),
+        patch.object(cc, "fetch_stats", return_value={}),
+        patch.object(cc, "chat", return_value="draft"),
+    ):
+        cc.run(limit=1, max_drafts=999)
+        # Reset crawled_at so the video rotates back in for a second pass.
+        with SessionLocal() as db2:
+            db2.query(Video).filter(Video.id == "dedupe_vid").update({Video.comments_crawled_at: None})
+            db2.commit()
+        cc.run(limit=1, max_drafts=999)
+
+    with SessionLocal() as db:
+        count = db.query(CommentDraft).filter(CommentDraft.comment_id == "yt_dedupe_1").count()
+        assert count == 1
+
+
 def test_kpi_fetch_failure_does_not_abort_crawl():
     """A KPI stats fetch failure must not propagate — summary is still returned."""
     with SessionLocal() as db:
