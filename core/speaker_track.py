@@ -106,6 +106,65 @@ class NullFaceDetector:
 
 
 # ---------------------------------------------------------------------------
+# pick_centroid — pure face-selection rule (the head-cut-avoidance policy)
+# ---------------------------------------------------------------------------
+
+# Minimum detector confidence for a face to be considered at all.
+DEFAULT_CONF_THRESHOLD: float = 0.7
+# If the second-largest face is at least this fraction of the largest's area,
+# the frame is AMBIGUOUS (two comparable speakers) and we refuse to pick.
+DEFAULT_AMBIGUITY_RATIO: float = 0.5
+
+
+def pick_centroid(
+    faces: list[tuple[float, float, float, float, float]],
+    frame_w: int,
+    *,
+    conf_threshold: float = DEFAULT_CONF_THRESHOLD,
+    ambiguity_ratio: float = DEFAULT_AMBIGUITY_RATIO,
+) -> float | None:
+    """Select the dominant face's normalised x-centroid, or None to fall back.
+
+    This is the policy that avoids Opus Clip's documented multi-speaker
+    "head-cut" failure: when two faces of comparable size are present, there is
+    no single correct crop centre — tracking either one cuts the other out of
+    frame. Returning None here routes the segment to the static centre-crop,
+    which keeps both speakers partially visible instead of decapitating one.
+
+    Args:
+        faces:            Detections as (x, y, w, h, confidence) tuples in
+                          pixel units (detector-agnostic).
+        frame_w:          Frame width in pixels (> 0).
+        conf_threshold:   Discard detections below this confidence.
+        ambiguity_ratio:  Second-largest/largest area ratio at or above which
+                          the frame is ambiguous → None.
+
+    Returns:
+        Normalised x in [0, 1] of the dominant face centre, or None when no
+        confident face exists or the frame is ambiguous.
+
+    Raises:
+        ValueError: if frame_w <= 0.
+    """
+    if frame_w <= 0:
+        raise ValueError(f"frame_w must be positive, got {frame_w!r}")
+
+    confident = [f for f in faces if f[4] >= conf_threshold and f[2] > 0 and f[3] > 0]
+    if not confident:
+        return None
+
+    confident.sort(key=lambda f: f[2] * f[3], reverse=True)
+    if len(confident) > 1:
+        largest_area = confident[0][2] * confident[0][3]
+        second_area = confident[1][2] * confident[1][3]
+        if second_area >= ambiguity_ratio * largest_area:
+            return None  # comparable faces → centre-crop, never cut a head
+
+    x, _y, w, _h, _conf = confident[0]
+    return max(0.0, min(1.0, (x + w / 2.0) / frame_w))
+
+
+# ---------------------------------------------------------------------------
 # smooth_centroids
 # ---------------------------------------------------------------------------
 

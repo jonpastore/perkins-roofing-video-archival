@@ -414,23 +414,42 @@ def _apply_track_a_engines(
             out = os.path.join(scratch, f"reframe_{suffix}.mp4")
 
             if getattr(spec, "speaker_tracking", False):
-                # Item 7: speaker-tracking path — NullFaceDetector falls back to
-                # centre-crop until adapters/speaker_detector.py is implemented.
+                # A2: real speaker tracking — YuNet face centroids sampled once per
+                # second, EMA-smoothed + pan-speed-clamped. Ambiguous multi-speaker
+                # frames yield None from pick_centroid → smoothing drifts toward the
+                # last known position / centre instead of cutting a head (the
+                # documented Opus Clip failure). If opencv or the model is
+                # unavailable, NullFaceDetector keeps the old centre-crop behaviour.
                 from core.speaker_track import (  # noqa: PLC0415
                     NullFaceDetector,
                     build_tracking_crop_filter,
                     smooth_centroids,
                 )
 
-                # Build a single-segment pseudo-detection using the null detector.
-                # A real detector (opencv-python-headless DNN or mediapipe) would
-                # be wired here via adapters/speaker_detector.py — see core/speaker_track.py
-                # FaceDetector protocol for the seam contract.
-                detector = NullFaceDetector()
-                segments_for_detect = [{"start": 0.0, "end": 1.0}]
+                src_w, src_h, duration = 1920, 1080, 0.0
+                try:
+                    from adapters.speaker_detector import (  # noqa: PLC0415
+                        YuNetFaceDetector,
+                        probe_video,
+                    )
+                    src_w, src_h, duration = probe_video(current)
+                    detector = YuNetFaceDetector()
+                except Exception as det_exc:  # noqa: BLE001 — tracking is best-effort
+                    logger.warning(
+                        "speaker tracking unavailable (%s) — centre-crop fallback", det_exc
+                    )
+                    detector = NullFaceDetector()
+
+                n_samples = max(1, int(duration)) if duration > 0 else 1
+                segments_for_detect = [
+                    {"start": float(i), "end": float(i + 1)} for i in range(n_samples)
+                ]
+                timestamps = [s["start"] + 0.5 for s in segments_for_detect]
                 raw_centroids = detector.detect_centroids(current, segments_for_detect)
-                smoothed = smooth_centroids(raw_centroids, timestamps=[0.5])
-                crop_filter = build_tracking_crop_filter(smoothed, [0.5], src_w=1920, src_h=1080)
+                smoothed = smooth_centroids(raw_centroids, timestamps=timestamps)
+                crop_filter = build_tracking_crop_filter(
+                    smoothed, timestamps, src_w=src_w, src_h=src_h
+                )
             else:
                 from core.reframe import crop_filter_9x16  # noqa: PLC0415
                 crop_filter = crop_filter_9x16(1920, 1080, focus_x=0.5, ratio="9:16")

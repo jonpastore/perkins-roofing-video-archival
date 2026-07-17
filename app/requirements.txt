@@ -5,6 +5,7 @@ uvicorn[standard]>=0.50
 pydantic[email]>=2.13
 SQLAlchemy>=2.0.51
 numpy>=2.5
+opencv-python-headless>=4.10  # A2 speaker tracking (YuNet FaceDetectorYN); model committed at adapters/models/
 firebase-admin>=7.5
 requests>=2.34
 google-cloud-storage>=3.12

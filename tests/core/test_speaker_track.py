@@ -12,7 +12,6 @@ import pytest
 
 import core.speaker_track as st
 
-
 # ---------------------------------------------------------------------------
 # NullFaceDetector
 # ---------------------------------------------------------------------------
@@ -234,3 +233,47 @@ class TestBuildTrackingCropFilter:
         # crop_w must equal src_w (or its even-floor), crop_h derived from ratio
         assert crop_w <= 200
         assert crop_h <= 1000
+
+
+# ---------------------------------------------------------------------------
+# pick_centroid — the head-cut-avoidance policy
+# ---------------------------------------------------------------------------
+
+
+class TestPickCentroid:
+    def test_single_confident_face(self):
+        # Face box x=400 w=200 in a 1920-wide frame → centre at 500/1920.
+        cx = st.pick_centroid([(400, 100, 200, 200, 0.95)], 1920)
+        assert cx is not None
+        assert abs(cx - 500 / 1920) < 1e-9
+
+    def test_no_faces_returns_none(self):
+        assert st.pick_centroid([], 1920) is None
+
+    def test_low_confidence_discarded(self):
+        assert st.pick_centroid([(400, 100, 200, 200, 0.3)], 1920) is None
+
+    def test_two_comparable_faces_ambiguous(self):
+        # Second face >= 50% of largest's area → refuse (centre-crop, no head-cut).
+        faces = [(200, 100, 200, 200, 0.9), (1400, 100, 160, 160, 0.9)]
+        assert st.pick_centroid(faces, 1920) is None
+
+    def test_dominant_face_wins_over_small_background_face(self):
+        # Background face well under the ambiguity ratio → track the dominant one.
+        faces = [(200, 100, 300, 300, 0.9), (1500, 100, 80, 80, 0.9)]
+        cx = st.pick_centroid(faces, 1920)
+        assert cx is not None
+        assert abs(cx - 350 / 1920) < 1e-9
+
+    def test_zero_size_box_discarded(self):
+        assert st.pick_centroid([(100, 100, 0, 50, 0.99)], 1920) is None
+
+    def test_centroid_clamped_to_unit_interval(self):
+        # Box hanging off the right edge cannot exceed 1.0.
+        cx = st.pick_centroid([(1900, 100, 200, 200, 0.9)], 1920)
+        assert cx == 1.0
+
+    def test_bad_frame_width_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="frame_w"):
+            st.pick_centroid([(0, 0, 10, 10, 0.9)], 0)
