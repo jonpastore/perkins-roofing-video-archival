@@ -1,0 +1,6 @@
+roofr_report_ref,address,roof_type,squares,eaves_lf,hips_lf,ridges_lf,valleys_lf,rakes_lf,wall_flashings_lf,stories,phase,crew_size,days,notes_why
+EXAMPLE-001,123 Ocean Dr,tile,28,140,60,45,20,80,15,1,demo,4,1.5,"Tile removal + haul is the bottleneck, not crew size; wet-set mud roof so no reuse, full teardown to deck"
+EXAMPLE-001,123 Ocean Dr,tile,28,140,60,45,20,80,15,1,dry_in,3,1,"Single-story simple hip, no valleys work stoppage, standard felt/synthetic pace"
+EXAMPLE-001,123 Ocean Dr,tile,28,140,60,45,20,80,15,1,install,5,3,"Concrete tile at this pitch/complexity, 5-man crew, valleys add cut time"
+EXAMPLE-002,456 Palm Ave,shingle,22,110,0,35,10,90,0,2,demo,3,0.5,"Single-layer shingle tear-off, straight gable, no hips/valleys to slow crew"
+EXAMPLE-002,456 Palm Ave,shingle,22,110,0,35,10,90,0,2,install,3,1.5,"2-story adds staging/ladder time vs 1-story; simple gable keeps it fast otherwise"
