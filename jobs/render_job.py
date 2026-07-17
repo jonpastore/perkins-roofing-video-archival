@@ -320,6 +320,7 @@ def _apply_track_a_engines(
     hook_text: str | None = None,
     aspects: list[str] | None = None,
     tenant_id: int | None = None,
+    brand_kit: dict | None = None,
 ) -> str:
     """Apply Track A engines to *clip_path* in TRD sequence; return output path.
 
@@ -351,6 +352,9 @@ def _apply_track_a_engines(
                      triggers a 1:1 1080×1080 second-pass render.  Ignored
                      here — caller handles multi-aspect from the returned path.
         tenant_id:   Tenant id (informational; session stamping is done by caller).
+        brand_kit:   Optional brand kit dict (core.brand_kit.load_brand_kit) providing
+                     caption font/primary-color overrides. None/empty -> no overrides,
+                     captions use exactly the preset style (today's behaviour).
 
     Returns:
         Path to the (possibly transformed) clip MP4.  May be the original
@@ -472,7 +476,15 @@ def _apply_track_a_engines(
                 if getattr(spec, "emoji_highlights", False):
                     from core.captions_emoji import KEYWORD_EMOJI_MAP  # noqa: PLC0415
                     _emoji_map = KEYWORD_EMOJI_MAP
-                ass_content = to_ass_karaoke(events, style=spec.captions.style, emoji_map=_emoji_map)
+                # Brand-kit theming: optional font/primary-color override (None/empty
+                # brand_kit -> both None -> to_ass_karaoke renders the preset unchanged).
+                _bk = brand_kit or {}
+                _brand_font = _bk.get("font_heading") or _bk.get("font_body") or None
+                _brand_primary_color = _bk.get("primary_color") or None
+                ass_content = to_ass_karaoke(
+                    events, style=spec.captions.style, emoji_map=_emoji_map,
+                    brand_font=_brand_font, brand_primary_color=_brand_primary_color,
+                )
                 ass_path = os.path.join(scratch, f"captions_{suffix}.ass")
                 with open(ass_path, "w", encoding="utf-8") as f:
                     f.write(ass_content)
@@ -839,6 +851,12 @@ def render_part(
         # Load the render spec saved by Clip Studio (defaults reproduce current behaviour).
         render_spec = get_render_spec(series.parts_json)
 
+        # Brand-kit caption theming: optional font/primary-color override, sourced from
+        # the tenant's brand kit (core.brand_kit). Absent/empty brand kit -> no overrides,
+        # captions render exactly as they do today.
+        from core.brand_kit import load_brand_kit  # noqa: PLC0415
+        brand_kit = load_brand_kit(tenant_id or 1, db) or {}
+
         # Load Video row here so we can check archive_uri in _source_video_path.
         video_row = db.get(Video, video_id)
         # Snapshot the archive_uri — the ORM object will be detached after db.close().
@@ -892,6 +910,7 @@ def render_part(
                 clip_end=end,
                 db=_words_db,
                 hook_text=part.get("hook") or None,
+                brand_kit=brand_kit,
             )
         finally:
             _words_db.close()

@@ -494,9 +494,16 @@ def test_emoji_highlights_enabled_passes_emoji_map_to_karaoke():
 
     captured_kwargs = {}
 
-    def fake_to_ass_karaoke(events, style="default", *, emoji_map=None):
+    def fake_to_ass_karaoke(events, style="default", *, emoji_map=None,
+                             brand_font=None, brand_primary_color=None):
         captured_kwargs["emoji_map"] = emoji_map
-        return "[Script Info]\n[V4+ Styles]\nStyle: Default,Arial,48,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,10,10,30,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        return (
+            "[Script Info]\n[V4+ Styles]\n"
+            "Style: Default,Arial,48,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,"
+            "1,0,0,0,100,100,0,0,1,3,1,2,10,10,30,1\n"
+            "[Events]\nFormat: Layer, Start, End, Style, Name, "
+            "MarginL, MarginR, MarginV, Effect, Text\n"
+        )
 
     with (
         patch("jobs.render_job._load_words_for_clip", return_value=words),
@@ -521,7 +528,8 @@ def test_emoji_highlights_disabled_passes_none_emoji_map():
 
     captured_kwargs: dict = {}
 
-    def fake_to_ass_karaoke(events, style="default", *, emoji_map=None):
+    def fake_to_ass_karaoke(events, style="default", *, emoji_map=None,
+                             brand_font=None, brand_primary_color=None):
         captured_kwargs["called"] = True
         captured_kwargs["emoji_map"] = emoji_map
         return (
@@ -543,3 +551,74 @@ def test_emoji_highlights_disabled_passes_none_emoji_map():
         _apply_track_a_engines("/tmp/clip.mp4", spec, "/tmp", 1, 0)
 
     assert captured_kwargs.get("emoji_map") is None
+
+
+# ---------------------------------------------------------------------------
+# Brand-kit caption theming: brand_kit param reaches to_ass_karaoke
+# ---------------------------------------------------------------------------
+
+def test_brand_kit_font_and_color_passed_to_captions():
+    spec = ClipRenderSpec(captions=CaptionsSpec(style="tiktok_pop"))
+    words = [{"word": "roof", "start": 0.0, "end": 0.4}]
+    brand_kit = {"font_heading": "Montserrat", "primary_color": "#1a3c5e"}
+
+    captured_kwargs = {}
+
+    def fake_to_ass_karaoke(events, style="default", *, emoji_map=None,
+                             brand_font=None, brand_primary_color=None):
+        captured_kwargs["brand_font"] = brand_font
+        captured_kwargs["brand_primary_color"] = brand_primary_color
+        return (
+            "[Script Info]\n[V4+ Styles]\n"
+            "Style: Default,Arial,48,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,"
+            "1,0,0,0,100,100,0,0,1,3,1,2,10,10,30,1\n"
+            "[Events]\nFormat: Layer, Start, End, Style, Name, "
+            "MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+
+    with (
+        patch("jobs.render_job._load_words_for_clip", return_value=words),
+        patch("jobs.render_job._resolve_music_track", return_value=None),
+        patch("adapters.ffmpeg.run_ffmpeg_cmd"),
+        patch("os.path.join", side_effect=lambda *a: "/".join(a)),
+        patch("core.captions.to_ass_karaoke", fake_to_ass_karaoke),
+    ):
+        from jobs.render_job import _apply_track_a_engines
+        _apply_track_a_engines(
+            "/tmp/clip.mp4", spec, "/tmp", 1, 0, brand_kit=brand_kit,
+        )
+
+    assert captured_kwargs.get("brand_font") == "Montserrat"
+    assert captured_kwargs.get("brand_primary_color") == "#1a3c5e"
+
+
+def test_no_brand_kit_passes_none_to_captions():
+    spec = ClipRenderSpec(captions=CaptionsSpec(style="tiktok_pop"))
+    words = [{"word": "roof", "start": 0.0, "end": 0.4}]
+
+    captured_kwargs = {}
+
+    def fake_to_ass_karaoke(events, style="default", *, emoji_map=None,
+                             brand_font=None, brand_primary_color=None):
+        captured_kwargs["brand_font"] = brand_font
+        captured_kwargs["brand_primary_color"] = brand_primary_color
+        return (
+            "[Script Info]\n[V4+ Styles]\n"
+            "Style: Default,Arial,48,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,"
+            "1,0,0,0,100,100,0,0,1,3,1,2,10,10,30,1\n"
+            "[Events]\nFormat: Layer, Start, End, Style, Name, "
+            "MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+
+    with (
+        patch("jobs.render_job._load_words_for_clip", return_value=words),
+        patch("jobs.render_job._resolve_music_track", return_value=None),
+        patch("adapters.ffmpeg.run_ffmpeg_cmd"),
+        patch("os.path.join", side_effect=lambda *a: "/".join(a)),
+        patch("core.captions.to_ass_karaoke", fake_to_ass_karaoke),
+    ):
+        from jobs.render_job import _apply_track_a_engines
+        _apply_track_a_engines("/tmp/clip.mp4", spec, "/tmp", 1, 0)
+
+    assert captured_kwargs.get("brand_font") is None
+    assert captured_kwargs.get("brand_primary_color") is None
