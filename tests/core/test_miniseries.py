@@ -241,6 +241,29 @@ def test_clean_title_collapses_whitespace_and_leading_junk():
     assert clean_title("—  Gutters   Guide  ") == "Gutters Guide"
 
 
+def test_clean_title_keeps_numeric_reference():
+    # "#2" is a numeric reference, not a hashtag — it must survive.
+    assert clean_title("Shingle Red Flag #2 Most People Ignore") == \
+        "Shingle Red Flag #2 Most People Ignore"
+
+
+def test_clean_title_strips_markdown_asterisks():
+    assert clean_title("*Shingle Red Flag* Explained") == "Shingle Red Flag Explained"
+
+
+def test_clean_title_strips_zwj_emoji_sequence():
+    # 🤦‍♂️ = facepalm + ZWJ + male sign + VS16; no ‍ remnant may survive.
+    out = clean_title("When a Crazy Person \U0001F926‍♂️ Does This")
+    assert out == "When a Crazy Person Does This"
+    assert "‍" not in out
+
+
+def test_clean_title_hashtag_only_still_empty():
+    # The 40 real hashtag-only channel titles must still collapse to '' (→ fallback).
+    assert clean_title("#perkinsroofing #roofinginnovation") == ""
+    assert clean_title("#miami #miamistorm") == ""
+
+
 # ---------------------------------------------------------------------------
 # propose_clips — content-driven, REAL seconds (the fixed logic)
 # ---------------------------------------------------------------------------

@@ -11,11 +11,17 @@ _EMOJI_RE = re.compile(
     "\U0000FE00-\U0000FE0F"    # variation selectors
     "\U00002190-\U000021FF"    # arrows
     "\U00002B00-\U00002BFF"    # misc symbols and arrows
+    "\U0000200D"               # zero-width joiner (emoji ZWJ sequences, e.g. 🤦‍♂️)
     "]+",
     flags=re.UNICODE,
 )
-# Hashtag tokens anywhere (e.g. "#roofing") and leading junk symbols.
-_HASHTAG_RE = re.compile(r"(?:^|\s)#\w+")
+# Hashtag tokens must start with a LETTER (e.g. "#roofing"). A "#" followed by
+# digits is a numeric reference, not a hashtag ("Shingle Red Flag #2") — those
+# must survive, so the class is [A-Za-z], not \w.
+_HASHTAG_RE = re.compile(r"(?:^|\s)#[A-Za-z]\w*")
+# Markdown emphasis asterisks are never meaningful in a display title (source
+# titles sometimes arrive as "*Big Claim*"); strip them wherever they appear.
+_MD_ASTERISK_RE = re.compile(r"\*+")
 _LEADING_JUNK_RE = re.compile(r"^[\s#@*•\-–—|]+")
 _TRAILING_JUNK_RE = re.compile(r"[\s#@*•\-–—|]+$")
 
@@ -24,12 +30,14 @@ def clean_title(text: str | None) -> str:
     """Strip emojis and hashtags from a raw source-video title; collapse whitespace.
 
     Returns a clean, human-readable name suitable for MiniSeries.title and part
-    titles. Empty/None input yields ''.
+    titles. Empty/None input yields ''. Numeric references like "#2" are kept;
+    only letter-initial hashtags (#roofing) and markdown asterisks are removed.
     """
     if not text:
         return ""
     cleaned = _EMOJI_RE.sub("", text)
     cleaned = _HASHTAG_RE.sub(" ", cleaned)
+    cleaned = _MD_ASTERISK_RE.sub("", cleaned)
     cleaned = _LEADING_JUNK_RE.sub("", cleaned)
     cleaned = _TRAILING_JUNK_RE.sub("", cleaned)
     return " ".join(cleaned.split())

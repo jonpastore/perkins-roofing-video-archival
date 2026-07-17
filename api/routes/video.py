@@ -46,6 +46,7 @@ _EMOJI_RE = re.compile(
     "[\U00002600-\U000027BF"   # misc symbols
     "\U0001F300-\U0001FAFF"    # emoji / pictographs
     "\U0000FE00-\U0000FE0F"    # variation selectors
+    "\U0000200D"               # zero-width joiner (emoji ZWJ sequences)
     "\U00020000-\U0002A6DF"    # CJK extension
     "\U0002A700-\U0002CEAF"    # CJK extension
     "\U0002CEB0-\U0002EBEF"    # CJK extension
