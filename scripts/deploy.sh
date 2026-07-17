@@ -46,6 +46,11 @@ SECRETS="${SECRETS},YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:late
 # Knowify OAuth token blob (Wave 8). Bootstrap-populated by Jon in Wave-9 step 4;
 # a placeholder version exists so :latest resolves at deploy time.
 SECRETS="${SECRETS},KNOWIFY_TOKENS_SECRET=knowify-tokens:latest"
+# Clip Studio b-roll (adapters/pexels.py). Same pattern as YOUTUBE_API_KEY/etc above:
+# the secret container has no version until Jon adds the real key out-of-band
+# (gcloud secrets versions add pexels-api-key --data-file=-) — deploy will fail to
+# resolve ":latest" until that's done, same as any other pre-bootstrap secret here.
+SECRETS="${SECRETS},PEXELS_API_KEY=pexels-api-key:latest"
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .
