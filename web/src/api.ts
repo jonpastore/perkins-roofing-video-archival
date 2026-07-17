@@ -1138,3 +1138,35 @@ export async function getGcpSpend(params: { days?: number }): Promise<GcpSpendRe
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
+
+// ── Production readiness gates ──────────────────────────────────────────────
+
+export type GateState = "ok" | "warn" | "blocker" | "unknown";
+
+export interface ProductionGate {
+  id: string;
+  label: string;
+  category: string;
+  state: GateState;
+  detail: string;
+  remediation: string;
+}
+
+export interface ProductionReadinessSummary {
+  ok: number;
+  warn: number;
+  blocker: number;
+  total: number;
+  ready: boolean;
+}
+
+export interface ProductionReadiness {
+  gates: ProductionGate[];
+  summary: ProductionReadinessSummary;
+}
+
+export async function getProductionReadiness(): Promise<ProductionReadiness> {
+  const r = await apiFetch("/config/production-readiness");
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}

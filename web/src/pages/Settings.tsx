@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, getProductionReadiness, type ProductionReadiness, type GateState } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +61,13 @@ function fmtDate(iso: string | null): string {
 
 const MODEL_KEYS = new Set(["EMBED_MODEL", "LLM_MODEL"]);
 const OTHER_SENTINEL = "__other__";
+
+const READINESS_TONE: Record<GateState, "green" | "amber" | "red" | "gray"> = {
+  ok: "green",
+  warn: "amber",
+  blocker: "red",
+  unknown: "gray",
+};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -365,6 +372,10 @@ export function Settings() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthErr, setHealthErr] = useState<string | null>(null);
 
+  const [readiness, setReadiness] = useState<ProductionReadiness | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(true);
+  const [readinessErr, setReadinessErr] = useState<string | null>(null);
+
   function loadConfig() {
     setLoadingConfig(true);
     setConfigErr(null);
@@ -395,9 +406,19 @@ export function Settings() {
       .finally(() => setHealthLoading(false));
   }
 
+  function loadReadiness() {
+    setReadinessLoading(true);
+    setReadinessErr(null);
+    getProductionReadiness()
+      .then(setReadiness)
+      .catch((e: unknown) => setReadinessErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setReadinessLoading(false));
+  }
+
   useEffect(() => {
     loadConfig();
     loadSecrets();
+    loadReadiness();
   }, []);
 
   async function saveSetting(key: string, value: string) {
@@ -598,7 +619,54 @@ export function Settings() {
       </Card>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Section 5: Admin / role management note                             */}
+      {/* Section 5: Production readiness — control + explanation surface for  */}
+      {/* the gate chips shown at the top of the main dashboard. Connectivity  */}
+      {/* gate reuses the Connectivity Tests section above; the rest reflect   */}
+      {/* env config, DB, Secret Manager, and DNS state gathered server-side.  */}
+      {/* ------------------------------------------------------------------ */}
+      <Card style={{ marginBottom: 24, borderTop: `4px solid ${BRAND.navyText}` }}>
+        <SectionTitle>Production Readiness</SectionTitle>
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: BRAND.sub }}>
+          Go-live gates shown as chips at the top of the Dashboard. This is the
+          explanation + remediation for each one — connectivity itself is tested
+          in the "Connectivity Tests" section above.
+        </p>
+        <Button
+          onClick={loadReadiness}
+          disabled={readinessLoading}
+          style={{ padding: "9px 20px", fontSize: 14, marginBottom: 16 }}
+        >
+          {readinessLoading ? "Re-testing…" : "Re-test"}
+        </Button>
+        {readinessErr && <ErrorMsg>Check failed: {readinessErr}</ErrorMsg>}
+        {readiness && (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ borderBottom: `2px solid ${BRAND.border}`, textAlign: "left" }}>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "18%" }}>Gate</th>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "10%" }}>State</th>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600, width: "36%" }}>Detail</th>
+                <th style={{ padding: "6px 12px", color: BRAND.sub, fontWeight: 600 }}>Remediation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {readiness.gates.map((g) => (
+                <tr key={g.id} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                  <td style={{ padding: "10px 12px", fontWeight: 500, color: BRAND.ink }}>{g.label}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <Badge tone={READINESS_TONE[g.state]}>{g.state}</Badge>
+                  </td>
+                  <td style={{ padding: "10px 12px", fontSize: 13, color: BRAND.sub }}>{g.detail}</td>
+                  <td style={{ padding: "10px 12px", fontSize: 13, color: BRAND.sub }}>{g.remediation || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Section 6: Admin / role management note                             */}
       {/* ------------------------------------------------------------------ */}
       <Card style={{ borderTop: `4px solid ${BRAND.red}` }}>
         <SectionTitle>Admin Access</SectionTitle>
