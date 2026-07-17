@@ -10,8 +10,8 @@ import inspect
 import json
 import logging
 import os
-import uuid
 import urllib.request
+import uuid
 from typing import Any
 
 from core.email_gate import decide
