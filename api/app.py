@@ -16,6 +16,7 @@ from api.routes.audit import router as audit_router
 from api.routes.clips import router as clips_router
 from api.routes.comments import router as comments_router
 from api.routes.config import router as config_router
+from api.routes.connections import router as connections_router
 from api.routes.contract_faq import router as contract_faq_router
 from api.routes.customers import router as customers_router
 from api.routes.dashboard import router as dashboard_router
@@ -35,7 +36,6 @@ from api.routes.quotes import router as quotes_router
 from api.routes.scheduling import router as scheduling_router
 from api.routes.squares import router as squares_router
 from api.routes.suggestions import router as suggestions_router
-from api.routes.connections import router as connections_router
 from api.routes.topics import router as topics_router
 from api.routes.users import me_router
 from api.routes.users import router as users_router
