@@ -99,7 +99,28 @@ unwired code across the wave, plus a manual TODO/FIXME/console.log/as-any sweep.
 is pre-existing (bd0c1d9) and a graceful config→legacy fallback. Audit-agent findings + any
 fixes are appended below.
 
-<!-- DEEP-VALIDATION-FINDINGS -->
+**Two independent deep-audit agents (backend `critic` + frontend `code-reviewer`) + my manual
+sweep — result: NO demo-breakers.** Both confirmed zero stubs/TODOs/unwired handlers, payloads
+match the pydantic models field-for-field, migration 0042 correct. Real edge-cases found and
+FIXED (commit 56e4bc5):
+- **BE — gutter accessories silent drop**: elbows/leaf_guard/2-story with `gutter_lf=0` priced
+  $0 silently → now 422 (test added).
+- **BE — standalone tiers ignored discount**: metal CARIBBEAN / flat PROLONG / COASTAL_CARIBBEAN
+  kept rack rate on a discounted quote → now subtract the resolved discount (tests added).
+- **BE — config_id tenant isolation**: added explicit tenant check (defense-in-depth vs RLS-only).
+- **FE — EstimatingConfig branch switch** discarded unsaved config edits → now confirms first.
+- **FE — Quoting result panel** dropped bottom-left under inputs (CSS auto-placement, 3 grid
+  children) once a measurement was selected → now spans full width.
+- **FE — profit 'Min %' pill** hardcoded 13% → reads `quoteResult.floors`; removed dead `region`
+  field from the quote body.
+
+FIXED-DEPLOYED: API + SPA redeployed with 56e4bc5.
+
+Deliberately NOT fixed (config-value gaps needing Tim, or out-of-scope — see commit body):
+- existing_roof=shingle/flat → $0 demo (shingle=baseline is defensible; flat needs Tim's demo
+  rate). selected_tier is audit-only (unused server-side, harmless). Quote-route unknown-branch
+  stays 503 not 422 (cosmetic LOW; tests use phantom branches). New tenants get no branches
+  seeded (tenant-2 onboarding, already-gated hardening). No commercial-job pricing path yet.
 
 ## Operate / verify
 - Prod DB proxy + DB_URL: see prompt.txt. Deploy: `bash scripts/deploy.sh` (API) + firebase
