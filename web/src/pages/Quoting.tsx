@@ -87,6 +87,7 @@ interface QuoteResult {
   region: string;
   branch?: string;
   pricing_config_hash?: string;
+  floors?: { min_profit_pct: number; min_profit_plus_oh_pct: number };
   roof_type: string;
   num_squares: number;
   per_square_total: number;
@@ -1072,11 +1073,8 @@ export function Quoting() {
       // Required by core/proposal.py validate_snapshot (fires on SEND, not draft-create).
       pricing_config_hash: quoteResult.pricing_config_hash ?? "",
       estimator_version: "1.0.0",
-      // ponytail: floor pcts aren't in the estimator response yet (only the ok/warning
-      // booleans are); hardcoded to match the live pricing config's profit_floor_pct/
-      // profit_plus_oh_floor_pct (infra/fixtures/pricing_config_exhibit_b.json). Add a
-      // /estimator/quote field for these if a branch ever configures different floors.
-      floors: { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
+      // Fallback only for responses cached before the backend started returning floors.
+      floors: quoteResult.floors ?? { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
     };
 
     try {
