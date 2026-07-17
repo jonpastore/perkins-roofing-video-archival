@@ -171,6 +171,10 @@ const GUTTER_STYLES: Array<{ value: string; label: string }> = [
   { value: "halfround_copper", label: "Copper Half-Round" },
 ];
 
+// Only these styles have a two_story_per_lf rate in the pricing config; the rest 422
+// on gutter_two_story:true. Hardcoded client-side since config isn't fetched per-style.
+const TWO_STORY_GUTTER_STYLES = new Set(["k6_alum", "k7_alum"]);
+
 let estimateDiscountKey = 0;
 function newEstimateDiscount(): EstimateDiscountRow {
   estimateDiscountKey += 1;
@@ -207,27 +211,32 @@ function EstimateCheckbox({
   checked,
   onChange,
   label,
+  disabled,
+  title,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   label: string;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
-    <label style={{
+    <label title={title} style={{
       display: "flex",
       alignItems: "center",
       gap: 8,
       fontSize: 13,
       fontWeight: 500,
-      color: BRAND.ink,
+      color: disabled ? BRAND.sub : BRAND.ink,
       minHeight: 38,
       lineHeight: 1.3,
-      cursor: "pointer",
+      cursor: disabled ? "not-allowed" : "pointer",
       whiteSpace: "normal",
     }}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
         style={{ width: 15, height: 15, flexShrink: 0, accentColor: BRAND.red }}
       />
@@ -613,6 +622,7 @@ export function Quoting() {
   const [recommendedTier, setRecommendedTier] = useState<"good" | "better" | "best">("good");
   const [estimateDiscounts, setEstimateDiscounts] = useState<EstimateDiscountRow[]>([]);
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
+  const [inputsDirty, setInputsDirty] = useState(false);
   const [lastQuoteInput, setLastQuoteInput] = useState<Record<string, unknown> | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -653,12 +663,15 @@ export function Quoting() {
 
   function tierTotalsForQuote(q: QuoteResult): { good: number; better: number; best: number } {
     // good/better/best snapshot compat, derived from the real package_options menu:
-    // good=PROTECTOR (engine total), better=PREFERRED, best=first PREMIUM* tier (falls
-    // back to PREFERRED's total when the system has no PREMIUM tier, e.g. none today).
+    // good=PROTECTOR (engine total), better=PREFERRED, best=highest-total PREMIUM* tier
+    // (falls back to PREFERRED's total when the system has no PREMIUM tier).
     const options = q.package_options ?? [];
     const protector = options.find((o) => o.key === "PROTECTOR")?.total ?? q.project_total;
     const preferred = options.find((o) => o.key === "PREFERRED")?.total ?? protector;
-    const premium = options.find((o) => o.key.startsWith("PREMIUM"))?.total ?? preferred;
+    const premiumOptions = options.filter((o) => o.key.startsWith("PREMIUM"));
+    const premium = premiumOptions.length
+      ? Math.max(...premiumOptions.map((o) => o.total))
+      : preferred;
     return { good: protector, better: preferred, best: premium };
   }
 
@@ -998,6 +1011,7 @@ export function Quoting() {
       }
       const data: QuoteResult = await r.json();
       setQuoteResult(data);
+      setInputsDirty(false);
       loadEstimatesForMeasurement(selectedMeasurement!.id);
     } catch (e: unknown) {
       setQuoteError(e instanceof Error ? e.message : String(e));
@@ -1010,6 +1024,11 @@ export function Quoting() {
     setActiveProfitPreset(null);
     return runQuote();
   }
+
+  // Any change to an estimate input (reuses buildQuoteBody as the single source of
+  // truth for "what counts as an input") marks the last quote stale; runQuote clears it.
+  const quoteBodyKey = JSON.stringify(buildQuoteBody());
+  useEffect(() => { setInputsDirty(true); }, [quoteBodyKey]);
 
   async function applyTargetProfit(pct: number) {
     if (!quoteResult?.margin || !Number.isFinite(pct) || pct <= 0) return;
@@ -1522,7 +1541,15 @@ export function Quoting() {
               <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 90px 110px", gap: 10, alignItems: "end", marginTop: 6 }}>
                 <div>
                   <FieldLabel>Style</FieldLabel>
-                  <select value={quoteGutterStyle} onChange={(e) => setQuoteGutterStyle(e.target.value)} style={selectStyle}>
+                  <select
+                    value={quoteGutterStyle}
+                    onChange={(e) => {
+                      const style = e.target.value;
+                      setQuoteGutterStyle(style);
+                      if (!TWO_STORY_GUTTER_STYLES.has(style)) setQuoteGutterTwoStory(false);
+                    }}
+                    style={selectStyle}
+                  >
                     {GUTTER_STYLES.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
                   </select>
                 </div>
@@ -1547,6 +1574,8 @@ export function Quoting() {
                   checked={quoteGutterTwoStory}
                   onChange={setQuoteGutterTwoStory}
                   label="2-story (uplift applies)"
+                  disabled={!TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle)}
+                  title={TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle) ? undefined : "no 2-story rate configured for this style"}
                 />
               </div>
               <div style={{ marginTop: 6, fontSize: 11, color: BRAND.sub }}>Downspouts included in the per-LF rate.</div>
@@ -1673,6 +1702,11 @@ export function Quoting() {
                       {quoteResult.margin_ok ? "Margin OK" : "Margin LOW"}
                     </span>
                   </div>
+                  {inputsDirty && (
+                    <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12, fontWeight: 700 }}>
+                      Inputs changed — recalculate
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {(quoteResult.package_options ?? []).length === 0 && (
                       <div style={{ fontSize: 12, color: BRAND.sub }}>No package menu available for this roof type.</div>
@@ -1767,7 +1801,7 @@ export function Quoting() {
                       Proposal #{proposalCreated.id} created. Switch to the <strong>Proposals</strong> tab to send it.
                     </div>
                   ) : (
-                    <Button onClick={handleCreateProposal} disabled={creatingProposal || !selectedPropertyId} style={{ fontSize: 13, width: "100%" }}>
+                    <Button onClick={handleCreateProposal} disabled={creatingProposal || !selectedPropertyId || inputsDirty} style={{ fontSize: 13, width: "100%" }}>
                       {creatingProposal ? "Creating…" : "Create proposal draft"}
                     </Button>
                   )}
