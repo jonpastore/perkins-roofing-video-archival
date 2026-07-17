@@ -147,3 +147,23 @@ See [reviews/2026-07-07-comprehensive-review.md](reviews/2026-07-07-comprehensiv
   ingest_worker, consolidate_faqs).
 - Reproducible builds: generate a hashed `requirements.lock` (deps are now bumped to latest floors
   but still `>=` ranges).
+
+## B8 — Branch management (admin CRUD) + branch-scoped dashboards
+**Idea (2026-07-17, Jon):** Admin Config shows pricing for 3 hard-coded branches
+(miami/jupiter/naples); there is no admin interface for branches. Build one: branch CRUD
+controls the branch selector options everywhere (estimator, configs, dashboards). Dashboards
+must filter by branch or show all. Tim's sheets confirm branches are first-class with their
+own crew/OH structures (Miami 9/12/15-man vs Jupiter 4/7/10-man OH bases; Marco/Josh tabs).
+
+## B9 — QuickBooks integration, per-branch (4 companies)
+**Idea (2026-07-17, Jon):** Tim has 4 companies, 4 Knowify subscriptions, and 4 QuickBooks
+subscriptions. Handle accounting integrations AT THE BRANCH LEVEL: each branch maps to a
+(company, Knowify sub, QuickBooks sub) triple. Plan the QuickBooks integration with that
+mapping from day one; the existing Knowify mirror/token machinery is single-subscription
+today and will need per-branch credential scoping.
+
+## B10 — Franchise/multi-tenant admin (royalty + marketing fee)
+**Idea (2026-07-17, Jon):** Other tenants may be franchisees who owe Tim a royalty and a
+marketing fee. The admin interface needs an owner-level view across all franchises/tenants
+(revenue rollups → royalty/marketing-fee computation, per-tenant drill-down). Plan the admin
+interface for this; pairs with B8 (branch level) and B9 (per-company accounting).
