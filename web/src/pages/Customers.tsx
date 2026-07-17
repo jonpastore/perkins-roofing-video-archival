@@ -11,6 +11,7 @@ import {
   addCustomerProperty,
   updateProperty,
   deleteProperty,
+  listBranches,
 } from "../api";
 import type {
   QuotingCustomer,
@@ -20,6 +21,7 @@ import type {
   CustomerInput,
   ContactInput,
   PropertyInput,
+  BranchRow,
 } from "../api";
 import { NavContext } from "../App";
 import { DataTable } from "../ui/DataTable";
@@ -47,6 +49,24 @@ type PropertyDetailRow = QuotingProperty & {
   latest_measurement_total_sq?: number | null;
 };
 
+function BranchSelect({
+  value,
+  onChange,
+  branches,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  branches: BranchRow[];
+}) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inputStyle, width: "100%" }}>
+      {branches.map((b) => (
+        <option key={b.key} value={b.key}>{b.name}</option>
+      ))}
+    </select>
+  );
+}
+
 function ModalShell({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "32px 16px", overflowY: "auto" }}>
@@ -66,10 +86,11 @@ function ModalShell({ children, onClose, title }: { children: React.ReactNode; o
 interface NewCustomerFormProps {
   onSaved: (c: QuotingCustomer) => void;
   onCancel: () => void;
+  branches: BranchRow[];
 }
 
-function NewCustomerForm({ onSaved, onCancel }: NewCustomerFormProps) {
-  const [form, setForm] = useState<CustomerInput>({ display_name: "", company_name: "", email: "", phone: "" });
+function NewCustomerForm({ onSaved, onCancel, branches }: NewCustomerFormProps) {
+  const [form, setForm] = useState<CustomerInput>({ display_name: "", company_name: "", email: "", phone: "", branch: "miami" });
   const [property, setProperty] = useState<PropertyInput>({ street: "", city: "", state: "FL", zip: "", county: "", code_zone: "FBC" });
   const [measurementSq, setMeasurementSq] = useState("");
   const [measurementNote, setMeasurementNote] = useState("");
@@ -132,6 +153,10 @@ function NewCustomerForm({ onSaved, onCancel }: NewCustomerFormProps) {
             <SectionLabel>Phone</SectionLabel>
             <input type="tel" style={{ ...inputStyle, width: "100%" }} value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} placeholder="(555) 555-5555" />
           </div>
+          <div>
+            <SectionLabel>Branch</SectionLabel>
+            <BranchSelect value={form.branch ?? "miami"} onChange={(v) => set("branch", v)} branches={branches} />
+          </div>
         </div>
         <div style={{ borderTop: `1px solid ${BRAND.border}`, paddingTop: 14, marginTop: 14 }}>
           <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 13, marginBottom: 8 }}>Initial property and measurement (optional)</div>
@@ -164,14 +189,16 @@ interface EditCustomerFormProps {
   customer: QuotingCustomer;
   onSaved: (c: QuotingCustomer) => void;
   onCancel: () => void;
+  branches: BranchRow[];
 }
 
-function EditCustomerForm({ customer, onSaved, onCancel }: EditCustomerFormProps) {
+function EditCustomerForm({ customer, onSaved, onCancel, branches }: EditCustomerFormProps) {
   const [form, setForm] = useState<CustomerInput>({
     display_name: customer.display_name,
     company_name: customer.company_name,
     email: customer.email,
     phone: customer.phone,
+    branch: customer.branch,
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -212,6 +239,10 @@ function EditCustomerForm({ customer, onSaved, onCancel }: EditCustomerFormProps
         <div>
           <SectionLabel>Phone</SectionLabel>
           <input type="tel" style={{ ...inputStyle, width: "100%" }} value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} />
+        </div>
+        <div>
+          <SectionLabel>Branch</SectionLabel>
+          <BranchSelect value={form.branch ?? "miami"} onChange={(v) => set("branch", v)} branches={branches} />
         </div>
       </div>
       {err && <ErrorMsg>{err}</ErrorMsg>}
@@ -427,11 +458,12 @@ interface DetailPanelProps {
   customerId: number;
   onClose: () => void;
   onCustomerUpdated: (c: QuotingCustomer) => void;
+  branches: BranchRow[];
 }
 
 type DetailSubPanel = "edit" | "addContact" | "addProperty" | null;
 
-function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProps) {
+function DetailPanel({ customerId, onClose, onCustomerUpdated, branches }: DetailPanelProps) {
   const [detail, setDetail] = useState<QuotingCustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -525,6 +557,10 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
               <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Phone</div>
               <div style={{ color: BRAND.ink }}>{detail.phone ?? "—"}</div>
             </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>Branch</div>
+              <div style={{ color: BRAND.ink }}>{branches.find((b) => b.key === detail.branch)?.name ?? detail.branch}</div>
+            </div>
           </div>
 
           {subPanel === null && (
@@ -561,6 +597,7 @@ function DetailPanel({ customerId, onClose, onCustomerUpdated }: DetailPanelProp
                 setSubPanel(null);
               }}
               onCancel={() => setSubPanel(null)}
+              branches={branches}
             />
           )}
           {subPanel === "addContact" && (
@@ -725,8 +762,11 @@ export function Customers() {
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [branches, setBranches] = useState<BranchRow[]>([]);
 
   const seqRef = useRef(0);
+
+  useEffect(() => { listBranches().then(setBranches).catch(() => undefined); }, []);
 
   const doFetch = useCallback((q: QueryState, isActive: true | undefined) => {
     const seq = ++seqRef.current;
@@ -820,6 +860,12 @@ export function Customers() {
       render: (r: CustomerListRow) => r.phone ?? "—",
     },
     {
+      key: "branch" as const,
+      header: "Branch",
+      sortable: false,
+      render: (r: CustomerListRow) => branches.find((b) => b.key === r.branch)?.name ?? r.branch ?? "—",
+    },
+    {
       key: "property_count" as const,
       header: "Property / Measure",
       sortable: false,
@@ -894,6 +940,7 @@ export function Customers() {
           <NewCustomerForm
             onSaved={handleNewSaved}
             onCancel={() => setShowNewForm(false)}
+            branches={branches}
           />
         </ModalShell>
       )}
@@ -904,6 +951,7 @@ export function Customers() {
             customerId={selectedId}
             onClose={() => setSelectedId(null)}
             onCustomerUpdated={handleCustomerUpdated}
+            branches={branches}
           />
         </ModalShell>
       )}

@@ -10,6 +10,7 @@ import {
   inputStyle,
 } from "../ui";
 import {
+  apiFetch,
   getMarketingSettings,
   putMarketingSettings,
   getBrandUploadUrl,
@@ -258,6 +259,58 @@ function SocialAccountRow({
   );
 }
 
+// YouTube row — unlike the other platforms this one is click-to-authenticate:
+// reflects whether the token can ACTUALLY post (via /comments/reply-config) and
+// offers a Connect/Reconnect button using the same pattern as Comments.tsx.
+interface ReplyConfig {
+  oauth_configured: boolean;
+  can_post: boolean;
+  channel_title: string;
+  reason: string;
+  can_reconnect: boolean;
+  connect_path: string | null;
+}
+
+function YouTubeConnectRow({ replyCfg, onConnect }: { replyCfg: ReplyConfig | null; onConnect: () => void }) {
+  const connected = replyCfg?.can_post ?? false;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 14px",
+        borderRadius: 8,
+        border: `1px solid ${BRAND.border}`,
+        marginBottom: 6,
+        background: "#fff",
+      }}
+    >
+      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: BRAND.navyText }}>YouTube</span>
+
+      {!replyCfg ? (
+        <Badge tone="gray">Loading…</Badge>
+      ) : connected ? (
+        <>
+          <Badge tone="green">Connected</Badge>
+          <span style={{ fontSize: 11, color: BRAND.sub, fontFamily: "monospace" }}>
+            {replyCfg.channel_title}
+          </span>
+        </>
+      ) : (
+        <Badge tone="amber">Reconnect needed</Badge>
+      )}
+
+      {replyCfg?.can_reconnect && (
+        <Button variant="ghost" style={{ fontSize: 12, padding: "4px 10px" }} onClick={onConnect}>
+          {connected ? "Switch account" : "Connect YouTube"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 // Safety-gate denylist editor
 function DenylistEditor({
   items,
@@ -411,6 +464,25 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [replyCfg, setReplyCfg] = useState<ReplyConfig | null>(null);
+
+  useEffect(() => {
+    apiFetch("/comments/reply-config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setReplyCfg)
+      .catch(() => undefined);
+  }, []);
+
+  async function handleConnectYouTube() {
+    if (!replyCfg?.connect_path) return;
+    try {
+      const r = await apiFetch(replyCfg.connect_path);
+      const d = await r.json();
+      if (d.auth_url) window.location.href = d.auth_url as string;
+    } catch {
+      // Button just won't navigate — no separate error surface needed here.
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -840,13 +912,17 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
           now; Instagram and TikTok connect is pending app-review approval (available in F6).
         </HelpText>
         <div style={{ marginTop: 14 }}>
-          {SOCIAL_PLATFORMS.map((p) => (
-            <SocialAccountRow
-              key={p}
-              platform={p}
-              status={socialAccounts[p]}
-            />
-          ))}
+          {SOCIAL_PLATFORMS.map((p) =>
+            p === "youtube" ? (
+              <YouTubeConnectRow key={p} replyCfg={replyCfg} onConnect={handleConnectYouTube} />
+            ) : (
+              <SocialAccountRow
+                key={p}
+                platform={p}
+                status={socialAccounts[p]}
+              />
+            )
+          )}
         </div>
       </Card>
 

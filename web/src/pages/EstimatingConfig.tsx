@@ -15,15 +15,14 @@ import {
   createPricingConfig,
   activatePricingConfig,
   diffPricingConfigs,
+  listBranches,
   type PricingConfigVersion,
   type PricingConfigDetail,
   type PricingConfigDiff,
+  type BranchRow,
 } from "../api";
 
 // ── Types & constants ─────────────────────────────────────────────────────────
-
-type Branch = "miami" | "jupiter" | "naples";
-const BRANCHES: Branch[] = ["miami", "jupiter", "naples"];
 
 type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
 
@@ -1150,7 +1149,8 @@ interface EstimatingConfigProps {
 
 export function EstimatingConfig({ role }: EstimatingConfigProps) {
   const manage = canManage(role);
-  const [branch, setBranch] = useState<Branch>("miami");
+  const [branches, setBranches] = useState<BranchRow[]>([]);
+  const [branch, setBranch] = useState<string>("miami");
 
   // Version list
   const [versions, setVersions] = useState<PricingConfigVersion[]>([]);
@@ -1186,7 +1186,7 @@ export function EstimatingConfig({ role }: EstimatingConfigProps) {
   const [diffError, setDiffError] = useState<string | null>(null);
 
   const loadVersions = useCallback(
-    (b: Branch) => {
+    (b: string) => {
       setListLoading(true);
       setListError(null);
       setVersions([]);
@@ -1210,6 +1210,18 @@ export function EstimatingConfig({ role }: EstimatingConfigProps) {
     },
     []
   );
+
+  useEffect(() => {
+    listBranches()
+      .then((bs) => {
+        setBranches(bs);
+        if (bs.length > 0 && !bs.some((b) => b.key === branch)) {
+          setBranch(bs.find((b) => b.key === "miami")?.key ?? bs[0].key);
+        }
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     loadVersions(branch);
@@ -1236,7 +1248,7 @@ export function EstimatingConfig({ role }: EstimatingConfigProps) {
       .finally(() => setDetailLoading(false));
   }, [selectedId]);
 
-  function handleBranchChange(b: Branch) {
+  function handleBranchChange(b: string) {
     setBranch(b);
   }
 
@@ -1347,28 +1359,27 @@ export function EstimatingConfig({ role }: EstimatingConfigProps) {
             border: `1px solid ${BRAND.border}`,
           }}
         >
-          {BRANCHES.map((b, i) => {
-            const active = branch === b;
+          {branches.map((b, i) => {
+            const active = branch === b.key;
             return (
               <button
-                key={b}
-                onClick={() => handleBranchChange(b)}
+                key={b.key}
+                onClick={() => handleBranchChange(b.key)}
                 style={{
                   padding: "7px 18px",
                   fontSize: 13,
                   fontWeight: 600,
                   border: "none",
                   borderRight:
-                    i < BRANCHES.length - 1 ? `1px solid ${BRAND.border}` : "none",
+                    i < branches.length - 1 ? `1px solid ${BRAND.border}` : "none",
                   cursor: "pointer",
                   background: active ? BRAND.navy : "#fff",
                   color: active ? "#fff" : BRAND.sub,
                   transition: "background 0.1s, color 0.1s",
-                  textTransform: "capitalize",
                   fontFamily: FONT,
                 }}
               >
-                {b}
+                {b.name}
               </button>
             );
           })}

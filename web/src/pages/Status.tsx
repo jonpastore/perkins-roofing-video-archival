@@ -12,7 +12,7 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
-import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, getProductionReadiness, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse, type ProductionReadiness, type GateState } from "../api";
+import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, getProductionReadiness, listBranches, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse, type ProductionReadiness, type GateState, type BranchRow } from "../api";
 import { NavContext } from "../App";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg, StatCard, inputStyle } from "../ui";
 import { errText } from "../lib/errors";
@@ -212,13 +212,18 @@ function BillingSection() {
   const [agingLoading, setAgingLoading] = useState(false);
   const [agingError, setAgingError] = useState<string | null>(null);
   const agingRequestId = useRef(0);
+  const [branches, setBranches] = useState<BranchRow[]>([]);
+  // undefined = "All branches"
+  const [branch, setBranch] = useState<string | undefined>(undefined);
 
-  function fetch(p: Preset, cf: string, ct: string) {
+  useEffect(() => { listBranches().then(setBranches).catch(() => undefined); }, []);
+
+  function fetch(p: Preset, cf: string, ct: string, br: string | undefined) {
     setLoading(true);
     setError(null);
     const { from, to, bucket } = rangeForPreset(p, cf, ct);
     setLastRange({ from, to, bucket });
-    getDashboardBilling({ from, to, bucket })
+    getDashboardBilling({ from, to, bucket, branch: br })
       .then(setBilling)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -240,7 +245,7 @@ function BillingSection() {
     setAgingLoading(true);
     setAgingError(null);
     setAgingDetail(null);
-    getAgingDetail(bucket, asOf)
+    getAgingDetail(bucket, asOf, branch)
       .then((detail) => {
         if (agingRequestId.current === requestId) setAgingDetail(detail);
       })
@@ -252,15 +257,21 @@ function BillingSection() {
       });
   }
 
-  useEffect(() => { fetch(preset, customFrom, customTo); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetch(preset, customFrom, customTo, branch); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handlePreset(p: Preset) {
     setPreset(p);
-    if (p !== "custom") fetch(p, customFrom, customTo);
+    if (p !== "custom") fetch(p, customFrom, customTo, branch);
   }
 
   function handleCustomApply() {
-    fetch("custom", customFrom, customTo);
+    fetch("custom", customFrom, customTo, branch);
+  }
+
+  function handleBranchChange(v: string) {
+    const next = v === "" ? undefined : v;
+    setBranch(next);
+    fetch(preset, customFrom, customTo, next);
   }
 
   // Build chart data: merge payments + invoices by period
@@ -328,6 +339,16 @@ function BillingSection() {
               {label}
             </button>
           ))}
+          <select
+            value={branch ?? ""}
+            onChange={(e) => handleBranchChange(e.target.value)}
+            style={{ ...inputStyle, padding: "5px 8px", fontSize: 13, marginLeft: 8 }}
+          >
+            <option value="">All branches</option>
+            {branches.map((b) => (
+              <option key={b.key} value={b.key}>{b.name}</option>
+            ))}
+          </select>
           {preset === "custom" && (
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
               <input

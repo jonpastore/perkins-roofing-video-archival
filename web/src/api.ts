@@ -360,6 +360,39 @@ export interface Paged<T> {
   total: number;
 }
 
+// ── Branches ──────────────────────────────────────────────────────────────────
+
+export interface BranchRow {
+  id: number;
+  key: string;
+  name: string;
+  active: boolean;
+  sort: number;
+}
+
+/** Active branches by default; pass true to include inactive (admin management view). */
+export async function listBranches(includeInactive = false): Promise<BranchRow[]> {
+  const r = await apiFetch(`/branches${qs({ include_inactive: includeInactive || undefined })}`);
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function createBranch(body: { key: string; name: string; sort?: number }): Promise<BranchRow> {
+  const r = await apiFetch(`/branches`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
+export async function updateBranch(id: number, body: { name?: string; active?: boolean; sort?: number }): Promise<BranchRow> {
+  const r = await apiFetch(`/branches/${id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await errText(r));
+  return r.json();
+}
+
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 /** Serialize a params object to a query string, skipping undefined/null values. */
@@ -390,6 +423,7 @@ export interface QuotingCustomer {
   company_name: string | null;
   email: string | null;
   phone: string | null;
+  branch: string;
   is_active: boolean;
 }
 export interface QuotingProperty {
@@ -463,6 +497,7 @@ export interface CustomerInput {
   email?: string | null;
   phone?: string | null;
   notes?: string | null;
+  branch?: string | null;
 }
 export async function createCustomer(body: CustomerInput): Promise<QuotingCustomer> {
   const r = await apiFetch(`/quoting/customers`, {
@@ -1049,6 +1084,7 @@ export async function getDashboardBilling(params: {
   from?: string;
   to?: string;
   bucket?: string;
+  branch?: string;
 }): Promise<DashboardBilling> {
   const r = await apiFetch(`/dashboard/billing${qs(params)}`);
   if (!r.ok) throw new Error(await errText(r));
@@ -1077,8 +1113,8 @@ export interface AgingDetail {
 }
 
 /** Drill-down: open AR invoices/customers in one aging bucket. */
-export async function getAgingDetail(bucket: string, asOf?: string): Promise<AgingDetail> {
-  const r = await apiFetch(`/dashboard/billing/aging/${encodeURIComponent(bucket)}${qs({ as_of: asOf })}`);
+export async function getAgingDetail(bucket: string, asOf?: string, branch?: string): Promise<AgingDetail> {
+  const r = await apiFetch(`/dashboard/billing/aging/${encodeURIComponent(bucket)}${qs({ as_of: asOf, branch })}`);
   if (!r.ok) throw new Error(await errText(r));
   return r.json();
 }
