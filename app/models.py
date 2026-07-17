@@ -462,7 +462,7 @@ class CommentDraft(Base):
     id           = Column(Integer, primary_key=True, autoincrement=True)
     video_id     = Column(String, nullable=False, index=True)
     comment_id   = Column(String, nullable=False)
-    platform     = Column(String, nullable=False, default="youtube")
+    platform     = Column(String, nullable=False, server_default="youtube", default="youtube")
     author       = Column(String)
     comment_text = Column(Text, nullable=False)
     published_at = Column(DateTime)
