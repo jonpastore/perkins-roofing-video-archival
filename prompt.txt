@@ -1,75 +1,74 @@
 Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-17.md and docs/KNOWN_GAPS.md — full state.
-docs/ENGINEERING_RULES.md (R1-R5) is binding. HEAD 16a662b (or later); branch main, clean.
+READ FIRST: CONTINUATION-2026-07-17-eve.md (full state of the Monday-demo wave) and
+docs/plans/2026-07-17-zoom-analysis.md (Tim's estimating model + remaining action items).
+docs/ENGINEERING_RULES.md (R1-R5) is binding. HEAD is on branch main, clean.
 
-CREDENTIALS — THIS IS DIFFERENT NOW (2026-07-17):
-- All Google automation runs under a NON-EXPIRING service account. Before any gcloud/terraform/
-  firebase: `export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json`
-  (also in ~/.bashrc). NO interactive login is EVER needed — do NOT ask Jon to reauth; if a
-  Google call 401s, re-export the SA key, don't start an OAuth flow. Key backup: Secret Manager
-  `perkins-deploy-sa-key`. (Note: sourcing .env resets GOOGLE_APPLICATION_CREDENTIALS to a
-  nonexistent infra/vertex-dev-sa.json — re-export the SA key after any `source .env`.)
+CREDENTIALS (unchanged): all Google automation runs under a NON-EXPIRING service account:
+`export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json`
+(also in ~/.bashrc). NO interactive login ever needed; re-export the SA key if a call 401s.
+Sourcing .env clobbers it → re-export after any `source .env`.
 
-PRIMARY GOAL (Jon's ask): endpoint coverage + negative tests, driven by a live 500.
-A prod 500 on POST/PUT /quoting/customers/{id}/properties ("value too long for type character
-varying(2)", state="Florida") was fixed in 16a662b by adding Pydantic max_length. The LESSON:
-the suite runs on SQLite, which IGNORES VARCHAR(n) limits, so oversized-string input passes in
-tests but 500s on prod Postgres — a whole class of bugs the tests can't see. This is SYSTEMIC:
-~90 length-bounded Column(String(N)) columns + 21 route files with create/update/request Pydantic
-schemas, most likely missing max_length. Do:
-  A. max_length AUDIT across all 21 route schemas — every str field mapping to a bounded DB
-     column gets max_length matching app/models.py. Parallelize across route-file clusters (agents).
-  B. NEGATIVE TESTS for every endpoint: oversized (422), missing-required (422), wrong-type,
-     not-found (404), cross-tenant/authz (403/401). Run the constraint-sensitive ones under the
-     Postgres harness (scripts/test_pg.sh) — SQLite hides VARCHAR + some constraint violations.
-  C. Push endpoint coverage toward 100% (R1 behavioral-validation via these negative tests).
-  Grep `Column(String(` in app/models.py, map table→schema, fix + test. Deploy per cluster.
+WHAT JUST SHIPPED (2026-07-17 evening, autopilot wave — ALL DEPLOYED + PROD-VERIFIED):
+Branch management, gutters (Tim's style price list), existing_roof demo, time-based
+overhead, full package menu, profit slider, YouTube connect. API image f9c13e8 on Cloud
+Run; SPA on Firebase; prod configs seeded (all branches v3 = base+gutters+daily overhead).
+Migrations 0041 (branches) + 0042 (pricing-config partial index) applied to prod.
+The 7 features + click paths are in docs/plans/2026-07-17-monday-demo-walkthrough.md.
 
-THEN the remaining gaps in docs/KNOWN_GAPS.md (confirm drift scope with Jon first):
-1. Least-privilege the deploy SA — replace roles/owner with scoped roles (secretmanager.admin,
-   run.admin, cloudscheduler.admin, monitoring.editor, cloudsql.client, artifactregistry.writer,
-   cloudbuild.builds.editor, iam.serviceAccountUser), verify a deploy still works, drop owner,
-   codify in infra/main.tf.
-2. Migration-replay robustness — swap scripts/apply_migrations.sh's naive ;-split for sqlparse
-   (or psql -f); verify a full replay against prod runs clean (idempotent).
-3. Terraform drift (7 resources: cloudflare WAF/rate-limit/routing, zone settings, api domain
-   mapping, gotenberg) — review intent WITH JON, then apply deliberately or codify. Do NOT
-   blind-apply (changes prod networking/WAF).
-4. Real Pexels key (Jon provides): `printf '<key>' | gcloud secrets versions add pexels-api-key --data-file=-`.
-5. Only if #319 progressed: OAuth capture UI — build web/src/pages/Connections.tsx, wire
-   OAUTH_STATE_HMAC_KEY value + OAUTH_REDIRECT_BASE into deploy.sh, register /oauth/{platform}/callback
-   redirect URIs per provider (see docs/plans/2026-07-17-social-app-registrations.md).
+PRIMARY GOAL (Jon's ask, in priority order):
+1. **Finish the Zoom action items** in docs/plans/2026-07-17-zoom-analysis.md that are NOT
+   yet built (branch/estimating wave IS done). Highest-value next:
+   a. **Roof-cuts custom calculator** — the ~$1,150 / ~2% gap between our PROTECTOR ($53,100)
+      and Tim's Greener ($51,950) is the manual cut-adjustment (round-to-10ft material pieces,
+      waste factors per cut type) Tim does by hand. Needs RoofR cut LFs (eaves/hips/ridges/
+      valleys/rakes/wall-flashings) as estimator inputs + the cut math. See zoom-analysis §1.
+   b. **RoofR ingestion** — no public API; Jon to get account access / call them; also try
+      the website-widget data path + parse report PDFs into measurements+cut LFs.
+   c. **Duration-training dataset** — Tim will label 20-30 RoofR reports (per-phase days) using
+      docs/templates/duration-training-template.csv; then train a duration predictor.
+   d. **Low-slope builder inputs** (deck type, coating system) — configs exist, builder UI doesn't.
+   e. **CompanyCam** photo pull (Tim adding Jon to account; REST v2 + webhooks researched).
+2. **Then the franchise/accounting track** (backlog B8-B10): Qvinci/QuickBooks-per-branch
+   (Tim has 4 companies / 4 Knowify / 4 QB subs → branch level), franchisee royalty +
+   marketing-fee ACH via Stripe, owner cross-tenant admin view.
 
-WHAT'S ALREADY LIVE (don't rebuild): the OAuth health ALARM (integration_status + 30-min scheduler +
-Cloud Monitoring, emails admins on integration-broken); production-readiness panel (dashboard top +
-Admin Config; prod eval = READY, 0 blockers, 4 expected warnings); Phase 2 comment platform column
-(migration 0040); A2 speaker tracking; prompt-to-clip; clip-studio parity; comments E1 gate.
+BLOCKED ON TIM (chase these):
+- Share the ORIGINAL calculator sheets (the shared copies have no cell comments — comments
+  hold the material↔price mapping needed to auto-populate config from the price book).
+- Provide GC branch pricing values (GC quotes 503 until then — expected).
+- Provide per-branch daily overhead if different from the seeded baseline (Miami OH > Jupiter;
+  Naples zero right now — seeded values are Tim's general Zoom numbers, same for all branches).
+- Re-mint / connect the YouTube channel-owner token (click Connect on Comments page, pick the
+  Perkins-channel-owning account) to clear the reply-403.
+- Gutters: proposal vs email had 2 tiny discrepancies (7" 2-story $18.30 vs $18.20; 6" 2-story
+  $12.55 vs $12.95) — confirm which is right; seeded values use the email.
 
 OPERATE:
 - Prod DB: `/tmp/cloud-sql-proxy --port 5432 video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg &`
-  then DB_URL=postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins.
-  cloud-sql-proxy v2 binary is at /tmp/cloud-sql-proxy (re-download v2.14.1 if gone).
-- Deploy (non-interactive now): `bash scripts/deploy.sh` (API+jobs; needs CLEAN git tree); SPA:
-  `cd web && npm run build && npx --no-install firebase deploy --only hosting --project video-archival-and-content-gen`.
-- Migrations 0039+0040 applied to prod. Apply future migrations DIRECTLY (full replay has a
-  documented ;-splitter gap). RLS: platform-level tables (integration_status, oauth_state_nonces,
-  tenant_offboard_log) are exempt via _RLS_EXEMPT_PLATFORM_TABLES in app/models.py — tenant tables
-  get auto-RLS from the _rls_on_create hook.
-- Offload bulk/non-security work to the FREE fleet: `llm -m gpt-oss-120b "..."` (sync, ~0.3s) and
-  `mcp__hermes__submit_task` (async, free CF tier). Security-critical code + review stay on Claude.
+  then DB_URL=postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins
+- Deploy API: `bash scripts/deploy.sh` (needs CLEAN tree). SPA: `cd web && npm run build &&
+  npx --no-install firebase deploy --only hosting:app --project video-archival-and-content-gen`.
+  (Firebase multi-site: targets `app` and `setback`; see web/firebase.json + web/.firebaserc.)
+- Migrations: apply directly (0041,0042 already applied). Pricing configs are versioned +
+  immutable; ONE active per branch (partial index, migration 0042). Seed scripts create a new
+  active version: scripts/seed_gutters_config.py, scripts/seed_daily_overhead_config.py.
+- Config edits from Admin UI create a new inactive version then activate (works post-0042).
+- Prod e2e recipe: mint a smoke admin token via firebase_admin custom-token → ID token →
+  hit the API; DELETE the smoke user after (see this session's prod_e2e approach).
 
-ENVIRONMENT GOTCHAS (each cost real time — still true):
-- articles/videos are RLS-protected: session.info["tenant_id"]=1 or queries error with
-  'unrecognized configuration parameter "app.tenant_id"'. Only tenant 1 exists.
-- `pgrep -f <pat>` / `pkill -f <pat>` MATCH THIS SHELL'S OWN command line — use ps + a bracketed
-  grep (`ps -eo pid,cmd | grep "[c]loud-sql-proxy"`), never pkill -f a pattern in your own command.
-- No foreground `sleep` (blocked); for "wait until X" use Bash run_in_background + an until-loop.
-- WP REST needs WP_APP_PWD from Secret Manager; .env WP_PWD is the WEB login and 401s on REST.
-  Prod WP is a GoDaddy STAGING site (myftpupload host) — the readiness panel flags this (#317 cutover
-  clears noindex). Don't touch the 123 pre-existing published posts.
-- PERKINS_ENV=prod requires EMBED_BACKEND=LLM_BACKEND=vertex + GOOGLE_CLOUD_PROJECT + a non-sqlite DB_URL.
+ENVIRONMENT GOTCHAS (still true):
+- SQLite (test DB) does NOT enforce VARCHAR limits, RLS, OR partial-index predicates — prod
+  Postgres does. This class has bitten twice (property-500, the 0042 config-version cap). When
+  a constraint/limit matters, test on the PG harness (scripts/test_pg.sh) too.
+- `ps -eo pid,cmd | grep "[c]loud-sql-proxy"` — never pkill -f your own shell's pattern.
+- articles/videos are RLS-protected: session.info["tenant_id"]=1 or queries error. Only tenant 1.
+- Offload bulk/non-security work to the FREE fleet per Jon's standing directive: `llm -m
+  smart-router "..."` / `llm -m gpt-oss-120b "..."` (sync, local) and `mcp__hermes__submit_task`
+  (async, free Cloudflare tier). Security-critical code + review stay on Claude. This session
+  used both (demo-doc draft on Cloudflare, gutter-math cross-check on smart-router).
 
-Delegate parallelizable build work to worktree agents (model=sonnet). WATCH FOR: agents this session
-repeatedly went idle WITHOUT committing and forked from stale bases — always verify the worktree is
-committed + rebased, run the tests YOURSELF, then merge. Verify in prod (proxy + real facts), don't assert.
+VALIDATION STATUS AT HANDOFF: wave code deep-audited (backend + frontend) for gaps/slop/
+unwired/stubs — findings + fixes recorded in CONTINUATION-2026-07-17-eve.md. Full backend
+suite green. Prod e2e green (branches, gutters exact, daily OH exact, all package tiers match
+Greener PDF, config-save unblocked). Verify in prod (proxy + real facts), don't assert.

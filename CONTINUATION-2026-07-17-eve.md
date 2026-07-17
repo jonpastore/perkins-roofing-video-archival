@@ -1,70 +1,109 @@
-# Continuation — 2026-07-17 evening (autopilot Monday-demo wave)
+# Continuation — 2026-07-17 evening (autopilot Monday-demo wave) — COMPLETE
 
-**HEAD at writing: in flight — see `git log`; branch main.** Everything through `ebee617`
-is committed; UI executor commits land after. **Deadline: Tim expects visible improvement
-MONDAY, then demos to Josh/Marco.**
+**Everything below is committed to `main`, deployed, and PROD-VERIFIED.** Tim demos to
+Josh/Marco after Monday; the wave is demo-ready. Deep code audit run at handoff (findings +
+fixes in the "Deep validation" section).
 
-## Shipped earlier today (all deployed + verified in prod)
-- max_length audit (`6ddaf70`) + meta-test + 231 negative tests (three agent clusters merged).
-- Human-readable API errors (`ce6737a`) — `[object Object]` fixed; shared errText/formatDetail.
-- Gutters v1 + New-construction/Demo pair + editable pending-Tim config cells (`f02790b`).
-- Comments OAuth: connect/switch buttons + post-as confirmation; capture flow LIVE end-to-end
-  (`8531005`); Google redirect URI registered; `/oauth/youtube/start` verified 200.
-  **Remaining human step: TIM clicks Connect and picks the channel-owner account.**
-- Price book seeded in prod: 171 items from Tim's 4/29 sheet (`8b40b4a` fixed the seed's RLS).
-- Coastal setback checker LIVE: https://perkins-setback.web.app (`1597d36`) — verified warranty
-  thresholds (per-brand PDFs cited in zones.json). Flag: Coastalume 300ft claim unverified;
-  Dynamic Metals has no public warranty doc (call 772-247-2465).
-- MCP media server: /home/jon/projects/mcp-media-transcribe (transcribe/extract_frames/list_media)
-  — fixed amd-halo whisper (bad HF token, root-owned cache, DEVICE=cuda→cpu/int8).
-- Zoom deep-analysis: docs/plans/2026-07-17-zoom-analysis.md (action items w/ timestamps+frames).
+## Completed-work breakdown (this session)
 
-## Autopilot wave (this evening) — branch mgmt + estimating overhaul
-Backend DONE, verified SQLite+PG, **migration 0041 APPLIED TO PROD** (branches
-miami/jupiter/naples/gc; 7,413 customers backfilled miami):
-- Branch model + /branches CRUD (read estimating_view, write manage_config) + customer.branch
-  (validated active) + dashboard ?branch= filtering (all analytics fns) — `7191b06`+`ebee617`.
-- Gutters engine = Tim's style-based email model; seed script scripts/seed_gutters_config.py
-  (tested, idempotent) — **RUN AGAINST PROD AFTER API DEPLOY** (creates v+1 configs per branch).
-- existing_roof selector semantics; package_options on quote (adders exact vs Greener PDF;
-  TILE PREFERRED 160→165).
-- GC branch: NO pricing config yet — GC quotes 503 until Tim provides values.
-In flight at writing: exec-ui-admin (branches admin UI/customers/dashboard selector/marketing
-YouTube connect), exec-ui-builder (builder overhaul: existing-roof, gutters UI, daily-OH days,
-package menu, profit slider, branch-from-customer), security review, full-suite baseline,
-duration-training template (docs/templates/).
+### The 7 shipped features (all live on app.perkinsroofing.net)
+1. **Branch management** — `branches` table + `/branches` CRUD (read `estimating_view`,
+   write `manage_config`); every branch selector reads from it; `customers.branch` (validated
+   active); dashboards filter by `?branch=` or show all. Admin Config → Branches tab (CRUD).
+   Migration 0041 (RLS-seeded miami/jupiter/naples/gc; 7,413 customers backfilled miami).
+2. **Existing-roof / demo selector** — quote builder asks "Existing roof (what are we tearing
+   off?)" (new construction / shingle / tile / metal / flat); demo cost + tile dumpster follow
+   what's TORN OFF, not the new roof (Zoom [13:03]). Legacy `demo` bool preserved.
+3. **Gutters** — engine + UI on Tim's real style price list (7/17 email): 6"/7" K-style, box,
+   half-round, aluminum/copper; per-LF incl. downspouts; 2-story uplift (gated to styles that
+   have the rate); elbows, leaf guards, leaderheads, removal; <100 LF surcharge.
+4. **Time-based overhead** — builder "By time (days)" mode; engine computes OH from days×daily
+   targets. Prod-verified: 4 demo + 6 tile days = **$8,670 = 4×1050 + 6×745, exact**.
+5. **Full package menu** — every quote returns `package_options`: Protector (engine total) +
+   Preferred + 3 premiums (Caribbean/Mediterranean/Modern) + Coastal as flat catalog adders.
+   **Matches the Greener proposal to the dollar** (Caribbean +$12,470 / Med +$15,695 / Modern
+   +$20,855 @ 43 sq). TILE PREFERRED corrected 160→165. Computed post-discount (coherent).
+6. **Profit slider + floors** — target-margin presets (13% min / 15% / 20%) + min-$ floor
+   re-price via `profit_mode="flat"`; red when below the 13%/33% config floors (config-driven).
+7. **YouTube comment posting** — connect/switch-account button + "post as {channel}?" confirm
+   (Comments page + Marketing social-accounts row).
 
-## WAVE COMPLETE — deployed + verified in prod (update 2026-07-17 ~7:20pm)
-- **API deployed**: image `f9c13e8` on Cloud Run (branches, gutters engine, existing_roof,
-  package_options post-discount, floors exposure). **SPA deployed** to app hosting.
-- **Phase-4 reviews done**: security (1 MED fixed — create_branch tenant stamp, 8501db4),
-  architect (all 7 items VERIFIED-COMPLETE), code-review (1 HIGH + 3 MED fixed:
-  2-story gutter gate, stale-quote badge, rates-branch, discount coherence).
-- **Prod config seeded**: migration 0041 (branches) + 0042 (pricing-config partial index
-  fix) applied; all branches now on **v3 active** = base + gutters (Tim's email prices) +
-  daily overhead (Tim's Zoom targets: demo 1050/tile 745/metal 850/shingle 700, $2,500
-  weekly floor). GC still has no config (503 until Tim provides values — expected).
-- **E2E verified on prod**: branches list, gutters (384LF 2-story 7" = $6,988.80 exact),
-  daily overhead ($8,670 = 4×1050+6×745 exact), all package tiers match Greener PDF to the
-  $, tile-demo+dumpster on tile teardown, new-construction clean, dashboard ?branch=,
-  floors exposed, unknown-branch rejected. PROTECTOR now $53,100 vs Tim's $51,950 (~2%;
-  remaining gap = the manual roof-cuts custom-calc, not yet wired).
-- **The schema bug this wave surfaced (0042)**: 0014's UNIQUE(tenant,branch,is_active)
-  capped each branch at 2 config versions; once the seeds made branches 2-version, the
-  Admin "save config" POST would 409. Fixed to a partial index (one active, unlimited
-  history) — Postgres AND sqlite_where so tests stay correct.
-- Demo walkthrough: docs/plans/2026-07-17-monday-demo-walkthrough.md (Cloudflare free-tier
-  draft, fact-checked). Duration-training template: docs/templates/.
+### Schema fixes (both the SQLite-hides-constraints class)
+- **0041** — branches table + `customers.branch`; RLS policy + tenant-GUC-stamped seed.
+- **0042** — pricing-config "one active per branch" was `UNIQUE(tenant,branch,is_active)`,
+  which capped each branch at **2 versions**; once the gutters+daily seeds made branches
+  2-version, Admin config-save (POST → 409) and re-activation broke. Fixed to a partial index
+  `UNIQUE(tenant,branch) WHERE is_active` (postgresql_where + sqlite_where). **Applied to prod;
+  config-save verified unblocked through the deployed API.**
 
-Remaining to fully close: none blocking. Optional: /oh-my-claudecode:cancel to clear
-autopilot state; the API image (f9c13e8) trails HEAD by the inert model-index declaration
-(0042) + docs — a redeploy is NOT required (the index change is DDL-only, prod already has
-it via migration; queries unchanged).
+### Prod data seeded (all branches now v3 active)
+`scripts/seed_gutters_config.py` + `scripts/seed_daily_overhead_config.py` — idempotent,
+create-new-version. v3 = base + gutters (email prices) + daily overhead (Zoom targets: demo
+1050 / tile 745 / metal 850 / shingle 700, $2,500 weekly floor). GC has NO config (503 —
+expected until Tim provides values).
 
-## Monday-demo remaining gaps (from zoom-analysis, not in this wave)
-RoofR ingestion (Jon needs account access/call), CompanyCam (Tim adds Jon), original
-calculator sheets sharing (comments!), copper commodity pricing, low-slope deck/coating
-builder inputs, Qvinci/QuickBooks-per-branch + franchise ACH (B8-B10).
+### Deploys
+- API image **f9c13e8** on Cloud Run (branches, gutters engine, existing_roof, package_options
+  post-discount, floors exposure). SPA on Firebase `app` target. HEAD is ahead of the deployed
+  image only by DDL-only model-index declaration (0042, prod already has it via migration) +
+  seed scripts + docs — **a redeploy is NOT required** (runtime unchanged).
 
-*Standing archive directive performed: moved the oldest top-level CONTINUATION
-(2026-07-11-eve) into docs/continuations/; only the latest 3 remain at top level.*
+### Also this session (earlier, all deployed)
+max_length audit + 231 negative tests; human-readable API errors; comments OAuth capture;
+price book seeded (171 items); coastal setback checker (perkins-setback.web.app, verified
+warranty PDFs); MCP media server (transcribe/frames — fixed the amd-halo whisper box); Zoom
+transcription + deep-analysis (docs/plans/2026-07-17-zoom-analysis.md).
+
+## Validation — confirmed correct
+- **Full backend suite: 4322 passed, 0 failed, 0 errors** (post-schema-change).
+- **PG harness** (scripts/test_pg.sh) green on branches/dashboard/gutters/packages.
+- **Phase-4 reviews**: security (1 MED fixed — create_branch tenant stamp), architect (all 7
+  items VERIFIED-COMPLETE), code-review (1 HIGH + 3 MED + 2 LOW fixed).
+- **Prod e2e** (smoke admin token → live API, user deleted after): GET /branches; gutters
+  384LF 2-story 7" = **$6,988.80 exact**; daily OH **$8,670 exact**; all package tiers = Greener
+  PDF to the $; tile-demo + dumpster on tile teardown; new-construction clean; dashboard
+  ?branch=miami; floors exposed; unknown branch rejected (503); **config-save POST = 200**
+  (was 409 pre-0042). PROTECTOR $53,100 vs Tim's $51,950 (~2%; gap = manual roof-cuts calc).
+- **Free-fleet offload** (Jon's directive): demo walkthrough drafted on Cloudflare free tier
+  (Hermes), gutter math cross-checked on local smart-router — both matched.
+
+## Documentation + memory — updated
+- `docs/plans/2026-07-17-zoom-analysis.md` — Tim's estimating model + all action items (timestamps + frames).
+- `docs/plans/2026-07-17-monday-demo-walkthrough.md` — presenter click-paths for all 7 features.
+- `docs/templates/duration-training-{template.csv,README.md}` — for Tim's per-phase day labeling.
+- `README.md` continuation index updated; this file is "most recent". Archive rotated
+  (oldest top-level CONTINUATION moved to docs/continuations/).
+- Local memory: `branches-and-monday-demo.md`, `estimator-pricing-linkage.md` (+ MEMORY.md index).
+
+## Outstanding (nothing blocks the Monday demo)
+**Zoom action items not yet built** (see zoom-analysis.md — prioritized in prompt.txt):
+- Roof-cuts custom calculator (closes the ~2% PROTECTOR gap — round-to-10ft + waste per cut).
+- RoofR ingestion (no public API — Jon needs account access/call; website-widget data; PDF parse).
+- Duration-training predictor (Tim labels 20-30 reports via the template).
+- Low-slope builder inputs (deck type, coating system — configs exist, UI doesn't).
+- CompanyCam photo pull (Tim adds Jon; REST v2 + webhooks researched).
+- Franchise/accounting (B8-B10): Qvinci/QuickBooks-per-branch, royalty+marketing ACH via Stripe,
+  owner cross-tenant admin view.
+
+**Blocked on Tim** (chase): share ORIGINAL calculator sheets (cell comments = material mapping);
+GC pricing values; per-branch daily overhead if different; connect the YouTube channel-owner
+token; confirm 2 tiny gutter price discrepancies (proposal vs email).
+
+**Known, non-blocking**: API deployed image trails HEAD by inert changes (no redeploy needed);
+specialty_tile_upgrade still falls back to legacy rates (pre-existing TODO, bd0c1d9, graceful).
+
+## Deep validation (code audit at handoff)
+Ran read-only deep audits (backend `critic` + frontend `code-reviewer`) for gaps/slop/stubs/
+unwired code across the wave, plus a manual TODO/FIXME/console.log/as-any sweep. Manual sweep:
+**zero stubs/slop/unwired in wave code**; the only TODO in scope (estimator.py specialty_tile)
+is pre-existing (bd0c1d9) and a graceful config→legacy fallback. Audit-agent findings + any
+fixes are appended below.
+
+<!-- DEEP-VALIDATION-FINDINGS -->
+
+## Operate / verify
+- Prod DB proxy + DB_URL: see prompt.txt. Deploy: `bash scripts/deploy.sh` (API) + firebase
+  hosting:app (SPA). Suite: `.venv/bin/python -m pytest -q`. PG harness: `scripts/test_pg.sh`.
+
+*Standing archive directive performed: oldest top-level CONTINUATION already rotated into
+docs/continuations/ this session; only the latest 3 remain at top level.*
