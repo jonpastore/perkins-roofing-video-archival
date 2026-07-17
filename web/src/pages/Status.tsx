@@ -12,7 +12,7 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
-import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse } from "../api";
+import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, getProductionReadiness, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse, type ProductionReadiness, type GateState } from "../api";
 import { NavContext } from "../App";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg, StatCard, inputStyle } from "../ui";
 
@@ -683,6 +683,67 @@ function GcpSpendWidget() {
   );
 }
 
+// ── Production Readiness banner ───────────────────────────────────────────────
+// Compact status strip: N/M gates ready, a colored chip per gate, and a re-test
+// button. Explanation + remediation for each gate lives in Admin Config; this is
+// just the at-a-glance signal every admin sees on load.
+
+const GATE_TONE: Record<GateState, "green" | "amber" | "red" | "gray"> = {
+  ok: "green",
+  warn: "amber",
+  blocker: "red",
+  unknown: "gray",
+};
+
+function ProductionReadinessBanner() {
+  const [data, setData] = useState<ProductionReadiness | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  function fetchReadiness() {
+    setLoading(true);
+    setError(null);
+    getProductionReadiness()
+      .then(setData)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { fetchReadiness(); }, []);
+
+  return (
+    <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
+            Production Readiness
+            {data && ` — ${data.summary.ok}/${data.summary.total} gates ready`}
+          </span>
+          {loading && <Loading label="Checking…" />}
+          {error && <ErrorMsg>Error: {error}</ErrorMsg>}
+          {!loading && !error && data && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {data.gates.map((g) => (
+                <Badge key={g.id} tone={GATE_TONE[g.state]}>
+                  {g.label}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+        <Button variant="ghost" onClick={fetchReadiness} disabled={loading}>
+          Re-test
+        </Button>
+      </div>
+      {!loading && !error && data && data.summary.blocker > 0 && (
+        <div style={{ marginTop: 10, fontSize: 13, color: BRAND.redDark, fontWeight: 600 }}>
+          {data.summary.blocker} blocker{data.summary.blocker > 1 ? "s" : ""} — see Admin Config → Platform Settings for remediation.
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Main Status page ──────────────────────────────────────────────────────────
 
 export function Status() {
@@ -760,6 +821,8 @@ export function Status() {
       <PageTitle right={<Button onClick={fetchStatus} disabled={loading}>Refresh</Button>}>
         Platform Status
       </PageTitle>
+
+      <ProductionReadinessBanner />
 
       {toast && (
         <div

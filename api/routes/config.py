@@ -27,7 +27,11 @@ from pydantic import BaseModel
 
 from api.auth import require_role
 from app.config import settings
-from app.models import PlatformConfig, PlatformSessionLocal, SecretAudit
+from app.models import PlatformConfig, PlatformSessionLocal, SecretAudit, engine
+from core.email_gate import current_mode as _email_send_mode
+from core.production_gates import evaluate_gates
+from core.production_gates import summary as gate_summary
+from core.tenant import assert_rls_enforceable
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -649,4 +653,116 @@ def health_checks(claims=Depends(require_role("manage_config"))):
             {"name": name, "ok": ok, "detail": detail}
             for name, ok, detail in checks
         ]
+    }
+
+
+# ---------------------------------------------------------------------------
+# Production-readiness gates — complements /config/health-checks above.
+# health-checks is live connectivity probes; this is go-live posture (email
+# mode, staging vs prod, RLS enforcement, DMARC, missing secrets, integration
+# status, OAuth capture) evaluated by the pure core.production_gates module.
+# ---------------------------------------------------------------------------
+
+_REQUIRED_SECRETS = (
+    "db-password",
+    "wordpress-app-password",
+    "internal-secret",
+    "resend-api-key",
+    "youtube-api-key",
+)
+
+_DMARC_DOMAIN = "_dmarc.perkinsroofing.net"  # the live sending domain (adapters/resend.py)
+
+
+def _dmarc_policy() -> str:
+    """Best-effort live DMARC TXT lookup. Never raises — falls back to the
+    intended target policy ('reject') if DNS is unavailable or unparsable."""
+    try:
+        import dns.resolver  # noqa: PLC0415
+        answers = dns.resolver.resolve(_DMARC_DOMAIN, "TXT", lifetime=5)
+        for rdata in answers:
+            txt = b"".join(rdata.strings).decode("utf-8", "ignore")
+            for tag in txt.split(";"):
+                tag = tag.strip()
+                if tag.lower().startswith("p="):
+                    return tag.split("=", 1)[1].strip().lower()
+    except Exception:
+        pass
+    return os.getenv("DMARC_INTENDED_POLICY", "reject")
+
+
+def _gather_production_readiness_facts() -> dict[str, Any]:
+    """Gather the live facts core.production_gates.evaluate_gates needs. All I/O
+    lives here; the gate logic itself stays pure and unit-tested separately."""
+    wp_url = _env_value("WP_URL")
+
+    try:
+        client = _secret_manager_client()
+        project = _gcp_project()
+        use_gcp = True
+    except Exception:
+        client = None
+        project = None
+        use_gcp = False
+
+    if use_gcp:
+        secret_has_version = {
+            secret_id: _secret_latest_create_time(client, project, secret_id) is not None
+            for secret_id in _REQUIRED_SECRETS
+        }
+        missing_secrets = [s for s in _REQUIRED_SECRETS if not secret_has_version[s]]
+        wp_app_pwd_set = secret_has_version["wordpress-app-password"]
+    else:
+        # Can't verify Secret Manager (dev/local without ADC) — don't fabricate a
+        # blocker; fall back to the env var wordpress actually reads at runtime.
+        missing_secrets = []
+        wp_app_pwd_set = bool(os.environ.get("WP_APP_PWD"))
+
+    try:
+        # Local import: the integration_status table/model (plan Phase 1.2) may not
+        # exist yet on every branch. Degrade to "no known integrations" rather than
+        # crash the whole readiness endpoint if it's absent.
+        from app.models import IntegrationStatus  # noqa: PLC0415
+        with PlatformSessionLocal() as db:
+            db.info["platform_scope"] = True
+            integration_statuses = [
+                {"integration": r.integration, "status": r.status}
+                for r in db.query(IntegrationStatus).filter(IntegrationStatus.tenant_id.is_(None)).all()
+            ]
+    except Exception:
+        integration_statuses = []
+
+    return {
+        "email_send_mode": _email_send_mode(),
+        "wp_user_set": bool(os.environ.get("WP_USER")),
+        "wp_app_pwd_set": wp_app_pwd_set,
+        "wp_is_staging": any(s in wp_url.lower() for s in ("myftpupload", "staging")),
+        "rls_enforceable": assert_rls_enforceable(engine),
+        "dmarc_policy": _dmarc_policy(),
+        "missing_secrets": missing_secrets,
+        "integration_statuses": integration_statuses,
+        "capture_configured": bool(os.getenv("OAUTH_STATE_HMAC_KEY")) and bool(os.getenv("OAUTH_REDIRECT_BASE")),
+    }
+
+
+@router.get("/production-readiness")
+def production_readiness(claims=Depends(require_role("manage_config"))):
+    """Go-live readiness gates: state + remediation per gate, plus a roll-up summary.
+
+    Returns {"gates": [{id, label, category, state, detail, remediation}], "summary": {...}}.
+    """
+    gates = evaluate_gates(_gather_production_readiness_facts())
+    return {
+        "gates": [
+            {
+                "id": g.id,
+                "label": g.label,
+                "category": g.category,
+                "state": g.state,
+                "detail": g.detail,
+                "remediation": g.remediation,
+            }
+            for g in gates
+        ],
+        "summary": gate_summary(gates),
     }
