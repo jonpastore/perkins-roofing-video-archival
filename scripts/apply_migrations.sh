@@ -18,7 +18,7 @@ fi
 
 echo "== Applying migrations from infra/migrations =="
 DB_URL="$DB_URL" .venv/bin/python - "$@" <<'PY'
-import glob, os
+import glob, os, re
 from sqlalchemy import create_engine, text
 
 # Create the base tables FIRST (the ORM owns them; no migration issues their CREATE TABLE).
@@ -27,12 +27,16 @@ from sqlalchemy import create_engine, text
 import app.models as _m
 _m.init_db()
 
+# Strip ALL SQL line-comments (full-line AND trailing "-- ..."), then split on ';'.
+# Trailing comments left in place broke the naive split — a "DEFAULT 0  -- note" line
+# fed a comment into the parser (migration 0035). Migrations here are plain DDL with
+# no "--" inside string literals, so an inline strip is safe.
+_COMMENT = re.compile(r"--.*$", re.MULTILINE)
+
 engine = create_engine(os.environ["DB_URL"])
 files = sorted(glob.glob("infra/migrations/*.sql"))
 for f in files:
-    raw = open(f).read()
-    # strip full-line SQL comments, then split into statements on ';'
-    body = "\n".join(ln for ln in raw.splitlines() if not ln.strip().startswith("--"))
+    body = _COMMENT.sub("", open(f).read())
     with engine.begin() as c:
         for stmt in (s.strip() for s in body.split(";")):
             if stmt:

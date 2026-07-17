@@ -131,7 +131,11 @@ def search_to_clips(prompt: str, chunks: list, score_fn: object = None) -> list[
     if not moments:
         return _by_retrieval_score(candidates)
 
-    by_window = {(round(c["start"], 2), round(c["end"], 2)): c for c in candidates}
+    # candidates are score-descending; setdefault keeps the HIGHER-scoring one when
+    # two windows round to the same (start,end) key (a bare dict comp would keep the last).
+    by_window: dict = {}
+    for c in candidates:
+        by_window.setdefault((round(c["start"], 2), round(c["end"], 2)), c)
     results = []
     for m in moments:
         src = by_window.get((round(m["start"], 2), round(m["end"], 2)))
