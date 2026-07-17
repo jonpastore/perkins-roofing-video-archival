@@ -265,10 +265,27 @@ def test_client_passthrough_when_provided():
     assert T._client(fake) is fake
 
 
+def _patch_secretmanager(fake_mod):
+    """Patch BOTH resolution paths for `from google.cloud import secretmanager`.
+
+    If any earlier test in the run imported the real module, the `google.cloud`
+    package already carries the attribute, and the import binds it via getattr —
+    bypassing a patched sys.modules entry. That made these tests hit REAL Secret
+    Manager (60s ADC retry) only in full-suite runs. Patch the package attribute
+    too so resolution is deterministic regardless of ordering.
+    """
+    import google.cloud as _gc
+    return (
+        patch.dict("sys.modules", {"google.cloud.secretmanager": fake_mod}),
+        patch.object(_gc, "secretmanager", fake_mod, create=True),
+    )
+
+
 def test_client_builds_real_when_none():
     fake_mod = MagicMock()
     fake_mod.SecretManagerServiceClient.return_value = "REAL"
-    with patch.dict("sys.modules", {"google.cloud.secretmanager": fake_mod}):
+    p1, p2 = _patch_secretmanager(fake_mod)
+    with p1, p2:
         assert T._client(None) == "REAL"
 
 
@@ -348,8 +365,8 @@ def test_main_refresh_only_dispatch(monkeypatch):
     fake_sm = _sm_client(TOK)
     fake_mod = MagicMock()
     fake_mod.SecretManagerServiceClient.return_value = fake_sm
-    with patch.dict("sys.modules", {"google.cloud.secretmanager": fake_mod}), \
-         patch.object(T.urllib.request, "urlopen", return_value=_Resp({}, 200)):
+    p1, p2 = _patch_secretmanager(fake_mod)
+    with p1, p2, patch.object(T.urllib.request, "urlopen", return_value=_Resp({}, 200)):
         with pytest.raises(SystemExit) as ei:
             runpy.run_module("core.knowify.tokens", run_name="__main__")
     assert ei.value.code == 0
