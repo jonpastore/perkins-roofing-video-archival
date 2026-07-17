@@ -474,6 +474,96 @@ function ZoneTypeTable({
   );
 }
 
+// Gutter style rate table — keyed by whatever style keys exist in gutters.styles
+// (core/estimator.py looks them up by key; scripts/seed_gutters_config.py seeds the set).
+// New style keys are added via Raw JSON; this table edits the rates of existing ones.
+interface GutterStyle {
+  label?: string;
+  per_lf?: number | null;
+  two_story_per_lf?: number | null;
+  elbow_each?: number | null;
+}
+
+function GutterStylesTable({
+  styles,
+  onChange,
+  disabled,
+}: {
+  styles: Record<string, GutterStyle>;
+  onChange: (updated: Record<string, GutterStyle>) => void;
+  disabled: boolean;
+}) {
+  const keys = Object.keys(styles);
+
+  function setField(key: string, field: keyof GutterStyle, value: string | number | null) {
+    onChange({ ...styles, [key]: { ...styles[key], [field]: value } });
+  }
+
+  function numCell(key: string, field: "per_lf" | "two_story_per_lf" | "elbow_each") {
+    const val = styles[key][field];
+    return (
+      <input
+        type="number"
+        disabled={disabled}
+        value={val ?? ""}
+        placeholder={val === null || val === undefined ? "Pending Tim" : undefined}
+        onChange={(e) => setField(key, field, e.target.value === "" ? null : parseFloat(e.target.value))}
+        style={{
+          ...inputStyle,
+          padding: "4px 8px",
+          fontSize: 12,
+          width: 90,
+          textAlign: "right",
+          background: disabled ? BRAND.bg : "#fff",
+          ...(val === null || val === undefined ? { borderColor: "#fcd34d", background: "#fffbf0" } : {}),
+        }}
+      />
+    );
+  }
+
+  if (keys.length === 0) {
+    return <PendingField label="Gutter styles" />;
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <SectionLabel>Gutter styles</SectionLabel>
+      <div style={{ overflowX: "auto", border: `1px solid ${BRAND.border}`, borderRadius: 8 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ background: BRAND.bg }}>
+              {["Style", "Label", "$/LF", "2-story $/LF", "Elbow $/each"].map((h) => (
+                <th key={h} style={{ padding: "8px 12px", textAlign: h === "Style" || h === "Label" ? "left" : "right", color: BRAND.sub, fontWeight: 700, borderBottom: `1px solid ${BRAND.border}` }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k} style={{ borderBottom: `1px solid ${BRAND.border}` }}>
+                <td style={{ padding: "6px 12px", color: BRAND.ink, fontFamily: "monospace", fontSize: 11 }}>{k}</td>
+                <td style={{ padding: "4px 8px" }}>
+                  <input
+                    type="text"
+                    disabled={disabled}
+                    value={styles[k].label ?? ""}
+                    onChange={(e) => setField(k, "label", e.target.value)}
+                    style={{ ...inputStyle, padding: "4px 8px", fontSize: 12, width: "100%", background: disabled ? BRAND.bg : "#fff" }}
+                  />
+                </td>
+                <td style={{ padding: "4px 8px", textAlign: "right" }}>{numCell(k, "per_lf")}</td>
+                <td style={{ padding: "4px 8px", textAlign: "right" }}>{numCell(k, "two_story_per_lf")}</td>
+                <td style={{ padding: "4px 8px", textAlign: "right" }}>{numCell(k, "elbow_each")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Collapsible section group ─────────────────────────────────────────────────
 
 function CollapsibleGroup({
@@ -1047,31 +1137,26 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
             </div>
           </CollapsibleGroup>
 
-          <CollapsibleGroup title="Gutters (Pending Tim)" accent="#fffbf0">
-            <div
-              style={{
-                border: `1px dashed #fcd34d`,
-                borderRadius: 8,
-                padding: "12px 14px",
-                background: "#fffbf0",
-                marginBottom: 14,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
-                Gutter rates are <strong>pending Tim</strong> (Google sheet / 7-17 Zoom). Null fields
-                price nothing until filled — a quote that uses one shows a clear "pending" error.
-                1–2 story installs are standard; the high-reach add applies when the crew needs a
-                lift/machine.
-              </p>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <NumericField label='6" aluminum ($/LF)' value={getNum(["gutters", "price_per_lf", "6_inch"])} onChange={(v) => set(["gutters", "price_per_lf", "6_inch"], v)} disabled={disabled} />
-              <NumericField label='7" aluminum ($/LF)' value={getNum(["gutters", "price_per_lf", "7_inch"])} onChange={(v) => set(["gutters", "price_per_lf", "7_inch"], v)} disabled={disabled} />
-              <NumericField label='6" copper ($/LF)' value={getNum(["gutters", "copper_price_per_lf", "6_inch"])} onChange={(v) => set(["gutters", "copper_price_per_lf", "6_inch"], v)} disabled={disabled} />
-              <NumericField label='7" copper ($/LF)' value={getNum(["gutters", "copper_price_per_lf", "7_inch"])} onChange={(v) => set(["gutters", "copper_price_per_lf", "7_inch"], v)} disabled={disabled} />
-              <NumericField label="Downspouts ($/LF)" value={getNum(["gutters", "downspout_per_lf"])} onChange={(v) => set(["gutters", "downspout_per_lf"], v)} disabled={disabled} />
-              <NumericField label="Copper downspouts ($/LF)" value={getNum(["gutters", "copper_downspout_per_lf"])} onChange={(v) => set(["gutters", "copper_downspout_per_lf"], v)} disabled={disabled} />
-              <NumericField label="High reach / machine add ($ flat)" value={getNum(["gutters", "high_reach_add"])} onChange={(v) => set(["gutters", "high_reach_add"], v)} disabled={disabled} />
+          <CollapsibleGroup title="Gutters" accent="#f0f4ff">
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+              Rates keyed by gutter style (matches <code>core/estimator.py</code>'s <code>gutters.styles.&lt;key&gt;</code> lookup).
+              A style or field left blank prices nothing until filled — a quote that uses it shows a clear "pending" error.
+              New style keys can be added via Raw JSON.
+            </p>
+            <GutterStylesTable
+              styles={((config.gutters as Record<string, unknown> | undefined)?.styles ?? {}) as Record<string, GutterStyle>}
+              onChange={(v) => set(["gutters", "styles"], v)}
+              disabled={disabled}
+            />
+            <SectionLabel>Removal, leaf guard & leaderheads</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField label="Removal ($/LF)" value={getNum(["gutters", "removal_per_lf"])} onChange={(v) => set(["gutters", "removal_per_lf"], v)} disabled={disabled} />
+              <NumericField label="Leaf guard, standard ($/LF)" value={getNum(["gutters", "leaf_guard_std_per_lf"])} onChange={(v) => set(["gutters", "leaf_guard_std_per_lf"], v)} disabled={disabled} />
+              <NumericField label="Leaf guard, upgraded ($/LF)" value={getNum(["gutters", "leaf_guard_upgraded_per_lf"])} onChange={(v) => set(["gutters", "leaf_guard_upgraded_per_lf"], v)} disabled={disabled} />
+              <NumericField label="Leaderhead, residential ($ each)" value={getNum(["gutters", "leaderhead_res_each"])} onChange={(v) => set(["gutters", "leaderhead_res_each"], v)} disabled={disabled} />
+              <NumericField label="Leaderhead, commercial ($ each)" value={getNum(["gutters", "leaderhead_comm_each"])} onChange={(v) => set(["gutters", "leaderhead_comm_each"], v)} disabled={disabled} />
+              <NumericField label="Small-job add ($/LF)" value={getNum(["gutters", "small_job_add_per_lf"])} onChange={(v) => set(["gutters", "small_job_add_per_lf"], v)} disabled={disabled} unit="under threshold" />
+              <NumericField label="Small-job threshold (LF)" value={getNum(["gutters", "small_job_threshold_lf"])} onChange={(v) => set(["gutters", "small_job_threshold_lf"], v)} disabled={disabled} />
             </div>
           </CollapsibleGroup>
         </div>
