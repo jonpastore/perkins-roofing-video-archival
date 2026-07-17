@@ -69,12 +69,16 @@ def test_estimates_expose_pricing_drivers_discounts_and_estimate_linkage():
 
     assert "Recommended tier" in source
     assert "EstimateCheckbox" in source
-    assert "Demo / tear-off" in source
+    # Demo is now the existing-roof selector (Zoom 2026-07-17: price by what's torn OFF)
+    assert "Existing roof (what are we tearing off?)" in source
+    assert "New construction" in source
+    assert "existing_roof" in source
     assert "Discounts affect total and margin" in source
     assert "estimate_id: quoteResult.estimate_id" in source
     assert "recommended_tier: recommendedTier" in source
+    # Tier math now derives from the server-computed package menu
     assert "tierTotalsForQuote" in source
-    assert "Bridge tier math to Perkins package adders" in source
+    assert "package_options" in source
 
 
 def test_estimates_auto_route_roofr_low_slope_when_rates_available():
