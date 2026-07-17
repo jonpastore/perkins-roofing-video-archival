@@ -12,6 +12,12 @@ _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp.close()
 os.environ["DB_URL"] = f"sqlite:///{_tmp.name}"
 
+# Hermetic google.auth: strip any ambient GOOGLE_APPLICATION_CREDENTIALS (e.g. the
+# perkins-deploy-sa key exported in ~/.bashrc) so tests never pick up a real credential.
+# With a live SA key present, google.auth succeeds where knowify/grpc tests expect no
+# creds (or a mock), and they fail non-deterministically depending on the dev's shell.
+os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
+
 
 import pytest  # noqa: E402
 
