@@ -235,12 +235,6 @@ def quote(
     result["county"] = body.county
     result["slope_type"] = effective_slope_type
     result["selected_tier"] = body.selected_tier
-    # Full package menu (Protector from the engine total + flat catalog adders — Zoom
-    # 2026-07-17: offer ALL premiums + coastal, adders don't re-price cuts). Pre-discount.
-    from core.perkins_packages import package_options  # noqa: PLC0415
-    result["package_options"] = package_options(
-        body.roof_type, float(body.num_squares), float(result["project_total"])
-    )
 
     # Discounts are sales concessions. They reduce project_total and available
     # profit/margin, while preserving the pre-discount engine total for audit.
@@ -284,6 +278,15 @@ def quote(
             "combined_floor_ok": combined_pct >= config.raw["profit_plus_oh_floor_pct"],
             "margin_warnings": warnings,
         }
+
+    # Full package menu (Protector from the engine total + flat catalog adders — Zoom
+    # 2026-07-17: offer ALL premiums + coastal; adders don't re-price cuts). Computed
+    # AFTER discounts so tier totals, the proposal snapshot, and the deposit all agree
+    # with the discounted headline number ("Discounts affect total and margin").
+    from core.perkins_packages import package_options  # noqa: PLC0415
+    result["package_options"] = package_options(
+        body.roof_type, float(body.num_squares), float(result["project_total"])
+    )
 
     # Persist estimate row for audit reproduction (TRD §2.2)
     parent_id = body.parent_estimate_id
