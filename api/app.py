@@ -35,6 +35,7 @@ from api.routes.quotes import router as quotes_router
 from api.routes.scheduling import router as scheduling_router
 from api.routes.squares import router as squares_router
 from api.routes.suggestions import router as suggestions_router
+from api.routes.connections import router as connections_router
 from api.routes.topics import router as topics_router
 from api.routes.users import me_router
 from api.routes.users import router as users_router
@@ -119,6 +120,7 @@ app.include_router(proposals_router)
 app.include_router(squares_router)
 app.include_router(admin_metrics_router)
 app.include_router(audit_router)
+app.include_router(connections_router)
 
 
 class Query(BaseModel):
