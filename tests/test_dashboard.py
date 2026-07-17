@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 import api.app as appmod
 from api.auth import set_verifier
-from app.models import Base, Branch, Customer, Invoice, Payment, Proposal, SessionLocal, init_db
+from app.models import Base, Customer, Invoice, Payment, Proposal, SessionLocal, init_db
 from core.dashboard import (
     aging_buckets,
     branch_exists,
@@ -97,13 +97,6 @@ def _customer(session, branch="miami") -> Customer:
     session.add(c)
     session.flush()
     return c
-
-
-def _branch_row(session, key: str, name: str | None = None) -> Branch:
-    b = Branch(key=key, name=name or key.title())
-    session.add(b)
-    session.flush()
-    return b
 
 
 # ---------------------------------------------------------------------------
@@ -539,9 +532,9 @@ class TestProposalFunnelOverTime:
 
 class TestBranchFilter:
     def test_branch_exists(self):
-        e = _engine()
-        s = _session(e)
-        _branch_row(s, "miami", "Miami")
+        # Branch table auto-seeds miami/jupiter/naples/gc for tenant 1 on create_all
+        # (app/models.py _seed_default_branches) — no manual insert needed.
+        s = _session(_engine())
         assert branch_exists(s, "miami") is True
         assert branch_exists(s, "atlantis") is False
 
@@ -646,13 +639,18 @@ class TestBillingDashboardRouteBranch:
     @pytest.fixture(autouse=True)
     def _setup_db(self):
         init_db()
+        with SessionLocal() as db:
+            db.query(Invoice).delete()
+            db.query(Customer).delete()
+            db.commit()
 
     def _seed(self):
         with SessionLocal() as db:
             db.info["tenant_id"] = 1
+            # branches table auto-seeds miami/jupiter for tenant 1 (app/models.py _seed_default_branches)
             miami = Customer(display_name="Miami Co", branch="miami")
             jupiter = Customer(display_name="Jupiter Co", branch="jupiter")
-            db.add_all([miami, jupiter, Branch(key="miami", name="Miami"), Branch(key="jupiter", name="Jupiter")])
+            db.add_all([miami, jupiter])
             db.flush()
             db.add_all([
                 Invoice(job_id=1, customer_id=miami.id, status="sent", total="500.00", subtotal="500.00",
