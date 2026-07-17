@@ -166,8 +166,11 @@ resource "cloudflare_record" "txt_dkim" {
   proxied = false
 }
 
-# DMARC — p=quarantine since 2026-07-10 (Google DKIM record live + "Start
-# authentication" clicked by Jon). rua reports to dmarc@perkinsroofing.net
+# DMARC — p=reject since 2026-07-17 (was p=quarantine 2026-07-10..17). Evidence
+# for the flip (28 aggregate reports, 528 msgs, Jul 10-16): 515 aligned-pass /
+# 13 fail = 97.5%, and ALL 13 failures were dkim=fail+spf=fail spoofing from
+# bare VPS/cloud IPs (202.95.15.94 x8, AWS, GCP, Orange) — zero legit senders
+# failing. rua reports to dmarc@perkinsroofing.net
 # (create the group in Google Admin if it doesn't exist yet).
 #
 # ruf (forensic) added 2026-07-14. No `fo` tag = fo=0 = report only when NO
@@ -183,7 +186,7 @@ resource "cloudflare_record" "txt_dmarc" {
   zone_id = var.cloudflare_zone_id
   name    = "_dmarc"
   type    = "TXT"
-  content = "v=DMARC1; p=quarantine; rua=mailto:dmarc@perkinsroofing.net; ruf=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
+  content = "v=DMARC1; p=reject; rua=mailto:dmarc@perkinsroofing.net; ruf=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
   ttl     = 3600
   proxied = false
 }
