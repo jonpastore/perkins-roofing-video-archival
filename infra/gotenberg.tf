@@ -13,7 +13,7 @@ resource "google_cloud_run_v2_service" "gotenberg" {
   # connector), so INTERNAL_ONLY returned a GFE 404. Ingress is ALL but IAM still gates
   # every request — only api_run_sa holds roles/run.invoker (binding below), so this is
   # authenticated-only, not public.
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   # Stateless HTML→PDF render service — no data to protect, and the provider default
   # of true blocks recreating a tainted/failed revision. Safe to allow deletion.
