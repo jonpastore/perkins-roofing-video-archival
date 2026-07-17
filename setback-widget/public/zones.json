@@ -1,0 +1,63 @@
+{
+  "_sources": {
+    "metal_alliance": "https://www.ersmetals.com/downloads/Metal%20Alliance%20Warranty.pdf (Consolidated Limited Product Warranty, 08/2022)",
+    "gulf_coast_guardian": "https://gulfcoastsupply.com/wp-content/uploads/2025/03/SAMPLE-GCSM-50-year-one-time-transferable-PVDF-Guardian-Warranty_2025.pdf",
+    "gulf_coast_oceanguard": "https://gulfcoastsupply.com/wp-content/uploads/2024/01/SAMPLE_OceanGuard-50-20-Year-Warranty_FINAL.pdf",
+    "englert": "https://www.englertinc.com/sites/default/files/2021-10/REV%20FINAL%20SAMPLE%20Englert%20U%20S%20%20Roof%20Warranty%202_2021.pdf (Rev 6, 2/2021)",
+    "pac_clad_standard": "https://www.pac-clad.com/wordpress2021/wp-content/uploads/2023/11/35-Year-Finish-Limited-Warranty-Sample.pdf",
+    "pac_clad_coastal": "https://www.pac-clad.com/wordpress2021/wp-content/uploads/2021/11/PAC-CLAD-Coastal-Finish-Warranty.pdf",
+    "zam_mill": "https://sunshinemetalsupply.com/wp-content/uploads/2024/07/east-lake-zam-coastal-warranty-sample.pdf (Wheeling-NipponSteel ZAM mill warranty)"
+  },
+  "materials": [
+    {
+      "name": "Aluminum (Kynar/PVDF or Tedlar coated)",
+      "blurb": "The waterfront choice — warrantied at any distance, including beachfront. Most brands require a twice-yearly fresh-water rinse near salt water.",
+      "provisions": [
+        { "manufacturer": "Metal Alliance", "void_within_ft": null, "conditional_within_ft": 1500,
+          "note": "Tedlar® aluminum: full coastal coverage, no setback. PVDF/FEVE aluminum: covered coastal at a reduced term (25/25/25 vs 25/40/30 yr)." },
+        { "manufacturer": "Gulf Coast (OceanGuard™)", "void_within_ft": null, "conditional_within_ft": 1500,
+          "note": "No distance exclusion — warrantied on the beach. Condition: twice-yearly fresh-water rinse with records (AAMA 610)." },
+        { "manufacturer": "Englert", "void_within_ft": null, "conditional_within_ft": 2640,
+          "note": "Within ½ mile: covered at 25-yr (vs 35-yr) paint term + mandatory annual fresh-water rinse with records." },
+        { "manufacturer": "PAC-CLAD (Coastal 30-yr)", "void_within_ft": null, "conditional_within_ft": 1500,
+          "note": "Aluminum-only coastal warranty (30 yr): within 1,500 ft requires twice-yearly fresh-water rinse (AAMA 609/610). Standard 35-yr warranty instead voids inside ½ mile." }
+      ]
+    },
+    {
+      "name": "ZAM® / ZM-coated steel (PVDF/FEVE painted)",
+      "blurb": "Zinc-aluminum-magnesium coated steel — warrantied far closer to the water than regular Galvalume (mill warranty: only the last 300 ft to breaking surf is excluded).",
+      "provisions": [
+        { "manufacturer": "Wheeling-NipponSteel (ZAM® mill)", "void_within_ft": 300, "conditional_within_ft": 5280,
+          "note": "20.5-yr no-perforation warranty; excludes 'areas within 300 feet of the ocean coastline with breaking surf'. Requires ZM90+ coating, 24-ga min, PVDF/FEVE paint, twice-yearly fresh-water rinse. Not on pilings/over water." },
+        { "manufacturer": "Metal Alliance (MagnaGuard™ ZM150)", "void_within_ft": 1500, "conditional_within_ft": null,
+          "note": "Master warranty lists MagnaGuard steel as Non-Coastal only — no coverage within the 1,500 ft 'Coastal Area' (seacoast, salt or brackish water). Ask your rep for a Coastalume™-specific schedule (marketing cites 300 ft/0 ft but no warranty doc verifies it yet)." }
+      ]
+    },
+    {
+      "name": "Kynar/PVDF-painted steel (Galvalume / AZ50)",
+      "blurb": "Premium-painted steel — brand-dependent near salt water: void anywhere from 1,500 ft to a full ½ mile depending on manufacturer.",
+      "provisions": [
+        { "manufacturer": "Gulf Coast (Guardian PVDF steel)", "void_within_ft": 1500, "conditional_within_ft": null,
+          "note": "Void 'within 1500 ft of coastline with breaking surf, 800 ft from coastline with large bay, or 400 ft from marsh'. We apply the most protective 1,500 ft; bay/marsh-front homes may qualify closer — ask us." },
+        { "manufacturer": "Metal Alliance", "void_within_ft": 1500, "conditional_within_ft": null,
+          "note": "Painted steel (AZ50/G90, PVDF/FEVE/SMP) has no Coastal Area coverage — void within 1,500 ft of seacoast, salt or brackish water." },
+        { "manufacturer": "Englert", "void_within_ft": 2640, "conditional_within_ft": null,
+          "note": "'Englert does not offer any warranty for any period of time on prepainted Galvalume®' within ½ mile of seacoast, salt or brackish water." },
+        { "manufacturer": "PAC-CLAD (standard 35-yr)", "void_within_ft": 2640, "conditional_within_ft": null,
+          "note": "Installations 'less than a one-half mile radius from a seacoast, saltwater or other brackish water environment are all excluded'." }
+      ]
+    },
+    {
+      "name": "Standard / mill-finish Galvalume steel",
+      "blurb": "Conventional steel — the most restricted option near salt water; plan on at least a half-mile of separation.",
+      "provisions": [
+        { "manufacturer": "Englert (mill finish)", "void_within_ft": 2640, "conditional_within_ft": null,
+          "note": "No warranty for any period within ½ mile of seacoast, salt or brackish water (AZ55 25-yr / AZ50 20-yr beyond that)." },
+        { "manufacturer": "Metal Alliance (AZ55 acrylic)", "void_within_ft": 1500, "conditional_within_ft": null,
+          "note": "Non-Coastal approval only — no coverage within the 1,500 ft Coastal Area." },
+        { "manufacturer": "PAC-CLAD (G-90/AZ50)", "void_within_ft": 2640, "conditional_within_ft": null,
+          "note": "Standard warranty excludes installations inside a ½-mile radius of salt or brackish water." }
+      ]
+    }
+  ]
+}

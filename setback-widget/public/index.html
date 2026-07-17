@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Coastal Metal Roof Warranty Checker — Perkins Roofing</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<style>
+  :root { --navy: #1b2a52; --red: #ef3c1a; --ink: #1a202c; --sub: #667085; --bg: #f7f8fa; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--navy); color: #fff; padding: 18px 24px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; font-weight: 800; }
+  header .tag { font-size: 13px; opacity: .85; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 20px; }
+  .search { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .search input { flex: 1; min-width: 260px; padding: 12px 14px; font-size: 15px; border: 1px solid #d0d5dd; border-radius: 10px; }
+  .search button { padding: 12px 22px; font-size: 15px; font-weight: 700; color: #fff; background: var(--red); border: none; border-radius: 10px; cursor: pointer; }
+  .search button:disabled { opacity: .6; cursor: default; }
+  #map { height: 380px; border-radius: 12px; border: 1px solid #d0d5dd; }
+  .result { margin: 16px 0; }
+  .verdict { background: #fff; border: 1px solid #d0d5dd; border-radius: 12px; padding: 18px; margin-bottom: 12px; }
+  .verdict h2 { font-size: 17px; margin-bottom: 4px; }
+  .dist { font-size: 14px; color: var(--sub); margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef0f3; vertical-align: top; }
+  th { color: var(--sub); font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+  .ok   { color: #067647; font-weight: 700; }
+  .void { color: #b42318; font-weight: 700; }
+  .cond { color: #b45309; font-weight: 700; }
+  .note { font-size: 12px; color: var(--sub); }
+  .advisory { background: #fffbeb; border: 1px dashed #fcd34d; color: #92400e; border-radius: 10px; padding: 12px 14px; font-size: 13px; margin: 12px 0; }
+  .cta { display: inline-block; margin-top: 8px; background: var(--navy); color: #fff; font-weight: 700; text-decoration: none; padding: 12px 22px; border-radius: 10px; }
+  footer { font-size: 12px; color: var(--sub); padding: 18px 0 40px; line-height: 1.6; }
+  .err { color: #b42318; font-size: 14px; margin: 8px 0; }
+  .spin { color: var(--sub); font-size: 14px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Perkins Roofing</h1>
+  <span class="tag">Coastal Metal Roof Warranty Checker — South Florida</span>
+</header>
+<div class="wrap">
+  <p style="margin: 14px 0; font-size: 15px;">
+    How close is your home to salt water? Enter your address — we'll measure the distance and show
+    which metal roofing materials keep their <strong>manufacturer warranty</strong> valid at your location.
+  </p>
+  <div class="search">
+    <input id="addr" placeholder="Enter your address (e.g. 575 NW 152nd St, Miami, FL)"
+           onkeydown="if(event.key==='Enter')check()" />
+    <button id="go" onclick="check()">Check my address</button>
+  </div>
+  <div id="status"></div>
+  <div id="map"></div>
+  <div class="result" id="result"></div>
+  <footer>
+    <strong>Perkins Roofing</strong> · Est. 1980 · CCC1331944 · perkinsroofing.net ·
+    561.559.ROOF (Jupiter) · 305.MIA.ROOF (Miami)<br />
+    This tool estimates straight-line distance to mapped open salt water (Atlantic, Gulf, bays,
+    and the Intracoastal) and summarizes published manufacturer warranty setback provisions.
+    It is a guide, not a warranty determination — final material eligibility is governed by each
+    manufacturer's current written warranty for your specific product and site. Map data ©
+    OpenStreetMap contributors.
+  </footer>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="./app.js"></script>
+</body>
+</html>

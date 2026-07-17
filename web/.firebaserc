@@ -1,0 +1,11 @@
+{
+  "projects": { "default": "video-archival-and-content-gen" },
+  "targets": {
+    "video-archival-and-content-gen": {
+      "hosting": {
+        "app": ["video-archival-and-content-gen"],
+        "setback": ["perkins-setback"]
+      }
+    }
+  }
+}
