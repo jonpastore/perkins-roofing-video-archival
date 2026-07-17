@@ -19,7 +19,6 @@ comments._owner_access_token) — that exchange does not rotate or invalidate an
 """
 from __future__ import annotations
 
-import json
 import os
 import urllib.error
 import urllib.request
@@ -110,29 +109,25 @@ def probe_knowify() -> ProbeResult | None:
 
 
 def probe_youtube_reply() -> ProbeResult | None:
-    """Exchange the stored owner refresh token for an access token.
+    """Verify the reply token can actually POST — i.e. it authorizes a YouTube channel.
 
-    Google refresh tokens are multi-use (plan Principle 2 / pre-mortem 4) — this exchange
-    is the cheapest liveness check available and does not rotate or burn the credential,
-    unlike Knowify's single-use refresh tokens.
+    A valid, force-ssl-scoped token still 403s on comments.insert if the authorizing
+    account has no channel (or the wrong one), so a bare token-exchange check reads
+    "healthy" for a credential that cannot post. posting_channel() does the exchange
+    AND channels?mine=true; no channel → broken (reconnect as the channel owner).
+    Google refresh tokens are multi-use, so this does not burn the credential.
     """
     if not youtube_comments.reply_oauth_configured():
         return None
     try:
-        youtube_comments._owner_access_token()
-    except urllib.error.HTTPError as exc:
-        if exc.code in (400, 401, 403):
-            body = ""
-            try:
-                body = json.loads(exc.read().decode())
-            except Exception:  # noqa: BLE001 — best-effort error detail only
-                pass
-            return ProbeResult(ok=False, hard_auth_failure=True, error=f"YouTube reply HTTP {exc.code} {body}")
-        return ProbeResult(ok=False, error=f"YouTube reply HTTP {exc.code}")
+        ch = youtube_comments.posting_channel()
     except urllib.error.URLError as exc:
         return ProbeResult(ok=False, error=str(exc.reason))
-    except RuntimeError as exc:
-        # _owner_access_token() raises RuntimeError on a response with no access_token —
-        # a live-looking exchange that returned garbage is as good as a dead credential.
+    except Exception as exc:  # noqa: BLE001 — any exchange/API failure = not currently postable
         return ProbeResult(ok=False, hard_auth_failure=True, error=str(exc))
+    if ch is None:
+        return ProbeResult(
+            ok=False, hard_auth_failure=True,
+            error="token authorizes no YouTube channel — reconnect as the channel owner",
+        )
     return ProbeResult(ok=True)

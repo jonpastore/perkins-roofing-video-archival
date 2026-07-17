@@ -57,7 +57,10 @@ export function Comments() {
   const [draftingId, setDraftingId]   = useState<number | null>(null);
   const [drafts, setDrafts]           = useState<Record<number, string>>({});
   const [actionMsg, setActionMsg]     = useState<string | null>(null);
-  const [oauthConfigured, setOauthConfigured] = useState(false);
+  const [replyCfg, setReplyCfg] = useState<{
+    oauth_configured: boolean; can_post: boolean; channel_title: string;
+    reason: string; can_reconnect: boolean; connect_path: string | null;
+  }>({ oauth_configured: false, can_post: false, channel_title: "", reason: "", can_reconnect: false, connect_path: null });
   const [postingId, setPostingId]     = useState<number | null>(null);
 
   function loadItems(status: StatusFilter, needsOnly: boolean, off: number) {
@@ -86,10 +89,22 @@ export function Comments() {
   useEffect(() => {
     loadItems(statusFilter, needsReplyOnly, 0);
     apiFetch("/comments/reply-config")
-      .then((r) => (r.ok ? r.json() : { oauth_configured: false }))
-      .then((d: { oauth_configured?: boolean }) => setOauthConfigured(!!d.oauth_configured))
-      .catch(() => setOauthConfigured(false));
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d) => setReplyCfg((c) => ({ ...c, ...d })))
+      .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleConnectYouTube() {
+    if (!replyCfg.connect_path) return;
+    try {
+      const r = await apiFetch(replyCfg.connect_path);
+      const d = await r.json();
+      if (d.auth_url) { window.location.href = d.auth_url as string; }
+      else { setActionMsg("Could not start the YouTube connect flow."); }
+    } catch (e: unknown) {
+      setActionMsg(e instanceof Error ? e.message : "Could not start the YouTube connect flow.");
+    }
+  }
 
   function handleStatusChange(val: StatusFilter) {
     setStatusFilter(val);
@@ -216,21 +231,35 @@ export function Comments() {
     <main style={{ maxWidth: 960 }}>
       <PageTitle>Comment Reply Assistant</PageTitle>
 
-      {/* Posting mode note — reflects whether YouTube OAuth posting is configured */}
-      {oauthConfigured ? (
+      {/* Posting mode note — reflects whether the token can ACTUALLY post to the channel */}
+      {replyCfg.can_post ? (
         <Card style={{ marginBottom: 20, background: "#f0f9ff", borderLeft: `4px solid #0ea5e9` }}>
           <p style={{ margin: 0, fontSize: 13, color: "#075985" }}>
-            <strong>Posting enabled:</strong> review or edit a draft, then <em>Post to YouTube</em> to
-            publish the reply directly (posts as the Perkins channel via authorized OAuth).
+            <strong>Posting enabled:</strong> review or edit a draft, then <em>Post to YouTube</em> —
+            replies publish as <strong>{replyCfg.channel_title || "the channel"}</strong>.
           </p>
+        </Card>
+      ) : replyCfg.oauth_configured ? (
+        <Card style={{ marginBottom: 20, background: "#fef2f2", borderLeft: `4px solid #ef4444` }}>
+          <p style={{ margin: 0, fontSize: 13, color: "#991b1b" }}>
+            <strong>Reconnect needed to post:</strong>{" "}
+            {replyCfg.reason || "the connected account cannot post to the channel."}
+          </p>
+          {replyCfg.can_reconnect && (
+            <Button
+              onClick={handleConnectYouTube}
+              style={{ marginTop: 10, fontSize: 12, padding: "5px 12px", background: "#ef4444", borderColor: "#ef4444" }}
+            >
+              Connect YouTube (as channel owner)
+            </Button>
+          )}
         </Card>
       ) : (
         <Card style={{ marginBottom: 20, background: "#fffbeb", borderLeft: `4px solid #f59e0b` }}>
           <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
             <strong>Draft-only mode:</strong> prepares reply drafts to review and copy-paste into
             YouTube. Direct posting needs the channel owner's YouTube OAuth (scope
-            <code> youtube.force-ssl</code>) — see docs/YOUTUBE_REPLY_OAUTH.md to enable the
-            <em> Post to YouTube</em> button. Mark a reply <em>Ready</em> when approved.
+            <code> youtube.force-ssl</code>). Mark a reply <em>Ready</em> when approved.
           </p>
         </Card>
       )}
@@ -416,7 +445,7 @@ export function Comments() {
                           Mark Ready
                         </Button>
                       )}
-                      {oauthConfigured && item.status !== "posted" && (
+                      {replyCfg.can_post && item.status !== "posted" && (
                         <Button
                           disabled={postingId === item.id || !draftValue(item).trim()}
                           onClick={() => handlePost(item)}

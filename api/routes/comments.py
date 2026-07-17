@@ -197,9 +197,49 @@ def update_comment(
 
 @router.get("/reply-config")
 def reply_config(_claims=Depends(require_role("article_read"))):
-    """Report whether direct YouTube reply posting is configured (owner OAuth token present)."""
-    from adapters.youtube_comments import reply_oauth_configured
-    return {"oauth_configured": reply_oauth_configured()}
+    """Report YouTube reply-posting readiness — and whether the connected token can
+    ACTUALLY post (has a channel), so the UI can prompt for reconnect BEFORE a 403.
+
+    Returns:
+      oauth_configured  — env creds present (refresh token + client id/secret).
+      can_post          — the token authorizes a YouTube channel (and matches the
+                          configured owner channel if YT_OWNER_CHANNEL_ID is set).
+      channel_title     — the channel the token acts as (for display), or "".
+      reason            — human-readable why can_post is false.
+      can_reconnect     — the self-service OAuth capture flow is configured, so the UI
+                          can offer a "Connect YouTube" button (GET /oauth/youtube/start).
+    """
+    import os  # noqa: PLC0415
+
+    from adapters.youtube_comments import posting_channel, reply_oauth_configured
+
+    configured = reply_oauth_configured()
+    ch = posting_channel() if configured else None
+    owner = os.getenv("YT_OWNER_CHANNEL_ID", "").strip()
+
+    can_post, reason, title = False, "", ""
+    if not configured:
+        reason = "YouTube reply OAuth is not configured."
+    elif ch is None:
+        reason = ("The connected Google account has no YouTube channel (or the token is "
+                  "invalid) — reconnect as the account that owns the channel.")
+    else:
+        title = ch.get("title") or ""
+        if owner and ch.get("id") != owner:
+            reason = (f"Connected as “{title}”, which is not the configured owner "
+                      f"channel — reconnect as the channel owner.")
+        else:
+            can_post = True
+
+    can_reconnect = bool(os.getenv("OAUTH_STATE_HMAC_KEY") and os.getenv("OAUTH_REDIRECT_BASE"))
+    return {
+        "oauth_configured": configured,
+        "can_post": can_post,
+        "channel_title": title,
+        "reason": reason,
+        "can_reconnect": can_reconnect,
+        "connect_path": "/oauth/youtube/start" if can_reconnect else None,
+    }
 
 
 @router.post("/{comment_id}/post")
@@ -235,8 +275,23 @@ def post_reply_to_youtube(
     try:
         post_reply(row.comment_id, reply_text)
     except RuntimeError as exc:
-        # OAuth not configured — a deliberate, recoverable state.
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        msg = str(exc)
+        low = msg.lower()
+        if "not configured" in low:
+            # OAuth creds absent — reconnect needed. UI shows the Connect flow.
+            raise HTTPException(status_code=503, detail=msg) from exc
+        if "403" in msg or "forbidden" in low:
+            # Valid, scoped token, but the authorizing account can't post as the channel
+            # (no channel / wrong channel). This is a RECONNECT problem — tell the UI so it
+            # prompts for OAuth as the channel owner rather than reading as a server fault.
+            log.warning("post_reply_to_youtube: reconnect required for %d: %s", comment_id, msg)
+            raise HTTPException(
+                status_code=409,
+                detail="reconnect_required: the connected YouTube account cannot post to the "
+                       "channel — reconnect as the channel owner. (" + msg + ")",
+            ) from exc
+        log.error("post_reply_to_youtube: YouTube post failed for %d: %s", comment_id, msg, exc_info=True)
+        raise HTTPException(status_code=502, detail="posting the reply to YouTube failed") from exc
     except Exception as exc:
         log.error("post_reply_to_youtube: YouTube post failed for %d: %s", comment_id, exc, exc_info=True)
         raise HTTPException(status_code=502, detail="posting the reply to YouTube failed") from exc

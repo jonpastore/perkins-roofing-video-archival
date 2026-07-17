@@ -118,6 +118,36 @@ def fetch_comments(
 YOUTUBE_REPLY_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
 _COMMENTS_INSERT = "https://www.googleapis.com/youtube/v3/comments"
+_CHANNELS_MINE = "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true"
+
+
+def posting_channel() -> dict | None:
+    """Return the YouTube channel the stored reply token can post AS, or None.
+
+    Exchanges the refresh token and calls channels?mine=true — the definitive
+    "can this token actually post a comment?" check. A token can be valid and
+    correctly scoped yet still 403 on comments.insert if the authorizing Google
+    account has NO YouTube channel (or is the wrong account): comments are posted
+    AS a channel. Returns {"id", "title"} of the authorized channel, or None when
+    unconfigured, the exchange fails, or the account has no channel. Never raises.
+    """
+    try:
+        access = _owner_access_token()
+    except Exception:  # noqa: BLE001 — unconfigured / exchange failure → not postable
+        return None
+    try:
+        req = urllib.request.Request(
+            _CHANNELS_MINE, headers={"Authorization": f"Bearer {access}"}
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310 — fixed Google API URL
+            data = json.loads(resp.read().decode())
+    except Exception:  # noqa: BLE001
+        return None
+    items = data.get("items") or []
+    if not items:
+        return None
+    ch = items[0]
+    return {"id": ch.get("id"), "title": (ch.get("snippet") or {}).get("title", "")}
 
 
 def reply_oauth_configured() -> bool:
@@ -173,5 +203,18 @@ def post_reply(parent_comment_id: str, text: str) -> dict:
         url, data=body, method="POST",
         headers={"Authorization": f"Bearer {access}", "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 — fixed Google API URL
-        return json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 — fixed Google API URL
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        # Surface YouTube's actual reason instead of a bare 403. The most common one
+        # (reason=forbidden on a valid, force-ssl token) is "the authorizing account
+        # has no channel / is the wrong channel" — a reconnect problem, not a code bug.
+        detail = ""
+        try:
+            err = json.loads(exc.read().decode()).get("error", {})
+            errs = err.get("errors") or [{}]
+            detail = f"{errs[0].get('reason', '')}: {err.get('message', '')}"
+        except Exception:  # noqa: BLE001 — best-effort error detail
+            pass
+        raise RuntimeError(f"YouTube comments.insert HTTP {exc.code} — {detail}".strip()) from exc

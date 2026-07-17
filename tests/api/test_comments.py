@@ -455,3 +455,64 @@ class TestPostReplySafetyGate:
                 assert db.get(CommentDraft, rid).status == "posted"
         finally:
             self._cleanup()
+
+
+# ---------------------------------------------------------------------------
+# reply-config precheck + reconnect prompt (YouTube can't-post → prompt for OAuth)
+# ---------------------------------------------------------------------------
+
+class TestReplyConfigCanPost:
+    def test_can_post_true_when_token_has_channel(self, monkeypatch):
+        monkeypatch.setattr("adapters.youtube_comments.reply_oauth_configured", lambda: True)
+        monkeypatch.setattr("adapters.youtube_comments.posting_channel",
+                            lambda: {"id": "UCxyz", "title": "Perkins Roofing Corp."})
+        d = _admin_client().get("/comments/reply-config", headers=AUTH).json()
+        assert d["can_post"] is True
+        assert d["channel_title"] == "Perkins Roofing Corp."
+
+    def test_can_post_false_when_no_channel(self, monkeypatch):
+        # The live 403 cause: valid token, but the account has no YouTube channel.
+        monkeypatch.setattr("adapters.youtube_comments.reply_oauth_configured", lambda: True)
+        monkeypatch.setattr("adapters.youtube_comments.posting_channel", lambda: None)
+        d = _admin_client().get("/comments/reply-config", headers=AUTH).json()
+        assert d["can_post"] is False
+        assert "no youtube channel" in d["reason"].lower()
+
+    def test_can_post_false_on_owner_channel_mismatch(self, monkeypatch):
+        monkeypatch.setenv("YT_OWNER_CHANNEL_ID", "UCowner")
+        monkeypatch.setattr("adapters.youtube_comments.reply_oauth_configured", lambda: True)
+        monkeypatch.setattr("adapters.youtube_comments.posting_channel",
+                            lambda: {"id": "UCother", "title": "Some Other Channel"})
+        d = _admin_client().get("/comments/reply-config", headers=AUTH).json()
+        assert d["can_post"] is False
+        assert "not the configured owner" in d["reason"].lower()
+
+
+class TestPostReconnectMapping:
+    def _seed(self):
+        with SessionLocal() as db:
+            row = CommentDraft(video_id=_VIDEO_ID, comment_id="yt-rc", author="A",
+                               comment_text="q", needs_reply=True, draft_reply="Clean reply.",
+                               status="ready")
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return row.id
+
+    def test_403_forbidden_maps_to_409_reconnect(self, monkeypatch):
+        rid = self._seed()
+        try:
+            class _Pass:
+                passed = True
+                reason = ""
+            monkeypatch.setattr("adapters.safety.run_gate", lambda t, k: _Pass())
+            def _boom(cid, text):
+                raise RuntimeError("YouTube comments.insert HTTP 403 — forbidden: no channel")
+            monkeypatch.setattr("adapters.youtube_comments.post_reply", _boom)
+            r = _admin_client().post(f"/comments/{rid}/post", headers=AUTH)
+            assert r.status_code == 409
+            assert "reconnect_required" in r.json()["detail"]
+        finally:
+            with SessionLocal() as db:
+                db.query(CommentDraft).filter(CommentDraft.comment_id == "yt-rc").delete()
+                db.commit()
