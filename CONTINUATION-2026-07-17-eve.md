@@ -34,14 +34,32 @@ YouTube connect), exec-ui-builder (builder overhaul: existing-roof, gutters UI, 
 package menu, profit slider, branch-from-customer), security review, full-suite baseline,
 duration-training template (docs/templates/).
 
-## To finish the wave (if interrupted)
-1. Verify+build UI executor work (npm run build), run full backend suite, ruff.
-2. Phase-4 reviews (security running; add architect+code-review on full diff), fix HIGHs.
-3. Deploy: bash scripts/deploy.sh (API) + SPA hosting deploy.
-4. PYTHONPATH=. DB_URL=<prod> .venv/bin/python scripts/seed_gutters_config.py (after deploy).
-5. E2E prod check: quote w/ existing_roof+gutters+daily OH via a Jupiter customer; dashboards
-   by branch; branches admin CRUD.
-6. /oh-my-claudecode:cancel to clear autopilot state.
+## WAVE COMPLETE — deployed + verified in prod (update 2026-07-17 ~7:20pm)
+- **API deployed**: image `f9c13e8` on Cloud Run (branches, gutters engine, existing_roof,
+  package_options post-discount, floors exposure). **SPA deployed** to app hosting.
+- **Phase-4 reviews done**: security (1 MED fixed — create_branch tenant stamp, 8501db4),
+  architect (all 7 items VERIFIED-COMPLETE), code-review (1 HIGH + 3 MED fixed:
+  2-story gutter gate, stale-quote badge, rates-branch, discount coherence).
+- **Prod config seeded**: migration 0041 (branches) + 0042 (pricing-config partial index
+  fix) applied; all branches now on **v3 active** = base + gutters (Tim's email prices) +
+  daily overhead (Tim's Zoom targets: demo 1050/tile 745/metal 850/shingle 700, $2,500
+  weekly floor). GC still has no config (503 until Tim provides values — expected).
+- **E2E verified on prod**: branches list, gutters (384LF 2-story 7" = $6,988.80 exact),
+  daily overhead ($8,670 = 4×1050+6×745 exact), all package tiers match Greener PDF to the
+  $, tile-demo+dumpster on tile teardown, new-construction clean, dashboard ?branch=,
+  floors exposed, unknown-branch rejected. PROTECTOR now $53,100 vs Tim's $51,950 (~2%;
+  remaining gap = the manual roof-cuts custom-calc, not yet wired).
+- **The schema bug this wave surfaced (0042)**: 0014's UNIQUE(tenant,branch,is_active)
+  capped each branch at 2 config versions; once the seeds made branches 2-version, the
+  Admin "save config" POST would 409. Fixed to a partial index (one active, unlimited
+  history) — Postgres AND sqlite_where so tests stay correct.
+- Demo walkthrough: docs/plans/2026-07-17-monday-demo-walkthrough.md (Cloudflare free-tier
+  draft, fact-checked). Duration-training template: docs/templates/.
+
+Remaining to fully close: none blocking. Optional: /oh-my-claudecode:cancel to clear
+autopilot state; the API image (f9c13e8) trails HEAD by the inert model-index declaration
+(0042) + docs — a redeploy is NOT required (the index change is DDL-only, prod already has
+it via migration; queries unchanged).
 
 ## Monday-demo remaining gaps (from zoom-analysis, not in this wave)
 RoofR ingestion (Jon needs account access/call), CompanyCam (Tim adds Jon), original
