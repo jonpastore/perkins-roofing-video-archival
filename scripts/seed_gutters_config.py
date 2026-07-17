@@ -64,16 +64,19 @@ def main() -> None:
         if args.dry_run:
             print(f"{branch}: would create v{active.version + 1} with gutters (from v{active.version})")
             continue
+        # Deactivate + flush before inserting the new active version —
+        # uq_pricing_configs_active_branch is non-deferrable (one active per branch).
+        new_version = active.version + 1
+        active.is_active = False
+        s.flush()
         new = PricingConfig(
-            branch=branch, version=active.version + 1,
+            branch=branch, version=new_version,
             label=f"{active.label or branch} + gutters (Tim email 7/17)",
             config=cfg, config_hash=compute_hash(cfg),
-            is_active=False, created_by="seed_gutters_config.py", tenant_id=1,
+            is_active=True, created_by="seed_gutters_config.py", tenant_id=1,
         )
         s.add(new)
         s.flush()
-        active.is_active = False
-        new.is_active = True
         print(f"{branch}: created + activated v{new.version} (id={new.id})")
     if not args.dry_run:
         s.commit()

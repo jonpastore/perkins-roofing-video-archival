@@ -522,6 +522,13 @@ class PricingConfig(Base):
         UniqueConstraint("tenant_id", "branch", "version",
                          name="uq_pricing_configs_tenant_branch_version"),
         Index("ix_pricing_configs_tenant_branch", "tenant_id", "branch"),
+        # One ACTIVE config per (tenant, branch); unlimited inactive version history.
+        # Partial index (migration 0042) — replaces 0014's UNIQUE(tenant,branch,is_active)
+        # which wrongly capped history at 2 rows/branch. The WHERE predicate must be set
+        # per-dialect: without sqlite_where it degrades to a plain UNIQUE(tenant,branch)
+        # on SQLite and blocks version history in tests.
+        Index("uq_pricing_configs_one_active_per_branch", "tenant_id", "branch",
+              unique=True, postgresql_where=text("is_active"), sqlite_where=text("is_active")),
     )
 
 
