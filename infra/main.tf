@@ -644,6 +644,30 @@ resource "google_cloud_scheduler_job" "crawl_comments" {
 # in one execution without the API request timeout constraint.
 # Cadence: 02:00 Chicago time daily — off-peak, after the overnight crawl-comments
 # rotation has already refreshed the most recently touched videos.
+# Probe shared platform integrations (wordpress/resend/knowify/youtube_reply) every 30 min
+# and persist health status onto `integration_status` (plan Phase 1.4). Alert email on
+# transition-to-broken is sent by the job itself via adapters/resend.py; this scheduler only
+# owns the cadence + the request auth (X-Internal-Secret, mirrors every other /internal/* job).
+resource "google_cloud_scheduler_job" "integration_health" {
+  name      = "integration-health"
+  region    = var.region
+  schedule  = "*/30 * * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/integration-health"
+    http_method = "POST"
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_cloud_scheduler_job" "poll_archive_kpis" {
   name      = "poll-archive-kpis"
   region    = var.region
@@ -900,6 +924,61 @@ resource "google_monitoring_alert_policy" "knowify_sync_failure_alert" {
   }
 
   depends_on = [google_logging_metric.knowify_sync_failures]
+}
+
+# ---------------------------------------------------------------------------
+# 10e. Alerting — Integration Health scheduler execution failure (job-liveness layer,
+#      plan Phase 1.4 / Option C). This is the layer Cloud Monitoring owns: the SCHEDULER
+#      failing to reach the endpoint (5xx / timeout), NOT the business-status alarm (that's
+#      the app's own transition-to-broken email in jobs/integration_health_job.py). Reuses
+#      the existing knowify_alert_email notification channel (same var.alert_email
+#      recipient) rather than provisioning a second identical channel.
+#      guard: count=0 when alert_email is empty, same pattern as 10d above.
+# ---------------------------------------------------------------------------
+
+resource "google_logging_metric" "integration_health_failures" {
+  name   = "integration_health_failures"
+  filter = <<-EOT
+    resource.type="cloud_scheduler_job"
+    resource.labels.job_id="integration-health"
+    severity>=ERROR
+  EOT
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_monitoring_alert_policy" "integration_health_failure_alert" {
+  count        = var.alert_email != "" ? 1 : 0
+  display_name = "Integration Health — scheduler execution failure (5xx)"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "integration-health scheduler job failed"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/integration_health_failures\" resource.type=\"cloud_scheduler_job\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+      aggregations {
+        alignment_period   = "1800s"
+        per_series_aligner = "ALIGN_COUNT"
+      }
+    }
+  }
+
+  notification_channels = [
+    google_monitoring_notification_channel.knowify_alert_email[0].name,
+  ]
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+
+  depends_on = [google_logging_metric.integration_health_failures]
 }
 
 # ---------------------------------------------------------------------------

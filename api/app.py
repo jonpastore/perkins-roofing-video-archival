@@ -354,6 +354,15 @@ def crawl_comments_cron():
     return run(limit=50, max_drafts=25)
 
 
+@app.post("/internal/integration-health", dependencies=[Depends(_require_internal)])
+def integration_health_cron():
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). Probes shared platform
+    integrations (wordpress, resend, knowify, youtube_reply), persists health status, and
+    emails an admin alert on transition to broken. Runs every 30 min (infra/main.tf)."""
+    from jobs.integration_health_job import run
+    return run()
+
+
 @app.get("/internal/tenants")
 def internal_tenants(audit=Depends(require_internal_tenants)):
     """Platform-admin tenant listing (F4b stub — full management API is F6 scope).
