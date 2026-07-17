@@ -358,8 +358,15 @@ function ZoneTypeTable({
   onChange: (updated: Record<string, Record<string, number | null>>) => void;
   disabled: boolean;
 }) {
-  const zones = Object.keys(data);
-  const types = zones.length > 0 ? Object.keys(data[zones[0]]) : [];
+  // "_pending_*" keys are Tim-note comments riding inside the zone dicts, not rate
+  // rows — render them as tooltips on their cell, never as editable rows.
+  const zones = Object.keys(data).filter((k) => !k.startsWith("_"));
+  const types = zones.length > 0 ? Object.keys(data[zones[0]]).filter((k) => !k.startsWith("_")) : [];
+
+  function pendingNote(zone: string, type: string): string | undefined {
+    const note = (data[zone] as Record<string, unknown> | undefined)?.[`_pending_${type}_${zone.toLowerCase()}`];
+    return typeof note === "string" ? note : undefined;
+  }
 
   function handleChange(zone: string, type: string, val: number | null) {
     onChange({
@@ -427,26 +434,16 @@ function ZoneTypeTable({
                 </td>
                 {zones.map((z) => {
                   const val = data[z][type];
+                  const note = pendingNote(z, type);
                   return (
                     <td key={z} style={{ padding: "4px 8px", textAlign: "right" }}>
-                      {val === null ? (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: "#b45309",
-                            background: "#fff3e0",
-                            padding: "1px 7px",
-                            borderRadius: 10,
-                          }}
-                        >
-                          Pending Tim
-                        </span>
-                      ) : (
+                      {(
                         <input
                           type="number"
                           disabled={disabled}
                           value={val ?? ""}
+                          placeholder={val === null ? "Pending Tim" : undefined}
+                          title={note}
                           onChange={(e) =>
                             handleChange(
                               z,
@@ -462,6 +459,7 @@ function ZoneTypeTable({
                             textAlign: "right",
                             background: disabled ? BRAND.bg : "#fff",
                             cursor: disabled ? "default" : "text",
+                            ...(val === null ? { borderColor: "#fcd34d", background: "#fffbf0" } : {}),
                           }}
                         />
                       )}
@@ -573,6 +571,7 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
     const updated = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
     let cur: Record<string, unknown> = updated;
     for (let i = 0; i < path.length - 1; i++) {
+      if (typeof cur[path[i]] !== "object" || cur[path[i]] === null) cur[path[i]] = {};
       cur = cur[path[i]] as Record<string, unknown>;
     }
     cur[path[path.length - 1]] = value;
@@ -1046,6 +1045,34 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                 onChange={(v) => set(["low_slope", "tear_off_per_layer_per_sq"], v)}
                 disabled={disabled}
               />
+            </div>
+          </CollapsibleGroup>
+
+          <CollapsibleGroup title="Gutters (Pending Tim)" accent="#fffbf0">
+            <div
+              style={{
+                border: `1px dashed #fcd34d`,
+                borderRadius: 8,
+                padding: "12px 14px",
+                background: "#fffbf0",
+                marginBottom: 14,
+              }}
+            >
+              <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
+                Gutter rates are <strong>pending Tim</strong> (Google sheet / 7-17 Zoom). Null fields
+                price nothing until filled — a quote that uses one shows a clear "pending" error.
+                1–2 story installs are standard; the high-reach add applies when the crew needs a
+                lift/machine.
+              </p>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <NumericField label='6" aluminum ($/LF)' value={getNum(["gutters", "price_per_lf", "6_inch"])} onChange={(v) => set(["gutters", "price_per_lf", "6_inch"], v)} disabled={disabled} />
+              <NumericField label='7" aluminum ($/LF)' value={getNum(["gutters", "price_per_lf", "7_inch"])} onChange={(v) => set(["gutters", "price_per_lf", "7_inch"], v)} disabled={disabled} />
+              <NumericField label='6" copper ($/LF)' value={getNum(["gutters", "copper_price_per_lf", "6_inch"])} onChange={(v) => set(["gutters", "copper_price_per_lf", "6_inch"], v)} disabled={disabled} />
+              <NumericField label='7" copper ($/LF)' value={getNum(["gutters", "copper_price_per_lf", "7_inch"])} onChange={(v) => set(["gutters", "copper_price_per_lf", "7_inch"], v)} disabled={disabled} />
+              <NumericField label="Downspouts ($/LF)" value={getNum(["gutters", "downspout_per_lf"])} onChange={(v) => set(["gutters", "downspout_per_lf"], v)} disabled={disabled} />
+              <NumericField label="Copper downspouts ($/LF)" value={getNum(["gutters", "copper_downspout_per_lf"])} onChange={(v) => set(["gutters", "copper_downspout_per_lf"], v)} disabled={disabled} />
+              <NumericField label="High reach / machine add ($ flat)" value={getNum(["gutters", "high_reach_add"])} onChange={(v) => set(["gutters", "high_reach_add"], v)} disabled={disabled} />
             </div>
           </CollapsibleGroup>
         </div>

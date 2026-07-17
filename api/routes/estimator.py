@@ -91,6 +91,11 @@ class QuoteRequest(BaseModel):
     extra_line_items: list[str] = Field(default_factory=list)
     ridge_vent_lf: float = 0
     layers_to_remove: int = 0
+    gutter_lf: float = Field(default=0, ge=0)
+    gutter_size: Literal["6_inch", "7_inch"] = "6_inch"
+    gutter_material: Literal["aluminum", "copper"] = "aluminum"
+    downspout_lf: float = Field(default=0, ge=0)
+    gutter_high_reach: bool = False
     deck_type: Optional[str] = None
     include_insulation: bool = False
     include_tapered: bool = False
@@ -179,6 +184,11 @@ def quote(
         extra_line_items=body.extra_line_items,
         ridge_vent_lf=body.ridge_vent_lf,
         layers_to_remove=body.layers_to_remove,
+        gutter_lf=body.gutter_lf,
+        gutter_size=body.gutter_size,
+        gutter_material=body.gutter_material,
+        downspout_lf=body.downspout_lf,
+        gutter_high_reach=body.gutter_high_reach,
         deck_type=body.deck_type,
         include_insulation=body.include_insulation,
         include_tapered=body.include_tapered,

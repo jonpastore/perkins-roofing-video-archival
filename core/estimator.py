@@ -173,6 +173,14 @@ class QuoteInput:
     include_insulation: bool = False
     include_tapered: bool = False
 
+    # Gutters (rates live in config["gutters"]; pending-Tim nulls raise ConfigError
+    # only when a quote actually uses them)
+    gutter_lf: float = 0
+    gutter_size: str = "6_inch"          # 6_inch | 7_inch
+    gutter_material: str = "aluminum"    # aluminum | copper
+    downspout_lf: float = 0
+    gutter_high_reach: bool = False      # 1–2 stories standard; high reach / machine = priced add
+
     # v2: Day-based overhead mode
     overhead_mode: str = "per_sq"        # "per_sq" (default, existing) | "daily"
     daily_series: list[DailyOverheadSeries] = field(default_factory=list)
@@ -426,6 +434,36 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
     if q.ridge_vent_lf:
         rate = config.raw["ridge_vent_per_lf"]
         items.append(LineItem("ridge_vents", "Ridge Vents", q.ridge_vent_lf * rate, tags["ridge_vents"]))
+
+    if q.gutter_lf or q.downspout_lf or q.gutter_high_reach:
+        g = config.raw.get("gutters") or {}
+        tag = tags.get("gutters", "Materials")
+
+        def _gutter_rate(val: Any, name: str) -> float:
+            if val is None:
+                raise ConfigError(
+                    f"gutters.{name} is null (pending Tim) — required by this quote. "
+                    "Fill it in Admin → Estimating Config."
+                )
+            return float(val)
+
+        copper = q.gutter_material == "copper"
+        size_label = '7"' if q.gutter_size == "7_inch" else '6"'
+        if q.gutter_lf:
+            table = g.get("copper_price_per_lf" if copper else "price_per_lf") or {}
+            key = f'{"copper_" if copper else ""}price_per_lf.{q.gutter_size}'
+            rate = _gutter_rate(table.get(q.gutter_size), key)
+            label = f"{size_label} {'Copper ' if copper else ''}Gutters"
+            items.append(LineItem("gutters", label, q.gutter_lf * rate, tag, rate))
+        if q.downspout_lf:
+            key = "copper_downspout_per_lf" if copper else "downspout_per_lf"
+            rate = _gutter_rate(g.get(key), key)
+            label = f"{'Copper ' if copper else ''}Downspouts"
+            items.append(LineItem("downspouts", label, q.downspout_lf * rate, tag, rate))
+        if q.gutter_high_reach:
+            add = _gutter_rate(g.get("high_reach_add"), "high_reach_add")
+            tag_hr = tags.get("gutters", "Labor")
+            items.append(LineItem("gutter_high_reach", "Gutter High Reach / Machine", add, tag_hr))
 
     zone_extras = config.raw["line_items"].get(zone, {})
     for key in q.extra_line_items:

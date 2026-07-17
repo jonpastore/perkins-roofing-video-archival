@@ -539,6 +539,11 @@ export function Quoting() {
   const [quoteStuccoMetalLf, setQuoteStuccoMetalLf] = useState("");
   const [quotePenetrations, setQuotePenetrations] = useState("");
   const [quoteRidgeVentLf, setQuoteRidgeVentLf] = useState("");
+  const [quoteGutterLf, setQuoteGutterLf] = useState("");
+  const [quoteGutterSize, setQuoteGutterSize] = useState<"6_inch" | "7_inch">("6_inch");
+  const [quoteGutterMaterial, setQuoteGutterMaterial] = useState<"aluminum" | "copper">("aluminum");
+  const [quoteDownspoutLf, setQuoteDownspoutLf] = useState("");
+  const [quoteGutterHighReach, setQuoteGutterHighReach] = useState(false);
   const [recommendedTier, setRecommendedTier] = useState<"good" | "better" | "best">("good");
   const [estimateDiscounts, setEstimateDiscounts] = useState<EstimateDiscountRow[]>([]);
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
@@ -907,6 +912,11 @@ export function Quoting() {
       stucco_metal_lf: Number(quoteStuccoMetalLf || 0),
       penetrations: Number(quotePenetrations || 0),
       ridge_vent_lf: Number(quoteRidgeVentLf || 0),
+      gutter_lf: Number(quoteGutterLf || 0),
+      gutter_size: quoteGutterSize,
+      gutter_material: quoteGutterMaterial,
+      downspout_lf: Number(quoteDownspoutLf || 0),
+      gutter_high_reach: quoteGutterHighReach,
       selected_tier: recommendedTier,
       discounts: estimateDiscounts
         .filter((d) => d.description.trim() && d.value.trim())
@@ -1359,17 +1369,66 @@ export function Quoting() {
               </div>
             </div>
 
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 90px 1fr", gap: 10, alignItems: "end" }}>
-              <EstimateCheckbox checked={quoteDemo} onChange={setQuoteDemo} label="Demo / tear-off" />
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 90px", gap: 10, alignItems: "end" }}>
+              <EstimateCheckbox
+                checked={!quoteDemo}
+                onChange={(v) => { setQuoteDemo(!v); if (v) setQuoteLayersToRemove("0"); }}
+                label="New construction"
+              />
+              <EstimateCheckbox
+                checked={quoteDemo}
+                onChange={(v) => { setQuoteDemo(v); setQuoteLayersToRemove(v ? "1" : "0"); }}
+                label="Demo / tear-off"
+              />
+              <div title={quoteDemo ? undefined : "Enable Demo / tear-off to set layers"}>
+                <FieldLabel>Layers</FieldLabel>
+                <input type="number" min="0" step="1" disabled={!quoteDemo} value={quoteLayersToRemove} onChange={(e) => setQuoteLayersToRemove(e.target.value)} style={{ ...inputStyle, width: "100%", opacity: quoteDemo ? 1 : 0.5 }} />
+              </div>
+            </div>
+            {quoteDemo && (quoteRoofType === "13_tile" || quoteRoofType === "barrel_tile") && (
+              <div style={{ marginTop: 6, fontSize: 11, color: BRAND.sub }}>
+                Tile demo adds the tile-demo rate and dumpsters automatically.
+              </div>
+            )}
+
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, alignItems: "end" }}>
               <EstimateCheckbox checked={quoteSecondaryWater} onChange={setQuoteSecondaryWater} label="SWR" />
               <EstimateCheckbox checked={quoteWinterguard} onChange={setQuoteWinterguard} label="WinterGuard" />
-              <div><FieldLabel>Layers</FieldLabel><input type="number" min="0" step="1" value={quoteLayersToRemove} onChange={(e) => setQuoteLayersToRemove(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               <div><FieldLabel>Penetrations</FieldLabel><input type="number" min="0" step="1" value={quotePenetrations} onChange={(e) => setQuotePenetrations(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
             </div>
 
             <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div><FieldLabel>Stucco metal LF</FieldLabel><input type="number" min="0" step="1" value={quoteStuccoMetalLf} onChange={(e) => setQuoteStuccoMetalLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               <div><FieldLabel>Ridge vent LF</FieldLabel><input type="number" min="0" step="1" value={quoteRidgeVentLf} onChange={(e) => setQuoteRidgeVentLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <SectionLabel>Gutters</SectionLabel>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 130px 1fr", gap: 10, alignItems: "end", marginTop: 6 }}>
+                <div><FieldLabel>Gutter LF</FieldLabel><input type="number" min="0" step="1" value={quoteGutterLf} onChange={(e) => setQuoteGutterLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+                <div>
+                  <FieldLabel>Size</FieldLabel>
+                  <select value={quoteGutterSize} onChange={(e) => setQuoteGutterSize(e.target.value as "6_inch" | "7_inch")} style={selectStyle}>
+                    <option value="6_inch">6"</option>
+                    <option value="7_inch">7"</option>
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Material</FieldLabel>
+                  <select value={quoteGutterMaterial} onChange={(e) => setQuoteGutterMaterial(e.target.value as "aluminum" | "copper")} style={selectStyle}>
+                    <option value="aluminum">Aluminum</option>
+                    <option value="copper">Copper</option>
+                  </select>
+                </div>
+                <div><FieldLabel>Downspout LF</FieldLabel><input type="number" min="0" step="1" value={quoteDownspoutLf} onChange={(e) => setQuoteDownspoutLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <EstimateCheckbox
+                  checked={quoteGutterHighReach}
+                  onChange={setQuoteGutterHighReach}
+                  label="High reach / machine needed (1–2 story is standard)"
+                />
+              </div>
             </div>
 
             <div style={{ marginTop: 16 }}>
