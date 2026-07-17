@@ -5,12 +5,17 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Base, Invoice, Payment, Proposal
+import api.app as appmod
+from api.auth import set_verifier
+from app.models import Base, Branch, Customer, Invoice, Payment, Proposal, SessionLocal, init_db
 from core.dashboard import (
     aging_buckets,
+    branch_exists,
     invoices_issued_over_time,
     open_ar_summary,
     payments_over_time,
@@ -70,9 +75,9 @@ def _payment(session, invoice_id: int, amount: str, payment_date: datetime) -> P
     return p
 
 
-def _proposal(session, status="draft", created_at=None) -> Proposal:
+def _proposal(session, status="draft", created_at=None, customer_id=1) -> Proposal:
     prop = Proposal(
-        customer_id=1,
+        customer_id=customer_id,
         property_id=1,
         title="Test Proposal",
         accept_token=uuid.uuid4().hex[:86],
@@ -85,6 +90,20 @@ def _proposal(session, status="draft", created_at=None) -> Proposal:
     session.add(prop)
     session.flush()
     return prop
+
+
+def _customer(session, branch="miami") -> Customer:
+    c = Customer(display_name=f"Test Customer ({branch})", branch=branch)
+    session.add(c)
+    session.flush()
+    return c
+
+
+def _branch_row(session, key: str, name: str | None = None) -> Branch:
+    b = Branch(key=key, name=name or key.title())
+    session.add(b)
+    session.flush()
+    return b
 
 
 # ---------------------------------------------------------------------------
@@ -512,3 +531,166 @@ class TestProposalFunnelOverTime:
         result = proposal_funnel_over_time(s, _dt(2024, 2, 1), _dt(2024, 2, 3), "day")
         assert [r["period"] for r in result] == ["2024-02-01", "2024-02-02", "2024-02-03"]
         assert all(r["draft"] == 0 and r["sent"] == 0 for r in result)
+
+
+# ---------------------------------------------------------------------------
+# branch filter (core functions)
+# ---------------------------------------------------------------------------
+
+class TestBranchFilter:
+    def test_branch_exists(self):
+        e = _engine()
+        s = _session(e)
+        _branch_row(s, "miami", "Miami")
+        assert branch_exists(s, "miami") is True
+        assert branch_exists(s, "atlantis") is False
+
+    def test_payments_and_invoices_filtered_by_branch(self):
+        e = _engine()
+        s = _session(e)
+        miami = _customer(s, branch="miami")
+        jupiter = _customer(s, branch="jupiter")
+        inv_m = _invoice(s, customer_id=miami.id, total="1000.00", invoice_date=_dt(2024, 1, 10))
+        inv_j = _invoice(s, customer_id=jupiter.id, total="500.00", invoice_date=_dt(2024, 1, 12))
+        _payment(s, inv_m.id, "1000.00", _dt(2024, 1, 15))
+        _payment(s, inv_j.id, "500.00", _dt(2024, 1, 16))
+
+        all_payments = payments_over_time(s, _dt(2024, 1, 1), _dt(2024, 1, 31))
+        miami_payments = payments_over_time(s, _dt(2024, 1, 1), _dt(2024, 1, 31), branch="miami")
+        assert sum((r["total"] for r in all_payments), Decimal("0")) == Decimal("1500.00")
+        assert sum((r["total"] for r in miami_payments), Decimal("0")) == Decimal("1000.00")
+
+        all_invoices = invoices_issued_over_time(s, _dt(2024, 1, 1), _dt(2024, 1, 31))
+        jupiter_invoices = invoices_issued_over_time(s, _dt(2024, 1, 1), _dt(2024, 1, 31), branch="jupiter")
+        assert sum((r["total"] for r in all_invoices), Decimal("0")) == Decimal("1500.00")
+        assert sum((r["total"] for r in jupiter_invoices), Decimal("0")) == Decimal("500.00")
+
+    def test_open_ar_and_aging_filtered_by_branch(self):
+        e = _engine()
+        s = _session(e)
+        miami = _customer(s, branch="miami")
+        jupiter = _customer(s, branch="jupiter")
+        _invoice(s, customer_id=miami.id, status="sent", total="800.00", due_date=_dt(2024, 2, 1))
+        _invoice(s, customer_id=jupiter.id, status="sent", total="300.00", due_date=_dt(2023, 12, 1))
+
+        all_ar = open_ar_summary(s)
+        miami_ar = open_ar_summary(s, branch="miami")
+        assert all_ar["open_total"] == Decimal("1100.00")
+        assert miami_ar["open_total"] == Decimal("800.00")
+
+        all_aging = aging_buckets(s, date(2024, 3, 1))
+        jupiter_aging = aging_buckets(s, date(2024, 3, 1), branch="jupiter")
+        assert sum(all_aging.values()) == Decimal("1100.00")
+        assert jupiter_aging["d90_plus"] == Decimal("300.00")
+        assert jupiter_aging["current"] == Decimal("0")
+
+    def test_receivables_due_next_filtered_by_branch(self):
+        e = _engine()
+        s = _session(e)
+        miami = _customer(s, branch="miami")
+        jupiter = _customer(s, branch="jupiter")
+        _invoice(s, customer_id=miami.id, status="sent", total="500.00", due_date=_dt(2024, 3, 11))
+        _invoice(s, customer_id=jupiter.id, status="sent", total="200.00", due_date=_dt(2024, 3, 15))
+
+        all_r = receivables_due_next(s, date(2024, 3, 1), days=30)
+        miami_r = receivables_due_next(s, date(2024, 3, 1), days=30, branch="miami")
+        assert all_r["total"] == Decimal("700.00")
+        assert miami_r["total"] == Decimal("500.00")
+
+    def test_proposal_funnel_filtered_by_branch(self):
+        e = _engine()
+        s = _session(e)
+        miami = _customer(s, branch="miami")
+        jupiter = _customer(s, branch="jupiter")
+        _proposal(s, status="accepted", created_at=_dt(2024, 2, 1), customer_id=miami.id)
+        _proposal(s, status="declined", created_at=_dt(2024, 2, 2), customer_id=jupiter.id)
+
+        all_funnel = proposal_funnel(s, _dt(2024, 1, 1), _dt(2024, 3, 1))
+        miami_funnel = proposal_funnel(s, _dt(2024, 1, 1), _dt(2024, 3, 1), branch="miami")
+        assert all_funnel["accepted"] == 1 and all_funnel["declined"] == 1
+        assert miami_funnel["accepted"] == 1 and miami_funnel["declined"] == 0
+
+        all_over_time = proposal_funnel_over_time(s, _dt(2024, 2, 1), _dt(2024, 2, 3), "day")
+        jupiter_over_time = proposal_funnel_over_time(
+            s, _dt(2024, 2, 1), _dt(2024, 2, 3), "day", branch="jupiter"
+        )
+        assert sum(r["accepted"] for r in all_over_time) == 1
+        assert sum(r["declined"] for r in all_over_time) == 1
+        assert sum(r["accepted"] for r in jupiter_over_time) == 0
+        assert sum(r["declined"] for r in jupiter_over_time) == 1
+
+    def test_absent_branch_unchanged(self):
+        """No branch arg -> identical to current (pre-feature) behavior: all customers included."""
+        e = _engine()
+        s = _session(e)
+        miami = _customer(s, branch="miami")
+        jupiter = _customer(s, branch="jupiter")
+        _invoice(s, customer_id=miami.id, status="sent", total="100.00")
+        _invoice(s, customer_id=jupiter.id, status="sent", total="200.00")
+        assert open_ar_summary(s)["open_total"] == open_ar_summary(s, branch=None)["open_total"] == Decimal("300.00")
+
+
+# ---------------------------------------------------------------------------
+# branch filter (GET /dashboard/billing route wiring)
+# ---------------------------------------------------------------------------
+
+AUTH = {"Authorization": "Bearer x"}
+
+
+def _admin_client() -> TestClient:
+    set_verifier(lambda t: {"uid": "u1", "email": "admin@p.com", "role": "admin", "email_verified": True})
+    return TestClient(appmod.app)
+
+
+class TestBillingDashboardRouteBranch:
+    @pytest.fixture(autouse=True)
+    def _setup_db(self):
+        init_db()
+
+    def _seed(self):
+        with SessionLocal() as db:
+            db.info["tenant_id"] = 1
+            miami = Customer(display_name="Miami Co", branch="miami")
+            jupiter = Customer(display_name="Jupiter Co", branch="jupiter")
+            db.add_all([miami, jupiter, Branch(key="miami", name="Miami"), Branch(key="jupiter", name="Jupiter")])
+            db.flush()
+            db.add_all([
+                Invoice(job_id=1, customer_id=miami.id, status="sent", total="500.00", subtotal="500.00",
+                        tax_amount="0", credit_amount="0", created_by="test",
+                        invoice_date=datetime(2024, 1, 10)),
+                Invoice(job_id=1, customer_id=jupiter.id, status="sent", total="300.00", subtotal="300.00",
+                        tax_amount="0", credit_amount="0", created_by="test",
+                        invoice_date=datetime(2024, 1, 12)),
+            ])
+            db.commit()
+
+    def test_absent_branch_returns_all(self):
+        self._seed()
+        r = _admin_client().get("/dashboard/billing?from=2024-01-01&to=2024-01-31", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["open_ar_summary"]["open_total"] == 800.0
+
+    def test_branch_filters_to_one_customer(self):
+        self._seed()
+        r = _admin_client().get("/dashboard/billing?from=2024-01-01&to=2024-01-31&branch=miami", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["open_ar_summary"]["open_total"] == 500.0
+
+    def test_unknown_branch_422(self):
+        self._seed()
+        r = _admin_client().get("/dashboard/billing?from=2024-01-01&to=2024-01-31&branch=atlantis", headers=AUTH)
+        assert r.status_code == 422
+
+    def test_aging_drilldown_unknown_branch_422(self):
+        self._seed()
+        r = _admin_client().get("/dashboard/billing/aging/current?branch=atlantis", headers=AUTH)
+        assert r.status_code == 422
+
+    def test_aging_drilldown_branch_filters(self):
+        self._seed()
+        r = _admin_client().get(
+            "/dashboard/billing/aging/current?as_of=2024-01-01&branch=jupiter", headers=AUTH
+        )
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert all(item["customer_name"] == "Jupiter Co" for item in items)

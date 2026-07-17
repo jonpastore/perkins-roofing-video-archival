@@ -162,6 +162,10 @@ class QuoteInput:
     project_kind: str = "residential"    # residential | commercial
     pitch_7_12: bool = False
     demo: bool = False
+    # What's being torn OFF (Zoom 2026-07-17 [13:03-14:46]): demo cost follows the EXISTING
+    # roof, not the new one (tile demo ≫ shingle). None = legacy callers (demo bool + new
+    # roof_type decide, preserving old behavior); "none" = new construction (no demo).
+    existing_roof: Optional[str] = None  # none | shingle | tile | metal | flat
     secondary_water_barrier: bool = False
     winterguard: bool = False
     stucco_metal_lf: float = 0
@@ -173,13 +177,18 @@ class QuoteInput:
     include_insulation: bool = False
     include_tapered: bool = False
 
-    # Gutters (rates live in config["gutters"]; pending-Tim nulls raise ConfigError
-    # only when a quote actually uses them)
+    # Gutters — Tim's style-based price list (email 2026-07-17): per-LF price includes the
+    # matching downspouts; 2-story is a per-LF uplift; elbows/leaf guards/leaderheads/removal
+    # are separate. Rates live in config["gutters"]; missing/null rates raise ConfigError only
+    # when a quote actually uses them.
+    gutter_style: Optional[str] = None   # key into config["gutters"]["styles"], e.g. "k6_alum"
     gutter_lf: float = 0
-    gutter_size: str = "6_inch"          # 6_inch | 7_inch
-    gutter_material: str = "aluminum"    # aluminum | copper
-    downspout_lf: float = 0
-    gutter_high_reach: bool = False      # 1–2 stories standard; high reach / machine = priced add
+    gutter_two_story: bool = False
+    gutter_elbows: int = 0
+    gutter_removal_lf: float = 0
+    leaf_guard: str = "none"             # none | std | upgraded
+    leaderheads_res: int = 0
+    leaderheads_comm: int = 0
 
     # v2: Day-based overhead mode
     overhead_mode: str = "per_sq"        # "per_sq" (default, existing) | "daily"
@@ -369,13 +378,17 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
         p712 = config.raw["pitch_7_12_add"]
         items.append(LineItem("pitch_7_12_add", "7/12 Pitch Add", p712 * sq, tags["pitch_7_12_add"], p712))
 
-    if q.demo:
-        if _is_metal(rt):
-            md = config.raw["metal_demo_add"]
-            items.append(LineItem("metal_demo", "Metal Demo", md * sq, tags["metal_demo"], md))
-        elif _is_tile(rt):
-            td = config.raw["tile_demo_add"]
-            items.append(LineItem("tile_demo", "Tile Demo", td * sq, tags["tile_demo"], td))
+    # Demo adds key off what's being TORN OFF when known; legacy callers (existing_roof
+    # unset) keep the old behavior of keying off the NEW roof type.
+    ex = q.existing_roof
+    if ex is None:
+        ex = ("metal" if _is_metal(rt) else "tile" if _is_tile(rt) else "other") if q.demo else "none"
+    if ex == "metal":
+        md = config.raw["metal_demo_add"]
+        items.append(LineItem("metal_demo", "Metal Demo", md * sq, tags["metal_demo"], md))
+    elif ex == "tile":
+        td = config.raw["tile_demo_add"]
+        items.append(LineItem("tile_demo", "Tile Demo", td * sq, tags["tile_demo"], td))
 
     if q.secondary_water_barrier:
         swb = config.raw["secondary_water_barrier_add"]
@@ -407,8 +420,10 @@ def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineIt
         permit += config.raw["permit_commercial_add"]
     items.append(LineItem("permit_processing", "Permit Processing", permit, tags["permit_processing"]))
 
-    # Tile dumpster — automatic for tile roofs
-    if _is_tile(q.roof_type) and q.num_squares > 0:
+    # Tile dumpster — automatic when tile is involved on either side of the job:
+    # new tile roofs need it, and tearing OFF tile generates the dump loads regardless
+    # of what goes on (Zoom [33:20]: one tile dump truck ≈ $1,200).
+    if (_is_tile(q.roof_type) or q.existing_roof == "tile") and q.num_squares > 0:
         count = config.tile_dumpster_count(q.num_squares, zone)
         dumpster_cost = count * config.raw["tile_dumpster_cost"]
         items.append(LineItem("tile_dumpster", "Tile Dumpster", dumpster_cost, tags["tile_dumpster"]))
@@ -435,35 +450,57 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
         rate = config.raw["ridge_vent_per_lf"]
         items.append(LineItem("ridge_vents", "Ridge Vents", q.ridge_vent_lf * rate, tags["ridge_vents"]))
 
-    if q.gutter_lf or q.downspout_lf or q.gutter_high_reach:
+    if q.gutter_lf or q.gutter_removal_lf or q.leaderheads_res or q.leaderheads_comm:
         g = config.raw.get("gutters") or {}
         tag = tags.get("gutters", "Materials")
 
-        def _gutter_rate(val: Any, name: str) -> float:
+        def _grate(val: Any, name: str) -> float:
             if val is None:
                 raise ConfigError(
-                    f"gutters.{name} is null (pending Tim) — required by this quote. "
+                    f"gutters.{name} is missing — required by this quote. "
                     "Fill it in Admin → Estimating Config."
                 )
             return float(val)
 
-        copper = q.gutter_material == "copper"
-        size_label = '7"' if q.gutter_size == "7_inch" else '6"'
         if q.gutter_lf:
-            table = g.get("copper_price_per_lf" if copper else "price_per_lf") or {}
-            key = f'{"copper_" if copper else ""}price_per_lf.{q.gutter_size}'
-            rate = _gutter_rate(table.get(q.gutter_size), key)
-            label = f"{size_label} {'Copper ' if copper else ''}Gutters"
+            styles = g.get("styles") or {}
+            style = styles.get(q.gutter_style or "")
+            if style is None:
+                raise ConfigError(
+                    f"gutters.styles.{q.gutter_style!r} is not configured — pick a configured "
+                    "gutter style or add it in Admin → Estimating Config."
+                )
+            rate_key = "two_story_per_lf" if q.gutter_two_story else "per_lf"
+            rate = _grate(style.get(rate_key), f"styles.{q.gutter_style}.{rate_key}")
+            # Small jobs (under threshold LF) carry a per-LF surcharge (Tim: "+$2 or more")
+            threshold = float(g.get("small_job_threshold_lf") or 0)
+            if threshold and q.gutter_lf < threshold:
+                rate += _grate(g.get("small_job_add_per_lf"), "small_job_add_per_lf")
+            label = style.get("label") or q.gutter_style
+            if q.gutter_two_story:
+                label = f"{label} (2-story)"
             items.append(LineItem("gutters", label, q.gutter_lf * rate, tag, rate))
-        if q.downspout_lf:
-            key = "copper_downspout_per_lf" if copper else "downspout_per_lf"
-            rate = _gutter_rate(g.get(key), key)
-            label = f"{'Copper ' if copper else ''}Downspouts"
-            items.append(LineItem("downspouts", label, q.downspout_lf * rate, tag, rate))
-        if q.gutter_high_reach:
-            add = _gutter_rate(g.get("high_reach_add"), "high_reach_add")
-            tag_hr = tags.get("gutters", "Labor")
-            items.append(LineItem("gutter_high_reach", "Gutter High Reach / Machine", add, tag_hr))
+            if q.gutter_elbows:
+                each = _grate(style.get("elbow_each", 0), f"styles.{q.gutter_style}.elbow_each")
+                if each:
+                    items.append(LineItem("gutter_elbows", "Gutter Elbows", q.gutter_elbows * each, tag))
+            if q.leaf_guard != "none":
+                lg_key = "leaf_guard_upgraded_per_lf" if q.leaf_guard == "upgraded" else "leaf_guard_std_per_lf"
+                lg = _grate(g.get(lg_key), lg_key)
+                lg_label = "Leaf Guard (upgraded)" if q.leaf_guard == "upgraded" else "Leaf Guard (standard)"
+                items.append(LineItem("leaf_guard", lg_label, q.gutter_lf * lg, tag, lg))
+        if q.gutter_removal_lf:
+            rem = _grate(g.get("removal_per_lf"), "removal_per_lf")
+            items.append(LineItem("gutter_removal", "Gutter Removal & Disposal",
+                                  q.gutter_removal_lf * rem, tags.get("gutters", "Labor"), rem))
+        if q.leaderheads_res:
+            each = _grate(g.get("leaderhead_res_each"), "leaderhead_res_each")
+            items.append(LineItem("leaderheads_res", "Leaderhead / Conductor Head (res.)",
+                                  q.leaderheads_res * each, tag))
+        if q.leaderheads_comm:
+            each = _grate(g.get("leaderhead_comm_each"), "leaderhead_comm_each")
+            items.append(LineItem("leaderheads_comm", "Leaderhead / Conductor Head (comm.)",
+                                  q.leaderheads_comm * each, tag))
 
     zone_extras = config.raw["line_items"].get(zone, {})
     for key in q.extra_line_items:

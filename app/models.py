@@ -593,6 +593,24 @@ class Measurement(Base):
 # F3 — Quoting / Proposals
 # ---------------------------------------------------------------------------
 
+class Branch(Base, TenantMixin):
+    """First-class branches (Zoom 2026-07-17): drives every branch selector; each of
+    Tim's companies (Miami/Jupiter/Naples/GC) is a branch; franchisee tenants get their
+    own rows. Seeded by migration 0041."""
+    __tablename__ = "branches"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    key        = Column(String(50), nullable=False)
+    name       = Column(String(100), nullable=False)
+    active     = Column(Boolean, nullable=False, default=True, server_default="true")
+    sort       = Column(Integer, nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key", name="uq_branches_tenant_key"),
+    )
+
+
 class Customer(Base, TenantMixin):
     __tablename__ = "customers"
 
@@ -602,6 +620,9 @@ class Customer(Base, TenantMixin):
     email               = Column(String(255))
     phone               = Column(String(50))
     knowify_customer_id = Column(String(100))
+    # Branch the customer belongs to (branches.key). All Knowify-mirrored customers are
+    # Miami until other subscriptions are connected; child assets inherit this.
+    branch              = Column(String(50), nullable=False, default="miami", server_default="miami")
     # Mirrors Knowify ObjectState: a client Inactive/Cancelled/Deleted in Knowify is
     # is_active=False here (invoices for inactive clients are still imported/linked).
     is_active           = Column(Boolean, nullable=False, default=True, server_default="true")
@@ -1316,6 +1337,26 @@ def _seed_perkins_tenant(target, connection, **kw):
         connection.execute(
             pg_insert(target).values(**row).on_conflict_do_nothing(index_elements=["id"])
         )
+
+
+@event.listens_for(Branch.__table__, "after_create")
+def _seed_default_branches(target, connection, **kw):
+    """Seed tenant 1 branches on fresh DBs (dev/SQLite tests; prod uses migration 0041)."""
+    rows = [
+        {"tenant_id": 1, "key": "miami", "name": "Miami", "sort": 1, "active": True},
+        {"tenant_id": 1, "key": "jupiter", "name": "Jupiter", "sort": 2, "active": True},
+        {"tenant_id": 1, "key": "naples", "name": "Naples", "sort": 3, "active": True},
+        {"tenant_id": 1, "key": "gc", "name": "GC", "sort": 4, "active": True},
+    ]
+    if connection.dialect.name == "sqlite":
+        connection.execute(target.insert().prefix_with("OR IGNORE"), rows)
+    else:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        for row in rows:
+            connection.execute(
+                pg_insert(target).values(**row).on_conflict_do_nothing(
+                    index_elements=["tenant_id", "key"])
+            )
 
 
 # H2 (R2 #321 review): runtime init_db()/create_all (app/ingest.py + several jobs) can

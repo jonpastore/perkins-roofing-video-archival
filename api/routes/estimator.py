@@ -91,11 +91,15 @@ class QuoteRequest(BaseModel):
     extra_line_items: list[str] = Field(default_factory=list)
     ridge_vent_lf: float = 0
     layers_to_remove: int = 0
+    existing_roof: Optional[Literal["none", "shingle", "tile", "metal", "flat"]] = None
+    gutter_style: Optional[str] = Field(default=None, max_length=50)
     gutter_lf: float = Field(default=0, ge=0)
-    gutter_size: Literal["6_inch", "7_inch"] = "6_inch"
-    gutter_material: Literal["aluminum", "copper"] = "aluminum"
-    downspout_lf: float = Field(default=0, ge=0)
-    gutter_high_reach: bool = False
+    gutter_two_story: bool = False
+    gutter_elbows: int = Field(default=0, ge=0)
+    gutter_removal_lf: float = Field(default=0, ge=0)
+    leaf_guard: Literal["none", "std", "upgraded"] = "none"
+    leaderheads_res: int = Field(default=0, ge=0)
+    leaderheads_comm: int = Field(default=0, ge=0)
     deck_type: Optional[str] = None
     include_insulation: bool = False
     include_tapered: bool = False
@@ -184,11 +188,15 @@ def quote(
         extra_line_items=body.extra_line_items,
         ridge_vent_lf=body.ridge_vent_lf,
         layers_to_remove=body.layers_to_remove,
+        existing_roof=body.existing_roof,
+        gutter_style=body.gutter_style,
         gutter_lf=body.gutter_lf,
-        gutter_size=body.gutter_size,
-        gutter_material=body.gutter_material,
-        downspout_lf=body.downspout_lf,
-        gutter_high_reach=body.gutter_high_reach,
+        gutter_two_story=body.gutter_two_story,
+        gutter_elbows=body.gutter_elbows,
+        gutter_removal_lf=body.gutter_removal_lf,
+        leaf_guard=body.leaf_guard,
+        leaderheads_res=body.leaderheads_res,
+        leaderheads_comm=body.leaderheads_comm,
         deck_type=body.deck_type,
         include_insulation=body.include_insulation,
         include_tapered=body.include_tapered,
@@ -227,6 +235,12 @@ def quote(
     result["county"] = body.county
     result["slope_type"] = effective_slope_type
     result["selected_tier"] = body.selected_tier
+    # Full package menu (Protector from the engine total + flat catalog adders — Zoom
+    # 2026-07-17: offer ALL premiums + coastal, adders don't re-price cuts). Pre-discount.
+    from core.perkins_packages import package_options  # noqa: PLC0415
+    result["package_options"] = package_options(
+        body.roof_type, float(body.num_squares), float(result["project_total"])
+    )
 
     # Discounts are sales concessions. They reduce project_total and available
     # profit/margin, while preserving the pre-discount engine total for audit.

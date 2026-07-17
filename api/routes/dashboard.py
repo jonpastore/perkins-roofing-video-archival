@@ -17,6 +17,7 @@ from core.dashboard import (
     AGING_BUCKETS,
     aging_bucket_detail,
     aging_buckets,
+    branch_exists,
     invoices_issued_over_time,
     open_ar_summary,
     payments_over_time,
@@ -45,6 +46,7 @@ def billing_dashboard(
     from_date: str | None = Query(default=None, alias="from"),
     to_date: str | None = Query(default=None, alias="to"),
     bucket: str = "day",
+    branch: str | None = Query(default=None),
     claims=Depends(require_role(_ROLE)),
     db: Session = Depends(get_db_session),
 ):
@@ -54,9 +56,15 @@ def billing_dashboard(
       from   — start date inclusive (YYYY-MM-DD), required
       to     — end date inclusive (YYYY-MM-DD), required
       bucket — day | week | month (default: day)
+      branch — branches.key; when absent, all branches are included (default).
+               When present, every metric is restricted to customers in that
+               branch (inactive branches are allowed — reporting still works
+               after a branch is retired).
     """
     if bucket not in _VALID_BUCKETS:
         raise HTTPException(422, f"bucket must be one of {sorted(_VALID_BUCKETS)}")
+    if branch is not None and not branch_exists(db, branch):
+        raise HTTPException(422, f"unknown branch: {branch}")
 
     from_dt = _parse_date(from_date, "from")
     to_dt = _parse_date(to_date, "to")
@@ -66,13 +74,13 @@ def billing_dashboard(
     as_of = to_dt.date()
 
     return {
-        "payments_over_time": payments_over_time(db, from_dt, to_dt, bucket),  # type: ignore[arg-type]
-        "invoices_issued_over_time": invoices_issued_over_time(db, from_dt, to_dt, bucket),  # type: ignore[arg-type]
-        "open_ar_summary": open_ar_summary(db),
-        "aging_buckets": aging_buckets(db, as_of),
-        "receivables_due_next_30": receivables_due_next(db, as_of, days=30),
-        "proposal_funnel": proposal_funnel(db, from_dt, to_dt),
-        "proposal_funnel_over_time": proposal_funnel_over_time(db, from_dt, to_dt, bucket),  # type: ignore[arg-type]
+        "payments_over_time": payments_over_time(db, from_dt, to_dt, bucket, branch),  # type: ignore[arg-type]
+        "invoices_issued_over_time": invoices_issued_over_time(db, from_dt, to_dt, bucket, branch),  # type: ignore[arg-type]
+        "open_ar_summary": open_ar_summary(db, branch),
+        "aging_buckets": aging_buckets(db, as_of, branch),
+        "receivables_due_next_30": receivables_due_next(db, as_of, days=30, branch=branch),
+        "proposal_funnel": proposal_funnel(db, from_dt, to_dt, branch),
+        "proposal_funnel_over_time": proposal_funnel_over_time(db, from_dt, to_dt, bucket, branch),  # type: ignore[arg-type]
     }
 
 
@@ -80,6 +88,7 @@ def billing_dashboard(
 def billing_aging_drilldown(
     bucket: str,
     as_of: str | None = Query(default=None, description="YYYY-MM-DD; defaults to today"),
+    branch: str | None = Query(default=None),
     claims=Depends(require_role(_ROLE)),
     db: Session = Depends(get_db_session),
 ):
@@ -87,8 +96,16 @@ def billing_aging_drilldown(
 
     Used by the dashboard bar-chart drill-down. Bucket must be one of:
     current, d1_30, d31_60, d61_90, d90_plus.
+
+    branch — branches.key; when absent, all branches are included (default).
     """
     if bucket not in AGING_BUCKETS:
         raise HTTPException(422, f"bucket must be one of {list(AGING_BUCKETS)}")
+    if branch is not None and not branch_exists(db, branch):
+        raise HTTPException(422, f"unknown branch: {branch}")
     as_of_date = _parse_date(as_of, "as_of").date() if as_of else date.today()
-    return {"bucket": bucket, "as_of": as_of_date.isoformat(), "items": aging_bucket_detail(db, as_of_date, bucket)}
+    return {
+        "bucket": bucket,
+        "as_of": as_of_date.isoformat(),
+        "items": aging_bucket_detail(db, as_of_date, bucket, branch),
+    }

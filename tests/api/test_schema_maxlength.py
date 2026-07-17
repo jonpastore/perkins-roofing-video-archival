@@ -25,6 +25,10 @@ from app import models
 # "module.Class.field" entries exempt from the rule (response models etc.).
 ALLOW = {
     "api.routes.pricing_configs.ConfigResponse.config_hash",  # response model — output, not input
+    # ContactCreate/Update.name writes contacts.name (255); the heuristic cross-matches
+    # branches.name (100) because customers.py references Branch for validation only.
+    "api.routes.customers.ContactCreate.name",
+    "api.routes.customers.ContactUpdate.name",
 }
 
 

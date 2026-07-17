@@ -51,3 +51,31 @@ def test_package_prices_snapshot_is_fixed_point_strings():
     assert snap["PROTECTOR"] == format(SHINGLE["PROTECTOR"], "f")
     # every value round-trips to the original Decimal
     assert all(Decimal(v) == SHINGLE[k] for k, v in snap.items())
+
+
+# ---------------------------------------------------------------------------
+# package_options — full menu for the quote builder (Zoom 2026-07-17)
+# ---------------------------------------------------------------------------
+
+def test_package_options_tile_matches_greener_proposal():
+    from core.perkins_packages import package_options
+    opts = {o["key"]: o for o in package_options("13_tile", 43, 51950.0)}
+    assert opts["PROTECTOR"]["total"] == 51950.0
+    assert opts["PREFERRED"]["addl_price"] == 165 * 43            # $7,095 — Greener PDF
+    assert opts["PREMIUM_CARIBBEAN"]["addl_price"] == 290 * 43    # $12,470
+    assert opts["PREMIUM_MEDITERRANEAN"]["addl_price"] == 365 * 43  # $15,695
+    assert opts["PREMIUM_MODERN"]["addl_price"] == 485 * 43       # $20,855
+    assert opts["COASTAL"]["addl_price"] == 47.5 * 43
+
+
+def test_package_options_standalone_metal_caribbean():
+    from core.perkins_packages import package_options
+    opts = {o["key"]: o for o in package_options("standing_seam_metal", 10, 12000.0)}
+    assert opts["CARIBBEAN"]["standalone"] is True
+    assert opts["CARIBBEAN"]["total"] == 1000 * 10
+    assert opts["COASTAL_CARIBBEAN"]["total"] == (1000 + 225) * 10
+
+
+def test_package_options_unknown_roof_type_empty():
+    from core.perkins_packages import package_options
+    assert package_options("mystery", 10, 1000.0) == []

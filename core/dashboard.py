@@ -13,7 +13,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Customer, Invoice, Payment, Proposal
+from app.models import Branch, Customer, Invoice, Payment, Proposal
 
 # Open = money is still expected
 _OPEN_STATUSES = ("sent", "viewed", "partially_paid")
@@ -23,6 +23,11 @@ Bucket = Literal["day", "week", "month"]
 
 # AR aging bucket keys — shared by aging_buckets (totals) and aging_bucket_detail (drill-down).
 AGING_BUCKETS = ("current", "d1_30", "d31_60", "d61_90", "d90_plus")
+
+
+def branch_exists(session: Session, branch: str) -> bool:
+    """True if `branch` is a valid branches.key (active or inactive — both report)."""
+    return session.execute(select(Branch.id).where(Branch.key == branch)).first() is not None
 
 
 def _aging_bucket_for(days_past: int) -> str:
@@ -83,16 +88,28 @@ def payments_over_time(
     from_dt: datetime,
     to_dt: datetime,
     bucket: Bucket = "day",
+    branch: str | None = None,
 ) -> list[dict]:
     """Payments received in [from_dt, to_dt] (to_dt inclusive of the whole day).
+
+    branch — when given, only payments on invoices whose customer belongs to that
+    branch (joined via Invoice.customer_id -> Customer.branch). Invoice.customer_id
+    is NOT NULL, so this join never drops a payment for lack of a customer link.
 
     Returns [{period, total, count}] sorted by period.
     """
     to_exclusive = to_dt + timedelta(days=1)
-    rows = session.execute(
+    stmt = (
         select(Payment.payment_date, Payment.amount)
         .where(Payment.payment_date >= from_dt, Payment.payment_date < to_exclusive)
-    ).all()
+    )
+    if branch is not None:
+        stmt = (
+            stmt.join(Invoice, Invoice.id == Payment.invoice_id)
+            .join(Customer, Customer.id == Invoice.customer_id)
+            .where(Customer.branch == branch)
+        )
+    rows = session.execute(stmt).all()
 
     buckets: dict[str, dict] = {}
     for payment_date, amount in rows:
@@ -114,6 +131,7 @@ def invoices_issued_over_time(
     from_dt: datetime,
     to_dt: datetime,
     bucket: Bucket = "day",
+    branch: str | None = None,
 ) -> list[dict]:
     """Invoices issued in [from_dt, to_dt] (to_dt inclusive of the whole day).
 
@@ -123,14 +141,17 @@ def invoices_issued_over_time(
     ``created_at`` alone would pile every back-filled Knowify invoice onto the import
     day, producing a single giant bar (the dashboard bug this fixes).
 
+    branch — when given, only invoices whose customer belongs to that branch.
+    Invoice.customer_id is NOT NULL, so no invoice is dropped for lack of a link.
+
     Returns [{period, total, count}] sorted by period.
     """
     to_exclusive = to_dt + timedelta(days=1)
     issued_at = func.coalesce(Invoice.invoice_date, Invoice.created_at)
-    rows = session.execute(
-        select(issued_at, Invoice.total)
-        .where(issued_at >= from_dt, issued_at < to_exclusive)
-    ).all()
+    stmt = select(issued_at, Invoice.total).where(issued_at >= from_dt, issued_at < to_exclusive)
+    if branch is not None:
+        stmt = stmt.join(Customer, Customer.id == Invoice.customer_id).where(Customer.branch == branch)
+    rows = session.execute(stmt).all()
 
     buckets: dict[str, dict] = {}
     for issued, total in rows:
@@ -147,17 +168,20 @@ def invoices_issued_over_time(
 # open_ar_summary
 # ---------------------------------------------------------------------------
 
-def open_ar_summary(session: Session) -> dict:
+def open_ar_summary(session: Session, branch: str | None = None) -> dict:
     """Counts and dollar totals for open invoices.
 
     open_count   — number of invoices in sent/viewed/partially_paid
     open_total   — sum of invoice.total for those invoices
     outstanding_total — sum of (total - paid) for those invoices
+
+    branch — when given, only invoices whose customer belongs to that branch.
+    Invoice.customer_id is NOT NULL, so no invoice is dropped for lack of a link.
     """
-    open_invoices = session.execute(
-        select(Invoice.id, Invoice.total)
-        .where(Invoice.status.in_(_OPEN_STATUSES))
-    ).all()
+    stmt = select(Invoice.id, Invoice.total).where(Invoice.status.in_(_OPEN_STATUSES))
+    if branch is not None:
+        stmt = stmt.join(Customer, Customer.id == Invoice.customer_id).where(Customer.branch == branch)
+    open_invoices = session.execute(stmt).all()
 
     if not open_invoices:
         return {"open_count": 0, "open_total": Decimal("0"), "outstanding_total": Decimal("0")}
@@ -191,15 +215,18 @@ def open_ar_summary(session: Session) -> dict:
 # aging_buckets
 # ---------------------------------------------------------------------------
 
-def aging_buckets(session: Session, as_of: date) -> dict:
+def aging_buckets(session: Session, as_of: date, branch: str | None = None) -> dict:
     """Outstanding $ for open invoices bucketed by days past due_date as of as_of.
 
     Buckets: current (not yet due), d1_30, d31_60, d61_90, d90_plus.
+
+    branch — when given, only invoices whose customer belongs to that branch.
+    Invoice.customer_id is NOT NULL, so no invoice is dropped for lack of a link.
     """
-    open_invoices = session.execute(
-        select(Invoice.id, Invoice.total, Invoice.due_date)
-        .where(Invoice.status.in_(_OPEN_STATUSES))
-    ).all()
+    stmt = select(Invoice.id, Invoice.total, Invoice.due_date).where(Invoice.status.in_(_OPEN_STATUSES))
+    if branch is not None:
+        stmt = stmt.join(Customer, Customer.id == Invoice.customer_id).where(Customer.branch == branch)
+    open_invoices = session.execute(stmt).all()
 
     if not open_invoices:
         return {"current": Decimal("0"), "d1_30": Decimal("0"),
@@ -232,18 +259,21 @@ def aging_buckets(session: Session, as_of: date) -> dict:
     return result
 
 
-def aging_bucket_detail(session: Session, as_of: date, bucket: str) -> list[dict]:
+def aging_bucket_detail(session: Session, as_of: date, bucket: str, branch: str | None = None) -> list[dict]:
     """Open AR drill-down rows for one aging bucket.
 
     Returns one row per open invoice in the bucket with customer + invoice context:
     [{customer_id, customer_name, invoice_id, invoice_number, knowify_invoice_number,
       invoice_date, due_date, status, total, paid, outstanding, days_past_due}]
     sorted by oldest/most-overdue first (then customer).
+
+    branch — when given, only invoices whose customer belongs to that branch.
+    Invoice.customer_id is NOT NULL, so no invoice is dropped for lack of a link.
     """
     if bucket not in AGING_BUCKETS:
         raise ValueError(f"bucket must be one of {AGING_BUCKETS}")
 
-    open_rows = session.execute(
+    stmt = (
         select(
             Invoice.id,
             Invoice.customer_id,
@@ -257,7 +287,10 @@ def aging_bucket_detail(session: Session, as_of: date, bucket: str) -> list[dict
         )
         .outerjoin(Customer, Customer.id == Invoice.customer_id)
         .where(Invoice.status.in_(_OPEN_STATUSES))
-    ).all()
+    )
+    if branch is not None:
+        stmt = stmt.where(Customer.branch == branch)
+    open_rows = session.execute(stmt).all()
 
     if not open_rows:
         return []
@@ -323,24 +356,27 @@ def aging_bucket_detail(session: Session, as_of: date, bucket: str) -> list[dict
 # receivables_due_next
 # ---------------------------------------------------------------------------
 
-def receivables_due_next(session: Session, as_of: date, days: int = 30) -> dict:
+def receivables_due_next(session: Session, as_of: date, days: int = 30, branch: str | None = None) -> dict:
     """Open invoices with due_date in (as_of, as_of + days].
 
     Returns {count, total} — total is the OUTSTANDING balance (face value minus
     payments received) so a partially-paid invoice contributes only its unpaid
     portion, consistent with open_ar_summary.
+
+    branch — when given, only invoices whose customer belongs to that branch.
+    Invoice.customer_id is NOT NULL, so no invoice is dropped for lack of a link.
     """
     cutoff = datetime.combine(as_of + timedelta(days=days), datetime.min.time())
     as_of_dt = datetime.combine(as_of, datetime.min.time())
 
-    rows = session.execute(
-        select(Invoice.id, Invoice.total)
-        .where(
-            Invoice.status.in_(_OPEN_STATUSES),
-            Invoice.due_date > as_of_dt,
-            Invoice.due_date <= cutoff,
-        )
-    ).all()
+    stmt = select(Invoice.id, Invoice.total).where(
+        Invoice.status.in_(_OPEN_STATUSES),
+        Invoice.due_date > as_of_dt,
+        Invoice.due_date <= cutoff,
+    )
+    if branch is not None:
+        stmt = stmt.join(Customer, Customer.id == Invoice.customer_id).where(Customer.branch == branch)
+    rows = session.execute(stmt).all()
 
     if not rows:
         return {"count": 0, "total": Decimal("0")}
@@ -366,16 +402,19 @@ def receivables_due_next(session: Session, as_of: date, days: int = 30) -> dict:
 # proposal_funnel
 # ---------------------------------------------------------------------------
 
-def proposal_funnel(session: Session, from_dt: datetime, to_dt: datetime) -> dict:
+def proposal_funnel(session: Session, from_dt: datetime, to_dt: datetime, branch: str | None = None) -> dict:
     """Proposal status distribution for proposals created in [from_dt, to_dt] (to_dt inclusive).
 
     Returns counts per status + win_rate (accepted / (accepted + declined), or 0).
+
+    branch — when given, only proposals whose customer belongs to that branch.
+    Proposal.customer_id is NOT NULL, so no proposal is dropped for lack of a link.
     """
     to_exclusive = to_dt + timedelta(days=1)
-    rows = session.execute(
-        select(Proposal.status)
-        .where(Proposal.created_at >= from_dt, Proposal.created_at < to_exclusive)
-    ).all()
+    stmt = select(Proposal.status).where(Proposal.created_at >= from_dt, Proposal.created_at < to_exclusive)
+    if branch is not None:
+        stmt = stmt.join(Customer, Customer.id == Proposal.customer_id).where(Customer.branch == branch)
+    rows = session.execute(stmt).all()
 
     counts: dict[str, int] = {s: 0 for s in _FUNNEL_STATUSES}
     for (status,) in rows:
@@ -393,6 +432,7 @@ def proposal_funnel_over_time(
     from_dt: datetime,
     to_dt: datetime,
     bucket: Bucket = "day",
+    branch: str | None = None,
 ) -> list[dict]:
     """Proposal status distribution by time bucket.
 
@@ -400,12 +440,17 @@ def proposal_funnel_over_time(
     payments/invoices chart. Four bars are returned per period:
     draft, sent/viewed, accepted, declined. Revision requests are not a funnel
     terminal and are intentionally omitted from the grouped time-series view.
+
+    branch — when given, only proposals whose customer belongs to that branch.
+    Proposal.customer_id is NOT NULL, so no proposal is dropped for lack of a link.
     """
     to_exclusive = to_dt + timedelta(days=1)
-    rows = session.execute(
-        select(Proposal.created_at, Proposal.status)
-        .where(Proposal.created_at >= from_dt, Proposal.created_at < to_exclusive)
-    ).all()
+    stmt = select(Proposal.created_at, Proposal.status).where(
+        Proposal.created_at >= from_dt, Proposal.created_at < to_exclusive
+    )
+    if branch is not None:
+        stmt = stmt.join(Customer, Customer.id == Proposal.customer_id).where(Customer.branch == branch)
+    rows = session.execute(stmt).all()
 
     buckets: dict[str, dict] = {
         period: {"period": period, "draft": 0, "sent": 0, "accepted": 0, "declined": 0}

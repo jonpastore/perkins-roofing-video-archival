@@ -43,6 +43,7 @@ class CustomerCreate(BaseModel):
     email: Optional[str] = Field(default=None, max_length=255)
     phone: Optional[str] = Field(default=None, max_length=50)
     knowify_customer_id: Optional[str] = Field(default=None, max_length=100)
+    branch: Optional[str] = Field(default=None, max_length=50)  # None -> 'miami'
     notes: Optional[str] = None
 
 
@@ -51,6 +52,7 @@ class CustomerUpdate(BaseModel):
     company_name: Optional[str] = Field(default=None, max_length=255)
     email: Optional[str] = Field(default=None, max_length=255)
     phone: Optional[str] = Field(default=None, max_length=50)
+    branch: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = None
 
 
@@ -98,6 +100,17 @@ class PropertyUpdate(BaseModel):
 # Serializers
 # ---------------------------------------------------------------------------
 
+def _validate_branch(db: Session, key: str) -> str:
+    """422 unless `key` is an ACTIVE branch (branches drive every selector; assets must
+    not land in branches that don't exist or were deactivated)."""
+    from app.models import Branch  # noqa: PLC0415
+
+    b = db.execute(select(Branch).where(Branch.key == key)).scalar_one_or_none()
+    if b is None or not b.active:
+        raise HTTPException(422, f"unknown or inactive branch {key!r}")
+    return key
+
+
 def _customer_row(
     row: Customer,
     *,
@@ -112,6 +125,7 @@ def _customer_row(
         "email": row.email,
         "phone": row.phone,
         "knowify_customer_id": row.knowify_customer_id,
+        "branch": row.branch,
         "is_active": row.is_active,
         "notes": row.notes,
         "created_at": row.created_at.isoformat() if row.created_at else None,
@@ -317,6 +331,7 @@ def create_customer(
     db: Session = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(db)
+    branch = _validate_branch(db, body.branch) if body.branch else "miami"
     row = Customer(
         tenant_id=tenant_id,
         display_name=body.display_name,
@@ -324,6 +339,7 @@ def create_customer(
         email=body.email,
         phone=body.phone,
         knowify_customer_id=body.knowify_customer_id,
+        branch=branch,
         notes=body.notes,
     )
     db.add(row)
@@ -400,6 +416,8 @@ def update_customer(
     if row is None:
         raise HTTPException(404, f"Customer {customer_id} not found")
 
+    if body.branch is not None:
+        _validate_branch(db, body.branch)
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(row, field, value)
     db.flush()

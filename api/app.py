@@ -37,6 +37,7 @@ from api.routes.scheduling import router as scheduling_router
 from api.routes.squares import router as squares_router
 from api.routes.suggestions import router as suggestions_router
 from api.routes.topics import router as topics_router
+from api.routes.branches import router as branches_router
 from api.routes.users import me_router
 from api.routes.users import router as users_router
 from api.routes.video import router as video_router
@@ -109,6 +110,7 @@ app.include_router(measurements_router)
 app.include_router(faq_router)
 app.include_router(contract_faq_router)
 app.include_router(config_router)
+app.include_router(branches_router)
 app.include_router(users_router)
 app.include_router(me_router)
 app.include_router(suggestions_router)

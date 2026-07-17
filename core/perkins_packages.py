@@ -38,7 +38,7 @@ SHINGLE: dict[str, Decimal] = {
 # ---------------------------------------------------------------------------
 TILE: dict[str, Decimal] = {
     "PROTECTOR":           Decimal("1100.00"),
-    "PREFERRED":           Decimal("160.00"),   # adder
+    "PREFERRED":           Decimal("165.00"),   # adder — verified Greener proposal 7/17: $7,095/43sq
     "PREMIUM_CARIBBEAN":   Decimal("290.00"),   # adder
     "PREMIUM_MEDITERRANEAN": Decimal("365.00"), # adder
     "PREMIUM_MODERN":      Decimal("485.00"),   # adder
@@ -115,6 +115,70 @@ def sell_price_per_sq(system: str, tier: str) -> Decimal:
     if system == "metal" and tier == "COASTAL_CARIBBEAN":
         return table["CARIBBEAN"] + table["COASTAL_CARIBBEAN"]
     return table["PROTECTOR"] + table[tier]
+
+
+# Estimator roof_type → package system
+_ROOF_TYPE_SYSTEM: dict[str, str] = {
+    "13_tile": "tile", "barrel_tile": "tile",
+    "3tab_shingle": "shingle", "dimensional_shingle": "shingle",
+    "standing_seam_metal": "metal",
+    "tpo": "flat", "bur": "flat", "coatings": "flat", "silicone": "flat",
+}
+
+_TIER_LABELS: dict[str, str] = {
+    "PROTECTOR": "Perkins Protector",
+    "PREFERRED": "Perkins Preferred",
+    "PREMIUM": "Perkins Premium",
+    "PREMIUM_CARIBBEAN": "Perkins Premium (Caribbean)",
+    "PREMIUM_MEDITERRANEAN": "Perkins Premium (Mediterranean)",
+    "PREMIUM_MODERN": "Perkins Premium (Modern)",
+    "COASTAL": "Coastal Upgrade",
+    "HVHZ_COASTAL": "HVHZ Coastal Upgrade",
+    "CARIBBEAN": "Caribbean (standalone)",
+    "COASTAL_CARIBBEAN": "Coastal Caribbean",
+    "PROLONG": "Prolong (standalone)",
+    "RESTORE": "Restore",
+}
+
+
+def package_options(roof_type: str, num_squares: float, protector_total: float) -> list[dict]:
+    """Full package menu for a quote (Zoom 2026-07-17 [51:56]: offer ALL premiums + coastal).
+
+    PROTECTOR's total comes from the ESTIMATOR ENGINE (cuts/OH/profit aware) — the
+    catalog PROTECTOR $/sq is intentionally ignored. Adder tiers are flat catalog
+    prices × squares layered on the engine total (upgrades don't re-price cuts —
+    "it's just a swap of materials" [24:00]). Standalone bases (CARIBBEAN metal,
+    PROLONG flat) are their own catalog price × squares.
+    """
+    system = _ROOF_TYPE_SYSTEM.get(roof_type)
+    if system is None:
+        return []
+    table = _TABLES[system]
+    standalone = _STANDALONE[system]
+    sq = Decimal(str(num_squares))
+    prot = Decimal(str(protector_total))
+    out = [{
+        "key": "PROTECTOR", "label": _TIER_LABELS["PROTECTOR"], "system": system,
+        "adder_per_sq": None, "addl_price": 0.0, "total": float(prot), "standalone": False,
+    }]
+    for tier, price in table.items():
+        if tier == "PROTECTOR":
+            continue
+        if tier in standalone:
+            total = price * sq
+            addl = total - prot
+        elif system == "metal" and tier == "COASTAL_CARIBBEAN":
+            total = (table["CARIBBEAN"] + price) * sq
+            addl = total - prot
+        else:
+            addl = price * sq
+            total = prot + addl
+        out.append({
+            "key": tier, "label": _TIER_LABELS.get(tier, tier.title()), "system": system,
+            "adder_per_sq": float(price), "addl_price": round(float(addl), 2),
+            "total": round(float(total), 2), "standalone": tier in standalone,
+        })
+    return out
 
 
 def package_prices_snapshot(system: str) -> dict[str, str]:
