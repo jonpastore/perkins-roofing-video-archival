@@ -1009,6 +1009,20 @@ function RenderOptionsPanel({
                     />
                     1:1 square (1080×1080)
                   </label>
+                  <label style={{ fontSize: 13, color: BRAND.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={(spec.aspects ?? []).includes("wide")}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...(spec.aspects ?? []).filter((a) => a !== "wide"), "wide"]
+                          : (spec.aspects ?? []).filter((a) => a !== "wide");
+                        setSpec({ ...spec, aspects: next });
+                      }}
+                      style={{ width: 14, height: 14, accentColor: BRAND.red, cursor: "pointer" }}
+                    />
+                    16:9 wide (1920×1080)
+                  </label>
                 </div>
               </div>
 

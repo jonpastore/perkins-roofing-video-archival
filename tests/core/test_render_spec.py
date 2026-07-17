@@ -9,6 +9,7 @@ from core.render_spec import (
     ClipRenderSpec,
     FxSpec,
     MusicSpec,
+    aspect_export_vf,
     build_filtergraph,
     get_clips,
     get_render_spec,
@@ -469,3 +470,56 @@ def test_aspects_serialised_in_to_dict():
 def test_aspects_roundtrips_via_from_dict():
     spec = ClipRenderSpec.from_dict({"aspects": ["square"]})
     assert "square" in spec.aspects
+
+
+# ---------------------------------------------------------------------------
+# 16:9 "wide" aspect (Item 1)
+# ---------------------------------------------------------------------------
+
+def test_aspects_wide():
+    spec = ClipRenderSpec(aspects=["wide"])
+    assert "wide" in spec.aspects
+
+
+def test_aspects_square_and_wide_together():
+    spec = ClipRenderSpec(aspects=["square", "wide"])
+    assert set(spec.aspects) == {"square", "wide"}
+
+
+def test_aspect_export_vf_square():
+    vf = aspect_export_vf("square")
+    assert "scale=1080:1080" in vf
+    assert "pad=1080:1080" in vf
+    assert "setsar=1" in vf
+
+
+def test_aspect_export_vf_wide():
+    vf = aspect_export_vf("wide")
+    assert "scale=1920:1080" in vf
+    assert "pad=1920:1080" in vf
+    assert "setsar=1" in vf
+
+
+def test_aspect_export_vf_invalid_raises():
+    with pytest.raises(ValueError):
+        aspect_export_vf("portrait")
+
+
+# ---------------------------------------------------------------------------
+# Transitions honesty fix (#344): wipe/slide/dissolve removed — only
+# single-clip-applicable "cut"/"fade" remain (xfade kinds need two clips).
+# ---------------------------------------------------------------------------
+
+def test_fx_wipe_no_longer_valid():
+    with pytest.raises(Exception):
+        FxSpec(transition="wipe")
+
+
+def test_fx_slide_no_longer_valid():
+    with pytest.raises(Exception):
+        FxSpec(transition="slide")
+
+
+def test_fx_dissolve_no_longer_valid():
+    with pytest.raises(Exception):
+        FxSpec(transition="dissolve")

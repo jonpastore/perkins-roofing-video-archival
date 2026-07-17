@@ -46,6 +46,36 @@ def _scale_pad_filter(stream_label: str, out_label: str) -> str:
     )
 
 
+def aspect_export_vf(aspect: str) -> str:
+    """Return a scale+pad+setsar filter string for a secondary aspect export.
+
+    Mirrors :func:`_scale_pad_filter`'s letterbox approach (used for the fixed
+    9:16 target) but parametrised by the export dimensions for *aspect* — the
+    finished 9:16 reel is scaled/padded to "square" (1080x1080) or "wide"
+    (1920x1080) with black bars, never cropped.
+
+    Args:
+        aspect: One of the keys in ``_ASPECT_EXPORT_DIMENSIONS`` ("square", "wide").
+
+    Returns:
+        An ffmpeg ``-vf`` filter string.
+
+    Raises:
+        ValueError: if *aspect* is not a supported export aspect.
+    """
+    if aspect not in _ASPECT_EXPORT_DIMENSIONS:
+        raise ValueError(
+            f"Unsupported export aspect {aspect!r}. "
+            f"Choose from: {sorted(_ASPECT_EXPORT_DIMENSIONS)}"
+        )
+    w, h = _ASPECT_EXPORT_DIMENSIONS[aspect]
+    return (
+        f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"setsar=1"
+    )
+
+
 def build_filtergraph(title_secs: float, closing_secs: float) -> str:
     """Build the ffmpeg filter_complex string for a 3-segment reel.
 
@@ -117,7 +147,15 @@ _VALID_TRANSITIONS: frozenset[str] = frozenset({"cut", "fade", "wipe", "slide", 
 _VALID_COLOR_GRADES: frozenset[str] = frozenset({"none", "vivid", "warm", "cool"})
 _VALID_BROLL_SOURCES: frozenset[str] = frozenset({"pexels", "none"})
 _VALID_MUSIC_CATALOGS: frozenset[str] = frozenset({"pixabay", "ytaudio", "fma", "none"})
-_VALID_ASPECTS: frozenset[str] = frozenset({"9:16", "square"})
+_VALID_ASPECTS: frozenset[str] = frozenset({"9:16", "square", "wide"})
+
+# Output dimensions for the secondary aspect exports built from the finished
+# 9:16 reel (see aspect_export_vf). "9:16" itself needs no secondary pass —
+# it's the render's native output.
+_ASPECT_EXPORT_DIMENSIONS: dict[str, tuple[int, int]] = {
+    "square": (1080, 1080),
+    "wide": (1920, 1080),
+}
 
 
 class CaptionsSpec(BaseModel):

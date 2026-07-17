@@ -930,39 +930,38 @@ def render_part(
         # clip_duration is the part's wall-clock length; convert seconds → minutes.
         metering.add("render_minutes", clip_duration / 60.0)
 
-        # ── Multi-aspect export (Item 6) ──────────────────────────────────────
-        # When the render spec includes "square" in aspects, produce a second
-        # 1:1 1080×1080 output from the finished reel (scale+pad, black bars).
-        # The square variant is uploaded to GCS under a sibling key and recorded
-        # in a separate SocialPost row with platform tagged as "{platform}:square".
-        # Default: 9:16 only (no aspects field → no second pass).
+        # ── Multi-aspect export (Item 6 + 16:9 parity) ─────────────────────────
+        # When the render spec includes "square" and/or "wide" in aspects, produce
+        # an extra export from the finished reel (scale+pad, black bars — see
+        # core.render_spec.aspect_export_vf). Each variant is uploaded to GCS
+        # under a sibling key and recorded in a separate SocialPost row with
+        # platform tagged as "{platform}:{aspect}".
+        # Default: 9:16 only (no aspects field → no extra passes).
         aspects = list(render_spec.aspects) if hasattr(render_spec, "aspects") else []
-        square_gcs_url: str | None = None
-        if "square" in aspects:
+        extra_aspect_gcs_urls: dict[str, str] = {}
+        for _aspect in ("square", "wide"):
+            if _aspect not in aspects:
+                continue
             try:
                 from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+                from core.render_spec import aspect_export_vf  # noqa: PLC0415
 
-                square_path = os.path.join(scratch, f"square_{series_id}_{part_index}.mp4")
-                square_vf = (
-                    "scale=1080:1080:force_original_aspect_ratio=decrease,"
-                    "pad=1080:1080:(ow-iw)/2:(oh-ih)/2:color=black,"
-                    "setsar=1"
-                )
+                aspect_path = os.path.join(scratch, f"{_aspect}_{series_id}_{part_index}.mp4")
                 run_ffmpeg_cmd([
                     "ffmpeg", "-y", "-i", reel_path,
-                    "-vf", square_vf,
+                    "-vf", aspect_export_vf(_aspect),
                     "-c:v", "libx264", "-profile:v", "high",
                     "-pix_fmt", "yuv420p", "-c:a", "copy",
-                    square_path,
+                    aspect_path,
                 ])
-                sq_key = _gcs_object_key(series_id, part_index, tenant_id=tenant_id or 1).replace(
-                    ".mp4", "_square.mp4"
+                aspect_key = _gcs_object_key(series_id, part_index, tenant_id=tenant_id or 1).replace(
+                    ".mp4", f"_{_aspect}.mp4"
                 )
-                bucket_name_sq = _reels_bucket()
-                square_gcs_url = _upload_to_gcs(square_path, bucket_name_sq, sq_key)
-                logger.info("square export uploaded: %s", square_gcs_url)
+                bucket_name_extra = _reels_bucket()
+                extra_aspect_gcs_urls[_aspect] = _upload_to_gcs(aspect_path, bucket_name_extra, aspect_key)
+                logger.info("%s export uploaded: %s", _aspect, extra_aspect_gcs_urls[_aspect])
             except Exception as exc:  # noqa: BLE001
-                logger.warning("square export skipped (non-fatal): %s", exc)
+                logger.warning("%s export skipped (non-fatal): %s", _aspect, exc)
 
         # 8. Upload to GCS (private bucket — returns gs:// URI)
         bucket_name = _reels_bucket()
