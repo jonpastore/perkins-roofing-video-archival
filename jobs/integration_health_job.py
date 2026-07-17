@@ -21,7 +21,7 @@ import adapters.integration_probes as probes
 import adapters.resend as resend
 from app.config import settings
 from app.models import IntegrationStatus, OAuthStateNonce, PlatformSessionLocal
-from core.integration_health import next_status, should_alert
+from core.integration_health import ProbeResult, next_status, should_alert
 
 _PROBES = {
     "wordpress": probes.probe_wordpress,
@@ -78,7 +78,10 @@ def run(now=None) -> dict:
     try:
         for integration, probe_fn in _PROBES.items():
             row = _load_row(db, integration)
-            probe = probe_fn()
+            try:
+                probe = probe_fn()
+            except Exception as exc:  # noqa: BLE001 — one probe must never kill the whole sweep
+                probe = ProbeResult(ok=False, error=f"probe raised: {exc}")
             if probe is None:
                 row.status = "unconfigured"
                 row.last_checked = now

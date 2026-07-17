@@ -50,7 +50,16 @@ def probe_wordpress() -> ProbeResult | None:
 
 
 def probe_resend() -> ProbeResult | None:
-    """GET https://api.resend.com/domains with RESEND_API_KEY."""
+    """Coarse liveness for Resend via GET /domains.
+
+    LIMITATION (deliberate): Resend has no read endpoint a SEND-scoped key can call —
+    /domains returns 401/403 for a perfectly valid sending key, indistinguishable
+    from a revoked one, and the only true send test is POST /emails (which actually
+    sends). So we treat any HTTP response (incl. 401/403) as healthy: it proves
+    Resend is up AND the key is present. A genuinely dead Resend (network failure or
+    5xx) still trips the transient path; real send failures surface via email_logs.
+    This avoids a false "broken" alarm on every cycle for a working sending key.
+    """
     api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         return None
@@ -62,8 +71,10 @@ def probe_resend() -> ProbeResult | None:
         with urllib.request.urlopen(req, timeout=10):
             return ProbeResult(ok=True)
     except urllib.error.HTTPError as exc:
+        # 401/403 == reachable + key present (sending-scoped keys always 401 here).
         if exc.code in (401, 403):
-            return ProbeResult(ok=False, hard_auth_failure=True, error=f"Resend HTTP {exc.code}")
+            return ProbeResult(ok=True)
+        # 5xx / 429 == Resend itself degraded → transient (N=3 before broken).
         return ProbeResult(ok=False, error=f"Resend HTTP {exc.code}")
     except urllib.error.URLError as exc:
         return ProbeResult(ok=False, error=str(exc.reason))
@@ -77,6 +88,11 @@ def probe_knowify() -> ProbeResult | None:
         tok = load_tokens()
     except Exception as exc:  # noqa: BLE001 — Secret Manager access failure, not a code bug
         return ProbeResult(ok=False, error=str(exc))
+    if not isinstance(tok, dict) or not tok.get("access_token"):
+        # Placeholder / not-yet-configured token blob (no access_token) — treat as
+        # unconfigured, not broken: this integration was never set up, so it should
+        # not raise an outage alarm.
+        return None
     try:
         ok = is_valid(tok)
     except urllib.error.HTTPError as exc:
@@ -85,6 +101,9 @@ def probe_knowify() -> ProbeResult | None:
         return ProbeResult(ok=False, error=f"Knowify HTTP {exc.code}")
     except urllib.error.URLError as exc:
         return ProbeResult(ok=False, error=str(exc.reason))
+    except (KeyError, TypeError, ValueError) as exc:
+        # Malformed token shape — unusable but not a network/auth signal.
+        return ProbeResult(ok=False, error=f"Knowify token malformed: {exc}")
     if not ok:
         return ProbeResult(ok=False, hard_auth_failure=True, error="Knowify token invalid (401 at /valid)")
     return ProbeResult(ok=True)

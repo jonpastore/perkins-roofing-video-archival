@@ -41,3 +41,14 @@ CREATE TABLE IF NOT EXISTS oauth_state_nonces (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
+
+-- Both tables carry a tenant_id column, so app/models.py's _rls_on_create
+-- after_create hook (which FORCE-RLS's every tenant_id table) will have stamped
+-- them if create_all ran before this migration. They are platform-level (no RLS),
+-- so undo it here — idempotent, and the hook is also fixed to exempt these names.
+ALTER TABLE integration_status DISABLE ROW LEVEL SECURITY;
+ALTER TABLE integration_status NO FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_auto ON integration_status;
+ALTER TABLE oauth_state_nonces DISABLE ROW LEVEL SECURITY;
+ALTER TABLE oauth_state_nonces NO FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_auto ON oauth_state_nonces;

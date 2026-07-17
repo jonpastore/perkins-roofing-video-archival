@@ -1337,8 +1337,21 @@ def _rls_on_create(target, connection, **kw):
     ))
 
 
+# Platform-level tables that carry a tenant_id column but are NOT tenant-scoped:
+# they must stay RLS-EXEMPT (reachable via PlatformSessionLocal; shared/NULL-tenant
+# rows and cross-tenant reads are intentional). Without this, _rls_on_create would
+# FORCE-RLS them and every NULL-tenant / no-GUC insert would be denied (migration
+# 0039 tables hit exactly that). Mirrors the tenant_offboard_log platform-level
+# precedent (app/models.py IntegrationStatus/OAuthStateNonce docstrings).
+_RLS_EXEMPT_PLATFORM_TABLES = {
+    "tenants",
+    "tenant_offboard_log",
+    "integration_status",
+    "oauth_state_nonces",
+}
+
 for _t in Base.metadata.tables.values():
-    if "tenant_id" in _t.columns and _t.name != "tenants":
+    if "tenant_id" in _t.columns and _t.name not in _RLS_EXEMPT_PLATFORM_TABLES:
         event.listens_for(_t, "after_create")(_rls_on_create)
 
 
