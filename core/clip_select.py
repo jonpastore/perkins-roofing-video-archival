@@ -150,17 +150,102 @@ def score_segments(
 
 
 # ---------------------------------------------------------------------------
-# A4 stub (blocked on Josh's prompts)
+# A4 — per-platform title/hashtag/description generation (spec §2 A4)
 # ---------------------------------------------------------------------------
 
+# Channel-observed core hashtags (Tim's own vocabulary, measured across the real
+# YouTube titles) — grounded defaults, not invented branding.
+CORE_HASHTAGS = ["#PerkinsRoofing", "#Roofing", "#MiamiRoofing"]
 
-def generate_titles(clip: dict, prompts: dict | None = None) -> list[str]:
-    """Generate per-platform titles/hashtags for a clip.
+# Per-platform copy norms. Counts follow docs/prompts/social-caption-v5.md
+# (instagram 5, facebook 3) and YouTube's 100-char title ceiling (65 preferred).
+_PLATFORM_RULES = {
+    "youtube":   "Title Case title, max 65 chars. 3 hashtags. 1-2 sentence description.",
+    "tiktok":    "Punchy hook-style title, max 60 chars. 5 hashtags. Short caption-style description.",
+    "instagram": "Hook-style title, max 60 chars. 5 hashtags. Caption-style description with a CTA.",
+}
 
-    NOT IMPLEMENTED — blocked on Josh supplying explicit per-platform prompts.
-    See spec §2 A4 and docs/BACKLOG.md.
+# Default per-platform prompt. Josh's explicit prompts (spec §2 A4) drop in via
+# the ``prompts`` argument and override this template per platform key.
+_DEFAULT_TITLE_PROMPT = (
+    "You write social copy for Perkins Roofing, a Miami / South Florida roofing "
+    "contractor. For the {platform} clip below, write platform-tuned copy.\n"
+    "{rules}\n"
+    "Hashtags: specific to the clip content; you may include {core_tags} when relevant. "
+    "No emoji in the title. No invented product names, prices, or claims not in the clip.\n"
+    'Return STRICT JSON only: {{"title": str, "hashtags": [str], "description": str}}\n\n'
+    "Clip title: {title}\n"
+    "Clip transcript/summary:\n{text}"
+)
 
-    Raises:
-        NotImplementedError: always; this feature is pending external input.
+
+def build_title_prompt(clip: dict, platform: str, prompts: dict | None = None) -> str:
+    """Build the copy-generation prompt for one platform.
+
+    ``prompts`` maps platform → prompt template (Josh's explicit prompts when they
+    arrive); each template may use {title}/{text} placeholders. Missing platforms
+    fall back to the built-in default.
     """
-    raise NotImplementedError("A4 blocked on Josh's prompts")
+    title = str(clip.get("title") or "")
+    text = str(clip.get("text") or clip.get("transcript") or clip.get("reason") or "")[:1500]
+    template = (prompts or {}).get(platform)
+    if template:
+        return template.format(title=title, text=text)
+    return _DEFAULT_TITLE_PROMPT.format(
+        platform=platform,
+        rules=_PLATFORM_RULES.get(platform, _PLATFORM_RULES["youtube"]),
+        core_tags=" ".join(CORE_HASHTAGS),
+        title=title,
+        text=text,
+    )
+
+
+def parse_title_output(raw: str | None) -> dict | None:
+    """Parse one platform's copy response → {title, hashtags, description} or None.
+
+    Same robustness contract as parse_viral: tolerates fences/trailing commas via
+    parse_model_json, returns None (never raises) on anything unusable.
+    """
+    if not raw:
+        return None
+    parsed = parse_model_json(raw)
+    if not isinstance(parsed, dict):
+        return None
+    title = str(parsed.get("title") or "").strip()
+    if not title:
+        return None
+    tags = parsed.get("hashtags") or []
+    if isinstance(tags, str):
+        tags = tags.split()
+    hashtags = [t if str(t).startswith("#") else f"#{t}" for t in tags if str(t).strip()]
+    return {
+        "title": title,
+        "hashtags": hashtags,
+        "description": str(parsed.get("description") or "").strip(),
+    }
+
+
+def generate_titles(
+    clip: dict,
+    prompts: dict | None = None,
+    gen_fn: object = None,  # callable[[str], str] | None
+    platforms: tuple[str, ...] = ("youtube", "tiktok", "instagram"),
+) -> dict[str, dict]:
+    """Generate per-platform title/hashtags/description copy for a clip (spec §2 A4).
+
+    ``gen_fn`` is an injected callable (prompt → raw LLM response), matching the
+    score_moments pattern — this module never does I/O itself. ``prompts`` carries
+    Josh's explicit per-platform templates when supplied; defaults otherwise.
+
+    Returns {platform: {"title", "hashtags", "description"}}; platforms whose
+    response is unusable are omitted. ``gen_fn=None`` → {} (pure/testable default).
+    """
+    if gen_fn is None:
+        return {}
+    out: dict[str, dict] = {}
+    for platform in platforms:
+        raw = gen_fn(build_title_prompt(clip, platform, prompts))
+        parsed = parse_title_output(raw)
+        if parsed is not None:
+            out[platform] = parsed
+    return out

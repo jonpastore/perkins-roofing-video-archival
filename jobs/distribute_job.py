@@ -147,7 +147,13 @@ def distribute(
             logger.warning("distribute_job: caption flag-gate BLOCKED: %s", reason)
             return [DistributeResult(platform=p, status="FAILED", error=f"blocked: {reason}")
                     for p in destinations]
-        fixed_caption = parts.caption  # REVIEW still publishes; caller can inspect flags upstream
+        # v5 contract: hashtags live ONLY in the hashtags array (never inside caption) —
+        # so the published caption must re-join them here or they are silently dropped.
+        tags = parts.hashtags or []
+        if isinstance(tags, str):  # v3 line format carries them as one string
+            tags = tags.split()
+        from core.social import build_caption  # noqa: PLC0415
+        fixed_caption = build_caption(parts.caption, tags)  # REVIEW still publishes; caller can inspect flags upstream
 
     for platform in destinations:
         # Resolve transcode spec (pure — always succeeds for known platforms)

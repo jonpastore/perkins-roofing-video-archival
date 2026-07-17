@@ -1,11 +1,11 @@
 """Tests for core/clip_select.py — 100% line coverage required."""
 import json
 
-import pytest
-
 from core.clip_select import (
+    build_title_prompt,
     build_viral_prompt,
     generate_titles,
+    parse_title_output,
     parse_viral,
     rank_moments,
     score_segments,
@@ -274,11 +274,52 @@ def test_score_segments_score_fn_returns_garbage():
 # ---------------------------------------------------------------------------
 
 
-def test_generate_titles_raises_not_implemented():
-    with pytest.raises(NotImplementedError, match="A4 blocked"):
-        generate_titles({"start": 0.0, "end": 30.0})
+def test_generate_titles_no_gen_fn_returns_empty():
+    # Pure/testable default, same contract as score_segments(score_fn=None).
+    assert generate_titles({"title": "Valley Repair"}) == {}
 
 
-def test_generate_titles_with_prompts_still_raises():
-    with pytest.raises(NotImplementedError):
-        generate_titles({"start": 0.0, "end": 30.0}, prompts={"yt": "some prompt"})
+def test_generate_titles_parses_all_platforms():
+    raw = ('{"title": "Roof Valley Done Right", "hashtags": ["MiamiRoofing", "#Tile"],'
+           ' "description": "How we hem valley metal."}')
+    out = generate_titles({"title": "Valley", "text": "hem the valley metal"}, gen_fn=lambda p: raw)
+    assert set(out) == {"youtube", "tiktok", "instagram"}
+    yt = out["youtube"]
+    assert yt["title"] == "Roof Valley Done Right"
+    # Bare tags get a leading '#'; existing '#' preserved.
+    assert yt["hashtags"] == ["#MiamiRoofing", "#Tile"]
+    assert yt["description"] == "How we hem valley metal."
+
+
+def test_generate_titles_omits_unparseable_platform():
+    responses = iter(['{"title": "Good", "hashtags": [], "description": ""}', "garbage", '{"title": ""}'])
+    out = generate_titles({"title": "x"}, gen_fn=lambda p: next(responses))
+    assert list(out) == ["youtube"]  # tiktok garbage + instagram empty-title both dropped
+
+
+def test_build_title_prompt_uses_josh_override():
+    prompt = build_title_prompt(
+        {"title": "Valley", "text": "transcript here"},
+        "tiktok",
+        prompts={"tiktok": "JOSH SAYS: {title} // {text}"},
+    )
+    assert prompt == "JOSH SAYS: Valley // transcript here"
+
+
+def test_build_title_prompt_default_mentions_platform_and_core_tags():
+    prompt = build_title_prompt({"title": "Valley", "text": "t"}, "instagram")
+    assert "instagram" in prompt
+    assert "#PerkinsRoofing" in prompt
+
+
+def test_parse_title_output_handles_fenced_json_and_str_hashtags():
+    raw = '```json\n{"title": "T", "hashtags": "#a #b", "description": "d"}\n```'
+    parsed = parse_title_output(raw)
+    assert parsed == {"title": "T", "hashtags": ["#a", "#b"], "description": "d"}
+
+
+def test_parse_title_output_rejects_junk():
+    assert parse_title_output(None) is None
+    assert parse_title_output("not json at all") is None
+    assert parse_title_output('["a", "list"]') is None  # non-dict top level
+    assert parse_title_output('{"hashtags": ["#x"]}') is None  # no title

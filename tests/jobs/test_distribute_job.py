@@ -58,3 +58,61 @@ def test_missing_license_ignored_when_not_required(monkeypatch):
         oauth_store=store,
     )
     assert results[0].status == "PUBLISHED"
+
+
+_V5_RAW = """{"prompt_version": "v5", "status": "ok", "flags": [],
+"platform_used": "instagram", "hook_structure": "question", "tone": "expert",
+"caption": "Your roof fails at the fasteners first.",
+"hashtags": ["#MiamiRoofing", "#TileRoof"], "word_count": 7}"""
+
+
+def test_published_caption_includes_v5_hashtags(monkeypatch):
+    # Bug #343: parts.hashtags was discarded — the v5 contract keeps hashtags OUT of
+    # the caption field, so publish must re-join them or posts ship with none.
+    captured = {}
+
+    class _Pass:
+        passed = True
+        reason = ""
+
+    def _capture_gate(text, kind):
+        captured["caption"] = text
+        return _Pass()
+
+    monkeypatch.setattr("adapters.safety.run_gate", _capture_gate)
+    store = OAuthStore()
+    store.put("youtube_shorts", "default", access_token="tok", ttl=3600)
+    results = distribute_job.distribute(
+        video_url="https://x/clip.mp4",
+        destinations=["youtube_shorts"],
+        raw_caption_output=_V5_RAW,
+        oauth_store=store,
+    )
+    assert results[0].status == "PUBLISHED"
+    assert captured["caption"].startswith("Your roof fails at the fasteners first.")
+    assert "#MiamiRoofing #TileRoof" in captured["caption"]
+
+
+def test_published_caption_includes_v3_line_hashtags(monkeypatch):
+    # v3 line format carries hashtags as one string — must also survive to publish.
+    captured = {}
+
+    class _Pass:
+        passed = True
+        reason = ""
+
+    def _capture_gate(text, kind):
+        captured["caption"] = text
+        return _Pass()
+
+    monkeypatch.setattr("adapters.safety.run_gate", _capture_gate)
+    store = OAuthStore()
+    store.put("youtube_shorts", "default", access_token="tok", ttl=3600)
+    results = distribute_job.distribute(
+        video_url="https://x/clip.mp4",
+        destinations=["youtube_shorts"],
+        raw_caption_output=_CLEAN_RAW,   # HASHTAGS: #roofing #southflorida
+        oauth_store=store,
+    )
+    assert results[0].status == "PUBLISHED"
+    assert "#roofing #southflorida" in captured["caption"]

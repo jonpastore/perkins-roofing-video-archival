@@ -150,19 +150,28 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                 bucket, key = _gcs_key_from_url(post.gcs_url)
                 video_url = signed_get_url(bucket, key, _SIGNED_URL_TTL)
 
-                # Resolve the real reel title from MiniSeries.parts_json
+                # Resolve the real reel title + hashtags from MiniSeries.parts_json.
+                # Per-part hashtags are written by core.clip_select.generate_titles (A4)
+                # when copy generation has run; otherwise the channel's core tags apply —
+                # an empty list here was bug #343 (posts shipped with no hashtags at all).
                 _title = ""
+                _tags: list[str] = []
                 try:
                     series = db.get(MiniSeries, post.series_id)
                     if series is not None:
                         parts = series.parts_json or []
                         if post.part < len(parts):
                             _title = parts[post.part].get("title") or series.title or ""
+                            _tags = parts[post.part].get("hashtags") or []
                         else:
                             _title = series.title or ""
                 except Exception:  # noqa: BLE001
                     pass
-                caption = build_caption(_title or f"Perkins Roofing Part {post.part + 1}", [])
+                from core.clip_select import CORE_HASHTAGS  # noqa: PLC0415
+                caption = build_caption(
+                    _title or f"Perkins Roofing Part {post.part + 1}",
+                    _tags or CORE_HASHTAGS,
+                )
                 idempotency_key = f"series-{post.series_id}-part-{post.part}"
 
                 all_done = True
