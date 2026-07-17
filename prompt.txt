@@ -1,7 +1,7 @@
 Resume perkins-roofing/video-archival after a /clear.
 
 READ FIRST: CONTINUATION-2026-07-17.md and docs/KNOWN_GAPS.md — full state.
-docs/ENGINEERING_RULES.md (R1-R5) is binding. HEAD b609fe3 (or later); branch main, clean.
+docs/ENGINEERING_RULES.md (R1-R5) is binding. HEAD 16a662b (or later); branch main, clean.
 
 CREDENTIALS — THIS IS DIFFERENT NOW (2026-07-17):
 - All Google automation runs under a NON-EXPIRING service account. Before any gcloud/terraform/
@@ -11,7 +11,22 @@ CREDENTIALS — THIS IS DIFFERENT NOW (2026-07-17):
   `perkins-deploy-sa-key`. (Note: sourcing .env resets GOOGLE_APPLICATION_CREDENTIALS to a
   nonexistent infra/vertex-dev-sa.json — re-export the SA key after any `source .env`.)
 
-GOAL: finish the remaining gaps in docs/KNOWN_GAPS.md, in order (confirm drift scope with Jon first):
+PRIMARY GOAL (Jon's ask): endpoint coverage + negative tests, driven by a live 500.
+A prod 500 on POST/PUT /quoting/customers/{id}/properties ("value too long for type character
+varying(2)", state="Florida") was fixed in 16a662b by adding Pydantic max_length. The LESSON:
+the suite runs on SQLite, which IGNORES VARCHAR(n) limits, so oversized-string input passes in
+tests but 500s on prod Postgres — a whole class of bugs the tests can't see. This is SYSTEMIC:
+~90 length-bounded Column(String(N)) columns + 21 route files with create/update/request Pydantic
+schemas, most likely missing max_length. Do:
+  A. max_length AUDIT across all 21 route schemas — every str field mapping to a bounded DB
+     column gets max_length matching app/models.py. Parallelize across route-file clusters (agents).
+  B. NEGATIVE TESTS for every endpoint: oversized (422), missing-required (422), wrong-type,
+     not-found (404), cross-tenant/authz (403/401). Run the constraint-sensitive ones under the
+     Postgres harness (scripts/test_pg.sh) — SQLite hides VARCHAR + some constraint violations.
+  C. Push endpoint coverage toward 100% (R1 behavioral-validation via these negative tests).
+  Grep `Column(String(` in app/models.py, map table→schema, fix + test. Deploy per cluster.
+
+THEN the remaining gaps in docs/KNOWN_GAPS.md (confirm drift scope with Jon first):
 1. Least-privilege the deploy SA — replace roles/owner with scoped roles (secretmanager.admin,
    run.admin, cloudscheduler.admin, monitoring.editor, cloudsql.client, artifactregistry.writer,
    cloudbuild.builds.editor, iam.serviceAccountUser), verify a deploy still works, drop owner,
