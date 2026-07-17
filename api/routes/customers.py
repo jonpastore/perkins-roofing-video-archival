@@ -17,7 +17,7 @@ Authz:
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -70,23 +70,27 @@ class ContactUpdate(BaseModel):
     is_primary: Optional[bool] = None
 
 
+# max_length mirrors the properties table columns (app/models.py Property). Without it,
+# oversized input (e.g. state="Florida") sails past validation and 500s on Postgres
+# ("value too long for type character varying(2)") — SQLite silently ignores the limit,
+# which is why the test suite never caught it. These bounds make it a clean 422 on both.
 class PropertyCreate(BaseModel):
-    street: str
-    city: str
-    state: str = "FL"
-    zip: Optional[str] = None
-    county: Optional[str] = None
-    code_zone: str = "FBC"
+    street: str = Field(max_length=255)
+    city: str = Field(max_length=100)
+    state: str = Field(default="FL", max_length=2)
+    zip: Optional[str] = Field(default=None, max_length=10)
+    county: Optional[str] = Field(default=None, max_length=100)
+    code_zone: str = Field(default="FBC", max_length=10)
     notes: Optional[str] = None
 
 
 class PropertyUpdate(BaseModel):
-    street: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    zip: Optional[str] = None
-    county: Optional[str] = None
-    code_zone: Optional[str] = None
+    street: Optional[str] = Field(default=None, max_length=255)
+    city: Optional[str] = Field(default=None, max_length=100)
+    state: Optional[str] = Field(default=None, max_length=2)
+    zip: Optional[str] = Field(default=None, max_length=10)
+    county: Optional[str] = Field(default=None, max_length=100)
+    code_zone: Optional[str] = Field(default=None, max_length=10)
     notes: Optional[str] = None
 
 

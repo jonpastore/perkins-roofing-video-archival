@@ -497,3 +497,53 @@ class TestDeleteProperty:
 
         assert r.status_code == 409
         assert "linked" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Property field-length validation — regression for the prod 500
+# ("value too long for type character varying(2)" on state="Florida").
+# SQLite ignores VARCHAR(n) limits so only Postgres 500'd; these assert a clean
+# 422 on BOTH DBs via Pydantic max_length matching the columns.
+# ---------------------------------------------------------------------------
+
+class TestPropertyFieldLengthValidation:
+    def test_state_too_long_returns_422(self, admin_client):
+        cust = _create_customer(admin_client)
+        r = admin_client.post(
+            f"/quoting/customers/{cust['id']}/properties",
+            json={"street": "1 A St", "city": "Miami", "state": "Florida"}, headers=AUTH,
+        )
+        assert r.status_code == 422, r.text
+
+    def test_code_zone_too_long_returns_422(self, admin_client):
+        cust = _create_customer(admin_client)
+        r = admin_client.post(
+            f"/quoting/customers/{cust['id']}/properties",
+            json={"street": "1 A St", "city": "Miami", "code_zone": "FBC-HVHZ-2023"}, headers=AUTH,
+        )
+        assert r.status_code == 422, r.text
+
+    def test_zip_too_long_returns_422(self, admin_client):
+        cust = _create_customer(admin_client)
+        r = admin_client.post(
+            f"/quoting/customers/{cust['id']}/properties",
+            json={"street": "1 A St", "city": "Miami", "zip": "33101-1234-toolong"}, headers=AUTH,
+        )
+        assert r.status_code == 422, r.text
+
+    def test_update_state_too_long_returns_422(self, admin_client):
+        cust = _create_customer(admin_client)
+        prop = _create_property(admin_client, cust["id"])
+        r = admin_client.put(
+            f"/quoting/properties/{prop['id']}", json={"state": "California"}, headers=AUTH,
+        )
+        assert r.status_code == 422, r.text
+
+    def test_valid_short_fields_still_ok(self, admin_client):
+        cust = _create_customer(admin_client)
+        r = admin_client.post(
+            f"/quoting/customers/{cust['id']}/properties",
+            json={"street": "1 A St", "city": "Miami", "state": "FL",
+                  "code_zone": "HVHZ", "zip": "33101"}, headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
