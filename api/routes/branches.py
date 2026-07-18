@@ -12,8 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from adapters.quickbooks import branch_qb_mapping
 from api.auth import get_db_session, require_role
-from app.models import Branch
+from app.models import Branch, BranchAccounting
 
 router = APIRouter(prefix="/branches", tags=["branches"])
 
@@ -82,3 +83,67 @@ def update_branch(
         b.sort = body.sort
     db.flush()
     return _dict(b)
+
+
+# ---------------------------------------------------------------------------
+# B9 scaffold — per-branch QuickBooks/Knowify mapping admin API.
+# Live QBO OAuth client is HELD; this only populates the mapping row that
+# adapters/quickbooks.py's resolution seam reads once credentials exist.
+# ---------------------------------------------------------------------------
+
+def _accounting_dict(row: BranchAccounting) -> dict:
+    return {
+        "branch": row.branch,
+        "qb_realm_id": row.qb_realm_id,
+        "qb_company_name": row.qb_company_name,
+        "knowify_subscription_id": row.knowify_subscription_id,
+        "active": row.active,
+    }
+
+
+class BranchAccountingUpdate(BaseModel):
+    qb_realm_id: str | None = None
+    qb_company_name: str | None = None
+    knowify_subscription_id: str | None = None
+    active: bool | None = None
+
+
+@router.get("/{branch}/accounting")
+def get_branch_accounting(
+    branch: str,
+    claims=Depends(require_role("billing_view")),
+    db: Session = Depends(get_db_session),
+):
+    row = branch_qb_mapping(db, branch)
+    if row is None:
+        raise HTTPException(404, f"no accounting mapping for branch {branch!r}")
+    return _accounting_dict(row)
+
+
+@router.put("/{branch}/accounting")
+def put_branch_accounting(
+    branch: str,
+    body: BranchAccountingUpdate,
+    claims=Depends(require_role("manage_config")),
+    db: Session = Depends(get_db_session),
+):
+    b = db.execute(select(Branch).where(Branch.key == branch)).scalar_one_or_none()
+    if b is None or not b.active:
+        raise HTTPException(422, f"unknown or inactive branch {branch!r}")
+
+    row = branch_qb_mapping(db, branch)
+    if row is None:
+        row = BranchAccounting(branch=branch, tenant_id=db.info["tenant_id"])
+        db.add(row)
+
+    if body.qb_realm_id is not None:
+        row.qb_realm_id = body.qb_realm_id
+    if body.qb_company_name is not None:
+        row.qb_company_name = body.qb_company_name
+    if body.knowify_subscription_id is not None:
+        row.knowify_subscription_id = body.knowify_subscription_id
+    if body.active is not None:
+        row.active = body.active
+
+    db.flush()
+    return _accounting_dict(row)

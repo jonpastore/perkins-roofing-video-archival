@@ -97,7 +97,11 @@ in `video1033724674_frames/` — `frame_N` ≈ (N-1)×10s).
     rollup; NB transcript hears "Cuvincy" — Qvinci is the real product; a qvinci tab is open in
     Tim's browser). Royalty + marketing fee = % of revenue per franchisee. Jon proposed
     dashboard + **automated ACH collection via Stripe** (3-day notice, then draft) — Tim: yes.
-    (Backlog B9/B10; QuickBooks per-branch.)
+    (Backlog B9/B10; QuickBooks per-branch.) **B9 SCAFFOLD DONE 2026-07-18:** per-branch
+    `branch_accounting` mapping (migration 0044) + `qb_client_for_branch` credential seam
+    + admin API; live QBO OAuth + Qvinci rollup HELD until accounts exist. **B10 HELD:**
+    franchise royalty + Stripe ACH — blocked on a Stripe Connect account + Tim's actual
+    royalty/marketing-fee terms.
 
 **Business/schedule:**
 - Second payment approved [59:02]; Vlad regenerating the WeLeadLab invoice link.

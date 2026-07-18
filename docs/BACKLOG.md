@@ -161,7 +161,17 @@ controls the branch selector options everywhere (estimator, configs, dashboards)
 must filter by branch or show all. Tim's sheets confirm branches are first-class with their
 own crew/OH structures (Miami 9/12/15-man vs Jupiter 4/7/10-man OH bases; Marco/Josh tabs).
 
-## B9 — QuickBooks integration, per-branch (4 companies)
+## B9 — QuickBooks integration, per-branch (4 companies) — SCAFFOLD DONE 2026-07-18
+**Status:** Scaffold shipped (live QBO OAuth HELD until the 4 QB accounts + Qvinci exist).
+Built: `branch_accounting` table + migration 0044 (the per-branch (QB realm, QB company,
+Knowify sub) triple, RLS-scoped); `adapters/quickbooks.py` `qb_client_for_branch(tenant,branch)`
+credential-resolution seam (reads per-branch creds via `SecretManagerOAuthStore` platform
+`quickbooks`/account=branch; **raises** `QuickBooksUnconfigured` when absent, `NotImplementedError`
+when present — the live client is held, never silently stubs); `GET/PUT /branches/{branch}/accounting`
+admin API (read=billing_view, write=manage_config). The live QBO client drops in behind
+`qb_client_for_branch` without changing callers. Held: Qvinci rollup, live sync, per-branch
+OAuth minting. See B10 for royalty/ACH (also held).
+
 **Idea (2026-07-17, Jon):** Tim has 4 companies, 4 Knowify subscriptions, and 4 QuickBooks
 subscriptions. Handle accounting integrations AT THE BRANCH LEVEL: each branch maps to a
 (company, Knowify sub, QuickBooks sub) triple. Plan the QuickBooks integration with that

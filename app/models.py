@@ -1320,6 +1320,29 @@ class CompanyCamPhoto(Base, TenantMixin):
     )
 
 
+class BranchAccounting(Base, TenantMixin):
+    """Per-branch QuickBooks/Knowify mapping (B9 scaffold, migration 0044).
+
+    Tim runs 4 companies / 4 Knowify subs / 4 QuickBooks subs, one per branch. The
+    live QBO OAuth client is HELD (no QB/Qvinci accounts exist yet) — this table
+    only holds the mapping (realm id, company name, Knowify sub) that the seam in
+    adapters/quickbooks.py resolves once credentials exist.
+    """
+    __tablename__ = "branch_accounting"
+
+    id                       = Column(Integer, primary_key=True, autoincrement=True)
+    branch                   = Column(String(50), nullable=False)
+    qb_realm_id              = Column(String(50), nullable=True)
+    qb_company_name          = Column(String(200), nullable=True)
+    knowify_subscription_id  = Column(String(100), nullable=True)
+    active                   = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at               = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "branch", name="uq_branch_accounting_tenant_branch"),
+    )
+
+
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
 
