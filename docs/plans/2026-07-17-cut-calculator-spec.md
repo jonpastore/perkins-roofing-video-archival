@@ -92,3 +92,22 @@ for shingle/metal, multiply their flat base by (custom_base / standard_tile_base
   `num_squares` tiny-but-positive can produce an absurd $/sq (pre-existing engine-wide, GIGO);
   county `materials_tax_7pct_tile` × a base whose tile cost is already post-tax would double-tax —
   inactive today (all counties False), same latent issue as the flat base.
+
+## Golden-calibration finding + side-by-side decision (2026-07-18)
+Fed the 7 golden RoofR reports' real cut LFs through the calculator vs Tim's sold PROTECTOR
+(scripts scratch: golden_cut_analysis.py / golden_cut_detail.py). Result across the 4 standard
+jobs: mean |estimate/sold − 1| = **2.5% flat → 3.6% with cuts** — the cut calc makes the match
+WORSE, because Tim priced these standard roofs off the FLAT base, not the cut calculator:
+
+| job | roof | cutLF/sq | flat $/sq | cut $/sq | est/sold flat→cut |
+|---|---|---|---|---|---|
+| butterworth | tile | 12.6 (simple) | 770 | 727 (−43) | 1.00 → 0.96 |
+| mazzeo | tile | 19.8 (cut-heavy) | 770 | 776 (+6) | 0.96 → 0.97 |
+| thompson | metal | 14.1 | 750 | 733 (−17) | 1.00 → 0.98 |
+| allen | shingle | 18.2 | 420 | 419 (−1) | 1.06 → 1.06 |
+
+Matches Tim's Zoom framing (per-sq is "a guide, not a rule"; the Custom Tile Calc is his precision
+tool for cut-heavy/unusual roofs, not every job). **Decision (Jon 2026-07-18): show both
+side-by-side.** The quote HEADLINE now uses the flat base (matches Tim's standard pricing); the API
+attaches a `cut_calc` reference block (flat vs cut base $/sq + pre-discount totals) via a second
+estimate; the builder shows both and Tim picks. Cuts are no longer auto-applied to the headline.

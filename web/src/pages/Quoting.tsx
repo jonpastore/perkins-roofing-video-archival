@@ -107,6 +107,14 @@ interface QuoteResult {
   margin_warnings?: string[];
   margin?: MarginInfo;
   package_options?: PackageOption[];
+  cut_calc?: {
+    flat_base_per_sq: number;
+    cut_base_per_sq: number;
+    flat_project_total: number;
+    cut_project_total: number;
+    base_tile_brand?: string | null;
+    warnings?: string[];
+  };
   warnings?: string[];
   estimate_id?: number;
   estimate_version?: number;
@@ -1722,19 +1730,32 @@ export function Quoting() {
                       {quoteResult.margin_ok ? "Margin OK" : "Margin LOW"}
                     </span>
                   </div>
-                  {(() => {
-                    const baseLi = quoteResult.line_items_detail?.find((li) => li.key === "base_cost_lm");
-                    const cutsActive = rates?.cut_calc_available && !!selectedMeasurement
-                      && [selectedMeasurement.eaves_lf, selectedMeasurement.hips_lf, selectedMeasurement.ridges_lf,
-                          selectedMeasurement.valleys_lf, selectedMeasurement.rakes_lf, selectedMeasurement.wall_flashings_lf]
-                        .some((v) => v != null && Number(v) > 0);
-                    if (!cutsActive || !baseLi || baseLi.per_sq == null) return null;
-                    return (
-                      <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3", fontSize: 12, fontWeight: 600 }}>
-                        Cut-adjusted base: {usd(baseLi.per_sq)}/sq — priced from this roof&apos;s RoofR cuts (eaves/hips/ridges/valleys/rakes/wall flashings)
+                  {quoteResult.cut_calc && (
+                    <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "#eef2ff", border: "1px solid #c7d2fe" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#3730a3", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>
+                        RoofR cut calculator — pick a base
                       </div>
-                    );
-                  })()}
+                      <div style={{ display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ color: "#475569", fontSize: 11 }}>Standard (flat) — used</div>
+                          <div style={{ fontWeight: 700 }}>{usd(quoteResult.cut_calc.flat_base_per_sq)}/sq</div>
+                          <div style={{ color: "#475569" }}>{usd(quoteResult.cut_calc.flat_project_total)}</div>
+                        </div>
+                        <div>
+                          <div style={{ color: "#475569", fontSize: 11 }}>Cut-adjusted (RoofR)</div>
+                          <div style={{ fontWeight: 700, color: "#3730a3" }}>{usd(quoteResult.cut_calc.cut_base_per_sq)}/sq</div>
+                          <div style={{ color: "#475569" }}>{usd(quoteResult.cut_calc.cut_project_total)}</div>
+                        </div>
+                        <div style={{ alignSelf: "center", fontSize: 12, fontWeight: 700, color: quoteResult.cut_calc.cut_base_per_sq >= quoteResult.cut_calc.flat_base_per_sq ? "#1a7f4b" : BRAND.red }}>
+                          {quoteResult.cut_calc.cut_base_per_sq >= quoteResult.cut_calc.flat_base_per_sq ? "+" : "−"}
+                          {usd(Math.abs(quoteResult.cut_calc.cut_base_per_sq - quoteResult.cut_calc.flat_base_per_sq))}/sq
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>
+                        Headline uses the standard base (how Tim prices standard roofs). The cut-adjusted figure prices this roof&apos;s RoofR cuts — pick it for cut-precise jobs.
+                      </div>
+                    </div>
+                  )}
                   {inputsDirty && (
                     <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12, fontWeight: 700 }}>
                       Inputs changed — recalculate

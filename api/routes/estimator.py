@@ -193,8 +193,11 @@ def quote(
             if not cut_lfs[field_name]:  # explicit field wins when non-zero; else measurement
                 cut_lfs[field_name] = getattr(m, field_name) or 0
 
-    # Build QuoteInput
-    q = E.QuoteInput(
+    # Build QuoteInput kwargs. The headline quote uses the FLAT base (Tim's standard pricing);
+    # cut LFs are applied only to a separate cut_calc reference block below, so both the flat
+    # and cut-adjusted numbers are shown side-by-side and Tim picks (golden proposals show he
+    # prices standard roofs off the flat base, not the cut calculator).
+    qkwargs = dict(
         code_zone=body.code_zone,
         slope_type=effective_slope_type,
         roof_type=body.roof_type,
@@ -234,8 +237,8 @@ def quote(
         profit_mode=body.profit_mode,
         flat_profit_dollars=body.flat_profit_dollars,
         base_tile_brand=body.base_tile_brand,
-        **cut_lfs,
     )
+    q = E.QuoteInput(**qkwargs)
 
     config = load_config(cfg_row.config)
 
@@ -330,6 +333,31 @@ def quote(
         body.roof_type, float(body.num_squares), float(result["project_total"]),
         discount_total=float(result.get("discount_total") or 0),
     )
+
+    # Cut-calculator reference (shown alongside the flat headline; Tim picks). A second estimate
+    # with the RoofR cut LFs, attached only when cuts actually move the base (calibrated zone).
+    # Pre-discount totals so the flat-vs-cut delta is purely the base difference.
+    if any(cut_lfs.values()):
+        try:
+            cut_res = E.estimate(config, E.QuoteInput(**qkwargs, **cut_lfs))
+        except (ValueError, ConfigError):
+            cut_res = None
+        if cut_res:
+            def _base_ps(res):
+                return next((li["per_sq"] for li in res["line_items_detail"]
+                             if li["key"] == "base_cost_lm"), None)
+            flat_base, cut_base = _base_ps(result), _base_ps(cut_res)
+            if flat_base is not None and cut_base is not None and abs(cut_base - flat_base) > 0.01:
+                result["cut_calc"] = {
+                    "flat_base_per_sq": round(flat_base, 2),
+                    "cut_base_per_sq": round(cut_base, 2),
+                    "flat_project_total": round(float(result.get("pre_discount_total")
+                                                      or result["project_total"]), 2),
+                    "cut_project_total": round(float(cut_res["project_total"]), 2),
+                    "base_tile_brand": body.base_tile_brand
+                        or (config.cuts_calc() or {}).get("default_tile_brand"),
+                    "warnings": cut_res.get("warnings", []),
+                }
 
     # Persist estimate row for audit reproduction (TRD §2.2)
     parent_id = body.parent_estimate_id

@@ -1277,22 +1277,29 @@ class TestQuoteCutCalculator:
         _activate_config(client, created["id"])
         return branch
 
-    def test_explicit_cut_lfs_adjust_base(self, admin_client):
+    def test_headline_stays_flat_cuts_in_reference_block(self, admin_client):
+        """Cut LFs don't move the headline base (Tim's flat pricing); the cut_calc block shows both."""
         branch = self._active_cuts_branch(admin_client)
         r = admin_client.post("/estimator/quote", headers=AUTH, json={
             "branch": branch, "code_zone": "FBC", "roof_type": "13_tile",
             "num_squares": 29.0, **_SHEET_CUTS,
         })
         assert r.status_code == 200, r.text
-        assert _base_per_sq(r.json()) == pytest.approx(820.9, abs=0.1)
+        body = r.json()
+        assert _base_per_sq(body) == pytest.approx(770.0, abs=0.01)  # headline flat
+        cc = body["cut_calc"]
+        assert cc["flat_base_per_sq"] == pytest.approx(770.0, abs=0.01)
+        assert cc["cut_base_per_sq"] == pytest.approx(820.9, abs=0.1)
+        assert cc["cut_project_total"] > cc["flat_project_total"]
 
-    def test_no_cuts_uses_flat_base(self, admin_client):
+    def test_no_cuts_has_no_reference_block(self, admin_client):
         branch = self._active_cuts_branch(admin_client)
         r = admin_client.post("/estimator/quote", headers=AUTH, json={
             "branch": branch, "code_zone": "FBC", "roof_type": "13_tile", "num_squares": 29.0,
         })
         assert r.status_code == 200, r.text
         assert _base_per_sq(r.json()) == pytest.approx(770.0, abs=0.01)
+        assert "cut_calc" not in r.json()
 
     def test_measurement_id_resolves_cut_lfs(self, admin_client):
         branch = self._active_cuts_branch(admin_client)
@@ -1306,8 +1313,8 @@ class TestQuoteCutCalculator:
             "num_squares": 29.0, "measurement_id": mid,
         })
         assert r.status_code == 200, r.text
-        # Cut LFs pulled from the measurement → same adjusted base as the explicit path.
-        assert _base_per_sq(r.json()) == pytest.approx(820.9, abs=0.1)
+        # Cut LFs pulled from the measurement → same cut base as the explicit path.
+        assert r.json()["cut_calc"]["cut_base_per_sq"] == pytest.approx(820.9, abs=0.1)
 
     def test_bad_measurement_id_404(self, admin_client):
         branch = self._active_cuts_branch(admin_client)
@@ -1331,5 +1338,7 @@ class TestQuoteCutCalculator:
             "num_squares": 29.0, "measurement_id": mid,
         })
         assert merged.status_code == 200 and pure.status_code == 200
-        assert _base_per_sq(merged.json()) > _base_per_sq(pure.json())  # eaves override raised it
-        assert _base_per_sq(merged.json()) > 770.0                       # other 5 LFs still applied
+        mb = merged.json()["cut_calc"]["cut_base_per_sq"]
+        pb = pure.json()["cut_calc"]["cut_base_per_sq"]
+        assert mb > pb        # eaves override raised the cut base
+        assert pb > 770.0     # measurement's 5 other LFs still applied
