@@ -66,6 +66,18 @@ variable "cloudflare_api_token" {
   sensitive = true
 }
 
+variable "cloudflare_rate_limiting_enabled" {
+  type        = bool
+  description = "Provision the waf_rate_limits ruleset. Requires a PAID Cloudflare plan — the Free plan caps rate-limit rules at period=10s and 1 rule, so the IaC (period=60 × 3 rules) hard-fails on apply. Default false so drift_check is clean on Free; flip to true once the plan is upgraded (pending Jon's pay determination)."
+  default     = false
+}
+
+variable "cloudflare_origin_routing_enabled" {
+  type        = bool
+  description = "Provision the origin_routing ruleset (CF zone → Cloud Run origin rewrite). Off by default: the app reaches the API via the direct run.app URL today, so this is unused, and creating it changes live routing on the zone. Enable + confirm-then-apply only when routing perkinsroofing.net through CF to the origin."
+  default     = false
+}
+
 variable "cloudflare_ipv4_ranges" {
   type        = list(string)
   description = "Cloudflare IPv4 CIDR ranges for the Cloud Armor origin allowlist. Source: https://www.cloudflare.com/ips-v4 — update when CF publishes changes. Used only when cloud_armor_enabled = true."

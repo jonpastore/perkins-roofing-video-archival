@@ -283,7 +283,9 @@ resource "cloudflare_zone_settings_override" "perkinsroofing" {
 # ---------------------------------------------------------------------------
 
 resource "cloudflare_ruleset" "origin_routing" {
-  count   = var.cloudflare_zone_id != "" ? 1 : 0
+  # Off by default (var default false): unused today (app hits run.app directly) and creating it
+  # changes live zone routing. Enable + confirm-then-apply only when routing CF -> Cloud Run origin.
+  count   = var.cloudflare_zone_id != "" && var.cloudflare_origin_routing_enabled ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "perkins-origin-routing"
   kind    = "zone"
@@ -317,7 +319,10 @@ resource "cloudflare_ruleset" "origin_routing" {
 # ---------------------------------------------------------------------------
 
 resource "cloudflare_ruleset" "waf_rate_limits" {
-  count   = var.cloudflare_zone_id != "" ? 1 : 0
+  # Off by default (var default false): requires a PAID plan. Free plan caps rate-limit rules at
+  # period=10s and 1 rule, so this (period=60 × 3) hard-fails on apply. Flip the var true after
+  # the plan upgrade (pending Jon's pay determination).
+  count   = var.cloudflare_zone_id != "" && var.cloudflare_rate_limiting_enabled ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "perkins-rate-limits"
   kind    = "zone"

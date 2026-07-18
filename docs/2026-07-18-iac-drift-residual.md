@@ -40,8 +40,15 @@ upgraded to v5. None of the above is caused by the cut-calculator work.
   to recreate. `terraform untaint` (no cloud change) cleared the replaces. `zone_settings_override` then
   applied **in-place** cleanly (the v4 failure was the replace, not in-place). Also applied gotenberg
   scaling + created the 2 `companycam-*` secret containers. **0 destroyed** throughout.
-- **Residual (benign; each needs a decision):** `waf_rate_limits` (Free-plan capped — needs paid plan or
-  gate-off), `origin_routing` (unused — gate or confirm-then-apply, not forced blind on a live zone),
-  `zone_settings_override` (perpetual v4 `true_client_ip_header` diff — needs v5 migration or an
-  ignore_changes that would stop TF-tracking SSL), `gotenberg` (perpetual cosmetic `0`↔`null` scaling
-  diff), `domain_mapping.api` (needs Google domain-ownership verification). None block a deploy.
+- **Gated off (money-free, safe):** `waf_rate_limits` → `var.cloudflare_rate_limiting_enabled`
+  (default false; flip after a paid plan), `origin_routing` → `var.cloudflare_origin_routing_enabled`
+  (default false; unused). Plan is now **0 add / 0 destroy / 2 in-place**.
+- **Residual (benign; each needs a decision, none block a deploy):** `zone_settings_override`
+  (perpetual v4 `true_client_ip_header` diff — needs the v5 provider migration; an ignore_changes
+  would stop TF-tracking SSL so it's NOT applied), `gotenberg` (perpetual cosmetic `0`↔`null` scaling
+  diff — nested-path ignore_changes unsupported, documented benign in gotenberg.tf), `domain_mapping.api`
+  (needs Google domain-ownership verification).
+- **v4→v5 provider migration:** free-tier compatible, but it's a resource-type-change migration across
+  LIVE email DNS (MX/SPF/DKIM/DMARC) whose only drift benefit is the cosmetic zone_settings diff — so
+  best practice is a planned, zero-change-plan-verified cutover via the official tf-migrate codemod, NOT
+  a rushed in-session apply. Deferred to a controlled change.
