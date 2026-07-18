@@ -173,6 +173,16 @@ const EXISTING_ROOF_OPTIONS: Array<{ value: "none" | "shingle" | "tile" | "metal
   { value: "flat", label: "Flat" },
 ];
 
+// Roof type -> the daily-overhead "install" series (the crew rate for putting the new roof on).
+// The roof type is already chosen, so the builder asks for ONE "install days" number, not one per type.
+// Low-slope/flat systems fall back to the demo/dry-in/flat daily rate.
+const INSTALL_SERIES_BY_ROOF: Record<string, string> = {
+  "13_tile": "tile", barrel_tile: "tile",
+  standing_seam_metal: "metal",
+  "3tab_shingle": "shingle", dimensional_shingle: "shingle",
+  tpo: "demo_dry_in_flat", coatings: "demo_dry_in_flat", silicone: "demo_dry_in_flat", bur: "demo_dry_in_flat",
+};
+
 const GUTTER_STYLES: Array<{ value: string; label: string }> = [
   { value: "k6_alum", label: "6\" Alum K-Style" },
   { value: "k7_alum", label: "7\" Alum K-Style" },
@@ -629,7 +639,8 @@ export function Quoting() {
   const [quoteLeaderheadsRes, setQuoteLeaderheadsRes] = useState("");
   const [quoteLeaderheadsComm, setQuoteLeaderheadsComm] = useState("");
   const [quoteOverheadMode, setQuoteOverheadMode] = useState<"per_sq" | "daily">("per_sq");
-  const [quoteDailyDays, setQuoteDailyDays] = useState<Record<string, string>>({});
+  const [quoteDemoDays, setQuoteDemoDays] = useState("");
+  const [quoteInstallDays, setQuoteInstallDays] = useState("");
   const [targetProfitPct, setTargetProfitPct] = useState("");
   const [targetProfitMinDollars, setTargetProfitMinDollars] = useState("");
   const [activeProfitPreset, setActiveProfitPreset] = useState<number | null>(null);
@@ -958,9 +969,15 @@ export function Quoting() {
 
   function buildQuoteBody(overrides: Record<string, unknown> = {}): Record<string, unknown> | null {
     if (!selectedMeasurement?.total_sq) return null;
-    const dailySeries = Object.entries(quoteDailyDays)
-      .map(([series, days]) => ({ series, days: Number(days || 0) }))
-      .filter((s) => s.days > 0);
+    // Build daily series from two inputs: demo days (tear-off rate) + install days (roof-type rate).
+    // If both map to the same series (flat roofs), sum them.
+    const demoD = Number(quoteDemoDays || 0);
+    const installD = Number(quoteInstallDays || 0);
+    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? "demo_dry_in_flat";
+    const dailyMap: Record<string, number> = {};
+    if (demoD > 0) dailyMap["demo_dry_in_flat"] = (dailyMap["demo_dry_in_flat"] ?? 0) + demoD;
+    if (installD > 0) dailyMap[installSeries] = (dailyMap[installSeries] ?? 0) + installD;
+    const dailySeries = Object.entries(dailyMap).map(([series, days]) => ({ series, days }));
     return {
       branch: selectedCustomer?.branch || "miami",
       code_zone: quoteRegion,
@@ -1532,7 +1549,16 @@ export function Quoting() {
                 ))}
               </div>
               <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 120px", gap: 10, alignItems: "end" }}>
-                <div />
+                <div title={quoteExistingRoof === "none" ? "No tear-off on new construction" : "Demo / tear-off crew days — priced when Overhead = By time (days)"}>
+                  <FieldLabel>Demo days (tear-off)</FieldLabel>
+                  <input
+                    type="number" min="0" step="0.5"
+                    disabled={quoteExistingRoof === "none"}
+                    value={quoteDemoDays}
+                    onChange={(e) => setQuoteDemoDays(e.target.value)}
+                    style={{ ...inputStyle, width: "100%", opacity: quoteExistingRoof === "none" ? 0.5 : 1 }}
+                  />
+                </div>
                 <div title={quoteExistingRoof === "none" ? "Select an existing roof type to set layers" : undefined}>
                   <FieldLabel>Layers</FieldLabel>
                   <input
@@ -1631,23 +1657,32 @@ export function Quoting() {
                 ))}
               </div>
               {quoteOverheadMode === "daily" && (
-                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  {Object.keys(rates?.daily_overhead_rates ?? {}).length === 0 && (
-                    <div style={{ gridColumn: "1 / -1", fontSize: 12, color: BRAND.sub }}>
-                      No daily overhead series configured for this branch.
-                    </div>
-                  )}
-                  {Object.keys(rates?.daily_overhead_rates ?? {}).map((series) => (
-                    <div key={series}>
-                      <FieldLabel>{series.replace(/_/g, " ")} (days)</FieldLabel>
-                      <input
-                        type="number" min="0" step="0.5"
-                        value={quoteDailyDays[series] ?? ""}
-                        onChange={(e) => setQuoteDailyDays((prev) => ({ ...prev, [series]: e.target.value }))}
-                        style={{ ...inputStyle, width: "100%" }}
-                      />
-                    </div>
-                  ))}
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 8 }}>
+                    By-time overhead <strong>replaces</strong> the per-square overhead (it doesn&apos;t add to it). Demo days are set in the tear-off section above.
+                  </div>
+                  {Object.keys(rates?.daily_overhead_rates ?? {}).length === 0 ? (
+                    <div style={{ fontSize: 12, color: BRAND.sub }}>No daily overhead rates configured for this branch.</div>
+                  ) : (() => {
+                    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? "demo_dry_in_flat";
+                    const rate = rates?.daily_overhead_rates?.[installSeries];
+                    return (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10, alignItems: "end" }}>
+                        <div style={{ fontSize: 12, color: BRAND.sub }}>
+                          Install crew rate: <strong>{rate != null ? usd(rate) : "—"}/day</strong> ({installSeries.replace(/_/g, " ")})
+                        </div>
+                        <div>
+                          <FieldLabel>Install days</FieldLabel>
+                          <input
+                            type="number" min="0" step="0.5"
+                            value={quoteInstallDays}
+                            onChange={(e) => setQuoteInstallDays(e.target.value)}
+                            style={{ ...inputStyle, width: "100%" }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1790,6 +1825,12 @@ export function Quoting() {
                     Estimate #{quoteResult.estimate_id ?? "—"} · recommended/default tier: <strong>{recommendedTier.toUpperCase()}</strong>
                   </div>
                   <SectionLabel>Profitability</SectionLabel>
+                  {(() => {
+                    const oh = quoteResult.line_items_detail?.find((li) => li.key === "overhead");
+                    if (!oh) return null;
+                    const mode = quoteOverheadMode === "daily" ? "by days" : "per-sq";
+                    return <ResultRow label={`Overhead (${mode})`} value={usd(oh.amount)} />;
+                  })()}
                   {quoteResult.pre_discount_total != null && (
                     <ResultRow label="Pre-discount total" value={usd(quoteResult.pre_discount_total)} />
                   )}
