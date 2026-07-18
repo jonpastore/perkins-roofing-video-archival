@@ -693,6 +693,22 @@ class TestEstimatorQuote:
         deck_total = _quote("bur_tpo_concrete_primer")  # +$15/sq deck adder
         assert deck_total > base_total, "deck_type adder did not flow through to the total"
 
+    def test_api_quote_unknown_roof_type_422_not_500(self, admin_client):
+        """An unknown/mismatched roof_type must 422 at the boundary, never reach the engine and
+        500. Regression: relaxing the roof_type Literal to str exposed a KeyError->500 on the
+        sloped path (e.g. a granular low-slope key sent when low-slope pricing is pending)."""
+        branch = _unique_branch("quote-unknown-rt")
+        created = _create_config(admin_client, branch=branch)  # SAMPLE_CONFIG: low-slope pending
+        _activate_config(admin_client, created["id"])
+        r = admin_client.post(
+            "/estimator/quote",
+            json={"branch": branch, "code_zone": "FBC", "roof_type": "tpo_adhered",
+                  "slope_type": "sloped", "num_squares": 10.0},
+            headers=AUTH,
+        )
+        assert r.status_code == 422, f"expected clean 422, got {r.status_code}: {r.text}"
+        assert "unknown roof_type" in r.text
+
     def test_rates_exposes_only_priced_low_slope_types(self, admin_client):
         branch = _unique_branch("rates-low")
         cfg = copy.deepcopy(SAMPLE_CONFIG)

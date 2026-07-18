@@ -172,6 +172,20 @@ def quote(
     low_slope_keys = LOW_SLOPE_ROOF_TYPES | set(_priced_low_slope_types(cfg_row.config, body.code_zone))
     effective_slope_type = "low_slope" if body.roof_type in low_slope_keys else body.slope_type
 
+    # roof_type is a free str at the boundary (config-driven keys), so validate it here against the
+    # active config for this zone — otherwise an unknown key reaches the engine and raises KeyError
+    # (an uncaught 500) instead of a clean 422. Valid = priced sloped keys + the low-slope set.
+    valid_sloped = {
+        k for k in ((cfg_row.config.get("sloped_base_cost_lm") or {}).get(body.code_zone) or {})
+        if not k.startswith("_")
+    }
+    if body.roof_type not in (valid_sloped | low_slope_keys):
+        raise HTTPException(
+            422,
+            detail=f"unknown roof_type {body.roof_type!r} for zone {body.code_zone}. "
+            f"Valid: {sorted(valid_sloped | low_slope_keys)}",
+        )
+
     # Validate specialty_tile against the active config
     if body.specialty_tile is not None and effective_slope_type == "sloped":
         valid = (cfg_row.config.get("specialty_tile_upgrade") or {}).get(body.code_zone, {})
