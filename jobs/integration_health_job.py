@@ -28,6 +28,7 @@ _PROBES = {
     "resend": probes.probe_resend,
     "knowify": probes.probe_knowify,
     "youtube_reply": probes.probe_youtube_reply,
+    "companycam": probes.probe_companycam,
 }
 
 

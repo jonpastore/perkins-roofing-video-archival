@@ -13,8 +13,10 @@ from api.routes.admin_metrics import router as admin_metrics_router
 from api.routes.archive import router as archive_router
 from api.routes.articles import router as articles_router
 from api.routes.audit import router as audit_router
+from api.routes.branches import router as branches_router
 from api.routes.clips import router as clips_router
 from api.routes.comments import router as comments_router
+from api.routes.companycam import router as companycam_router
 from api.routes.config import router as config_router
 from api.routes.connections import router as connections_router
 from api.routes.contract_faq import router as contract_faq_router
@@ -37,7 +39,6 @@ from api.routes.scheduling import router as scheduling_router
 from api.routes.squares import router as squares_router
 from api.routes.suggestions import router as suggestions_router
 from api.routes.topics import router as topics_router
-from api.routes.branches import router as branches_router
 from api.routes.users import me_router
 from api.routes.users import router as users_router
 from api.routes.video import router as video_router
@@ -111,6 +112,7 @@ app.include_router(faq_router)
 app.include_router(contract_faq_router)
 app.include_router(config_router)
 app.include_router(branches_router)
+app.include_router(companycam_router)
 app.include_router(users_router)
 app.include_router(me_router)
 app.include_router(suggestions_router)

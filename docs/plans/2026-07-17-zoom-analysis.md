@@ -64,7 +64,17 @@ in `video1033724674_frames/` — `frame_N` ≈ (N-1)×10s).
    call w. RoofR [21:47]; try interfacing with the website widget's data; parse report PDFs
    into measurements+cut LFs (uploads exist already).
 7. **CompanyCam**: Tim adding Jon to account [21:52–22:16] → build pull-photos integration
-   (research done 7/17: REST v2 + webhooks, PAT self-serve).
+   (research done 7/17: REST v2 + webhooks, PAT self-serve). **SCAFFOLD BUILT 2026-07-18
+   (ahead of account):** adapter (`adapters/companycam.py`, PAT via env, urllib+UA),
+   mirror (`core/companycam/mirror.py`, hash-gated upsert), model + migration
+   `0043_companycam.sql` (tenant-scoped, RLS), backfill job (`jobs/companycam_sync.py`,
+   advisory lock 8274126), health probe, and an HMAC-verified inbound webhook
+   (`api/routes/companycam.py`, `/companycam/webhook`). Secrets `companycam-pat` +
+   `companycam-webhook-secret` declared in TF + deploy.sh. **Gated on Tim:** the PAT (Jon on
+   the account) — table stays empty until set. **Confirm when live:** CompanyCam's exact
+   webhook envelope + signature header/format (the parse + verify is one function to tune),
+   the sync project→tenant mapping, and add pagination + webhook replay protection. Cloud
+   Scheduler/Run-Job for the backfill deferred (YAGNI until the account exists).
 8. **Duration-training dataset**: Tim will label 20–30+ RoofR reports with per-phase days +
    notes ("why"), all roof types [10:49–12:54]. SET UP FOR HIM: Drive folder + sheet template
    (columns: roofr ref, roof type, phase, days, notes). Then train duration predictor from cuts.

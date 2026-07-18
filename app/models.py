@@ -1294,6 +1294,32 @@ class KnowifyRawRecord(Base, TenantMixin):
     )
 
 
+class CompanyCamPhoto(Base, TenantMixin):
+    """Mirror of one CompanyCam photo (ahead-of-account scaffold, migration 0043).
+
+    content_hash gates re-writes so an unchanged photo produces zero writes
+    (core/companycam/mirror.py). Populated by jobs/companycam_sync.py once
+    COMPANYCAM_PAT is configured.
+    """
+    __tablename__ = "companycam_photos"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    companycam_photo_id = Column(String(100), nullable=False, index=True)
+    project_id          = Column(String(100), nullable=True)
+    url                 = Column(String(1000), nullable=True)
+    captured_at         = Column(DateTime, nullable=True)
+    lat                 = Column(Float, nullable=True)
+    lon                 = Column(Float, nullable=True)
+    tags                = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
+    raw                 = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    content_hash        = Column(String(64), nullable=False)
+    created_at          = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "companycam_photo_id", name="uq_companycam_photos_tenant_photo"),
+    )
+
+
 engine = create_engine(settings.DB_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, future=True)
 

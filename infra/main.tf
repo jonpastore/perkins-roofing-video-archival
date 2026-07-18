@@ -1026,6 +1026,9 @@ locals {
     # never in git/tfvars.
     "oauth-state-hmac",      # OAuth capture-flow state HMAC key (core/oauth_state.py): value out-of-band.
     "perkins-deploy-sa-key", # perkins-deploy-sa JSON key backup (bootstrapped 2026-07-17): value out-of-band.
+    "companycam-pat",            # CompanyCam PAT (adapters/companycam.py): no account yet — same
+    # ahead-of-account pattern as pexels-api-key above; value added out-of-band once issued.
+    "companycam-webhook-secret", # CompanyCam webhook signature secret: value out-of-band once issued.
   ])
 }
 

@@ -108,6 +108,26 @@ def probe_knowify() -> ProbeResult | None:
     return ProbeResult(ok=True)
 
 
+def probe_companycam() -> ProbeResult | None:
+    """GET /v2/projects?per_page=1 — cheapest authenticated call that proves the PAT works.
+
+    Ahead-of-account scaffold: no PAT issued yet, so this returns None (unconfigured,
+    not broken) until adapters.companycam.configured() flips true.
+    """
+    import adapters.companycam as companycam
+
+    if not companycam.configured():
+        return None
+    try:
+        companycam.list_projects(per_page=1)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "CompanyCam API error 401" in msg or "CompanyCam API error 403" in msg:
+            return ProbeResult(ok=False, hard_auth_failure=True, error=msg)
+        return ProbeResult(ok=False, error=msg)
+    return ProbeResult(ok=True)
+
+
 def probe_youtube_reply() -> ProbeResult | None:
     """Verify the reply token can actually POST — i.e. it authorizes a YouTube channel.
 

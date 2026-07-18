@@ -55,6 +55,12 @@ SECRETS="${SECRETS},KNOWIFY_TOKENS_SECRET=knowify-tokens:latest"
 # (gcloud secrets versions add pexels-api-key --data-file=-) — deploy will fail to
 # resolve ":latest" until that's done, same as any other pre-bootstrap secret here.
 SECRETS="${SECRETS},PEXELS_API_KEY=pexels-api-key:latest"
+# CompanyCam (adapters/companycam.py): NOT wired into --set-secrets yet — the connector is
+# inert without these env vars (configured()==False, webhook 503s), and injecting versionless
+# secrets would fail EVERY deploy (incl. unrelated changes). When Jon is on the account and the
+# PAT exists, add the versions (gcloud secrets versions add companycam-pat / -webhook-secret)
+# and re-add: SECRETS="${SECRETS},COMPANYCAM_PAT=companycam-pat:latest,COMPANYCAM_WEBHOOK_SECRET=companycam-webhook-secret:latest"
+# The secret containers are already declared in infra/main.tf local.secret_ids.
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .
