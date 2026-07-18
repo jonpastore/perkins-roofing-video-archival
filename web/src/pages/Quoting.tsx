@@ -149,6 +149,10 @@ interface EstimatorRates {
   cut_calc_available?: boolean;
   tile_brands?: Record<string, string>;
   default_tile_brand?: string | null;
+  low_slope?: {
+    deck_types?: Record<string, number | null>;
+    [k: string]: unknown;
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -625,6 +629,11 @@ export function Quoting() {
   const [quoteRoofHeight, setQuoteRoofHeight] = useState<"1_story" | "2_stories" | "3_5_stories">("1_story");
   const [quoteExistingRoof, setQuoteExistingRoof] = useState<"none" | "shingle" | "tile" | "metal" | "flat">("none");
   const [quoteLayersToRemove, setQuoteLayersToRemove] = useState("0");
+  // Low-slope builder inputs (deck/attach system + insulation/tapered) — only sent when the
+  // selected roof_type is a low-slope system. Default deck = existing_concrete ($0 adder).
+  const [quoteDeckType, setQuoteDeckType] = useState("existing_concrete");
+  const [quoteIncludeInsulation, setQuoteIncludeInsulation] = useState(false);
+  const [quoteIncludeTapered, setQuoteIncludeTapered] = useState(false);
   const [quoteSecondaryWater, setQuoteSecondaryWater] = useState(false);
   const [quoteWinterguard, setQuoteWinterguard] = useState(false);
   const [quoteStuccoMetalLf, setQuoteStuccoMetalLf] = useState("");
@@ -996,6 +1005,9 @@ export function Quoting() {
       existing_roof: quoteExistingRoof,
       demo: quoteExistingRoof !== "none",
       layers_to_remove: Number(quoteLayersToRemove || 0),
+      deck_type: isLowSlopeRoofType ? quoteDeckType : undefined,
+      include_insulation: isLowSlopeRoofType ? quoteIncludeInsulation : false,
+      include_tapered: isLowSlopeRoofType ? quoteIncludeTapered : false,
       secondary_water_barrier: quoteSecondaryWater,
       winterguard: quoteWinterguard,
       stucco_metal_lf: Number(quoteStuccoMetalLf || 0),
@@ -1578,6 +1590,25 @@ export function Quoting() {
             {quoteExistingRoof === "tile" && (
               <div style={{ marginTop: 6, fontSize: 11, color: BRAND.sub }}>
                 Tile demo adds the tile-demo rate and dumpsters automatically.
+              </div>
+            )}
+
+            {isLowSlopeRoofType && (
+              <div style={{ marginTop: 14 }}>
+                <FieldLabel>Deck / attach system</FieldLabel>
+                <select value={quoteDeckType} onChange={(e) => setQuoteDeckType(e.target.value)} style={selectStyle}>
+                  {Object.entries(rates?.low_slope?.deck_types ?? {})
+                    .filter(([k, v]) => !k.startsWith("_") && v !== null)
+                    .map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {k.replace(/_/g, " ")}{Number(v) > 0 ? ` (+$${v}/sq)` : ""}
+                      </option>
+                    ))}
+                </select>
+                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <EstimateCheckbox checked={quoteIncludeInsulation} onChange={setQuoteIncludeInsulation} label="Insulation" />
+                  <EstimateCheckbox checked={quoteIncludeTapered} onChange={setQuoteIncludeTapered} label="Tapered ISO" />
+                </div>
               </div>
             )}
 

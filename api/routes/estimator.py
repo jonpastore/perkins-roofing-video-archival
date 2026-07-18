@@ -72,10 +72,10 @@ class QuoteRequest(BaseModel):
     code_zone: Literal["HVHZ", "FBC"] = "HVHZ"
     county: Optional[str] = None
     slope_type: Literal["sloped", "low_slope"] = "sloped"
-    roof_type: Literal[
-        "13_tile", "barrel_tile", "3tab_shingle", "dimensional_shingle", "standing_seam_metal",
-        "tpo", "coatings", "silicone", "bur",
-    ] = "13_tile"
+    # roof_type keys are config-driven (exhibit_b uses granular low-slope system keys like
+    # `tpo_adhered`, `pb_silicone_2coat`); a static Literal can't enumerate them, so validate
+    # at the boundary with a length cap and let the engine's ConfigError guard unknown keys (→422).
+    roof_type: str = Field(default="13_tile", max_length=40)
     num_squares: float = Field(..., gt=0)
     roof_cuts: Literal["low", "medium", "high"] = "low"
     roof_height: Literal["1_story", "2_stories", "3_5_stories", "6_plus"] = "1_story"
@@ -166,7 +166,11 @@ def quote(
             ),
         )
 
-    effective_slope_type = "low_slope" if body.roof_type in LOW_SLOPE_ROOF_TYPES else body.slope_type
+    # Route to the low-slope calculator whenever the roof_type is a low-slope system, regardless
+    # of the client-sent slope_type flag. The set is config-driven (granular exhibit_b keys) plus
+    # the coarse aliases so a caller can never mismatch roof_type and calculator.
+    low_slope_keys = LOW_SLOPE_ROOF_TYPES | set(_priced_low_slope_types(cfg_row.config, body.code_zone))
+    effective_slope_type = "low_slope" if body.roof_type in low_slope_keys else body.slope_type
 
     # Validate specialty_tile against the active config
     if body.specialty_tile is not None and effective_slope_type == "sloped":

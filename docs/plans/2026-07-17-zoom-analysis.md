@@ -77,7 +77,12 @@ in `video1033724674_frames/` — `frame_N` ≈ (N-1)×10s).
 11. **Low-slope estimator inputs** [33:44–39:41]: deck type (wood/concrete/metal — different
     attach systems: anchor sheet / open-flame / SecuRock), coating system choices
     (acrylic/silicone/urethane), what-you're-demoing. Deck-type table exists in configs;
-    quote-builder low-slope UI needs these inputs.
+    quote-builder low-slope UI needs these inputs. **DONE 2026-07-18:** deck/attach-system
+    selector + insulation + tapered-ISO toggles added to Quoting.tsx (shown only for low-slope
+    roof_types); the coating/system choice IS the roof_type (`pb_silicone_2coat`,
+    `stockmeier_polyurethane_2coat`, …). Backend boundary widened: `/estimator/quote` `roof_type`
+    is now config-driven (was a stale Literal that 422'd granular exhibit_b keys) and low-slope
+    routing is derived from the active config, not a hardcoded coarse set.
 12. **Franchise/royalty** [41:11–42:44]: franchise advisors recommended **Qvinci** (QuickBooks
     rollup; NB transcript hears "Cuvincy" — Qvinci is the real product; a qvinci tab is open in
     Tim's browser). Royalty + marketing fee = % of revenue per franchisee. Jon proposed

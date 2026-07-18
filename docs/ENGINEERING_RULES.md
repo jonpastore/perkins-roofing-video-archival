@@ -52,6 +52,20 @@ every change must satisfy these. CI enforces what it can; the rest is a manual p
 - Terraform owns GCP. Ansible owns host/OS/service config (the cerberus Whisper node, GPU
   dedication, systemd units, packages). Both are committed; both are drift-checked (R4).
 
+## R6 — Commit protocol (every commit, owner directive 2026-07-18)
+- **On every commit, in the same session, before moving on:**
+  1. **Docs** — update the affected docs (plan/spec/backlog/continuation, `docs/`) so git stays
+     the source of truth. No feature ships with stale docs.
+  2. **Drift** — run `scripts/drift_check.sh`; show no drift (R4). If the change touched infra,
+     apply from git first, then re-check.
+  3. **Jarvis** — update tasks/projects via the `jarvis-memory` MCP (`complete_task`,
+     `set_next_action`, `add_task`) so the canonical task list matches reality. Jarvis is
+     canonical; never leave a parallel list in markdown.
+  4. **Memory** — record durable, non-obvious facts in project memory (`memory/` + `MEMORY.md`
+     index): decisions, blockers, gotchas, credential/data gates. Not code structure or git
+     history (those live in the repo).
+- This is a gate, not a suggestion: a commit without docs+drift+jarvis+memory is incomplete.
+
 ## Per-wave Definition of Done (checklist)
 - [ ] All wave tasks implemented — no unwired/dead code (architect-verified).
 - [ ] `pytest --cov=core --cov-fail-under=97` green (R1) + a behavioral validation for new I/O.

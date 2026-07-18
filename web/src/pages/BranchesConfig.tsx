@@ -5,7 +5,9 @@ import { listBranches, createBranch, updateBranch, type BranchRow } from "../api
 type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
 
 function canManage(role: Role): boolean {
-  return role === "admin" || role === "web_admin" || role === "platform_admin";
+  // Must match backend authz: branch writes require `manage_config`, which is admin-only
+  // (core/authz.py). Widening this to web_admin/platform_admin only shows buttons that 403.
+  return role === "admin";
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {

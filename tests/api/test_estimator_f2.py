@@ -660,6 +660,39 @@ class TestEstimatorQuote:
         assert body["roof_type"] == "bur"
         assert body["project_total"] > 0
 
+    def test_api_quote_granular_low_slope_key_and_deck_type(self, admin_client):
+        """Granular exhibit_b low-slope keys (e.g. tpo_adhered) must be accepted (no 422 from a
+        stale Literal), route to the low-slope calculator via config, and honor deck_type."""
+        branch = _unique_branch("quote-granular-low")
+        cfg = copy.deepcopy(SAMPLE_CONFIG)
+        cfg["low_slope"]["base_cost_lm"]["FBC"]["tpo_adhered"] = 485
+        cfg["low_slope"]["overhead"]["FBC"]["tpo_oh"] = 135
+        cfg["low_slope"]["deck_types"]["bur_tpo_concrete_primer"] = 15  # concrete deck, +$15/sq
+        created = _create_config(admin_client, branch=branch, config=cfg)
+        _activate_config(admin_client, created["id"])
+
+        def _quote(deck_type):
+            r = admin_client.post(
+                "/estimator/quote",
+                json={
+                    "branch": branch, "code_zone": "FBC",
+                    "roof_type": "tpo_adhered",   # granular key — would 422 under the old Literal
+                    "slope_type": "sloped",       # must be corrected to low_slope by config routing
+                    "num_squares": 10.0,
+                    "deck_type": deck_type,
+                },
+                headers=AUTH,
+            )
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["slope_type"] == "low_slope"
+            assert body["roof_type"] == "tpo_adhered"
+            return body["project_total"]
+
+        base_total = _quote("existing_concrete")     # $0 deck adder (baseline)
+        deck_total = _quote("bur_tpo_concrete_primer")  # +$15/sq deck adder
+        assert deck_total > base_total, "deck_type adder did not flow through to the total"
+
     def test_rates_exposes_only_priced_low_slope_types(self, admin_client):
         branch = _unique_branch("rates-low")
         cfg = copy.deepcopy(SAMPLE_CONFIG)

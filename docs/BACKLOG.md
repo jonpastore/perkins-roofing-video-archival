@@ -148,7 +148,13 @@ See [reviews/2026-07-07-comprehensive-review.md](reviews/2026-07-07-comprehensiv
 - Reproducible builds: generate a hashed `requirements.lock` (deps are now bumped to latest floors
   but still `>=` ranges).
 
-## B8 — Branch management (admin CRUD) + branch-scoped dashboards
+## B8 — Branch management (admin CRUD) + branch-scoped dashboards ✅ DONE 2026-07-18
+**Status:** Shipped. Branch model + migration 0041, `/branches` CRUD API (GET/POST/PUT, deactivate
+not delete by design), api.ts client, `BranchesConfig.tsx` admin sub-tab, and all selectors
+(Estimator/Quoting/Customers/Status) pull from `listBranches()` — no hard-coded branch lists
+remain. 2026-07-18 fix: `BranchesConfig.canManage` aligned to backend `manage_config` (admin-only)
+so no button 403s. Branch-scoped dashboard filtering already lives in `core/dashboard.py`.
+
 **Idea (2026-07-17, Jon):** Admin Config shows pricing for 3 hard-coded branches
 (miami/jupiter/naples); there is no admin interface for branches. Build one: branch CRUD
 controls the branch selector options everywhere (estimator, configs, dashboards). Dashboards
