@@ -407,20 +407,16 @@ resource "cloudflare_ruleset" "waf_block_internal" {
 #    (not v2). Requires the Cloud Run API and the domain to be verified in GCP.
 # ---------------------------------------------------------------------------
 
-resource "google_cloud_run_domain_mapping" "api" {
-  location = var.region
-  name     = "app.perkinsroofing.net"
-
-  metadata {
-    namespace = var.project_id
-  }
-
-  spec {
-    route_name = google_cloud_run_v2_service.api.name
-  }
-
-  depends_on = [google_project_service.apis]
-}
+# REMOVED 2026-07-18 — vestigial, never-Ready, unroutable. app.perkinsroofing.net is served by
+# Firebase Hosting (app_cname -> ${project}.web.app) and the SPA calls the API at the direct
+# *.run.app URL (web/.env VITE_API_BASE), so nothing ever routed through this Cloud Run mapping.
+# Cloud Run reported status Ready=False with two blockers: (1) "Caller is not authorized to
+# administer the domain ... verify ownership via Webmaster Central" (a HUMAN Search Console step),
+# and (2) "Certificate will not be provisioned unless the domain is made routable" — which it never
+# can be, because the hostname points at Firebase by design. Verifying ownership would NOT make the
+# mapping work; the resource was pure drift. Re-add ONLY if the CF-edge design is activated
+# (app.perkinsroofing.net proxied through Cloudflare with a Transform Rule splitting /api/* to the
+# Cloud Run origin — see cloudflare_ruleset.origin_routing, currently gated off).
 
 # ---------------------------------------------------------------------------
 # 7. Secret Manager container for Cloudflare API token (§7.6)
@@ -518,9 +514,4 @@ resource "google_compute_security_policy" "cf_allowlist" {
 output "cloudflare_zone_id" {
   description = "Cloudflare zone ID for perkinsroofing.net (echo-back for scripts)"
   value       = var.cloudflare_zone_id != "" ? var.cloudflare_zone_id : "(not configured)"
-}
-
-output "cloud_run_domain_mapping_status" {
-  description = "Cloud Run domain mapping resource DNS records — use these to populate Cloudflare CNAME after mapping is provisioned"
-  value       = try(google_cloud_run_domain_mapping.api.status[0].resource_records, [])
 }
