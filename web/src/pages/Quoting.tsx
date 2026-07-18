@@ -644,6 +644,8 @@ export function Quoting() {
   const [targetProfitPct, setTargetProfitPct] = useState("");
   const [targetProfitMinDollars, setTargetProfitMinDollars] = useState("");
   const [activeProfitPreset, setActiveProfitPreset] = useState<number | null>(null);
+  const [commissionBasis, setCommissionBasis] = useState<"profit" | "job">("profit");
+  const [commissionRate, setCommissionRate] = useState("30");  // percent; default 30% of profit / 10% of job
   const [recommendedTier, setRecommendedTier] = useState<"good" | "better" | "best">("good");
   const [estimateDiscounts, setEstimateDiscounts] = useState<EstimateDiscountRow[]>([]);
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
@@ -1010,6 +1012,8 @@ export function Quoting() {
       overhead_mode: quoteOverheadMode,
       daily_series: quoteOverheadMode === "daily" ? dailySeries : [],
       profit_mode: "scale",
+      commission_basis: commissionBasis,
+      commission_rate: Number(commissionRate || 0) / 100,
       selected_tier: recommendedTier,
       discounts: estimateDiscounts
         .filter((d) => d.description.trim() && d.value.trim())
@@ -1839,7 +1843,6 @@ export function Quoting() {
                   )}
                   <ResultRow label="Profit" value={usd(quoteResult.profit_dollars)} />
                   <ResultRow label="Profit %" value={(quoteResult.profit_pct * 100).toFixed(1) + "%"} />
-                  <ResultRow label="Est. Commission" value={usd(quoteResult.estimated_commission)} />
                   {quoteResult.margin && (
                     <>
                       <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
@@ -1854,7 +1857,26 @@ export function Quoting() {
                           {(quoteResult.margin.combined_pct * 100).toFixed(1)}% {quoteResult.margin.combined_floor_ok ? "" : "— LOW"}
                         </span>
                       </div>
-                      <SectionLabel>Target profit</SectionLabel>
+                      <SectionLabel>Target margin (drives price)</SectionLabel>
+                      {(() => {
+                        const cur = targetProfitPct !== "" ? Number(targetProfitPct) : Math.round((quoteResult.profit_pct || 0) * 100);
+                        return (
+                          <div style={{ marginBottom: 10 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                              <span style={{ color: BRAND.sub }}>Margin</span>
+                              <strong>{cur}%</strong>
+                            </div>
+                            <input
+                              type="range" min="0" max="40" step="0.5" value={cur}
+                              onChange={(e) => setTargetProfitPct(e.target.value)}
+                              onPointerUp={(e) => void applyTargetProfit(Number((e.target as HTMLInputElement).value))}
+                              disabled={quoting}
+                              style={{ width: "100%" }}
+                            />
+                            <div style={{ fontSize: 11, color: BRAND.sub }}>Release to reprice the job to this margin.</div>
+                          </div>
+                        );
+                      })()}
                       <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
                         {(() => {
                           // "Min" reflects the active config's profit floor, not a hardcoded 13%.
@@ -1869,6 +1891,38 @@ export function Quoting() {
                         <div><FieldLabel>Min $</FieldLabel><input type="number" min="0" step="50" value={targetProfitMinDollars} onChange={(e) => setTargetProfitMinDollars(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
                         <Button variant="ghost" onClick={() => void applyTargetProfit(Number(targetProfitPct || 0))} disabled={quoting || !targetProfitPct} style={{ fontSize: 12 }}>Apply</Button>
                       </div>
+                      <SectionLabel>Commission</SectionLabel>
+                      <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${BRAND.border}`, marginBottom: 8 }}>
+                        {(["profit", "job"] as const).map((b, i) => (
+                          <button
+                            key={b} type="button"
+                            onClick={() => { setCommissionBasis(b); setCommissionRate(b === "profit" ? "30" : "10"); }}
+                            style={{
+                              flex: 1, padding: "6px 8px", fontSize: 12, fontWeight: 600, border: "none",
+                              borderRight: i === 0 ? `1px solid ${BRAND.border}` : "none", cursor: "pointer",
+                              background: commissionBasis === b ? BRAND.navy : "#fff",
+                              color: commissionBasis === b ? "#fff" : BRAND.sub,
+                            }}
+                          >
+                            {b === "profit" ? "% of profit" : "% of job"}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: BRAND.sub }}>Rate</span>
+                        <strong>{commissionRate}%</strong>
+                      </div>
+                      <input
+                        type="range" min="0" max={commissionBasis === "profit" ? "50" : "20"} step="0.5"
+                        value={commissionRate}
+                        onChange={(e) => setCommissionRate(e.target.value)}
+                        style={{ width: "100%" }}
+                      />
+                      {(() => {
+                        const rate = Number(commissionRate || 0) / 100;
+                        const basisAmt = commissionBasis === "job" ? quoteResult.project_total : quoteResult.profit_dollars;
+                        return <ResultRow label={`Commission (${commissionRate}% of ${commissionBasis})`} value={usd(basisAmt * rate)} />;
+                      })()}
                     </>
                   )}
                   {quoteResult.margin_warnings && quoteResult.margin_warnings.length > 0 && (

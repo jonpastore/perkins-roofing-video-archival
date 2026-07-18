@@ -263,6 +263,11 @@ class QuoteInput:
     profit_mode: str = "scale"           # "scale" (default, sliding scale) | "flat"
     flat_profit_dollars: Optional[float] = None   # used when profit_mode="flat"
 
+    # Commission lever: basis = "profit" (% of profit dollars) or "job" (% of project total).
+    # commission_rate_override is a fraction (e.g. 0.30); None falls back to the config rate.
+    commission_basis: str = "profit"
+    commission_rate_override: Optional[float] = None
+
     # Legacy override fields — preserved for old "KEY block" tests using explicit per-sq values.
     override_base_cost: Optional[float] = None
     override_overhead: Optional[float] = None
@@ -801,8 +806,10 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
 
     margin = _compute_margin(config, all_items, q.slope_type, zone, flat_floor)
 
-    commission_rate = config.commission_rate(q.slope_type, zone)
-    commission = margin.profit_dollars * commission_rate
+    comm_rate = (q.commission_rate_override if q.commission_rate_override is not None
+                 else config.commission_rate(q.slope_type, zone))
+    comm_base = project_total if q.commission_basis == "job" else margin.profit_dollars
+    commission = comm_base * comm_rate
 
     # Build legacy flat dicts for backward compat
     fixed_keys = {"delivery_plywood_vents", "new_bonus_values", "permit_processing",

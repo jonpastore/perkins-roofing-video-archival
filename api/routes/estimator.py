@@ -123,6 +123,8 @@ class QuoteRequest(BaseModel):
     daily_series: list[DailySeriesItem] = Field(default_factory=list)
     profit_mode: Literal["scale", "flat"] = "scale"
     flat_profit_dollars: Optional[float] = Field(default=None, ge=0)
+    commission_basis: Literal["profit", "job"] = "profit"
+    commission_rate: Optional[float] = Field(default=None, ge=0, le=1)  # fraction, e.g. 0.30
     discounts: list[DiscountInput] = Field(default_factory=list)
     selected_tier: Literal["good", "better", "best"] = "good"
     parent_estimate_id: Optional[int] = None
@@ -237,6 +239,8 @@ def quote(
         profit_mode=body.profit_mode,
         flat_profit_dollars=body.flat_profit_dollars,
         base_tile_brand=body.base_tile_brand,
+        commission_basis=body.commission_basis,
+        commission_rate_override=body.commission_rate,
     )
     q = E.QuoteInput(**qkwargs)
 
@@ -297,7 +301,8 @@ def quote(
         oh_dollars = float((result.get("margin") or {}).get("oh_dollars") or 0)
         profit_pct = (adjusted_profit / eligible_base) if eligible_base else 0.0
         combined_pct = ((adjusted_profit + oh_dollars) / eligible_base) if eligible_base else 0.0
-        commission_rate = config.commission_rate(effective_slope_type, body.code_zone)
+        commission_rate = (body.commission_rate if body.commission_rate is not None
+                            else config.commission_rate(effective_slope_type, body.code_zone))
         warnings = list(result.get("margin_warnings") or [])
         if adjusted_profit < 0 and "discount_exceeds_profit" not in warnings:
             warnings.append("discount_exceeds_profit")
@@ -311,7 +316,8 @@ def quote(
         result["project_total"] = adjusted_total
         result["profit_dollars"] = adjusted_profit
         result["profit_pct"] = round(profit_pct, 4)
-        result["estimated_commission"] = round(adjusted_profit * commission_rate, 2)
+        comm_base = adjusted_total if body.commission_basis == "job" else adjusted_profit
+        result["estimated_commission"] = round(comm_base * commission_rate, 2)
         result["margin_ok"] = profit_pct >= config.raw["profit_floor_pct"]
         result["margin_warnings"] = warnings
         result["margin"] = {
