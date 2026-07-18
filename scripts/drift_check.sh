@@ -7,6 +7,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
 
 echo "== Terraform (GCP) drift =="
+# The cloudflare provider needs a real token to read the zone; without it terraform falls back
+# to the format-valid placeholder (variables.tf) and `plan` ERRORs on the zone data source —
+# which used to mask ALL terraform drift as a creds error. Inject it from Secret Manager.
+if [ -z "${TF_VAR_cloudflare_api_token:-}" ]; then
+  export TF_VAR_cloudflare_api_token="$(gcloud secrets versions access latest --secret=cloudflare-api-token 2>/dev/null || true)"
+fi
 if ( cd "$ROOT/infra" && terraform init -input=false >/dev/null 2>&1 ); then
   ( cd "$ROOT/infra" && terraform plan -input=false -detailed-exitcode >/dev/null 2>&1 )
   case $? in

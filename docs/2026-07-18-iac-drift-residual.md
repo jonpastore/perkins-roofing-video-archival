@@ -29,3 +29,19 @@ item (same token). After Jon's edits it now has DNS + WAF + Zone-Settings edit o
 Setting SSL via the API diverges from TF intent (R3). It was the only path (v4 provider can't apply
 `zone_settings_override`, and Jon explicitly wanted strict SSL). Reconcile when the provider is
 upgraded to v5. None of the above is caused by the cut-calculator work.
+
+## Update 2026-07-18 (pm) — token verified, check fixed, drift de-risked
+- **Root cause of the "plan ERROR (creds)":** `drift_check.sh` ran `terraform plan` without injecting
+  `TF_VAR_cloudflare_api_token`, so the CF provider used the placeholder and errored on the zone read —
+  masking ALL terraform drift as a creds failure. **Fixed:** the script now self-injects the token from
+  Secret Manager. The token itself is valid/active (reads zone/settings/rulesets; plan = Free Website).
+- **De-risked:** `cloudflare_zone_settings_override` and `google_cloud_run_domain_mapping.api` were
+  tainted → **replace**; a blind apply would have destroyed live SSL + the api domain mapping and failed
+  to recreate. `terraform untaint` (no cloud change) cleared the replaces. `zone_settings_override` then
+  applied **in-place** cleanly (the v4 failure was the replace, not in-place). Also applied gotenberg
+  scaling + created the 2 `companycam-*` secret containers. **0 destroyed** throughout.
+- **Residual (benign; each needs a decision):** `waf_rate_limits` (Free-plan capped — needs paid plan or
+  gate-off), `origin_routing` (unused — gate or confirm-then-apply, not forced blind on a live zone),
+  `zone_settings_override` (perpetual v4 `true_client_ip_header` diff — needs v5 migration or an
+  ignore_changes that would stop TF-tracking SSL), `gotenberg` (perpetual cosmetic `0`↔`null` scaling
+  diff), `domain_mapping.api` (needs Google domain-ownership verification). None block a deploy.
