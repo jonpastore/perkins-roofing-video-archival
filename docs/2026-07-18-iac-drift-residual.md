@@ -48,7 +48,9 @@ upgraded to v5. None of the above is caused by the cut-calculator work.
   would stop TF-tracking SSL so it's NOT applied), `gotenberg` (perpetual cosmetic `0`↔`null` scaling
   diff — nested-path ignore_changes unsupported, documented benign in gotenberg.tf), `domain_mapping.api`
   (needs Google domain-ownership verification).
-- **v4→v5 provider migration:** free-tier compatible, but it's a resource-type-change migration across
-  LIVE email DNS (MX/SPF/DKIM/DMARC) whose only drift benefit is the cosmetic zone_settings diff — so
-  best practice is a planned, zero-change-plan-verified cutover via the official tf-migrate codemod, NOT
-  a rushed in-session apply. Deferred to a controlled change.
+- **v4→v5 provider migration — DONE 2026-07-18 (cloudflare v5.22.0).** Migrated cloudflare_record→
+  cloudflare_dns_record (10, FQDN names), zone_settings_override→3 cloudflare_zone_setting, rulesets→v5
+  `rules=[{...}]` syntax. Safe cutover on live email DNS: `state rm` the 11 old-type entries (forget,
+  not destroy) + `import` blocks → verified plan **13 import / 0 add / 0 change / 0 destroy** before
+  apply; applied 13 imported / 0 destroyed; dig confirms MX/SPF/DMARC intact, app+api 200. Resolved the
+  zone_settings perpetual diff. Now plan = **0 add / 0 destroy / 1 benign in-place** (gotenberg only).

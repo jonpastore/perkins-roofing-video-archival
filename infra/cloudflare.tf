@@ -75,7 +75,7 @@ data "cloudflare_zone" "perkinsroofing" {
 # ---------------------------------------------------------------------------
 
 # Google Workspace MX records — DNS-only (proxied = false), import before NS change
-resource "cloudflare_record" "mx_primary" {
+resource "cloudflare_dns_record" "mx_primary" {
   count    = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id  = var.cloudflare_zone_id
   name     = "perkinsroofing.net"
@@ -86,7 +86,7 @@ resource "cloudflare_record" "mx_primary" {
   priority = 1
 }
 
-resource "cloudflare_record" "mx_alt1" {
+resource "cloudflare_dns_record" "mx_alt1" {
   count    = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id  = var.cloudflare_zone_id
   name     = "perkinsroofing.net"
@@ -97,7 +97,7 @@ resource "cloudflare_record" "mx_alt1" {
   priority = 5
 }
 
-resource "cloudflare_record" "mx_alt2" {
+resource "cloudflare_dns_record" "mx_alt2" {
   count    = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id  = var.cloudflare_zone_id
   name     = "perkinsroofing.net"
@@ -108,7 +108,7 @@ resource "cloudflare_record" "mx_alt2" {
   priority = 5
 }
 
-resource "cloudflare_record" "mx_alt3" {
+resource "cloudflare_dns_record" "mx_alt3" {
   count    = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id  = var.cloudflare_zone_id
   name     = "perkinsroofing.net"
@@ -119,7 +119,7 @@ resource "cloudflare_record" "mx_alt3" {
   priority = 10
 }
 
-resource "cloudflare_record" "mx_alt4" {
+resource "cloudflare_dns_record" "mx_alt4" {
   count    = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id  = var.cloudflare_zone_id
   name     = "perkinsroofing.net"
@@ -131,7 +131,7 @@ resource "cloudflare_record" "mx_alt4" {
 }
 
 # SPF — DNS-only; update value to match the real record from Step A
-resource "cloudflare_record" "txt_spf" {
+resource "cloudflare_dns_record" "txt_spf" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "perkinsroofing.net"
@@ -156,10 +156,10 @@ resource "cloudflare_record" "txt_spf" {
 # GENERATED in the Admin console (Apps -> Google Workspace -> Gmail -> Authenticate
 # email -> Generate new record, 2048-bit) and "Start authentication" clicked; then
 # set var.google_dkim_key to the full TXT value ("v=DKIM1; k=rsa; p=...") and apply.
-resource "cloudflare_record" "txt_dkim" {
+resource "cloudflare_dns_record" "txt_dkim" {
   count   = var.cloudflare_zone_id != "" && var.google_dkim_key != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
-  name    = "google._domainkey"
+  name    = "google._domainkey.perkinsroofing.net"
   type    = "TXT"
   content = var.google_dkim_key
   ttl     = 3600
@@ -181,10 +181,10 @@ resource "cloudflare_record" "txt_dkim" {
 #
 # rua/ruf are same-domain (perkinsroofing.net), so RFC 7489 §7.1 external
 # destination verification does not apply — no _report._dmarc record needed.
-resource "cloudflare_record" "txt_dmarc" {
+resource "cloudflare_dns_record" "txt_dmarc" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
-  name    = "_dmarc"
+  name    = "_dmarc.perkinsroofing.net"
   type    = "TXT"
   content = "v=DMARC1; p=reject; rua=mailto:dmarc@perkinsroofing.net; ruf=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
   ttl     = 3600
@@ -195,10 +195,10 @@ resource "cloudflare_record" "txt_dmarc" {
 # Reporting only: no enforcement, so this cannot affect mail delivery. Stands
 # alone (does not require MTA-STS); it is the visibility half of the pair.
 # MTA-STS itself is NOT provisioned — see the MTA-STS note below.
-resource "cloudflare_record" "txt_tlsrpt" {
+resource "cloudflare_dns_record" "txt_tlsrpt" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
-  name    = "_smtp._tls"
+  name    = "_smtp._tls.perkinsroofing.net"
   type    = "TXT"
   content = "v=TLSRPTv1; rua=mailto:dmarc@perkinsroofing.net"
   ttl     = 3600
@@ -229,10 +229,10 @@ resource "cloudflare_record" "txt_tlsrpt" {
 # CF Transform Rule (§ below) splits /api/* traffic to Cloud Run at the edge.
 # Enable proxy only AFTER NS propagation is confirmed and Firebase cert is
 # provisioned (see CLOUDFLARE_RUNBOOK.md step 6).
-resource "cloudflare_record" "app_cname" {
+resource "cloudflare_dns_record" "app_cname" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
-  name    = "app"
+  name    = "app.perkinsroofing.net"
   type    = "CNAME"
   # Firebase Hosting custom domain (registered via the Hosting API 2026-07-10;
   # Firebase's requiredDnsUpdates asks for exactly this CNAME — ownership +
@@ -250,18 +250,28 @@ resource "cloudflare_record" "app_cname" {
 #    provision managed certs automatically for custom domain mappings.
 # ---------------------------------------------------------------------------
 
-resource "cloudflare_zone_settings_override" "perkinsroofing" {
-  count   = var.cloudflare_zone_id != "" ? 1 : 0
-  zone_id = var.cloudflare_zone_id
+# v5: zone_settings_override is gone — each setting is its own cloudflare_zone_setting resource.
+# This also fixes the v4 perpetual-diff (the monolithic settings block re-diffed true_client_ip_header
+# every plan). SSL=strict + always_use_https + min_tls_version were previously applied via the CF API.
+resource "cloudflare_zone_setting" "ssl" {
+  count      = var.cloudflare_zone_id != "" ? 1 : 0
+  zone_id    = var.cloudflare_zone_id
+  setting_id = "ssl"
+  value      = "strict"
+}
 
-  settings {
-    ssl = "strict"
-    # Redirect all HTTP to HTTPS at the CF edge
-    always_use_https = "on"
-    # Minimum TLS 1.2 — no TLS 1.0/1.1
-    min_tls_version = "1.2"
-    # Opportunistic Encryption + HSTS handled by Firebase/Cloud Run origin certs
-  }
+resource "cloudflare_zone_setting" "always_use_https" {
+  count      = var.cloudflare_zone_id != "" ? 1 : 0
+  zone_id    = var.cloudflare_zone_id
+  setting_id = "always_use_https"
+  value      = "on"
+}
+
+resource "cloudflare_zone_setting" "min_tls_version" {
+  count      = var.cloudflare_zone_id != "" ? 1 : 0
+  zone_id    = var.cloudflare_zone_id
+  setting_id = "min_tls_version"
+  value      = "1.2"
 }
 
 # ---------------------------------------------------------------------------
@@ -291,19 +301,20 @@ resource "cloudflare_ruleset" "origin_routing" {
   kind    = "zone"
   phase   = "http_request_transform"
 
-  rules {
+  rules = [{
     description = "Route /api/* to Cloud Run API origin"
     expression  = "(http.host eq \"app.perkinsroofing.net\" and starts_with(http.request.uri.path, \"/api/\"))"
     action      = "rewrite"
-    action_parameters {
-      headers {
-        name      = "Host"
-        operation = "set"
-        value     = replace(google_cloud_run_v2_service.api.uri, "https://", "")
+    action_parameters = {
+      headers = {
+        "Host" = {
+          operation = "set"
+          value     = replace(google_cloud_run_v2_service.api.uri, "https://", "")
+        }
       }
     }
     enabled = true
-  }
+  }]
 }
 
 # ---------------------------------------------------------------------------
@@ -328,50 +339,48 @@ resource "cloudflare_ruleset" "waf_rate_limits" {
   kind    = "zone"
   phase   = "http_ratelimit"
 
-  # Rule order within a phase ruleset is determined by the order of rules{}
-  # blocks. Most-specific first.
-
-  rules {
-    description = "Auth endpoint rate limit"
-    expression  = "(http.request.uri.path contains \"/api/auth\" or http.request.uri.path contains \"/__/auth\")"
-    action      = "block"
-    ratelimit {
-      characteristics     = ["ip.src"]
-      period              = 60
-      requests_per_period = 20
-      mitigation_timeout  = 600
-    }
-    enabled = true
-  }
-
-  rules {
-    # F3 EXIT GATE — proposal accept-page brute-force protection (e-sign).
-    # This rule is a hard requirement from TRD-F3 §3.5 (deferred to F6).
-    # Do NOT remove or disable this rule without a corresponding F3 re-review.
-    description = "Proposal accept page rate limit (e-sign)"
-    expression  = "http.request.uri.path contains \"/accept\""
-    action      = "block"
-    ratelimit {
-      characteristics     = ["ip.src"]
-      period              = 60
-      requests_per_period = 10
-      mitigation_timeout  = 300
-    }
-    enabled = true
-  }
-
-  rules {
-    description = "API general rate limit"
-    expression  = "http.request.uri.path contains \"/api/\""
-    action      = "block"
-    ratelimit {
-      characteristics     = ["ip.src"]
-      period              = 60
-      requests_per_period = 300
-      mitigation_timeout  = 120
-    }
-    enabled = true
-  }
+  # Rule order within a phase ruleset follows the order of rules[] entries. Most-specific first.
+  rules = [
+    {
+      description = "Auth endpoint rate limit"
+      expression  = "(http.request.uri.path contains \"/api/auth\" or http.request.uri.path contains \"/__/auth\")"
+      action      = "block"
+      ratelimit = {
+        characteristics     = ["ip.src"]
+        period              = 60
+        requests_per_period = 20
+        mitigation_timeout  = 600
+      }
+      enabled = true
+    },
+    {
+      # F3 EXIT GATE — proposal accept-page brute-force protection (e-sign).
+      # This rule is a hard requirement from TRD-F3 §3.5 (deferred to F6).
+      # Do NOT remove or disable this rule without a corresponding F3 re-review.
+      description = "Proposal accept page rate limit (e-sign)"
+      expression  = "http.request.uri.path contains \"/accept\""
+      action      = "block"
+      ratelimit = {
+        characteristics     = ["ip.src"]
+        period              = 60
+        requests_per_period = 10
+        mitigation_timeout  = 300
+      }
+      enabled = true
+    },
+    {
+      description = "API general rate limit"
+      expression  = "http.request.uri.path contains \"/api/\""
+      action      = "block"
+      ratelimit = {
+        characteristics     = ["ip.src"]
+        period              = 60
+        requests_per_period = 300
+        mitigation_timeout  = 120
+      }
+      enabled = true
+    },
+  ]
 }
 
 # WAF custom rule: block /internal/* at the edge for all non-platform_admin
@@ -384,7 +393,7 @@ resource "cloudflare_ruleset" "waf_block_internal" {
   kind    = "zone"
   phase   = "http_request_firewall_custom"
 
-  rules {
+  rules = [{
     description = "Block /internal/* routes at edge (defense-in-depth; FastAPI also enforces platform_admin)"
     # Blocks all unauthenticated access to /internal paths at the CF edge.
     # Authenticated platform_admin requests carry a session cookie that CF passes
@@ -392,7 +401,7 @@ resource "cloudflare_ruleset" "waf_block_internal" {
     expression = "starts_with(http.request.uri.path, \"/internal/\")"
     action     = "block"
     enabled    = true
-  }
+  }]
 }
 
 # ---------------------------------------------------------------------------
