@@ -1245,3 +1245,91 @@ class TestEstimatePersistence:
         assert row.code_zone == "HVHZ"
         assert row.input_json is not None
         assert row.result_json is not None
+
+
+# ---------------------------------------------------------------------------
+# POST /estimator/quote — RoofR cut calculator (geometry-adjusted base)
+# ---------------------------------------------------------------------------
+
+_CUTS_CALC = {
+    "rounding": {"eaves": 10, "hips_ridges": 10, "valleys": 50, "rakes": 10, "wall_flashings": 10},
+    "fixed_per_sq": {"FBC": 519, "HVHZ": None},
+    "coeff": {"drip_a": 1.10, "drip_b": 0.46, "valley_a_div": 50, "valley_a_rate": 90,
+              "valley_b_div": 65, "valley_b_rate": 151, "hipridge_tile_rate": 2.30,
+              "eave_closure_rate": 3.10, "field_tiles_addon": 5},
+    "standard_tile": {"field": 147.59, "rake": 4.82},
+}
+CUTS_CONFIG = {**SAMPLE_CONFIG, "cuts_calc": _CUTS_CALC}
+# Tim's Custom Tile Calc example inputs → cut-adjusted FBC base $820.90/sq (flat is $770).
+_SHEET_CUTS = {"eaves_lf": 299, "hips_lf": 142, "ridges_lf": 103,
+               "valleys_lf": 102, "rakes_lf": 74, "wall_flashings_lf": 47}
+
+
+def _base_per_sq(body: dict) -> float:
+    li = next(x for x in body["line_items_detail"] if x["key"] == "base_cost_lm")
+    return li["per_sq"]
+
+
+class TestQuoteCutCalculator:
+    def _active_cuts_branch(self, client):
+        branch = _unique_branch("cuts")
+        created = _create_config(client, branch=branch, config=CUTS_CONFIG)
+        _activate_config(client, created["id"])
+        return branch
+
+    def test_explicit_cut_lfs_adjust_base(self, admin_client):
+        branch = self._active_cuts_branch(admin_client)
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "FBC", "roof_type": "13_tile",
+            "num_squares": 29.0, **_SHEET_CUTS,
+        })
+        assert r.status_code == 200, r.text
+        assert _base_per_sq(r.json()) == pytest.approx(820.9, abs=0.1)
+
+    def test_no_cuts_uses_flat_base(self, admin_client):
+        branch = self._active_cuts_branch(admin_client)
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "FBC", "roof_type": "13_tile", "num_squares": 29.0,
+        })
+        assert r.status_code == 200, r.text
+        assert _base_per_sq(r.json()) == pytest.approx(770.0, abs=0.01)
+
+    def test_measurement_id_resolves_cut_lfs(self, admin_client):
+        branch = self._active_cuts_branch(admin_client)
+        m = admin_client.post("/measurements", headers=AUTH, json={
+            "total_sq": 29.0, **_SHEET_CUTS,
+        })
+        assert m.status_code == 200, m.text
+        mid = m.json()["id"]
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "FBC", "roof_type": "13_tile",
+            "num_squares": 29.0, "measurement_id": mid,
+        })
+        assert r.status_code == 200, r.text
+        # Cut LFs pulled from the measurement → same adjusted base as the explicit path.
+        assert _base_per_sq(r.json()) == pytest.approx(820.9, abs=0.1)
+
+    def test_bad_measurement_id_404(self, admin_client):
+        branch = self._active_cuts_branch(admin_client)
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "FBC", "roof_type": "13_tile",
+            "num_squares": 29.0, "measurement_id": 999999,
+        })
+        assert r.status_code == 404, r.text
+
+    def test_measurement_and_explicit_lf_merge_per_field(self, admin_client):
+        """measurement_id + one explicit override → per-field merge (other 5 keep measurement)."""
+        branch = self._active_cuts_branch(admin_client)
+        m = admin_client.post("/measurements", headers=AUTH, json={"total_sq": 29.0, **_SHEET_CUTS})
+        mid = m.json()["id"]
+        merged = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "FBC", "roof_type": "13_tile",
+            "num_squares": 29.0, "measurement_id": mid, "eaves_lf": 500,
+        })
+        pure = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "FBC", "roof_type": "13_tile",
+            "num_squares": 29.0, "measurement_id": mid,
+        })
+        assert merged.status_code == 200 and pure.status_code == 200
+        assert _base_per_sq(merged.json()) > _base_per_sq(pure.json())  # eaves override raised it
+        assert _base_per_sq(merged.json()) > 770.0                       # other 5 LFs still applied

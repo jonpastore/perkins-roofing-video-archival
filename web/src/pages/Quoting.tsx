@@ -92,6 +92,7 @@ interface QuoteResult {
   num_squares: number;
   per_square_total: number;
   squares_subtotal: number;
+  line_items_detail?: Array<{ key: string; label: string; amount: number; category: string; per_sq: number | null }>;
   project_fixed_costs: Record<string, number>;
   line_items: Record<string, number>;
   pm_incentive: number;
@@ -137,6 +138,9 @@ interface EstimatorRates {
   low_slope_roof_types?: string[];
   low_slope_pending?: boolean;
   daily_overhead_rates?: Record<string, number>;
+  cut_calc_available?: boolean;
+  tile_brands?: Record<string, string>;
+  default_tile_brand?: string | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -599,6 +603,7 @@ export function Quoting() {
   const [rates, setRates] = useState<EstimatorRates | null>(null);
   const [ratesError, setRatesError] = useState<string | null>(null);
   const [quoteRoofCuts, setQuoteRoofCuts] = useState<"low" | "medium" | "high">("low");
+  const [baseTileBrand, setBaseTileBrand] = useState<string>("");
   const [quoteRoofHeight, setQuoteRoofHeight] = useState<"1_story" | "2_stories" | "3_5_stories">("1_story");
   const [quoteExistingRoof, setQuoteExistingRoof] = useState<"none" | "shingle" | "tile" | "metal" | "flat">("none");
   const [quoteLayersToRemove, setQuoteLayersToRemove] = useState("0");
@@ -957,6 +962,7 @@ export function Quoting() {
       measurement_id: selectedMeasurement.id,
       project_kind: "residential",
       roof_cuts: quoteRoofCuts,
+      base_tile_brand: baseTileBrand || undefined,
       roof_height: quoteRoofHeight,
       tile_pointing: "no",
       pitch_7_12: false,
@@ -1465,6 +1471,21 @@ export function Quoting() {
                   <option value="high">High</option>
                 </select>
               </div>
+              {rates?.cut_calc_available
+                && (quoteRoofType === "13_tile" || quoteRoofType === "barrel_tile")
+                && rates.tile_brands && Object.keys(rates.tile_brands).length > 0 && (
+                <div>
+                  <FieldLabel>Base tile brand</FieldLabel>
+                  <select value={baseTileBrand} onChange={(e) => setBaseTileBrand(e.target.value)} style={selectStyle}>
+                    <option value="">
+                      {`Default${rates.default_tile_brand ? ` — ${rates.tile_brands[rates.default_tile_brand] ?? rates.default_tile_brand}` : ""}`}
+                    </option>
+                    {Object.entries(rates.tile_brands).map(([k, label]) => (
+                      <option key={k} value={k}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <FieldLabel>Height</FieldLabel>
                 <select value={quoteRoofHeight} onChange={(e) => setQuoteRoofHeight(e.target.value as "1_story" | "2_stories" | "3_5_stories")} style={selectStyle}>
@@ -1701,6 +1722,19 @@ export function Quoting() {
                       {quoteResult.margin_ok ? "Margin OK" : "Margin LOW"}
                     </span>
                   </div>
+                  {(() => {
+                    const baseLi = quoteResult.line_items_detail?.find((li) => li.key === "base_cost_lm");
+                    const cutsActive = rates?.cut_calc_available && !!selectedMeasurement
+                      && [selectedMeasurement.eaves_lf, selectedMeasurement.hips_lf, selectedMeasurement.ridges_lf,
+                          selectedMeasurement.valleys_lf, selectedMeasurement.rakes_lf, selectedMeasurement.wall_flashings_lf]
+                        .some((v) => v != null && Number(v) > 0);
+                    if (!cutsActive || !baseLi || baseLi.per_sq == null) return null;
+                    return (
+                      <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "#eef2ff", border: "1px solid #c7d2fe", color: "#3730a3", fontSize: 12, fontWeight: 600 }}>
+                        Cut-adjusted base: {usd(baseLi.per_sq)}/sq — priced from this roof&apos;s RoofR cuts (eaves/hips/ridges/valleys/rakes/wall flashings)
+                      </div>
+                    );
+                  })()}
                   {inputsDirty && (
                     <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12, fontWeight: 700 }}>
                       Inputs changed — recalculate

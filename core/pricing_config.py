@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
 import jcs
 
@@ -111,6 +111,14 @@ class PricingConfig:
 
     def sloped_overhead(self, zone: str, roof_type: str) -> float:
         return self.raw["sloped_overhead"][zone][roof_type]
+
+    def cuts_calc(self) -> Optional[dict]:
+        """Return the RoofR cut-calculator config (rounding/coeff/fixed/standard_tile), or None.
+
+        Present only in configs seeded with Tim's Custom Tile Calc decode. When absent, the
+        estimator falls back to the flat sloped_base — preserving legacy behavior.
+        """
+        return self.raw.get("cuts_calc")
 
     def profit_per_sq(self, num_squares: float) -> float:
         """Sliding-scale profit lookup using boundary_inclusive_lower / boundary_exclusive_upper.

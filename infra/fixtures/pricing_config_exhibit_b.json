@@ -75,6 +75,20 @@
     }
   },
 
+  "cuts_calc": {
+    "_source": "Tim 'Custom Tile Calc' tab, decoded 2026-07-17; see docs/plans/2026-07-17-cut-calculator-spec.md",
+    "rounding": {"eaves": 10, "hips_ridges": 10, "valleys": 50, "rakes": 10, "wall_flashings": 10},
+    "fixed_per_sq": {"FBC": 519, "HVHZ": null},
+    "coeff": {"drip_a": 1.10, "drip_b": 0.46, "valley_a_div": 50, "valley_a_rate": 90, "valley_b_div": 65, "valley_b_rate": 151, "hipridge_tile_rate": 2.30, "eave_closure_rate": 3.10, "field_tiles_addon": 5},
+    "standard_tile": {"field": 147.59, "rake": 4.82},
+    "default_tile_brand": "eagle",
+    "tile_brands": {
+      "eagle":    {"label": "Eagle (concrete, standard)", "field": 147.59, "rake": 4.82},
+      "crown":    {"label": "Crown (concrete)",           "field": 143.19, "rake": 4.30},
+      "westlake": {"label": "West Lake (concrete)",        "field": 145.71, "rake": 4.50}
+    }
+  },
+
   "sloped_overhead": {
     "HVHZ": {
       "3tab_shingle": 125,

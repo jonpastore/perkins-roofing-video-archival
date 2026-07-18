@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
-from app.models import Estimate, PricingConfig
+from app.models import Estimate, Measurement, PricingConfig
 from core import estimator as E
 from core.discounts import resolve_discounts
 from core.estimator import DailyOverheadSeries
@@ -92,6 +92,15 @@ class QuoteRequest(BaseModel):
     ridge_vent_lf: float = 0
     layers_to_remove: int = 0
     existing_roof: Optional[Literal["none", "shingle", "tile", "metal", "flat"]] = None
+    # RoofR cut linear-footages — feed Tim's custom cut calculator (geometry-adjusted base).
+    # Explicit values win; otherwise resolved from measurement_id when given.
+    eaves_lf: float = Field(default=0, ge=0)
+    hips_lf: float = Field(default=0, ge=0)
+    ridges_lf: float = Field(default=0, ge=0)
+    valleys_lf: float = Field(default=0, ge=0)
+    rakes_lf: float = Field(default=0, ge=0)
+    wall_flashings_lf: float = Field(default=0, ge=0)
+    base_tile_brand: Optional[str] = Field(default=None, max_length=30)
     gutter_style: Optional[str] = Field(default=None, max_length=50)
     gutter_lf: float = Field(default=0, ge=0)
     gutter_two_story: bool = False
@@ -167,6 +176,23 @@ def quote(
         if body.specialty_tile not in valid:
             raise HTTPException(400, f"unknown specialty_tile for {body.code_zone}: {body.specialty_tile!r}")
 
+    # Resolve RoofR cut LFs: start from the measurement (the RoofR -> estimate ingestion path)
+    # when a measurement_id is supplied, then let any explicit request field override per-field.
+    # Merging per-field (not all-or-nothing) means a single typed override can't silently drop
+    # the measurement's other five values.
+    cut_lfs = {
+        "eaves_lf": body.eaves_lf, "hips_lf": body.hips_lf, "ridges_lf": body.ridges_lf,
+        "valleys_lf": body.valleys_lf, "rakes_lf": body.rakes_lf,
+        "wall_flashings_lf": body.wall_flashings_lf,
+    }
+    if body.measurement_id is not None:
+        m = db.get(Measurement, body.measurement_id)
+        if m is None or m.tenant_id != db.info.get("tenant_id"):
+            raise HTTPException(404, f"Measurement {body.measurement_id} not found")
+        for field_name in cut_lfs:
+            if not cut_lfs[field_name]:  # explicit field wins when non-zero; else measurement
+                cut_lfs[field_name] = getattr(m, field_name) or 0
+
     # Build QuoteInput
     q = E.QuoteInput(
         code_zone=body.code_zone,
@@ -207,6 +233,8 @@ def quote(
         daily_series=[DailyOverheadSeries(series=s.series, days=s.days) for s in body.daily_series],
         profit_mode=body.profit_mode,
         flat_profit_dollars=body.flat_profit_dollars,
+        base_tile_brand=body.base_tile_brand,
+        **cut_lfs,
     )
 
     config = load_config(cfg_row.config)
@@ -424,6 +452,13 @@ def rates(
             "low_slope": cfg.get("low_slope") or {},
             "profit_scale": cfg.get("profit_scale", []),
             "roof_cuts": cfg.get("roof_cuts", {}),
+            # Cut calculator: whether this zone is calibrated, and the selectable base tile brands.
+            "cut_calc_available": bool(((cfg.get("cuts_calc") or {}).get("fixed_per_sq") or {}).get(zone)),
+            "tile_brands": {
+                k: (v or {}).get("label", k)
+                for k, v in ((cfg.get("cuts_calc") or {}).get("tile_brands") or {}).items()
+            },
+            "default_tile_brand": (cfg.get("cuts_calc") or {}).get("default_tile_brand"),
             "tile_pointing": cfg.get("tile_pointing", {}),
             "specialty_tile": (cfg.get("specialty_tile_upgrade") or {}).get(zone, {}),
             "line_items": (cfg.get("line_items") or {}).get(zone, {}),

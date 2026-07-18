@@ -140,6 +140,60 @@ def compute_profit_guidance(
     return result
 
 
+def compute_cut_adjusted_base(
+    config: PricingConfig, q: "QuoteInput", zone: str, roof_type: str,
+) -> Optional[float]:
+    """Geometry-adjusted base $/sq from RoofR cut LFs (Tim's Custom Tile Calc, decoded 2026-07-17).
+
+    Returns None — and the caller falls back to the flat sloped_base — when the calc does not
+    apply: no cuts_calc in the config, no cut measurements, num_squares <= 0, or the zone has no
+    calibrated fixed block (e.g. HVHZ, which needs its own base detail).
+
+    13" tile is computed directly from the geometry (round each cut LF UP to material-piece
+    lengths, then price the metal/tile lines). Other roof types scale their flat base by the tile
+    custom/standard ratio — Tim's "one calculator, same % difference" rule (Zoom [05:33]).
+    See docs/plans/2026-07-17-cut-calculator-spec.md for the full derivation.
+    """
+    cc = config.cuts_calc()
+    if not cc or not q.has_cut_measurements() or q.num_squares <= 0:
+        return None
+    fixed = (cc.get("fixed_per_sq") or {}).get(zone)
+    if fixed is None:
+        return None
+    r, co = cc["rounding"], cc["coeff"]
+    # Base tile brand selects the field/rake tile cost (Eagle default); falls back to the
+    # single standard_tile block for configs that predate tile_brands.
+    st = (cc.get("tile_brands") or {}).get(q.base_tile_brand) or cc["standard_tile"]
+
+    def _ceil(x: Any, m: float) -> float:
+        x = float(x or 0)
+        return math.ceil(x / m) * m if x > 0 else 0.0
+
+    eaves_r = _ceil(q.eaves_lf, r["eaves"])
+    hipridge_r = _ceil((q.hips_lf or 0) + (q.ridges_lf or 0), r["hips_ridges"])
+    valleys_r = _ceil(q.valleys_lf, r["valleys"])
+    rakes_r = _ceil(q.rakes_lf, r["rakes"])
+    wall_r = _ceil(q.wall_flashings_lf, r["wall_flashings"])
+    sq = float(q.num_squares)
+
+    drip = ((eaves_r + rakes_r) * co["drip_a"]
+            + (eaves_r + rakes_r + wall_r) * co["drip_b"]) / sq
+    valley = ((valleys_r / co["valley_a_div"]) * co["valley_a_rate"]
+              + (valleys_r / co["valley_b_div"]) * co["valley_b_rate"]) / sq
+    field = st["field"] + co["field_tiles_addon"]
+    hipridge = (hipridge_r * co["hipridge_tile_rate"]
+                + (rakes_r + hipridge_r) * st["rake"]) / sq
+    eave = (eaves_r * co["eave_closure_rate"]) / sq
+    tile_base = float(fixed) + drip + valley + field + hipridge + eave
+
+    if roof_type == "13_tile":
+        return tile_base
+    std_tile = config.sloped_base(zone, "13_tile")
+    if not std_tile:
+        return None
+    return config.sloped_base(zone, roof_type) * (tile_base / std_tile)
+
+
 # -------------------------------------------------------------------------
 # Input / Output dataclasses
 # -------------------------------------------------------------------------
@@ -176,6 +230,17 @@ class QuoteInput:
     deck_type: Optional[str] = None
     include_insulation: bool = False
     include_tapered: bool = False
+
+    # RoofR cut linear-footages — drive Tim's custom cut calculator. When any is set and the
+    # config carries cuts_calc for the zone, the base_cost line is recomputed from the geometry
+    # instead of the flat sloped_base (Zoom 2026-07-17; docs/plans/2026-07-17-cut-calculator-spec.md).
+    eaves_lf: float = 0
+    hips_lf: float = 0
+    ridges_lf: float = 0
+    valleys_lf: float = 0
+    rakes_lf: float = 0
+    wall_flashings_lf: float = 0
+    base_tile_brand: Optional[str] = None  # key into cuts_calc.tile_brands; None = config default
 
     # Gutters — Tim's style-based price list (email 2026-07-17): per-LF price includes the
     # matching downspouts; 2-story is a per-LF uplift; elbows/leaf guards/leaderheads/removal
@@ -217,6 +282,13 @@ class QuoteInput:
         # Keep region in sync for legacy callers that read it back
         if self.region is None:
             self.region = self.code_zone
+
+    def has_cut_measurements(self) -> bool:
+        """True when any RoofR cut LF is provided (triggers the cut calculator)."""
+        return any((
+            self.eaves_lf, self.hips_lf, self.ridges_lf,
+            self.valleys_lf, self.rakes_lf, self.wall_flashings_lf,
+        ))
 
 
 @dataclass
@@ -332,8 +404,15 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
 
     tags = config.raw["cost_category_tags"]
 
-    # Per-square components
-    base = q.override_base_cost if q.override_base_cost is not None else config.sloped_base(zone, rt)
+    # Per-square components. Base is the flat sloped_base unless RoofR cut LFs are supplied and
+    # the config carries the cut calculator, in which case the base is recomputed from geometry.
+    if q.override_base_cost is not None:
+        base = q.override_base_cost
+    else:
+        base = config.sloped_base(zone, rt)
+        cut_base = compute_cut_adjusted_base(config, q, zone, rt)
+        if cut_base is not None:
+            base = cut_base
     items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
 
     # Overhead — per_sq mode (default) or day-based mode (v2)
@@ -680,6 +759,24 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
             "confirm the correct PM incentive band with Tim."
         )
     pm_item = LineItem("pm_incentive", "PM Incentive", pm_val, tags["pm_incentive"])
+
+    # Cut-calculator advisories. The geometry base and the categorical roof_cuts low/med/high
+    # knob both price cut complexity; Tim keeps both (low=$0 default), so surface — not suppress —
+    # the overlap. Also warn when cut LFs are supplied for a zone the calculator isn't calibrated
+    # for (falls back to the flat base silently otherwise).
+    if q.slope_type == "sloped" and q.has_cut_measurements():
+        cut_base = compute_cut_adjusted_base(config, q, zone, q.roof_type)
+        if cut_base is None:
+            warnings.append(
+                f"cut_calc_uncalibrated_zone: RoofR cut LFs supplied but the cut calculator is "
+                f"not calibrated for zone '{zone}' — flat base used. Seed cuts_calc.fixed_per_sq['{zone}']."
+            )
+        elif config.raw.get("roof_cuts", {}).get(q.roof_cuts):
+            warnings.append(
+                f"roof_cuts_double_count: the geometry cut calculator already prices cut complexity "
+                f"in the base; the categorical roof_cuts='{q.roof_cuts}' line adds on top. Use "
+                "roof_cuts='low' unless an extra manual cut charge is intended."
+            )
 
     all_items = per_sq_items + fixed_items + optional_items + [pm_item]
 
