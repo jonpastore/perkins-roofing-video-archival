@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # load_brand_kit
 # ---------------------------------------------------------------------------
@@ -153,6 +155,37 @@ def test_brand_upload_signed_url_correct_path_tenant1():
     )
 
     mock_bucket.blob.assert_called_once_with("tenants/1/brand/logo.png")
+
+
+# ---------------------------------------------------------------------------
+# brand_view_signed_url
+# ---------------------------------------------------------------------------
+
+def test_brand_view_signed_url_returns_get_url_for_tenant_path():
+    """brand_view_signed_url signs a GET on tenants/{id}/brand/{name}."""
+    from core.brand_kit import brand_view_signed_url
+
+    mock_gcs = MagicMock()
+    mock_bucket = MagicMock()
+    mock_blob = MagicMock()
+    mock_gcs.bucket.return_value = mock_bucket
+    mock_bucket.blob.return_value = mock_blob
+    mock_blob.generate_signed_url.return_value = "https://storage.googleapis.com/get-signed"
+
+    url = brand_view_signed_url(tenant_id=2, asset_name="logo.png", gcs_client=mock_gcs, bucket_name="mybucket")
+
+    assert url == "https://storage.googleapis.com/get-signed"
+    mock_bucket.blob.assert_called_once_with("tenants/2/brand/logo.png")
+    assert mock_blob.generate_signed_url.call_args.kwargs.get("method") == "GET"
+
+
+@pytest.mark.parametrize("bad", ["../secrets.txt", "tenants/9/brand/logo.png", "", "a/b"])
+def test_brand_view_signed_url_rejects_path_traversal(bad):
+    """A non-bare filename cannot escape the tenant's brand prefix."""
+    from core.brand_kit import brand_view_signed_url
+
+    with pytest.raises(ValueError):
+        brand_view_signed_url(tenant_id=1, asset_name=bad, gcs_client=MagicMock(), bucket_name="b")
 
 
 def test_load_brand_kit_non_dict_settings_returns_none():

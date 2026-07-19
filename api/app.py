@@ -235,6 +235,29 @@ def brand_upload_url(body: dict, claims=Depends(require_role_db("marketing_artic
     return {"upload_url": url, "gcs_uri": gcs_uri}
 
 
+@app.post("/admin/tenant/brand/view-url")
+def brand_view_url(body: dict, claims=Depends(require_role_db("marketing_articles"))):
+    """Issue a short-lived signed GET URL so the Admin UI can preview a saved
+    brand asset. The server derives the tenant-scoped key from a bare filename,
+    so a client cannot read outside its own tenants/{id}/brand/ prefix."""
+    import os
+
+    from core.brand_kit import brand_view_signed_url
+    asset_name = body.get("asset_name")
+    if not asset_name:
+        raise HTTPException(422, "asset_name required")
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    if not project:
+        raise HTTPException(503, "GCS not configured (GOOGLE_CLOUD_PROJECT unset)")
+    from google.cloud import storage  # noqa: PLC0415 — heavy import, endpoint-local
+    tid = _require_tenant(claims)
+    try:
+        url = brand_view_signed_url(tid, asset_name, storage.Client(), f"{project}-media")
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"view_url": url}
+
+
 @app.post("/search")
 def search(q: Query, _claims=Depends(require_role("search")),
            db: Session = Depends(get_db_session)):

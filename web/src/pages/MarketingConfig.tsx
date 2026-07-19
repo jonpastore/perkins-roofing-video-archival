@@ -14,6 +14,7 @@ import {
   getMarketingSettings,
   putMarketingSettings,
   getBrandUploadUrl,
+  getBrandViewUrl,
   type BrandKit,
   type SocialAccountStatus,
   type MarketingSettings,
@@ -144,7 +145,23 @@ function GcsUriField({
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);  // just-uploaded local blob
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null);    // signed GET for a saved gs:// asset
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  // A fresh local blob always wins; otherwise fetch a signed GET URL for the saved asset.
+  useEffect(() => {
+    if (previewUrl) return;              // just uploaded — the blob is already showing
+    if (!value.startsWith("gs://")) { setRemoteUrl(null); return; }
+    let cancelled = false;
+    getBrandViewUrl(value).then((u) => { if (!cancelled) setRemoteUrl(u); }).catch(() => { if (!cancelled) setRemoteUrl(null); });
+    return () => { cancelled = true; };
+  }, [value, previewUrl]);
+
+  const shownPreview = previewUrl ?? remoteUrl;
+  const previewKind = accept.includes("video") ? "video" : accept.includes("audio") ? "audio" : "image";
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -154,6 +171,7 @@ function GcsUriField({
     try {
       const gcsPath = await onUpload(file);
       onChange(gcsPath);
+      setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -203,6 +221,17 @@ function GcsUriField({
       </div>
       {helpText && <HelpText>{helpText}</HelpText>}
       {uploadError && <ErrorMsg>{uploadError}</ErrorMsg>}
+      {shownPreview && (
+        <div style={{ marginTop: 8 }}>
+          {previewKind === "image" && (
+            <img src={shownPreview} alt="preview" style={{ maxHeight: 80, maxWidth: 200, borderRadius: 6, border: `1px solid ${BRAND.border}` }} />
+          )}
+          {previewKind === "video" && (
+            <video src={shownPreview} controls style={{ maxHeight: 120, maxWidth: 240, borderRadius: 6, border: `1px solid ${BRAND.border}` }} />
+          )}
+          {previewKind === "audio" && <audio src={shownPreview} controls style={{ width: "100%", maxWidth: 260 }} />}
+        </div>
+      )}
     </div>
   );
 }

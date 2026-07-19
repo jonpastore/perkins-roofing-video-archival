@@ -292,6 +292,21 @@ export async function getBrandUploadUrl(
   return { url: data.upload_url, gcs_path: data.gcs_uri };
 }
 
+/** Short-lived signed GET URL to preview a saved brand asset. Takes the stored
+ *  gs:// URI, sends the bare filename; the server re-derives the tenant path. */
+export async function getBrandViewUrl(gcsUri: string): Promise<string> {
+  const asset_name = gcsUri.split("/").pop() ?? "";
+  const res = await apiFetch("/admin/tenant/brand/view-url", {
+    method: "POST",
+    body: JSON.stringify({ asset_name }),
+  });
+  if (!res.ok) {
+    throw new Error(await errText(res));
+  }
+  const data = await res.json();
+  return data.view_url as string;
+}
+
 // ── F6: tenant provisioning + per-tenant SSO ─────────────────────────────────
 
 export interface Tenant {

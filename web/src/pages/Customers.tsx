@@ -23,6 +23,7 @@ import type {
   PropertyInput,
   BranchRow,
 } from "../api";
+import { CustomerFields, emptyCustomerFields, customerFieldsToInput, type CustomerFieldValues } from "../components/CustomerFields";
 import { NavContext } from "../App";
 import { DataTable } from "../ui/DataTable";
 import type { QueryState, ColDef } from "../ui/DataTable";
@@ -90,27 +91,24 @@ interface NewCustomerFormProps {
 }
 
 function NewCustomerForm({ onSaved, onCancel, branches }: NewCustomerFormProps) {
-  const [form, setForm] = useState<CustomerInput>({ display_name: "", company_name: "", email: "", phone: "", branch: "miami" });
+  const [cust, setCust] = useState<CustomerFieldValues>(emptyCustomerFields());
   const [property, setProperty] = useState<PropertyInput>({ street: "", city: "", state: "FL", zip: "", county: "", code_zone: "FBC" });
   const [measurementSq, setMeasurementSq] = useState("");
   const [measurementNote, setMeasurementNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  function set(field: keyof CustomerInput, value: string) {
-    setForm((f) => ({ ...f, [field]: value || null }));
-  }
   function setProp(field: keyof PropertyInput, value: string) {
     setProperty((f) => ({ ...f, [field]: value || null }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.display_name.trim()) { setErr("Display name is required."); return; }
+    if (!cust.display_name.trim()) { setErr("Display name is required."); return; }
     setSaving(true);
     setErr(null);
     try {
-      const c = await createCustomer({ ...form, display_name: form.display_name.trim() });
+      const c = await createCustomer(customerFieldsToInput(cust));
       if (property.street?.trim()) {
         const prop = await addCustomerProperty(c.id, { ...property, street: property.street.trim() });
         if (measurementSq.trim()) {
@@ -136,27 +134,8 @@ function NewCustomerForm({ onSaved, onCancel, branches }: NewCustomerFormProps) 
     <Card style={{ marginBottom: 20 }}>
       <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15, marginBottom: 16 }}>New Customer</div>
       <form onSubmit={handleSubmit}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-          <div>
-            <SectionLabel>Display Name *</SectionLabel>
-            <input style={{ ...inputStyle, width: "100%" }} value={form.display_name} onChange={(e) => set("display_name", e.target.value)} placeholder="Full name" autoFocus />
-          </div>
-          <div>
-            <SectionLabel>Company</SectionLabel>
-            <input style={{ ...inputStyle, width: "100%" }} value={form.company_name ?? ""} onChange={(e) => set("company_name", e.target.value)} placeholder="Company name" />
-          </div>
-          <div>
-            <SectionLabel>Email</SectionLabel>
-            <input type="email" style={{ ...inputStyle, width: "100%" }} value={form.email ?? ""} onChange={(e) => set("email", e.target.value)} placeholder="email@example.com" />
-          </div>
-          <div>
-            <SectionLabel>Phone</SectionLabel>
-            <input type="tel" style={{ ...inputStyle, width: "100%" }} value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} placeholder="(555) 555-5555" />
-          </div>
-          <div>
-            <SectionLabel>Branch</SectionLabel>
-            <BranchSelect value={form.branch ?? "miami"} onChange={(v) => set("branch", v)} branches={branches} />
-          </div>
+        <div style={{ marginBottom: 12 }}>
+          <CustomerFields value={cust} onChange={(p) => setCust((s) => ({ ...s, ...p }))} branches={branches} autoFocus />
         </div>
         <div style={{ borderTop: `1px solid ${BRAND.border}`, paddingTop: 14, marginTop: 14 }}>
           <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 13, marginBottom: 8 }}>Initial property and measurement (optional)</div>

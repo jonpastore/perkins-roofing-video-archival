@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch, listBranches, type BranchRow } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, PillButton, SectionLabel } from "../ui";
 import { errText } from "../lib/errors";
+import { CustomerFields, emptyCustomerFields, customerFieldsToInput, type CustomerFieldValues } from "../components/CustomerFields";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -287,47 +288,13 @@ function CustomerForm({
   saving: boolean;
   branches: BranchRow[];
 }) {
-  const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
-  const [companyName, setCompanyName] = useState(initial?.company_name ?? "");
-  const [email, setEmail] = useState(initial?.email ?? "");
-  const [phone, setPhone] = useState(initial?.phone ?? "");
-  const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [branch, setBranch] = useState(initial?.branch ?? "miami");
+  const [v, setV] = useState<CustomerFieldValues>(emptyCustomerFields(initial));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <FieldLabel>Name *</FieldLabel>
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="Full name" />
-        </div>
-        <div>
-          <FieldLabel>Company</FieldLabel>
-          <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="Optional" />
-        </div>
-        <div>
-          <FieldLabel>Email</FieldLabel>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="customer@email.com" />
-        </div>
-        <div>
-          <FieldLabel>Phone</FieldLabel>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="(555) 555-5555" />
-        </div>
-        <div>
-          <FieldLabel>Branch</FieldLabel>
-          <select value={branch ?? "miami"} onChange={(e) => setBranch(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }}>
-            {branches.map((b) => (
-              <option key={b.key} value={b.key}>{b.name}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ gridColumn: "1 / -1" }}>
-          <FieldLabel>Notes</FieldLabel>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputStyle, width: "100%", fontSize: 13, resize: "vertical" }} placeholder="Internal notes…" />
-        </div>
-      </div>
+      <CustomerFields value={v} onChange={(p) => setV((s) => ({ ...s, ...p }))} branches={branches} />
       <div style={{ display: "flex", gap: 8 }}>
-        <Button onClick={() => onSave({ display_name: displayName, company_name: companyName || null, email: email || null, phone: phone || null, notes: notes || null, branch: branch || null })} disabled={saving || !displayName.trim()} style={{ fontSize: 13 }}>
+        <Button onClick={() => onSave(customerFieldsToInput(v))} disabled={saving || !v.display_name.trim()} style={{ fontSize: 13 }}>
           {saving ? "Saving…" : "Save customer"}
         </Button>
         <Button variant="ghost" onClick={onCancel} style={{ fontSize: 13 }}>Cancel</Button>
@@ -1672,6 +1639,9 @@ export function Quoting() {
 
             <div style={{ marginTop: 16 }}>
               <SectionLabel>Overhead</SectionLabel>
+              <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 6, lineHeight: 1.5 }}>
+                How job-site overhead is charged. <strong>Per-square</strong> uses the config guide rate per roofing square; <strong>By time</strong> bills the crew day-rate × install days.
+              </div>
               <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${BRAND.border}`, width: "fit-content" }}>
                 {(["per_sq", "daily"] as const).map((mode, i) => (
                   <button
@@ -1878,6 +1848,9 @@ export function Quoting() {
                   <ResultRow label="Profit %" value={(quoteResult.profit_pct * 100).toFixed(1) + "%"} />
                   {quoteResult.margin && (
                     <>
+                      <div style={{ fontSize: 11, color: BRAND.sub, margin: "8px 0 2px", lineHeight: 1.5 }}>
+                        Margin checks — green is at or above the branch's minimum, <span style={{ color: BRAND.red, fontWeight: 700 }}>red — LOW</span> is below it. "OH" = overhead.
+                      </div>
                       <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13 }}>
                         <span>Profit % vs floor</span>
                         <span style={{ fontWeight: 700, color: quoteResult.margin.profit_floor_ok ? BRAND.navyText : BRAND.red }}>
@@ -1925,6 +1898,9 @@ export function Quoting() {
                         <Button variant="ghost" onClick={() => void applyTargetProfit(Number(targetProfitPct || 0))} disabled={quoting || !targetProfitPct} style={{ fontSize: 12 }}>Apply</Button>
                       </div>
                       <SectionLabel>Commission</SectionLabel>
+                      <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 6, lineHeight: 1.5 }}>
+                        Sales rep's payout — either a percent of the job's <strong>profit</strong> or of the total <strong>job</strong> price. Switching the basis resets to the usual default rate.
+                      </div>
                       <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: `1px solid ${BRAND.border}`, marginBottom: 8 }}>
                         {(["profit", "job"] as const).map((b, i) => (
                           <button

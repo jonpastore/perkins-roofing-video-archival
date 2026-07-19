@@ -126,3 +126,30 @@ def brand_upload_signed_url(
         content_type=content_type,
     )
     return url
+
+
+def brand_view_signed_url(
+    tenant_id: int,
+    asset_name: str,
+    gcs_client,
+    bucket_name: str,
+    ttl_seconds: int = 900,
+) -> str:
+    """Generate a V4 signed GET URL so the Admin UI can preview a saved brand asset.
+
+    ``asset_name`` is a bare filename; the server derives the tenant-scoped key,
+    so a client cannot request objects outside ``tenants/{id}/brand/`` (no path
+    traversal, no cross-tenant read).
+
+    Returns:
+        HTTPS signed GET URL string.
+    """
+    if "/" in asset_name or ".." in asset_name or not asset_name:
+        raise ValueError("asset_name must be a bare filename")
+    key = tenant_object_path(tenant_id, f"brand/{asset_name}")
+    blob = gcs_client.bucket(bucket_name).blob(key)
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=datetime.timedelta(seconds=ttl_seconds),
+        method="GET",
+    )
