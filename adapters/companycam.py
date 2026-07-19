@@ -70,6 +70,15 @@ def normalize_photo(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def ping(per_page: int = 1) -> None:
+    """Cheapest authenticated call — fetch a single page of projects to prove the PAT works.
+
+    Raises RuntimeError on a missing PAT or a non-2xx response. The health probe MUST use this,
+    NOT list_projects() — the latter paginates through EVERY page via _get_all().
+    """
+    _get(projects_url(), {"per_page": per_page})
+
+
 def _get_all(url: str, per_page: int = 100) -> list[dict[str, Any]]:
     """Fetch every page of a CompanyCam list endpoint (paginated via page/per_page).
 

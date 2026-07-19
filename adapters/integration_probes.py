@@ -119,7 +119,7 @@ def probe_companycam() -> ProbeResult | None:
     if not companycam.configured():
         return None
     try:
-        companycam.list_projects(per_page=1)
+        companycam.ping()  # single-call probe (list_projects() paginates every page)
     except RuntimeError as exc:
         msg = str(exc)
         if "CompanyCam API error 401" in msg or "CompanyCam API error 403" in msg:

@@ -575,9 +575,8 @@ function WorkflowCallout() {
         ))}
       </div>
       <p style={{ margin: "10px 0 0", fontSize: 11, color: BRAND.sub, lineHeight: 1.5 }}>
-        Need a fast ballpark without a customer? A standalone <strong>Quick Estimate Calculator</strong>{" "}
-        (legacy) still exists for unattached what-if pricing, but estimates you intend to send should be
-        built here so they stay linked to a customer, property, and measurement.
+        Build every estimate you intend to send here so it stays linked to a customer, property, and
+        measurement.
       </p>
     </Card>
   );
@@ -1597,13 +1596,16 @@ export function Quoting() {
               <div style={{ marginTop: 14 }}>
                 <FieldLabel>Deck / attach system</FieldLabel>
                 <select value={quoteDeckType} onChange={(e) => setQuoteDeckType(e.target.value)} style={selectStyle}>
-                  {Object.entries(rates?.low_slope?.deck_types ?? {})
-                    .filter(([k, v]) => !k.startsWith("_") && v !== null)
-                    .map(([k, v]) => (
+                  {(() => {
+                    const opts = Object.entries(rates?.low_slope?.deck_types ?? {}).filter(([k, v]) => !k.startsWith("_") && v !== null);
+                    return opts.length === 0 ? (
+                      <option value="">Pending Tim — no deck rates configured</option>
+                    ) : opts.map(([k, v]) => (
                       <option key={k} value={k}>
                         {k.replace(/_/g, " ")}{Number(v) > 0 ? ` (+$${v}/sq)` : ""}
                       </option>
-                    ))}
+                    ));
+                  })()}
                 </select>
                 <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <EstimateCheckbox checked={quoteIncludeInsulation} onChange={setQuoteIncludeInsulation} label="Insulation" />
@@ -1803,7 +1805,7 @@ export function Quoting() {
                   {quoteResult.cut_calc && (
                     <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "#eef2ff", border: "1px solid #c7d2fe" }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#3730a3", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>
-                        RoofR cut calculator — pick a base
+                        RoofR cut calculator — reference
                       </div>
                       <div style={{ display: "flex", gap: 20, fontSize: 13, flexWrap: "wrap" }}>
                         <div>
@@ -1822,7 +1824,7 @@ export function Quoting() {
                         </div>
                       </div>
                       <div style={{ fontSize: 11, color: "#475569", marginTop: 6 }}>
-                        Headline uses the standard base (how Tim prices standard roofs). The cut-adjusted figure prices this roof&apos;s RoofR cuts — pick it for cut-precise jobs.
+                        The headline quote uses the standard base (how Tim prices standard roofs). The cut-adjusted figure prices this roof&apos;s RoofR cuts and is shown for comparison on cut-heavy jobs — it is a reference, not a separate selection.
                       </div>
                     </div>
                   )}
@@ -2047,15 +2049,15 @@ export function Quoting() {
         </Card>
       )}
 
-      {!search.trim() && !showNewCustomer && (
+      {!search.trim() && !showNewCustomer && filteredCustomers.length === 0 && (
         <Card>
           <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
-            Start typing to find a customer, then choose the property, measurement, and estimate.
+            No customers yet. Use + New customer to add one, then choose the property, measurement, and estimate.
           </p>
         </Card>
       )}
 
-      {search.trim() && filteredCustomers.length > 0 && (
+      {!showNewCustomer && filteredCustomers.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filteredCustomers.slice(0, 8).map((c) => (
             <Card
