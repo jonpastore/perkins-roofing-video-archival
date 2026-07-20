@@ -113,7 +113,25 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
         try:
             db = SessionLocal()
             db.info["tenant_id"] = tenant_id
+            did_claim = False
             try:
+                # Atomically claim this row (awaiting_social -> publishing) so two
+                # overlapping cron runs can't both post the same reel. A concurrent run
+                # sees 0 rows affected and skips. did_claim gates the release in finally
+                # so we never revert a claim another worker holds.
+                did_claim = bool(
+                    db.query(ScheduledContent)
+                    .filter(
+                        ScheduledContent.id == sched.id,
+                        ScheduledContent.status == "awaiting_social",
+                    )
+                    .update({"status": "publishing"}, synchronize_session=False)
+                )
+                db.commit()
+                if not did_claim:
+                    skipped += 1
+                    continue
+
                 # Resolve the SocialPost (ref_id is the social_post pk as a string)
                 post = db.get(SocialPost, int(sched.ref_id))
                 if post is None:
@@ -275,7 +293,7 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         .all()
                     )
 
-                # Mark ScheduledContent published only when all platforms succeeded
+                # Mark ScheduledContent published only when all platforms succeeded.
                 if all_done:
                     sc = db.get(ScheduledContent, sched.id)
                     if sc is not None:
@@ -284,6 +302,19 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                     db.commit()
 
             finally:
+                # Release our own claim on any non-published exit (early continue,
+                # partial failure, or exception): a row we left in "publishing" goes
+                # back to awaiting_social so the next cron retries it. Gated on did_claim
+                # so we never touch a claim another worker holds.
+                if did_claim:
+                    try:
+                        sc = db.get(ScheduledContent, sched.id)
+                        if sc is not None and sc.status == "publishing":
+                            sc.status = "awaiting_social"
+                            db.add(sc)
+                            db.commit()
+                    except Exception:  # noqa: BLE001
+                        db.rollback()
                 db.close()
 
         except Exception as exc:  # noqa: BLE001

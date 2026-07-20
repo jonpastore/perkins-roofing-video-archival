@@ -15,8 +15,10 @@ import {
   putMarketingSettings,
   getBrandUploadUrl,
   getBrandViewUrl,
+  listConnections,
+  startOAuth,
   type BrandKit,
-  type SocialAccountStatus,
+  type Connection,
   type MarketingSettings,
 } from "../api";
 import { errText } from "../lib/errors";
@@ -236,23 +238,32 @@ function GcsUriField({
   );
 }
 
-// Social account status row (read-only in F5; connect is F6)
+// Social account row driven by GET /connections. The OAuth capture flow for all
+// platforms exists on the backend (api/routes/connections.py); a platform is only
+// clickable once its client credentials are in place (oauth_configured), so we
+// never fire a redirect that would 503 — we show "Setup pending" instead.
+const PLATFORM_LABEL: Record<string, string> = {
+  youtube: "YouTube",
+  facebook: "Facebook",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+};
+
 function SocialAccountRow({
   platform,
-  status,
+  conn,
+  onConnect,
+  connecting,
+  manage,
 }: {
   platform: string;
-  status: SocialAccountStatus | undefined;
+  conn: Connection | undefined;
+  onConnect: (platform: string) => void;
+  connecting: boolean;
+  manage: boolean;
 }) {
-  const platformLabel: Record<string, string> = {
-    youtube: "YouTube",
-    facebook: "Facebook",
-    instagram: "Instagram",
-    tiktok: "TikTok",
-  };
-
-  const isF6Gated = platform === "instagram" || platform === "tiktok";
-  const connected = status?.connected ?? false;
+  const connected = conn?.status === "ok";
+  const configured = conn?.oauth_configured ?? false;
 
   return (
     <div
@@ -268,22 +279,25 @@ function SocialAccountRow({
       }}
     >
       <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: BRAND.navyText }}>
-        {platformLabel[platform] ?? platform}
+        {PLATFORM_LABEL[platform] ?? platform}
       </span>
 
-      {isF6Gated ? (
-        <Badge tone="gray">Connect in F6</Badge>
-      ) : connected ? (
+      {connected ? (
+        <Badge tone="green">Connected</Badge>
+      ) : configured ? (
         <>
-          <Badge tone="green">Connected</Badge>
-          {status?.account_id && (
-            <span style={{ fontSize: 11, color: BRAND.sub, fontFamily: "monospace" }}>
-              {status.account_id}
-            </span>
+          <Badge tone="amber">Not connected</Badge>
+          {manage && (
+            <Button variant="ghost" style={{ fontSize: 12, padding: "5px 12px" }} disabled={connecting} onClick={() => onConnect(platform)}>
+              {connecting ? "Connecting…" : "Connect"}
+            </Button>
           )}
         </>
       ) : (
-        <Badge tone="amber">Not connected</Badge>
+        <>
+          <Badge tone="gray">Setup pending</Badge>
+          <span style={{ fontSize: 11, color: BRAND.sub }}>needs {PLATFORM_LABEL[platform] ?? platform} app credentials</span>
+        </>
       )}
     </div>
   );
@@ -504,11 +518,16 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
   const [isDirty, setIsDirty] = useState(false);
   const [replyCfg, setReplyCfg] = useState<ReplyConfig | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [connections, setConnections] = useState<Record<string, Connection>>({});
+  const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch("/comments/reply-config")
       .then((r) => (r.ok ? r.json() : null))
       .then(setReplyCfg)
+      .catch(() => undefined);
+    listConnections()
+      .then((rows) => setConnections(Object.fromEntries(rows.map((r) => [r.integration, r]))))
       .catch(() => undefined);
   }, []);
 
@@ -523,6 +542,17 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
       else setConnectError("Could not start the YouTube connect flow.");
     } catch (e: unknown) {
       setConnectError(e instanceof Error ? e.message : "Could not start the YouTube connect flow.");
+    }
+  }
+
+  async function handleConnectSocial(platform: string) {
+    setConnectingPlatform(platform);
+    setConnectError(null);
+    try {
+      window.location.href = await startOAuth(platform);
+    } catch (e: unknown) {
+      setConnectError(e instanceof Error ? e.message : `Could not start the ${platform} connect flow.`);
+      setConnectingPlatform(null);
     }
   }
 
@@ -621,7 +651,6 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
   if (!draft) return null;
 
   const brand = draft.brand ?? {};
-  const socialAccounts = draft.social_accounts ?? {};
 
   return (
     <div style={{ fontFamily: FONT }}>
@@ -950,8 +979,9 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
           Social Account Status
         </div>
         <HelpText>
-          OAuth connection status for each distribution platform. YouTube and Facebook are available
-          now; Instagram and TikTok connect is pending app-review approval (available in F6).
+          OAuth connection status for each distribution platform. A platform becomes connectable
+          once its app credentials are in place; Instagram/TikTok/Facebook live posting also needs
+          platform app-review approval.
         </HelpText>
         <div style={{ marginTop: 14 }}>
           {SOCIAL_PLATFORMS.map((p) =>
@@ -961,11 +991,15 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
               <SocialAccountRow
                 key={p}
                 platform={p}
-                status={socialAccounts[p]}
+                conn={connections[p]}
+                onConnect={handleConnectSocial}
+                connecting={connectingPlatform === p}
+                manage={manage}
               />
             )
           )}
         </div>
+        {connectError && <div style={{ marginTop: 8 }}><ErrorMsg>{connectError}</ErrorMsg></div>}
       </Card>
 
       {/* Safety-gate denylist */}

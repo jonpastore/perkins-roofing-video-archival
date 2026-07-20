@@ -17,6 +17,18 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
     promoted, errored = 0, 0
     for r in due(rows, now):
         try:
+            # Atomically claim the row so two overlapping cron runs can't both promote it
+            # (double-publish guard). The conditional UPDATE is row-locked by the DB; a
+            # concurrent run sees 0 rows affected and skips. Portable across PG and SQLite.
+            claimed = (
+                db.query(ScheduledContent)
+                .filter(ScheduledContent.id == r.id, ScheduledContent.status == "scheduled")
+                .update({"status": "promoting"}, synchronize_session=False)
+            )
+            db.commit()
+            if not claimed:
+                continue
+
             if r.kind == "reel":
                 r.status = "awaiting_social"
                 db.add(r)

@@ -14,7 +14,6 @@ import { ClipStudio } from "./pages/ClipStudio";
 import { Comments } from "./pages/Comments";
 import { Logs } from "./pages/Logs";
 import { Email } from "./pages/Email";
-import { Estimator } from "./pages/Estimator";
 import { Quoting } from "./pages/Quoting";
 import { Squares } from "./pages/Squares";
 import { Proposals } from "./pages/Proposals";
@@ -22,7 +21,6 @@ import { ProposalBuilder } from "./pages/ProposalBuilder";
 import { Invoices } from "./pages/Invoices";
 import { Customers } from "./pages/Customers";
 import { Payments } from "./pages/Payments";
-import { Quotes } from "./pages/Quotes";
 import { ContractFaq } from "./pages/ContractFaq";
 import { AdminConfig } from "./pages/AdminConfig";
 import { Knowify } from "./pages/Knowify";
@@ -557,7 +555,6 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "comments" && <Comments />}
       {tab === "video-approval" && <VideoApproval />}
       {tab === "archive" && <Archive />}
-      {tab === "estimator" && <Estimator />}
       {tab === "logs" && <Logs />}
       {tab === "quoting" && <Quoting />}
       {tab === "squares" && <Squares />}
@@ -566,7 +563,6 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "invoices" && <Invoices />}
       {tab === "customers" && <Customers />}
       {tab === "payments" && <Payments />}
-      {tab === "quotes" && <Quotes />}
       {tab === "contract-faq" && <ContractFaq />}
       {tab === "admin-config" && <AdminConfig role={role} />}
       {tab === "legacy-data" && <Knowify />}

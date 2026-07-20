@@ -307,6 +307,32 @@ export async function getBrandViewUrl(gcsUri: string): Promise<string> {
   return data.view_url as string;
 }
 
+// ── Integration connections (OAuth capture) ─────────────────────────────────
+export interface Connection {
+  integration: string;
+  status: string;          // "ok" | "unconfigured" | error states
+  oauth: boolean;          // has an OAuth start/callback flow
+  oauth_configured: boolean; // client creds + redirect base present → Connect will work (not 503)
+  last_error: string | null;
+}
+
+/** Live status for every known integration (Connections page + social rows). */
+export async function listConnections(): Promise<Connection[]> {
+  const res = await apiFetch("/connections");
+  if (!res.ok) throw new Error(await errText(res));
+  const data = await res.json();
+  return (data.connections ?? []) as Connection[];
+}
+
+/** Begin an OAuth connect: returns the provider auth_url to redirect to.
+ *  Throws (e.g. 503) when the platform's client credentials aren't configured yet. */
+export async function startOAuth(platform: string): Promise<string> {
+  const res = await apiFetch(`/oauth/${platform}/start`);
+  if (!res.ok) throw new Error(await errText(res));
+  const data = await res.json();
+  return data.auth_url as string;
+}
+
 // ── F6: tenant provisioning + per-tenant SSO ─────────────────────────────────
 
 export interface Tenant {

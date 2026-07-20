@@ -68,6 +68,18 @@ function fmtDate(iso: string | null) {
   }
 }
 
+// A datetime-local <input> holds browser-local wall time with no timezone. Convert
+// to/from the explicit-UTC ISO the API uses, so a scheduled reel fires at the moment
+// the user actually picked (not shifted by the UTC offset).
+function localInputToUtcIso(local: string): string {
+  return local ? new Date(local).toISOString() : local;
+}
+function utcIsoToLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 export function Scheduling() {
   const { navigate } = useContext(NavContext);
   const [items, setItems] = useState<ScheduledItem[]>([]);
@@ -138,7 +150,7 @@ export function Scheduling() {
 
   function openEdit(item: ScheduledItem) {
     setEditingId(item.id);
-    const dtLocal = item.publish_at ? item.publish_at.slice(0, 16) : "";
+    const dtLocal = utcIsoToLocalInput(item.publish_at);
     setForm({
       kind: item.kind,
       ref_id: item.ref_id,
@@ -185,7 +197,7 @@ export function Scheduling() {
           body: JSON.stringify({
             kind: form.kind,
             ref_id: form.ref_id,
-            publish_at: form.publish_at,
+            publish_at: localInputToUtcIso(form.publish_at),
             target: form.target || null,
           }),
         });
@@ -193,7 +205,7 @@ export function Scheduling() {
         r = await apiFetch(`/scheduling/${editingId}`, {
           method: "PUT",
           body: JSON.stringify({
-            publish_at: form.publish_at,
+            publish_at: localInputToUtcIso(form.publish_at),
             target: form.target || null,
           }),
         });
