@@ -1075,7 +1075,10 @@ def render_part(
     # ── 9. Persist SocialPost (one row per platform) + ScheduledContent ─────────
     # One SocialPost row per platform so social_job.already_posted works
     # uniformly — no combined "instagram,tiktok" rows.
-    _platforms = [p.strip() for p in _DEFAULT_PLATFORM.split(",") if p.strip()]
+    # Auto-schedule targets come from the render spec's platform selection when set,
+    # else the default. This is what the Scheduling checkbox edits afterward.
+    _spec_platforms = list(getattr(render_spec, "platforms", None) or [])
+    _platforms = _spec_platforms or [p.strip() for p in _DEFAULT_PLATFORM.split(",") if p.strip()]
 
     db = SessionLocal()
     if tenant_id is not None:
@@ -1113,7 +1116,7 @@ def render_part(
             ref_id=str(first_post_id),
             publish_at=datetime.now(timezone.utc).replace(tzinfo=None),
             status="scheduled",
-            target=_DEFAULT_PLATFORM,
+            target=",".join(_platforms),
         )
         db.add(sched)
         db.commit()

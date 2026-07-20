@@ -266,6 +266,16 @@ class ClipRenderSpec(BaseModel):
     emoji_highlights: bool = False
     aspects: list[str] = Field(default_factory=list)
     audio_enhance: bool = False
+    platforms: list[str] = Field(default_factory=list)  # auto-schedule targets; empty = default
+
+    @field_validator("platforms")
+    @classmethod
+    def _valid_platforms(cls, v: list[str]) -> list[str]:
+        allowed = {"instagram", "tiktok"}  # the platforms social_job can publish today
+        for p in v:
+            if p not in allowed:
+                raise ValueError(f"platforms entries must be in {sorted(allowed)}, got {p!r}")
+        return v
 
     @field_validator("aspects", mode="before")
     @classmethod

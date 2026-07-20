@@ -863,6 +863,7 @@ interface ClipRenderSpec {
   reframe: boolean;
   speaker_tracking: boolean;
   focus_x?: number;
+  platforms?: string[];
   captions: { style: string; position: string };
   speech_cleanup: boolean;
   broll: { source: string; query_auto: boolean };
@@ -877,6 +878,7 @@ const DEFAULT_SPEC: ClipRenderSpec = {
   reframe: false,
   speaker_tracking: false,
   focus_x: 0.5,
+  platforms: [],
   captions: { style: "default", position: "bottom" },
   speech_cleanup: false,
   broll: { source: "none", query_auto: true },
@@ -1038,6 +1040,29 @@ function RenderOptionsPanel({
                   style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
                 />
                 <span style={{ fontSize: 12, color: BRAND.sub }}>Denoise + compress + loudnorm (EBU R128, -14 LUFS)</span>
+              </div>
+
+              {/* Publish targets (auto-schedule) */}
+              <div style={rowStyle}>
+                <label style={labelStyle}>Publish to</label>
+                <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                  {(["instagram", "tiktok"] as const).map((p) => (
+                    <label key={p} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: BRAND.ink, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={(spec.platforms ?? []).includes(p)}
+                        onChange={(e) => {
+                          const cur = spec.platforms ?? [];
+                          const next = e.target.checked ? [...cur, p] : cur.filter((x) => x !== p);
+                          setSpec({ ...spec, platforms: Array.from(new Set(next)) });
+                        }}
+                        style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
+                      />
+                      {p === "instagram" ? "Instagram" : "TikTok"}
+                    </label>
+                  ))}
+                  <span style={{ fontSize: 11, color: BRAND.sub }}>None selected = Instagram + TikTok</span>
+                </div>
               </div>
 
               {/* Captions */}
