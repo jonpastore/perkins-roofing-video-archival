@@ -355,9 +355,9 @@ function ClipCard({
   const [scenes, setScenes] = useState<number[] | null>(null);
   const [scenesLoading, setScenesLoading] = useState(false);
 
-  function detectScenes() {
+  function detectScenes(mode: "speech" | "visual" = "speech") {
     setScenesLoading(true);
-    apiFetch(`/clips/scenes?video_id=${encodeURIComponent(videoId)}&start=${clip.start}&end=${clip.end}`)
+    apiFetch(`/clips/scenes?video_id=${encodeURIComponent(videoId)}&start=${clip.start}&end=${clip.end}&mode=${mode}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { boundaries: number[] } | null) => setScenes(d?.boundaries ?? []))
       .catch(() => setScenes([]))
@@ -479,11 +479,20 @@ function ClipCard({
       <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <button
           type="button"
-          onClick={detectScenes}
+          onClick={() => detectScenes("speech")}
           disabled={scenesLoading}
           style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: `1px solid ${BRAND.border}`, background: "#fff", color: BRAND.sub, cursor: "pointer" }}
         >
           {scenesLoading ? "Detecting…" : "✂ Detect scenes"}
+        </button>
+        <button
+          type="button"
+          onClick={() => detectScenes("visual")}
+          disabled={scenesLoading}
+          title="Analyse the video for visual cuts (camera/B-roll) — slower"
+          style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 6, border: `1px solid ${BRAND.border}`, background: "#fff", color: BRAND.sub, cursor: "pointer" }}
+        >
+          visual
         </button>
         {scenes && scenes.filter((t) => t > clip.start + 0.5 && t < clip.end - 0.5).map((t) => (
           <button

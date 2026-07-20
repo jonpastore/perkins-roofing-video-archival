@@ -1100,13 +1100,30 @@ def clip_scenes(
     video_id: str,
     start: float,
     end: float,
+    mode: str = "speech",
     claims=Depends(require_role("approve_video")),
     db: Session = Depends(get_db_session),
 ):
-    """Suggested scene-cut points (seconds) from speech gaps within [start, end].
+    """Suggested scene-cut points (seconds) within [start, end].
 
-    Derived from stored word timestamps — no video download. Returns
-    {"video_id", "boundaries": [float, ...]} (empty when no transcript in range)."""
+    mode="speech" (default): boundaries from transcript speech gaps — instant, no video.
+    mode="visual": ffmpeg scene detection over the archived source range (camera/B-roll
+    cuts). Falls back to speech-gap when the source or ffmpeg is unavailable.
+    Returns {"video_id", "boundaries": [float,...], "method": "visual"|"speech"}."""
+    if mode == "visual":
+        try:
+            video = db.get(Video, video_id)
+            if video and (video.archive_uri or "").startswith("gs://"):
+                from adapters.storage import signed_get_url  # noqa: PLC0415
+                from core.scene_detect_visual import detect_scenes  # noqa: PLC0415
+                bucket, _, key = video.archive_uri[len("gs://"):].partition("/")
+                url = signed_get_url(bucket, key, 900)
+                # ffmpeg resets the clock after -ss, so offset back to source time.
+                vis = detect_scenes(url, start=start, end=end, timeout=45.0)
+                return {"video_id": video_id, "boundaries": [round(start + b, 2) for b in vis], "method": "visual"}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("clip_scenes: visual detection failed, using speech-gap: %s", exc)
+
     from app.models import Word  # noqa: PLC0415
     rows = (
         db.query(Word)
@@ -1115,4 +1132,4 @@ def clip_scenes(
         .all()
     )
     words = [{"word": r.word or "", "start": float(r.start or 0.0)} for r in rows]
-    return {"video_id": video_id, "boundaries": scene_boundaries(words)}
+    return {"video_id": video_id, "boundaries": scene_boundaries(words), "method": "speech"}
