@@ -802,8 +802,10 @@ export function Quoting() {
         return r.json();
       })
       .then((rows: Measurement[]) => {
-        setMeasurements(Array.isArray(rows) ? rows : []);
-        setSelectedMeasurement(null);
+        const list = Array.isArray(rows) ? rows : [];
+        setMeasurements(list);
+        // Auto-load the measurement by default when there's only one to choose from.
+        setSelectedMeasurement(list.length === 1 ? list[0] : null);
       })
       .catch((e: unknown) => setMeasurementError(e instanceof Error ? e.message : String(e)))
       .finally(() => setMeasurementsLoading(false));
@@ -943,6 +945,19 @@ export function Quoting() {
       setQuoteRoofType(lowSlopeTypes[0]);
     }
   }, [selectedMeasurement?.pitch_primary, lowSlopeTypes.join(","), quoteRoofType]);
+
+  // Prefill estimate inputs the measurement can unambiguously provide. Only fills fields
+  // still blank (never overwrites a value the user already typed). num_squares is derived
+  // straight from selectedMeasurement.total_sq in buildQuoteBody, so it needs no prefill here.
+  useEffect(() => {
+    if (!selectedMeasurement) return;
+    if (selectedMeasurement.ridges_lf != null) {
+      setQuoteRidgeVentLf((prev) => (prev === "" ? String(selectedMeasurement.ridges_lf) : prev));
+    }
+    if (selectedMeasurement.eaves_lf != null) {
+      setQuoteGutterLf((prev) => (prev === "" ? String(selectedMeasurement.eaves_lf) : prev));
+    }
+  }, [selectedMeasurement?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function buildQuoteBody(overrides: Record<string, unknown> = {}): Record<string, unknown> | null {
     if (!selectedMeasurement?.total_sq) return null;
