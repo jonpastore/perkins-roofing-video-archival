@@ -356,6 +356,80 @@ function NumericField({
   );
 }
 
+// Percentage field paired with a range slider — both drive the same value.
+function SliderNumberField({
+  label,
+  value,
+  onChange,
+  disabled,
+  min,
+  max,
+  step = 0.5,
+  unit,
+}: {
+  label: string;
+  value: number | null | undefined;
+  onChange: (v: number | null) => void;
+  disabled: boolean;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+}) {
+  if (value === null || value === undefined) {
+    return <PendingField label={label} />;
+  }
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <label
+        style={{
+          display: "block",
+          fontSize: 11,
+          fontWeight: 600,
+          color: BRAND.sub,
+          marginBottom: 2,
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+        }}
+      >
+        {label} {unit && <span style={{ fontWeight: 400, textTransform: "none" }}>({unit})</span>}
+      </label>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="range"
+          disabled={disabled}
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(parseFloat(e.target.value))}
+          style={{ flex: 1, accentColor: BRAND.red, cursor: disabled ? "default" : "pointer" }}
+        />
+        <input
+          type="number"
+          disabled={disabled}
+          min={min}
+          max={max}
+          step={step}
+          value={value ?? ""}
+          onChange={(e) =>
+            onChange(e.target.value === "" ? null : parseFloat(e.target.value))
+          }
+          style={{
+            ...inputStyle,
+            padding: "6px 8px",
+            fontSize: 13,
+            width: 70,
+            textAlign: "right",
+            background: disabled ? BRAND.bg : "#fff",
+            cursor: disabled ? "default" : "text",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // Nested zone/type table rendered as a 2-column grid (HVHZ | FBC × roof_type).
 function ZoneTypeTable({
   label,
@@ -1035,7 +1109,7 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
             </div>
             <SectionLabel>Commission rates</SectionLabel>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-              <NumericField
+              <SliderNumberField
                 label="Sloped (%)"
                 value={
                   typeof (config.commission_pct as Record<string, unknown> | undefined)?.sloped === "number"
@@ -1047,9 +1121,11 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                   set(["commission_pct"], { ...cur, sloped: v !== null ? v / 100 : null });
                 }}
                 disabled={disabled}
+                min={0}
+                max={20}
                 unit="e.g. 10 = 10%"
               />
-              <NumericField
+              <SliderNumberField
                 label="Low-slope (%)"
                 value={
                   typeof (config.commission_pct as Record<string, unknown> | undefined)?.low_slope === "number"
@@ -1061,16 +1137,20 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                   set(["commission_pct"], { ...cur, low_slope: v !== null ? v / 100 : null });
                 }}
                 disabled={disabled}
+                min={0}
+                max={20}
                 unit="e.g. 15 = 15%"
               />
             </div>
             <SectionLabel>Margin floors</SectionLabel>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-              <NumericField
+              <SliderNumberField
                 label="Profit floor (%)"
                 value={typeof config.profit_floor_pct === "number" ? (config.profit_floor_pct as number) * 100 : null}
                 onChange={(v) => set(["profit_floor_pct"], v !== null ? v / 100 : null)}
                 disabled={disabled}
+                min={0}
+                max={60}
                 unit="e.g. 13 = 13%"
               />
               <NumericField

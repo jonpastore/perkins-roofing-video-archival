@@ -1877,7 +1877,7 @@ export function Quoting() {
                               onChange={(e) => setTargetProfitPct(e.target.value)}
                               onPointerUp={(e) => void applyTargetProfit(Number((e.target as HTMLInputElement).value))}
                               disabled={quoting}
-                              style={{ width: "100%" }}
+                              style={{ width: "100%", accentColor: BRAND.red }}
                             />
                             <div style={{ fontSize: 11, color: BRAND.sub }}>Release to reprice the job to this margin.</div>
                           </div>
@@ -1917,15 +1917,20 @@ export function Quoting() {
                           </button>
                         ))}
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, marginBottom: 4, gap: 8 }}>
                         <span style={{ color: BRAND.sub }}>Rate</span>
-                        <strong>{commissionRate}%</strong>
+                        <input
+                          type="number" min="0" max={commissionBasis === "profit" ? 50 : 20} step="0.5"
+                          value={commissionRate}
+                          onChange={(e) => setCommissionRate(e.target.value)}
+                          style={{ ...inputStyle, width: 70, textAlign: "right", fontWeight: 700 }}
+                        />
                       </div>
                       <input
                         type="range" min="0" max={commissionBasis === "profit" ? "50" : "20"} step="0.5"
                         value={commissionRate}
                         onChange={(e) => setCommissionRate(e.target.value)}
-                        style={{ width: "100%" }}
+                        style={{ width: "100%", accentColor: BRAND.red }}
                       />
                       {(() => {
                         const rate = Number(commissionRate || 0) / 100;
