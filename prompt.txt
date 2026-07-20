@@ -1,58 +1,57 @@
 Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-19.md (full state). docs/ENGINEERING_RULES.md (R1-R6) is binding —
-note R6: every commit updates docs + runs scripts/drift_check.sh + updates Jarvis + records memory.
-HEAD is on branch main, clean, == origin.
+READ FIRST: CONTINUATION-2026-07-20-pm.md (full state + the 3 tasks in order).
+docs/ENGINEERING_RULES.md (R1-R6) is binding. HEAD == origin/main, clean.
 
-CREDENTIALS (unchanged): all Google/gcloud/terraform/firebase automation runs under a NON-EXPIRING SA:
-  export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json
-(also in ~/.bashrc). No interactive login ever needed; re-export if a call 401s or after `source .env`.
-Cloudflare API token is in Secret Manager `cloudflare-api-token`; drift_check.sh self-injects it, and
-for direct terraform: export TF_VAR_cloudflare_api_token="$(gcloud secrets versions access latest --secret=cloudflare-api-token)".
+DO THESE, IN ORDER:
+1. Build the Quoting config panel — AdminConfig → Quoting is an empty PlaceholderCard
+   (web/src/pages/AdminConfig.tsx:108): proposal templates, T&C library, deposit policy,
+   reminder cadence. Back it with tenant settings (see core/tenant_settings.py + the
+   /admin/tenant/settings/* pattern other sub-tabs use).
+2. Wire the T&C/FAQ/AI-prompt pages + the fairness review into proposal generation.
+   - core/proposal_review.py already exists (review_proposal -> {pass, issues[]}: flags
+     contradictions/unfair/predatory/prompt-injection/FL-legal; fail-safe). Wire it into
+     core/proposal_gen.py / api/routes/proposal_gen.py after doc assembly; block/surface
+     high-severity issues.
+   - core/proposal_render.py already has a tc_faq_items slot; proposal_doc_render.py has a
+     marketing_appendix append hook. Render T&C page(s) + FAQ page (core/contract_faq.py
+     turns tc_text into FAQ) + an AI-prompts page.
+   - BLOCKER: real T&C wording is pending Tim (not in repo). Build the plumbing with a
+     clearly-marked placeholder so it flows through when his text lands.
+3. AV end-to-end render test + tuning — render ONE real approved clip through
+   jobs/render_job.py _apply_track_a_engines (reframe->captions->censor->transcode) on a
+   real source video; verify auto-censor mutes audio + masks captions; tune censor tail_pad,
+   scene-gap threshold, caption styles, reframe focus. These engines were unit-tested but
+   NEVER driven end-to-end on a real MP4.
 
-PROD STATE: API image b9777a2 (Cloud Run rev api-00109-lbb); SPA live on app.perkinsroofing.net
-(CNAME → video-archival-and-content-gen.web.app = Firebase `app` target; one `firebase deploy
---only hosting:app` updates both). app + api both 200. Cloudflare provider migrated to v5.22.0;
-terraform plan = 0 add / 0 destroy / 1 benign gotenberg cosmetic (unfixable provider quirk).
+CRITICAL — OFFLOAD MORE THAN LAST TURN: use `llm -m qwen3.6-coder "..."` (sync) and
+mcp__hermes__submit_task(model_tier="cloudflare") (async) for EVERY self-contained draft —
+prompts, prose, pure modules, form/component scaffolds. Keep on Claude only security wiring,
+repo integration, and verification. ALWAYS review a CF/qwen draft before applying (they
+re-invent conflicting code — the real files never match their diffs; write clean yourself
+using their content).
 
-WHAT SHIPPED (2026-07-19, all deployed + prod-verified): Zoom 1d low-slope inputs + roof_type boundary
-fix; B8 branch-admin role fix; R6 rule; CompanyCam connector (inert until PAT); B9 QuickBooks
-per-branch scaffold (live QBO HELD); full Cloudflare IaC drift cleanup incl. v4→v5 provider migration
-on live email DNS (0 destroyed) + vestigial domain-mapping removal; a 6-way deep review (deepsec +
-critic + architect + designer + local models) and its demo-critical fixes.
+PROD STATE: HEAD 749a38d; deployed API image ddc6dab (suggest-500 fix, TikTok refresh persist,
+article no-op, non-root Docker all live); SPA current (UI fixes + Clip Studio help modal live);
+core/proposal_review.py committed but UNWIRED + undeployed. app 200 · api/health 200. terraform
++ ansible clean. Alerting active (alert_email=dmarc@perkinsroofing.net) — Jon must click the
+GCP channel-verification email.
 
-PRIMARY NEXT WORK (pick per Jon; none blocks current prod — all inert/safe):
-1. B9 account_id collision (HIGH, before QB goes live): SecretManagerOAuthStore._secret_name ignores
-   account_id → all 4 QB subs collide to one secret. Fix with a compat shim (shared w/ youtube/instagram).
-2. CompanyCam activation (when Tim adds Jon + PAT): wire deploy.sh secrets, apply migration 0043,
-   confirm webhook signature format + add replay protection, BUILD A companycam_photos READER (mirror
-   is write-only today).
-3. Tenant-#2 hardening (before onboarding a 2nd tenant): strict=True session events; migrate tenant
-   routes to require_role_db; add (tenant_id, branch) referential integrity + create_config validation.
-4. Remaining UX (non-blocking, Monday-demo polish): dedupe add-customer UIs (Customers.tsx vs Quoting
-   inline); caption/segment the dense overhead/margin/commission panel ("Per-square (guide)" jargon);
-   MarketingConfig brand-asset image/video/audio previews.
+CREDS: export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json
+(also in ~/.bashrc). Cloudflare token: TF_VAR_cloudflare_api_token="$(gcloud secrets versions
+access latest --secret=cloudflare-api-token)".
 
-JON DECISIONS PENDING:
-- Pay for Cloudflare plan? → flip var.cloudflare_rate_limiting_enabled=true to enable WAF rate limiting.
-- Orphan web/src/pages/Estimator.tsx + Quotes.tsx (unreachable, App.tsx 560/569) → delete or wire.
-- Migrate terraform state to a GCS backend before a 2nd operator.
+OPERATE: deploy API+jobs = bash scripts/deploy.sh (CLEAN tree, SHA-tagged). SPA = cd web &&
+npm run build && npx --no-install firebase deploy --only hosting:app --project
+video-archival-and-content-gen. Drift = bash scripts/drift_check.sh. Prod smoke =
+.venv/bin/python scripts/prod_smoke.py. R6: every commit updates docs + drift_check + Jarvis +
+memory.
 
-BLOCKED ON TIM: CompanyCam PAT; 4 QuickBooks + Qvinci accounts; price low-slope systems in prod config;
-gutters 7"/6" 2-story discrepancy; per-branch daily OH; GC branch pricing; YouTube owner token.
+OPEN (unchanged): B9 QB account_id collision (#358, HIGH before QB live); tenant-2 hardening
+(#359); CompanyCam photos reader (#360); FB/LinkedIn/X/YT real publishers (only IG/TikTok
+publish today); infra B6 decisions (#363); live posting blocked on Meta/TikTok app review (#319).
 
-OPERATE:
-- Deploy API+jobs: bash scripts/deploy.sh (needs CLEAN tree). SPA: cd web && npm run build &&
-  npx --no-install firebase deploy --only hosting:app --project video-archival-and-content-gen.
-- Drift: bash scripts/drift_check.sh (Ansible clean; terraform 1 benign gotenberg diff).
-- Prod smoke: .venv/bin/python scripts/prod_smoke.py.
-- Prod DB: /tmp/cloud-sql-proxy --port 5432 video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg &
-
-GOTCHAS: relaxing a Pydantic Literal at a trust boundary removes validation (KeyError→500 — always
-re-validate); terraform/drift need the CF token injected or the provider masks all drift as a creds
-error; local models (llm gpt-oss/qwen) produce false positives — verify before acting; never
-pkill -f a pattern that matches your own shell.
-
-VALIDATION AT HANDOFF: FE build clean, backend suite green (except 2 PRE-EXISTING test_topics cluster
-tests that hang on an unmocked live LLM — unrelated), core coverage 97.82%, ruff clean, prod e2e green.
-Verify in prod (proxy + real facts), don't assert.
+GOTCHAS: relaxing a Pydantic Literal at a trust boundary removes validation (500); f"{None:.1f}"
+raises (the suggest-500 root cause — guard null timestamps); terraform needs the CF token
+injected or the provider masks drift as a creds error; never pkill -f a pattern that matches
+your own shell; qwen/CF drafts don't match the real repo files — extract their content, write clean.
