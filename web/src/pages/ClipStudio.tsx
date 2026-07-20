@@ -332,6 +332,10 @@ interface TranscriptSegment {
   text: string;
 }
 
+const CLIP_FIT_LABELS: Record<string, string> = {
+  instagram: "IG", tiktok: "TikTok", youtube_shorts: "Shorts", facebook: "FB",
+};
+
 function ClipCard({
   clip,
   index,
@@ -347,6 +351,26 @@ function ClipCard({
   const [transcriptSegs, setTranscriptSegs] = useState<TranscriptSegment[] | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [fit, setFit] = useState<Record<string, { ok: boolean; failures: string[] }> | null>(null);
+
+  // Live per-platform spec check via /clips/preflight. Render output is fixed
+  // 1080x1920 h264/aac, so duration is the meaningful gate; res/codec always pass.
+  useEffect(() => {
+    const dur = Number(clip.end) - Number(clip.start);
+    if (!(dur > 0)) { setFit(null); return; }
+    let cancelled = false;
+    apiFetch("/clips/preview/preflight", {
+      method: "POST",
+      body: JSON.stringify({
+        platforms: ["instagram", "tiktok", "youtube_shorts", "facebook"],
+        meta: { duration_seconds: dur, width: 1080, height: 1920, size_mb: 50, codec_video: "h264", codec_audio: "aac" },
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setFit(d?.results ?? null); })
+      .catch(() => { if (!cancelled) setFit(null); });
+    return () => { cancelled = true; };
+  }, [clip.start, clip.end]);
 
   function update(field: keyof EditableClip, value: string | number | boolean) {
     onChange(index, { ...clip, [field]: value });
@@ -420,6 +444,25 @@ function ClipCard({
         <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Caption </span>
         <span style={{ fontSize: 13, color: BRAND.ink }}>{clip.caption || <em style={{ color: BRAND.sub }}>—</em>}</span>
       </div>
+
+      {/* Per-platform spec fit (duration-driven) */}
+      {fit && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Fits</span>
+          {Object.entries(fit).map(([p, r]) => (
+            <span
+              key={p}
+              title={r.failures.join("; ") || "meets platform specs"}
+              style={{
+                fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                background: r.ok ? "#e6f4ea" : "#fdf0e3", color: r.ok ? "#1e7a34" : "#9a6400",
+              }}
+            >
+              {r.ok ? "✓" : "⚠"} {CLIP_FIT_LABELS[p] ?? p}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Time range + preview */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
