@@ -13,6 +13,36 @@ import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, St
 import { ProposalBuilder } from "./ProposalBuilder";
 import { errText } from "../lib/errors";
 
+// Pre-send fairness/security review (core/proposal_review). send returns 422 with
+// {detail:{error:"proposal_review_failed", issues:[...]}} on HIGH findings; the
+// sender can override with their judgment.
+interface ReviewIssue { severity: string; category: string; detail: string; location?: string }
+
+function ReviewBlockPanel({
+  issues, sending, onSendAnyway, onDismiss,
+}: { issues: ReviewIssue[]; sending: boolean; onSendAnyway: () => void; onDismiss: () => void }) {
+  return (
+    <div style={{ border: `1px solid ${BRAND.red}`, borderRadius: 8, padding: "12px 14px", background: "#fff5f4", marginBottom: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.red, marginBottom: 6 }}>
+        Pre-send review flagged {issues.length} high-severity issue{issues.length === 1 ? "" : "s"}
+      </div>
+      <ul style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+        {issues.map((it, i) => (
+          <li key={i} style={{ fontSize: 12, color: BRAND.ink, marginBottom: 4, lineHeight: 1.4 }}>
+            <strong>{it.category}</strong>{it.location ? ` (${it.location})` : ""}: {it.detail}
+          </li>
+        ))}
+      </ul>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button variant="ghost" style={{ fontSize: 12 }} onClick={onDismiss} disabled={sending}>Dismiss</Button>
+        <Button style={{ fontSize: 12, background: BRAND.red, borderColor: BRAND.red }} onClick={onSendAnyway} disabled={sending}>
+          {sending ? "Sending…" : "Send anyway (override)"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ProposalStatus =
@@ -174,6 +204,7 @@ export function Proposals() {
 
   // Per-row action state
   const [sendingId, setSendingId] = useState<number | null>(null);
+  const [reviewBlock, setReviewBlock] = useState<{ id: number; issues: ReviewIssue[] } | null>(null);
   const [revisingId, setRevisingId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -463,15 +494,26 @@ export function Proposals() {
     }
   }
 
-  async function handleSend(id: number) {
+  async function handleSend(id: number, override = false) {
     setSendingId(id);
     setActionError(null);
     try {
-      const r = await apiFetch(`/quoting/proposals/${id}/send`, { method: "POST", body: JSON.stringify({}) });
+      const r = await apiFetch(`/quoting/proposals/${id}/send`, {
+        method: "POST", body: JSON.stringify({ override_review: override }),
+      });
       if (!r.ok) {
-                throw new Error(await errText(r));
+        // HIGH-severity pre-send review findings come back as a structured 422 —
+        // surface the issues + an override button instead of a raw error string.
+        const body = (await r.clone().json().catch(() => null)) as
+          { detail?: { error?: string; issues?: ReviewIssue[] } } | null;
+        if (r.status === 422 && body?.detail?.error === "proposal_review_failed") {
+          setReviewBlock({ id, issues: body.detail.issues ?? [] });
+          return;
+        }
+        throw new Error(await errText(r));
       }
       const updated: ProposalRow = await r.json();
+      setReviewBlock(null);
       setProposals((prev) => prev.map((p) => p.id === id ? { ...p, ...updated } : p));
       if (drawerProposal?.id === id) setDrawerProposal((prev) => prev ? { ...prev, ...updated } : prev);
     } catch (e: unknown) {
@@ -773,6 +815,14 @@ export function Proposals() {
             {/* Actions */}
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {actionError && <ErrorMsg>Error: {actionError}</ErrorMsg>}
+              {reviewBlock?.id === p.id && (
+                <ReviewBlockPanel
+                  issues={reviewBlock.issues}
+                  sending={sendingId === p.id}
+                  onSendAnyway={() => handleSend(p.id, true)}
+                  onDismiss={() => setReviewBlock(null)}
+                />
+              )}
               {pdfError && <ErrorMsg>PDF error: {pdfError}</ErrorMsg>}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {p.status === "draft" && (
@@ -1187,6 +1237,14 @@ export function Proposals() {
           </div>
 
           {actionError && <ErrorMsg>Action error: {actionError}</ErrorMsg>}
+          {reviewBlock && reviewBlock.id !== drawerProposal?.id && (
+            <ReviewBlockPanel
+              issues={reviewBlock.issues}
+              sending={sendingId === reviewBlock.id}
+              onSendAnyway={() => handleSend(reviewBlock.id, true)}
+              onDismiss={() => setReviewBlock(null)}
+            />
+          )}
           {pdfError && <ErrorMsg>PDF error: {pdfError}</ErrorMsg>}
 
           {loading && <Loading label="Loading proposals…" />}
