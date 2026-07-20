@@ -1,34 +1,48 @@
 import { BRAND } from "../ui";
 
-// Feature help for Clip Studio — one entry per video/audio/publishing feature we built.
-const HELP: { group: string; items: { title: string; body: string }[] }[] = [
+// Feature help for Clip Studio. Grouped by WHERE each control lives in the UI —
+// validated 1:1 against ClipStudio.tsx so the help matches what's actually on screen.
+// `where` tells you the exact spot; `req` notes anything that must be toggled first.
+const HELP: {
+  group: string;
+  blurb?: string;
+  items: { title: string; body: string; req?: string }[];
+}[] = [
   {
-    group: "Video",
+    group: "Step 2 — AI clip suggestions",
+    blurb: "Shown after you pick a source video, before you generate suggestions.",
     items: [
-      { title: "Reframe (9:16)", body: "Crops landscape footage to a vertical format ready for Reels, TikTok, and YouTube Shorts. Use it to repurpose standard recordings for mobile-first feeds." },
-      { title: "Speaker tracking", body: "Keeps the person speaking centered in frame as they move while reframing. Ideal for shots where the subject walks around or shifts position." },
-      { title: "Focal point", body: "A manual slider to choose what stays in frame when speaker tracking is off. Best for highlighting a static detail — a roof feature or piece of equipment." },
-      { title: "Scene detection", body: "Finds natural cut points — pauses in speech, or visual camera cuts — so you can trim a clip to a clean scene without scrubbing. 'Visual' analyzes the video; the default uses the transcript." },
-      { title: "Captions", body: "Burns styled on-screen captions from the transcript (Bold Yellow, TikTok Pop, Reels Clean, Shorts Editorial — or Off). Boosts retention for sound-off viewing." },
-      { title: "Emoji highlights", body: "Adds relevant emoji on keywords in the captions for extra visual pop." },
-      { title: "Aspect exports", body: "Also exports square (1:1) and wide (16:9) versions alongside the vertical clip, so one edit covers multiple placements." },
+      { title: "Platform presets", body: "The platform buttons (General / Instagram / TikTok / YouTube Shorts / Facebook) above “Suggest clips”. They tune the AI suggestions — hook length, caption style, hashtag count — for that platform. Optional; defaults to General." },
     ],
   },
   {
-    group: "Audio",
+    group: "On each suggested clip card",
+    blurb: "Appears on every clip after suggestions come back (Step 2, “Review suggested clips”).",
     items: [
-      { title: "Auto-censor", body: "Automatically mutes flagged/profane words in the audio AND masks them in the burned captions. Uses the crude denylist plus your Marketing safety denylist. Runs on every render." },
-      { title: "Speech cleanup", body: "Removes filler words ('um', 'uh') and long pauses for a tighter, more professional edit." },
-      { title: "Audio enhance", body: "Denoise + compress + normalize loudness to broadcast level (EBU R128, −14 LUFS) — voice stays clear even from a noisy job site." },
-      { title: "Background music", body: "Adds a royalty-free music bed under the dialogue to fill silence and set the mood." },
+      { title: "Scene detection", body: "The “✂ Detect scenes” button (and the “visual” button next to it) on each clip. Finds natural cut points — the default uses the transcript (speech gaps); “visual” analyses the video for camera cuts (slower). Click a returned “cut @ …s” chip to trim the clip to that point." },
+      { title: "Platform fit check", body: "The “Fits” row of green ✓ / amber ⚠ chips per platform on each clip, based on its length vs each platform’s spec — so you catch a too-long clip before saving." },
     ],
   },
   {
-    group: "Publishing",
+    group: "Render options — in the “Ready to Render” panel",
+    blurb: "IMPORTANT: these controls are hidden until you (1) Suggest clips, (2) “Save as clip series”, then (3) scroll to the “Ready to Render” panel and click “Render options ▼” on that series. They do not appear while you are still choosing clips.",
     items: [
-      { title: "Platform presets", body: "Tunes the AI clip suggestions — hook length, caption style, hashtag count — for a target platform (Instagram, TikTok, YouTube Shorts, Facebook)." },
-      { title: "Platform fit check", body: "Shows a green ✓ or amber ⚠ per platform on each clip, based on its length vs the platform's spec — so you catch a too-long clip before scheduling." },
-      { title: "Publish targets", body: "Choose which platforms (Instagram, TikTok today) the finished clip posts to. Only connected platforms are selectable." },
+      { title: "Reframe (9:16)", body: "Crops landscape footage to vertical for Reels / TikTok / Shorts." },
+      { title: "Speaker tracking", body: "Tries to keep the speaker centered as they move while reframing. Falls back to a centre crop when the face-detector adapter isn’t wired on the server.", req: "Turn Reframe ON first — this control is hidden otherwise." },
+      { title: "Focal point", body: "A manual slider to choose what stays in frame — good for a static detail (a roof feature, a piece of equipment).", req: "Shown only when Reframe is ON and Speaker tracking is OFF." },
+      { title: "Captions", body: "Burns styled on-screen captions from the transcript. Styles: Bold Yellow, TikTok Pop, Reels Clean, Shorts Editorial — or “Off” for no burned captions. Choose Bottom or Top position." },
+      { title: "Emoji highlights", body: "Appends roofing-domain emoji to matched keywords in the captions." },
+      { title: "Speech cleanup", body: "Removes filler words (“um”, “uh”) and long pauses for a tighter edit. Requires a transcript." },
+      { title: "Audio enhance", body: "Denoise + compress + normalize loudness to broadcast level (EBU R128, −14 LUFS)." },
+      { title: "Background music", body: "Adds a royalty-free music bed (Pixabay / FMA) under the dialogue. Requires a track ID." },
+      { title: "Export aspects", body: "9:16 always renders; optionally also export 1:1 square (1080×1080) and 16:9 wide (1920×1080) from the same edit." },
+      { title: "Publish targets", body: "The “Publish to” checkboxes — which connected platforms the finished clip auto-schedules to (Instagram / TikTok today). None checked = Instagram + TikTok." },
+    ],
+  },
+  {
+    group: "Automatic — no control to set",
+    items: [
+      { title: "Auto-censor", body: "Runs on every render with no toggle: mutes flagged/profane words in the audio AND masks them in the burned captions. Uses the crude denylist plus your Marketing → safety denylist. There is nothing to turn on — it is always active." },
     ],
   },
 ];
@@ -44,17 +58,28 @@ export function ClipStudioHelp({ onClose }: { onClose: () => void }) {
         style={{ width: "min(680px, 96vw)", background: "#fff", borderRadius: 12, boxShadow: "0 20px 50px rgba(16,24,40,0.25)" }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 22px", borderBottom: `1px solid ${BRAND.border}` }}>
-          <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 17 }}>Clip Studio — video &amp; audio features</div>
+          <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 17 }}>Clip Studio — features &amp; where to find them</div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: BRAND.sub, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: "8px 22px 22px" }}>
+          <div style={{ marginTop: 12, padding: "10px 12px", background: BRAND.bg, borderRadius: 8, fontSize: 12.5, color: BRAND.ink, lineHeight: 1.5 }}>
+            <strong>The flow:</strong> pick a source video → <strong>Suggest clips</strong> → curate &amp; <strong>Save as clip series</strong> → in <strong>Ready to Render</strong>, open <strong>Render options ▼</strong> on that series to set reframe, captions, audio, and publishing → <strong>Render now</strong>. Most controls below live in that Render options panel and won’t appear until a series is saved.
+          </div>
           {HELP.map((g) => (
-            <div key={g.group} style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.red, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{g.group}</div>
+            <div key={g.group} style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.red, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{g.group}</div>
+              {g.blurb && (
+                <div style={{ fontSize: 12, color: BRAND.sub, lineHeight: 1.45, marginBottom: 8 }}>{g.blurb}</div>
+              )}
               {g.items.map((it) => (
                 <div key={it.title} style={{ marginBottom: 12 }}>
                   <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 13.5 }}>{it.title}</div>
                   <div style={{ fontSize: 13, color: BRAND.ink, lineHeight: 1.5, marginTop: 2 }}>{it.body}</div>
+                  {it.req && (
+                    <div style={{ fontSize: 12, color: "#9a6400", background: "#fdf0e3", borderRadius: 6, padding: "3px 8px", marginTop: 4, display: "inline-block" }}>
+                      ⚠ {it.req}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
