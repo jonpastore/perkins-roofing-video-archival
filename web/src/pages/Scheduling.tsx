@@ -1,8 +1,9 @@
 import { useContext, useEffect, useState } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, listConnections, type Connection } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
 import { errText } from "../lib/errors";
+import { PlatformCheckboxes } from "../components/PlatformCheckboxes";
 
 interface ScheduledItem {
   id: number;
@@ -96,6 +97,7 @@ export function Scheduling() {
   const [articles, setArticles] = useState<ArticleOption[]>([]);
   const [seriesList, setSeriesList] = useState<SeriesOption[]>([]);
   const [dropdownsLoading, setDropdownsLoading] = useState(false);
+  const [connections, setConnections] = useState<Connection[]>([]);
 
   function load(filter?: string) {
     setLoading(true);
@@ -133,6 +135,7 @@ export function Scheduling() {
 
   useEffect(() => {
     load();
+    listConnections().then(setConnections).catch(() => undefined);
   }, []);
 
   function handleFilterChange(v: string) {
@@ -347,15 +350,11 @@ export function Scheduling() {
                   wordpress
                 </div>
               ) : (
-                <select
+                <PlatformCheckboxes
                   value={form.target}
-                  onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))}
-                  style={{ ...inputStyle, width: "100%" }}
-                >
-                  <option value="">— select platform —</option>
-                  <option value="instagram">Instagram</option>
-                  <option value="tiktok">TikTok</option>
-                </select>
+                  onChange={(v) => setForm((f) => ({ ...f, target: v }))}
+                  connections={connections}
+                />
               )}
             </div>
 
