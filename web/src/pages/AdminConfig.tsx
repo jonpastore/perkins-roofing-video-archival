@@ -70,6 +70,7 @@ export function AdminConfig({ role }: AdminConfigProps) {
           borderBottom: `2px solid ${BRAND.border}`,
           marginBottom: 24,
           overflowX: "auto",
+          overflowY: "hidden",
         }}
       >
         {subTabs.map((t) => {

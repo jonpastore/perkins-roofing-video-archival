@@ -47,6 +47,20 @@ function fmtDate(iso: string): string {
   });
 }
 
+// Human-readable roof-type / key labels: 13_tile → "13 Tile", 3tab_shingle → "3-Tab
+// Shingle", standing_seam_metal → "Standing Seam Metal", tpo → "TPO".
+const _TYPE_ACRONYMS: Record<string, string> = { tpo: "TPO", bur: "BUR", hvhz: "HVHZ", fbc: "FBC", gc: "GC" };
+function humanizeType(key: string): string {
+  return String(key)
+    .split("_")
+    .map((w) => {
+      if (_TYPE_ACRONYMS[w.toLowerCase()]) return _TYPE_ACRONYMS[w.toLowerCase()];
+      if (/^3tab$/i.test(w)) return "3-Tab";
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(" ");
+}
+
 function copyToClipboard(text: string) {
   navigator.clipboard?.writeText(text).catch(() => undefined);
 }
@@ -196,8 +210,8 @@ function VersionRow({
       onClick={onSelect}
       style={{
         display: "flex",
-        alignItems: "center",
-        gap: 10,
+        flexDirection: "column",
+        gap: 5,
         padding: "10px 14px",
         borderRadius: 8,
         cursor: "pointer",
@@ -206,24 +220,21 @@ function VersionRow({
         transition: "background 0.1s",
       }}
     >
-      <span
-        style={{
-          minWidth: 28,
-          fontWeight: 700,
-          fontSize: 13,
-          color: BRAND.navyText,
-        }}
-      >
-        v{v.version}
-      </span>
-      {v.is_active && <Badge tone="green">Active</Badge>}
-      <span style={{ flex: 1, fontSize: 13, color: BRAND.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {v.label ?? `Version ${v.version}`}
-      </span>
-      <HashDisplay hash={v.config_hash} short />
-      <span style={{ fontSize: 11, color: BRAND.sub, whiteSpace: "nowrap" }}>
-        {fmtDate(v.created_at)}
-      </span>
+      {/* Row 1: version + active + label */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ fontWeight: 700, fontSize: 13, color: BRAND.navyText }}>v{v.version}</span>
+        {v.is_active && <Badge tone="green">Active</Badge>}
+        <span style={{ flex: 1, fontSize: 13, color: BRAND.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {v.label ?? `Version ${v.version}`}
+        </span>
+      </div>
+      {/* Row 2: hash + full date */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <HashDisplay hash={v.config_hash} short />
+        <span style={{ fontSize: 11, color: BRAND.sub, whiteSpace: "nowrap" }}>
+          {fmtDate(v.created_at)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -402,15 +413,15 @@ function ZoneTypeTable({
                 <th
                   key={z}
                   style={{
-                    padding: "8px 12px",
-                    textAlign: "right",
+                    padding: "8px 8px",
+                    textAlign: "center",
                     color: BRAND.sub,
                     fontWeight: 700,
                     borderBottom: `1px solid ${BRAND.border}`,
-                    minWidth: 100,
+                    minWidth: 106,
                   }}
                 >
-                  {z}
+                  {_TYPE_ACRONYMS[z.toLowerCase()] ?? z}
                 </th>
               ))}
             </tr>
@@ -425,17 +436,16 @@ function ZoneTypeTable({
                   style={{
                     padding: "6px 12px",
                     color: BRAND.ink,
-                    fontFamily: "monospace",
-                    fontSize: 11,
+                    fontSize: 12,
                   }}
                 >
-                  {type}
+                  {humanizeType(type)}
                 </td>
                 {zones.map((z) => {
                   const val = data[z][type];
                   const note = pendingNote(z, type);
                   return (
-                    <td key={z} style={{ padding: "4px 8px", textAlign: "right" }}>
+                    <td key={z} style={{ padding: "4px 8px", textAlign: "center" }}>
                       {(
                         <input
                           type="number"
