@@ -42,6 +42,19 @@ def censor_spans(words, extra_denylist=(), tail_pad: float = 0.4) -> list[tuple[
     return _merge(spans)
 
 
+def mute_audio_filter(spans: list[tuple[float, float]]) -> str:
+    """Build an ffmpeg ``-af`` value that silences the audio over each span.
+
+    Returns "" when there are no spans (caller should skip the filter entirely).
+    ``volume`` is enabled whenever ``t`` falls in any span — the sum of per-span
+    ``between()`` terms is >0 inside a span, 0 outside.
+    """
+    if not spans:
+        return ""
+    terms = "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in spans)
+    return f"volume=enable='{terms}':volume=0"
+
+
 def _merge(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """Merge overlapping/touching spans into a minimal disjoint set."""
     if not spans:

@@ -410,6 +410,38 @@ def _apply_track_a_engines(
         except Exception as exc:  # noqa: BLE001
             logger.warning("speech_cleanup skipped (non-fatal): %s", exc)
 
+    # ── A-censor: auto-mute flagged spoken words (crude/toxic denylist) ───────
+    # Automatic — runs whenever the transcript has flagged words; no-op otherwise.
+    # Placed after the audio stages so it mutes clean audio, before video engines.
+    # ponytail: crude denylist only; fold in the tenant safety_denylist via
+    # TenantSettings when brand-specific terms (e.g. competitor names) need muting.
+    try:
+        from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+        from core.censor import censor_spans, mute_audio_filter  # noqa: PLC0415
+
+        _cwords = _load_words_for_clip(
+            video_id=video_id, clip_start=clip_start, clip_end=clip_end, db=db,
+        )
+        if _cwords:
+            # Word starts are source-relative; the clip was cut at clip_start, so
+            # shift spans into the clip-local timeline the mute filter runs against.
+            _offset = clip_start or 0.0
+            _spans = [
+                (max(0.0, s - _offset), max(0.0, e - _offset))
+                for s, e in censor_spans(_cwords)
+            ]
+            _af = mute_audio_filter(_spans)
+            if _af:
+                out = os.path.join(scratch, f"censored_{suffix}.mp4")
+                run_ffmpeg_cmd(["ffmpeg", "-y", "-i", current, "-af", _af, "-c:v", "copy", out])
+                current = out
+                logger.info(
+                    "censor: muted %d span(s) series=%d part=%d",
+                    len(_spans), series_id, part_index,
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("censor skipped (non-fatal): %s", exc)
+
     # ── A2: reframe (9:16 crop — centre or speaker-tracked) ──────────────────
     if spec.reframe:
         try:

@@ -1,5 +1,5 @@
 """censor_spans maps flagged words to merged mute spans."""
-from core.censor import censor_spans
+from core.censor import censor_spans, mute_audio_filter
 
 
 def _words(*pairs):
@@ -34,3 +34,12 @@ def test_case_and_punctuation_insensitive():
 def test_unordered_input_is_sorted():
     words = _words(("competitor", 2.0), ("we", 0.0), ("beat", 1.0))
     assert censor_spans(words, extra_denylist=["competitor"]) == [(2.0, 2.4)]
+
+
+def test_mute_filter_empty_when_no_spans():
+    assert mute_audio_filter([]) == ""
+
+
+def test_mute_filter_builds_volume_enable():
+    f = mute_audio_filter([(1.0, 1.8), (2.0, 2.5)])
+    assert f == "volume=enable='between(t,1.000,1.800)+between(t,2.000,2.500)':volume=0"
