@@ -39,6 +39,7 @@ from core.clip_search import search_to_clips
 from core.platform_specs import PLATFORM_PRESETS, PLATFORM_SPECS
 from core.platform_specs import validate as validate_platform
 from core.render_spec import ClipRenderSpec, get_clips, get_render_spec, set_render_spec
+from core.scene_detect import scene_boundaries
 
 # GCP coordinates — read from env so deploy.sh / Terraform own the values.
 _GCP_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "video-archival-and-content-gen")
@@ -1092,3 +1093,26 @@ def preflight_clip(
         failures = validate_platform(body.meta, p)
         results[p] = {"ok": not failures, "failures": failures}
     return {"results": results}
+
+
+@router.get("/scenes")
+def clip_scenes(
+    video_id: str,
+    start: float,
+    end: float,
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
+    """Suggested scene-cut points (seconds) from speech gaps within [start, end].
+
+    Derived from stored word timestamps — no video download. Returns
+    {"video_id", "boundaries": [float, ...]} (empty when no transcript in range)."""
+    from app.models import Word  # noqa: PLC0415
+    rows = (
+        db.query(Word)
+        .filter(Word.video_id == video_id, Word.start >= start, Word.start < end)
+        .order_by(Word.start)
+        .all()
+    )
+    words = [{"word": r.word or "", "start": float(r.start or 0.0)} for r in rows]
+    return {"video_id": video_id, "boundaries": scene_boundaries(words)}

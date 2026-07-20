@@ -352,6 +352,17 @@ function ClipCard({
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [fit, setFit] = useState<Record<string, { ok: boolean; failures: string[] }> | null>(null);
+  const [scenes, setScenes] = useState<number[] | null>(null);
+  const [scenesLoading, setScenesLoading] = useState(false);
+
+  function detectScenes() {
+    setScenesLoading(true);
+    apiFetch(`/clips/scenes?video_id=${encodeURIComponent(videoId)}&start=${clip.start}&end=${clip.end}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { boundaries: number[] } | null) => setScenes(d?.boundaries ?? []))
+      .catch(() => setScenes([]))
+      .finally(() => setScenesLoading(false));
+  }
 
   // Live per-platform spec check via /clips/preflight. Render output is fixed
   // 1080x1920 h264/aac, so duration is the meaningful gate; res/codec always pass.
@@ -463,6 +474,32 @@ function ClipCard({
           ))}
         </div>
       )}
+
+      {/* Scene cut points (speech-gap detection) */}
+      <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={detectScenes}
+          disabled={scenesLoading}
+          style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: `1px solid ${BRAND.border}`, background: "#fff", color: BRAND.sub, cursor: "pointer" }}
+        >
+          {scenesLoading ? "Detecting…" : "✂ Detect scenes"}
+        </button>
+        {scenes && scenes.filter((t) => t > clip.start + 0.5 && t < clip.end - 0.5).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => update("end", Math.round(t * 10) / 10)}
+            title="Trim this clip to end at this scene cut"
+            style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 10, border: `1px solid ${BRAND.border}`, background: BRAND.bg, color: BRAND.ink, cursor: "pointer" }}
+          >
+            cut @ {t.toFixed(1)}s
+          </button>
+        ))}
+        {scenes && scenes.filter((t) => t > clip.start + 0.5 && t < clip.end - 0.5).length === 0 && (
+          <span style={{ fontSize: 11, color: BRAND.sub }}>No scene breaks in this range.</span>
+        )}
+      </div>
 
       {/* Time range + preview */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
