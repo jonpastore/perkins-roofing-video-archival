@@ -1068,6 +1068,41 @@ def render_part(
         gcs_url = _upload_to_gcs(reel_path, bucket_name, object_key)
         logger.info("upload complete: %s", gcs_url)
 
+        # Per-platform conform: for any target platform whose duration cap the reel
+        # exceeds, upload a trimmed variant and record its gs:// URL; the SocialPost loop
+        # points that platform at its variant. A no-op for platforms within cap (the
+        # current instagram/tiktok reels are well under), active when a tight-cap platform
+        # joins. Mirrors the aspect-export pattern above.
+        platform_gcs_urls: dict[str, str] = {}
+        try:
+            from adapters.ffmpeg import probe as _probe  # noqa: PLC0415
+            from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+            from core.platform_specs import PLATFORM_SPECS  # noqa: PLC0415
+            from core.transcode import conform_cmd  # noqa: PLC0415
+
+            _reel_dur = float(_probe(reel_path).get("duration") or clip_duration)
+            _conform_targets = (
+                list(getattr(render_spec, "platforms", None) or [])
+                or [p.strip() for p in _DEFAULT_PLATFORM.split(",") if p.strip()]
+            )
+            for _plat in _conform_targets:
+                _pspec = PLATFORM_SPECS.get(_plat)
+                if _pspec is None:
+                    continue
+                _out = os.path.join(scratch, f"conform_{_plat}_{series_id}_{part_index}.mp4")
+                _cmd = conform_cmd(reel_path, _out, _pspec, _reel_dur)
+                if _cmd is None:
+                    continue
+                run_ffmpeg_cmd(_cmd)
+                _pkey = object_key.replace(".mp4", f"_{_plat}.mp4")
+                platform_gcs_urls[_plat] = _upload_to_gcs(_out, bucket_name, _pkey)
+                logger.info(
+                    "conformed %s variant (<=%ds) uploaded: %s",
+                    _plat, _pspec.max_length_seconds, platform_gcs_urls[_plat],
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("per-platform conform skipped (non-fatal): %s", exc)
+
     finally:
         if _tmp_ctx:
             _tmp_ctx.cleanup()
@@ -1102,7 +1137,8 @@ def render_part(
                     platform=platform,
                 )
                 db.add(p_post)
-            p_post.gcs_url = gcs_url  # gs:// URI — signed at publish time
+            # Use the platform's conformed variant when one was produced, else the master.
+            p_post.gcs_url = platform_gcs_urls.get(platform, gcs_url)  # gs:// URI — signed at publish time
             p_post.status = "rendered"
             db.flush()
             if first_post_id is None:
