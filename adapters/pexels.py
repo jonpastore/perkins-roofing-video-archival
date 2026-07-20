@@ -122,6 +122,20 @@ def fetch_broll_clip(
         return None
 
 
+def _probe_dims(path: str) -> tuple[int, int]:
+    """Return (width, height) of *path*'s first video stream via ffprobe."""
+    import json  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    r = subprocess.run(  # noqa: S603
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "json", path],
+        capture_output=True, text=True, check=True, timeout=30,
+    )
+    stream = json.loads(r.stdout)["streams"][0]
+    return int(stream["width"]), int(stream["height"])
+
+
 def build_broll_overlay_cmd(
     primary_path: str,
     broll_path: str,
@@ -132,12 +146,11 @@ def build_broll_overlay_cmd(
 ) -> list[str]:
     """Build an ffmpeg arg list that overlays *broll_path* onto *primary_path*.
 
-    The b-roll video is scaled to fill the primary frame (scale to primary
-    dimensions), trimmed to [0, overlay_end - overlay_start], and overlaid
-    from *overlay_start* to *overlay_end* using the ``overlay`` filter with
-    ``enable='between(t,...)'``.
-
-    Both inputs must be the same resolution (1080×1920 for 9:16).
+    The b-roll video is scaled+cropped to fill the primary frame exactly
+    (matching *primary_path*'s real dimensions, probed via ffprobe — a
+    downloaded Pexels clip is not guaranteed to already match), trimmed to
+    [0, overlay_end - overlay_start], and overlaid from *overlay_start* to
+    *overlay_end* using the ``overlay`` filter with ``enable='between(t,...)'``.
 
     Args:
         primary_path:   Path to the primary (already reframed) video.
@@ -151,13 +164,18 @@ def build_broll_overlay_cmd(
     """
     ffmpeg = os.getenv("FFMPEG_BIN", "ffmpeg")
     duration = max(0.01, overlay_end - overlay_start)
+    pw, ph = _probe_dims(primary_path)
 
     # filter_complex:
-    #   [1:v] scale to primary frame size, trim to overlay duration → [broll_scaled]
+    #   [1:v] scale to the primary's REAL dimensions (fill-crop), trim to
+    #   overlay duration → [broll_scaled]. The previous `scale=iw:ih` used
+    #   the b-roll's OWN width/height (a no-op self-scale, not the primary's
+    #   frame) so a b-roll asset at any resolution other than the primary's
+    #   only covered a corner of the frame instead of filling it.
     #   [0:v][broll_scaled] overlay with time-enable between overlay_start/end → [vout]
     fc = (
-        f"[1:v]scale=iw:ih:force_original_aspect_ratio=increase,"
-        f"crop=iw:ih,setpts=PTS-STARTPTS,trim=0:{duration:.6f},setpts=PTS-STARTPTS[broll_t];"
+        f"[1:v]scale={pw}:{ph}:force_original_aspect_ratio=increase,"
+        f"crop={pw}:{ph},setpts=PTS-STARTPTS,trim=0:{duration:.6f},setpts=PTS-STARTPTS[broll_t];"
         f"[0:v][broll_t]overlay=0:0:enable='between(t,{overlay_start:.6f},{overlay_end:.6f})'[vout]"
     )
 
