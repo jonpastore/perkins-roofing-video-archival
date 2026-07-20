@@ -966,11 +966,17 @@ if __name__ == "__main__":
     import json
     import sys
 
-    # Usage: python -m jobs.article_job <topic> <keyword1> [<keyword2> ...]
-    # SERPs default to empty dicts (no live Serper calls)
+    # Manual CLI for explicit backfills — SERPs default to empty dicts (no live Serper).
+    #   python -m jobs.article_job <topic> <keyword1> [<keyword2> ...]
+    # In prod, article generation is admin-driven via the /topics API (curated per
+    # tenant), so this entrypoint has no autonomous work without explicit topics. A
+    # no-arg invocation is therefore a clean no-op (exit 0) — executing the Cloud Run
+    # `article` job bare (e.g. a deploy smoke check) must not red-flag as a failure.
     if len(sys.argv) < 3:  # noqa: PLR2004
-        print("Usage: python -m jobs.article_job <topic> <kw1> [<kw2> ...]")
-        sys.exit(1)
+        print("jobs.article_job: no topic/keywords given — nothing to do. "
+              "Usage: python -m jobs.article_job <topic> <kw1> [<kw2> ...] "
+              "(article generation runs via the admin /topics API).")
+        sys.exit(0)
     _topic = sys.argv[1]
     _kw_serps = [(kw, {}) for kw in sys.argv[2:]]
     print(json.dumps(run(_topic, _kw_serps), indent=2))
