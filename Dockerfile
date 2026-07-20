@@ -19,4 +19,12 @@ COPY scripts ./scripts
 COPY app ./app
 
 ENV PORT=8080 PERKINS_ENV=prod
+
+# Run unprivileged — applies to the service default and every `python -m jobs.<name>`
+# override. Created after COPY so /srv can be chowned to the non-root user.
+RUN groupadd -r -g 10001 appgroup \
+    && useradd -r -u 10001 -g appgroup appuser \
+    && chown -R appuser:appgroup /srv
+USER appuser
+
 CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT}"]
