@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 from api.auth import get_db_session, require_role
 from app.models import GraphNode, MiniSeries, PlatformConfig, PlatformSessionLocal, Segment, SocialPost, Video
 from core.clip_search import search_to_clips
+from core.platform_specs import PLATFORM_PRESETS, PLATFORM_SPECS
 from core.platform_specs import validate as validate_platform
 from core.render_spec import ClipRenderSpec, get_clips, get_render_spec, set_render_spec
 
@@ -55,6 +56,7 @@ router = APIRouter(prefix="/clips", tags=["clips"])
 class SuggestRequest(BaseModel):
     video_id: str
     count: int = 4
+    platform: str | None = None  # tune suggestions to a target platform's preset
 
 
 class ViralityScore(BaseModel):
@@ -394,11 +396,27 @@ def upload_brand_video(
     return {"key": config_key, "gcs_path": gcs_path}
 
 
+def _platform_guidance(platform: str | None) -> str:
+    """One-line platform tuning drawn from PLATFORM_PRESETS/PLATFORM_SPECS, or "" when
+    no (known) platform is given. Augments the suggestion prompt — it never replaces
+    the content-driven selection."""
+    if not platform or platform not in PLATFORM_PRESETS:
+        return ""
+    p = PLATFORM_PRESETS[platform]
+    spec = PLATFORM_SPECS.get(platform)
+    cap = f" Keep each clip under {spec.max_length_seconds}s." if spec else ""
+    return (
+        f"\nTarget platform: {platform}. Tune for it — open with a ~{p['hook_seconds']}s hook, "
+        f"{p['caption_style']} captions, ~{p['hashtag_count']} hashtags, {p['text_cadence']} pacing.{cap}"
+    )
+
+
 def _build_suggest_prompt(
     video_title: str,
     segments: list,
     nodes: list,
     count: int,
+    platform: str | None = None,
 ) -> str:
     """Build an LLM prompt for clip suggestion grounded in actual transcript timestamps."""
     seg_lines = "\n".join(
@@ -411,7 +429,7 @@ def _build_suggest_prompt(
     )
     return f"""You are a short-form video editor for a roofing company's social media.
 Analyse the transcript and content graph below for the video titled "{video_title}".
-Identify the {count} BEST moments to clip as standalone Instagram/TikTok reels (20-60 seconds each).
+Identify the {count} BEST moments to clip as standalone Instagram/TikTok reels (20-60 seconds each).{_platform_guidance(platform)}
 
 Select moments that are:
 - Self-contained (no context needed from outside the clip)
@@ -503,11 +521,12 @@ def _llm_suggestions(
     segments: list,
     nodes: list,
     count: int,
+    platform: str | None = None,
 ) -> list[dict]:
     """Call the LLM to get clip suggestions; fall back to propose_parts on failure."""
     from app.llm import chat  # noqa: PLC0415
 
-    prompt = _build_suggest_prompt(video_title, segments, nodes, count)
+    prompt = _build_suggest_prompt(video_title, segments, nodes, count, platform=platform)
     try:
         result = chat(prompt, want_json=True)
         clips = result.get("clips") if isinstance(result, dict) else None
@@ -635,7 +654,7 @@ def suggest_clips(
 
     video_title = video.title or body.video_id
 
-    suggestions_raw = _llm_suggestions(video_title, segments, nodes, body.count)
+    suggestions_raw = _llm_suggestions(video_title, segments, nodes, body.count, platform=body.platform)
 
     suggestions = [ClipSuggestion(**s) for s in suggestions_raw]
     return SuggestResponse(

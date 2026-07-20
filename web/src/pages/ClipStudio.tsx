@@ -1393,6 +1393,7 @@ export function ClipStudio() {
   const { params, navigate: navNavigate } = useContext(NavContext);
   const [step, setStep] = useState<Step>({ kind: "pick" });
   const [suggesting, setSuggesting] = useState(false);
+  const [suggestPlatform, setSuggestPlatform] = useState<string>("");
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1429,7 +1430,7 @@ export function ClipStudio() {
     try {
       const r = await apiFetch("/clips/suggest", {
         method: "POST",
-        body: JSON.stringify({ video_id: video.id }),
+        body: JSON.stringify({ video_id: video.id, ...(suggestPlatform ? { platform: suggestPlatform } : {}) }),
       });
       if (!r.ok) {
         const detail = await errText(r);
@@ -1536,6 +1537,30 @@ export function ClipStudio() {
           </div>
 
           {suggestError && <ErrorMsg>Error: {suggestError}</ErrorMsg>}
+
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 6 }}>
+              Tune suggestions for a platform (optional) — shapes hook, caption style, hashtags &amp; length:
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {([["", "General"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["youtube_shorts", "YouTube Shorts"], ["facebook", "Facebook"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSuggestPlatform(key)}
+                  disabled={suggesting}
+                  style={{
+                    padding: "5px 12px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer",
+                    border: `1px solid ${BRAND.border}`,
+                    background: suggestPlatform === key ? BRAND.navy : "#fff",
+                    color: suggestPlatform === key ? "#fff" : BRAND.sub,
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <Button onClick={() => handleSuggest(step.video)} disabled={suggesting}>
