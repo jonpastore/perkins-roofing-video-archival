@@ -420,12 +420,15 @@ def _build_suggest_prompt(
     platform: str | None = None,
 ) -> str:
     """Build an LLM prompt for clip suggestion grounded in actual transcript timestamps."""
+    # Coerce None start/end to 0.0 — some transcript segments / graph nodes have a
+    # null timestamp, and f"{None:.1f}" raises a TypeError that (built before the
+    # try/except in _llm_suggestions) surfaced as a 500 on suggest.
     seg_lines = "\n".join(
-        f"  [{s.start:.1f}s-{s.end:.1f}s] {(s.text or '').strip()}"
+        f"  [{float(s.start or 0):.1f}s-{float(s.end or 0):.1f}s] {(s.text or '').strip()}"
         for s in segments[:120]  # cap to avoid context overflow
     )
     node_lines = "\n".join(
-        f"  [{n.start:.1f}s] {n.kind}: {n.label}"
+        f"  [{float(n.start or 0):.1f}s] {n.kind}: {n.label}"
         for n in nodes[:60]
     )
     return f"""You are a short-form video editor for a roofing company's social media.
