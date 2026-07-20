@@ -62,13 +62,16 @@ resource "google_cloud_run_v2_service" "gotenberg" {
 
   depends_on = [google_project_service.apis]
 
+  # Declare the service-level scaling block GCP auto-creates (both fields 0) so config
+  # matches state — otherwise the provider renders a perpetual "0 -> null" removal diff.
+  # min=0 keeps the scale-to-zero behaviour; manual=0 = manual scaling not in use.
+  scaling {
+    min_instance_count    = 0
+    manual_instance_count = 0
+  }
+
   lifecycle {
     # client/client_version are gcloud-set metadata; ignore to keep drift checks clean.
-    # NOTE: Cloud Run returns scaling.{manual,min}_instance_count = 0 for these unset
-    # fields, so `terraform plan` shows a harmless perpetual "0 -> null" in-place diff on
-    # this service. It cannot be applied away (GCP always reports 0) and nested-path
-    # ignore_changes is unsupported here — treat this one gotenberg in-place change as
-    # expected/benign in the R4 drift check.
     ignore_changes = [
       client,
       client_version,
