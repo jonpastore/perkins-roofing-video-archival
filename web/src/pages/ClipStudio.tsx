@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { apiFetch, apiFetchMultipart } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, Spinner } from "../ui";
 import { NavContext } from "../App";
+import { ClipStudioHelp } from "../components/ClipStudioHelp";
 import { errText } from "../lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1620,9 +1621,15 @@ export function ClipStudio() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  const [helpOpen, setHelpOpen] = useState(false);
+
   return (
     <main style={{ maxWidth: 820 }}>
-      <PageTitle>Clip Studio</PageTitle>
+      {helpOpen && <ClipStudioHelp onClose={() => setHelpOpen(false)} />}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <PageTitle>Clip Studio</PageTitle>
+        <Button variant="ghost" style={{ fontSize: 13 }} onClick={() => setHelpOpen(true)}>? Help — features</Button>
+      </div>
 
       {/* Ready-to-render panel — always visible */}
       <RenderablePanel />
