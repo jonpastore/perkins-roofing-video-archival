@@ -22,6 +22,8 @@ import os
 
 from sqlalchemy.exc import IntegrityError
 
+from core.social_creds import creds_for
+
 logger = logging.getLogger(__name__)
 
 _PLATFORM_CREDS: dict[str, list[str]] = {
@@ -32,38 +34,33 @@ _PLATFORM_CREDS: dict[str, list[str]] = {
 _SIGNED_URL_TTL = 3600  # seconds — enough for the platform to pull the video
 
 
-def _creds_present(platform: str) -> bool:
-    return all(os.environ.get(k) for k in _PLATFORM_CREDS.get(platform, []))
+def _publisher(platform: str, creds: dict):
+    """Return an initialised publisher for *platform* using resolved *creds*
+    (OAuth store first, env fallback — see core.social_creds.creds_for). Only the
+    creds keys that are present are passed; absent ones let the adapter keep its env
+    default, preserving the pre-store behaviour.
 
-
-def _publisher(platform: str):
-    """Return an initialised publisher for *platform*.
-
-    For TikTok: if TIKTOK_REFRESH_TOKEN is set, refresh the access token first
-    and use the returned access_token for this publish call.  The rotated
-    refresh_token must be persisted back to Secret Manager in prod (not yet
-    wired — see TODO below).
+    For TikTok: if a refresh token is available, refresh the access token first. The
+    rotated refresh_token must be persisted back to Secret Manager in prod (TODO below).
     """
     if platform == "instagram":
         from adapters.meta_ig import IgPublisher  # noqa: PLC0415
-        return IgPublisher()
+        kwargs = {k: creds[k] for k in ("ig_user_id", "access_token") if creds.get(k)}
+        return IgPublisher(**kwargs)
     if platform == "tiktok":
         from adapters.tiktok import TikTokPublisher  # noqa: PLC0415
-        refresh_token = os.environ.get("TIKTOK_REFRESH_TOKEN")
-        if refresh_token:
+        kwargs = {k: creds[k] for k in ("access_token", "open_id") if creds.get(k)}
+        if creds.get("refresh_token") or os.environ.get("TIKTOK_REFRESH_TOKEN"):
             try:
                 from adapters.tiktok import refresh_access_token  # noqa: PLC0415
-                refreshed = refresh_access_token()
-                new_token = refreshed["access_token"]
+                kwargs["access_token"] = refresh_access_token()["access_token"]
                 logger.info("social_job: TikTok access token refreshed via refresh_token")
-                # TODO: persist refreshed["refresh_token"] back to Secret Manager in prod
-                return TikTokPublisher(access_token=new_token)
+                # TODO: persist the rotated refresh_token back to Secret Manager in prod
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "social_job: TikTok token refresh failed (%s) — falling back to env token",
-                    exc,
+                    "social_job: TikTok token refresh failed (%s) — using resolved token", exc,
                 )
-        return TikTokPublisher()
+        return TikTokPublisher(**kwargs)
     raise ValueError(f"Unknown platform: {platform!r}")
 
 
@@ -91,7 +88,7 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
     from app.models import MiniSeries, ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
     from core.social import already_posted, build_caption  # noqa: PLC0415
 
-    any_creds = any(_creds_present(p) for p in _PLATFORM_CREDS)
+    any_creds = any(creds_for(p, tenant_id) for p in _PLATFORM_CREDS)
     if not any_creds:
         logger.warning("social creds not configured — skipping")
         return {"published": 0, "skipped": 0, "errored": 0}
@@ -204,7 +201,8 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         skipped += 1
                         continue
 
-                    if not _creds_present(platform):
+                    creds = creds_for(platform, tenant_id)
+                    if not creds:
                         logger.warning(
                             "social_job: no creds for platform=%s — skipping", platform
                         )
@@ -213,7 +211,7 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         continue
 
                     try:
-                        pub = _publisher(platform)
+                        pub = _publisher(platform, creds)
                         external_id = pub.publish(
                             video_url=video_url,
                             caption=caption,
