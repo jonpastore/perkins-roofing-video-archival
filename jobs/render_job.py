@@ -492,9 +492,14 @@ def _apply_track_a_engines(
                 _focus_x = float(getattr(spec, "focus_x", 0.5) or 0.5)
                 crop_filter = crop_filter_9x16(1920, 1080, focus_x=_focus_x, ratio="9:16")
 
+            # Escape commas in the crop expression: the speaker-tracking filter is
+            # crop=W:H:if(lte(t,..),x,..):Y and ffmpeg's -vf parser splits unescaped
+            # commas as filter separators ("Filter not found"), which previously made
+            # the whole reframe step throw and the clip stay landscape. The centre/
+            # focal branch has no commas, so this is a no-op there.
             cmd = [
                 "ffmpeg", "-y", "-i", current,
-                "-vf", crop_filter,
+                "-vf", crop_filter.replace(",", "\\,"),
                 "-c:v", "libx264", "-profile:v", "high",
                 "-pix_fmt", "yuv420p", "-c:a", "copy",
                 out,

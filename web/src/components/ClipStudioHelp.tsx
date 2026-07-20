@@ -28,7 +28,7 @@ const HELP: {
     blurb: "IMPORTANT: these controls are hidden until you (1) Suggest clips, (2) “Save as clip series”, then (3) scroll to the “Ready to Render” panel and click “Render options ▼” on that series. They do not appear while you are still choosing clips.",
     items: [
       { title: "Reframe (9:16)", body: "Crops landscape footage to vertical for Reels / TikTok / Shorts." },
-      { title: "Speaker tracking", body: "Tries to keep the speaker centered as they move while reframing. Falls back to a centre crop when the face-detector adapter isn’t wired on the server.", req: "Turn Reframe ON first — this control is hidden otherwise." },
+      { title: "Speaker tracking", body: "Keeps the speaker’s face centered in the vertical crop as they move, using on-device face detection (YuNet). The crop is smoothed and pan-speed-limited; frames where no face is found hold the last position, so it never cuts a head.", req: "Turn Reframe ON first — this control is hidden otherwise." },
       { title: "Focal point", body: "A manual slider to choose what stays in frame — good for a static detail (a roof feature, a piece of equipment).", req: "Shown only when Reframe is ON and Speaker tracking is OFF." },
       { title: "Captions", body: "Burns styled on-screen captions from the transcript. Styles: Bold Yellow, TikTok Pop, Reels Clean, Shorts Editorial — or “Off” for no burned captions. Choose Bottom or Top position." },
       { title: "Emoji highlights", body: "Appends roofing-domain emoji to matched keywords in the captions." },
