@@ -423,12 +423,13 @@ def _apply_track_a_engines(
             video_id=video_id, clip_start=clip_start, clip_end=clip_end, db=db,
         )
         if _cwords:
+            _denylist = _load_safety_denylist(tenant_id, db)
             # Word starts are source-relative; the clip was cut at clip_start, so
             # shift spans into the clip-local timeline the mute filter runs against.
             _offset = clip_start or 0.0
             _spans = [
                 (max(0.0, s - _offset), max(0.0, e - _offset))
-                for s, e in censor_spans(_cwords)
+                for s, e in censor_spans(_cwords, extra_denylist=_denylist)
             ]
             _af = mute_audio_filter(_spans)
             if _af:
@@ -744,6 +745,24 @@ def _load_words_for_clip(
         return result
     except Exception as exc:  # noqa: BLE001
         logger.warning("_load_words_for_clip: DB query failed: %s", exc)
+        return []
+
+
+def _load_safety_denylist(tenant_id: int | None, db) -> list[str]:
+    """Return the tenant's configured safety_denylist terms (brand/competitor names
+    to censor on top of the crude denylist). Empty list on any miss — never fails."""
+    if db is None or not tenant_id:
+        return []
+    try:
+        from sqlalchemy import text  # noqa: PLC0415
+        row = db.execute(
+            text("SELECT settings FROM tenants WHERE id = :tid"), {"tid": tenant_id}
+        ).fetchone()
+        settings = (row.settings if row and hasattr(row, "settings") else (row[0] if row else None)) or {}
+        terms = settings.get("safety_denylist") if isinstance(settings, dict) else None
+        return terms if isinstance(terms, list) else []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_load_safety_denylist: read failed: %s", exc)
         return []
 
 
