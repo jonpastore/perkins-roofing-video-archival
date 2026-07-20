@@ -66,3 +66,31 @@ def test_non_awaiting_row_is_not_claimed(monkeypatch):
     by_ref = {r.ref_id: r.status for r in s.query(ScheduledContent).all()}
     s.close()
     assert by_ref == {"1": "publishing", "2": "published"}  # untouched
+
+
+def test_tiktok_refresh_persists_rotated_token(monkeypatch):
+    """A TikTok publish with a refresh token rotates the access token AND writes the
+    new access+refresh pair back to the OAuth store (else the refresh token goes stale)."""
+    import jobs.social_job as SJ
+
+    captured = {}
+    monkeypatch.setattr(
+        "adapters.tiktok.refresh_access_token",
+        lambda **kw: {"access_token": "new-at", "refresh_token": "new-rt"},
+    )
+    monkeypatch.setattr("adapters.tiktok.TikTokPublisher", lambda **kw: kw)
+
+    class _FakeStore:
+        def __init__(self, tenant_id):
+            captured["tenant_id"] = tenant_id
+
+        def put(self, platform, account_id, access_token, refresh_token, **kw):
+            captured["put"] = (platform, account_id, access_token, refresh_token)
+
+    monkeypatch.setattr("adapters.distribution.oauth_store.SecretManagerOAuthStore", _FakeStore)
+
+    pub = SJ._publisher("tiktok", {"access_token": "old-at", "open_id": "oid", "refresh_token": "old-rt"}, tenant_id=7)
+
+    assert pub["access_token"] == "new-at"                      # publisher uses the fresh token
+    assert captured["put"] == ("tiktok", "oid", "new-at", "new-rt")  # rotated pair persisted
+    assert captured["tenant_id"] == 7

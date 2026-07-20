@@ -34,14 +34,15 @@ _PLATFORM_CREDS: dict[str, list[str]] = {
 _SIGNED_URL_TTL = 3600  # seconds — enough for the platform to pull the video
 
 
-def _publisher(platform: str, creds: dict):
+def _publisher(platform: str, creds: dict, tenant_id: int):
     """Return an initialised publisher for *platform* using resolved *creds*
     (OAuth store first, env fallback — see core.social_creds.creds_for). Only the
     creds keys that are present are passed; absent ones let the adapter keep its env
     default, preserving the pre-store behaviour.
 
-    For TikTok: if a refresh token is available, refresh the access token first. The
-    rotated refresh_token must be persisted back to Secret Manager in prod (TODO below).
+    For TikTok: if a refresh token is available, refresh the access token first and
+    persist the rotated tokens back to Secret Manager (TikTok rotates the refresh_token,
+    so the old one goes stale — without write-back, auth eventually breaks).
     """
     if platform == "instagram":
         from adapters.meta_ig import IgPublisher  # noqa: PLC0415
@@ -50,12 +51,23 @@ def _publisher(platform: str, creds: dict):
     if platform == "tiktok":
         from adapters.tiktok import TikTokPublisher  # noqa: PLC0415
         kwargs = {k: creds[k] for k in ("access_token", "open_id") if creds.get(k)}
-        if creds.get("refresh_token") or os.environ.get("TIKTOK_REFRESH_TOKEN"):
+        _rt = creds.get("refresh_token") or os.environ.get("TIKTOK_REFRESH_TOKEN")
+        if _rt:
             try:
                 from adapters.tiktok import refresh_access_token  # noqa: PLC0415
-                kwargs["access_token"] = refresh_access_token()["access_token"]
+                refreshed = refresh_access_token(refresh_token=_rt)
+                kwargs["access_token"] = refreshed["access_token"]
                 logger.info("social_job: TikTok access token refreshed via refresh_token")
-                # TODO: persist the rotated refresh_token back to Secret Manager in prod
+                # Persist the rotated tokens so the next run reads the fresh refresh_token,
+                # not the now-stale one. Non-fatal — a failed write must not block the post.
+                try:
+                    from adapters.distribution.oauth_store import SecretManagerOAuthStore  # noqa: PLC0415
+                    SecretManagerOAuthStore(tenant_id=tenant_id).put(
+                        "tiktok", creds.get("open_id", ""),
+                        refreshed["access_token"], refreshed.get("refresh_token") or _rt,
+                    )
+                except Exception as store_exc:  # noqa: BLE001
+                    logger.warning("social_job: TikTok token persist failed (non-fatal): %s", store_exc)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "social_job: TikTok token refresh failed (%s) — using resolved token", exc,
@@ -211,7 +223,7 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         continue
 
                     try:
-                        pub = _publisher(platform, creds)
+                        pub = _publisher(platform, creds, tenant_id)
                         external_id = pub.publish(
                             video_url=video_url,
                             caption=caption,
