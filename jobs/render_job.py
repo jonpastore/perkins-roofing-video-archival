@@ -489,7 +489,8 @@ def _apply_track_a_engines(
                 )
             else:
                 from core.reframe import crop_filter_9x16  # noqa: PLC0415
-                crop_filter = crop_filter_9x16(1920, 1080, focus_x=0.5, ratio="9:16")
+                _focus_x = float(getattr(spec, "focus_x", 0.5) or 0.5)
+                crop_filter = crop_filter_9x16(1920, 1080, focus_x=_focus_x, ratio="9:16")
 
             cmd = [
                 "ffmpeg", "-y", "-i", current,

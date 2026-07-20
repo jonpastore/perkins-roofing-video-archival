@@ -250,8 +250,16 @@ class ClipRenderSpec(BaseModel):
 
     reframe: bool = False
     speaker_tracking: bool = False
+    focus_x: float = 0.5  # manual horizontal focal point (0=left, 1=right) when not speaker-tracking
     captions: CaptionsSpec = Field(default_factory=CaptionsSpec)
     speech_cleanup: bool = False
+
+    @field_validator("focus_x")
+    @classmethod
+    def _valid_focus_x(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"focus_x must be in [0, 1], got {v!r}")
+        return v
     broll: BrollSpec = Field(default_factory=BrollSpec)
     music: MusicSpec = Field(default_factory=MusicSpec)
     fx: FxSpec = Field(default_factory=FxSpec)

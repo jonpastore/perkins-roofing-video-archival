@@ -782,6 +782,7 @@ function ReelSettingsPanel() {
 interface ClipRenderSpec {
   reframe: boolean;
   speaker_tracking: boolean;
+  focus_x?: number;
   captions: { style: string; position: string };
   speech_cleanup: boolean;
   broll: { source: string; query_auto: boolean };
@@ -795,6 +796,7 @@ interface ClipRenderSpec {
 const DEFAULT_SPEC: ClipRenderSpec = {
   reframe: false,
   speaker_tracking: false,
+  focus_x: 0.5,
   captions: { style: "default", position: "bottom" },
   speech_cleanup: false,
   broll: { source: "none", query_auto: true },
@@ -904,6 +906,7 @@ function RenderOptionsPanel({
 
               {/* Speaker tracking */}
               {spec.reframe && (
+                <>
                 <div style={{ ...rowStyle, paddingLeft: 24 }}>
                   <label style={{ ...labelStyle, color: BRAND.sub }}>Speaker tracking</label>
                   <input
@@ -916,6 +919,21 @@ function RenderOptionsPanel({
                     Face-centroid tracking crop (requires face detector adapter — falls back to centre-crop when not wired)
                   </span>
                 </div>
+                {!spec.speaker_tracking && (
+                  <div style={{ ...rowStyle, paddingLeft: 24 }}>
+                    <label style={{ ...labelStyle, color: BRAND.sub }}>Focal point</label>
+                    <input
+                      type="range" min="0" max="1" step="0.05"
+                      value={spec.focus_x ?? 0.5}
+                      onChange={(e) => setSpec({ ...spec, focus_x: Number(e.target.value) })}
+                      style={{ flex: 1, maxWidth: 200, cursor: "pointer", accentColor: BRAND.red }}
+                    />
+                    <span style={{ fontSize: 12, color: BRAND.sub }}>
+                      Crop centre {Math.round((spec.focus_x ?? 0.5) * 100)}% — {(spec.focus_x ?? 0.5) < 0.4 ? "left" : (spec.focus_x ?? 0.5) > 0.6 ? "right" : "centre"}
+                    </span>
+                  </div>
+                )}
+                </>
               )}
 
               {/* Speech cleanup */}
@@ -950,7 +968,7 @@ function RenderOptionsPanel({
                   onChange={(e) => setSpec({ ...spec, captions: { ...spec.captions, style: e.target.value } })}
                   style={selectStyle}
                 >
-                  <option value="default">Default</option>
+                  <option value="default">Off (no burned captions)</option>
                   <option value="bold_yellow">Bold yellow (legacy)</option>
                   <option value="tiktok_pop">TikTok Pop</option>
                   <option value="reels_clean">Reels Clean</option>
