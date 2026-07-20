@@ -24,8 +24,8 @@ variable "budget_amount" {
 
 variable "alert_email" {
   type        = string
-  description = "Email address to notify when the budget threshold is hit"
-  default     = ""
+  description = "Email address for budget + Cloud Monitoring alert notifications. Empty disables all alert policies + the notification channel (count=0)."
+  default     = "dmarc@perkinsroofing.net"
 }
 
 variable "extra_auth_domains" {
