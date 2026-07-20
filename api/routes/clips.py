@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 from api.auth import get_db_session, require_role
 from app.models import GraphNode, MiniSeries, PlatformConfig, PlatformSessionLocal, Segment, SocialPost, Video
 from core.clip_search import search_to_clips
+from core.platform_specs import validate as validate_platform
 from core.render_spec import ClipRenderSpec, get_clips, get_render_spec, set_render_spec
 
 # GCP coordinates — read from env so deploy.sh / Terraform own the values.
@@ -1049,3 +1050,26 @@ def render_status(
         "parts_total": parts_total,
         "parts_rendered": parts_rendered,
     }
+
+
+class PreflightBody(BaseModel):
+    platforms: list[str]
+    meta: dict  # duration_seconds, width, height, size_mb, codec_video, codec_audio
+
+
+@router.post("/{clip_id}/preflight")
+def preflight_clip(
+    clip_id: str,
+    body: PreflightBody,
+    claims=Depends(require_role("approve_video")),
+):
+    """Per-platform pass/fail for a clip's rendered meta vs platform_specs, so the UI
+    shows a ✓/⚠ per target platform before scheduling. clip_id is reserved for a future
+    per-clip meta lookup; today the caller supplies meta in the body."""
+    if not body.platforms:
+        raise HTTPException(status_code=422, detail="platforms must not be empty")
+    results = {}
+    for p in body.platforms:
+        failures = validate_platform(body.meta, p)
+        results[p] = {"ok": not failures, "failures": failures}
+    return {"results": results}
