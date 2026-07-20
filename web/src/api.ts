@@ -271,6 +271,69 @@ const _CONTENT_TYPE: Record<string, string> = {
   wav: "audio/wav", mp3: "audio/mpeg", m4a: "audio/mp4",
 };
 
+// ── Quoting config: deposit / reminder cadence / license + proposal templates ──
+
+export interface QuotingSettings {
+  deposit: { mode?: "percent" | "fixed"; value?: number };
+  reminder_cadence_days: number[];
+  license_number: string | null;
+}
+
+export async function getQuotingSettings(): Promise<QuotingSettings> {
+  const res = await apiFetch("/quoting/settings");
+  if (!res.ok) throw new Error(await errText(res));
+  return res.json();
+}
+
+export async function putQuotingSettings(body: QuotingSettings): Promise<void> {
+  const res = await apiFetch("/quoting/settings", { method: "PUT", body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await errText(res));
+}
+
+export interface ProposalTemplate {
+  id: number;
+  name: string;
+  is_default: boolean;
+  html_body: string;
+  cover_page_html: string | null;
+  tc_attachment_gcs: string | null;
+  logo_url: string | null;
+  primary_color: string | null;
+  accent_color: string | null;
+  footer_text: string | null;
+  created_by: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function listProposalTemplates(): Promise<ProposalTemplate[]> {
+  const res = await apiFetch("/quoting/templates");
+  if (!res.ok) throw new Error(await errText(res));
+  return res.json();
+}
+
+export async function createProposalTemplate(
+  body: Pick<ProposalTemplate, "name" | "html_body"> & Partial<ProposalTemplate>,
+): Promise<ProposalTemplate> {
+  const res = await apiFetch("/quoting/templates", { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await errText(res));
+  return res.json();
+}
+
+export async function updateProposalTemplate(
+  id: number,
+  body: Partial<ProposalTemplate>,
+): Promise<ProposalTemplate> {
+  const res = await apiFetch(`/quoting/templates/${id}`, { method: "PUT", body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await errText(res));
+  return res.json();
+}
+
+export async function deleteProposalTemplate(id: number): Promise<void> {
+  const res = await apiFetch(`/quoting/templates/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errText(res));
+}
+
 /** Presigned brand-asset upload. UI passes a BrandKit field key + file extension;
  *  this adapts to the backend contract ({asset_name, content_type} → {upload_url,
  *  gcs_uri}) and returns the UI shape {url, gcs_path}. */

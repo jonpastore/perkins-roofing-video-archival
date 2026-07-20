@@ -132,6 +132,33 @@ def _load_tc_context(db: Session) -> dict:
         "tc_cover_letter": prompt_block["cover_letter"],
     }
 
+
+def _assemble_review_text(row: "Proposal", db: Session) -> str:
+    """Flatten a proposal (scope + deposit + T&C + FAQ + customer notes) to plain
+    text for core.proposal_review. Customer-supplied fields are included on purpose —
+    they are the prompt-injection surface the review checks."""
+    snap = row.quote_snapshot or {}
+    parts = [f"PROPOSAL: {row.title}"]
+    for ln in _proposal_scope_lines(snap):
+        parts.append(f"- {ln['label']} qty={ln['qty_display']} {ln['price_display']}")
+    dp = snap.get("deposit_policy") or {}
+    if dp:
+        parts.append(
+            f"DEPOSIT: mode={dp.get('mode')} value={dp.get('value')} {dp.get('instructions', '')}"
+        )
+    notes = snap.get("notes") or snap.get("customer_notes")
+    if notes:
+        parts.append(f"CUSTOMER NOTES: {notes}")
+    try:
+        tc = _load_tc_context(db)
+        if tc.get("tc_text"):
+            parts.append("TERMS & CONDITIONS:\n" + tc["tc_text"])
+        for it in (tc.get("tc_faq_items") or []):
+            parts.append(f"FAQ Q: {it['q']}\nA: {it['a']}")
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("review text T&C load failed for proposal %s: %s", row.id, exc)
+    return "\n".join(parts)
+
 router = APIRouter(tags=["quoting_proposals"])
 
 # Re-export for tests that import from this module
@@ -389,7 +416,9 @@ class ProposalUpdate(BaseModel):
 
 
 class SendRequest(BaseModel):
-    pass
+    # When a pre-send fairness/security review flags HIGH-severity issues the send
+    # is blocked (422) unless the sender explicitly overrides with their judgment.
+    override_review: bool = False
 
 
 class ReviseRequest(BaseModel):
@@ -502,6 +531,9 @@ def _template_row(row: ProposalTemplate) -> dict:
         "tenant_id": row.tenant_id,
         "name": row.name,
         "is_default": row.is_default,
+        "html_body": row.html_body,
+        "cover_page_html": row.cover_page_html,
+        "tc_attachment_gcs": row.tc_attachment_gcs,
         "logo_url": row.logo_url,
         "primary_color": row.primary_color,
         "accent_color": row.accent_color,
@@ -1109,6 +1141,26 @@ def send_proposal(
         raise HTTPException(422, str(exc)) from exc
     row.quote_snapshot = snapshot
 
+    # Pre-send fairness + security review (protects both parties). Block on HIGH
+    # findings unless overridden. review_error (the fail-safe infra marker) is
+    # logged and surfaced, NOT hard-blocked — a flaky LLM must not wedge sending.
+    review_warning = None
+    if not body.override_review:
+        from core.proposal_review import review_proposal  # noqa: PLC0415
+        verdict = review_proposal(_assemble_review_text(row, db))
+        high = [i for i in verdict["issues"]
+                if i.get("severity") == "high" and i.get("category") != "review_error"]
+        if high:
+            raise HTTPException(422, detail={
+                "error": "proposal_review_failed",
+                "message": "Pre-send review flagged high-severity issues. "
+                           "Resolve them or resend with override_review=true.",
+                "issues": high,
+            })
+        if any(i.get("category") == "review_error" for i in verdict["issues"]):
+            review_warning = "pre-send review could not run; proposal sent unreviewed"
+            _log.warning("proposal %s sent without a completed review", row.id)
+
     row.status = "sent"
     row.sent_at = now
     db.flush()
@@ -1155,6 +1207,8 @@ def send_proposal(
     result = _proposal_row(row)
     if not email_sent:
         result["email_sent"] = False
+    if review_warning:
+        result["review_warning"] = review_warning
     return result
 
 

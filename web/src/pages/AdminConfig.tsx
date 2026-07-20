@@ -8,6 +8,7 @@ import { BranchesConfig } from "./BranchesConfig";
 import { MarketingConfig } from "./MarketingConfig";
 import { KbConfig } from "./KbConfig";
 import { TenantsConfig } from "./TenantsConfig";
+import { QuotingConfig } from "./QuotingConfig";
 import { SsoPanel } from "./SsoPanel";
 
 type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
@@ -19,25 +20,6 @@ interface AdminConfigProps {
 interface SubTab {
   key: string;
   label: string;
-}
-
-function PlaceholderCard({ message }: { message: string }) {
-  return (
-    <div
-      style={{
-        background: "#fff",
-        border: `1px solid ${BRAND.border}`,
-        borderRadius: 12,
-        padding: "40px 32px",
-        textAlign: "center",
-        color: "#9aa3ba",
-        fontSize: 15,
-        marginTop: 24,
-      }}
-    >
-      {message}
-    </div>
-  );
 }
 
 export function AdminConfig({ role }: AdminConfigProps) {
@@ -105,9 +87,7 @@ export function AdminConfig({ role }: AdminConfigProps) {
       {activeSubTab === "estimating" && <EstimatingConfig role={role} />}
       {activeSubTab === "price-book" && <PriceBook />}
       {activeSubTab === "branches" && <BranchesConfig role={role} />}
-      {activeSubTab === "quoting" && (
-        <PlaceholderCard message="Quoting config — coming in F3 (proposal templates, T&C library, deposit policy, reminder cadence)" />
-      )}
+      {activeSubTab === "quoting" && <QuotingConfig role={role} />}
       {activeSubTab === "users-roles" && (
         <>
           <Users />

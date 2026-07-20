@@ -52,6 +52,16 @@ def _setup_db():
     init_db()
 
 
+@pytest.fixture(autouse=True)
+def _stub_review_llm(monkeypatch):
+    # send_proposal now runs a pre-send fairness/security review via app.llm.chat.
+    # Stub it to a clean pass so send tests don't hit a live LLM. Dedicated review
+    # behavior (block/override/warn) is covered in TestSendReview below with its
+    # own stubs.
+    import app.llm as llm_mod
+    monkeypatch.setattr(llm_mod, "chat", lambda prompt, **kw: {"pass": True, "issues": []})
+
+
 @pytest.fixture()
 def admin_client():
     set_verifier(lambda t: {"uid": "u1", "email": "admin@perkins.com",
@@ -1533,3 +1543,49 @@ class TestKnowifyStateMapping:
         from api.routes.proposals import knowify_proposal_state
         c = {"BusinessState": "Draft", "IsSigned": False, "DateCreated": "2024-01-01T00:00:00Z"}
         assert knowify_proposal_state(c)["status"] == "draft"
+
+
+# ---------------------------------------------------------------------------
+# Pre-send fairness/security review gate (core.proposal_review wiring)
+# ---------------------------------------------------------------------------
+
+class TestSendReview:
+    def _high_issue(self):
+        return {"pass": False, "issues": [{
+            "severity": "high", "category": "unfair",
+            "detail": "waives all homeowner recourse", "location": "T&C"}]}
+
+    def test_high_severity_blocks_send(self, monkeypatch):
+        import app.llm as llm_mod
+        monkeypatch.setattr(llm_mod, "chat", lambda prompt, **kw: self._high_issue())
+        c, _, _, draft = _scaffold()
+        r = c.post(f"/quoting/proposals/{draft['id']}/send", json={}, headers=AUTH)
+        assert r.status_code == 422, r.text
+        body = r.json()["detail"]
+        assert body["error"] == "proposal_review_failed"
+        assert body["issues"][0]["category"] == "unfair"
+        # proposal stays a draft — not sent
+        got = c.get(f"/quoting/proposals/{draft['id']}", headers=AUTH).json()
+        assert got["status"] == "draft"
+
+    def test_override_review_sends_despite_high(self, monkeypatch):
+        import app.llm as llm_mod
+        monkeypatch.setattr(llm_mod, "chat", lambda prompt, **kw: self._high_issue())
+        c, _, _, draft = _scaffold()
+        r = c.post(f"/quoting/proposals/{draft['id']}/send",
+                   json={"override_review": True}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "sent"
+
+    def test_review_error_warns_but_sends(self, monkeypatch):
+        # LLM failure -> review_proposal returns a review_error high issue (fail-safe).
+        # That must NOT hard-block; it surfaces a warning and the send proceeds.
+        import app.llm as llm_mod
+        def boom(prompt, **kw):
+            raise RuntimeError("llm down")
+        monkeypatch.setattr(llm_mod, "chat", boom)
+        c, _, _, draft = _scaffold()
+        r = c.post(f"/quoting/proposals/{draft['id']}/send", json={}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "sent"
+        assert "review_warning" in r.json()
