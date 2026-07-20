@@ -263,7 +263,7 @@ def post_reply_to_youtube(
         raise HTTPException(status_code=400, detail="no draft reply to post")
 
     # E1 content-safety gate (fail-closed) — the reply is a generated artifact and MUST
-    # pass BEFORE it reaches YouTube, same as every caption in jobs/distribute_job.py.
+    # pass BEFORE it reaches YouTube, same as every caption in jobs/social_job.py.
     # Human approval is not a substitute: the gate is the platform-wide invariant.
     from adapters.safety import run_gate  # noqa: PLC0415
     gate_result = run_gate(reply_text, "social")
