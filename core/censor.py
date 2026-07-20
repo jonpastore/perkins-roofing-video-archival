@@ -13,6 +13,35 @@ def _attr(item, key):
     return item[key] if isinstance(item, dict) else getattr(item, key)
 
 
+def _flagged(token: str, deny: set[str]) -> bool:
+    """True when a spoken token hits the tenant denylist or the crude denylist."""
+    norm = (token or "").lower().strip(".,!?;:\"'")
+    return bool(norm and (norm in deny or denylist_hits(token)))
+
+
+def mask_word(token: str) -> str:
+    """Replace a token with a block mask of similar length (min 2), for captions."""
+    core = (token or "").strip()
+    return "▇" * max(2, len(core)) if core else token
+
+
+def mask_caption_words(words, extra_denylist=()) -> list:
+    """Return *words* with flagged tokens' text replaced by a block mask (timings and
+    all other keys intact), so a censored word is hidden in burned captions too — not
+    just muted in the audio track."""
+    deny = {t.strip().lower() for t in extra_denylist if t and t.strip()}
+    out = []
+    for w in words:
+        token = _attr(w, "word") or ""
+        if _flagged(token, deny):
+            masked = dict(w) if isinstance(w, dict) else {"word": token, "start": _attr(w, "start")}
+            masked["word"] = mask_word(token)
+            out.append(masked)
+        else:
+            out.append(w)
+    return out
+
+
 def censor_spans(words, extra_denylist=(), tail_pad: float = 0.4) -> list[tuple[float, float]]:
     """Return merged [start, end) audio spans to mute for flagged words.
 
@@ -34,9 +63,7 @@ def censor_spans(words, extra_denylist=(), tail_pad: float = 0.4) -> list[tuple[
     )
     spans: list[tuple[float, float]] = []
     for i, w in enumerate(ordered):
-        token = (w["word"] or "").strip()
-        norm = token.lower().strip(".,!?;:\"'")
-        if norm in deny or denylist_hits(token):
+        if _flagged(w["word"], deny):
             end = ordered[i + 1]["start"] if i + 1 < len(ordered) else w["start"] + tail_pad
             spans.append((w["start"], end))
     return _merge(spans)

@@ -1,5 +1,5 @@
 """censor_spans maps flagged words to merged mute spans."""
-from core.censor import censor_spans, mute_audio_filter
+from core.censor import censor_spans, mask_caption_words, mask_word, mute_audio_filter
 
 
 def _words(*pairs):
@@ -43,3 +43,17 @@ def test_mute_filter_empty_when_no_spans():
 def test_mute_filter_builds_volume_enable():
     f = mute_audio_filter([(1.0, 1.8), (2.0, 2.5)])
     assert f == "volume=enable='between(t,1.000,1.800)+between(t,2.000,2.500)':volume=0"
+
+
+def test_mask_word_blocks_similar_length():
+    assert mask_word("damn") == "▇▇▇▇"
+    assert mask_word("hi") == "▇▇"
+    assert mask_word("a") == "▇▇"  # min width 2
+
+
+def test_mask_caption_words_masks_only_flagged():
+    words = _words(("we", 0.0), ("beat", 0.5), ("competitor", 1.0))
+    out = mask_caption_words(words, extra_denylist=["competitor"])
+    assert [w["word"] for w in out] == ["we", "beat", "▇▇▇▇▇▇▇▇▇▇"]
+    # timings preserved
+    assert [w["start"] for w in out] == [0.0, 0.5, 1.0]

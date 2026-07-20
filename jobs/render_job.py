@@ -524,6 +524,10 @@ def _apply_track_a_engines(
                 db=db,
             )
             if words:
+                # Mask censored words in the burned caption text too (audio is muted
+                # separately by the censor engine above).
+                from core.censor import mask_caption_words  # noqa: PLC0415
+                words = mask_caption_words(words, extra_denylist=_load_safety_denylist(tenant_id, db))
                 events = caption_events(words)
                 _emoji_map: dict | None = None
                 if getattr(spec, "emoji_highlights", False):
