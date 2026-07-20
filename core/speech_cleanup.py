@@ -224,10 +224,14 @@ def build_cleanup_cmd(
             out_path,
         ]
 
-    # Multiple keeps → trim each then concat.
+    # Multiple keeps → trim each then concat.  The concat filter requires
+    # inputs interleaved per segment (v0,a0,v1,a1,...), NOT all video labels
+    # followed by all audio labels — ffmpeg's -filter_complex parser links
+    # pads positionally, so the wrong order produces an audio/video pad-type
+    # mismatch ("Media type mismatch ... Error linking filters") and the
+    # whole cleanup step throws.
     filter_parts: list[str] = []
-    v_labels: list[str] = []
-    a_labels: list[str] = []
+    concat_labels: list[str] = []
 
     for idx, seg in enumerate(keep_segs):
         s = seg["start"]
@@ -240,10 +244,9 @@ def build_cleanup_cmd(
         filter_parts.append(
             f"[0:a]atrim=start={s}:end={e},asetpts=PTS-STARTPTS[{al}]"
         )
-        v_labels.append(f"[{vl}]")
-        a_labels.append(f"[{al}]")
+        concat_labels.append(f"[{vl}][{al}]")
 
-    concat_inputs = "".join(v_labels + a_labels)
+    concat_inputs = "".join(concat_labels)
     filter_parts.append(
         f"{concat_inputs}concat=n={n}:v=1:a=1[vout][aout]"
     )
