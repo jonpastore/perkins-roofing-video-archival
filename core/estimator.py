@@ -176,11 +176,20 @@ def compute_cut_adjusted_base(
     wall_r = _ceil(q.wall_flashings_lf, r["wall_flashings"])
     sq = float(q.num_squares)
 
+    # Some brands (e.g. newly-added Verea/Other rows) may have a confirmed rake unit but no
+    # field-tile cost yet — raise a clear ConfigError instead of a bare TypeError on None + int.
+    field_cost = st.get("field")
+    if field_cost is None:
+        raise ConfigError(
+            f"cuts_calc.tile_brands[{q.base_tile_brand!r}] has no 'field' cost — "
+            "Tim must confirm the field-tile price before this brand can drive the cut calculator."
+        )
+
     drip = ((eaves_r + rakes_r) * co["drip_a"]
             + (eaves_r + rakes_r + wall_r) * co["drip_b"]) / sq
     valley = ((valleys_r / co["valley_a_div"]) * co["valley_a_rate"]
               + (valleys_r / co["valley_b_div"]) * co["valley_b_rate"]) / sq
-    field = st["field"] + co["field_tiles_addon"]
+    field = field_cost + co["field_tiles_addon"]
     hipridge = (hipridge_r * co["hipridge_tile_rate"]
                 + (rakes_r + hipridge_r) * st["rake"]) / sq
     eave = (eaves_r * co["eave_closure_rate"]) / sq

@@ -30,6 +30,9 @@ CUTS_CALC = {
         "eagle":    {"label": "Eagle (concrete, standard)", "field": 147.59, "rake": 4.82},
         "crown":    {"label": "Crown (concrete)",           "field": 143.19, "rake": 4.30},
         "westlake": {"label": "West Lake (concrete)",        "field": 145.71, "rake": 4.50},
+        "verea_s":         {"label": "Verea Spanish \"S\"", "field": None, "rake": 5.78},
+        "verea_caribbean": {"label": "Verea Caribbean",     "field": None, "rake": 19.14},
+        "other":           {"label": "Other / Custom",      "field": None, "rake": 45.00},
     },
 }
 

@@ -85,7 +85,13 @@
     "tile_brands": {
       "eagle":    {"label": "Eagle (concrete, standard)", "field": 147.59, "rake": 4.82},
       "crown":    {"label": "Crown (concrete)",           "field": 143.19, "rake": 4.30},
-      "westlake": {"label": "West Lake (concrete)",        "field": 145.71, "rake": 4.50}
+      "westlake": {"label": "West Lake (concrete)",        "field": 145.71, "rake": 4.50},
+      "verea_s":          {"label": "Verea Spanish \"S\"", "field": null, "rake": 5.78,
+                            "_pending_field": "Tim — confirm Verea Spanish 'S' field-tile cost (rake unit confirmed 2026-07-21)"},
+      "verea_caribbean":  {"label": "Verea Caribbean",     "field": null, "rake": 19.14,
+                            "_pending_field": "Tim — confirm Verea Caribbean field-tile cost (rake unit confirmed 2026-07-21)"},
+      "other":            {"label": "Other / Custom",      "field": null, "rake": 45.00,
+                            "_pending_field": "Tim — manual/custom tile; field-tile cost entered per-job, not config-driven yet"}
     }
   },
 
