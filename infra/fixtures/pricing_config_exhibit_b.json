@@ -10,7 +10,7 @@
       "OI-8: pm_incentive — full matrix needs Tim verification before activation (PC matrix per PRD F2-11; current values from plan §10.5)",
       "OI-9: boundary_inclusive_lower / boundary_exclusive_upper — presumed lower-inclusive/upper-exclusive per Exhibit B wording (PC-2); config flag means answer is a data change only",
       "OI-10: tile_dumpster_boundary_inclusive — default true; Tim to confirm (Adv-1 per PRD)",
-      "OI-11: low_slope zones — sheet note says FBC deltas unverified except SAV-M -$25 (encoded); confirm all FBC low-slope values match HVHZ or supply deltas"
+      "OI-11: low_slope zones — Zoom 2026-07-20 confirmed Exhibit B §4 is a single table for both zones (FBC = HVHZ); confirm with Tim if his live calculator implies a delta"
     ]
   },
 
@@ -251,7 +251,7 @@
 
   "low_slope": {
     "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached — engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* — prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
-    "_note_fbc_deltas": "FBC values set equal to HVHZ per sheet note 'FBC deltas unverified' EXCEPT polyglass_sav_sap which is $25 lower in FBC (sheet explicit). Confirm remaining FBC low-slope values with Tim (OI-11).",
+    "_note_fbc_deltas": "FBC values set equal to HVHZ — Exhibit B §4 is one table for both zones (confirmed Zoom 2026-07-20), unlike sloped §5 which is zone-split. Confirm with Tim if his live low-slope calculator implies a delta (OI-11).",
 
     "all_in_systems": [
       "pb_acrylic_2coat",
@@ -277,8 +277,8 @@
         "_note_stockmeier_floor": "stockmeier min 12 sq; under 12 sq = $390/sq T&M — floor note only, not engine logic v1"
       },
       "FBC": {
-        "polyglass_sav_sap":            450,
-        "_note_fbc_sav_sap": "FBC is $25 less than HVHZ per sheet explicit note (SAV M -$25 in FBC)",
+        "polyglass_sav_sap":            475,
+        "_note_fbc_sav_sap": "Exhibit B §4 is ONE low-slope table (unlike sloped §5, which is zone-split) — Zoom 2026-07-20 confirmed FBC uses the same §4 values as HVHZ. Supersedes the earlier $450 (-$25 vs HVHZ) sourced from Tim's operational sheet, not the reviewed exhibit. Confirm FBC low-slope delta with Tim if his live calculator disagrees.",
         "tpo_adhered":                  485,
         "tpo_mech_attached":            485,
         "pb_acrylic_2coat":             375,
@@ -304,8 +304,8 @@
       }
     },
 
-    "wood_deck_oh_adder": 50,
-    "_note_wood_deck_oh": "Add $50/sq to overhead when deck_type is a wood variant (concrete is baseline). Jon confirmed 2026-07-10 — sheet showed $45 but Jon corrected to $50.",
+    "wood_deck_oh_adder": 45,
+    "_note_wood_deck_oh": "Add $45/sq to overhead when deck_type is a wood variant (concrete is baseline). Exhibit B §4.2 legal value, re-confirmed on Zoom 2026-07-20 — supersedes the earlier ad-hoc $50 (2026-07-10, sourced from Tim's operational sheet, not the reviewed exhibit).",
 
     "insulation_tiers": [
       [null, 255],
