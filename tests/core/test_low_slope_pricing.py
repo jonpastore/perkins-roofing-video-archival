@@ -89,7 +89,7 @@ def test_fixture_all_in_excludes_base_systems():
 def test_fixture_wood_deck_oh_adder():
     raw = _load_fixture()
     adder = raw["low_slope"].get("wood_deck_oh_adder")
-    assert adder == 45, f"wood_deck_oh_adder must be 45 (Exhibit B §4.2), got {adder!r}"
+    assert adder == 50, f"wood_deck_oh_adder must be 50 (Exhibit B §4.2), got {adder!r}"
 
 
 def test_fixture_deck_adders_populated():
@@ -174,7 +174,7 @@ def test_config_is_all_in_false_for_base_system():
 
 def test_config_wood_deck_oh_adder():
     cfg = _cfg()
-    assert cfg.wood_deck_oh_adder() == 45
+    assert cfg.wood_deck_oh_adder() == 50
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +282,7 @@ def test_non_all_in_base_cost_matches_config():
 
 
 # ---------------------------------------------------------------------------
-# 5. Engine — wood deck adds $45 OH adder
+# 5. Engine — wood deck adds $50 OH adder
 # ---------------------------------------------------------------------------
 
 def _make_wood_deck_input(system: str, deck: str, sq: float = 20) -> QuoteInput:
@@ -296,8 +296,8 @@ def _make_wood_deck_input(system: str, deck: str, sq: float = 20) -> QuoteInput:
     )
 
 
-def test_wood_deck_adds_45_oh_to_non_all_in():
-    """Non-all-in system with bur_wood_wb3000 deck: OH line increases by $45/sq."""
+def test_wood_deck_adds_50_oh_to_non_all_in():
+    """Non-all-in system with bur_wood_wb3000 deck: OH line increases by $50/sq."""
     cfg = _cfg()
     q_concrete = _make_base_input("polyglass_sav_sap", sq=20)
     q_wood = _make_wood_deck_input("polyglass_sav_sap", "bur_wood_wb3000", sq=20)
@@ -308,12 +308,12 @@ def test_wood_deck_adds_45_oh_to_non_all_in():
     oh_concrete = next(li for li in r_concrete["line_items_detail"] if li["key"] == "overhead")
     oh_wood = next(li for li in r_wood["line_items_detail"] if li["key"] == "overhead")
 
-    # Wood OH amount = concrete OH amount + 45 * sq
-    assert oh_wood["amount"] == pytest.approx(oh_concrete["amount"] + 45 * 20)
+    # Wood OH amount = concrete OH amount + 50 * sq
+    assert oh_wood["amount"] == pytest.approx(oh_concrete["amount"] + 50 * 20)
 
 
-def test_wood_deck_adds_45_oh_per_sq_not_flat():
-    """The $45 adder is per-square, verified with different sq count.
+def test_wood_deck_adds_50_oh_per_sq_not_flat():
+    """The $50 adder is per-square, verified with different sq count.
 
     Uses residential < 20 sq to stay in the valid pm_incentive band.
     """
@@ -331,11 +331,11 @@ def test_wood_deck_adds_45_oh_per_sq_not_flat():
     r_w = estimate(cfg, q_wood)
     oh_c = next(li for li in r_c["line_items_detail"] if li["key"] == "overhead")
     oh_w = next(li for li in r_w["line_items_detail"] if li["key"] == "overhead")
-    assert oh_w["amount"] == pytest.approx(oh_c["amount"] + 45 * sq)
+    assert oh_w["amount"] == pytest.approx(oh_c["amount"] + 50 * sq)
 
 
 def test_concrete_deck_no_wood_oh_adder():
-    """existing_concrete deck must NOT add the $45 wood OH adder."""
+    """existing_concrete deck must NOT add the $50 wood OH adder."""
     cfg = _cfg()
     q_no_deck = _make_base_input("polyglass_sav_sap", sq=20)
     q_concrete = QuoteInput(
@@ -393,15 +393,16 @@ def test_both_zones_resolve_without_config_error(zone, system):
 # 8. FBC matches HVHZ — Exhibit B §4 is a single table for both zones
 # ---------------------------------------------------------------------------
 
-def test_fbc_sav_sap_matches_hvhz():
-    """Exhibit B §4 is ONE low-slope table for both zones (confirmed on Zoom 2026-07-20),
-    unlike sloped §5 which is zone-split. FBC polyglass_sav_sap must equal HVHZ ($475),
-    superseding the earlier -$25 FBC assumption sourced from Tim's operational sheet."""
+def test_fbc_sav_sap_delta_below_hvhz():
+    """FBC polyglass_sav_sap is $25 below HVHZ ($450 vs $475) — explicit in Tim's live
+    operational sheet. Jon 2026-07-21: the home-office/live sheet is the most current
+    pricing and supersedes Exhibit B's single §4 table. Confirm with Tim if his live
+    calculator disagrees."""
     raw = _load_fixture()
     hvhz_base = raw["low_slope"]["base_cost_lm"]["HVHZ"]["polyglass_sav_sap"]
     fbc_base = raw["low_slope"]["base_cost_lm"]["FBC"]["polyglass_sav_sap"]
-    assert fbc_base == hvhz_base == 475, (
-        f"FBC polyglass_sav_sap should equal HVHZ per Exhibit B §4. HVHZ={hvhz_base}, FBC={fbc_base}"
+    assert hvhz_base == 475 and fbc_base == 450, (
+        f"expected HVHZ=475, FBC=450 (-$25 sheet delta). HVHZ={hvhz_base}, FBC={fbc_base}"
     )
 
 

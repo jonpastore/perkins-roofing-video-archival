@@ -277,8 +277,8 @@
         "_note_stockmeier_floor": "stockmeier min 12 sq; under 12 sq = $390/sq T&M — floor note only, not engine logic v1"
       },
       "FBC": {
-        "polyglass_sav_sap":            475,
-        "_note_fbc_sav_sap": "Exhibit B §4 is ONE low-slope table (unlike sloped §5, which is zone-split) — Zoom 2026-07-20 confirmed FBC uses the same §4 values as HVHZ. Supersedes the earlier $450 (-$25 vs HVHZ) sourced from Tim's operational sheet, not the reviewed exhibit. Confirm FBC low-slope delta with Tim if his live calculator disagrees.",
+        "polyglass_sav_sap":            450,
+        "_note_fbc_sav_sap": "FBC is $25 lower than HVHZ ($450 vs $475) — explicit in Tim's live operational sheet. Jon 2026-07-21: Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES the Exhibit B legal snapshot (one §4 table). Confirm with Tim if his live calculator disagrees.",
         "tpo_adhered":                  485,
         "tpo_mech_attached":            485,
         "pb_acrylic_2coat":             375,
@@ -304,8 +304,8 @@
       }
     },
 
-    "wood_deck_oh_adder": 45,
-    "_note_wood_deck_oh": "Add $45/sq to overhead when deck_type is a wood variant (concrete is baseline). Exhibit B §4.2 legal value, re-confirmed on Zoom 2026-07-20 — supersedes the earlier ad-hoc $50 (2026-07-10, sourced from Tim's operational sheet, not the reviewed exhibit).",
+    "wood_deck_oh_adder": 50,
+    "_note_wood_deck_oh": "Add $50/sq to overhead when deck_type is a wood variant (concrete is baseline). Jon corrected 45→50 on 2026-07-10 from Tim's operational sheet; Jon 2026-07-21 reaffirmed Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES Exhibit B §4.2's $45 snapshot.",
 
     "insulation_tiers": [
       [null, 255],
