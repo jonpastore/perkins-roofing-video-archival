@@ -1,25 +1,41 @@
 # "Pending Tim" resolution — most fields are recoverable NOW
 
-Reviewed the admin-config "Pending Tim" fields. The large cluster is the
+Reviewed the admin-config "Pending Tim" fields. The large cluster was the
 **Low-Slope group** (`EstimatingConfig.tsx` Group 5, `low_slope.*`), which the UI
-says is "pending Tim's Exhibit B §4 values." Those values **already exist** in the
+said was "pending Tim's Exhibit B §4 values." Those values **already existed** in the
 reviewed, locked document `legal/06-exhibit-B-pricing-engine-rules.pdf` §4 ("the
-two reviewed low-slope sheets: HVHZ + FBC"). So they are resolvable without Tim —
-transcribe Exhibit B into the config.
+two reviewed low-slope sheets: HVHZ + FBC") — resolvable without Tim by transcribing
+Exhibit B into the config.
 
-## RESOLVED from Exhibit B §4 → `low_slope.*` config
+## RESOLVED + LIVE IN PROD (2026-07-21)
+
+The `low_slope.*` values below were transcribed into `infra/fixtures/pricing_config_exhibit_b.json`
+on 2026-07-10 and covered by a 47-test suite (`tests/core/test_low_slope_pricing.py` +
+friends), but `scripts/seed_pricing_configs.py` is skip-if-exists — since prod's
+`PricingConfig` rows (tenant 1: miami/jupiter/naples) already existed from an earlier
+seed, the fill never reached prod. All three branches were stuck on the original
+all-null placeholder `low_slope` block (`bur`/`tpo`/`coatings`/`silicone` OI-1..OI-6),
+so `_priced_low_slope_types()` (`api/routes/estimator.py`) returned zero roof types and
+the UI showed "Pending Tim" for values that had actually been reviewed and answered for
+11 days.
+
+Reconciled via `scripts/reconcile_low_slope_pricing.py` (new immutable config version,
+same pattern as `seed_cuts_calc_config.py`): miami/jupiter/naples all moved v4 → v5,
+touching only the `low_slope` key (78 fields; everything else byte-identical).
+`scripts/prod_smoke.py` confirms `low_slope_pending=False` and a live `tpo_adhered`
+quote now returns `slope_type=low_slope` in prod.
 
 ### §4.1 Base cost L&M ($/SQ) → `low_slope.base_cost_lm[zone][roof_type]`
-| System | $/SQ |
-|---|---|
-| Polyglass SAV / SAP (Peel & Stick) | 475 |
-| Adhered TPO | 485 |
-| Mech. Attached TPO | 485 |
-| PB Acrylic Coating (2 white coats, incl OH+P) | 375 |
-| PB Premium Coat (Acrylic, incl OH+P) | 550 |
-| PB Silicone (1 coat, incl OH+P) | 445 |
-| PB Silicone (2 coats, incl OH+P) | 515 |
-| Stockmeier Polyurethane (2 coats, incl OH+P) | 595 |
+| System | HVHZ $/SQ | FBC $/SQ |
+|---|---|---|
+| Polyglass SAV / SAP (Peel & Stick) | 475 | **450** (Tim's live sheet: FBC is $25 lower) |
+| Adhered TPO | 485 | 485 |
+| Mech. Attached TPO | 485 | 485 |
+| PB Acrylic Coating (2 white coats, incl OH+P) | 375 | 375 |
+| PB Premium Coat (Acrylic, incl OH+P) | 550 | 550 |
+| PB Silicone (1 coat, incl OH+P) | 445 | 445 |
+| PB Silicone (2 coats, incl OH+P) | 515 | 515 |
+| Stockmeier Polyurethane (2 coats, incl OH+P) | 595 | 595 |
 
 ### §4.2 Overhead ($/SQ) → `low_slope.overhead[zone][oh_key]` (+`wood_deck_oh_adder`)
 | Surface | $/SQ |
@@ -27,7 +43,7 @@ transcribe Exhibit B into the config.
 | Flat Roof | 155 |
 | TPO Roof | 135 |
 | Coatings (in-house) | 95 |
-| **Wood deck adder** | **+45** (concrete is default) → `wood_deck_oh_adder = 45` |
+| **Wood deck adder** | **+50** (concrete is default) → `wood_deck_oh_adder = 50` (corrected 45→50 on 2026-07-10 from Tim's operational sheet; live in prod 2026-07-21) |
 
 ### §4.3 Insulation ($/SQ, no profit) → `low_slope.insulation_tiers` + `tapered_cost_per_sq`
 | Type | $/SQ |
@@ -63,19 +79,25 @@ Sloped calculator sheet (has comments + formulas):
 `https://docs.google.com/spreadsheets/d/1qxfKRRvmQS_NYu3AE2KQgek421Wzftu3xVmGECFH-ig/edit`
 Tabs: `Tim (HVHZ)`, `FBC (Palm/Lee/St.Lucie)`, `Custom Tile Calc`, `Marco`, `Josh`, `OH Metrics`, `Jupiter`.
 
-1. **Low-slope HVHZ-vs-FBC delta:** Exhibit B §4 gives ONE low-slope table, but the
-   config is per-zone (`[zone]`) and §4 is titled "HVHZ + FBC variant." Confirm the
-   FBC low-slope base costs are identical to HVHZ, or if FBC is cheaper (sloped §5.2
-   is ~$10–20/SQ lower than §5.1). → Tim, or compare the two low-slope source sheets.
+1. ~~**Low-slope HVHZ-vs-FBC delta**~~ — RESOLVED 2026-07-20 Zoom: Exhibit B §4 is one
+   table for both zones. Jon 2026-07-21: confirmed Tim's live operational sheet is the
+   most current source and does show one real delta not in Exhibit B —
+   `polyglass_sav_sap` is $450 FBC vs $475 HVHZ (now live, see §4.1 above). Still open:
+   confirm with Tim whether any *other* low-slope system also has an undocumented
+   zone delta on his live calculator.
 2. **Per-brand rake-tile unit** (tile roof-cuts): `Custom Tile Calc` cells B35/E35/B42/E42
    show $4.30 / $5.78 / $19.14 by tile brand — confirm the brand→unit mapping.
 3. **Gutter hangers** (7" Alum K-Style "plus hangers") + **whether 4×5 downspouts
    ($10.50) bill separately** — not on the gutters sheet; ask Tim directly.
 4. **`Jupiter` branch** low-slope/tile values if that branch differs (tab exists;
-   `Custom Tile Calc` row 2 notes "Jupiter Branch (every 17.5 SQ)…").
+   `Custom Tile Calc` row 2 notes "Jupiter Branch (every 17.5 SQ)…"). Note: the
+   2026-07-21 prod reconcile applied the same tenant-wide `low_slope` block to all
+   three branches (miami/jupiter/naples) — if Jupiter's live sheet turns out to
+   diverge, jupiter's config will need its own version bump, not a shared one.
 
-## Seeding plan (blocked on weekly model limit — resets 6am ET)
-Extend/author the low-slope seed with the §4 values above, keyed by zone
-(HVHZ + FBC, pending item 1) and roof_type; verify against `core/pricing_config.py`
-getters; behavioral test that a low-slope quote no longer raises ConfigError.
-Route to a sonnet executor after reset.
+## Seeding — DONE (2026-07-21)
+The low-slope seed (§4 values above) is live in prod for all three branches
+(`scripts/reconcile_low_slope_pricing.py`, config version 5). Verified against
+`core/pricing_config.py` getters via the existing 47-test suite and behaviorally
+via `scripts/prod_smoke.py` (a low-slope quote no longer raises ConfigError / shows
+pending).
