@@ -24,7 +24,7 @@ from functools import lru_cache
 
 from core.article_prompt import system_prompt, template_prompt
 from core.json_repair import parse_model_json
-from core.jsonld import build_article, build_breadcrumb_list, build_faq_page, build_video_object
+from core.jsonld import build_article, build_faq_page, build_video_object
 from core.qa_gate import is_duplicate, verdict
 
 logger = logging.getLogger(__name__)
@@ -903,6 +903,7 @@ def _run_for_tenant(
             "outline": item.get("outline", []),
             "role": "pillar" if is_pillar else "cluster",
             "pillar_slug": pillar_slug if not is_pillar else None,
+            "pillar_title": plan["pillar"].get("title") if not is_pillar else None,
         }
         serp = serps_map.get(kw) or {}
         try:
@@ -1092,30 +1093,19 @@ def _wp_base_url() -> str:
 # ---------------------------------------------------------------------------
 
 def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
-    """Deterministic JSON-LD: Article + FAQPage + BreadcrumbList (always present)
-    + VideoObject entries when video grounding exists."""
-    from datetime import datetime, timezone  # noqa: PLC0415
+    """Deterministic JSON-LD: FAQPage + VideoObject ONLY.
 
-    from core.jsonld import build_article, build_faq_page  # noqa: PLC0415
+    Rank Math (the live site's SEO plugin) already emits Organization/Person/Article/
+    BreadcrumbList for every post — see core.brand_identity for the same NAP data
+    modeled for the (currently unused-here) full-graph path in ``generate_article``.
+    Emitting those node types again per-article would duplicate what Rank Math already
+    puts on the page, so the per-post schema we inject here is scoped to the two node
+    types Rank Math does NOT generate: the article's own FAQ Q&A pairs and its source
+    VideoObject(s).
+    """
+    from core.jsonld import build_faq_page  # noqa: PLC0415
 
-    slug = ctx.get("pillar_slug") or fields.get("slug") or ""
-    wp_base = _wp_base_url()
-    url = f"{wp_base}/{slug}".rstrip("/")
-    date = datetime.now(timezone.utc).date().isoformat()
-    jsonld: list[dict] = [
-        build_article(
-            (fields.get("title") or "")[:110],
-            fields.get("meta") or "",
-            "Perkins Roofing",
-            date,
-            url,
-        ),
-        build_breadcrumb_list([
-            {"name": "Home", "url": f"{wp_base}/"},
-            {"name": "Blog", "url": f"{wp_base}/blog/"},
-            {"name": fields.get("title") or slug, "url": url},
-        ]),
-    ]
+    jsonld: list[dict] = []
     if fields.get("faq_json"):
         jsonld.append(build_faq_page(fields["faq_json"]))
     # Include VideoObject entries stored on fields (set by generate_scored_article
@@ -1341,6 +1331,44 @@ def _ensure_footer_link(content_md: str) -> str:
     from core.brand_identity import YOUTUBE_CHANNEL_URL  # noqa: PLC0415
     footer = f'<p>{_YOUTUBE_FOOTER_TEXT} <a href="{YOUTUBE_CHANNEL_URL}">{YOUTUBE_CHANNEL_URL}</a></p>'
     return f"{content_md}\n{footer}"
+
+
+def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
+    """Append internal links: cluster -> pillar (descriptive anchor) + 1-3 contextual
+    SERVICES links (keyword-matched — see core.internal_links).
+
+    Same append-only pattern as _ensure_footer_link/_ensure_video_link: never rewrites
+    existing prose, never invents a link. Idempotent — skips a link whose URL is
+    already present in the body.
+    """
+    if not content_md:
+        return content_md
+
+    links: list[str] = []
+
+    pillar_slug = ctx.get("pillar_slug")
+    if ctx.get("role") == "cluster" and pillar_slug:
+        pillar_url = f"{_wp_base_url()}/blog/{pillar_slug}"
+        if pillar_url not in content_md:
+            anchor = ctx.get("pillar_title") or _title_case_keyword(pillar_slug.replace("-", " "))
+            links.append(f'<a href="{pillar_url}">{anchor}</a>')
+
+    from core.internal_links import matching_service_links  # noqa: PLC0415
+    # Match against the article's own prose only — excluding a related-links block this
+    # function already appended, so a second pass doesn't treat its own anchor text as new
+    # content to match against (which would keep growing the link list every re-run).
+    body_for_matching = re.sub(r'<p class="related-links">.*?</p>', "", content_md,
+                               flags=re.IGNORECASE | re.DOTALL)
+    haystack = f"{keyword} {_strip_html(body_for_matching)}"
+    for entry in matching_service_links(haystack):
+        if entry["url"] not in content_md:
+            links.append(f'<a href="{entry["url"]}">{entry["anchor"]}</a>')
+
+    if not links:
+        return content_md
+
+    block = f'<p class="related-links">Related: {" | ".join(links)}</p>'
+    return f"{content_md}\n{block}"
 
 
 def _ensure_article_image(content_md: str, keyword: str) -> str:
@@ -1961,6 +1989,10 @@ def generate_scored_article(
             logger.error(
                 "generate_scored_article %r: body still ≤300 words after emergency refine; "
                 "wordcount check will fail — content may be incomplete", keyword)
+
+    # 7b. Internal links (REQUIRED): cluster -> pillar + 1-3 contextual services links.
+    #     Placed after the emergency-refine block for the same reason as the footer below.
+    fields["content_md"] = _ensure_internal_links(fields.get("content_md", ""), keyword, ctx)
 
     # 8. Footer (REQUIRED on every article): YouTube subscribe CTA. Placed last, after the
     #    emergency-refine block above (which can regenerate content_md wholesale), so nothing

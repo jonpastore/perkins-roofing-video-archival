@@ -549,3 +549,84 @@ def test_grounding_audit_escalates_terms_tim_has_never_said():
         assert not any("Polyblast" in t for t in never), "a word Tim says must NOT escalate"
     finally:
         article_job._corpus_vocabulary.cache_clear()
+
+
+# ── per-post schema scoped to FAQ + Video only (Rank Math owns Org/Article/Breadcrumb) ──────
+
+def test_jsonld_is_faq_and_video_only():
+    from jobs.article_job import _build_article_jsonld
+
+    fields = {
+        "title": "Wall Flashings Guide",
+        "meta": "m",
+        "faq_json": [{"q": "q", "a": "a"}],
+        "_video_jsonld": [{"@context": "https://schema.org", "@type": "VideoObject", "name": "v"}],
+    }
+    jsonld = _build_article_jsonld(fields, {"role": "pillar", "pillar_slug": None})
+    types = [node["@type"] for node in jsonld]
+    assert types == ["FAQPage", "VideoObject"]
+    assert "Article" not in types
+    assert "BreadcrumbList" not in types
+    assert "Organization" not in types
+    assert "Person" not in types
+
+
+def test_jsonld_omits_video_when_ungrounded():
+    from jobs.article_job import _build_article_jsonld
+
+    fields = {"title": "T", "meta": "m", "faq_json": [{"q": "q", "a": "a"}]}
+    jsonld = _build_article_jsonld(fields, {"role": "pillar", "pillar_slug": None})
+    assert [node["@type"] for node in jsonld] == ["FAQPage"]
+
+
+# ── internal linking: cluster -> pillar + contextual services links ────────────────────────
+
+def test_internal_links_cluster_links_up_to_its_pillar():
+    from jobs.article_job import _ensure_internal_links
+
+    ctx = {"role": "cluster", "pillar_slug": "metal-roofing-guide", "pillar_title": "Metal Roofing Guide"}
+    out = _ensure_internal_links("<p>some article body</p>", "metal roof cost", ctx)
+    assert '<a href="https://perkinsroofing.net/blog/metal-roofing-guide">Metal Roofing Guide</a>' in out
+
+
+def test_internal_links_pillar_article_gets_no_pillar_link():
+    from jobs.article_job import _ensure_internal_links
+
+    ctx = {"role": "pillar", "pillar_slug": None}
+    out = _ensure_internal_links("<p>body</p>", "metal roofing", ctx)
+    assert "/blog/" not in out
+
+
+def test_internal_links_adds_contextual_services_link():
+    from jobs.article_job import _ensure_internal_links
+
+    ctx = {"role": "pillar", "pillar_slug": None}
+    out = _ensure_internal_links("<p>Learn about roof repair costs.</p>", "roof repair", ctx)
+    assert 'href="https://perkinsroofing.net/roof-repair/"' in out
+    assert "roof repair services" in out
+
+
+def test_internal_links_does_not_link_an_unrelated_service():
+    from jobs.article_job import _ensure_internal_links
+
+    ctx = {"role": "pillar", "pillar_slug": None}
+    out = _ensure_internal_links("<p>Gutter cleaning schedules for South Florida homes.</p>",
+                                 "gutter cleaning", ctx)
+    assert "flat-roofing" not in out
+    assert "tile-roofing" not in out
+
+
+def test_internal_links_is_idempotent():
+    from jobs.article_job import _ensure_internal_links
+
+    ctx = {"role": "cluster", "pillar_slug": "metal-roofing-guide", "pillar_title": "Metal Roofing Guide"}
+    once = _ensure_internal_links("<p>roof repair body</p>", "roof repair", ctx)
+    twice = _ensure_internal_links(once, "roof repair", ctx)
+    assert twice == once
+
+
+def test_matching_service_links_caps_at_three():
+    from core.internal_links import matching_service_links
+
+    text = "roof repair roof replacement roof inspection metal roof tile roof flat roof"
+    assert len(matching_service_links(text)) == 3
