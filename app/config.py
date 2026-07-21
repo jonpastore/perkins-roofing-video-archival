@@ -21,7 +21,7 @@ class Settings:
     LLM_BACKEND   = os.getenv("LLM_BACKEND", "ollama")
     OLLAMA_URL    = os.getenv("OLLAMA_URL", "http://cerberus-ai:11434")  # DEV ONLY
     LITELLM_URL   = os.getenv("LITELLM_URL", "http://cerberus-ai:4000")  # DEV ONLY
-    LITELLM_MODEL = os.getenv("LITELLM_MODEL", "gpt-oss-120b-think")
+    LITELLM_MODEL = os.getenv("LITELLM_MODEL", "gpt-oss-120b")
     # EMBED_MODEL default is BACKEND-AWARE so it matches the embedder actually used: vertex →
     # gemini-embedding-001 (3072-dim, same default as adapters.llm.get_embedder), ollama → nomic.
     # A single shared default previously caused embed_job to stamp/skip with the wrong model,

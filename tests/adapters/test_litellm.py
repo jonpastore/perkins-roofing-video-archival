@@ -1,6 +1,6 @@
 """LiteLLMLLM (adapters/llm.py) — mocked, no live network calls.
 
-Live compliance against the real cerberus-ai:4000 front door (gpt-oss-120b-think) was verified
+Live compliance against the real cerberus-ai:4000 front door (gpt-oss-120b) was verified
 manually 2026-07-21: both ARTICLE_SCHEMA and CRITIQUE_SCHEMA round-tripped to valid JSON via the
 json_object + prompt-spelled-keys workaround. These tests lock in the request/response contract
 so a refactor can't silently break that path.
@@ -49,7 +49,7 @@ def test_chat_hits_openai_compatible_endpoint_with_bearer_key(monkeypatch):
     assert out == "OK"
     assert captured["url"] == "http://cerberus-ai:4000/v1/chat/completions"
     assert captured["headers"]["Authorization"] == "Bearer sk-test-key"
-    assert captured["payload"]["model"] == "gpt-oss-120b-think"
+    assert captured["payload"]["model"] == "gpt-oss-120b"
     assert captured["payload"]["messages"] == [{"role": "user", "content": "say ok"}]
 
 
@@ -113,7 +113,7 @@ def test_get_default_returns_litellm_backend(monkeypatch):
     try:
         inst = llm_mod.get_default()
         assert isinstance(inst, LiteLLMLLM)
-        assert inst._model == "gpt-oss-120b-think"
+        assert inst._model == "gpt-oss-120b"
         assert inst._url == "http://cerberus-ai:4000/v1/chat/completions"
     finally:
         llm_mod._default = None

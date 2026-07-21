@@ -130,7 +130,7 @@ class OllamaLLM:
 
 
 class LiteLLMLLM:
-    """Local gpt-oss-120b-think via the LiteLLM front door (cerberus-ai:4000), an
+    """Local gpt-oss-120b (non-think, faster + no JSON-truncation) via the LiteLLM front door (cerberus-ai:4000), an
     OpenAI-compatible chat endpoint — same `.chat` contract as VertexLLM/OllamaLLM. Opt-in
     dev/local generator (settings.LLM_BACKEND == "litellm"); never the prod default (prod's
     fail-fast in app/config.py still requires LLM_BACKEND == "vertex").
@@ -144,7 +144,7 @@ class LiteLLMLLM:
     CRITIQUE_SCHEMA cleanly in the same test.
     """
 
-    def __init__(self, url="http://cerberus-ai:4000", model="gpt-oss-120b-think", api_key=None):
+    def __init__(self, url="http://cerberus-ai:4000", model="gpt-oss-120b", api_key=None):
         self._url = url.rstrip("/") + "/v1/chat/completions"
         self._model = model
         self._api_key = api_key
