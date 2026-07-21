@@ -183,6 +183,33 @@ def test_get_topics_ordered_by_count_desc():
     assert counts == sorted(counts, reverse=True)
 
 
+def test_get_topics_sort_priority_metal_first():
+    """sort=priority puts metal-roofing topics before shingle/other topics."""
+    from app.models import GraphNode, SessionLocal
+    with SessionLocal() as db:
+        db.add(GraphNode(video_id="vid1", kind="topics", label="standing seam metal roofing",
+                         detail="", start=10.0, version="1"))
+        db.commit()
+
+    c = _admin_client()
+    r = c.get("/topics", params={"sort": "priority"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    labels = [i["label"].lower() for i in _items(r)]
+    metal_idx = labels.index("standing seam metal roofing")
+    other_indices = [i for i, l in enumerate(labels) if l != "standing seam metal roofing"]
+    assert all(metal_idx < i for i in other_indices)
+
+
+def test_topic_priority_ranks():
+    """metal_roofing=0, consumer_protection=1, other=2 (unit-level, no DB)."""
+    from api.routes.topics import _topic_priority
+    assert _topic_priority("Standing Seam Metal Roofing") == 0
+    assert _topic_priority("aluminum roof panels") == 0
+    assert _topic_priority("Roof Insurance Claim Scams") == 1
+    assert _topic_priority("public adjuster warning signs") == 1
+    assert _topic_priority("shingle roof repair") == 2
+
+
 def test_get_topics_sales_allowed():
     """sales role has article_read → 200."""
     c = _sales_client()

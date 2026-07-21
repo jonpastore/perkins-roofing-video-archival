@@ -17,6 +17,7 @@ pass status="publish" to go live.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from contextlib import contextmanager
 from functools import lru_cache
@@ -1325,6 +1326,23 @@ _YT_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([A-Za-z0-9_-]{6,})", re.IGNORECASE)
 
 
+_YOUTUBE_FOOTER_TEXT = "Subscribe to our YouTube channel for more!"
+
+
+def _ensure_footer_link(content_md: str) -> str:
+    """Append the YouTube subscribe CTA to every article body.
+
+    Same pattern as _ensure_video_link/_ensure_article_image: deterministic and append-only,
+    never invented. Idempotent — a second pass (e.g. a regen job re-running this on an already
+    processed body) won't double the footer.
+    """
+    if not content_md or _YOUTUBE_FOOTER_TEXT in content_md:
+        return content_md
+    from core.brand_identity import YOUTUBE_CHANNEL_URL  # noqa: PLC0415
+    footer = f'<p>{_YOUTUBE_FOOTER_TEXT} <a href="{YOUTUBE_CHANNEL_URL}">{YOUTUBE_CHANNEL_URL}</a></p>'
+    return f"{content_md}\n{footer}"
+
+
 def _ensure_article_image(content_md: str, keyword: str) -> str:
     """Give the article a real image: the thumbnail of the video it was built from.
 
@@ -1778,6 +1796,7 @@ def generate_scored_article(
     target: int = 100,
     max_iters: int = 3,
     llm=None,
+    validator_llm=None,
     db=None,
     critique: bool = False,
 ) -> dict:
@@ -1795,12 +1814,25 @@ def generate_scored_article(
     (3 critics + 1 revision) extra LLM round-trips per article on top of generation — and because
     turning it on globally silently changes every existing caller's cost, latency, and LLM-call
     surface. Callers that want it ask for it (see jobs/regen_articles_seo).
+
+    Two-model split: ``llm`` drafts/refines (may be the cheap local backend, e.g. litellm's
+    gpt-oss-120b-think); ``validator_llm`` grades that draft for grounding and defaults to an
+    EXPLICIT VertexLLM instance regardless of settings.LLM_BACKEND, so a local draft model never
+    marks its own homework. Construction is lazy/no-op (no vertexai.init happens until a check
+    actually calls .chat()), so a caller that never exercises the validator pays nothing.
     """
     from core.seo import failing_keys, score_article  # noqa: PLC0415
 
     if llm is None:
         from adapters.llm import get_default  # noqa: PLC0415
         llm = get_default()
+    if validator_llm is None:
+        from adapters.llm import VertexLLM  # noqa: PLC0415
+        validator_llm = VertexLLM(
+            project=os.getenv("GOOGLE_CLOUD_PROJECT"),
+            location=os.getenv("GCP_REGION", "us-central1"),
+            chat_model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+        )
 
     fields = generate_article_content(keyword, ctx, llm=llm, db=db)
     # Hold the evidence in a LOCAL, not in `fields`. Every refine/revise step rebuilds the dict
@@ -1865,7 +1897,7 @@ def generate_scored_article(
     # comes from — calls this with critique off. Leaving the guard advisory there meant the one
     # path that matters had no fabrication check at all. This costs an LLM round-trip ONLY when
     # something is actually unsourced; a clean article pays nothing.
-    fields = _enforce_grounding(fields, keyword, transcript, llm=llm,
+    fields = _enforce_grounding(fields, keyword, transcript, llm=validator_llm,
                                target_words=int(ctx.get("target_words", 1800)))
 
     # ── Final deterministic guarantees ──────────────────────────────────────
@@ -1929,6 +1961,11 @@ def generate_scored_article(
             logger.error(
                 "generate_scored_article %r: body still ≤300 words after emergency refine; "
                 "wordcount check will fail — content may be incomplete", keyword)
+
+    # 8. Footer (REQUIRED on every article): YouTube subscribe CTA. Placed last, after the
+    #    emergency-refine block above (which can regenerate content_md wholesale), so nothing
+    #    downstream of this point can drop it.
+    fields["content_md"] = _ensure_footer_link(fields.get("content_md", ""))
 
     jsonld = _build_article_jsonld(fields, ctx)
     result = _score(fields, jsonld)

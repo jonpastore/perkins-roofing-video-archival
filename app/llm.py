@@ -48,7 +48,7 @@ def chat(prompt, want_json=False, timeout=300):
         txt = re.sub(r"<think>.*?</think>", "", out.get("response", ""), flags=re.S).strip()
     elif settings.LLM_BACKEND == "anthropic":
         txt = _anthropic(prompt)
-    elif settings.LLM_BACKEND == "vertex":
+    elif settings.LLM_BACKEND in ("vertex", "litellm"):
         from adapters.llm import get_default
         txt = get_default().chat(prompt, want_json=want_json)
     else:

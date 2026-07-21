@@ -65,3 +65,7 @@ AUTHOR: dict = {
         "Florida High-Velocity Hurricane Zone building code",
     ],
 }
+
+# Footer CTA link appended to every generated article (jobs/article_job._ensure_footer_link).
+# Canonical channel-ID form — stable even if the @handle above ever changes.
+YOUTUBE_CHANNEL_URL = "https://www.youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg"

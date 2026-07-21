@@ -14,10 +14,14 @@ class Settings:
     # rest of the suite should not pay a lock wait per request.
     AUDIT_ENABLED = os.getenv("AUDIT_ENABLED", "1").lower() not in ("0", "false", "no")
 
-    # Model backends — 'ollama' (dev/cerberus) | 'vertex' | 'anthropic' (prod, see llm.py)
+    # Model backends — 'ollama' (dev/cerberus) | 'litellm' (dev/local, gpt-oss-120b-think via
+    # the cerberus LiteLLM front door — opt-in, never the prod default) | 'vertex' | 'anthropic'
+    # (prod, see llm.py)
     EMBED_BACKEND = os.getenv("EMBED_BACKEND", "ollama")
     LLM_BACKEND   = os.getenv("LLM_BACKEND", "ollama")
     OLLAMA_URL    = os.getenv("OLLAMA_URL", "http://cerberus-ai:11434")  # DEV ONLY
+    LITELLM_URL   = os.getenv("LITELLM_URL", "http://cerberus-ai:4000")  # DEV ONLY
+    LITELLM_MODEL = os.getenv("LITELLM_MODEL", "gpt-oss-120b-think")
     # EMBED_MODEL default is BACKEND-AWARE so it matches the embedder actually used: vertex →
     # gemini-embedding-001 (3072-dim, same default as adapters.llm.get_embedder), ollama → nomic.
     # A single shared default previously caused embed_job to stamp/skip with the wrong model,

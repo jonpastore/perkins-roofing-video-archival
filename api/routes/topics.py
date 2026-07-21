@@ -71,7 +71,8 @@ def list_topics(
     grouping from content_graph when the table is empty (pre-priming safety net).
 
     Query params:
-      - sort:      "videos" (default) | "length" | "alpha"
+      - sort:      "videos" (default) | "length" | "alpha" | "priority" (metal roofing first,
+                   then consumer-protection, then everything else)
       - limit:     page size (omit for all)
       - offset:    skip first N results (default 0)
       - generated: "all" (default) | "yes" | "no"
@@ -97,11 +98,32 @@ def list_topics(
     return _list_topics_live(db, sort=sort, limit=limit, offset=offset, generated=generated)
 
 
+# Topic content-priority buckets (Jon, 2026-07-21 buildout plan): metal roofing first
+# (exploding demand), then consumer-protection/what-to-look-out-for, then everything else.
+# Keyword lists reuse _ROOFING_SUBTOPIC_PATTERNS' metal bucket verbatim so the two stay in sync.
+_TOPIC_PRIORITY_KEYWORDS: list[tuple[int, list[str]]] = [
+    (0, ["metal", "standing seam", "steel", "aluminum"]),  # metal_roofing
+    (1, ["insurance", "insurance claim", "public adjuster", "storm chaser", "warranty",
+         "scam", "permit", "license", "consumer protection", "contract", "fraud"]),  # consumer_protection
+]
+
+
+def _topic_priority(label: str) -> int:
+    """metal_roofing=0, consumer_protection=1, other=2 — for sort='priority'."""
+    label_lower = label.lower()
+    for rank, keywords in _TOPIC_PRIORITY_KEYWORDS:
+        if any(kw in label_lower for kw in keywords):
+            return rank
+    return 2
+
+
 def _sort_key(sort: str):
     if sort == "length":
         return lambda x: x["total_content_length"]
     if sort == "alpha":
         return lambda x: x["label"].lower()
+    if sort == "priority":
+        return lambda x: _topic_priority(x["label"])
     return lambda x: x["num_videos"]
 
 
@@ -181,7 +203,7 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int, ge
         for row in rows
     ]
 
-    reverse = sort != "alpha"
+    reverse = sort not in ("alpha", "priority")
     items.sort(key=_sort_key(sort), reverse=reverse)
 
     # Apply generated filter + push-generated-to-back ordering BEFORE pagination.
@@ -291,7 +313,7 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int, generate
         for g in groups.values()
     ]
 
-    reverse = sort != "alpha"
+    reverse = sort not in ("alpha", "priority")
     items.sort(key=_sort_key(sort), reverse=reverse)
 
     # Apply generated filter + push-generated-to-back ordering BEFORE pagination.

@@ -920,3 +920,28 @@ class TestEnsureToc:
         from core.seo import ensure_toc
         body = '<p><a href="#a">jump</a></p><h2>A</h2><h2>B</h2><h2>C</h2>'
         assert ensure_toc(body) == body
+
+
+class TestEnsureFooterLink:
+    """_ensure_footer_link must append the YouTube subscribe CTA to every article body —
+    append-only, idempotent, and sourced from core.brand_identity (never invented)."""
+
+    def test_appends_footer_text_and_link(self):
+        from core.brand_identity import YOUTUBE_CHANNEL_URL
+        from jobs.article_job import _ensure_footer_link
+        body = "<h2>Section</h2><p>Some roofing content.</p>"
+        result = _ensure_footer_link(body)
+        assert result.startswith(body)
+        assert "Subscribe to our YouTube channel for more!" in result
+        assert YOUTUBE_CHANNEL_URL in result
+
+    def test_idempotent_does_not_double_append(self):
+        from jobs.article_job import _ensure_footer_link
+        once = _ensure_footer_link("<p>content</p>")
+        twice = _ensure_footer_link(once)
+        assert once == twice
+        assert twice.count("Subscribe to our YouTube channel for more!") == 1
+
+    def test_empty_content_returns_empty(self):
+        from jobs.article_job import _ensure_footer_link
+        assert _ensure_footer_link("") == ""

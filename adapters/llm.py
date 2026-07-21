@@ -3,8 +3,11 @@ with gemini-2.5-flash (chat) and gemini-embedding-001 @ 3072-dim (embeddings).
 
 Validated live 2026-07-04 against project video-archival-and-content-gen with the
 vertex-dev-sa key (GOOGLE_APPLICATION_CREDENTIALS)."""
+import json
 import os
+import re
 import time
+import urllib.request
 
 from core import metering
 
@@ -126,6 +129,78 @@ class OllamaLLM:
         return get_embedder().embed(texts, batch=batch)
 
 
+class LiteLLMLLM:
+    """Local gpt-oss-120b-think via the LiteLLM front door (cerberus-ai:4000), an
+    OpenAI-compatible chat endpoint — same `.chat` contract as VertexLLM/OllamaLLM. Opt-in
+    dev/local generator (settings.LLM_BACKEND == "litellm"); never the prod default (prod's
+    fail-fast in app/config.py still requires LLM_BACKEND == "vertex").
+
+    response_schema is deliberately NOT sent as OpenAI `response_format: json_schema`: our
+    schemas (e.g. ARTICLE_SCHEMA in jobs/article_job.py) use Vertex's controlled-generation
+    shape (uppercase "OBJECT"/"STRING" types), and litellm's json_schema conversion hard-400s
+    on that shape (verified live against gpt-oss-120b-think 2026-07-21). Instead this reuses
+    OllamaLLM's workaround — spell out the required keys in the prompt — with the
+    universally-supported `json_object` mode, which round-tripped ARTICLE_SCHEMA and
+    CRITIQUE_SCHEMA cleanly in the same test.
+    """
+
+    def __init__(self, url="http://cerberus-ai:4000", model="gpt-oss-120b-think", api_key=None):
+        self._url = url.rstrip("/") + "/v1/chat/completions"
+        self._model = model
+        self._api_key = api_key
+
+    def _key(self) -> str:
+        if self._api_key:
+            return self._api_key
+        key = os.getenv("LITELLM_API_KEY")
+        if key:
+            return key
+        # Local-dev fallback: the cached copy `llm` (the fleet's CLI) also reads.
+        cached = os.path.expanduser("~/.config/litellm/cerberus.key")
+        if os.path.exists(cached):
+            with open(cached) as f:
+                return f.read().strip()
+        raise RuntimeError(
+            "LITELLM_API_KEY unset and ~/.config/litellm/cerberus.key not found — "
+            "required for the litellm backend"
+        )
+
+    def chat(self, prompt, want_json=False, response_schema=None):
+        if response_schema and isinstance(response_schema, dict):
+            props = response_schema.get("properties", {})
+            req = response_schema.get("required", list(props))
+            prompt = (
+                prompt
+                + f"\n\nReturn ONLY one valid JSON object with these keys: {', '.join(props)}. "
+                + f"Required: {', '.join(req)}. "
+                + 'The "content" key (if present) must hold the COMPLETE article body as HTML.'
+            )
+        payload = {
+            "model": self._model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1 if (want_json or response_schema) else 0.4,
+            # gpt-oss is a reasoning model — a tight budget silently truncates JSON mid-object
+            # (measured: 800 tokens truncated CRITIQUE_SCHEMA output; 3000 did not). Article
+            # bodies run long, so size generously rather than retune per call site.
+            "max_tokens": 8192,
+        }
+        if want_json or response_schema:
+            payload["response_format"] = {"type": "json_object"}
+        req = urllib.request.Request(
+            self._url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self._key()}"},
+        )
+        with urllib.request.urlopen(req, timeout=300) as r:
+            data = json.loads(r.read().decode())
+        content = data["choices"][0]["message"]["content"] or ""
+        return re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+
+    def embed(self, texts, batch=100):
+        # Embeddings must match the stored 3072-dim Vertex vectors — always use the Vertex embedder.
+        return get_embedder().embed(texts, batch=batch)
+
+
 _default = None
 _embedder = None
 
@@ -148,12 +223,16 @@ def get_embedder():
 
 def get_default():
     """Lazy singleton, backend-selected by settings.LLM_BACKEND. 'ollama' -> local cerberus
-    (priming); otherwise Vertex (live). Built from env (GOOGLE_CLOUD_PROJECT, GCP_REGION, models)."""
+    (priming); 'litellm' -> local gpt-oss-120b-think via the cerberus LiteLLM front door
+    (opt-in, dev-only); otherwise Vertex (live). Built from env (GOOGLE_CLOUD_PROJECT,
+    GCP_REGION, models)."""
     global _default
     if _default is None:
         from app.config import settings  # noqa: PLC0415
         if settings.LLM_BACKEND == "ollama":
             _default = OllamaLLM()
+        elif settings.LLM_BACKEND == "litellm":
+            _default = LiteLLMLLM(url=settings.LITELLM_URL, model=settings.LITELLM_MODEL)
         else:
             project = os.getenv("GOOGLE_CLOUD_PROJECT")
             if not project:
