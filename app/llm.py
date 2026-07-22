@@ -48,7 +48,7 @@ def chat(prompt, want_json=False, timeout=300):
         txt = re.sub(r"<think>.*?</think>", "", out.get("response", ""), flags=re.S).strip()
     elif settings.LLM_BACKEND == "anthropic":
         txt = _anthropic(prompt)
-    elif settings.LLM_BACKEND in ("vertex", "litellm"):
+    elif settings.LLM_BACKEND in ("vertex", "litellm", "cloudflare"):
         from adapters.llm import get_default
         txt = get_default().chat(prompt, want_json=want_json)
     else:
@@ -56,8 +56,10 @@ def chat(prompt, want_json=False, timeout=300):
     if want_json:
         a, b = txt.find("{"), txt.rfind("}")
         if a != -1 and b != -1:
-            try: return json.loads(txt[a:b + 1])
-            except Exception: return {}
+            try:
+                return json.loads(txt[a:b + 1])
+            except Exception:
+                return {}
         return {}
     return txt
 

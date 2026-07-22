@@ -22,6 +22,11 @@ class Settings:
     OLLAMA_URL    = os.getenv("OLLAMA_URL", "http://cerberus-ai:11434")  # DEV ONLY
     LITELLM_URL   = os.getenv("LITELLM_URL", "http://cerberus-ai:4000")  # DEV ONLY
     LITELLM_MODEL = os.getenv("LITELLM_MODEL", "gpt-oss-120b")
+    # Cloudflare Workers-AI (prod-capable non-local generator; no dependence on the local fleet).
+    # Token comes from CLOUDFLARE_API_TOKEN (Secret Manager 'cloudflare-api-token'); account is
+    # Tim's Perkins CF account. See adapters.llm.CloudflareLLM.
+    CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "3303058f686721d6877d6d1e8b8a448c")
+    CLOUDFLARE_MODEL = os.getenv("CLOUDFLARE_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
     # EMBED_MODEL default is BACKEND-AWARE so it matches the embedder actually used: vertex →
     # gemini-embedding-001 (3072-dim, same default as adapters.llm.get_embedder), ollama → nomic.
     # A single shared default previously caused embed_job to stamp/skip with the wrong model,
@@ -83,7 +88,12 @@ settings = Settings()
 # Prod fail-fast (tenancy guard): a prod deploy must use Vertex + Cloud SQL, never the dev
 # cerberus/ollama box or local sqlite. Set PERKINS_ENV=prod on Cloud Run.
 if os.getenv("PERKINS_ENV") == "prod":
-    if settings.EMBED_BACKEND != "vertex" or settings.LLM_BACKEND != "vertex":
-        raise RuntimeError("prod requires EMBED_BACKEND=LLM_BACKEND=vertex (no dev ollama)")
+    # EMBED must stay Vertex: the stored chunk index is 3072-dim Vertex-embedded, so retrieval
+    # grounding breaks if it drifts. The CHAT (draft) backend may be Vertex OR Cloudflare
+    # Workers-AI (prod-capable, no dependence on the dev-only local fleet) — never dev ollama/litellm.
+    if settings.EMBED_BACKEND != "vertex":
+        raise RuntimeError("prod requires EMBED_BACKEND=vertex (index compatibility)")
+    if settings.LLM_BACKEND not in ("vertex", "cloudflare"):
+        raise RuntimeError("prod requires LLM_BACKEND in {vertex, cloudflare} (no dev ollama/litellm)")
     if settings.DB_URL.startswith("sqlite"):
         raise RuntimeError("prod requires Postgres/Cloud SQL, not sqlite")

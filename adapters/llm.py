@@ -201,6 +201,61 @@ class LiteLLMLLM:
         return get_embedder().embed(texts, batch=batch)
 
 
+class CloudflareLLM:
+    """Cloudflare Workers-AI chat backend — same ``.chat`` contract as VertexLLM/LiteLLMLLM.
+
+    This is the PRODUCTION-capable non-local generator (settings.LLM_BACKEND == 'cloudflare'):
+    it removes the dependence on the local cerberus fleet (dev-only, not always reachable from
+    Cloud Run). Account + model are config-driven; the API token comes from CLOUDFLARE_API_TOKEN
+    (injected from Secret Manager in prod). Embeddings still go to Vertex (the stored 3072-dim
+    index is Vertex-embedded — only the CHAT backend is swappable). response_schema is spelled
+    out in the prompt (same reason as LiteLLMLLM) rather than sent as a provider json_schema.
+    """
+
+    _API = "https://api.cloudflare.com/client/v4/accounts/{acct}/ai/run/{model}"
+
+    def __init__(self, account=None, model="@cf/meta/llama-3.3-70b-instruct-fp8-fast", api_token=None):
+        self._account = account or os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
+        self._model = model
+        self._token = api_token or os.getenv("CLOUDFLARE_API_TOKEN", "")
+        if not self._account or not self._token:
+            raise RuntimeError(
+                "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required for the cloudflare "
+                "LLM backend (token from Secret Manager 'cloudflare-api-token')."
+            )
+
+    def chat(self, prompt, want_json=False, response_schema=None):
+        if response_schema and isinstance(response_schema, dict):
+            props = response_schema.get("properties", {})
+            req = response_schema.get("required", list(props))
+            prompt = (
+                prompt
+                + f"\n\nReturn ONLY one valid JSON object with these keys: {', '.join(props)}. "
+                + f"Required: {', '.join(req)}. "
+                + 'The "content" key (if present) must hold the COMPLETE article body as HTML.'
+            )
+        payload = {
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1 if (want_json or response_schema) else 0.4,
+            "max_tokens": 8192,
+        }
+        url = self._API.format(acct=self._account, model=self._model)
+        r = urllib.request.Request(
+            url, data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self._token}"},
+        )
+        with urllib.request.urlopen(r, timeout=300) as resp:
+            data = json.loads(resp.read().decode())
+        if not data.get("success", False):
+            raise RuntimeError(f"Cloudflare Workers-AI error: {data.get('errors')}")
+        content = (data.get("result") or {}).get("response") or ""
+        return re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+
+    def embed(self, texts, batch=100):
+        # Embeddings must match the stored 3072-dim Vertex vectors — always use the Vertex embedder.
+        return get_embedder().embed(texts, batch=batch)
+
+
 _default = None
 _embedder = None
 
@@ -233,6 +288,9 @@ def get_default():
             _default = OllamaLLM()
         elif settings.LLM_BACKEND == "litellm":
             _default = LiteLLMLLM(url=settings.LITELLM_URL, model=settings.LITELLM_MODEL)
+        elif settings.LLM_BACKEND == "cloudflare":
+            _default = CloudflareLLM(account=settings.CLOUDFLARE_ACCOUNT_ID,
+                                     model=settings.CLOUDFLARE_MODEL)
         else:
             project = os.getenv("GOOGLE_CLOUD_PROJECT")
             if not project:
