@@ -603,7 +603,7 @@ def test_internal_links_adds_contextual_services_link():
 
     ctx = {"role": "pillar", "pillar_slug": None}
     out = _ensure_internal_links("<p>Learn about roof repair costs.</p>", "roof repair", ctx)
-    assert 'href="https://perkinsroofing.net/roof-repair/"' in out
+    assert 'href="https://perkinsroofing.net/roof-repair-services/"' in out
     assert "roof repair services" in out
 
 

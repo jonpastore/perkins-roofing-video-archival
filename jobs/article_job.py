@@ -24,7 +24,7 @@ from functools import lru_cache
 
 from core.article_prompt import system_prompt, template_prompt
 from core.json_repair import parse_model_json
-from core.jsonld import build_article, build_faq_page, build_video_object
+from core.jsonld import build_faq_page, build_video_object
 from core.numeric_grounding import check_numeric_claims
 from core.qa_gate import is_duplicate, verdict
 
@@ -749,41 +749,15 @@ def generate_article(
             + "; ".join(c["details"] for c in qa_checks if c.get("severity") == "block")
         )
 
-    # ── 6. Build JSON-LD ──────────────────────────────────────────────────────
-    import datetime  # noqa: PLC0415
-    today = datetime.date.today().isoformat()
-    # Policy: Tim Kanak is the author of record for every article (matches adapters.wordpress
-    # _author_id, which always assigns WP author id 3 = Tim Kanak). A named Person author is the
-    # per-article E-E-A-T signal that actually helps AI-answer-engine attribution; a generic org
-    # name does not. Enrichment may not override the byline.
-    wp_url = _wp_base_url()
-    # No /blog/ prefix: WordPress permalinks are set to "Post name" (Settings → Permalinks),
-    # so every post — like the SERVICES pages in core.internal_links — lives at a top-level
-    # https://perkinsroofing.net/<slug>, never /blog/<slug>. Confirm exact slugs with Wendy/Tim.
-    canonical_url = f"{wp_url}/{slug}"
-
-    # Canonical business identity: one @id-addressed Organization node + a Person author node with
-    # @id/sameAs (E-E-A-T). The Article references the org by @id via publisher — Google's pattern,
-    # no NAP duplication. See core.brand_identity.
-    from core.brand_identity import AUTHOR, ORG_ID, ORGANIZATION  # noqa: PLC0415
-    from core.jsonld import build_organization, build_person  # noqa: PLC0415
-
-    jsonld_list: list[dict] = [
-        build_organization(ORGANIZATION),
-        build_article(
-            headline=title,
-            description=article.get("metaDescription") or "",
-            author_name=AUTHOR["name"],
-            author=build_person(AUTHOR),
-            publisher_id=ORG_ID,
-            date_published=today,
-            date_modified=today,
-            url=canonical_url,
-        ),
-    ]
+    # ── 6. Build JSON-LD — FAQPage + VideoObject ONLY ─────────────────────────
+    # Rank Math already emits Organization/Person/Article/BreadcrumbList for every post, so
+    # emitting them per-article duplicates schema. Scoped to the two node types Rank Math does
+    # NOT generate — matches _build_article_jsonld (the generate_scored_article path). Was a full
+    # Organization+Article graph; corrected 2026-07-22 so this deployed batch path no longer ships
+    # duplicate schema (the same fix already applied to the live scored path + the existing posts).
+    jsonld_list: list[dict] = []
     if faq:
         jsonld_list.append(build_faq_page(faq))
-
     # Append VideoObject entries for each grounded source video
     jsonld_list.extend(jsonld_video_list)
 
