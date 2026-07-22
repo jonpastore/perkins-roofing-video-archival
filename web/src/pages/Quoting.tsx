@@ -2045,15 +2045,15 @@ export function Quoting() {
         </Card>
       )}
 
-      {!search.trim() && !showNewCustomer && filteredCustomers.length === 0 && (
+      {!customersLoading && !customersError && !search.trim() && !showNewCustomer && (
         <Card>
           <p style={{ color: BRAND.sub, fontSize: 14, margin: 0, textAlign: "center" }}>
-            No customers yet. Use + New customer to add one, then choose the property, measurement, and estimate.
+            Start typing to find a customer, or use + New customer to add one — then choose the property, measurement, and estimate.
           </p>
         </Card>
       )}
 
-      {!showNewCustomer && filteredCustomers.length > 0 && (
+      {!showNewCustomer && search.trim() && filteredCustomers.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filteredCustomers.slice(0, 8).map((c) => (
             <Card
