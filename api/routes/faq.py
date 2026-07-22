@@ -473,8 +473,9 @@ def publish_wordpress(
     """Collect all ANSWERED FaqEntry rows, build a semantic HTML FAQ page with
     FAQPage JSON-LD, and create-or-update a WordPress PAGE titled 'FAQ'.
 
-    Requires WP_URL / WP_USER / WP_APP_PWD env vars. Returns 503 with a clear
-    message when credentials are absent.
+    Requires the admin-config WP_URL (PlatformConfig) plus WP_USER / WP_APP_PWD env
+    creds (creds are key transport; the URL is config). Returns 503 with a clear
+    message when either is absent.
 
     Returns: {page_id, page_url, published, action}  (action: 'created' | 'updated')
     """
@@ -482,8 +483,10 @@ def publish_wordpress(
 
     from adapters import wordpress as wp
 
-    # Guard: WP creds must be present
-    missing = [v for v in ("WP_URL", "WP_USER", "WP_APP_PWD") if not os.environ.get(v)]
+    # Guard: admin-config WP_URL + env creds must be present
+    missing = [v for v in ("WP_USER", "WP_APP_PWD") if not os.environ.get(v)]
+    if not wp.resolved_wp_url():
+        missing.insert(0, "WP_URL (admin config)")
     if missing:
         raise HTTPException(
             status_code=503,

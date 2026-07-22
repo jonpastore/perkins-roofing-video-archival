@@ -77,8 +77,8 @@ def test_promotion_submits_article_for_search_indexing(monkeypatch):
     monkeypatch.setattr(PJ.wordpress, "update_status", lambda pid, st: None)
     calls = []
     monkeypatch.setattr(PJ.search_indexing, "submit_urls", lambda urls: calls.append(urls) or {"ok": True})
-    from app.config import settings
-    monkeypatch.setattr(settings, "WP_URL", "https://perkinsroofing.net")
+    # Admin-config WP_URL (resolved_wp_url), not env — see jobs/promote_job._submit_for_indexing.
+    monkeypatch.setattr(PJ.wordpress, "resolved_wp_url", lambda: "https://perkinsroofing.net")
 
     PJ.run()
 

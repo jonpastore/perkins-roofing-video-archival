@@ -562,6 +562,7 @@ def test_coverage_sales_allowed():
 def _seed_answered_entries():
     """Insert two answered FaqEntry rows directly; return their IDs."""
     from datetime import datetime
+
     from app.models import GraphNode
 
     with SessionLocal() as db:
@@ -596,7 +597,8 @@ def _seed_answered_entries():
 
 def test_publish_wordpress_no_creds(monkeypatch):
     """Returns 503 with a clear message when WP creds are absent."""
-    monkeypatch.delenv("WP_URL", raising=False)
+    import adapters.wordpress as _wp
+    monkeypatch.setattr(_wp, "resolved_wp_url", lambda: "")
     monkeypatch.delenv("WP_USER", raising=False)
     monkeypatch.delenv("WP_APP_PWD", raising=False)
 
@@ -609,7 +611,8 @@ def test_publish_wordpress_no_creds(monkeypatch):
 
 def test_publish_wordpress_creates_page(monkeypatch):
     """When no existing FAQ page, calls wp.create_page and returns page_id + url."""
-    monkeypatch.setenv("WP_URL", "https://example.com")
+    import adapters.wordpress as _wp
+    monkeypatch.setattr(_wp, "resolved_wp_url", lambda: "https://example.com")
     monkeypatch.setenv("WP_USER", "admin")
     monkeypatch.setenv("WP_APP_PWD", "test-password")
 
@@ -641,7 +644,8 @@ def test_publish_wordpress_creates_page(monkeypatch):
 
 def test_publish_wordpress_updates_existing_page(monkeypatch):
     """When an existing FAQ page is found, calls wp.update_page instead."""
-    monkeypatch.setenv("WP_URL", "https://example.com")
+    import adapters.wordpress as _wp
+    monkeypatch.setattr(_wp, "resolved_wp_url", lambda: "https://example.com")
     monkeypatch.setenv("WP_USER", "admin")
     monkeypatch.setenv("WP_APP_PWD", "test-password")
 
@@ -671,9 +675,9 @@ def test_publish_wordpress_updates_existing_page(monkeypatch):
 
 def test_publish_wordpress_includes_faqpage_jsonld(monkeypatch):
     """The page is built with FAQPage JSON-LD containing all answered entries."""
-    import json as _json
 
-    monkeypatch.setenv("WP_URL", "https://example.com")
+    import adapters.wordpress as _wp
+    monkeypatch.setattr(_wp, "resolved_wp_url", lambda: "https://example.com")
     monkeypatch.setenv("WP_USER", "admin")
     monkeypatch.setenv("WP_APP_PWD", "test-password")
 
@@ -716,7 +720,8 @@ def test_publish_wordpress_includes_faqpage_jsonld(monkeypatch):
 
 def test_publish_wordpress_admin_gated(monkeypatch):
     """Sales role cannot call POST /faq/publish-wordpress."""
-    monkeypatch.setenv("WP_URL", "https://example.com")
+    import adapters.wordpress as _wp
+    monkeypatch.setattr(_wp, "resolved_wp_url", lambda: "https://example.com")
     monkeypatch.setenv("WP_USER", "admin")
     monkeypatch.setenv("WP_APP_PWD", "test-password")
 
@@ -727,7 +732,8 @@ def test_publish_wordpress_admin_gated(monkeypatch):
 
 def test_publish_wordpress_no_answered_entries(monkeypatch):
     """Returns 422 when there are no answered FAQ entries."""
-    monkeypatch.setenv("WP_URL", "https://example.com")
+    import adapters.wordpress as _wp
+    monkeypatch.setattr(_wp, "resolved_wp_url", lambda: "https://example.com")
     monkeypatch.setenv("WP_USER", "admin")
     monkeypatch.setenv("WP_APP_PWD", "test-password")
 

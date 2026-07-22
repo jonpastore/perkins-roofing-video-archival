@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 import jobs.search_indexing_job as J
-from app.config import settings
 from app.models import Article, Base, SessionLocal, engine
 
 
@@ -29,7 +28,7 @@ def _seed_article(s, slug, status, updated_at):
 
 
 def test_submits_site_root_and_recent_published_articles(monkeypatch):
-    monkeypatch.setattr(settings, "WP_URL", "https://perkinsroofing.net")
+    monkeypatch.setattr(J.wordpress, "resolved_wp_url", lambda: "https://perkinsroofing.net")
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     s = SessionLocal()
@@ -53,7 +52,7 @@ def test_submits_site_root_and_recent_published_articles(monkeypatch):
 
 
 def test_no_wp_url_configured_submits_nothing(monkeypatch):
-    monkeypatch.setattr(settings, "WP_URL", "")
+    monkeypatch.setattr(J.wordpress, "resolved_wp_url", lambda: "")
     s = SessionLocal()
     _seed_article(s, "a", "published", datetime.now(timezone.utc).replace(tzinfo=None))
     s.commit(); s.close()

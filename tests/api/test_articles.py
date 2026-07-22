@@ -403,10 +403,17 @@ def test_get_article_wp_url_null_when_no_post_id():
 
 def test_get_article_wp_url_set_when_post_id_and_wp_url(monkeypatch):
     """GET /articles/{slug} returns full WP post URL when wp_post_id is set and WP_URL configured."""
-    monkeypatch.setenv("WP_URL", "https://perkinsroofing.net")
-    # Reload settings so WP_URL is picked up
-    import app.config as cfg
-    cfg.settings.WP_URL = "https://perkinsroofing.net"
+    # WP_URL comes from the admin config (PlatformConfig) — the single runtime source
+    # (adapters.wordpress.resolved_wp_url); env WP_URL is deliberately ignored (d1e25b5).
+    from app.models import PlatformConfig, PlatformSessionLocal
+    with PlatformSessionLocal() as pdb:
+        pdb.info["platform_scope"] = True
+        row = pdb.get(PlatformConfig, "WP_URL")
+        if row is None:
+            pdb.add(PlatformConfig(key="WP_URL", value="https://perkinsroofing.net"))
+        else:
+            row.value = "https://perkinsroofing.net"
+        pdb.commit()
 
     from app.models import Article, SessionLocal
     with SessionLocal() as db:

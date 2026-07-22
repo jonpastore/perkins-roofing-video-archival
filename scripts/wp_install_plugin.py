@@ -1,7 +1,9 @@
 """Install (or replace) the Perkins JSON-LD plugin on WordPress via the admin UI with Playwright.
 
-mu-plugins can't be installed over REST, so this logs into wp-admin and uploads the zip. Reads
-WP_URL/WP_USER from .env and the admin LOGIN password from /tmp/wp_login_pw (mode 600, not committed).
+mu-plugins can't be installed over REST, so this logs into wp-admin and uploads the zip. The WP
+base URL comes from the admin config (PlatformConfig WP_URL — needs DB_URL/proxy); WP_USER and the
+admin LOGIN password come from env (WP_LOGIN_PW / /tmp/wp_login_pw / WP_APP_PWD — creds are key
+transport, not config).
 
 Run: .venv/bin/python scripts/wp_install_plugin.py [/path/to/plugin.zip]
 """
@@ -12,7 +14,15 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ZIP = sys.argv[1] if len(sys.argv) > 1 else "/tmp/perkins-jsonld.zip"
-BASE = os.environ["WP_URL"].rstrip("/")
+# WP base URL from the admin config (PlatformConfig WP_URL) — the single runtime source;
+# env WP_URL is deliberately not read. Requires DB_URL pointed at the platform DB
+# (locally: Cloud SQL proxy on 127.0.0.1:5432).
+from adapters.wordpress import resolved_wp_url  # noqa: E402
+
+BASE = resolved_wp_url()
+if not BASE:
+    sys.exit("PlatformConfig WP_URL is unset (or DB_URL doesn't reach the platform DB) — "
+             "start the Cloud SQL proxy and export DB_URL before running this script.")
 USER = os.environ["WP_USER"]
 _pwfile = Path("/tmp/wp_login_pw")
 PW = (os.environ.get("WP_LOGIN_PW")

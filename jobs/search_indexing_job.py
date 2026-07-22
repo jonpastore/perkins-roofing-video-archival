@@ -9,7 +9,7 @@ Run: .venv/bin/python -m jobs.search_indexing_job
 from datetime import datetime, timedelta, timezone
 
 import adapters.search_indexing as search_indexing
-from app.config import settings
+import adapters.wordpress as wordpress
 from app.models import Article, SessionLocal
 from core.search_indexing import urls_for_articles
 
@@ -31,7 +31,8 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
         .all()
     )
     slugs = [r[0] for r in rows]
-    urls = urls_for_articles(settings.WP_URL, slugs)
+    # Admin-config WP_URL (resolved_wp_url), NOT env — .env is never a runtime config source.
+    urls = urls_for_articles(wordpress.resolved_wp_url(), slugs)
     result = search_indexing.submit_urls(urls)
     return {"submitted": len(urls), "result": result}
 
