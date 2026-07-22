@@ -1009,6 +1009,51 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
             </div>
           </CollapsibleGroup>
 
+          {/* ── Group 2b: Repair (time-based) ── */}
+          <CollapsibleGroup title="Repair Options (Time-Based)" accent="#f0f4ff">
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+              Repair quotes (shingle/tile/metal/flat) are priced as days &times; a daily labor
+              rate + material cost, instead of the full per-square replacement engine. Zoom
+              2026-07-20 [45:31] — Tim quoted these rates live; confirm before quoting a customer
+              (see PLACEHOLDER note in the pricing config JSON).
+            </p>
+            <SectionLabel>Daily labor rate ($/day)</SectionLabel>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField
+                label="One-man crew"
+                value={
+                  ((config.repair as Record<string, unknown> | undefined)?.daily_labor_rate as
+                    Record<string, number | null> | undefined)?.one_man
+                }
+                onChange={(v) => {
+                  const cur = JSON.parse(
+                    JSON.stringify(((config.repair as Record<string, unknown> | undefined)?.daily_labor_rate ?? {}))
+                  ) as Record<string, unknown>;
+                  cur.one_man = v;
+                  set(["repair", "daily_labor_rate"], cur);
+                }}
+                disabled={disabled}
+                unit="$/day"
+              />
+              <NumericField
+                label="Two-man crew"
+                value={
+                  ((config.repair as Record<string, unknown> | undefined)?.daily_labor_rate as
+                    Record<string, number | null> | undefined)?.two_man
+                }
+                onChange={(v) => {
+                  const cur = JSON.parse(
+                    JSON.stringify(((config.repair as Record<string, unknown> | undefined)?.daily_labor_rate ?? {}))
+                  ) as Record<string, unknown>;
+                  cur.two_man = v;
+                  set(["repair", "daily_labor_rate"], cur);
+                }}
+                disabled={disabled}
+                unit="$/day"
+              />
+            </div>
+          </CollapsibleGroup>
+
           {/* ── Group 3: Adders ── */}
           <CollapsibleGroup title="Adders">
             <SectionLabel>Per-square adders ($)</SectionLabel>

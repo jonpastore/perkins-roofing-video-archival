@@ -325,6 +325,23 @@ class PricingConfig:
         """'ceil' (default) or 'floor' — how total series days map to on-site weeks."""
         return str(self.raw.get("daily_overhead_weeks_rounding_mode") or "ceil")
 
+    # ------------------------------------------------------------------ #
+    # v2: Repair options (time-based pricing, Zoom 2026-07-20 [37:04]/[45:31]) #
+    # ------------------------------------------------------------------ #
+    def repair_roof_types(self) -> list[str]:
+        """Valid roof-type categories for a repair quote (shingle/tile/metal/flat)."""
+        return list((self.raw.get("repair") or {}).get("roof_types") or [])
+
+    def repair_daily_labor_rate(self, crew_size: int) -> float:
+        """Daily labor rate for a repair crew ($/day), keyed by crew size (1 or 2 men).
+
+        Raises ConfigError if the rate for this crew size is null/missing.
+        """
+        rates = (self.raw.get("repair") or {}).get("daily_labor_rate") or {}
+        key = "two_man" if crew_size == 2 else "one_man"
+        val = rates.get(key)
+        return self.get_or_raise(val, f"repair.daily_labor_rate.{key}")
+
     def low_slope_deck_cost(self, deck_type: str) -> float:
         val = self.raw["low_slope"]["deck_types"].get(deck_type)
         if val is None and deck_type != "existing_concrete":
