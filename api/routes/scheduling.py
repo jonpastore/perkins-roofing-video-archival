@@ -64,23 +64,6 @@ def _resolve_display_name(db, kind: str, ref_id: str) -> str:
         return ref_id
 
 
-def _resolved_wp_base() -> str:
-    """WordPress base URL for building post links. The admin-config value (PlatformConfig WP_URL,
-    editable in the dashboard) WINS; falls back to the WP_URL env baked at deploy. This lets the
-    staging/prod site URL be changed from Admin → Config without a redeploy."""
-    import os
-    try:
-        from app.models import PlatformConfig, PlatformSessionLocal  # noqa: PLC0415
-        with PlatformSessionLocal() as pdb:
-            pdb.info["platform_scope"] = True
-            row = pdb.get(PlatformConfig, "WP_URL")
-            if row and (row.value or "").strip():
-                return row.value.strip().rstrip("/")
-    except Exception:  # noqa: BLE001 — never break the response on a config lookup
-        pass
-    return (os.environ.get("WP_URL") or "").rstrip("/")
-
-
 def _published_url(db, kind: str, ref_id: str) -> str | None:
     """For a published article, the live WordPress post URL (else None)."""
     if db is None or kind != "article":
@@ -89,7 +72,8 @@ def _published_url(db, kind: str, ref_id: str) -> str | None:
     wp_post_id = row[0] if row else None
     if not wp_post_id:
         return None
-    base = _resolved_wp_base()
+    from adapters.wordpress import resolved_wp_url  # noqa: PLC0415
+    base = resolved_wp_url()
     return f"{base}/?p={wp_post_id}" if base else None
 
 

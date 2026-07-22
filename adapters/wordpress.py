@@ -30,8 +30,25 @@ def _auth() -> tuple[str, str]:
     return user, pwd
 
 
+def resolved_wp_url() -> str:
+    """Canonical WordPress base URL — the SINGLE source of truth. The admin-config value
+    (PlatformConfig WP_URL, editable in the dashboard) WINS; the WP_URL env is only a fallback for
+    contexts without a DB. Lets the site URL change from Admin → Config without a redeploy — no
+    reliance on .env once the admin value is set."""
+    try:
+        from app.models import PlatformConfig, PlatformSessionLocal  # noqa: PLC0415
+        with PlatformSessionLocal() as pdb:
+            pdb.info["platform_scope"] = True
+            row = pdb.get(PlatformConfig, "WP_URL")
+            if row and (row.value or "").strip():
+                return row.value.strip().rstrip("/")
+    except Exception:  # noqa: BLE001 — never break a WP call on a config lookup
+        pass
+    return os.environ.get("WP_URL", "").rstrip("/")
+
+
 def _base_url() -> str:
-    return os.environ["WP_URL"].rstrip("/")
+    return resolved_wp_url()
 
 
 @lru_cache(maxsize=8)

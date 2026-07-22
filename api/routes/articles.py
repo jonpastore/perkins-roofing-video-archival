@@ -18,7 +18,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
-from app.config import settings
 from app.models import Article
 from core.timeutil import iso_utc
 
@@ -39,7 +38,10 @@ def _slugify(title: str) -> str:
 
 
 def _wp_base() -> str:
-    return (settings.WP_URL or os.environ.get("WP_URL", "")).rstrip("/")
+    # Admin-config WP_URL wins (editable, no redeploy); env is only a fallback. See
+    # adapters.wordpress.resolved_wp_url — single source of truth, no .env reliance.
+    from adapters.wordpress import resolved_wp_url  # noqa: PLC0415
+    return resolved_wp_url()
 
 
 def _wp_url_for(wp_post_id: int | None) -> str | None:

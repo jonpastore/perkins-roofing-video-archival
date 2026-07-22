@@ -540,7 +540,8 @@ def publish_wordpress(
         log.error("WP publish-wordpress failed: %s", exc)
         raise HTTPException(status_code=502, detail=f"WordPress API error: {exc}") from exc
 
-    wp_base = os.environ.get("WP_URL", "").rstrip("/")
+    from adapters.wordpress import resolved_wp_url  # noqa: PLC0415
+    wp_base = resolved_wp_url()
     return {
         "page_id": page_id,
         "page_url": f"{wp_base}/?page_id={page_id}",

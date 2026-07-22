@@ -1061,9 +1061,10 @@ def refine_article_content(fields: dict, keyword: str, *, llm=None) -> dict:
 
 
 def _wp_base_url() -> str:
-    """Read WP_URL from env, stripping trailing slash."""
-    import os  # noqa: PLC0415
-    return os.environ.get("WP_URL", "https://perkinsroofing.net").rstrip("/")
+    """Canonical WP base URL (admin-config WP_URL wins, env fallback; see
+    adapters.wordpress.resolved_wp_url). Defaults to the live domain if neither is set."""
+    from adapters.wordpress import resolved_wp_url  # noqa: PLC0415
+    return resolved_wp_url() or "https://perkinsroofing.net"
 
 
 # ---------------------------------------------------------------------------
