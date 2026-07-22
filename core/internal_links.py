@@ -4,33 +4,33 @@ Pure data + pure matching — no I/O, no LLM. jobs.article_job appends the actua
 <a> tags deterministically (append-only, never invented prose); this module only
 decides WHICH service pages are relevant to a given article's text.
 
-*** SLUGS/ANCHORS UNCONFIRMED — confirm against the live site before trusting them. ***
-Every url below is the obvious/expected path for its service based on naming
-convention, NOT verified against perkinsroofing.net's actual permalinks. Update
-SERVICE_LINKS with the real slugs (and any anchor copy Wendy/Tim prefer) once
-confirmed with the site.
+Slugs VERIFIED against perkinsroofing.net's live sitemap + HTTP 200 checks (2026-07-22).
+The earlier naming-convention guesses shipped 2 hard 404s (/roof-replacement/,
+/flat-roofing/) and 4 non-canonical redirects (roof-repair, roof-inspection, metal-roofing,
+tile-roofing) — all corrected below to the real permalinks. Anchor copy may still be tuned
+with Wendy/Tim, but the URLs now resolve 200 directly.
 """
 from __future__ import annotations
 
 BASE_URL = "https://perkinsroofing.net"
 
-# TODO(confirm-slugs-with-site): placeholder scaffold, not verified live URLs.
+# Slugs verified live (sitemap + 200) 2026-07-22 — see module docstring.
 SERVICE_LINKS: list[dict] = [
     {
         "service": "roof repair",
-        "url": f"{BASE_URL}/roof-repair/",
+        "url": f"{BASE_URL}/roof-repair-services/",
         "anchor": "roof repair services",
         "keywords": ["roof repair", "repair your roof", "roof leak repair", "roofing repair"],
     },
     {
         "service": "roof replacement",
-        "url": f"{BASE_URL}/roof-replacement/",
-        "anchor": "roof replacement services",
+        "url": f"{BASE_URL}/new-roof-installers/",
+        "anchor": "new roof installation",
         "keywords": ["roof replacement", "replace your roof", "new roof installation", "reroofing"],
     },
     {
         "service": "roof inspection",
-        "url": f"{BASE_URL}/roof-inspection/",
+        "url": f"{BASE_URL}/roof-insurance-inspections/",
         "anchor": "a professional roof inspection",
         "keywords": ["roof inspection", "roof assessment", "inspect your roof"],
     },
@@ -48,21 +48,33 @@ SERVICE_LINKS: list[dict] = [
     },
     {
         "service": "metal roofing",
-        "url": f"{BASE_URL}/metal-roofing/",
+        "url": f"{BASE_URL}/metal-roofing-company/",
         "anchor": "metal roofing services",
         "keywords": ["metal roof", "metal roofing", "standing seam"],
     },
     {
         "service": "tile roofing",
-        "url": f"{BASE_URL}/tile-roofing/",
+        "url": f"{BASE_URL}/tile-roofing-company/",
         "anchor": "tile roofing services",
         "keywords": ["tile roof", "tile roofing", "clay tile", "concrete tile"],
     },
     {
         "service": "flat roofing",
-        "url": f"{BASE_URL}/flat-roofing/",
+        "url": f"{BASE_URL}/flat-roofs/",
         "anchor": "flat roofing services",
         "keywords": ["flat roof", "flat roofing", "tpo roof", "modified bitumen"],
+    },
+    {
+        "service": "shingle roofing",
+        "url": f"{BASE_URL}/shingle-roofs-company/",
+        "anchor": "shingle roofing services",
+        "keywords": ["shingle roof", "shingle roofing", "asphalt shingle", "architectural shingle", "3-tab"],
+    },
+    {
+        "service": "gutters",
+        "url": f"{BASE_URL}/gutter-sheet-metal-services/",
+        "anchor": "gutter and sheet metal services",
+        "keywords": ["gutter", "downspout", "roof drainage", "seamless gutter"],
     },
 ]
 
