@@ -24,12 +24,14 @@ CF Workers-AI verified: token=Secret Manager cloudflare-api-token (has Workers A
 3303058f686721d6877d6d1e8b8a448c. WP staging app pw vaulted (wordpress-app-password v3), WP_USER=jon,
 admin PlatformConfig WP_URL=1228404. o365 mail MCP wired (drafts to DeGenito Outlook).
 
+DONE 2026-07-22 pm: (1) llms.txt SHIPPED+LIVE on staging (plugin v1.2.0 serves /llms.txt +
+robots.txt AI allowlist via filter; jobs/llms_txt_job appends 61 articles to Wendy's hand-written
+preamble = PlatformConfig LLMS_TXT_PREAMBLE; NEVER push without the preamble). (2) Repair/re-roof
+toggle + scope-of-work AI rewrite SHIPPED (POST /estimator/scope-of-work/rewrite via app.llm.chat;
+template in config scope_of_work.default_template; repair proposals now send-valid). Residual for
+#387: scope_of_work_text not yet rendered into the contract PDF (proposal_render) — phase-4.
+
 PICK UP (build to the routing policy above):
-1. llms.txt generator (AIO: robots allowlist + llms.txt manifest; CF-gen; do NOT touch Rank Math
-   sitemap/robots). Plan: scratchpad/aio-and-cf-plan.md.
-2. Repair/re-roof toggle + scope-of-work field (app code sonnet/qwen; the template+AI-rewrite runs
-   on CF llama). Design brief: scratchpad/repair-sow-design.md. Gaps: repair card can't make a
-   proposal; no toggle in Quoting.tsx yet.
 3. Portfolio automation (Wendy): 30-field Google Sheet -> Avada Portfolio (cats Commercial/
    Residential/Construction, tags=location, skills=roof-type). CF write-ups from CompanyCam+proposal+
    YouTube; permissions human-gated. Doc/Sheet IDs in the O365 "Meeting notes and info" thread.
