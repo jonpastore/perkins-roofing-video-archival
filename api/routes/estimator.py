@@ -118,6 +118,7 @@ class QuoteRequest(BaseModel):
     gutter_two_story: bool = False
     gutter_elbows: int = Field(default=0, ge=0)
     gutter_removal_lf: float = Field(default=0, ge=0)
+    downspout_lf: float = Field(default=0, ge=0)
     leaf_guard: Literal["none", "std", "upgraded"] = "none"
     leaderheads_res: int = Field(default=0, ge=0)
     leaderheads_comm: int = Field(default=0, ge=0)
@@ -255,6 +256,7 @@ def quote(
         gutter_two_story=body.gutter_two_story,
         gutter_elbows=body.gutter_elbows,
         gutter_removal_lf=body.gutter_removal_lf,
+        downspout_lf=body.downspout_lf,
         leaf_guard=body.leaf_guard,
         leaderheads_res=body.leaderheads_res,
         leaderheads_comm=body.leaderheads_comm,

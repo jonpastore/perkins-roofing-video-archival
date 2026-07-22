@@ -624,6 +624,7 @@ export function Quoting() {
   const [quoteGutterTwoStory, setQuoteGutterTwoStory] = useState(false);
   const [quoteGutterElbows, setQuoteGutterElbows] = useState("");
   const [quoteGutterRemovalLf, setQuoteGutterRemovalLf] = useState("");
+  const [quoteDownspoutLf, setQuoteDownspoutLf] = useState("");
   const [quoteLeafGuard, setQuoteLeafGuard] = useState<"none" | "std" | "upgraded">("none");
   const [quoteLeaderheadsRes, setQuoteLeaderheadsRes] = useState("");
   const [quoteLeaderheadsComm, setQuoteLeaderheadsComm] = useState("");
@@ -1022,6 +1023,7 @@ export function Quoting() {
       gutter_two_story: quoteGutterTwoStory,
       gutter_elbows: Number(quoteGutterElbows || 0),
       gutter_removal_lf: Number(quoteGutterRemovalLf || 0),
+      downspout_lf: Number(quoteDownspoutLf || 0),
       leaf_guard: quoteLeafGuard,
       leaderheads_res: Number(quoteLeaderheadsRes || 0),
       leaderheads_comm: Number(quoteLeaderheadsComm || 0),
@@ -1680,6 +1682,7 @@ export function Quoting() {
                 <div><FieldLabel>Gutter LF</FieldLabel><input type="number" min="0" step="1" value={quoteGutterLf} onChange={(e) => setQuoteGutterLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
                 <div><FieldLabel>Elbows</FieldLabel><input type="number" min="0" step="1" value={quoteGutterElbows} onChange={(e) => setQuoteGutterElbows(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
                 <div><FieldLabel>Removal LF</FieldLabel><input type="number" min="0" step="1" value={quoteGutterRemovalLf} onChange={(e) => setQuoteGutterRemovalLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
+                <div><FieldLabel>Downspout LF (4×5)</FieldLabel><input type="number" min="0" step="1" value={quoteDownspoutLf} onChange={(e) => setQuoteDownspoutLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               </div>
               <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 110px 130px", gap: 10, alignItems: "end" }}>
                 <div>

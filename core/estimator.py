@@ -308,6 +308,8 @@ class QuoteInput:
     gutter_two_story: bool = False
     gutter_elbows: int = 0
     gutter_removal_lf: float = 0
+    downspout_lf: float = 0              # 4x5 downspout, per-LF, itemized SEPARATELY from the
+                                         # gutter per-LF rate (which historically bundled downspouts)
     leaf_guard: str = "none"             # none | std | upgraded
     leaderheads_res: int = 0
     leaderheads_comm: int = 0
@@ -591,7 +593,7 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
         rate = config.raw["ridge_vent_per_lf"]
         items.append(LineItem("ridge_vents", "Ridge Vents", q.ridge_vent_lf * rate, tags["ridge_vents"]))
 
-    if q.gutter_lf or q.gutter_removal_lf or q.leaderheads_res or q.leaderheads_comm:
+    if q.gutter_lf or q.gutter_removal_lf or q.downspout_lf or q.leaderheads_res or q.leaderheads_comm:
         g = config.raw.get("gutters") or {}
         tag = tags.get("gutters", "Materials")
 
@@ -634,6 +636,10 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
             rem = _grate(g.get("removal_per_lf"), "removal_per_lf")
             items.append(LineItem("gutter_removal", "Gutter Removal & Disposal",
                                   q.gutter_removal_lf * rem, tags.get("gutters", "Labor"), rem))
+        if q.downspout_lf:
+            ds_rate = _grate(g.get("downspout_per_lf"), "downspout_per_lf")
+            items.append(LineItem("downspout", "Downspout (4x5)",
+                                  q.downspout_lf * ds_rate, tag, ds_rate))
         if q.leaderheads_res:
             each = _grate(g.get("leaderhead_res_each"), "leaderhead_res_each")
             items.append(LineItem("leaderheads_res", "Leaderhead / Conductor Head (res.)",

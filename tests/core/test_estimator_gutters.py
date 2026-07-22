@@ -21,6 +21,7 @@ _GUTTERS = {
         "k6_copper": {"label": '6" Copper K-Style', "per_lf": 50.0},
     },
     "removal_per_lf": 3.85,
+    "downspout_per_lf": 10.50,
     "leaf_guard_std_per_lf": 9.80,
     "leaf_guard_upgraded_per_lf": 14.00,
     "leaderhead_res_each": 98,
@@ -67,6 +68,21 @@ def test_two_story_rate_and_elbows_and_leaf_guard():
 def test_small_job_surcharge_under_threshold():
     r = estimate(_cfg(), _quote(gutter_style="k6_alum", gutter_lf=80))
     assert _item(r, "gutters")["amount"] == pytest.approx(80 * (11.55 + 2.00))
+
+
+def test_downspout_itemized_separately():
+    # 4x5 downspout is its own line at downspout_per_lf, NOT bundled into the gutter rate.
+    r = estimate(_cfg(), _quote(gutter_style="k6_alum", gutter_lf=150, downspout_lf=90))
+    assert _item(r, "gutters")["amount"] == pytest.approx(150 * 11.55)   # gutter rate unchanged
+    assert _item(r, "downspout")["amount"] == pytest.approx(90 * 10.50)
+    assert "4x5" in _item(r, "downspout")["label"]
+
+
+def test_downspout_without_rate_raises_configerror():
+    g = {**_GUTTERS}
+    g.pop("downspout_per_lf")
+    with pytest.raises(ConfigError, match="downspout_per_lf"):
+        estimate(_cfg(gutters=g), _quote(downspout_lf=50))
 
 
 def test_removal_and_leaderheads():

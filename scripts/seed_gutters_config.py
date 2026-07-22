@@ -27,6 +27,8 @@ GUTTERS = {
         "halfround_copper": {"label": 'Copper Half-Round (w/ 4" round DS)', "per_lf": 55.00},
     },
     "removal_per_lf": 3.85,
+    "downspout_per_lf": 10.50,   # 4x5 downspout, itemized SEPARATELY (Tim to confirm in the sent email
+                                 # whether the gutter per-LF should drop now that DS is unbundled)
     "leaf_guard_std_per_lf": 9.80,        # Bulldog (Lansing)
     "leaf_guard_upgraded_per_lf": 14.00,  # Hydroflow
     "leaderhead_res_each": 98,
