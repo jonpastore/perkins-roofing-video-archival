@@ -86,6 +86,31 @@ def test_promotion_submits_article_for_search_indexing(monkeypatch):
     assert calls[0] == ["https://perkinsroofing.net/", "https://perkinsroofing.net/indexed-post/"]
 
 
+def test_indexing_failure_does_not_block_publish(monkeypatch):
+    """Best-effort: if search_indexing.submit_urls RAISES, promote_job must still
+    publish the article (the exception is swallowed in _submit_for_indexing, AFTER the
+    WP status flip). Regression lock for the reviewer-flagged gap."""
+    s = SessionLocal()
+    _seed_article(s, "idx-fail", 505)
+    s.commit()
+    s.close()
+
+    monkeypatch.setattr(PJ.wordpress, "update_status", lambda pid, st: None)
+
+    def boom(urls):
+        raise RuntimeError("indexnow 500")
+
+    monkeypatch.setattr(PJ.search_indexing, "submit_urls", boom)
+
+    result = PJ.run()
+
+    assert result == {"promoted": 1, "errored": 0}   # indexing failure did NOT block the publish
+    s = SessionLocal()
+    art = s.query(Article).filter(Article.slug == "idx-fail").one()
+    s.close()
+    assert art.status == "published"
+
+
 def test_promotion_without_wp_post_id_skips_indexing(monkeypatch):
     """No wp_post_id means the article was never actually published to WordPress —
     submitting its URL for indexing would be wrong (the page doesn't exist there)."""
