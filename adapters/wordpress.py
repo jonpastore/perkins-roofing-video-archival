@@ -31,10 +31,10 @@ def _auth() -> tuple[str, str]:
 
 
 def resolved_wp_url() -> str:
-    """Canonical WordPress base URL — the SINGLE source of truth. The admin-config value
-    (PlatformConfig WP_URL, editable in the dashboard) WINS; the WP_URL env is only a fallback for
-    contexts without a DB. Lets the site URL change from Admin → Config without a redeploy — no
-    reliance on .env once the admin value is set."""
+    """Canonical WordPress base URL — the SINGLE source of truth, from the admin config
+    (PlatformConfig WP_URL, editable in the dashboard). NO .env fallback: .env is only a secure
+    transport for keys into the vault, never a runtime config source. Returns "" if the admin
+    value is unset (callers degrade gracefully — no link / a clear failure, never a stale host)."""
     try:
         from app.models import PlatformConfig, PlatformSessionLocal  # noqa: PLC0415
         with PlatformSessionLocal() as pdb:
@@ -44,7 +44,7 @@ def resolved_wp_url() -> str:
                 return row.value.strip().rstrip("/")
     except Exception:  # noqa: BLE001 — never break a WP call on a config lookup
         pass
-    return os.environ.get("WP_URL", "").rstrip("/")
+    return ""
 
 
 def _base_url() -> str:
