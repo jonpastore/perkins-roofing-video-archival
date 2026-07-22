@@ -46,6 +46,8 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ("inch", re.compile(rf"\b({_NUM}){_RANGE_SEP}?({_NUM})?\s*(?:{_H}\s*in\b|inch(?:es)?\b|\")",
                         re.IGNORECASE)),
     ("mm", re.compile(rf"\b({_NUM}){_RANGE_SEP}?({_NUM})?\s*mm\b", re.IGNORECASE)),
+    # "mil" = thousandths of an inch — roofing membrane/underlayment thickness (40/80/130 mil).
+    ("mil", re.compile(rf"\b({_NUM}){_RANGE_SEP}?({_NUM})?\s*mils?\b", re.IGNORECASE)),
     ("ft", re.compile(rf"\b({_NUM}){_RANGE_SEP}?({_NUM})?\s*{_H}?\s*(?:ft|feet|foot)\b",
                       re.IGNORECASE)),
     ("lb", re.compile(rf"\b({_NUM}){_RANGE_SEP}?({_NUM})?\s*{_H}?\s*(?:lbs?|pounds?)\b",

@@ -173,3 +173,18 @@ def test_proof_article_snap_lock_comparison_rating_is_unsupported():
     # "well above snap-lock panels" — a real ungrounded figure the gate should catch.
     _, unsupported = check_numeric_claims(PROOF_ARTICLE_EXCERPT, PROOF_SOURCE_SNIPPET)
     assert any("160" in c and "170" in c for c in unsupported)
+
+
+def test_mil_thickness_is_extracted():
+    claims = extract_numeric_claims("<p>An 80 mil underlayment resists tearing.</p>")
+    assert claims[0]["kind"] == "mil"
+    assert claims[0]["values"] == (80.0,)
+
+
+def test_ungrounded_mil_thickness_is_flagged():
+    supported, unsupported = check_numeric_claims(
+        "<p>We install 130 mil membrane.</p>",
+        "The source mentions only an 80 mil underlayment.",
+    )
+    assert unsupported == ["130 mil"]
+    assert supported == []
