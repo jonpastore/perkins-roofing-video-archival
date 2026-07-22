@@ -17,7 +17,7 @@ REPAIR_CONFIG = {
     **SAMPLE_CONFIG,
     "repair": {
         "roof_types": ["shingle", "tile", "metal", "flat"],
-        "daily_labor_rate": {"one_man": 11.85, "two_man": 14.35},
+        "daily_labor_rate": {"one_man": 1185.00, "two_man": 1435.00},
     },
 }
 
@@ -52,10 +52,10 @@ class TestRepairQuote:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["daily_labor_rate"] == 11.85
-        assert body["labor_cost"] == pytest.approx(23.70)
+        assert body["daily_labor_rate"] == 1185.00
+        assert body["labor_cost"] == pytest.approx(2370.00)
         assert body["material_cost"] == 150.0
-        assert body["project_total"] == pytest.approx(173.70)
+        assert body["project_total"] == pytest.approx(2520.00)
         assert body["pricing_config_id"] == created["id"]
 
     def test_repair_quote_two_man_crew(self, admin_client):
@@ -69,7 +69,7 @@ class TestRepairQuote:
             headers=AUTH,
         )
         assert r.status_code == 200, r.text
-        assert r.json()["daily_labor_rate"] == 14.35
+        assert r.json()["daily_labor_rate"] == 1435.00
 
     def test_repair_quote_unknown_roof_type_422(self, admin_client):
         branch = _unique_branch()

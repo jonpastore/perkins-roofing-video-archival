@@ -1,9 +1,8 @@
 """Repair options — time-based pricing (Zoom 2026-07-20 [37:04]/[38:05]/[45:31]).
 
 Simple calculation: labor_cost = days * daily_labor_rate(crew_size); total = labor_cost + material_cost.
-Golden numbers use the config-seeded PLACEHOLDER rates ($11.85/one-man-day, $14.35/two-man-day) —
-see infra/fixtures/pricing_config_exhibit_b.json "repair._pending_daily_labor_rate" for the
-open confirmation item with Tim.
+Golden numbers use the config-seeded rates ($1185.00/one-man-day, $1435.00/two-man-day),
+confirmed by Jon 2026-07-21 (Tim's words).
 """
 from __future__ import annotations
 
@@ -55,19 +54,19 @@ def test_estimate_repair_one_man_per_roof_type(roof_type):
     result = estimate_repair(cfg, r)
     assert result["roof_type"] == roof_type
     assert result["crew_size"] == 1
-    assert result["daily_labor_rate"] == 11.85
-    assert result["labor_cost"] == pytest.approx(23.70)
+    assert result["daily_labor_rate"] == 1185.00
+    assert result["labor_cost"] == pytest.approx(2370.00)
     assert result["material_cost"] == 150.0
-    assert result["project_total"] == pytest.approx(173.70)
+    assert result["project_total"] == pytest.approx(2520.00)
 
 
 def test_estimate_repair_two_man_crew():
     cfg = _cfg()
     r = RepairInput(roof_type="tile", days=3, crew_size=2, material_cost=0)
     result = estimate_repair(cfg, r)
-    assert result["daily_labor_rate"] == 14.35
-    assert result["labor_cost"] == pytest.approx(43.05)
-    assert result["project_total"] == pytest.approx(43.05)
+    assert result["daily_labor_rate"] == 1435.00
+    assert result["labor_cost"] == pytest.approx(4305.00)
+    assert result["project_total"] == pytest.approx(4305.00)
 
 
 def test_estimate_repair_unknown_roof_type_raises_config_error():

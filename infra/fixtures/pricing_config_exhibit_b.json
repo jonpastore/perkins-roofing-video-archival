@@ -126,10 +126,10 @@
   "repair": {
     "roof_types": ["shingle", "tile", "metal", "flat"],
     "daily_labor_rate": {
-      "one_man": 11.85,
-      "two_man": 14.35
+      "one_man": 1185.00,
+      "two_man": 1435.00
     },
-    "_pending_daily_labor_rate": "PLACEHOLDER, unconfirmed: Tim quoted these live on the 2026-07-20 Zoom [45:31] as '$11.85 per man-day, $14.35 for two men' but the absolute values are far below every other daily rate in this config (daily_overhead_rates run $700-1050/day) -- CONFIRM with Tim whether this is really the full man-day rate or a per-sq/per-hour figure misheard in transcription before quoting a customer off it."
+    "_note_daily_labor_rate": "CONFIRMED by Jon 2026-07-21 (Tim's words): $1185.00 per one-man day, $1435.00 per two-man day. Earlier draft mis-transcribed these as $11.85/$14.35 (100x decimal slip) — corrected."
   },
 
   "profit_scale": [
