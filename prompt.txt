@@ -1,54 +1,53 @@
 Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-21.md (full state). docs/perkins-buildout-plan-2026-07-21.md
-(the plan). HEAD == origin/main, clean, HEAD 4227442. Deployed API image = 41472dc.
+READ FIRST: CONTINUATION-2026-07-22.md (full state). docs/PRODUCTION_CUTOVER_PLAN.md (cutover
+checklist + model routing + the CF prod flip). HEAD == origin/main, clean. Deployed prod image
+== HEAD (d1e25b5 or newer — check `git rev-parse --short HEAD` vs the api image).
 
-STANDING RULE (every task): USE LOCAL/FREE MODELS FIRST to save Claude tokens.
-- Code drafts: `llm -m qwen3.6-coder "..."` (sync) or mcp__hermes__submit_task(model_tier="cloudflare").
-- Article generation: LOCAL `gpt-oss-120b` (non-think) via litellm, VERTEX validates. Never a cloud generator.
-- Whisper: LOCAL faster-whisper large-v3 on the RTX 2060 (set LD_LIBRARY_PATH to the venv nvidia cublas/cudnn dirs).
-- Claude (opus) = orchestrate + verify only. Execution → SONNET subagents (not opus).
-- Article data from transcripts/KB ONLY. Invent nothing. Check everything.
+STANDING RULE — BINDING model routing (Jon 2026-07-22):
+- All creative/content (articles, llms.txt, portfolio write-ups, scope-of-work AI rewrite) →
+  CLOUDFLARE free-tier llama (LLM_BACKEND=cloudflare, @cf/meta/llama-3.3-70b-instruct-fp8-fast),
+  VALIDATED by Vertex/Gemini. Local gpt-oss was 1-time priming only — prod does NOT depend on it.
+- App code (toggles, estimator, connectors) → build with SONNET or qwen-coder 3.6, review with OPUS 4.8.
+- .env is ONLY a secure key transport into the vault — NEVER a runtime config source. Site URL etc.
+  come from the admin config (PlatformConfig), not env.
 
-STATE: Estimator + Quoting done and deployed. Clips fixed. Article pipeline rebuilt for
-local grounded generation: FAQ+Video-only schema (Rank Math owns the rest), internal links
-(no /blog/), YouTube footer, dense answer-first (cluster 1000/pillar 1500), numeric-grounding
-gate that BLOCKS invented figures. Article-gen commits after 41472dc are OPT-IN (prod stays
-LLM_BACKEND=vertex) so they are NOT deployed and are behavior-neutral until you flip to litellm.
+FIRST STEPS on resume:
+- Start the Cloud SQL proxy: `/tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &`
+  (needs GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json). DB reads:
+  raw psycopg + `SET app.tenant_id='1'`, or jobs.article_job._stamped_session(1).
 
-PICK UP (no fixed order — ask Jon or pick by priority):
-1. LAUNCH THE FULL ARTICLE RUN (drafts only, publishes nothing): batch-generate all pillars +
-   2-3 clusters each in metal-first priority, local gpt-oss-120b + Vertex validate, grounded,
-   stored as drafts. Multi-hour local-GPU job. Needs Jon's go (it produces content for review).
-   Prereq changes are DONE (schema scope, internal links, numeric gate, length).
-2. SEND THE WENDY REPLY (drafted in the last chat, ready). Then build to her import spec.
-3. ESTIMATOR 07-20 items (Jarvis #385-386): repair options (shingle/tile/metal/flat) with
-   time-based pricing + tear-off/re-install DAYS inputs + daily labor rates; fix missing
-   roof-type-selection bug.
-4. o365 MAIL MCP (all local): add create_draft/sendMail to jarvis/o365-connector/graph_client.py,
-   write jarvis/o365-mcp/server.py (mirror memory-mcp), register in ~/.claude.json, restart — so
-   Tim/Wendy drafts land in the degenito mailbox instead of jpastore79 gmail.
-5. SEO/AIO submission layer: IndexNow + Google-Indexing-API ping on publish (Rank Math already
-   owns sitemap/robots) + dashboard on/off toggle. Model on ~/projects/degenito/seo-aio.
-6. NEW PAGES: metal-warranty-checker (setback tool https://perkins-setback.web.app/ → WP plugin,
-   salinity cross-ref USGS + oceansciences, brackish canals count); thumbnail gallery (AI picks a
-   good frame, article image = chosen thumbnail); project-posting UI (proposal + CompanyCam →
-   Avada Portfolio).
+STATE: 61 articles LIVE + validated on new staging https://1228404.us6.myftpupload.com (30 new +
+31 refreshed; FAQ+Video schema, no /blog/, footer, 200 service links). Ready for Wendy's review.
+Prod on d1e25b5, LLM_BACKEND=vertex (CF adapter dormant), SEO submission OFF, email test-mode.
+CF Workers-AI verified: token=Secret Manager cloudflare-api-token (has Workers AI), account
+3303058f686721d6877d6d1e8b8a448c. WP staging app pw vaulted (wordpress-app-password v3), WP_USER=jon,
+admin PlatformConfig WP_URL=1228404. o365 mail MCP wired (drafts to DeGenito Outlook).
 
-WAITING ON TIM (draft email in jpastore79 gmail — move to degenito to send): per-branch overhead;
-gutter hangers; downspout separate+rate; Verea "S"/Caribbean field-tile costs; other FBC low-slope
-deltas; confirm the josh 49-clause T&C is current.
+PICK UP (build to the routing policy above):
+1. llms.txt generator (AIO: robots allowlist + llms.txt manifest; CF-gen; do NOT touch Rank Math
+   sitemap/robots). Plan: scratchpad/aio-and-cf-plan.md.
+2. Repair/re-roof toggle + scope-of-work field (app code sonnet/qwen; the template+AI-rewrite runs
+   on CF llama). Design brief: scratchpad/repair-sow-design.md. Gaps: repair card can't make a
+   proposal; no toggle in Quoting.tsx yet.
+3. Portfolio automation (Wendy): 30-field Google Sheet -> Avada Portfolio (cats Commercial/
+   Residential/Construction, tags=location, skills=roof-type). CF write-ups from CompanyCam+proposal+
+   YouTube; permissions human-gated. Doc/Sheet IDs in the O365 "Meeting notes and info" thread.
+4. CF PROD FLIP (terraform: inject CLOUDFLARE_API_TOKEN into Cloud Run api+jobs + set
+   LLM_BACKEND=cloudflare; apply + deploy). See docs/PRODUCTION_CUTOVER_PLAN.md §2.
+5. Deploy SPA if any web/ changes shipped: cd web && npm run build && firebase deploy --only hosting:app.
 
-WAITING ON YOU (Jon): OMC plugin reinstall to 4.15.6 via /plugin, then /oh-my-claudecode:setup
---global (preserve). Bring the STAGING WordPress into parity with prod before publish testing.
+WAITING ON WENDY (wendy@webpowermarketing.com): staging<->prod parity (breadcrumbs on prod 7/16 not
+staging); prod Rank Math config (no dup FAQ schema); review the 61; project data. WAITING ON TIM:
+6 pricing items ($1185/$1435 labor CONFIRMED). WAITING ON JON: CF prod-flip go; prod WP app password
+at cutover; SEO submission creds (IndexNow key + Google Indexing SA).
 
-OPERATE: deploy API+jobs = bash scripts/deploy.sh (CLEAN tree). SPA = cd web && npm run build &&
-firebase deploy --only hosting:app. export GOOGLE_APPLICATION_CREDENTIALS=
-/home/jon/.config/gcloud/perkins-deploy-sa.json. Prod smoke = .venv/bin/python scripts/prod_smoke.py.
-Prod pricing config: NON-DESTRUCTIVE version bumps only (see reconcile_*_pricing.py); low-slope v5,
-tile-brands v6. R6: every commit updates docs + Jarvis + memory.
+OPERATE: deploy = `set -a; source .env; set +a; export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/
+.config/gcloud/perkins-deploy-sa.json; bash scripts/deploy.sh` (CLEAN tree; deploy.sh hardcodes
+vertex+prod, bakes WP_URL from .env but runtime uses admin-config WP_URL). Prod smoke =
+.venv/bin/python scripts/prod_smoke.py. R6: every commit updates docs + Jarvis + memory.
 
-GOTCHAS: prod LLM_BACKEND MUST stay vertex until you deliberately flip to local; never run a writer
-sonnet executor and deploy.sh concurrently (deploy needs clean tree); Tim's LIVE sheet outranks
-Exhibit B for pricing (wood_deck OH 50, FBC polyglass 450); numeric gate deletes the sentence of any
-figure it can't ground — good for liability, watch for over-trim on spelled-out numbers.
+GOTCHAS: prod LLM_BACKEND flip to cloudflare is DELIBERATE (terraform, not automatic). Never run a
+writer executor + deploy.sh concurrently (deploy needs clean tree). Agent-tool worktrees can spawn
+STALE (pre-merge) — use `git worktree add <path> main` for a current base. Cloud SQL proxy must be
+running for DB work.
