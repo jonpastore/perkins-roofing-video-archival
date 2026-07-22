@@ -91,14 +91,14 @@ class TestBuildPlanHappyPath:
         cluster_kws = [c["keyword"] for c in plan["clusters"]]
         assert pillar_kw not in cluster_kws
 
-    def test_pillar_target_words_is_2500(self):
+    def test_pillar_target_words_is_1500(self):
         plan = build_plan(KEYWORDS, SERPS)
-        assert plan["pillar"]["target_words"] == 2500
+        assert plan["pillar"]["target_words"] == 1500
 
-    def test_cluster_target_words_is_1800(self):
+    def test_cluster_target_words_is_1000(self):
         plan = build_plan(KEYWORDS, SERPS)
         for cluster in plan["clusters"]:
-            assert cluster["target_words"] == 1800
+            assert cluster["target_words"] == 1000
 
     def test_pillar_slug_is_kebab_case(self):
         plan = build_plan(KEYWORDS, SERPS)

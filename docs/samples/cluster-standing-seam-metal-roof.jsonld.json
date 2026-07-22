@@ -1,0 +1,56 @@
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is the main advantage of a standing seam metal roof?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The hidden\u2011fastener system eliminates exposed screws, delivering up to 220\u202fmph wind uplift and a 50\u2011year lifespan."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I install a standing seam metal roof myself?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Installation needs specialized tools for hand\u2011crimping and precise cuts; professional installers ensure compliance with high\u2011velocity hurricane zone code."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How does panel material affect cost?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "24\u2011gauge steel is standard; aluminum costs about double, and copper can be five times more per square foot."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What is oil canning and how is it prevented?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Oil canning is a ripple effect on flat metal; striated panels and proper seam spacing minimize it."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Do I need a special underlayment?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "High\u2011velocity hurricane zones require double XFR (80\u202fmil) underlayment, adding roughly $150\u2011$200 per square foot."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How many clips are used per panel?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Clips are spaced every 4\u20116\u202fin; tighter spacing raises wind uplift ratings."
+        }
+      }
+    ]
+  }
+]

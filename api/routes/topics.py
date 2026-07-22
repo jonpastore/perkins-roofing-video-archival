@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from app.models import AggregatedTopic, Article, GraphNode, ScheduledContent, Video
+from core.article_plan import CLUSTER_TARGET_WORDS, PILLAR_TARGET_WORDS
 from core.topic_freshness import topic_freshness
 
 logger = logging.getLogger(__name__)
@@ -519,6 +520,7 @@ def generate_cluster_article(
             "role": "pillar",
             "pillar_slug": pillar_slug,
             "topic": topic,
+            "target_words": PILLAR_TARGET_WORDS,
         }
         pillar_content = _generate_content_with_fallback(topic, pillar_ctx, pillar_title, db=db)
 
@@ -561,6 +563,7 @@ def generate_cluster_article(
             "role": "cluster",
             "pillar_slug": pillar_slug,
             "topic": topic,
+            "target_words": CLUSTER_TARGET_WORDS,
         }
         cluster_content = _generate_content_with_fallback(
             subtopic, cluster_ctx, _title_case(subtopic), db=db
@@ -815,7 +818,8 @@ def _generate_content_with_fallback(keyword: str, ctx: dict, display_title: str,
         role = ctx.get("role", "standalone")
         pillar_slug = ctx.get("pillar_slug") or ""
         if role == "cluster" and pillar_slug:
-            back_link = f"\n\nFor a full overview, see [our complete guide to {topic}](/blog/{pillar_slug}).\n"
+            # No /blog/ prefix — post URLs are top-level (see jobs.article_job canonical_url).
+            back_link = f"\n\nFor a full overview, see [our complete guide to {topic}](/{pillar_slug}).\n"
         else:
             back_link = ""
         content_md = (

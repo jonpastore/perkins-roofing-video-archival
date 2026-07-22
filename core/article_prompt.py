@@ -227,7 +227,9 @@ def template_prompt(ctx: dict) -> str:
             f"\n\n═══ ARCHITECTURAL ROLE: PILLAR PAGE ═══\n"
             f'This is a PILLAR page — the authoritative, comprehensive overview for topic "{topic}".\n'
             f"- Covers the topic BROADLY (not deeply on any one sub-aspect)\n"
-            f"- Aim for {target_words} words — much longer than a typical article\n"
+            f"- Aim for {target_words} words — moderately longer than a cluster article, but "
+            f"still answer-first and dense: no padding, no filler transitions, every sentence "
+            f"earns its place\n"
             f'- Include a "Table of Contents" H2 near the top linking to each major section\n'
             f"- 8-12 H2 sections, each covering a distinct sub-topic\n"
             f'- Each H2 section ends with an "Learn more:" link pointing to a related cluster article\n'
@@ -238,7 +240,10 @@ def template_prompt(ctx: dict) -> str:
         role_guidance = (
             f"\n\n═══ ARCHITECTURAL ROLE: CLUSTER ARTICLE ═══\n"
             f'This is a CLUSTER article — targets ONE specific angle of topic "{topic}".\n'
-            f"- Aim for {target_words} words — focused, not exhaustive\n"
+            f"- Aim for {target_words} words — dense and answer-first, not exhaustive: lead "
+            f"with the direct answer, use tables/lists where they say more with fewer words, "
+            f"and cut any sentence that doesn't add new information. NO padding — do not repeat "
+            f"a point in different words to reach a length\n"
             f"- Goes DEEP on this ONE sub-topic (the opposite of the pillar)\n"
             f'- MUST include a prominent link UP to the pillar page (slug: "{pillar_slug or "TBD"}") '
             f'in the intro AND in a "More on this topic" section near the end\n'
@@ -323,7 +328,8 @@ def template_prompt(ctx: dict) -> str:
             "Pick the ones MOST topically relevant. These will be linked from within the article body.\n\n"
             "ANCHOR TEXT VARIATION (CRITICAL — affects SEO authority distribution):\n"
             "When you reference these internal links inside the article body using "
-            "HTML anchors `<a href=\"/blog/slug\">anchor text</a>` (NOT markdown), VARY THE ANCHOR TEXT across links. "
+            "HTML anchors `<a href=\"/slug\">anchor text</a>` (NOT markdown — and NEVER prefix the "
+            "slug with /blog/, posts are top-level), VARY THE ANCHOR TEXT across links. "
             "Do NOT use the linked article's exact title for every link. Distribute roughly:\n"
             "- 40% partial-match anchors (e.g. \"physiotherapy treatment\" not the full title)\n"
             "- 30% generic anchors that fit the prose (\"learn more here\", \"this guide\", \"our resource on X\")\n"
@@ -379,6 +385,10 @@ def template_prompt(ctx: dict) -> str:
         "- Include 1 markdown table if relevant\n"
         "- FAQ section with 4-6 Q&As at the end (real questions people ask)\n"
         "- Write for humans, not search engines\n"
+        "- Answer-first: lead every section with the direct answer, then support it — no "
+        "throat-clearing or restating the question\n"
+        "- Do NOT pad for length. If the direct answer takes 3 sentences, use 3 — never repeat "
+        "a point in different words just to hit a word count\n"
         "- Avoid generic statements; be specific and concrete\n"
         "- Reference the location naturally if this is a local business\n"
         "- keywords: list of 5-8 keyword phrases this article targets"
@@ -394,7 +404,8 @@ def template_prompt(ctx: dict) -> str:
         "  6. The alt text of at least one <img> tag\n"
         "  7. Throughout the body at a density of roughly 1% "
         "(count / total-words between 0.5% and 1.5%) — do NOT keyword-stuff\n"
-        "  8. At least one relative internal link (e.g. <a href=\"/blog/slug\">anchor</a>)\n"
+        "  8. At least one relative internal link (e.g. <a href=\"/slug\">anchor</a> — top-level, "
+        "no /blog/ prefix)\n"
         "  9. At least one external DoFollow link (no rel=\"nofollow\") to an authoritative source\n\n"
         "TITLE READABILITY (all four required):\n"
         "  10. Focus keyword appears in the FIRST HALF of the title\n"

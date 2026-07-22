@@ -25,6 +25,7 @@ from functools import lru_cache
 from core.article_prompt import system_prompt, template_prompt
 from core.json_repair import parse_model_json
 from core.jsonld import build_article, build_faq_page, build_video_object
+from core.numeric_grounding import check_numeric_claims
 from core.qa_gate import is_duplicate, verdict
 
 logger = logging.getLogger(__name__)
@@ -756,7 +757,10 @@ def generate_article(
     # per-article E-E-A-T signal that actually helps AI-answer-engine attribution; a generic org
     # name does not. Enrichment may not override the byline.
     wp_url = _wp_base_url()
-    canonical_url = f"{wp_url}/blog/{slug}"
+    # No /blog/ prefix: WordPress permalinks are set to "Post name" (Settings → Permalinks),
+    # so every post — like the SERVICES pages in core.internal_links — lives at a top-level
+    # https://perkinsroofing.net/<slug>, never /blog/<slug>. Confirm exact slugs with Wendy/Tim.
+    canonical_url = f"{wp_url}/{slug}"
 
     # Canonical business identity: one @id-addressed Organization node + a Person author node with
     # @id/sameAs (E-E-A-T). The Article references the org by @id via publisher — Google's pattern,
@@ -1348,7 +1352,8 @@ def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
 
     pillar_slug = ctx.get("pillar_slug")
     if ctx.get("role") == "cluster" and pillar_slug:
-        pillar_url = f"{_wp_base_url()}/blog/{pillar_slug}"
+        # No /blog/ — post URLs are top-level (see _wp_base_url callers / canonical_url note).
+        pillar_url = f"{_wp_base_url()}/{pillar_slug}"
         if pillar_url not in content_md:
             anchor = ctx.get("pillar_title") or _title_case_keyword(pillar_slug.replace("-", " "))
             links.append(f'<a href="{pillar_url}">{anchor}</a>')
@@ -1803,9 +1808,12 @@ def _enforce_grounding(fields: dict, keyword: str, transcript: str, *, llm=None,
     one. (Reviewed independently by GPT-5 and Grok; both reached this conclusion.)
 
     Real claim-grounding needs typed checks — numbers, named entities, "Tim says/recommends"
-    attributions — each requiring a matched evidence span from the source. That is a different
-    instrument and is not built yet. Until it is, the honest defence is upstream: give the
-    generator enough real transcript (source_transcripts) and forbid invention in the prompt.
+    attributions — each requiring a matched evidence span from the source. Numbers now have
+    that instrument (see _enforce_numeric_grounding below, core.numeric_grounding) because a
+    figure is objectively checkable against the source in a way a semantic claim is not, so it
+    can safely edit where this proper-noun guard cannot. Named-entity/attribution checks are
+    still not built. Until they are, the honest defence there is upstream: give the generator
+    enough real transcript (source_transcripts) and forbid invention in the prompt.
     """
     terms = _audit_grounding(fields, keyword, transcript)
     if terms:
@@ -1814,6 +1822,77 @@ def _enforce_grounding(fields: dict, keyword: str, transcript: str, *, llm=None,
             "(this detector is too noisy to drive revisions; check by hand if it matters)",
             keyword, len(terms), terms[:12])
     fields["unsourced_terms"] = terms
+    return fields
+
+
+NUMERIC_GROUNDING_ROUNDS = 2
+
+
+def _soften_unsupported_numeric_claims(content_md: str, unsupported: list[str]) -> str:
+    """Deterministic last resort: delete the sentence containing each still-unsupported figure.
+
+    Runs only after the LLM repair rounds in _enforce_numeric_grounding could not ground (or
+    remove) a number — an invented wind rating or price must never ship just because a repair
+    attempt was made. Tag-boundary aware (matches stop at '<'/'>') so a deletion can't bleed
+    into the next paragraph or heading.
+    """
+    out = content_md
+    for claim in unsupported:
+        pattern = re.compile(
+            r'(?:(?<=[.!?])\s+|(?<=[>])\s*)([^<>.!?]*?' + re.escape(claim) + r'[^<>.!?]*[.!?])')
+        out = pattern.sub(" ", out)
+    out = re.sub(r"<(p|li)([^>]*)>\s*</\1>", "", out, flags=re.IGNORECASE)  # emptied blocks
+    return re.sub(r"[ \t]{2,}", " ", out).strip()
+
+
+def _enforce_numeric_grounding(fields: dict, keyword: str, transcript: str, *, llm=None,
+                               target_words: int = 1800,
+                               rounds: int = NUMERIC_GROUNDING_ROUNDS) -> dict:
+    """BLOCK unsupported numeric claims from shipping.
+
+    Unlike _enforce_grounding (proper nouns, report-only — token presence there is not proof of
+    invention, so it can't safely drive edits) a number IS objectively checkable: either "218
+    mph" appears in the source (allowing format/range/synonym variance, see
+    core.numeric_grounding) or it doesn't. A wrong wind rating or price on a licensed roofer's
+    site is a liability an invented adjective is not, so this one is allowed to edit.
+
+    Tries the same revise loop the critique pass uses (one blocker finding per ungrounded
+    figure) up to `rounds` times. Whatever is STILL unsupported after that is deterministically
+    stripped sentence-by-sentence — bias is toward flagging: a real figure sent for human
+    review costs nothing shipped-wrong; an invented one shipping is the failure mode this
+    exists to prevent.
+    """
+    if not transcript:
+        return fields  # no evidence in hand -> nothing to check against (same policy as
+                        # _audit_grounding)
+
+    goal = _word_goal(target_words)
+    for _ in range(rounds):
+        _, unsupported = check_numeric_claims(fields.get("content_md", ""), transcript)
+        if not unsupported:
+            break
+        logger.warning(
+            "NUMERIC GROUNDING: %r has %d unsupported figure(s): %s — attempting repair",
+            keyword, len(unsupported), unsupported)
+        findings = [
+            {"severity": "blocker",
+             "issue": f'The article states "{claim}" but the source transcript never gives '
+                      f"this figure.",
+             "fix": "Find the real figure in the source transcript and correct it, or remove/"
+                    "soften the sentence. Never invent a replacement number."}
+            for claim in unsupported
+        ]
+        fields = _revise_without_regressing_length(fields, keyword, findings, goal, llm=llm)
+
+    _, still_unsupported = check_numeric_claims(fields.get("content_md", ""), transcript)
+    if still_unsupported:
+        logger.error(
+            "NUMERIC GROUNDING: %r still has %d unsupported figure(s) after %d repair round(s), "
+            "stripping the sentence(s) rather than shipping an invented number: %s",
+            keyword, len(still_unsupported), rounds, still_unsupported)
+        fields["content_md"] = _soften_unsupported_numeric_claims(
+            fields.get("content_md", ""), still_unsupported)
+    fields["numeric_claims_stripped"] = still_unsupported
     return fields
 
 
@@ -1927,6 +2006,13 @@ def generate_scored_article(
     # something is actually unsourced; a clean article pays nothing.
     fields = _enforce_grounding(fields, keyword, transcript, llm=validator_llm,
                                target_words=int(ctx.get("target_words", 1800)))
+
+    # ── Numeric claims are a liability, not a style issue — this one edits ───
+    # Prices, wind ratings, gauges: unlike the proper-noun guard above, a number is objectively
+    # checkable against the source, so unsupported ones are repaired or stripped, never just
+    # reported. See _enforce_numeric_grounding / core.numeric_grounding.
+    fields = _enforce_numeric_grounding(fields, keyword, transcript, llm=llm,
+                                        target_words=int(ctx.get("target_words", 1800)))
 
     # ── Final deterministic guarantees ──────────────────────────────────────
     # Applied AFTER the refine loop so the returned article provably passes every

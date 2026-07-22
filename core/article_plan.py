@@ -21,6 +21,12 @@ from __future__ import annotations
 
 import re
 
+# Word-count targets by role. Clusters are dense answer-first pages (~800-1200 acceptable
+# band); pillars stay moderately longer but are not force-expanded to the old 2500. See
+# core.article_prompt's role_guidance for the matching "no padding" prompt instructions.
+CLUSTER_TARGET_WORDS = 1000
+PILLAR_TARGET_WORDS = 1500
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -170,7 +176,7 @@ def build_plan(keywords: list[dict], serps: dict) -> dict:
             "When to consult a professional",
             "Next steps",
         ],
-        "target_words": 2500,
+        "target_words": PILLAR_TARGET_WORDS,
     }
 
     # ── 5. Cluster selection — prefer faq / how_to / comparison templates ────
@@ -232,7 +238,7 @@ def build_plan(keywords: list[dict], serps: dict) -> dict:
                 "Common mistakes",
                 "Related topics (link to pillar + sibling clusters)",
             ],
-            "target_words": 1800,
+            "target_words": CLUSTER_TARGET_WORDS,
         })
 
     # ── 6. Internal-link map ──────────────────────────────────────────────────

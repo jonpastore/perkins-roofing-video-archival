@@ -586,7 +586,8 @@ def test_internal_links_cluster_links_up_to_its_pillar():
 
     ctx = {"role": "cluster", "pillar_slug": "metal-roofing-guide", "pillar_title": "Metal Roofing Guide"}
     out = _ensure_internal_links("<p>some article body</p>", "metal roof cost", ctx)
-    assert '<a href="https://perkinsroofing.net/blog/metal-roofing-guide">Metal Roofing Guide</a>' in out
+    assert '<a href="https://perkinsroofing.net/metal-roofing-guide">Metal Roofing Guide</a>' in out
+    assert "/blog/" not in out
 
 
 def test_internal_links_pillar_article_gets_no_pillar_link():
@@ -625,8 +626,98 @@ def test_internal_links_is_idempotent():
     assert twice == once
 
 
+def test_internal_links_never_contain_blog_path():
+    # Site rule: no /blog/ in post URLs (pillar links AND services links are top-level).
+    from jobs.article_job import _ensure_internal_links
+
+    ctx = {"role": "cluster", "pillar_slug": "roof-repair-guide", "pillar_title": "Roof Repair Guide"}
+    out = _ensure_internal_links(
+        "<p>Roof repair costs and a professional roof inspection matter for every home.</p>",
+        "roof repair", ctx)
+    assert "/blog/" not in out
+
+
 def test_matching_service_links_caps_at_three():
     from core.internal_links import matching_service_links
 
     text = "roof repair roof replacement roof inspection metal roof tile roof flat roof"
     assert len(matching_service_links(text)) == 3
+
+
+# ── numeric-claim grounding (wiring around core.numeric_grounding) ──────────────────────────
+
+_MPH_TRANSCRIPT = "Panels are rated for 190 to 220 mph in our testing."
+
+
+def test_soften_removes_only_the_offending_sentence():
+    from jobs.article_job import _soften_unsupported_numeric_claims
+
+    html = ("<p>Standing seam panels are strong. This configuration rates at 999 mph in one "
+            "test. Homeowners love the look.</p>")
+    out = _soften_unsupported_numeric_claims(html, ["999 mph"])
+    assert "999" not in out
+    assert "Standing seam panels are strong." in out
+    assert "Homeowners love the look." in out
+
+
+def test_soften_drops_an_emptied_single_sentence_paragraph():
+    from jobs.article_job import _soften_unsupported_numeric_claims
+
+    html = "<p>This configuration rates at 999 mph.</p>"
+    out = _soften_unsupported_numeric_claims(html, ["999 mph"])
+    assert "999" not in out
+    assert "<p></p>" not in out and "<p> </p>" not in out
+
+
+def test_numeric_grounding_noop_without_transcript():
+    from jobs.article_job import _enforce_numeric_grounding
+
+    fields = {"content_md": "<p>Rated for 260 mph.</p>"}
+    out = _enforce_numeric_grounding(fields, "kw", "", llm=_ScriptedLLM())
+    assert out is fields
+    assert "numeric_claims_stripped" not in out
+
+
+def test_numeric_grounding_leaves_supported_claims_untouched():
+    from jobs.article_job import _enforce_numeric_grounding
+
+    fields = {"content_md": "<p>This roof is rated at 218 mph.</p>"}
+    out = _enforce_numeric_grounding(fields, "kw", _MPH_TRANSCRIPT, llm=_ScriptedLLM())
+    assert out["content_md"] == fields["content_md"]
+    assert out["numeric_claims_stripped"] == []
+
+
+def test_numeric_grounding_repairs_via_revise_when_the_llm_fixes_it():
+    from jobs.article_job import _enforce_numeric_grounding
+
+    fields = {"title": "T", "slug": "s", "meta": "m",
+              "content_md": "<p>This roof rated at 260 mph in one test.</p>", "faq_json": []}
+    fixed = json.dumps({
+        "title": "T", "slug": "s", "metaDescription": "m",
+        "content": "<p>This roof rated at 218 mph in one test.</p>", "faq": [],
+    })
+    llm = _ScriptedLLM(fixed)
+    out = _enforce_numeric_grounding(fields, "kw", _MPH_TRANSCRIPT, llm=llm, rounds=2)
+    assert "260 mph" not in out["content_md"]
+    assert "218" in out["content_md"]
+    assert out["numeric_claims_stripped"] == []
+    assert len(llm.prompts) == 1  # grounded on the first round — no second attempt needed
+
+
+def test_numeric_grounding_strips_the_sentence_when_repair_never_grounds_it():
+    from jobs.article_job import _enforce_numeric_grounding
+
+    content = ("<p>Great looks. This roof rated at 999 mph in one test. "
+               "Long lasting.</p>")
+    fields = {"title": "T", "slug": "s", "meta": "m", "content_md": content, "faq_json": []}
+    # The reviser keeps returning the same ungrounded figure every round.
+    same = json.dumps({
+        "title": "T", "slug": "s", "metaDescription": "m", "content": content, "faq": [],
+    })
+    llm = _ScriptedLLM(same, same)
+    out = _enforce_numeric_grounding(fields, "kw", _MPH_TRANSCRIPT, llm=llm, rounds=2)
+    assert "999" not in out["content_md"]
+    assert "Great looks." in out["content_md"]
+    assert "Long lasting." in out["content_md"]
+    assert out["numeric_claims_stripped"] == ["999 mph"]
+    assert len(llm.prompts) == 2  # exhausted both repair rounds before falling back

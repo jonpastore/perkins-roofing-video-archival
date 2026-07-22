@@ -1,0 +1,48 @@
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Does oil canning affect roof performance?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. It\u2019s only an optical illusion; the roof\u2019s water barrier remains intact."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I fix oil canning after installation?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The only fix is to replace flat panels with ribbed ones; there\u2019s no coating that eliminates the effect."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is oil canning covered by insurance?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No, because it isn\u2019t a leak or structural damage."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Will oil canning show up in home inspections?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Inspectors note it as a visual characteristic, not a defect."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Do all metal roof manufacturers offer striated panels?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Most major suppliers do; Tim\u2019s supplier GF Coast Supply provides both flat and striated options."
+        }
+      }
+    ]
+  }
+]

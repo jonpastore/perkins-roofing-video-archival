@@ -61,8 +61,14 @@ def _run_for_tenant(
     """Per-tenant SEO regen body. Called by for_each_tenant via run()."""
     from adapters.llm import get_default  # noqa: PLC0415
     from app.models import Article, SessionLocal  # noqa: PLC0415
+    from core.article_plan import CLUSTER_TARGET_WORDS, PILLAR_TARGET_WORDS  # noqa: PLC0415
     from core.seo import _word_count, rank_math_failures  # noqa: PLC0415
     from jobs.article_job import _word_goal, generate_scored_article  # noqa: PLC0415
+
+    # Same per-role targets the live generator plans against (core.article_plan) — otherwise
+    # this job judges "healthy" against the old flat 1800 and keeps re-flagging correctly-sized
+    # ~1000-word cluster articles as needing another regen round.
+    role_target_words = {"pillar": PILLAR_TARGET_WORDS, "cluster": CLUSTER_TARGET_WORDS}
 
     llm = get_default()
     q = db.query(Article)
@@ -87,7 +93,8 @@ def _run_for_tenant(
                 continue
             fails = rank_math_failures(a.title or "", a.meta or "", slug,
                                        a.content_md or "", a.focus_keyword or "")
-            if not fails and _word_count(a.content_md or "") >= _word_goal(1800):
+            target = role_target_words.get(a.role or "", 1800)
+            if not fails and _word_count(a.content_md or "") >= _word_goal(target):
                 skipped.append(slug)
             else:
                 keep.append(slug)
@@ -108,7 +115,8 @@ def _run_for_tenant(
                 continue
             kw = _keyword_from_slug(slug, a.title or slug, llm)
             ctx = {"keyword": kw, "role": a.role or "standalone",
-                   "pillar_slug": a.pillar_slug or slug, "topic": a.title or kw}
+                   "pillar_slug": a.pillar_slug or slug, "topic": a.title or kw,
+                   "target_words": role_target_words.get(a.role or "", 1800)}
 
             best = None
             best_fails = None
