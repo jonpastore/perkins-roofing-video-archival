@@ -31,8 +31,16 @@ toggle + scope-of-work AI rewrite SHIPPED (POST /estimator/scope-of-work/rewrite
 template in config scope_of_work.default_template; repair proposals now send-valid). Residual for
 #387: scope_of_work_text not yet rendered into the contract PDF (proposal_render) — phase-4.
 
+DONE 2026-07-22 pm (2): (3) Portfolio automation SHIPPED (ac77a44) — 13 Avada Portfolio DRAFTS
+on staging (8287-8299, cats/tags/skills verified); wendy sheet prefilled at
+docs/portfolio/wendy-sheet-prefill-2026-07-22.csv (~22-27/30 fields still need Tim/Wendy);
+4 projects doc-only (no Knowify match): River Place, Abacoa, SL Construction, Malooly.
+Re-run: portfolio_prefill.py -> portfolio_publish.py (idempotent; targets admin-config WP_URL).
+CompanyCam photo pull still blocked on creds (Jon). Zoom-gap tasks filed: Jarvis #396-403;
+o365-api stale-RT bug #404 (drafts work via direct Graph on cerberus meanwhile).
+
 PICK UP (build to the routing policy above):
-3. Portfolio automation (Wendy): 30-field Google Sheet -> Avada Portfolio (cats Commercial/
+OLD-3. Portfolio automation (Wendy): 30-field Google Sheet -> Avada Portfolio (cats Commercial/
    Residential/Construction, tags=location, skills=roof-type). CF write-ups from CompanyCam+proposal+
    YouTube; permissions human-gated. Doc/Sheet IDs in the O365 "Meeting notes and info" thread.
 4. CF PROD FLIP (terraform: inject CLOUDFLARE_API_TOKEN into Cloud Run api+jobs + set
