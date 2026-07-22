@@ -326,3 +326,20 @@ def trash(post_id: int) -> None:
     url = _wp_api_url(f"/wp-json/wp/v2/posts/{post_id}")
     resp = requests.delete(url, auth=_auth(), timeout=30)
     resp.raise_for_status()
+
+
+def push_llms_txt(content: str) -> dict:
+    """Push the llms.txt manifest to the perkins-jsonld plugin route
+    (POST /wp-json/perkins/v1/llms-txt). The plugin stores it as the
+    perkins_llms_txt option AND (best-effort) writes the physical
+    /llms.txt file — a pre-existing static file at the webroot shadows
+    the WP fallback route, so the file write is what actually updates
+    what crawlers see. Returns the plugin's {ok, bytes, file_written}.
+
+    Raises:
+        requests.HTTPError: if the WP REST API returns a non-2xx response.
+    """
+    url = _wp_api_url("/wp-json/perkins/v1/llms-txt")
+    resp = requests.post(url, json={"content": content}, auth=_auth(), timeout=30)
+    resp.raise_for_status()
+    return resp.json()

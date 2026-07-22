@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 
 import adapters.search_indexing as search_indexing
 import adapters.wordpress as wordpress
-from app.config import settings
 from app.models import Article, ScheduledContent, SessionLocal
 from core.scheduler import due
 from core.search_indexing import urls_for_articles
@@ -21,7 +20,8 @@ def _submit_for_indexing(slug: str) -> None:
     correctly published to WordPress either way. See jobs/search_indexing_job.py
     for the daily catch-up sweep that covers a failure here."""
     try:
-        urls = urls_for_articles(settings.WP_URL, [slug])
+        # Admin-config WP_URL (resolved_wp_url), NOT env — .env is never a runtime config source.
+        urls = urls_for_articles(wordpress.resolved_wp_url(), [slug])
         search_indexing.submit_urls(urls)
     except Exception as e:  # noqa: BLE001
         print(f"[search_indexing] submit failed for slug={slug}: {str(e)[:120]}")
@@ -94,6 +94,16 @@ def run(now=None):
         totals["errored"] += r["errored"]
 
     for_each_tenant(SessionLocal, _fn)
+
+    if totals["promoted"]:
+        # Best-effort llms.txt refresh so the AI-crawler manifest tracks the live article
+        # index. Never blocks promotion (the job is fail-safe internally, but belt+braces).
+        try:
+            from jobs.llms_txt_job import run as refresh_llms_txt  # noqa: PLC0415
+            print(f"[llms_txt] {refresh_llms_txt()}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[llms_txt] refresh failed: {str(e)[:120]}")
+
     return totals
 
 
