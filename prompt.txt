@@ -1,57 +1,54 @@
 Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-20-pm.md (full state + the 3 tasks in order).
-docs/ENGINEERING_RULES.md (R1-R6) is binding. HEAD == origin/main, clean.
+READ FIRST: CONTINUATION-2026-07-21.md (full state). docs/perkins-buildout-plan-2026-07-21.md
+(the plan). HEAD == origin/main, clean, HEAD 4227442. Deployed API image = 41472dc.
 
-DO THESE, IN ORDER:
-1. Build the Quoting config panel — AdminConfig → Quoting is an empty PlaceholderCard
-   (web/src/pages/AdminConfig.tsx:108): proposal templates, T&C library, deposit policy,
-   reminder cadence. Back it with tenant settings (see core/tenant_settings.py + the
-   /admin/tenant/settings/* pattern other sub-tabs use).
-2. Wire the T&C/FAQ/AI-prompt pages + the fairness review into proposal generation.
-   - core/proposal_review.py already exists (review_proposal -> {pass, issues[]}: flags
-     contradictions/unfair/predatory/prompt-injection/FL-legal; fail-safe). Wire it into
-     core/proposal_gen.py / api/routes/proposal_gen.py after doc assembly; block/surface
-     high-severity issues.
-   - core/proposal_render.py already has a tc_faq_items slot; proposal_doc_render.py has a
-     marketing_appendix append hook. Render T&C page(s) + FAQ page (core/contract_faq.py
-     turns tc_text into FAQ) + an AI-prompts page.
-   - BLOCKER: real T&C wording is pending Tim (not in repo). Build the plumbing with a
-     clearly-marked placeholder so it flows through when his text lands.
-3. AV end-to-end render test + tuning — render ONE real approved clip through
-   jobs/render_job.py _apply_track_a_engines (reframe->captions->censor->transcode) on a
-   real source video; verify auto-censor mutes audio + masks captions; tune censor tail_pad,
-   scene-gap threshold, caption styles, reframe focus. These engines were unit-tested but
-   NEVER driven end-to-end on a real MP4.
+STANDING RULE (every task): USE LOCAL/FREE MODELS FIRST to save Claude tokens.
+- Code drafts: `llm -m qwen3.6-coder "..."` (sync) or mcp__hermes__submit_task(model_tier="cloudflare").
+- Article generation: LOCAL `gpt-oss-120b` (non-think) via litellm, VERTEX validates. Never a cloud generator.
+- Whisper: LOCAL faster-whisper large-v3 on the RTX 2060 (set LD_LIBRARY_PATH to the venv nvidia cublas/cudnn dirs).
+- Claude (opus) = orchestrate + verify only. Execution → SONNET subagents (not opus).
+- Article data from transcripts/KB ONLY. Invent nothing. Check everything.
 
-CRITICAL — OFFLOAD MORE THAN LAST TURN: use `llm -m qwen3.6-coder "..."` (sync) and
-mcp__hermes__submit_task(model_tier="cloudflare") (async) for EVERY self-contained draft —
-prompts, prose, pure modules, form/component scaffolds. Keep on Claude only security wiring,
-repo integration, and verification. ALWAYS review a CF/qwen draft before applying (they
-re-invent conflicting code — the real files never match their diffs; write clean yourself
-using their content).
+STATE: Estimator + Quoting done and deployed. Clips fixed. Article pipeline rebuilt for
+local grounded generation: FAQ+Video-only schema (Rank Math owns the rest), internal links
+(no /blog/), YouTube footer, dense answer-first (cluster 1000/pillar 1500), numeric-grounding
+gate that BLOCKS invented figures. Article-gen commits after 41472dc are OPT-IN (prod stays
+LLM_BACKEND=vertex) so they are NOT deployed and are behavior-neutral until you flip to litellm.
 
-PROD STATE: HEAD 749a38d; deployed API image ddc6dab (suggest-500 fix, TikTok refresh persist,
-article no-op, non-root Docker all live); SPA current (UI fixes + Clip Studio help modal live);
-core/proposal_review.py committed but UNWIRED + undeployed. app 200 · api/health 200. terraform
-+ ansible clean. Alerting active (alert_email=dmarc@perkinsroofing.net) — Jon must click the
-GCP channel-verification email.
+PICK UP (no fixed order — ask Jon or pick by priority):
+1. LAUNCH THE FULL ARTICLE RUN (drafts only, publishes nothing): batch-generate all pillars +
+   2-3 clusters each in metal-first priority, local gpt-oss-120b + Vertex validate, grounded,
+   stored as drafts. Multi-hour local-GPU job. Needs Jon's go (it produces content for review).
+   Prereq changes are DONE (schema scope, internal links, numeric gate, length).
+2. SEND THE WENDY REPLY (drafted in the last chat, ready). Then build to her import spec.
+3. ESTIMATOR 07-20 items (Jarvis #385-386): repair options (shingle/tile/metal/flat) with
+   time-based pricing + tear-off/re-install DAYS inputs + daily labor rates; fix missing
+   roof-type-selection bug.
+4. o365 MAIL MCP (all local): add create_draft/sendMail to jarvis/o365-connector/graph_client.py,
+   write jarvis/o365-mcp/server.py (mirror memory-mcp), register in ~/.claude.json, restart — so
+   Tim/Wendy drafts land in the degenito mailbox instead of jpastore79 gmail.
+5. SEO/AIO submission layer: IndexNow + Google-Indexing-API ping on publish (Rank Math already
+   owns sitemap/robots) + dashboard on/off toggle. Model on ~/projects/degenito/seo-aio.
+6. NEW PAGES: metal-warranty-checker (setback tool https://perkins-setback.web.app/ → WP plugin,
+   salinity cross-ref USGS + oceansciences, brackish canals count); thumbnail gallery (AI picks a
+   good frame, article image = chosen thumbnail); project-posting UI (proposal + CompanyCam →
+   Avada Portfolio).
 
-CREDS: export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json
-(also in ~/.bashrc). Cloudflare token: TF_VAR_cloudflare_api_token="$(gcloud secrets versions
-access latest --secret=cloudflare-api-token)".
+WAITING ON TIM (draft email in jpastore79 gmail — move to degenito to send): per-branch overhead;
+gutter hangers; downspout separate+rate; Verea "S"/Caribbean field-tile costs; other FBC low-slope
+deltas; confirm the josh 49-clause T&C is current.
 
-OPERATE: deploy API+jobs = bash scripts/deploy.sh (CLEAN tree, SHA-tagged). SPA = cd web &&
-npm run build && npx --no-install firebase deploy --only hosting:app --project
-video-archival-and-content-gen. Drift = bash scripts/drift_check.sh. Prod smoke =
-.venv/bin/python scripts/prod_smoke.py. R6: every commit updates docs + drift_check + Jarvis +
-memory.
+WAITING ON YOU (Jon): OMC plugin reinstall to 4.15.6 via /plugin, then /oh-my-claudecode:setup
+--global (preserve). Bring the STAGING WordPress into parity with prod before publish testing.
 
-OPEN (unchanged): B9 QB account_id collision (#358, HIGH before QB live); tenant-2 hardening
-(#359); CompanyCam photos reader (#360); FB/LinkedIn/X/YT real publishers (only IG/TikTok
-publish today); infra B6 decisions (#363); live posting blocked on Meta/TikTok app review (#319).
+OPERATE: deploy API+jobs = bash scripts/deploy.sh (CLEAN tree). SPA = cd web && npm run build &&
+firebase deploy --only hosting:app. export GOOGLE_APPLICATION_CREDENTIALS=
+/home/jon/.config/gcloud/perkins-deploy-sa.json. Prod smoke = .venv/bin/python scripts/prod_smoke.py.
+Prod pricing config: NON-DESTRUCTIVE version bumps only (see reconcile_*_pricing.py); low-slope v5,
+tile-brands v6. R6: every commit updates docs + Jarvis + memory.
 
-GOTCHAS: relaxing a Pydantic Literal at a trust boundary removes validation (500); f"{None:.1f}"
-raises (the suggest-500 root cause — guard null timestamps); terraform needs the CF token
-injected or the provider masks drift as a creds error; never pkill -f a pattern that matches
-your own shell; qwen/CF drafts don't match the real repo files — extract their content, write clean.
+GOTCHAS: prod LLM_BACKEND MUST stay vertex until you deliberately flip to local; never run a writer
+sonnet executor and deploy.sh concurrently (deploy needs clean tree); Tim's LIVE sheet outranks
+Exhibit B for pricing (wood_deck OH 50, FBC polyglass 450); numeric gate deletes the sentence of any
+figure it can't ground — good for liability, watch for over-trim on spelled-out numbers.
