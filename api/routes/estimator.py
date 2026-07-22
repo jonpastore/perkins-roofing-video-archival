@@ -3,9 +3,11 @@
 Endpoints:
   POST  /estimator/quote    compute estimate using active config + stamp hash
   GET   /estimator/rates    rate tables from active config (config-driven in F2)
+  POST  /estimator/scope-of-work/rewrite   AI-rewrite a scope-of-work template
 
 Role requirements (core.authz):
-  estimating_view  → POST /estimator/quote, GET /estimator/rates
+  estimating_view  → POST /estimator/quote, GET /estimator/rates,
+                     POST /estimator/scope-of-work/rewrite
   estimating_manage → config CRUD (lives in api/routes/pricing_configs.py)
 """
 from typing import Literal, Optional
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 from api.auth import get_db_session, require_role
 from app.models import Estimate, Measurement, PricingConfig
 from core import estimator as E
+from core import scope_of_work as SOW
 from core.discounts import resolve_discounts
 from core.estimator import DailyOverheadSeries, RepairInput
 from core.pricing_config import ConfigError, load_config
@@ -55,6 +58,12 @@ class RepairQuoteRequest(BaseModel):
     crew_size: Literal[1, 2] = 1
     material_cost: float = Field(default=0, ge=0)
     config_id: Optional[int] = None      # null = use active config; explicit = pin to version
+
+
+class ScopeOfWorkRewriteRequest(BaseModel):
+    template: str = Field(..., min_length=1)
+    instruction: str = Field(..., min_length=1)
+    job_context: Optional[dict] = None
 
 
 router = APIRouter(prefix="/estimator", tags=["estimator"])
@@ -479,7 +488,35 @@ def repair_quote(
     result["branch"] = body.branch
     result["pricing_config_id"] = cfg_row.id
     result["pricing_config_hash"] = cfg_row.config_hash
+    # Same shape as /quote's floors block, so the UI can build a send-valid proposal
+    # snapshot (core/proposal.py validate_snapshot requires pricing_config_hash + floors).
+    result["floors"] = {
+        "min_profit_pct": config.raw["profit_floor_pct"],
+        "min_profit_plus_oh_pct": config.raw["profit_plus_oh_floor_pct"],
+    }
     return result
+
+
+@router.post("/scope-of-work/rewrite")
+def rewrite_scope_of_work(
+    body: ScopeOfWorkRewriteRequest,
+    _claims=Depends(require_role("estimating_view")),
+):
+    """AI-rewrite a scope-of-work template per a free-text instruction.
+
+    Returns HTTP 502 (template unchanged) on validation failure or an empty LLM reply,
+    rather than shipping a broken/empty scope of work.
+    """
+    from app.llm import chat  # noqa: PLC0415
+
+    try:
+        prompt = SOW.build_rewrite_prompt(body.template, body.instruction, body.job_context)
+        reply = chat(prompt)
+        text = SOW.validate_rewrite(reply or "")
+    except Exception as exc:  # noqa: BLE001 — fail-safe: ANY llm/transport/parse error
+        # returns "template unchanged", never a raw 500 (same posture as proposal_review).
+        raise HTTPException(502, detail="rewrite failed — template unchanged") from exc
+    return {"text": text}
 
 
 def _estimate_row(row: Estimate) -> dict:
@@ -581,6 +618,8 @@ def rates(
             "job_profit_floor": cfg.get("job_profit_floor") or 2500,
             # v2: repair (time-based) quote config — roof-type categories + daily labor rates
             "repair": cfg.get("repair") or {},
+            # scope-of-work AI rewrite: saved default template ({"default_template": str})
+            "scope_of_work": cfg.get("scope_of_work") or {},
         }
 
     # No active config seeded — minimal response (documented; the SPA shows the note).

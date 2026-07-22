@@ -57,6 +57,11 @@ class TestRepairQuote:
         assert body["material_cost"] == 150.0
         assert body["project_total"] == pytest.approx(2520.00)
         assert body["pricing_config_id"] == created["id"]
+        assert body["pricing_config_hash"] == created["config_hash"]
+        assert body["floors"] == {
+            "min_profit_pct": REPAIR_CONFIG["profit_floor_pct"],
+            "min_profit_plus_oh_pct": REPAIR_CONFIG["profit_plus_oh_floor_pct"],
+        }
 
     def test_repair_quote_two_man_crew(self, admin_client):
         branch = _unique_branch()

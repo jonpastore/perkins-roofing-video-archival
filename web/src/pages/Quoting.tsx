@@ -158,6 +158,7 @@ interface EstimatorRates {
     roof_types?: string[];
     daily_labor_rate?: { one_man?: number | null; two_man?: number | null };
   };
+  scope_of_work?: { default_template?: string };
 }
 
 interface RepairQuoteResult {
@@ -168,6 +169,8 @@ interface RepairQuoteResult {
   labor_cost: number;
   material_cost: number;
   project_total: number;
+  pricing_config_hash?: string;
+  floors?: { min_profit_pct: number; min_profit_plus_oh_pct: number };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -647,6 +650,9 @@ export function Quoting() {
   const [proposalCreated, setProposalCreated] = useState<{ id: number } | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
 
+  // Repair vs re-roof mode (Zoom 2026-07-20 [41:04])
+  const [jobMode, setJobMode] = useState<"reroof" | "repair">("reroof");
+
   // Repair quote (time-based — alternative to full replacement, Zoom 2026-07-20 [37:04]/[45:31])
   const [repairRoofType, setRepairRoofType] = useState<"shingle" | "tile" | "metal" | "flat">("shingle");
   const [repairDays, setRepairDays] = useState("");
@@ -655,6 +661,16 @@ export function Quoting() {
   const [repairResult, setRepairResult] = useState<RepairQuoteResult | null>(null);
   const [repairQuoting, setRepairQuoting] = useState(false);
   const [repairError, setRepairError] = useState<string | null>(null);
+  const [creatingRepairProposal, setCreatingRepairProposal] = useState(false);
+  const [repairProposalCreated, setRepairProposalCreated] = useState<{ id: number } | null>(null);
+  const [repairProposalError, setRepairProposalError] = useState<string | null>(null);
+
+  // Scope of work (Zoom 2026-07-20 [42:06]/[44:12]) — shared by both modes.
+  const [scopeOfWork, setScopeOfWork] = useState("");
+  const [scopeOfWorkPrefilled, setScopeOfWorkPrefilled] = useState(false);
+  const [scopeInstruction, setScopeInstruction] = useState("");
+  const [scopeRewriting, setScopeRewriting] = useState(false);
+  const [scopeRewriteError, setScopeRewriteError] = useState<string | null>(null);
 
   // Selected property for proposal creation
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
@@ -737,6 +753,16 @@ export function Quoting() {
       .then((data: EstimatorRates) => setRates(data))
       .catch((e: unknown) => setRatesError(e instanceof Error ? e.message : String(e)));
   }, [quoteRegion, selectedCustomer?.branch]);
+
+  // Pre-fill scope-of-work from the config template exactly once, so it never clobbers edits.
+  useEffect(() => {
+    if (scopeOfWorkPrefilled) return;
+    const template = rates?.scope_of_work?.default_template;
+    if (template) {
+      setScopeOfWork(template);
+      setScopeOfWorkPrefilled(true);
+    }
+  }, [rates, scopeOfWorkPrefilled]);
 
   function loadCustomerDetail(id: number) {
     setCustomerDetailLoading(true);
@@ -1108,6 +1134,29 @@ export function Quoting() {
     }
   }
 
+  async function handleRewriteScope() {
+    if (!scopeInstruction.trim()) return;
+    setScopeRewriting(true);
+    setScopeRewriteError(null);
+    try {
+      const r = await apiFetch("/estimator/scope-of-work/rewrite", {
+        method: "POST",
+        body: JSON.stringify({
+          template: scopeOfWork,
+          instruction: scopeInstruction,
+          job_context: { mode: jobMode, roof_type: jobMode === "repair" ? repairRoofType : quoteRoofType, branch: selectedCustomer?.branch || "miami" },
+        }),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      const data: { text: string } = await r.json();
+      setScopeOfWork(data.text);
+    } catch (e: unknown) {
+      setScopeRewriteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setScopeRewriting(false);
+    }
+  }
+
   // Any change to an estimate input (reuses buildQuoteBody as the single source of
   // truth for "what counts as an input") marks the last quote stale; runQuote clears it.
   const quoteBodyKey = JSON.stringify(buildQuoteBody());
@@ -1157,6 +1206,7 @@ export function Quoting() {
       estimator_version: "1.0.0",
       // Fallback only for responses cached before the backend started returning floors.
       floors: quoteResult.floors ?? { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
+      ...(scopeOfWork.trim() ? { scope_of_work_text: scopeOfWork.trim() } : {}),
     };
 
     try {
@@ -1179,6 +1229,59 @@ export function Quoting() {
       setProposalError(e instanceof Error ? e.message : String(e));
     } finally {
       setCreatingProposal(false);
+    }
+  }
+
+  async function handleCreateRepairProposal() {
+    if (!selectedCustomer || !repairResult || !selectedPropertyId) {
+      setRepairProposalError("Need a customer, property, and calculated repair quote to create a proposal.");
+      return;
+    }
+    setCreatingRepairProposal(true);
+    setRepairProposalError(null);
+
+    const estimateInput = {
+      branch: selectedCustomer?.branch || "miami",
+      roof_type: repairRoofType,
+      days: Number(repairDays || 0),
+      crew_size: repairCrewSize,
+      material_cost: Number(repairMaterialCost || 0),
+    };
+    const snapshot = {
+      estimate_input: estimateInput,
+      estimate_result: repairResult,
+      total: repairResult.project_total,
+      job_type: "repair",
+      roof_type: repairRoofType,
+      tiers: {
+        good: { label: "Repair", description: "Time-based repair", total: repairResult.project_total },
+      },
+      recommended_tier: "good",
+      selected_tier_default: "good",
+      deposit_policy: { mode: "percent", value: 50, instructions: "Check payable to Perkins Roofing" },
+      pricing_config_hash: repairResult.pricing_config_hash ?? "",
+      floors: repairResult.floors ?? { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
+      estimator_version: "1.0.0",
+      ...(scopeOfWork.trim() ? { scope_of_work_text: scopeOfWork.trim() } : {}),
+    };
+
+    try {
+      const r = await apiFetch("/quoting/proposals", {
+        method: "POST",
+        body: JSON.stringify({
+          customer_id: selectedCustomer.id,
+          property_id: selectedPropertyId,
+          title: `Repair Proposal — ${selectedCustomer.display_name}`,
+          quote_snapshot: snapshot,
+        }),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      const proposal = await r.json();
+      setRepairProposalCreated({ id: proposal.id });
+    } catch (e: unknown) {
+      setRepairProposalError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreatingRepairProposal(false);
     }
   }
 
@@ -1463,6 +1566,55 @@ export function Quoting() {
           </div>
         )}
 
+        {/* Re-roof vs repair mode (Zoom 2026-07-20 [41:04]) */}
+        <div style={{ display: "flex", marginBottom: 20 }}>
+          <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: `1px solid ${BRAND.border}` }}>
+            {(["reroof", "repair"] as const).map((m, i) => (
+              <button
+                key={m} type="button"
+                onClick={() => setJobMode(m)}
+                style={{
+                  padding: "8px 20px", fontSize: 13, fontWeight: 700, border: "none",
+                  borderRight: i === 0 ? `1px solid ${BRAND.border}` : "none", cursor: "pointer",
+                  background: jobMode === m ? BRAND.navy : "#fff",
+                  color: jobMode === m ? "#fff" : BRAND.sub,
+                }}
+              >
+                {m === "reroof" ? "Re-roof" : "Repair"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Scope of work — shared by both modes (Zoom 2026-07-20 [42:06]/[44:12]) */}
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 10 }}>Scope of work</div>
+          <textarea
+            value={scopeOfWork}
+            onChange={(e) => setScopeOfWork(e.target.value)}
+            rows={6}
+            style={{ ...inputStyle, width: "100%", fontSize: 13, resize: "vertical" }}
+          />
+          <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
+            <input
+              value={scopeInstruction}
+              onChange={(e) => setScopeInstruction(e.target.value)}
+              placeholder="How should this differ?"
+              style={{ ...inputStyle, flex: 1, fontSize: 13 }}
+            />
+            <Button
+              variant="ghost"
+              onClick={handleRewriteScope}
+              disabled={scopeRewriting || !scopeInstruction.trim()}
+              style={{ fontSize: 13, whiteSpace: "nowrap" }}
+            >
+              {scopeRewriting ? "Rewriting…" : "Rewrite with AI"}
+            </Button>
+          </div>
+          {scopeRewriteError && <div style={{ marginTop: 8 }}><ErrorMsg>Error: {scopeRewriteError}</ErrorMsg></div>}
+        </Card>
+
+        {jobMode === "reroof" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 20, alignItems: "start" }}>
           <Card>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
@@ -2049,9 +2201,11 @@ export function Quoting() {
             )}
           </div>
         </div>
+        )}
 
         {/* Repair estimate — time-based alternative to full replacement (Zoom 2026-07-20 [37:04]/[45:31]) */}
-        <Card style={{ marginTop: 20 }}>
+        {jobMode === "repair" && (
+        <Card>
           <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 4 }}>
             Repair estimate (time-based)
           </div>
@@ -2111,9 +2265,29 @@ export function Quoting() {
               <ResultRow label={`Labor (${repairResult.days}d @ ${usd(repairResult.daily_labor_rate)}/day)`} value={usd(repairResult.labor_cost)} />
               <ResultRow label="Material cost" value={usd(repairResult.material_cost)} />
               <ResultRow label="Repair total" value={usd(repairResult.project_total)} bold />
+
+              {props.length > 1 && (
+                <div style={{ marginTop: 14, marginBottom: 12 }}>
+                  <FieldLabel>Property for proposal</FieldLabel>
+                  <select value={selectedPropertyId ?? ""} onChange={(e) => setSelectedPropertyId(Number(e.target.value))} style={selectStyle}>
+                    {props.map((p) => <option key={p.id} value={p.id}>{p.street}, {p.city}</option>)}
+                  </select>
+                </div>
+              )}
+              {repairProposalCreated ? (
+                <div style={{ marginTop: 14, background: "#e6f9f0", borderRadius: 8, padding: "12px 14px", fontSize: 13, color: "#1a7f4b" }}>
+                  Proposal #{repairProposalCreated.id} created. Switch to the <strong>Proposals</strong> tab to send it.
+                </div>
+              ) : (
+                <Button onClick={handleCreateRepairProposal} disabled={creatingRepairProposal || !selectedPropertyId} style={{ marginTop: 14, fontSize: 13, width: "100%" }}>
+                  {creatingRepairProposal ? "Creating…" : "Create proposal draft"}
+                </Button>
+              )}
+              {repairProposalError && <div style={{ marginTop: 8 }}><ErrorMsg>Error: {repairProposalError}</ErrorMsg></div>}
             </div>
           )}
         </Card>
+        )}
       </main>
     );
   }

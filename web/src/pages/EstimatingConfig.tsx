@@ -1052,6 +1052,24 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                 unit="$/day"
               />
             </div>
+            <SectionLabel>Scope of work</SectionLabel>
+            <p style={{ margin: "0 0 8px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+              Default scope-of-work text pre-filled into the Quoting page; sales can edit or
+              rewrite it with AI per job.
+            </p>
+            <textarea
+              value={getStr(["scope_of_work", "default_template"], "")}
+              onChange={(e) => set(["scope_of_work", "default_template"], e.target.value)}
+              disabled={disabled}
+              rows={8}
+              style={{
+                ...inputStyle,
+                width: "100%",
+                fontSize: 13,
+                background: disabled ? BRAND.bg : "#fff",
+                resize: "vertical",
+              }}
+            />
           </CollapsibleGroup>
 
           {/* ── Group 3: Adders ── */}
