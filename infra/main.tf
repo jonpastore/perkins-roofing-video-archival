@@ -707,6 +707,30 @@ resource "google_cloud_scheduler_job" "poll_archive_kpis" {
   depends_on = [google_project_service.apis]
 }
 
+# Daily safety-net sweep: re-submit the site root + recently-published article URLs to
+# IndexNow + the Google Indexing API. The primary submission path fires on every publish
+# (jobs/promote_job.py); this only re-covers a submission that failed there (see
+# jobs/search_indexing_job.py). Toggle: platform_config/env SEARCH_INDEXING_ENABLED.
+resource "google_cloud_scheduler_job" "search_indexing_daily" {
+  name      = "search-indexing-daily"
+  region    = var.region
+  schedule  = "0 8 * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/search-indexing"
+    http_method = "POST"
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 # Trigger the `ingest` Cloud Run Job hourly during business hours (9:00-18:00 ET, inclusive).
 # Runs as jobs-sa: speech.client + media-bucket access + a 3600s timeout — the STT-heavy work
 # does NOT belong in the user-facing API request. The job is single-flight (Postgres advisory

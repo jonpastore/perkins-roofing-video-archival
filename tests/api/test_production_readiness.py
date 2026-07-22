@@ -45,6 +45,9 @@ _ALL_OK_FACTS = {
     "missing_secrets": [],
     "integration_statuses": [],
     "capture_configured": True,
+    "search_indexing_enabled": True,
+    "indexnow_key_set": True,
+    "google_indexing_creds_set": True,
 }
 
 
@@ -58,9 +61,9 @@ def test_all_ok_facts_yield_ready_summary(admin_client, monkeypatch):
     r = admin_client.get("/config/production-readiness", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     body = r.json()
-    assert len(body["gates"]) == 7
+    assert len(body["gates"]) == 8
     assert all(g["state"] == "ok" for g in body["gates"])
-    assert body["summary"] == {"ok": 7, "warn": 0, "blocker": 0, "total": 7, "ready": True}
+    assert body["summary"] == {"ok": 8, "warn": 0, "blocker": 0, "total": 8, "ready": True}
 
 
 def test_blocker_facts_surface_in_response(admin_client, monkeypatch):

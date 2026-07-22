@@ -214,6 +214,64 @@ def _oauth_capture_gate(facts: dict[str, Any]) -> Gate:
     )
 
 
+def _search_indexing_gate(facts: dict[str, Any]) -> Gate:
+    if not facts.get("search_indexing_enabled"):
+        return Gate(
+            id="search_indexing",
+            label="Search-engine indexing",
+            category="seo",
+            state="warn",
+            detail=(
+                "search-engine indexing (IndexNow + Google Indexing API) is turned "
+                "off — new articles will NOT be auto-submitted for indexing"
+            ),
+            remediation="set SEARCH_INDEXING_ENABLED=true in Admin Config → Platform Settings.",
+        )
+    indexnow_ok = facts.get("indexnow_key_set")
+    google_ok = facts.get("google_indexing_creds_set")
+    if not indexnow_ok and not google_ok:
+        return Gate(
+            id="search_indexing",
+            label="Search-engine indexing",
+            category="seo",
+            state="warn",
+            detail=(
+                "enabled but not configured — missing both INDEXNOW_KEY and "
+                "GOOGLE_INDEXING_CREDENTIALS; no submissions will fire"
+            ),
+            remediation=(
+                "provision an IndexNow key (+ host the key file at the site root) and a "
+                "Google Indexing API service-account (added as a Search Console owner)."
+            ),
+        )
+    if not indexnow_ok:
+        return Gate(
+            id="search_indexing",
+            label="Search-engine indexing",
+            category="seo",
+            state="warn",
+            detail="Google Indexing API configured; IndexNow (Bing/Yandex) is not — INDEXNOW_KEY missing.",
+            remediation="set INDEXNOW_KEY and host https://<site>/<key>.txt containing the key.",
+        )
+    if not google_ok:
+        return Gate(
+            id="search_indexing",
+            label="Search-engine indexing",
+            category="seo",
+            state="warn",
+            detail="IndexNow configured; Google Indexing API is not — GOOGLE_INDEXING_CREDENTIALS missing.",
+            remediation="set GOOGLE_INDEXING_CREDENTIALS (service-account JSON, added as a Search Console owner).",
+        )
+    return Gate(
+        id="search_indexing",
+        label="Search-engine indexing",
+        category="seo",
+        state="ok",
+        detail="Enabled; IndexNow and the Google Indexing API are both configured.",
+        remediation="",
+    )
+
+
 _GATE_FNS = (
     _email_mode_gate,
     _wordpress_gate,
@@ -222,6 +280,7 @@ _GATE_FNS = (
     _secrets_present_gate,
     _integrations_gate,
     _oauth_capture_gate,
+    _search_indexing_gate,
 )
 
 

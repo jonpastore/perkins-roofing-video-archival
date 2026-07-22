@@ -65,6 +65,44 @@ def test_promotion_syncs_article_status(monkeypatch):
     assert art.status == "published"   # kept in sync — the desync-prevention fix
 
 
+def test_promotion_submits_article_for_search_indexing(monkeypatch):
+    """Promoting an article (with a live wp_post_id) must trigger the on-publish
+    IndexNow + Google Indexing API submission (jobs/search_indexing_job.py covers
+    the daily catch-up; this is the primary path)."""
+    s = SessionLocal()
+    _seed_article(s, "indexed-post", 404)
+    s.commit()
+    s.close()
+
+    monkeypatch.setattr(PJ.wordpress, "update_status", lambda pid, st: None)
+    calls = []
+    monkeypatch.setattr(PJ.search_indexing, "submit_urls", lambda urls: calls.append(urls) or {"ok": True})
+    from app.config import settings
+    monkeypatch.setattr(settings, "WP_URL", "https://perkinsroofing.net")
+
+    PJ.run()
+
+    assert len(calls) == 1
+    assert calls[0] == ["https://perkinsroofing.net/", "https://perkinsroofing.net/indexed-post/"]
+
+
+def test_promotion_without_wp_post_id_skips_indexing(monkeypatch):
+    """No wp_post_id means the article was never actually published to WordPress —
+    submitting its URL for indexing would be wrong (the page doesn't exist there)."""
+    s = SessionLocal()
+    s.add(Article(slug="no-wp-id", title="no-wp-id", content_md="x", status="scheduled", wp_post_id=None))
+    s.add(ScheduledContent(kind="article", ref_id="no-wp-id", status="scheduled",
+                           publish_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=1)))
+    s.commit()
+    s.close()
+
+    calls = []
+    monkeypatch.setattr(PJ.search_indexing, "submit_urls", lambda urls: calls.append(urls) or {"ok": True})
+
+    PJ.run()
+    assert calls == []
+
+
 def test_reel_moves_to_awaiting_social(monkeypatch):
     s = SessionLocal()
     s.add(ScheduledContent(kind="reel", ref_id="7", status="scheduled",

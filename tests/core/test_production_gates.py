@@ -11,6 +11,9 @@ BASE_FACTS = {
     "missing_secrets": [],
     "integration_statuses": [{"integration": "resend", "status": "healthy"}],
     "capture_configured": True,
+    "search_indexing_enabled": True,
+    "indexnow_key_set": True,
+    "google_indexing_creds_set": True,
 }
 
 
@@ -23,10 +26,10 @@ def _gate(facts, gate_id):
 
 def test_all_ok_gives_ready_summary():
     gates = evaluate_gates(BASE_FACTS)
-    assert len(gates) == 7
+    assert len(gates) == 8
     assert all(g.state == "ok" for g in gates)
     s = summary(gates)
-    assert s == {"ok": 7, "warn": 0, "blocker": 0, "total": 7, "ready": True}
+    assert s == {"ok": 8, "warn": 0, "blocker": 0, "total": 8, "ready": True}
 
 
 # ── email_mode ──────────────────────────────────────────────────────────────
@@ -154,6 +157,39 @@ def test_oauth_capture_configured_ok():
     assert g.state == "ok"
 
 
+# ── search_indexing ─────────────────────────────────────────────────────────
+
+def test_search_indexing_disabled_warns():
+    g = _gate({**BASE_FACTS, "search_indexing_enabled": False}, "search_indexing")
+    assert g.state == "warn"
+    assert "turned off" in g.detail
+    assert "SEARCH_INDEXING_ENABLED=true" in g.remediation
+
+
+def test_search_indexing_enabled_but_unconfigured_warns():
+    facts = {**BASE_FACTS, "indexnow_key_set": False, "google_indexing_creds_set": False}
+    g = _gate(facts, "search_indexing")
+    assert g.state == "warn"
+    assert "not configured" in g.detail
+
+
+def test_search_indexing_missing_indexnow_only_warns():
+    g = _gate({**BASE_FACTS, "indexnow_key_set": False}, "search_indexing")
+    assert g.state == "warn"
+    assert "INDEXNOW_KEY missing" in g.detail
+
+
+def test_search_indexing_missing_google_only_warns():
+    g = _gate({**BASE_FACTS, "google_indexing_creds_set": False}, "search_indexing")
+    assert g.state == "warn"
+    assert "GOOGLE_INDEXING_CREDENTIALS missing" in g.detail
+
+
+def test_search_indexing_fully_configured_ok():
+    g = _gate(BASE_FACTS, "search_indexing")
+    assert g.state == "ok"
+
+
 # ── summary ─────────────────────────────────────────────────────────────────
 
 def test_summary_counts_and_ready_false_on_blocker():
@@ -162,6 +198,6 @@ def test_summary_counts_and_ready_false_on_blocker():
     s = summary(gates)
     assert s["blocker"] == 1
     assert s["warn"] == 1
-    assert s["ok"] == 5
-    assert s["total"] == 7
+    assert s["ok"] == 6
+    assert s["total"] == 8
     assert s["ready"] is False

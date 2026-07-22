@@ -390,6 +390,16 @@ def integration_health_cron():
     return run()
 
 
+@app.post("/internal/search-indexing", dependencies=[Depends(_require_internal)])
+def search_indexing_cron():
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). Daily safety-net sweep:
+    re-submits the site root + recently-published article URLs to IndexNow + the
+    Google Indexing API. The primary submission path is on-publish (jobs/promote_job.py);
+    this only re-covers a missed submission. Runs daily (infra/main.tf)."""
+    from jobs.search_indexing_job import run
+    return run()
+
+
 @app.get("/internal/tenants")
 def internal_tenants(audit=Depends(require_internal_tenants)):
     """Platform-admin tenant listing (F4b stub — full management API is F6 scope).

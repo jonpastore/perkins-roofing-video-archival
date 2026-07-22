@@ -6,9 +6,25 @@ Run: .venv/bin/python -m jobs.promote_job
 """
 from datetime import datetime, timezone
 
+import adapters.search_indexing as search_indexing
 import adapters.wordpress as wordpress
+from app.config import settings
 from app.models import Article, ScheduledContent, SessionLocal
 from core.scheduler import due
+from core.search_indexing import urls_for_articles
+
+
+def _submit_for_indexing(slug: str) -> None:
+    """Best-effort IndexNow + Google Indexing API submission for a newly-published
+    article (site root + the article's own URL — see core.search_indexing).
+    Never raises: a submission failure must not abort promotion, the article is
+    correctly published to WordPress either way. See jobs/search_indexing_job.py
+    for the daily catch-up sweep that covers a failure here."""
+    try:
+        urls = urls_for_articles(settings.WP_URL, [slug])
+        search_indexing.submit_urls(urls)
+    except Exception as e:  # noqa: BLE001
+        print(f"[search_indexing] submit failed for slug={slug}: {str(e)[:120]}")
 
 
 def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
@@ -43,6 +59,7 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
             article = db.get(Article, r.ref_id) if r.kind == "article" else None
             if article and article.wp_post_id:
                 wordpress.update_status(article.wp_post_id, "publish")
+                _submit_for_indexing(article.slug)
             # Keep Article.status in sync with the ScheduledContent row. Without this the article
             # stays status="scheduled" after promotion, and a later regen (which sets WP status
             # from Article.status) silently reverts a live post back to draft — the desync that

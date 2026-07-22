@@ -31,8 +31,26 @@
 8. **Model advice**: `gpt-oss-120b-think` is the right local generator for grounded roofing articles; Vertex Gemini as the validator/judge keeps compute cheap. If quality falls short, the next step UP that fits amd-halo's 125GB is limited (Kimi/GLM too big) — would need a mid-size reasoning model; flag to Jon before spending. Do NOT default to a cloud generator.
 
 ### P3 — Submission system (SEO/AIO) — from ~/projects/degenito/seo-aio
-9. Build daily submission of the SITE + new ARTICLES to search engines AND AI engines, modeled on `~/projects/degenito/seo-aio` (study `article-workflow`, sitemap worker, submission code). Advise gaps in how submissions currently work — they must run DAILY and on every publish.
-10. **Config toggle + dashboard notice**: an on/off config option; surface at the TOP of the dashboard with the other "off" notices (like alerting). Auto-submit after the initial release and on each publish.
+9. **DONE (search engines).** IndexNow (Bing/Yandex/etc, single key-file POST) + Google Indexing
+   API (URL_UPDATED, service-account auth) submission for the SITE + every newly-published article,
+   modeled on `~/projects/degenito/seo-aio`'s `_indexnow-helper.ts`/`_indexing-helper.ts`. Fires on
+   EVERY publish (hook in `jobs/promote_job.py`, right after the WP status flip) and DAILY as a
+   catch-up sweep (`jobs/search_indexing_job.py`, Cloud Scheduler `search-indexing-daily`, `infra/main.tf`).
+   Pure logic in `core/search_indexing.py`, I/O in `adapters/search_indexing.py`. Rate-limit aware
+   (capped at `MAX_URLS_PER_RUN`=100/run against Google's 200/day quota) and idempotent (both APIs
+   are notification endpoints, not queues). **"AI engines" submission is NOT built** — there's no
+   standard protocol for it yet (unlike IndexNow/Search Console); scope that separately if wanted
+   (e.g. an `llms.txt`).
+   **Creds Jon must provision (not invented — read from env, undocumented until set):**
+   `INDEXNOW_KEY` (any random string) + host `https://<site>/<INDEXNOW_KEY>.txt` containing only
+   that key on the WordPress site; `GOOGLE_INDEXING_CREDENTIALS` (service-account JSON) for an
+   account added as a Search Console OWNER of the site, with the Indexing API enabled on its GCP
+   project.
+10. **DONE.** `SEARCH_INDEXING_ENABLED` on/off toggle (Admin Config → Platform Settings, same
+    `platform_config` mechanism as every other editable key). Off/unconfigured state surfaces as a
+    `search_indexing` gate in `core/production_gates.py`, rendered by the existing
+    `ProductionReadinessBanner` at the top of the dashboard (`web/src/pages/Status.tsx`) — no new
+    frontend code needed, it reads the gate list generically.
 
 ### P4 — New pages / tools
 11. **Metal Warranty Checker page** + convert the `https://perkins-setback.web.app/` setback tool into a **WordPress plugin** for that page. Cross-reference water salinity: USGS Water-Level & Salinity Mapper (https://www.usgs.gov/tools/water-level-and-salinity-analysis-mapper) + https://salinity.oceansciences.org/maps-overview.htm. **Brackish canals COUNT** — do not measure only from the intercoastal/ocean; cross-reference the salinity sources to classify a location as brackish/fresh.

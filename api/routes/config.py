@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+import adapters.search_indexing as search_indexing
 from api.auth import require_role
 from app.config import settings
 from app.models import PlatformConfig, PlatformSessionLocal, SecretAudit, engine
@@ -137,6 +138,9 @@ EDITABLE_KEYS: dict[str, str] = {
     "BRAND_INTRO_VIDEO": "Brand intro video GCS path (gs://… or empty to use generated title card)",
     "BRAND_OUTRO_VIDEO": "Brand outro video GCS path (gs://… or empty to use generated closing card)",
     "EMAIL_HTML_HEADER": "Global email header HTML (prepended to every outgoing email body)",
+    "SEARCH_INDEXING_ENABLED": (
+        "Auto-submit new/published articles to IndexNow + Google Indexing API (true | false)"
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -732,6 +736,8 @@ def _gather_production_readiness_facts() -> dict[str, Any]:
     except Exception:
         integration_statuses = []
 
+    indexing_status = search_indexing.status()
+
     return {
         "email_send_mode": _email_send_mode(),
         "wp_user_set": bool(os.environ.get("WP_USER")),
@@ -742,6 +748,9 @@ def _gather_production_readiness_facts() -> dict[str, Any]:
         "missing_secrets": missing_secrets,
         "integration_statuses": integration_statuses,
         "capture_configured": bool(os.getenv("OAUTH_STATE_HMAC_KEY")) and bool(os.getenv("OAUTH_REDIRECT_BASE")),
+        "search_indexing_enabled": indexing_status.enabled,
+        "indexnow_key_set": indexing_status.indexnow_configured,
+        "google_indexing_creds_set": indexing_status.google_configured,
     }
 
 
