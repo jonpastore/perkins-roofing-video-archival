@@ -154,6 +154,20 @@ interface EstimatorRates {
     deck_types?: Record<string, number | null>;
     [k: string]: unknown;
   };
+  repair?: {
+    roof_types?: string[];
+    daily_labor_rate?: { one_man?: number | null; two_man?: number | null };
+  };
+}
+
+interface RepairQuoteResult {
+  roof_type: string;
+  days: number;
+  crew_size: number;
+  daily_labor_rate: number;
+  labor_cost: number;
+  material_cost: number;
+  project_total: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -632,6 +646,15 @@ export function Quoting() {
   const [proposalCreated, setProposalCreated] = useState<{ id: number } | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
 
+  // Repair quote (time-based — alternative to full replacement, Zoom 2026-07-20 [37:04]/[45:31])
+  const [repairRoofType, setRepairRoofType] = useState<"shingle" | "tile" | "metal" | "flat">("shingle");
+  const [repairDays, setRepairDays] = useState("");
+  const [repairCrewSize, setRepairCrewSize] = useState<1 | 2>(1);
+  const [repairMaterialCost, setRepairMaterialCost] = useState("");
+  const [repairResult, setRepairResult] = useState<RepairQuoteResult | null>(null);
+  const [repairQuoting, setRepairQuoting] = useState(false);
+  const [repairError, setRepairError] = useState<string | null>(null);
+
   // Selected property for proposal creation
   const [selectedPropertyId, setSelectedPropertyId] = useState<number | null>(null);
 
@@ -1051,6 +1074,36 @@ export function Quoting() {
   function handleCalculateQuote() {
     setActiveProfitPreset(null);
     return runQuote();
+  }
+
+  async function runRepairQuote() {
+    const days = Number(repairDays || 0);
+    if (!days || days <= 0) {
+      setRepairError("Enter the number of days for this repair.");
+      return;
+    }
+    setRepairQuoting(true);
+    setRepairError(null);
+    setRepairResult(null);
+    try {
+      const r = await apiFetch("/estimator/repair-quote", {
+        method: "POST",
+        body: JSON.stringify({
+          branch: selectedCustomer?.branch || "miami",
+          roof_type: repairRoofType,
+          days,
+          crew_size: repairCrewSize,
+          material_cost: Number(repairMaterialCost || 0),
+        }),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      const data: RepairQuoteResult = await r.json();
+      setRepairResult(data);
+    } catch (e: unknown) {
+      setRepairError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRepairQuoting(false);
+    }
   }
 
   // Any change to an estimate input (reuses buildQuoteBody as the single source of
@@ -1993,6 +2046,71 @@ export function Quoting() {
             )}
           </div>
         </div>
+
+        {/* Repair estimate — time-based alternative to full replacement (Zoom 2026-07-20 [37:04]/[45:31]) */}
+        <Card style={{ marginTop: 20 }}>
+          <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 4 }}>
+            Repair estimate (time-based)
+          </div>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+            For repair work (not a full replacement): days &times; the configured daily labor
+            rate, plus material cost. Simple calculation, per Tim.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <div>
+              <FieldLabel>Roof type</FieldLabel>
+              <select
+                value={repairRoofType}
+                onChange={(e) => setRepairRoofType(e.target.value as "shingle" | "tile" | "metal" | "flat")}
+                style={selectStyle}
+              >
+                {EXISTING_ROOF_OPTIONS.filter((o) => o.value !== "none").map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Days</FieldLabel>
+              <input
+                type="number" min="0" step="0.5"
+                value={repairDays}
+                onChange={(e) => setRepairDays(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <FieldLabel>Crew size</FieldLabel>
+              <select
+                value={repairCrewSize}
+                onChange={(e) => setRepairCrewSize(Number(e.target.value) as 1 | 2)}
+                style={selectStyle}
+              >
+                <option value={1}>1 man</option>
+                <option value={2}>2 men</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Material cost ($)</FieldLabel>
+              <input
+                type="number" min="0" step="1"
+                value={repairMaterialCost}
+                onChange={(e) => setRepairMaterialCost(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+          </div>
+          <Button onClick={runRepairQuote} disabled={repairQuoting} style={{ fontSize: 13 }}>
+            {repairQuoting ? "Calculating…" : "Calculate repair"}
+          </Button>
+          {repairError && <div style={{ marginTop: 10 }}><ErrorMsg>Error: {repairError}</ErrorMsg></div>}
+          {repairResult && (
+            <div style={{ marginTop: 14, maxWidth: 380 }}>
+              <ResultRow label={`Labor (${repairResult.days}d @ ${usd(repairResult.daily_labor_rate)}/day)`} value={usd(repairResult.labor_cost)} />
+              <ResultRow label="Material cost" value={usd(repairResult.material_cost)} />
+              <ResultRow label="Repair total" value={usd(repairResult.project_total)} bold />
+            </div>
+          )}
+        </Card>
       </main>
     );
   }

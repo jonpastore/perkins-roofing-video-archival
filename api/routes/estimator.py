@@ -19,7 +19,7 @@ from api.auth import get_db_session, require_role
 from app.models import Estimate, Measurement, PricingConfig
 from core import estimator as E
 from core.discounts import resolve_discounts
-from core.estimator import DailyOverheadSeries
+from core.estimator import DailyOverheadSeries, RepairInput
 from core.pricing_config import ConfigError, load_config
 
 
@@ -44,6 +44,18 @@ class DiscountInput(BaseModel):
     discount_type: Literal["amount", "percent"] = "amount"
     value: Optional[float] = Field(default=None, ge=0)
     percent: Optional[float] = Field(default=None, ge=0, le=100)
+
+class RepairQuoteRequest(BaseModel):
+    branch: str = "miami"
+    # roof_type is config-driven (repair.roof_types), not a Literal — a static enum here would
+    # 422 on a new category Tim adds to config without a code deploy (see roof_type on
+    # QuoteRequest above for the same fix, and its history).
+    roof_type: str = Field(..., max_length=40)
+    days: float = Field(..., gt=0)
+    crew_size: Literal[1, 2] = 1
+    material_cost: float = Field(default=0, ge=0)
+    config_id: Optional[int] = None      # null = use active config; explicit = pin to version
+
 
 router = APIRouter(prefix="/estimator", tags=["estimator"])
 
@@ -423,6 +435,51 @@ def quote(
     return result
 
 
+@router.post("/repair-quote")
+def repair_quote(
+    body: RepairQuoteRequest,
+    _claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
+):
+    """Compute a time-based repair quote (days x daily labor rate + material cost).
+
+    A simpler alternative to POST /quote for repair work — no line-item breakdown,
+    no audit row persisted; the sales flow re-quotes on demand.
+    """
+    if body.config_id is not None:
+        cfg_row = db.get(PricingConfig, body.config_id)
+        if cfg_row is None or cfg_row.tenant_id != db.info.get("tenant_id"):
+            raise HTTPException(404, f"Config {body.config_id} not found")
+    else:
+        cfg_row = _get_active_config_row(body.branch, db)
+
+    if cfg_row is None or not cfg_row.config:
+        raise HTTPException(
+            503,
+            detail=(
+                f"no active pricing config for branch '{body.branch}' — "
+                "seed/activate one in Admin -> Estimating"
+            ),
+        )
+
+    config = load_config(cfg_row.config)
+    try:
+        r = RepairInput(
+            roof_type=body.roof_type,
+            days=body.days,
+            crew_size=body.crew_size,
+            material_cost=body.material_cost,
+        )
+        result = E.estimate_repair(config, r)
+    except (ValueError, ConfigError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+    result["branch"] = body.branch
+    result["pricing_config_id"] = cfg_row.id
+    result["pricing_config_hash"] = cfg_row.config_hash
+    return result
+
+
 def _estimate_row(row: Estimate) -> dict:
     return {
         "id": row.id,
@@ -520,6 +577,8 @@ def rates(
             "daily_overhead_weeks_rounding_mode": cfg.get("daily_overhead_weeks_rounding_mode") or "ceil",
             "weekly_profit_floor": cfg.get("weekly_profit_floor") or 2500,
             "job_profit_floor": cfg.get("job_profit_floor") or 2500,
+            # v2: repair (time-based) quote config — roof-type categories + daily labor rates
+            "repair": cfg.get("repair") or {},
         }
 
     # No active config seeded — minimal response (documented; the SPA shows the note).

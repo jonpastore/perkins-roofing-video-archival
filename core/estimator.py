@@ -140,6 +140,54 @@ def compute_profit_guidance(
     return result
 
 
+@dataclass
+class RepairInput:
+    """Inputs for a time-based repair quote — an alternative to a full replacement estimate.
+
+    Simple calculation (Tim, Zoom 2026-07-20 [37:04]/[38:05]/[45:31]):
+        labor_cost = days * daily_labor_rate(crew_size)
+        project_total = labor_cost + material_cost
+    """
+    roof_type: str          # "shingle" | "tile" | "metal" | "flat" — validated against config.repair_roof_types()
+    days: float
+    crew_size: int = 1      # 1 (one-man rate) or 2 (two-man rate)
+    material_cost: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.days <= 0:
+            raise ValueError(f"RepairInput.days must be positive; got {self.days!r}")
+        if self.crew_size not in (1, 2):
+            raise ValueError(f"RepairInput.crew_size must be 1 or 2; got {self.crew_size!r}")
+        if self.material_cost < 0:
+            raise ValueError(f"RepairInput.material_cost must be >= 0; got {self.material_cost!r}")
+
+
+def estimate_repair(config: PricingConfig, r: RepairInput) -> dict[str, Any]:
+    """Compute a time-based repair quote: days x daily labor rate + material cost.
+
+    Raises ConfigError when roof_type isn't a configured repair category, or when the
+    daily labor rate for the requested crew size is missing from the config.
+    """
+    valid_types = config.repair_roof_types()
+    if r.roof_type not in valid_types:
+        raise ConfigError(
+            f"repair.roof_types has no entry for {r.roof_type!r}. "
+            f"Valid: {sorted(valid_types)}"
+        )
+    rate = config.repair_daily_labor_rate(r.crew_size)
+    labor_cost = r.days * rate
+    project_total = labor_cost + r.material_cost
+    return {
+        "roof_type": r.roof_type,
+        "days": r.days,
+        "crew_size": r.crew_size,
+        "daily_labor_rate": rate,
+        "labor_cost": round(labor_cost, 2),
+        "material_cost": round(r.material_cost, 2),
+        "project_total": round(project_total, 2),
+    }
+
+
 def compute_cut_adjusted_base(
     config: PricingConfig, q: "QuoteInput", zone: str, roof_type: str,
 ) -> Optional[float]:
