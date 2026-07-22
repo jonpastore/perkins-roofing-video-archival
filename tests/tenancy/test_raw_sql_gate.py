@@ -44,6 +44,7 @@ _APPROVED_PREFIXES = (
     "core/brand_kit.py",        # F5: reads tenants.settings (platform table, RLS-exempt)
     "core/offboard.py",         # F5: cross-tenant cascade DELETE by design (TRD-F5 §9)
     "jobs/enumerate_channel.py",  # F5-M2: reads tenants.settings for channel_sources (platform table, RLS-exempt)
+    "jobs/render_job.py",       # reads tenants.settings.safety_denylist (platform table, RLS-exempt) — parameterized :tid, safe
     "core/provision.py",        # F6: provisions rows in the platform tenants table (RLS-exempt)
     "scripts/",
     "infra/migrations/",

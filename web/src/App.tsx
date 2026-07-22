@@ -15,6 +15,7 @@ import { Comments } from "./pages/Comments";
 import { Logs } from "./pages/Logs";
 import { Email } from "./pages/Email";
 import { Quoting } from "./pages/Quoting";
+import { Estimator } from "./pages/Estimator";
 import { Squares } from "./pages/Squares";
 import { Proposals } from "./pages/Proposals";
 import { ProposalBuilder } from "./pages/ProposalBuilder";
@@ -557,6 +558,7 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "archive" && <Archive />}
       {tab === "logs" && <Logs />}
       {tab === "quoting" && <Quoting />}
+      {tab === "estimator" && <Estimator />}
       {tab === "squares" && <Squares />}
       {tab === "proposals" && <Proposals />}
       {tab === "proposal-gen" && <ProposalBuilder />}

@@ -102,9 +102,9 @@ def _accounting_dict(row: BranchAccounting) -> dict:
 
 
 class BranchAccountingUpdate(BaseModel):
-    qb_realm_id: str | None = None
-    qb_company_name: str | None = None
-    knowify_subscription_id: str | None = None
+    qb_realm_id: str | None = Field(default=None, max_length=50)
+    qb_company_name: str | None = Field(default=None, max_length=200)
+    knowify_subscription_id: str | None = Field(default=None, max_length=100)
     active: bool | None = None
 
 
