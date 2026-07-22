@@ -26,8 +26,14 @@ class _MockResponse:
 
 # ── status() / _enabled() ────────────────────────────────────────────────────
 
-def test_enabled_defaults_true_with_no_env_or_db_override(monkeypatch):
+def test_enabled_defaults_false_with_no_env_or_db_override(monkeypatch):
+    # OFF by default — submission never fires until Jon explicitly enables it.
     monkeypatch.delenv("SEARCH_INDEXING_ENABLED", raising=False)
+    assert SI._enabled() is False
+
+
+def test_enabled_true_via_env(monkeypatch):
+    monkeypatch.setenv("SEARCH_INDEXING_ENABLED", "true")
     assert SI._enabled() is True
 
 

@@ -36,7 +36,8 @@ _GOOGLE_INDEXING_SCOPE = "https://www.googleapis.com/auth/indexing"
 
 def _enabled() -> bool:
     """Admin on/off toggle. platform_config override (Admin Config → Platform
-    Settings, key SEARCH_INDEXING_ENABLED) wins; else env; default "true"."""
+    Settings, key SEARCH_INDEXING_ENABLED) wins; else env; default "false".
+    OFF by default — Jon must explicitly enable before any URL is submitted."""
     try:
         from app.models import PlatformConfig, PlatformSessionLocal  # noqa: PLC0415
         with PlatformSessionLocal() as db:
@@ -45,7 +46,7 @@ def _enabled() -> bool:
                 return row.value.strip().lower() == "true"
     except Exception:
         pass
-    return os.getenv("SEARCH_INDEXING_ENABLED", "true").strip().lower() == "true"
+    return os.getenv("SEARCH_INDEXING_ENABLED", "false").strip().lower() == "true"
 
 
 def status() -> IndexingStatus:

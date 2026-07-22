@@ -11,7 +11,8 @@ Two providers, one job:
       the Indexing API enabled on the GCP project.
 
 The admin on/off toggle is SEARCH_INDEXING_ENABLED (platform_config override,
-else env, default "true" — see adapters.search_indexing._enabled). I/O for both
+else env, default "false" (OFF until explicitly enabled) — see
+adapters.search_indexing._enabled). I/O for both
 providers lives in adapters/search_indexing.py; this module only builds the
 inputs and decides readiness state (consumed by core/production_gates.py).
 """
