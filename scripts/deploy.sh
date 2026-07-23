@@ -35,10 +35,12 @@ OAUTH_REDIRECT_BASE="${OAUTH_REDIRECT_BASE:-https://api-jnr6bsxyea-uc.a.run.app}
 
 # Env built with a '|' delimiter (gcloud ^|^ form) so values with commas/@/() survive intact.
 # DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
-# LLM_BACKEND=cloudflare (prod flip 2026-07-23, Jon's go — PRODUCTION_CUTOVER_PLAN.md §2):
-# CF llama drafts, Vertex validates. EMBED_BACKEND MUST stay vertex — the pgvector index is
-# 3072-dim Vertex-embedded; grounding breaks otherwise. Rollback: LLM_BACKEND=vertex + redeploy.
-BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|EMBED_BACKEND=vertex|LLM_BACKEND=cloudflare|CLOUDFLARE_ACCOUNT_ID=3303058f686721d6877d6d1e8b8a448c|EMBED_MODEL=gemini-embedding-001|LLM_MODEL=gemini-2.5-flash|DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}|WORKSPACE_ADMIN_SUBJECT=jon@perkinsroofing.net|WORKSPACE_DOMAIN=perkinsroofing.net"
+# LLM_BACKEND=vertex (flipped BACK 2026-07-23pm, Jon's go): measured Vertex-only generation
+# at ~$30-60/3k articles (batch/standard) vs the ~$145 CF-draft+Vertex-validate split, and CF
+# free tier walls at ~1-2 articles/day (10k neurons) with a 24k-ctx ceiling. Gemini 2.5 Flash:
+# 1M-ctx, one provider, cheaper. EMBED_BACKEND stays vertex (3072-dim pgvector index). The
+# CLOUDFLARE_API_TOKEN secret is left wired below so a flip back to cloudflare is env-only.
+BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|EMBED_BACKEND=vertex|LLM_BACKEND=vertex|EMBED_MODEL=gemini-embedding-001|LLM_MODEL=gemini-2.5-flash|DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}|WORKSPACE_ADMIN_SUBJECT=jon@perkinsroofing.net|WORKSPACE_DOMAIN=perkinsroofing.net"
 # W0: WP_URL/YT_OWNER_CHANNEL_ID/WORKSPACE_ADMIN_SUBJECT are kept here as env fallbacks while
 # existing pipeline consumers (articles, faq, scheduling, jobs) still read os.environ. Full
 # per-tenant migration (Tenant.settings.integrations) is deferred to a later wave. The proposals
