@@ -37,6 +37,13 @@ def _slugify(title: str) -> str:
     return s
 
 
+def _wp_status(db_status: str | None) -> str:
+    """Map an Article DB status to a valid WP REST status. The DB stores
+    'published' (promote_job) but WP only accepts 'publish' — passing the DB
+    value verbatim 400s and silently drops the sync for live articles."""
+    return "publish" if db_status == "published" else (db_status or "draft")
+
+
 def _wp_base() -> str:
     # Admin-config WP_URL wins (editable, no redeploy); env is only a fallback. See
     # adapters.wordpress.resolved_wp_url — single source of truth, no .env reliance.
@@ -309,7 +316,7 @@ def reprocess_article(
                     html=_markdown_to_html(a.content_md or ""),
                     meta_description=a.meta or "",
                     jsonld=list(a.jsonld_json) if a.jsonld_json else [],
-                    status=a.status or "draft",
+                    status=_wp_status(a.status),
                     focus_keyword=a.focus_keyword,
                 )
                 logger.info("wp reprocess update post_id=%d slug=%s", a.wp_post_id, slug)
@@ -399,7 +406,7 @@ def set_article_image(
                 html=_markdown_to_html(a.content_md or ""),
                 meta_description=a.meta or "",
                 jsonld=list(a.jsonld_json) if a.jsonld_json else [],
-                status=a.status or "draft",
+                status=_wp_status(a.status),
                 focus_keyword=a.focus_keyword,
             )
         except Exception as exc:  # noqa: BLE001

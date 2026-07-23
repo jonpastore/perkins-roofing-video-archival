@@ -453,3 +453,73 @@ def test_list_articles_wp_url_field_present():
     assert len(items) > 0
     for item in items:
         assert "wp_url" in item
+
+
+# ---------------------------------------------------------------------------
+# Curated image gallery (PUT /articles/{slug}/image)
+# ---------------------------------------------------------------------------
+
+VID = "BnsaVtCb0GU"
+_IMG_BODY = (
+    f'<img src="https://i.ytimg.com/vi/{VID}/hqdefault.jpg" alt="Roof" />\n'
+    f'<p>body https://www.youtube.com/watch?v={VID}</p>'
+)
+
+
+def _seed_image_article(slug: str, status: str = "published", wp_post_id: int | None = 7):
+    from app.models import Article, SessionLocal
+    with SessionLocal() as db:
+        a = db.get(Article, slug)
+        if a is None:
+            db.add(Article(slug=slug, title="Img Test", meta="", content_md=_IMG_BODY,
+                           faq_json=None, jsonld_json=None, role="standalone",
+                           pillar_slug=None, wp_post_id=wp_post_id, status=status,
+                           tenant_id=1))
+        else:
+            a.content_md, a.status, a.wp_post_id = _IMG_BODY, status, wp_post_id
+        db.commit()
+
+
+def test_wp_status_maps_published_to_publish():
+    from api.routes.articles import _wp_status
+    assert _wp_status("published") == "publish"
+    assert _wp_status("draft") == "draft"
+    assert _wp_status(None) == "draft"
+
+
+def test_set_image_swaps_content_and_syncs_wp_as_publish(monkeypatch):
+    """A live article's image change must reach WordPress with a VALID status —
+    the DB's 'published' is not a WP status; sending it verbatim 400s silently."""
+    import adapters.wordpress as wp
+    calls = {}
+    monkeypatch.setattr(wp, "update", lambda **kw: calls.update(kw))
+    _seed_image_article("img-live-sync")
+    c = _admin_client()
+    new = f"https://i.ytimg.com/vi/{VID}/maxres2.jpg"
+    r = c.put("/articles/img-live-sync/image", json={"url": new}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert new in r.json()["content_md"]
+    assert calls["status"] == "publish"
+    assert new in calls["html"]
+
+
+def test_set_image_rejects_foreign_video_url():
+    _seed_image_article("img-foreign")
+    c = _admin_client()
+    r = c.put("/articles/img-foreign/image",
+              json={"url": "https://i.ytimg.com/vi/AAAAAAAAAAA/maxres1.jpg"}, headers=AUTH)
+    assert r.status_code == 422
+
+
+def test_image_candidates_lists_frames_with_timecode_links(monkeypatch):
+    import adapters.frame_pick
+    monkeypatch.setattr(adapters.frame_pick, "_alive", lambda url: True)  # no network
+    _seed_image_article("img-candidates")
+    c = _admin_client()
+    r = c.get("/articles/img-candidates/image-candidates", headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["current"].endswith("hqdefault.jpg")
+    frames = [x for x in data["candidates"] if not x["is_title_card"]]
+    assert len(frames) == 3
+    assert all(x["watch_url"].startswith("https://www.youtube.com/watch") for x in frames)
