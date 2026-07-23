@@ -350,6 +350,7 @@ def repair_article(
     meta_description: str,
     category_id: int | None = None,
     has_featured_image: bool | None = None,
+    extra_valid_slugs: set[str] | None = None,
 ) -> RepairResult:
     """Run every repair pass, in order, over one article's content + jsonld.
 
@@ -360,6 +361,12 @@ def repair_article(
     jsonld_list = list(jsonld or [])
     fixes: list[str] = []
     issues: list[dict] = []
+
+    # Service PAGES and the article's own pillar are valid relative-link targets even
+    # though they aren't article rows — without this, _repair_relative_links unwraps
+    # the legitimate /roof-repair-services/ and /pillar-slug links as "dead".
+    from core.internal_links import SERVICE_SLUGS  # noqa: PLC0415
+    valid_slugs = set(valid_slugs) | set(SERVICE_SLUGS) | set(extra_valid_slugs or set())
 
     content, f1, i1 = _repair_video_ids(content, known_video_ids)
     fixes += f1

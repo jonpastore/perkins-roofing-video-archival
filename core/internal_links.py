@@ -78,6 +78,15 @@ SERVICE_LINKS: list[dict] = [
     },
 ]
 
+# Slugs of the real service PAGES on perkinsroofing.net (not articles). The repair
+# pass must treat relative links to these as valid, not unwrap them as dead article
+# cross-links. Derived from SERVICE_LINKS so the two never drift.
+import re as _re  # noqa: E402
+
+SERVICE_SLUGS: frozenset[str] = frozenset(
+    _re.sub(r"^/|/$", "", e["url"].replace(BASE_URL, "")) for e in SERVICE_LINKS
+)
+
 
 def matching_service_links(text: str, *, limit: int = 3) -> list[dict]:
     """Return up to *limit* SERVICE_LINKS entries whose keywords appear in *text*.

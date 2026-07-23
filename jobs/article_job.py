@@ -82,12 +82,14 @@ def _repair_inputs(db) -> dict:
 
 
 def _apply_repair(content_md: str, jsonld: list[dict], keyword: str, meta_description: str,
-                  db) -> tuple[str, list[dict], list[dict]]:
+                  db, pillar_slug: str | None = None) -> tuple[str, list[dict], list[dict]]:
     """Run core.article_repair.repair_article with DB-backed facts.
 
     Callers wrap this fail-open (same convention as the grounding/fact-check passes
     below): a repair-stage error must never block an otherwise-good article — it
-    just ships unrepaired and the caller logs it.
+    just ships unrepaired and the caller logs it. pillar_slug (a cluster's pillar)
+    is passed as an extra valid link target so its up-link survives even when the
+    pillar isn't persisted yet (concurrent batch generation).
     """
     from core.article_repair import repair_article  # noqa: PLC0415
 
@@ -100,6 +102,7 @@ def _apply_repair(content_md: str, jsonld: list[dict], keyword: str, meta_descri
         pillar_map=inputs["pillar_map"],
         keyword=keyword,
         meta_description=meta_description,
+        extra_valid_slugs={pillar_slug} if pillar_slug else None,
     )
     if result.fixes:
         logger.info("article_repair on %r: %s", keyword, result.fixes)
@@ -178,7 +181,7 @@ def _compliance_gate(fields: dict, ctx: dict, keyword: str, db,
             try:
                 fields["content_md"], fields["jsonld_json"], _ = _apply_repair(
                     fields.get("content_md", ""), fields.get("jsonld_json") or [],
-                    keyword, fields.get("meta", ""), db)
+                    keyword, fields.get("meta", ""), db, ctx.get("pillar_slug"))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("compliance-gate repair re-sync failed for %r: %s", keyword, exc)
         comp = _run()
@@ -923,7 +926,7 @@ def generate_article(
     try:
         with _stamped_session(tenant_id) as _repair_db:
             content, jsonld_list, repair_issues = _apply_repair(
-                content, jsonld_list, keyword, article.get("metaDescription") or "", _repair_db)
+                content, jsonld_list, keyword, article.get("metaDescription") or "", _repair_db, ctx.get("pillar_slug"))
         qa_checks.extend(repair_issues)
     except Exception as exc:  # noqa: BLE001
         logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
@@ -2320,7 +2323,7 @@ def generate_scored_article(
     if db is not None:
         try:
             fields["content_md"], jsonld, repair_issues = _apply_repair(
-                fields.get("content_md", ""), jsonld, keyword, fields.get("meta", ""), db)
+                fields.get("content_md", ""), jsonld, keyword, fields.get("meta", ""), db, ctx.get("pillar_slug"))
             fields.setdefault("qa_checks", []).extend(repair_issues)
         except Exception as exc:  # noqa: BLE001
             logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
