@@ -472,7 +472,113 @@ function HtmlEditor({ value, onChange }: HtmlEditorProps) {
 // Article view modal
 // ---------------------------------------------------------------------------
 
-type ModalTab = "article" | "seo";
+type ModalTab = "article" | "seo" | "image";
+
+interface ImageCandidate {
+  position: number;
+  url: string;
+  fallback_url: string;
+  timecode: number | null;
+  watch_url: string;
+  is_title_card: boolean;
+  video_id: string;
+  video_title: string | null;
+}
+
+/** Curated-image gallery: pick which in-video frame is the article's image. */
+function ImageTab({ slug, onApplied }: { slug: string; onApplied: () => void }) {
+  const [candidates, setCandidates] = useState<ImageCandidate[]>([]);
+  const [current, setCurrent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [applying, setApplying] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch(`/articles/${slug}/image-candidates`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d) => { setCandidates(d.candidates); setCurrent(d.current); })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [slug]);
+
+  async function choose(url: string) {
+    setApplying(url);
+    setError(null);
+    try {
+      const r = await apiFetch(`/articles/${slug}/image`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!r.ok) throw new Error((await r.json())?.detail ?? `HTTP ${r.status}`);
+      setCurrent(url);
+      onApplied();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplying(null);
+    }
+  }
+
+  if (loading) return <Loading />;
+  if (!candidates.length) return <p style={{ color: BRAND.sub, fontSize: 14 }}>No video in this article — no frames to choose from.</p>;
+  return (
+    <div>
+      <p style={{ fontSize: 13, color: BRAND.sub, margin: "0 0 14px" }}>
+        Choose the article image from real frames of its video. Frames are pulled at ~25/50/75%
+        of the video; the title card is the same image YouTube shows as the video thumbnail.
+      </p>
+      {error && <ErrorMsg>{error}</ErrorMsg>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}>
+        {candidates.map((c) => {
+          const active = current === c.url || current === c.fallback_url;
+          return (
+            <div
+              key={`${c.video_id}-${c.position}`}
+              style={{
+                border: active ? `2px solid ${BRAND.red}` : `1px solid ${BRAND.border}`,
+                borderRadius: 10, overflow: "hidden", background: "#fff",
+              }}
+            >
+              <img
+                src={c.url}
+                alt={c.is_title_card ? "Video title card" : `Frame at ${c.timecode ?? "?"}s`}
+                style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", display: "block", cursor: "pointer" }}
+                onClick={() => !applying && choose(c.url)}
+                onError={(e) => { (e.target as HTMLImageElement).src = c.fallback_url; }}
+              />
+              <div style={{ padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: BRAND.sub }}>
+                  {c.is_title_card ? "Title card" : `~${c.timecode != null ? `${Math.floor(c.timecode / 60)}:${String(c.timecode % 60).padStart(2, "0")}` : `frame ${c.position}`}`}
+                  {active && <strong style={{ color: BRAND.red }}> · current</strong>}
+                </span>
+                <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <a href={c.watch_url} target="_blank" rel="noopener noreferrer"
+                    title="See this moment in the video"
+                    style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline" }}>
+                    in video ↗
+                  </a>
+                  {!active && (
+                    <button
+                      onClick={() => choose(c.url)}
+                      disabled={applying !== null}
+                      style={{
+                        fontSize: 12, padding: "3px 10px", borderRadius: 6, cursor: "pointer",
+                        border: `1px solid ${BRAND.border}`, background: BRAND.bg, color: BRAND.navyText,
+                      }}
+                    >
+                      {applying === c.url ? "Saving…" : "Use"}
+                    </button>
+                  )}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 interface ArticleModalProps {
   slug: string;
@@ -796,7 +902,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
               flexShrink: 0,
             }}
           >
-            {(["article", "seo"] as ModalTab[]).map((tab) => (
+            {(["article", "seo", "image"] as ModalTab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -812,7 +918,7 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                   marginBottom: -1,
                 }}
               >
-                {tab === "article" ? "Article" : "SEO / AIO"}
+                {tab === "article" ? "Article" : tab === "seo" ? "SEO / AIO" : "Image"}
               </button>
             ))}
           </div>
@@ -1159,6 +1265,17 @@ function ArticleModal({ slug, onClose, onRefresh }: ArticleModalProps) {
                 </div>
               )}
             </div>
+          )}
+
+          {article && activeTab === "image" && (
+            <ImageTab
+              slug={slug}
+              onApplied={() => {
+                apiFetch(`/articles/${slug}`)
+                  .then((r) => (r.ok ? r.json() : null))
+                  .then((data: ArticleFull | null) => { if (data) setArticle(data); });
+              }}
+            />
           )}
         </div>
 

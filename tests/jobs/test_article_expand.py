@@ -241,11 +241,20 @@ def test_ensure_title_number_never_truncates_a_title_to_fit_the_year():
         assert out == title, f"title was mangled to fit the year: {out!r}"
 
 
-def test_ensure_article_image_uses_the_source_video_thumbnail():
+def _fake_pick(video_id, duration=None, keyword=""):
+    return {"url": f"https://i.ytimg.com/vi/{video_id}/maxres2.jpg", "position": 2,
+            "timecode": None, "watch_url": f"https://www.youtube.com/watch?v={video_id}",
+            "is_title_card": False, "fallback_url": f"https://i.ytimg.com/vi/{video_id}/hq2.jpg"}
+
+
+def test_ensure_article_image_uses_a_curated_source_video_frame(monkeypatch):
+    import adapters.frame_pick
+    monkeypatch.setattr(adapters.frame_pick, "pick_best_frame", _fake_pick)
     from jobs.article_job import _ensure_article_image
     body = "<p>intro</p>\nhttps://www.youtube.com/watch?v=BnsaVtCb0GU\n<p>rest</p>"
     out = _ensure_article_image(body, "wall flashings")
-    assert "img.youtube.com/vi/BnsaVtCb0GU/hqdefault.jpg" in out
+    assert "i.ytimg.com/vi/BnsaVtCb0GU/maxres2.jpg" in out
+    assert "hqdefault" not in out, "article image must not be the video title card"
     assert 'alt="Wall Flashings — Perkins Roofing"' in out
     assert body in out, "original body must be preserved"
 
@@ -265,8 +274,10 @@ def test_ensure_article_image_does_not_add_a_second_image():
     assert out.count("<img") == 1, "existing image must not be duplicated"
 
 
-def test_article_image_then_alt_caption_satisfies_rank_math():
+def test_article_image_then_alt_caption_satisfies_rank_math(monkeypatch):
     # The two helpers compose: supply the real image, then caption it with the keyword.
+    import adapters.frame_pick
+    monkeypatch.setattr(adapters.frame_pick, "pick_best_frame", _fake_pick)
     from core.seo import rank_math_checks
     from jobs.article_job import _ensure_article_image, _ensure_img_alt_keyword
     body = "<p>intro</p>\nhttps://youtu.be/BnsaVtCb0GU\n<p>rest</p>"

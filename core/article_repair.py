@@ -156,9 +156,12 @@ def _image_allowed(src: str, known_ids: set[str]) -> bool:
 
 def _thumb_img_tag(vid: str, keyword: str) -> str:
     """Same tag shape as jobs.article_job._ensure_article_image — replicated here
-    (pure) rather than imported, since this module must not import from jobs."""
+    (pure) rather than imported, since this module must not import from jobs.
+    hq2 (the ~50% in-video frame) rather than hqdefault: hqdefault is the uploaded
+    title card, and the article image must not mirror the YouTube title screen.
+    Pure module — no vision pick here; the mid frame is the deterministic choice."""
     alt = _title_case(keyword) if keyword else "Perkins Roofing"
-    return (f'<img src="https://img.youtube.com/vi/{vid}/hqdefault.jpg" '
+    return (f'<img src="https://img.youtube.com/vi/{vid}/hq2.jpg" '
             f'alt="{alt} — Perkins Roofing" loading="lazy" '
             f'style="max-width:100%;height:auto;border-radius:8px;margin:16px 0" />')
 

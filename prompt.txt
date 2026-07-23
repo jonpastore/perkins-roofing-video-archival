@@ -26,7 +26,12 @@ FIRST STEPS on resume:
 STATE: staging 1228404 fully audited+repaired — 61 articles (FAQ 61/61, VideoObject 61/61,
 categories/featured/TOC/service-links/no-dead-links all verified live), llms.txt (Wendy
 preamble preserved) + robots AI allowlist live, 13 portfolio drafts (8287-8299). The repair
-passes are now IN the pipeline (core/article_repair.py). Wendy reply DRAFT sits in the
+passes are now IN the pipeline (core/article_repair.py). CURATED IMAGES (buildout item 12)
+SHIPPED 07-22pm: article images are Gemini-vision-picked in-video frames (maxres1/2/3 =
+~25/50/75%), NOT the hqdefault title card — 60/61 live on staging (skip: water-drainage,
+no img). core/article_images.py + adapters/frame_pick.py + gallery API
+(GET/PUT /articles/{slug}/image-candidates|image) + Articles.tsx "Image" tab (deployed).
+SPA favicon/title now Perkins logo + "Perkins Roofing - Marketing and Sales" (deployed). Wendy reply DRAFT sits in the
 DeGenito Outlook with the prefill CSV attached, 13-point verified — JON SENDS IT (don't
 Graph-edit while he has it open: Outlook autosave clobbers; recipe in continuation).
 

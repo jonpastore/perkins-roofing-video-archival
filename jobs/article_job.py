@@ -1433,14 +1433,21 @@ def _ensure_article_image(content_md: str, keyword: str) -> str:
     lies about its own content.
 
     No video in the body -> no image. We never invent one.
+
+    The image is a curated in-video frame, NOT hqdefault: hqdefault is the uploaded
+    title card, so using it makes every article visually identical to the YouTube
+    title screen (buildout item 12). adapters.frame_pick has Gemini vision choose
+    the best real frame; on any failure it degrades to the mid-video frame.
     """
     if not content_md or re.search(r"<img\b", content_md, re.IGNORECASE):
         return content_md  # already has an image; neither duplicate nor overwrite it
     m = _YT_ID_RE.search(content_md)
     if not m:
         return content_md
+    from adapters.frame_pick import pick_best_frame  # noqa: PLC0415
+    src = pick_best_frame(m.group(1), keyword=keyword)["url"]
     alt = _title_case_keyword(keyword) if keyword else "Perkins Roofing"
-    img = (f'<img src="https://img.youtube.com/vi/{m.group(1)}/hqdefault.jpg" '
+    img = (f'<img src="{src}" '
            f'alt="{alt} — Perkins Roofing" loading="lazy" '
            f'style="max-width:100%;height:auto;border-radius:8px;margin:16px 0" />')
     return f"{img}\n{content_md}"

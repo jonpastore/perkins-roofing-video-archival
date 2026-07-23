@@ -59,7 +59,8 @@ def test_fuzzy_match_id_not_found():
 
 def test_thumb_img_tag_with_keyword():
     tag = _thumb_img_tag("gtbkLgg_G9o", "roof estimate")
-    assert 'src="https://img.youtube.com/vi/gtbkLgg_G9o/hqdefault.jpg"' in tag
+    # hq2 = the mid-video frame, deliberately NOT hqdefault (the title card).
+    assert 'src="https://img.youtube.com/vi/gtbkLgg_G9o/hq2.jpg"' in tag
     assert 'alt="Roof Estimate — Perkins Roofing"' in tag
 
 

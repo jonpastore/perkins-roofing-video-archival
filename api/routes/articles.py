@@ -326,6 +326,90 @@ def reprocess_article(
     return _article_full(a)
 
 
+@router.get("/{slug}/image-candidates")
+def image_candidates(
+    slug: str,
+    claims=Depends(require_role("article_read")),
+    db: Session = Depends(get_db_session),
+):
+    """Curated-image gallery for an article (buildout item 12).
+
+    Per embedded video: three real in-video frames (~25/50/75%, best live quality
+    tier) plus the title card, each deep-linked to the video at its timecode. The
+    current article image is included so the UI can mark the active choice.
+    """
+    from adapters.frame_pick import resolve_candidates  # noqa: PLC0415
+    from app.models import Video  # noqa: PLC0415
+    from core.article_images import current_image_src, embedded_video_ids  # noqa: PLC0415
+
+    a = db.get(Article, slug)
+    if a is None:
+        raise HTTPException(status_code=404, detail="article not found")
+    candidates = []
+    for vid in embedded_video_ids(a.content_md or ""):
+        v = db.get(Video, vid)
+        for c in resolve_candidates(vid, v.duration if v else None):
+            candidates.append({**c, "video_id": vid,
+                               "video_title": v.title if v else None})
+    return {"slug": slug, "current": current_image_src(a.content_md or ""),
+            "candidates": candidates}
+
+
+class SetImageRequest(BaseModel):
+    url: str
+
+
+@router.put("/{slug}/image")
+def set_article_image(
+    slug: str,
+    body: SetImageRequest,
+    claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
+    """Set the article image to a chosen gallery candidate; sync to WP if published.
+
+    Only thumbnail variants of a video actually embedded in the article are
+    accepted — the image must stay honest to the article's own video.
+    """
+    from core.article_images import (  # noqa: PLC0415
+        current_image_src,
+        embedded_video_ids,
+        swap_image_src,
+        valid_candidate_url,
+    )
+
+    a = db.get(Article, slug)
+    if a is None:
+        raise HTTPException(status_code=404, detail="article not found")
+    allowed = set(embedded_video_ids(a.content_md or ""))
+    if not valid_candidate_url(body.url, allowed):
+        raise HTTPException(status_code=422,
+                            detail="url is not a thumbnail variant of this article's video")
+    if current_image_src(a.content_md or "") is None:
+        raise HTTPException(status_code=409, detail="article has no image to replace")
+    a.content_md = swap_image_src(a.content_md, body.url)
+
+    if a.wp_post_id:
+        try:
+            from adapters.wordpress import update  # noqa: PLC0415
+            from jobs.article_job import _markdown_to_html  # noqa: PLC0415
+            update(
+                post_id=a.wp_post_id,
+                title=a.title or "",
+                html=_markdown_to_html(a.content_md or ""),
+                meta_description=a.meta or "",
+                jsonld=list(a.jsonld_json) if a.jsonld_json else [],
+                status=a.status or "draft",
+                focus_keyword=a.focus_keyword,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("wp update failed setting image slug=%s (db still saved): %s",
+                           slug, exc)
+    db.flush()
+    db.refresh(a)
+    return _article_full(a)
+
+
 class FixSeoRequest(BaseModel):
     check_key: str
 
