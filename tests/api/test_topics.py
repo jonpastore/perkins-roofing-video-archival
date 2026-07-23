@@ -86,14 +86,42 @@ def _fake_llm_subtopics(topic: str, existing: list, needed: int) -> list[str]:
     return results
 
 
+class _FakeLLM:
+    """Chat-contract stub for every adapters.llm backend — no network, ever."""
+
+    def chat(self, prompt, want_json=False, response_schema=None):
+        return "{}" if (want_json or response_schema) else "ok"
+
+    def embed(self, texts, batch=100):
+        return [[0.0] * 8 for _ in texts]
+
+
 @pytest.fixture(autouse=True)
 def patch_content_generator(monkeypatch):
-    """Monkeypatch generate_article_content, refine_article_content, and _llm_subtopics so no test hits the live LLM."""
+    """Monkeypatch every live-LLM / network seam so no test leaves the process.
+
+    generate/refine were always mocked, but the pipeline's later steps (critique,
+    repair, SEO fix) reach adapters.llm.get_default() — under the dev default
+    LLM_BACKEND=ollama that is a live HTTP call to cerberus, which is the #409
+    suite hang. frame_pick (curated article images) downloads frames + calls
+    Vertex vision — also network. Patch all of them at their choke points.
+    """
     import jobs.article_job as job_mod
     monkeypatch.setattr(job_mod, "generate_article_content", _fake_generate_article_content)
     monkeypatch.setattr(job_mod, "refine_article_content", _fake_refine_article_content)
     import api.routes.topics as topics_mod
     monkeypatch.setattr(topics_mod, "_llm_subtopics", _fake_llm_subtopics)
+
+    import adapters.llm as llm_mod
+    monkeypatch.setattr(llm_mod, "get_default", lambda: _FakeLLM())
+    monkeypatch.setattr(llm_mod, "get_embedder", lambda: _FakeLLM())
+
+    import adapters.frame_pick as fp
+    monkeypatch.setattr(fp, "pick_best_frame", lambda vid, duration=None, keyword="": {
+        "position": 2, "url": f"https://i.ytimg.com/vi/{vid}/hq2.jpg",
+        "fallback_url": f"https://i.ytimg.com/vi/{vid}/hq2.jpg",
+        "timecode": None, "watch_url": f"https://www.youtube.com/watch?v={vid}",
+        "is_title_card": False})
 
 
 def setup_module(module):

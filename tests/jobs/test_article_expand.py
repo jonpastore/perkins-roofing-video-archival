@@ -732,3 +732,30 @@ def test_numeric_grounding_strips_the_sentence_when_repair_never_grounds_it():
     assert "Long lasting." in out["content_md"]
     assert out["numeric_claims_stripped"] == ["999 mph"]
     assert len(llm.prompts) == 2  # exhausted both repair rounds before falling back
+
+
+def test_ensure_video_link_does_not_promote_unknown_video_id(tmp_path):
+    # #410: a placeholder id the generator invented must NOT become the iframe;
+    # with a db handle and no matching Video row, the URL is skipped.
+    from jobs.article_job import _ensure_video_link
+
+    class _FakeDB:
+        def get(self, model, vid):
+            return None  # no video is ever known
+
+    body = "<p>intro https://www.youtube.com/watch?v=exampleXYZ1 rest</p>"
+    out = _ensure_video_link(body, "roofing", db=_FakeDB())
+    assert "<iframe" not in out.split("Watch:")[0] or "exampleXYZ1" not in out
+    assert "youtube.com/embed/exampleXYZ1" not in out
+
+
+def test_ensure_video_link_promotes_known_video_id():
+    from jobs.article_job import _ensure_video_link
+
+    class _FakeDB:
+        def get(self, model, vid):
+            return object() if vid == "BnsaVtCb0GU" else None
+
+    body = "<p>see https://youtu.be/BnsaVtCb0GU today</p>"
+    out = _ensure_video_link(body, "roofing", db=_FakeDB())
+    assert "youtube.com/embed/BnsaVtCb0GU" in out

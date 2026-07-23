@@ -1223,12 +1223,35 @@ def _ensure_video_link(content_md: str, keyword: str, db=None) -> str:
             f'allowfullscreen loading="lazy"></iframe></div>'
         )
 
-    url_match = re.search(
+    def _known_video(url: str) -> bool:
+        """#410 guard: only promote a URL whose id is a real ingested video.
+
+        The generator has emitted placeholder ids (watch?v=example) when it lost
+        the grounding linkage — wrapping one in an iframe legitimizes an invented
+        reference that repair then has to strip, leaving the article without its
+        video. An unknown id falls through to the retrieval clip instead (and the
+        bogus URL itself is scrubbed by the in-pipeline repair pass).
+        Without a db handle we can't validate — keep legacy behavior then.
+        """
+        if db is None:
+            return True
+        parsed = _youtube_embed_src(url)
+        if parsed is None:
+            return False
+        vid = parsed[0].rsplit("/embed/", 1)[-1]
+        try:
+            from app.models import Video  # noqa: PLC0415
+            return db.get(Video, vid) is not None
+        except Exception:  # noqa: BLE001 — validation must never break generation
+            return True
+
+    for url_match in re.finditer(
         r"https?://(?:www\.)?(?:youtube\.com/(?:watch|embed)|youtu\.be/)[^\s\"'<)]+",
         content_md or "",
         re.IGNORECASE,
-    )
-    if url_match:
+    ):
+        if not _known_video(url_match.group(0)):
+            continue
         embed = _iframe(url_match.group(0))
         if embed:
             return f"{embed}\n{content_md}"
