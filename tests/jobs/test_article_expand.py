@@ -759,3 +759,16 @@ def test_ensure_video_link_promotes_known_video_id():
     body = "<p>see https://youtu.be/BnsaVtCb0GU today</p>"
     out = _ensure_video_link(body, "roofing", db=_FakeDB())
     assert "youtube.com/embed/BnsaVtCb0GU" in out
+
+
+def test_budget_sources_trims_to_char_budget():
+    from jobs.article_job import _budget_sources
+    srcs = [{"video_id": "a", "transcript": "x" * 3000},
+            {"video_id": "b", "transcript": "word " * 800},   # 4000 chars
+            {"video_id": "c", "transcript": "y" * 3000}]
+    out = _budget_sources(srcs, 5000)
+    assert [s["video_id"] for s in out] == ["a", "b"]
+    assert len(out[1]["transcript"]) <= 2000  # truncated at the budget, word boundary
+    assert _budget_sources(srcs, None) == srcs  # no budget -> untouched
+    # budget crossing with <500 room drops instead of emitting a useless fragment
+    assert [s["video_id"] for s in _budget_sources(srcs, 3200)] == ["a"]

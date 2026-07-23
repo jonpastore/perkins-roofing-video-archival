@@ -234,10 +234,22 @@ class CloudflareLLM:
                 + f"Required: {', '.join(req)}. "
                 + 'The "content" key (if present) must hold the COMPLETE article body as HTML.'
             )
+        # The model's context is 24k tokens TOTAL (input + output). Estimate input at
+        # ~3.2 chars/token (English prose) and clamp the output so the request always
+        # fits — an unclamped 8192 on a large grounded prompt 400s, and oversized
+        # bodies 413. Floor of 2048 keeps article JSON viable; if even that can't
+        # fit, fail loudly with the size rather than let CF truncate mid-JSON.
+        est_input = int(len(prompt) / 3.2)
+        max_out = min(8192, 24_000 - est_input - 512)
+        if max_out < 2048:
+            raise RuntimeError(
+                f"prompt too large for Cloudflare llama 24k context: ~{est_input} input "
+                f"tokens leaves {max_out} for output (need >=2048) — trim the prompt"
+            )
         payload = {
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1 if (want_json or response_schema) else 0.4,
-            "max_tokens": 8192,
+            "max_tokens": max_out,
         }
         url = self._API.format(acct=self._account, model=self._model)
         r = urllib.request.Request(

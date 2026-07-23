@@ -2318,8 +2318,43 @@ def source_transcripts(keyword: str, db=None, *, max_slices: int = SOURCE_MAX_SL
     return out
 
 
+def _grounding_char_budget() -> int | None:
+    """Total transcript chars allowed in a prompt, by chat backend.
+
+    CF llama (@cf 70b fp8-fast) has a 24k-token TOTAL context; unbounded topic
+    slices (the whole point of topic-slice grounding) blew it up — 413s, 400s,
+    and truncated JSON on the first real article batch (2026-07-23). ~36k chars
+    ≈ 9-10k tokens of grounding leaves room for the template + 8k output.
+    Vertex/local backends have 128k+ contexts — no budget (None).
+    """
+    from app.config import settings  # noqa: PLC0415
+    return 36_000 if settings.LLM_BACKEND == "cloudflare" else None
+
+
+def _budget_sources(sources: list[dict], max_chars: int | None) -> list[dict]:
+    """Trim slices (most-relevant-first order preserved) to a total char budget.
+    The slice that crosses the budget is truncated at a word boundary; later
+    slices drop. No budget -> unchanged."""
+    if not max_chars:
+        return sources
+    out, used = [], 0
+    for s in sources:
+        t = s.get("transcript") or ""
+        if used + len(t) <= max_chars:
+            out.append(s)
+            used += len(t)
+            continue
+        room = max_chars - used
+        if room > 500:  # a fragment shorter than this grounds nothing useful
+            cut = t[:room].rsplit(" ", 1)[0]
+            out.append({**s, "transcript": cut})
+        break
+    return out
+
+
 def _append_video_grounding(user_prompt: str, sources: list[dict]) -> str:
     """Append Tim's on-topic transcript slices + the grounding rules to the user prompt."""
+    sources = _budget_sources(sources, _grounding_char_budget())
     lines = [
         "",
         "=" * 70,
