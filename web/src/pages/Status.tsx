@@ -726,11 +726,11 @@ const GO_LIVE_ITEMS: GoLiveItem[] = [
   { label: "perkins-jsonld mu-plugin installed + active on PRODUCTION (already on staging)" },
   { label: "Rank Math on prod confirmed not duplicating our FAQ+Video schema nodes — Owner: Wendy" },
   { label: "Permalinks set to \"Post name\" on prod", href: "https://perkinsroofing.net/wp-admin/options-permalink.php" },
-  { label: "CF token injected into Cloud Run + LLM_BACKEND=cloudflare (see §2 of the cutover plan)" },
+  { label: "CF token injected into Cloud Run + LLM_BACKEND=cloudflare (see §2 of the cutover plan)", done: true },
   { label: "SEO submission creds provisioned IF enabling (IndexNow key + Google Indexing API service account) — toggle is OFF by default" },
   { label: "WP_AUTHOR_ID=3 (Tim Kanak) confirmed stable on prod" },
   { label: "core/internal_links.py service slugs verified 200 against live perkinsroofing.net", done: true },
-  { label: "Deploy main to prod (scripts/deploy.sh)" },
+  { label: "Deploy main to prod (scripts/deploy.sh)", done: true },
   { label: "Tim's $1185/$1435 labor rates confirmed", done: true },
   { label: "Remaining Tim pricing items confirmed (per-branch OH, gutter hangers, downspout $10.50, Verea field-tile, FBC low-slope deltas, T&C)" },
 ];

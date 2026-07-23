@@ -53,17 +53,20 @@ def _wp_admin_url_for(wp_post_id: int | None) -> str | None:
     return f"{base}/wp-admin/post.php?post={wp_post_id}&action=edit" if base else None
 
 
-def _candidate_summary(candidate: dict) -> dict:
+def _candidate_summary(candidate: dict, wp_by_title: dict | None = None) -> dict:
     preview = map_to_post(
         {"name": candidate["name"], "city": candidate["city"], "section": candidate["section"]},
         content_html="",
     )
-    from adapters.wordpress import find_portfolio_post  # noqa: PLC0415
     wp_post = None
-    try:
-        wp_post = find_portfolio_post(candidate["name"])
-    except Exception as exc:  # noqa: BLE001 — WP unreachable must not break the list
-        logger.warning("wp lookup failed for portfolio candidate %s: %s", candidate["name"], exc)
+    if wp_by_title is not None:
+        wp_post = wp_by_title.get(preview["title"].strip().lower())
+    else:
+        from adapters.wordpress import find_portfolio_post  # noqa: PLC0415
+        try:
+            wp_post = find_portfolio_post(candidate["name"])
+        except Exception as exc:  # noqa: BLE001 — WP unreachable must not break the list
+            logger.warning("wp lookup failed for portfolio candidate %s: %s", candidate["name"], exc)
 
     return {
         "slug": _slugify(candidate["name"]),
@@ -98,8 +101,15 @@ def _placeholder_content(candidate: dict) -> str:
 def list_portfolio(
     claims=Depends(require_role("article_read")),
 ):
+    from adapters.wordpress import list_portfolio_posts  # noqa: PLC0415
     from scripts.portfolio_prefill import CANDIDATES  # noqa: PLC0415
-    return [_candidate_summary(c) for c in CANDIDATES]
+    # One WP fetch, matched locally — 13 sequential authed searches crawled on slow WP.
+    try:
+        wp_by_title = {p["title"].lower(): p for p in list_portfolio_posts()}
+    except Exception as exc:  # noqa: BLE001 — WP unreachable must not break the list
+        logger.warning("wp portfolio list fetch failed: %s", exc)
+        wp_by_title = {}
+    return [_candidate_summary(c, wp_by_title) for c in CANDIDATES]
 
 
 @router.post("/{slug}/publish")
@@ -128,7 +138,7 @@ def publish_portfolio_project(
     from adapters.wordpress import publish_portfolio_post  # noqa: PLC0415
     try:
         result = publish_portfolio_post(post)
-    except requests.HTTPError as exc:
+    except requests.RequestException as exc:
         logger.warning("wp portfolio publish failed for %s: %s", candidate["name"], exc)
         raise HTTPException(status_code=502, detail=f"WordPress publish failed: {exc}") from exc
 

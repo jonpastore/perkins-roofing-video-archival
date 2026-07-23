@@ -399,6 +399,18 @@ def _get_or_create_portfolio_term(taxonomy_rest: str, name: str) -> int:
     return resp.json()["id"]
 
 
+def list_portfolio_posts() -> list[dict]:
+    """All avada_portfolio posts (any status) as [{"id", "status", "title"}].
+    One fetch for callers that need to match many titles — 13 sequential
+    find_portfolio_post searches crawled on a slow WP."""
+    url = _wp_api_url("/wp-json/wp/v2/avada_portfolio")
+    resp = _session.get(url, auth=_auth(),
+                        params={"status": "any", "per_page": 100}, timeout=20)
+    resp.raise_for_status()
+    return [{"id": p["id"], "status": p["status"],
+             "title": p["title"]["rendered"].strip()} for p in resp.json()]
+
+
 def find_portfolio_post(title: str) -> dict | None:
     """Find an existing avada_portfolio post (any status) by exact (case-insensitive)
     title match. Returns {"id": int, "status": str} or None."""

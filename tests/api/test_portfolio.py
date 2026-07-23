@@ -32,8 +32,11 @@ AUTH = {"Authorization": "Bearer tok"}
 FIRST_SLUG = "fisher-island-7900-flat-roofs"
 
 
-def test_list_requires_auth_role():
-    """article_read is granted to sales too — sales can list."""
+def test_list_requires_auth_role(monkeypatch):
+    """article_read is granted to sales too — sales can list. WP list mocked so the
+    test never leaves the process (review LOW: it used to hit the real adapter)."""
+    import adapters.wordpress as wp
+    monkeypatch.setattr(wp, "list_portfolio_posts", lambda: [])
     c = _sales_client()
     r = c.get("/portfolio", headers=AUTH)
     assert r.status_code == 200, r.text
@@ -42,7 +45,7 @@ def test_list_requires_auth_role():
 
 def test_list_includes_expected_fields(monkeypatch):
     import adapters.wordpress as wp
-    monkeypatch.setattr(wp, "find_portfolio_post", lambda title: None)
+    monkeypatch.setattr(wp, "list_portfolio_posts", lambda: [])
 
     c = _admin_client()
     r = c.get("/portfolio", headers=AUTH)
@@ -56,7 +59,13 @@ def test_list_includes_expected_fields(monkeypatch):
 
 def test_list_reports_existing_wp_draft(monkeypatch):
     import adapters.wordpress as wp
-    monkeypatch.setattr(wp, "find_portfolio_post", lambda title: {"id": 8287, "status": "draft"})
+    from core.portfolio import map_to_post
+    from scripts.portfolio_prefill import CANDIDATES as _C
+    first = next(c for c in _C if True)
+    t = map_to_post({"name": first["name"], "city": first["city"], "section": first["section"]},
+                    content_html="")["title"]
+    monkeypatch.setattr(wp, "list_portfolio_posts",
+                        lambda: [{"id": 8287, "status": "draft", "title": t}])
     monkeypatch.setattr(wp, "resolved_wp_url", lambda: "https://staging.perkinsroofing.net")
 
     c = _admin_client()
