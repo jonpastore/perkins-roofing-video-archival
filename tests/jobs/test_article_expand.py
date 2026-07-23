@@ -594,14 +594,12 @@ def test_jsonld_omits_video_when_ungrounded():
 
 def test_internal_links_cluster_links_up_to_its_pillar(monkeypatch):
     import jobs.article_job as job_mod
-    # Pin the WP base so the test doesn't depend on PlatformConfig.WP_URL, which another
-    # test in the full suite can leave populated in the shared sqlite (order-dependent CI fail).
-    monkeypatch.setattr(job_mod, "_wp_base_url", lambda: "https://perkinsroofing.net")
     from jobs.article_job import _ensure_internal_links
 
     ctx = {"role": "cluster", "pillar_slug": "metal-roofing-guide", "pillar_title": "Metal Roofing Guide"}
     out = _ensure_internal_links("<p>some article body</p>", "metal roof cost", ctx)
-    assert '<a href="https://perkinsroofing.net/metal-roofing-guide">Metal Roofing Guide</a>' in out
+    # RELATIVE link (rm_internal_link only counts relative /slug/ links; host-portable).
+    assert '<a href="/metal-roofing-guide">Metal Roofing Guide</a>' in out
     assert "/blog/" not in out
 
 
@@ -618,7 +616,7 @@ def test_internal_links_adds_contextual_services_link():
 
     ctx = {"role": "pillar", "pillar_slug": None}
     out = _ensure_internal_links("<p>Learn about roof repair costs.</p>", "roof repair", ctx)
-    assert 'href="https://perkinsroofing.net/roof-repair-services/"' in out
+    assert 'href="/roof-repair-services/"' in out   # relative (host-portable)
     assert "roof repair services" in out
 
 

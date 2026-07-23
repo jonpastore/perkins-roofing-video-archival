@@ -131,6 +131,7 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     c = _ensure_article_image(c, keyword)
     c = _ensure_img_alt_keyword(c, keyword)
     c = _ensure_heading(c, keyword)
+    c = _ensure_keyword_in_heading(c, keyword)
     c = _ensure_answer_first(c, keyword, fields.get("faq_json") or [])
     c = ensure_toc(c)
     c = _ensure_internal_links(c, keyword, ctx)
@@ -158,7 +159,17 @@ def _compliance_gate(fields: dict, ctx: dict, keyword: str, db) -> tuple[list[di
 
     comp = _run()
     if failing(comp):
-        _reapply_fixable_ensures(fields, ctx, keyword)
+        _reapply_fixable_ensures(fields, ctx, keyword, db=db)
+        # Re-sync JSON-LD via repair so the ensure re-pass (which rebuilds FAQPage
+        # from scratch) never drops the VideoObject that repair adds for embedded
+        # grounded videos. This is why videoobject_schema slipped before.
+        if db is not None:
+            try:
+                fields["content_md"], fields["jsonld_json"], _ = _apply_repair(
+                    fields.get("content_md", ""), fields.get("jsonld_json") or [],
+                    keyword, fields.get("meta", ""), db)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("compliance-gate repair re-sync failed for %r: %s", keyword, exc)
         comp = _run()
     fails = failing(comp)
     if fails:
@@ -1503,15 +1514,19 @@ def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
 
     links: list[str] = []
 
+    # RELATIVE links (href="/slug/") — Rank Math's rm_internal_link only counts
+    # relative internal links, they're host-portable (staging↔prod), and they match
+    # the live-site standard we standardized to. Absolute perkinsroofing.net URLs
+    # would fail rm_internal_link and couple the body to one host.
     pillar_slug = ctx.get("pillar_slug")
     if ctx.get("role") == "cluster" and pillar_slug:
-        # No /blog/ — post URLs are top-level (see _wp_base_url callers / canonical_url note).
-        pillar_url = f"{_wp_base_url()}/{pillar_slug}"
-        if pillar_url not in content_md:
+        # No /blog/ — post URLs are top-level.
+        pillar_url = f"/{pillar_slug}"
+        if f'href="{pillar_url}"' not in content_md:
             anchor = ctx.get("pillar_title") or _title_case_keyword(pillar_slug.replace("-", " "))
             links.append(f'<a href="{pillar_url}">{anchor}</a>')
 
-    from core.internal_links import matching_service_links  # noqa: PLC0415
+    from core.internal_links import BASE_URL, matching_service_links  # noqa: PLC0415
     # Match against the article's own prose only — excluding a related-links block this
     # function already appended, so a second pass doesn't treat its own anchor text as new
     # content to match against (which would keep growing the link list every re-run).
@@ -1519,8 +1534,16 @@ def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
                                flags=re.IGNORECASE | re.DOTALL)
     haystack = f"{keyword} {_strip_html(body_for_matching)}"
     for entry in matching_service_links(haystack):
-        if entry["url"] not in content_md:
-            links.append(f'<a href="{entry["url"]}">{entry["anchor"]}</a>')
+        rel = entry["url"].replace(BASE_URL, "") or "/"   # absolute -> relative path
+        if f'href="{rel}"' not in content_md:
+            links.append(f'<a href="{rel}">{entry["anchor"]}</a>')
+
+    # Guarantee ≥1 internal relative link (rm_internal_link). If nothing topically
+    # matched and there's no pillar to link, fall back to the roofing-services hub —
+    # an honest, always-relevant link for a roofing article, never off-topic filler.
+    if not links and 'class="related-links"' not in content_md \
+            and 'href="/residential-roofing/"' not in content_md:
+        links.append('<a href="/residential-roofing/">Perkins Roofing services</a>')
 
     if not links:
         return content_md
@@ -1679,6 +1702,23 @@ def _ensure_heading(content_md: str, keyword: str) -> str:
     kw_tc = _title_case_keyword(keyword) if keyword else "Overview"
     heading = f"<h2>{kw_tc}: What You Need to Know</h2>\n"
     return heading + (content_md or "")
+
+
+def _ensure_keyword_in_heading(content_md: str, keyword: str) -> str:
+    """Guarantee the focus keyword appears in at least one H2/H3/H4 (rm_kw_in_heading).
+    _ensure_heading only guarantees a heading EXISTS; if the LLM's headings don't carry
+    the keyword this stays failing. When none do, prefix the first heading with the
+    keyword — least-disruptive fix, no empty section added."""
+    if not content_md or not keyword:
+        return content_md
+    kw = keyword.lower()
+    heads = list(re.finditer(r"<h[234]\b[^>]*>(.*?)</h[234]>", content_md, re.IGNORECASE | re.DOTALL))
+    if any(kw in _strip_html(h.group(1)).lower() for h in heads) or not heads:
+        return content_md
+    first = heads[0]
+    inner = _strip_html(first.group(1)).strip()
+    new_head = f"<h2>{_title_case_keyword(keyword)}: {inner}</h2>"
+    return content_md[:first.start()] + new_head + content_md[first.end():]
 
 
 def _ensure_answer_first(content_md: str, keyword: str, faq: list) -> str:
@@ -2207,8 +2247,9 @@ def generate_scored_article(
     fields["content_md"] = _ensure_article_image(fields.get("content_md", ""), keyword)
     fields["content_md"] = _ensure_img_alt_keyword(fields.get("content_md", ""), keyword)
 
-    # 5. Headings: ensure ≥1 <h2> in content_md
+    # 5. Headings: ensure ≥1 <h2> in content_md, and the keyword in a heading (rm_kw_in_heading)
     fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
+    fields["content_md"] = _ensure_keyword_in_heading(fields.get("content_md", ""), keyword)
 
     # 6. Answer-first lede: first ~200 plain-text chars must contain a sentence
     fields["content_md"] = _ensure_answer_first(
