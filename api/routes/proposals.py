@@ -56,6 +56,7 @@ from api.routes.quotes import (
     _PROJECT_ADDRESS_FIELDS,
     _pick,
 )
+from app.config import settings as app_settings
 from app.models import (
     Customer,
     Job,
@@ -1607,7 +1608,11 @@ def get_settings(
     return {
         "deposit": settings.get("deposit", {}),
         "reminder_cadence_days": settings.get("reminder_cadence_days", [3, 7, 14]),
-        "license_number": settings.get("license_number"),
+        # tenant.settings.license_number is the per-tenant value; fall back to the
+        # single-tenant TENANT_LICENSE env var (same fallback proposal_gen.py /
+        # invoices.py already use for rendering) so the admin field doesn't show
+        # blank+placeholder when a license is already active via env config.
+        "license_number": settings.get("license_number") or (app_settings.TENANT_LICENSE or None),
     }
 
 
