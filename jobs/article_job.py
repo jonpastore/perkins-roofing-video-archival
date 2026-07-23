@@ -49,6 +49,62 @@ def _stamped_session(tenant_id):
         s.close()
 
 
+def _repair_inputs(db) -> dict:
+    """DB-backed facts core.article_repair.repair_article needs: known video ids +
+    metadata (videos table) and valid slugs + pillar map (articles table).
+
+    I/O only — the actual repair logic is the pure core.article_repair module.
+    """
+    from app.models import Article as ArticleModel  # noqa: PLC0415
+    from app.models import Video  # noqa: PLC0415
+
+    known_video_ids: set[str] = set()
+    video_meta: dict[str, dict] = {}
+    for vid, title, upload_date, duration in db.query(
+        Video.id, Video.title, Video.upload_date, Video.duration
+    ).all():
+        known_video_ids.add(vid)
+        video_meta[vid] = {"title": title, "upload_date": upload_date, "duration": duration}
+
+    valid_slugs = {s for (s,) in db.query(ArticleModel.slug).all()}
+    pillar_map = {
+        p: s
+        for p, s in db.query(ArticleModel.pillar_slug, ArticleModel.slug)
+                      .filter(ArticleModel.role == "pillar").all()
+        if p and p != s
+    }
+    return {
+        "known_video_ids": known_video_ids,
+        "video_meta": video_meta,
+        "valid_slugs": valid_slugs,
+        "pillar_map": pillar_map,
+    }
+
+
+def _apply_repair(content_md: str, jsonld: list[dict], keyword: str, meta_description: str,
+                  db) -> tuple[str, list[dict], list[dict]]:
+    """Run core.article_repair.repair_article with DB-backed facts.
+
+    Callers wrap this fail-open (same convention as the grounding/fact-check passes
+    below): a repair-stage error must never block an otherwise-good article — it
+    just ships unrepaired and the caller logs it.
+    """
+    from core.article_repair import repair_article  # noqa: PLC0415
+
+    inputs = _repair_inputs(db)
+    result = repair_article(
+        content_md, jsonld,
+        known_video_ids=inputs["known_video_ids"],
+        video_meta=inputs["video_meta"],
+        valid_slugs=inputs["valid_slugs"],
+        pillar_map=inputs["pillar_map"],
+        keyword=keyword,
+        meta_description=meta_description,
+    )
+    if result.fixes:
+        logger.info("article_repair on %r: %s", keyword, result.fixes)
+    return result.content_md, result.jsonld, result.issues
+
 
 # ---------------------------------------------------------------------------
 # HTML sanitizer — strips/converts residual markdown artifacts
@@ -760,6 +816,19 @@ def generate_article(
         jsonld_list.append(build_faq_page(faq))
     # Append VideoObject entries for each grounded source video
     jsonld_list.extend(jsonld_video_list)
+
+    # ── 6b. Deterministic repair + QA pass (core.article_repair) ────────────
+    # Corrects/strips corrupted video ids, invented images, dead relative links,
+    # dead staging hosts, and resyncs VideoObject jsonld — before publish. Never
+    # blocks: repair issues are appended to qa_checks for visibility only, since
+    # the rot they flag was already fixed (see core.article_repair's docstring).
+    try:
+        with _stamped_session(tenant_id) as _repair_db:
+            content, jsonld_list, repair_issues = _apply_repair(
+                content, jsonld_list, keyword, article.get("metaDescription") or "", _repair_db)
+        qa_checks.extend(repair_issues)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
 
     # ── 7. Idempotency check + Publish/Update ────────────────────────────────
     existing_article = None
@@ -2061,6 +2130,20 @@ def generate_scored_article(
     fields["content_md"] = _ensure_footer_link(fields.get("content_md", ""))
 
     jsonld = _build_article_jsonld(fields, ctx)
+
+    # ── Deterministic repair + QA pass (core.article_repair) ─────────────────
+    # Same stage as generate_article's batch path. Best-effort: only runs when a
+    # DB session is available — every current caller of generate_scored_article
+    # passes one; skipping otherwise (rather than opening an ad-hoc unstamped
+    # session) keeps this off the C1 unstamped-SessionLocal failure class.
+    if db is not None:
+        try:
+            fields["content_md"], jsonld, repair_issues = _apply_repair(
+                fields.get("content_md", ""), jsonld, keyword, fields.get("meta", ""), db)
+            fields.setdefault("qa_checks", []).extend(repair_issues)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
+
     result = _score(fields, jsonld)
 
     fields["jsonld_json"] = jsonld
