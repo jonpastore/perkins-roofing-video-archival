@@ -59,7 +59,13 @@ OPERATE: deploy = `set -a; source .env; set +a; export GOOGLE_APPLICATION_CREDEN
 scripts/prod_smoke.py. SPA = cd web && npm run build && firebase deploy --only hosting:app.
 R6: every commit updates docs + Jarvis + memory.
 
-GOTCHAS: staging WP 429s under fast crawls — throttle 1-1.5s + backoff, fresh cache-buster
+GOTCHAS: GoDaddy WAF began stripping Authorization on WP REST writes FROM CLOUD RUN
+~2026-07-23 03:44Z (after the 60-post image backfill burst): TLS-fingerprint + IP class,
+NOT credentials/UA (curl blocked even from morpheus w/ identical headers; python-requests
+from morpheus works). Image-tab WP sync fails from prod until it clears — retest with
+scratchpad e2e_image_flip.py; if persistent, Jon must loosen GoDaddy Website Security
+firewall. DB is still updated on every edit; resync from morpheus works (recipe in
+curated-article-images memory). staging WP 429s under fast crawls — throttle 1-1.5s + backoff, fresh cache-buster
 per run. GoDaddy 31-day static cache — flush via wp-admin admin-bar nonce URL (Playwright
 navigate; link hidden in dropdown). Outlook mail: pull FULL untruncated bodies (cerberus
 ~/gmail-enhanced-mcp msal + Graph, scope must be https://graph.microsoft.com/Mail.ReadWrite).
