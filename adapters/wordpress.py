@@ -23,6 +23,14 @@ from urllib.parse import urljoin, urlparse
 
 import requests
 
+# GoDaddy's WAF silently strips Authorization from requests with default library
+# User-Agents (curl/*, python-requests/* from datacenter egress) — REST auth then
+# 401s "rest_not_logged_in" while the same creds work from a browser. Observed
+# 2026-07-23 from Cloud Run; same failure class as the Resend/Cloudflare-1010 UA
+# block. Every call sends an explicit product UA.
+_session = requests.Session()
+_session.headers["User-Agent"] = "perkins-platform/1.0 (+https://perkinsroofing.net)"
+
 
 def _auth() -> tuple[str, str]:
     user = os.environ["WP_USER"]
@@ -63,7 +71,7 @@ def _rest_base_url(configured_base: str) -> str:
     """
     base = configured_base.rstrip("/")
     try:
-        resp = requests.get(f"{base}/wp-json/", timeout=10, allow_redirects=True)
+        resp = _session.get(f"{base}/wp-json/", timeout=10, allow_redirects=True)
         resp.raise_for_status()
     except requests.RequestException:
         return base
@@ -155,7 +163,7 @@ def publish(
     }
     if slug:
         payload["slug"] = slug
-    resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
+    resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return resp.json()["id"]
 
@@ -192,7 +200,7 @@ def update(
         "author": _author_id(),  # policy: always Tim Kanak
         "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
-    resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
+    resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
 
 
@@ -209,7 +217,7 @@ def update_status(post_id: int, status: str) -> None:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
     url = _wp_api_url(f"/wp-json/wp/v2/posts/{post_id}")
-    resp = requests.post(url, json={"status": status}, auth=_auth(), timeout=30)
+    resp = _session.post(url, json={"status": status}, auth=_auth(), timeout=30)
     resp.raise_for_status()
 
 
@@ -223,7 +231,7 @@ def find_page_by_title(title: str) -> int | None:
     """
     url = _wp_api_url("/wp-json/wp/v2/pages")
     params = {"search": title, "per_page": 20, "status": "any"}
-    resp = requests.get(url, params=params, auth=_auth(), timeout=30)
+    resp = _session.get(url, params=params, auth=_auth(), timeout=30)
     resp.raise_for_status()
     for page in resp.json():
         raw = page.get("title", {}).get("rendered", "")
@@ -269,7 +277,7 @@ def create_page(
         "author": _author_id(),  # policy: always Tim Kanak
         "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
-    resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
+    resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return resp.json()["id"]
 
@@ -306,7 +314,7 @@ def update_page(
         "author": _author_id(),  # policy: always Tim Kanak
         "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
-    resp = requests.post(url, json=payload, auth=_auth(), timeout=30)
+    resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
 
 
@@ -324,7 +332,7 @@ def trash(post_id: int) -> None:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
     url = _wp_api_url(f"/wp-json/wp/v2/posts/{post_id}")
-    resp = requests.delete(url, auth=_auth(), timeout=30)
+    resp = _session.delete(url, auth=_auth(), timeout=30)
     resp.raise_for_status()
 
 
@@ -340,6 +348,6 @@ def push_llms_txt(content: str) -> dict:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
     """
     url = _wp_api_url("/wp-json/perkins/v1/llms-txt")
-    resp = requests.post(url, json={"content": content}, auth=_auth(), timeout=30)
+    resp = _session.post(url, json={"content": content}, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return resp.json()
