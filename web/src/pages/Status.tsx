@@ -705,6 +705,89 @@ function GcpSpendWidget() {
   );
 }
 
+// ── Go-live checklist banner ──────────────────────────────────────────────────
+// Static reminder of the article/content staging→prod cutover steps (source of
+// truth: docs/PRODUCTION_CUTOVER_PLAN.md §3). None of these are code-verifiable
+// (WP admin settings, plugin installs, human review) so this is a plain list —
+// no backend, no polling. Dismiss state is local-only (matches the discount-
+// presets pattern elsewhere in this app).
+const GO_LIVE_DISMISSED_KEY = "perkins.goLiveChecklistDismissed.v1";
+
+interface GoLiveItem {
+  label: string;
+  done?: boolean;
+  href?: string;
+}
+
+const GO_LIVE_ITEMS: GoLiveItem[] = [
+  { label: "Staging↔prod WordPress parity confirmed (breadcrumbs etc.) — Owner: Wendy" },
+  { label: "Wendy reviews the 61 staging articles + confirms adherence criteria" },
+  { label: "PROD WP Application Password generated + vaulted (Secret Manager: wordpress-app-password) — Owner: Jon" },
+  { label: "perkins-jsonld mu-plugin installed + active on PRODUCTION (already on staging)" },
+  { label: "Rank Math on prod confirmed not duplicating our FAQ+Video schema nodes — Owner: Wendy" },
+  { label: "Permalinks set to \"Post name\" on prod", href: "https://perkinsroofing.net/wp-admin/options-permalink.php" },
+  { label: "CF token injected into Cloud Run + LLM_BACKEND=cloudflare (see §2 of the cutover plan)" },
+  { label: "SEO submission creds provisioned IF enabling (IndexNow key + Google Indexing API service account) — toggle is OFF by default" },
+  { label: "WP_AUTHOR_ID=3 (Tim Kanak) confirmed stable on prod" },
+  { label: "core/internal_links.py service slugs verified 200 against live perkinsroofing.net", done: true },
+  { label: "Deploy main to prod (scripts/deploy.sh)" },
+  { label: "Tim's $1185/$1435 labor rates confirmed", done: true },
+  { label: "Remaining Tim pricing items confirmed (per-branch OH, gutter hangers, downspout $10.50, Verea field-tile, FBC low-slope deltas, T&C)" },
+];
+
+function GoLiveChecklistBanner() {
+  const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(GO_LIVE_DISMISSED_KEY) === "1");
+
+  function dismiss() {
+    window.localStorage.setItem(GO_LIVE_DISMISSED_KEY, "1");
+    setDismissed(true);
+  }
+
+  if (dismissed) {
+    return (
+      <div style={{ marginBottom: 24, textAlign: "right" }}>
+        <button
+          onClick={() => { window.localStorage.removeItem(GO_LIVE_DISMISSED_KEY); setDismissed(false); }}
+          style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
+        >
+          Show go-live checklist
+        </button>
+      </div>
+    );
+  }
+
+  const remaining = GO_LIVE_ITEMS.filter((i) => !i.done).length;
+
+  return (
+    <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+        <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
+          Go-Live Checklist — staging→prod cutover ({remaining} open)
+        </span>
+        <button
+          onClick={dismiss}
+          title="Dismiss"
+          style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 0 }}
+        >
+          &times;
+        </button>
+      </div>
+      <p style={{ margin: "0 0 10px", fontSize: 12, color: BRAND.sub }}>
+        From docs/PRODUCTION_CUTOVER_PLAN.md §3. Every unchecked item is a manual step — this list
+        cannot verify plugin installs, WP admin settings, or human review; it's a reminder only.
+      </p>
+      <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: BRAND.ink, lineHeight: 1.9 }}>
+        {GO_LIVE_ITEMS.map((item, i) => (
+          <li key={i} style={{ color: item.done ? BRAND.sub : BRAND.ink, textDecoration: item.done ? "line-through" : "none" }}>
+            {item.href ? <a href={item.href} target="_blank" rel="noreferrer">{item.label}</a> : item.label}
+            {!item.done && <span style={{ marginLeft: 8 }}><Badge tone="amber">Manual</Badge></span>}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 // ── Production Readiness banner ───────────────────────────────────────────────
 // Compact status strip: N/M gates ready, a colored chip per gate, and a re-test
 // button. Explanation + remediation for each gate lives in Admin Config; this is
@@ -844,6 +927,7 @@ export function Status() {
         Platform Status
       </PageTitle>
 
+      <GoLiveChecklistBanner />
       <ProductionReadinessBanner />
 
       {toast && (
