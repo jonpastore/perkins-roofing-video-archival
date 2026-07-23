@@ -260,6 +260,18 @@ resource "cloudflare_zone_setting" "always_use_https" {
   value      = "on"
 }
 
+# Browser Integrity Check OFF (2026-07-23, #403): it challenged non-browser
+# agents including the AI crawlers robots.txt explicitly allows (GPTBot,
+# ClaudeBot, PerplexityBot) — the bot-blocking flagged in the Wendy thread.
+# Verified: crawler UAs got challenge before, 200 after. AIO reachability
+# deliberately outweighs this blunt header heuristic.
+resource "cloudflare_zone_setting" "browser_check" {
+  count      = var.cloudflare_zone_id != "" ? 1 : 0
+  zone_id    = var.cloudflare_zone_id
+  setting_id = "browser_check"
+  value      = "off"
+}
+
 resource "cloudflare_zone_setting" "min_tls_version" {
   count      = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id    = var.cloudflare_zone_id
