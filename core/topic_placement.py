@@ -74,24 +74,29 @@ def _group_new_pillars(seeds, *, threshold, max_clusters_per_pillar, sim):
     """Greedy: the seed with the most above-threshold neighbors becomes a pillar and
     absorbs its nearest unassigned neighbors as clusters; repeat until seeds run out.
     A seed with no neighbors becomes a solo pillar (no clusters yet) — better a new
-    hub than a dropped topic."""
-    remaining = list(seeds)
-    new_pillars, unplaced = [], []
-    while remaining:
-        # neighbor count for each remaining seed
-        def neighbors(s):
-            return sorted(
-                ((sim(s["vec"], o["vec"]), o) for o in remaining if o is not s),
-                key=lambda t: t[0], reverse=True)
+    hub than a dropped topic.
 
-        pillar = max(remaining, key=lambda s: sum(1 for sc, _ in neighbors(s) if sc >= threshold))
-        remaining.remove(pillar)
-        near = [o for sc, o in neighbors(pillar) if sc >= threshold][:max_clusters_per_pillar]
-        for o in near:
-            remaining.remove(o)
-        if near:
-            new_pillars.append({"pillar": pillar["keyword"], "clusters": [o["keyword"] for o in near]})
-        else:
-            # lonely seed — still a valid new hub, just clusterless for now
-            new_pillars.append({"pillar": pillar["keyword"], "clusters": []})
-    return new_pillars, unplaced
+    The pairwise similarity matrix is computed ONCE up front (O(n^2)); the greedy
+    then does index lookups only. (A prior version recomputed sims inside the pick
+    loop — O(n^3) over high-dim vectors, which timed out on ~150 seeds.)
+    """
+    n = len(seeds)
+    S = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        vi = seeds[i]["vec"]
+        for j in range(i + 1, n):
+            s = sim(vi, seeds[j]["vec"])
+            S[i][j] = S[j][i] = s
+
+    alive = set(range(n))
+    new_pillars = []
+    while alive:
+        p = max(alive, key=lambda i: sum(1 for j in alive if j != i and S[i][j] >= threshold))
+        alive.discard(p)
+        near = sorted((j for j in alive if S[p][j] >= threshold),
+                      key=lambda j: S[p][j], reverse=True)[:max_clusters_per_pillar]
+        for j in near:
+            alive.discard(j)
+        new_pillars.append({"pillar": seeds[p]["keyword"],
+                            "clusters": [seeds[j]["keyword"] for j in near]})
+    return new_pillars, []
