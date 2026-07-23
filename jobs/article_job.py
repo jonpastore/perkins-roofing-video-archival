@@ -141,11 +141,20 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     fields["jsonld_json"] = _build_article_jsonld(fields, ctx)
 
 
-def _compliance_gate(fields: dict, ctx: dict, keyword: str, db) -> tuple[list[dict], bool]:
-    """Run THE Wendy compliance checklist (core.article_criteria). If anything
-    fixable slipped, re-apply the idempotent ensures once and re-check. Returns
-    (serializable criteria list, all-pass bool). Non-fixable failures (unknown
-    video id, dead host) mean the article must not be treated as compliant."""
+# Criteria that a deterministic ensure cannot manufacture — they need the LLM to
+# write more/denser/better body (keyword density, content length, per-section
+# answers). When only these remain failing, the gate re-refines and loops.
+_LLM_FIXABLE = {"seo_ranking", "answer_first"}
+_COMPLIANCE_MAX_ITERS = 4
+
+
+def _compliance_gate(fields: dict, ctx: dict, keyword: str, db,
+                     llm=None) -> tuple[list[dict], bool]:
+    """LOOP until THE Wendy compliance checklist (core.article_criteria) is fully
+    green or a hard cap is hit. Each round re-applies the idempotent ensures +
+    repair (fixes structural criteria) and, when only LLM-fixable criteria remain
+    (density/length/answers), re-refines the body. Returns (serializable criteria,
+    all-pass bool). A non-green return means the article is NOT publishable."""
     from core.article_criteria import check_compliance, failing  # noqa: PLC0415
 
     known = _repair_inputs(db)["known_video_ids"] if db is not None else set()
@@ -158,11 +167,13 @@ def _compliance_gate(fields: dict, ctx: dict, keyword: str, db) -> tuple[list[di
             keyword, known)
 
     comp = _run()
-    if failing(comp):
+    for _ in range(_COMPLIANCE_MAX_ITERS):
+        fails = failing(comp)
+        if not fails:
+            break
+        # 1. Deterministic pass: ensures rebuild FAQPage, so re-sync jsonld via repair
+        #    afterwards or the VideoObject repair adds gets dropped.
         _reapply_fixable_ensures(fields, ctx, keyword, db=db)
-        # Re-sync JSON-LD via repair so the ensure re-pass (which rebuilds FAQPage
-        # from scratch) never drops the VideoObject that repair adds for embedded
-        # grounded videos. This is why videoobject_schema slipped before.
         if db is not None:
             try:
                 fields["content_md"], fields["jsonld_json"], _ = _apply_repair(
@@ -171,10 +182,23 @@ def _compliance_gate(fields: dict, ctx: dict, keyword: str, db) -> tuple[list[di
             except Exception as exc:  # noqa: BLE001
                 logger.warning("compliance-gate repair re-sync failed for %r: %s", keyword, exc)
         comp = _run()
+        fails = failing(comp)
+        if not fails:
+            break
+        # 2. If ONLY LLM-fixable criteria remain, re-refine the body and loop again.
+        #    If a structural criterion still fails after the deterministic pass, more
+        #    LLM won't help — stop and let it be reported as non-compliant.
+        if llm is not None and fails and all(c.key in _LLM_FIXABLE for c in fails):
+            refined = _refine_without_regressing_length(fields, keyword, llm=llm)
+            fields["content_md"] = markdownish_to_html(refined.get("content_md", "")
+                                                       or fields.get("content_md", ""))
+            continue
+        break
+
     fails = failing(comp)
     if fails:
-        logger.error("COMPLIANCE FAIL %r: %s", keyword,
-                     [(c.key, c.detail) for c in fails])
+        logger.error("COMPLIANCE FAIL %r after %d iters: %s", keyword,
+                     _COMPLIANCE_MAX_ITERS, [(c.key, c.detail) for c in fails])
     return ([{"key": c.key, "label": c.label, "ok": c.ok,
               "fixable": c.fixable, "detail": c.detail} for c in comp],
             not fails)
@@ -915,7 +939,7 @@ def generate_article(
                    "meta": meta_out, "slug": slug, "jsonld_json": jsonld_list}
         with _stamped_session(tenant_id) as _cg_db:
             _reapply_fixable_ensures(_fields, ctx, keyword, db=_cg_db)
-            compliance, compliant = _compliance_gate(_fields, ctx, keyword, _cg_db)
+            compliance, compliant = _compliance_gate(_fields, ctx, keyword, _cg_db, llm=llm)
         content, title = _fields["content_md"], _fields["title"]
         faq, jsonld_list, meta_out = _fields["faq_json"], _fields["jsonld_json"], _fields["meta"]
     except Exception as exc:  # noqa: BLE001 — a gate error must not silently publish
@@ -2312,7 +2336,7 @@ def generate_scored_article(
     # gaps; we run the whole checklist, re-apply the fixable ensures if anything
     # slipped, and re-check. The result is attached so no caller can publish an
     # article that silently missed a criterion. See core.article_criteria.
-    fields["compliance"], fields["compliant"] = _compliance_gate(fields, ctx, keyword, db)
+    fields["compliance"], fields["compliant"] = _compliance_gate(fields, ctx, keyword, db, llm=llm)
     logger.info(
         "generate_scored_article %r → score %d/100 (%d iters) compliant=%s failing=%s",
         keyword, result["score"], it, fields["compliant"],
