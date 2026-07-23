@@ -131,6 +131,8 @@ def publish(
     status: str = "draft",
     focus_keyword: str | None = None,
     slug: str | None = None,
+    category_ids: list[int] | None = None,
+    featured_media: int | None = None,
 ) -> int:
     """Create a WordPress post and return the new post id.
 
@@ -163,6 +165,10 @@ def publish(
     }
     if slug:
         payload["slug"] = slug
+    if category_ids:
+        payload["categories"] = category_ids
+    if featured_media:
+        payload["featured_media"] = featured_media
     resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return resp.json()["id"]
@@ -456,3 +462,31 @@ def publish_portfolio_post(post: dict, *, dry_run: bool = False) -> dict:
     resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return {"title": post["title"], "status": "created", "post_id": resp.json()["id"]}
+
+
+@lru_cache(maxsize=1)
+def _category_index() -> dict:
+    """name(lowercased) -> term id for all post categories (cached per process)."""
+    url = _wp_api_url("/wp-json/wp/v2/categories")
+    resp = _session.get(url, params={"per_page": 100, "_fields": "id,name"}, timeout=30)
+    resp.raise_for_status()
+    import html as _html
+    return {_html.unescape(c["name"]).strip().lower(): c["id"] for c in resp.json()}
+
+
+def category_id_for_name(name: str) -> int | None:
+    """Resolve a category NAME (core.wp_category output) to its WP term id."""
+    return _category_index().get(name.strip().lower())
+
+
+def featured_media_from_url(image_url: str, filename: str) -> int | None:
+    """Download an image (a curated in-video frame) and upload it to the WP media
+    library so it can be set as a post's featured image. Returns the media id, or
+    None on any failure (a missing featured image must never block publishing)."""
+    try:
+        r = _session.get(image_url, timeout=30)
+        r.raise_for_status()
+        media = upload_media(filename, r.content, mime=r.headers.get("Content-Type", "image/jpeg"))
+        return media.get("id")
+    except Exception:  # noqa: BLE001 — featured image is best-effort
+        return None

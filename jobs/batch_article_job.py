@@ -119,20 +119,30 @@ def _publish_fields(fields: dict, ctx: dict, keyword: str, status: str) -> dict:
     """Publish an already-generated COMPLIANT article to WordPress + persist its
     Article row (with role/pillar_slug so hub placement is recorded). Only ever
     called for compliant articles — the gate is upstream. Returns {wp_post_id}."""
-    from adapters.wordpress import publish
+    import re
+
+    from adapters.wordpress import category_id_for_name, featured_media_from_url, publish
     from api.routes.articles import _slugify
     from app.models import Article, SessionLocal
+    from core.wp_category import pick_category_name
     from jobs.article_job import _markdown_to_html
 
     slug = fields.get("slug") or _slugify(fields.get("title") or keyword)
+    content = fields.get("content_md") or ""
+    # Category (Wendy: never the default bucket) + featured image (the curated frame).
+    cat_id = category_id_for_name(pick_category_name(keyword, content))
+    m = re.search(r'<img[^>]*\bsrc="([^"]+)"', content)
+    featured = featured_media_from_url(m.group(1), f"{slug}-featured.jpg") if m else None
     post_id = publish(
         title=fields.get("title") or keyword,
-        html=_markdown_to_html(fields.get("content_md") or ""),
+        html=_markdown_to_html(content),
         meta_description=fields.get("meta") or "",
         jsonld=fields.get("jsonld_json") or [],
         status=status,
         focus_keyword=keyword,
         slug=slug,
+        category_ids=[cat_id] if cat_id else None,
+        featured_media=featured,
     )
     db = SessionLocal()
     db.info["tenant_id"] = 1
