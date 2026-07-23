@@ -10,19 +10,19 @@ def test_quoting_page_is_presented_as_canonical_estimates_workflow():
     assert '["Customer", "Property", "Measurement", "Estimate", "Proposal"]' in source
 
 
-def test_estimator_page_is_marked_legacy_unattached_calculator():
-    source = Path("web/src/pages/Estimator.tsx").read_text()
-
-    assert "Legacy Quick Estimate Calculator" in source
-    assert "Legacy / unattached calculator" in source
-    assert "It does not create a customer" in source
+def test_legacy_estimator_page_was_removed_by_consolidation():
+    # The consolidation went past "mark it legacy" — the standalone Estimator page was
+    # removed entirely, so the only estimate path is the customer-linked Quoting flow.
+    assert not Path("web/src/pages/Estimator.tsx").exists()
 
 
-def test_estimates_customer_search_is_autocomplete_not_full_list():
+def test_estimates_customer_search_is_bounded_server_search_not_full_list():
+    # Customer selection is a debounced SERVER-side search (bounded result set), not a
+    # full client-side list — the same intent, implemented server-side.
     source = Path("web/src/pages/Quoting.tsx").read_text()
-    assert "Start typing to find a customer" in source
-    assert "filteredCustomers.slice(0, 8)" in source
-    assert "No customers matching" in source
+    assert 'placeholder="Search customers by name, company, or email' in source
+    assert 'params.set("search"' in source          # query carries the search term
+    assert 'limit: "50"' in source                  # bounded, not "load them all"
 
 
 def test_estimates_property_measurement_estimate_chain_present():

@@ -19,7 +19,7 @@ def test_wp_api_url_uses_redirected_rest_host(monkeypatch):
     wp._rest_base_url.cache_clear()
     # Admin-config WP_URL (resolved_wp_url) — env WP_URL is deliberately ignored (d1e25b5).
     monkeypatch.setattr(wp, "resolved_wp_url", lambda: "https://configured-host.example.com")
-    monkeypatch.setattr(wp.requests, "get", fake_get)
+    monkeypatch.setattr(wp._session, "get", fake_get)
 
     assert wp._wp_api_url("/wp-json/wp/v2/posts/123") == (
         "https://redirect-target.example.com/wp-json/wp/v2/posts/123"
@@ -77,7 +77,7 @@ def test_publish_sends_the_slug_so_the_permalink_matches_our_article(monkeypatch
     monkeypatch.setenv("WP_APP_PWD", "x")
     monkeypatch.setattr(wp, "_rest_base_url", lambda b: "https://example.com")
     monkeypatch.setattr(wp, "_author_id", lambda: 1)
-    monkeypatch.setattr(wp.requests, "post", fake_post)
+    monkeypatch.setattr(wp._session, "post", fake_post)
 
     pid = wp.publish(title="T", html="<p>x</p>", meta_description="d", jsonld=[],
                      focus_keyword="wall flashings", slug="wall-flashings")
@@ -101,7 +101,7 @@ def test_publish_omits_slug_when_not_given(monkeypatch):
     monkeypatch.setenv("WP_APP_PWD", "x")
     monkeypatch.setattr(wp, "_rest_base_url", lambda b: "https://example.com")
     monkeypatch.setattr(wp, "_author_id", lambda: 1)
-    monkeypatch.setattr(wp.requests, "post",
+    monkeypatch.setattr(wp._session, "post",
                         lambda url, json=None, auth=None, timeout=None: (sent.update(json), _R())[1])
     wp.publish(title="T", html="<p>x</p>", meta_description="d", jsonld=[])
     assert "slug" not in sent

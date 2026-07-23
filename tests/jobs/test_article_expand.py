@@ -592,7 +592,11 @@ def test_jsonld_omits_video_when_ungrounded():
 
 # ── internal linking: cluster -> pillar + contextual services links ────────────────────────
 
-def test_internal_links_cluster_links_up_to_its_pillar():
+def test_internal_links_cluster_links_up_to_its_pillar(monkeypatch):
+    import jobs.article_job as job_mod
+    # Pin the WP base so the test doesn't depend on PlatformConfig.WP_URL, which another
+    # test in the full suite can leave populated in the shared sqlite (order-dependent CI fail).
+    monkeypatch.setattr(job_mod, "_wp_base_url", lambda: "https://perkinsroofing.net")
     from jobs.article_job import _ensure_internal_links
 
     ctx = {"role": "cluster", "pillar_slug": "metal-roofing-guide", "pillar_title": "Metal Roofing Guide"}
