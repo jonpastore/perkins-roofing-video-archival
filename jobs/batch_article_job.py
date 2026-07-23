@@ -40,6 +40,29 @@ PRICE = {
 
 _tls = threading.local()
 
+# Paced-publish allocator: each scheduled article gets the next slot so a batch
+# releases at PER_DAY/day starting START_DATE (avoids a spam-flag bulk publish).
+# Thread-safe — workers are concurrent.
+_sched_lock = threading.Lock()
+_sched_state = {"seq": 0, "per_day": 10, "start": None}  # start set by run_batch
+
+
+def _next_publish_at():
+    """Next paced publish_at (naive UTC), or None if scheduling is off."""
+    import datetime as _dt
+    with _sched_lock:
+        if _sched_state["start"] is None:
+            return None
+        seq = _sched_state["seq"]
+        _sched_state["seq"] += 1
+        per_day = max(1, _sched_state["per_day"])
+        start = _sched_state["start"]
+    day, slot = divmod(seq, per_day)
+    # spread the day's slots between 09:00 and 17:00 UTC
+    hour = 9 + int(slot * 8 / per_day)
+    return (start + _dt.timedelta(days=day)).replace(hour=hour, minute=(slot * 7) % 60,
+                                                     second=0, microsecond=0)
+
 
 def _instrument_vertex():
     """Monkeypatch VertexLLM.chat to accumulate per-article token usage into a
@@ -144,6 +167,7 @@ def _publish_fields(fields: dict, ctx: dict, keyword: str, status: str) -> dict:
         category_ids=[cat_id] if cat_id else None,
         featured_media=featured,
     )
+    publish_at = _next_publish_at()
     db = SessionLocal()
     db.info["tenant_id"] = 1
     try:
@@ -157,12 +181,31 @@ def _publish_fields(fields: dict, ctx: dict, keyword: str, status: str) -> dict:
         row.role = ctx.get("role")
         row.pillar_slug = ctx.get("pillar_slug")
         row.wp_post_id = post_id
-        row.status = "published" if status == "publish" else "draft"
+        # published now, or scheduled (draft on WP, flipped live by promote_job at publish_at)
+        if status == "publish":
+            row.status = "published"
+        elif publish_at is not None:
+            row.status = "scheduled"
+            row.publish_at = publish_at
+        else:
+            row.status = "draft"
         db.add(row)
+        # Durable schedule: promote_job flips the WP draft to published at publish_at.
+        if publish_at is not None and status != "publish":
+            from app.models import ScheduledContent
+            already = (db.query(ScheduledContent)
+                       .filter(ScheduledContent.kind == "article",
+                               ScheduledContent.ref_id == slug).first())
+            if already:
+                already.publish_at, already.status, already.target = publish_at, "scheduled", "staging"
+            else:
+                db.add(ScheduledContent(tenant_id=1, kind="article", ref_id=slug,
+                                        publish_at=publish_at, status="scheduled", target="staging"))
         db.commit()
     finally:
         db.close()
-    return {"wp_post_id": post_id, "slug": slug}
+    return {"wp_post_id": post_id, "slug": slug,
+            "publish_at": publish_at.isoformat() if publish_at else None}
 
 
 def _gen_one(keyword: str, role: str, pillar_slug: str | None, critique: bool,
@@ -207,11 +250,21 @@ def _gen_one(keyword: str, role: str, pillar_slug: str | None, critique: bool,
 
 
 def run_batch(campaigns: list[dict], *, workers: int = 6, critique: bool = True,
-              mode: str = "measure", status: str = "draft") -> dict:
+              mode: str = "measure", status: str = "draft",
+              per_day: int = 10, start_date=None) -> dict:
     """Generate every campaign's pillar + clusters concurrently; return the full
     per-article records + an aggregate cost/quality report. mode='publish' pushes
-    each COMPLIANT article to WordPress (non-compliant are skipped + reported)."""
+    each COMPLIANT article to WordPress (non-compliant are skipped + reported) and,
+    when status='draft', schedules a paced go-live (per_day/day from start_date)
+    via ScheduledContent so the DB is the durable source of truth."""
     _instrument_vertex()
+    if mode == "publish" and status != "publish":
+        import datetime as _dt
+        with _sched_lock:
+            _sched_state["seq"] = 0
+            _sched_state["per_day"] = per_day
+            _sched_state["start"] = start_date or (
+                _dt.datetime.utcnow().replace(microsecond=0) + _dt.timedelta(days=1))
 
     # Flatten to (keyword, role, pillar_slug) work items. A cluster's pillar_slug
     # points at its pillar so cross-links resolve; slug derived like the pipeline.
@@ -303,6 +356,8 @@ def main() -> int:
                          "publish = push each COMPLIANT article to WordPress")
     ap.add_argument("--status", choices=["draft", "publish"], default="draft",
                     help="WP status for publish mode (default draft — release live via ScheduledContent)")
+    ap.add_argument("--per-day", type=int, default=10,
+                    help="paced go-live rate for scheduled staging publish (publish mode, draft status)")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--critique", dest="critique", action="store_true", default=True)
     ap.add_argument("--no-critique", dest="critique", action="store_false")
@@ -317,7 +372,7 @@ def main() -> int:
           + (f", status={args.status}" if args.mode == "publish" else ""), flush=True)
 
     result = run_batch(campaigns, workers=args.workers, critique=args.critique,
-                       mode=args.mode, status=args.status)
+                       mode=args.mode, status=args.status, per_day=args.per_day)
     with open(args.out, "w") as f:
         json.dump(result, f, indent=1)
     print("\n=== REPORT ===", flush=True)
