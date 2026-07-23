@@ -1,0 +1,51 @@
+/* Perkins Metal Warranty Checker — namespaced under .perkins-mwc so theme CSS can't leak in
+   and this can't leak out. Ported from perkins-setback.web.app. */
+.perkins-mwc {
+	--navy: #1b2a52;
+	--red: #ef3c1a;
+	--ink: #1a202c;
+	--sub: #667085;
+	font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+	color: var(--ink);
+	max-width: 980px;
+	margin: 0 auto;
+}
+.perkins-mwc * { box-sizing: border-box; }
+.perkins-mwc .perkins-mwc-lede { margin: 14px 0; font-size: 15px; line-height: 1.5; }
+.perkins-mwc-search { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.perkins-mwc-search input {
+	flex: 1; min-width: 260px; padding: 12px 14px; font-size: 15px;
+	border: 1px solid #d0d5dd; border-radius: 10px;
+}
+.perkins-mwc-search button {
+	padding: 12px 22px; font-size: 15px; font-weight: 700; color: #fff;
+	background: var(--red); border: none; border-radius: 10px; cursor: pointer;
+}
+.perkins-mwc-search button:disabled { opacity: .6; cursor: default; }
+#perkins-mwc-map { height: 380px; border-radius: 12px; border: 1px solid #d0d5dd; }
+.perkins-mwc-result { margin: 16px 0; }
+.perkins-mwc .verdict {
+	background: #fff; border: 1px solid #d0d5dd; border-radius: 12px; padding: 18px; margin-bottom: 12px;
+}
+.perkins-mwc .verdict h2 { font-size: 17px; margin: 0 0 4px; }
+.perkins-mwc .dist { font-size: 14px; color: var(--sub); margin-bottom: 12px; }
+.perkins-mwc table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.perkins-mwc th, .perkins-mwc td {
+	text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef0f3; vertical-align: top;
+}
+.perkins-mwc th { color: var(--sub); font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+.perkins-mwc .ok { color: #067647; font-weight: 700; }
+.perkins-mwc .void { color: #b42318; font-weight: 700; }
+.perkins-mwc .cond { color: #b45309; font-weight: 700; }
+.perkins-mwc .note { font-size: 12px; color: var(--sub); }
+.perkins-mwc .advisory {
+	background: #fffbeb; border: 1px dashed #fcd34d; color: #92400e;
+	border-radius: 10px; padding: 12px 14px; font-size: 13px; margin: 12px 0;
+}
+.perkins-mwc .cta {
+	display: inline-block; margin-top: 8px; background: var(--navy); color: #fff; font-weight: 700;
+	text-decoration: none; padding: 12px 22px; border-radius: 10px;
+}
+.perkins-mwc .perkins-mwc-foot { font-size: 12px; color: var(--sub); padding: 18px 0 8px; line-height: 1.6; }
+.perkins-mwc .err { color: #b42318; font-size: 14px; margin: 8px 0; }
+.perkins-mwc .spin { color: var(--sub); font-size: 14px; margin: 8px 0; }
