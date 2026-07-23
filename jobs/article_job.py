@@ -893,6 +893,29 @@ def generate_article(
     except Exception as exc:  # noqa: BLE001
         logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
 
+    # ── 6c. Compliance gate — the SAME finalize + Wendy checklist the scored path runs.
+    #        generate_article historically skipped the structural ensures (TOC, internal
+    #        links, curated image, footer, …); apply them here and REFUSE to publish a
+    #        non-compliant article live. One process, one standard (core.article_criteria).
+    meta_out = article.get("metaDescription") or ""
+    compliant, compliance = None, []
+    try:
+        _fields = {"content_md": content, "faq_json": faq, "title": title,
+                   "meta": meta_out, "slug": slug, "jsonld_json": jsonld_list}
+        with _stamped_session(tenant_id) as _cg_db:
+            _reapply_fixable_ensures(_fields, ctx, keyword, db=_cg_db)
+            compliance, compliant = _compliance_gate(_fields, ctx, keyword, _cg_db)
+        content, title = _fields["content_md"], _fields["title"]
+        faq, jsonld_list, meta_out = _fields["faq_json"], _fields["jsonld_json"], _fields["meta"]
+    except Exception as exc:  # noqa: BLE001 — a gate error must not silently publish
+        logger.error("compliance gate errored for %r: %s", keyword, exc)
+        compliant = False
+    # Live publish requires compliance; drafts are allowed through for review but flagged.
+    if compliant is False and status not in ("draft", ""):
+        raise RuntimeError(
+            f"Article for '{keyword}' blocked by compliance gate — not published. Failing: "
+            + ", ".join(c["key"] for c in compliance if not c["ok"]))
+
     # ── 7. Idempotency check + Publish/Update ────────────────────────────────
     existing_article = None
     if persist and slug:
@@ -912,7 +935,7 @@ def generate_article(
             post_id=existing_article.wp_post_id,
             title=title,
             html=_markdown_to_html(content),
-            meta_description=article.get("metaDescription") or "",
+            meta_description=meta_out,
             jsonld=jsonld_list,
             status=status,
             focus_keyword=keyword,
@@ -923,7 +946,7 @@ def generate_article(
         post_id = publish(
             title=title,
             html=_markdown_to_html(content),
-            meta_description=article.get("metaDescription") or "",
+            meta_description=meta_out,
             jsonld=jsonld_list,
             status=status,
             focus_keyword=keyword,
@@ -952,7 +975,7 @@ def generate_article(
                 row = ArticleModel(slug=slug)
                 _db.add(row)
             row.title = title
-            row.meta = article.get("metaDescription") or ""
+            row.meta = meta_out
             row.content_md = content
             row.faq_json = faq
             row.jsonld_json = jsonld_list
