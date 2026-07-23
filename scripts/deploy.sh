@@ -35,7 +35,10 @@ OAUTH_REDIRECT_BASE="${OAUTH_REDIRECT_BASE:-https://api-jnr6bsxyea-uc.a.run.app}
 
 # Env built with a '|' delimiter (gcloud ^|^ form) so values with commas/@/() survive intact.
 # DB_URL keeps its inner '=' (gcloud splits key=value on the first '=').
-BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|EMBED_BACKEND=vertex|LLM_BACKEND=vertex|EMBED_MODEL=gemini-embedding-001|LLM_MODEL=gemini-2.5-flash|DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}|WORKSPACE_ADMIN_SUBJECT=jon@perkinsroofing.net|WORKSPACE_DOMAIN=perkinsroofing.net"
+# LLM_BACKEND=cloudflare (prod flip 2026-07-23, Jon's go — PRODUCTION_CUTOVER_PLAN.md §2):
+# CF llama drafts, Vertex validates. EMBED_BACKEND MUST stay vertex — the pgvector index is
+# 3072-dim Vertex-embedded; grounding breaks otherwise. Rollback: LLM_BACKEND=vertex + redeploy.
+BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|EMBED_BACKEND=vertex|LLM_BACKEND=cloudflare|CLOUDFLARE_ACCOUNT_ID=3303058f686721d6877d6d1e8b8a448c|EMBED_MODEL=gemini-embedding-001|LLM_MODEL=gemini-2.5-flash|DB_URL=postgresql+psycopg://app@/perkins?host=/cloudsql/${CONN}|WORKSPACE_ADMIN_SUBJECT=jon@perkinsroofing.net|WORKSPACE_DOMAIN=perkinsroofing.net"
 # W0: WP_URL/YT_OWNER_CHANNEL_ID/WORKSPACE_ADMIN_SUBJECT are kept here as env fallbacks while
 # existing pipeline consumers (articles, faq, scheduling, jobs) still read os.environ. Full
 # per-tenant migration (Tenant.settings.integrations) is deferred to a later wave. The proposals
@@ -50,6 +53,9 @@ SECRETS="${SECRETS},YOUTUBE_OAUTH_REFRESH_TOKEN=youtube-oauth-refresh-token:late
 # Knowify OAuth token blob (Wave 8). Bootstrap-populated by Jon in Wave-9 step 4;
 # a placeholder version exists so :latest resolves at deploy time.
 SECRETS="${SECRETS},KNOWIFY_TOKENS_SECRET=knowify-tokens:latest"
+# Cloudflare Workers-AI (adapters/llm.CloudflareLLM) — the prod article generator since the
+# 2026-07-23 flip. Same token as the terraform CF provider (Secret Manager cloudflare-api-token).
+SECRETS="${SECRETS},CLOUDFLARE_API_TOKEN=cloudflare-api-token:latest"
 # Clip Studio b-roll (adapters/pexels.py). Same pattern as YOUTUBE_API_KEY/etc above:
 # the secret container has no version until Jon adds the real key out-of-band
 # (gcloud secrets versions add pexels-api-key --data-file=-) — deploy will fail to
