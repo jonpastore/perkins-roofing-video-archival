@@ -106,6 +106,69 @@ def _apply_repair(content_md: str, jsonld: list[dict], keyword: str, meta_descri
     return result.content_md, result.jsonld, result.issues
 
 
+def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> None:
+    """Apply EVERY idempotent, no-LLM structural ensure in-place — the complete
+    deterministic finalize. Safe to call repeatedly (each ensure is a no-op when
+    already satisfied). This is the single finalize used by the compliance gate's
+    re-pass AND by the publish path, so both routes converge on identical output.
+    (Video-link is LLM-free when a YouTube URL is already in the body; it only
+    reaches for retrieval when none is, hence the optional db.)"""
+    from core.seo import ensure_toc  # noqa: PLC0415
+
+    # FAQ ≥4
+    if not fields.get("faq_json"):
+        fields["faq_json"] = _fallback_faq(keyword, fields.get("content_md", ""))
+    elif len(fields["faq_json"]) < 4:
+        existing_qs = {f["q"].lower() for f in fields["faq_json"]}
+        for item in _fallback_faq(keyword, fields.get("content_md", "")):
+            if item["q"].lower() not in existing_qs and len(fields["faq_json"]) < 4:
+                fields["faq_json"].append(item)
+    # Title (keyword + length band + no bare number)
+    fields["title"] = _ensure_title_number(_ensure_title(fields.get("title", ""), keyword), keyword)
+
+    c = fields.get("content_md", "")
+    c = _ensure_video_link(c, keyword, db=db)
+    c = _ensure_article_image(c, keyword)
+    c = _ensure_img_alt_keyword(c, keyword)
+    c = _ensure_heading(c, keyword)
+    c = _ensure_answer_first(c, keyword, fields.get("faq_json") or [])
+    c = ensure_toc(c)
+    c = _ensure_internal_links(c, keyword, ctx)
+    c = _ensure_footer_link(c)
+    fields["content_md"] = c
+    fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""), c)
+    fields["jsonld_json"] = _build_article_jsonld(fields, ctx)
+
+
+def _compliance_gate(fields: dict, ctx: dict, keyword: str, db) -> tuple[list[dict], bool]:
+    """Run THE Wendy compliance checklist (core.article_criteria). If anything
+    fixable slipped, re-apply the idempotent ensures once and re-check. Returns
+    (serializable criteria list, all-pass bool). Non-fixable failures (unknown
+    video id, dead host) mean the article must not be treated as compliant."""
+    from core.article_criteria import check_compliance, failing  # noqa: PLC0415
+
+    known = _repair_inputs(db)["known_video_ids"] if db is not None else set()
+
+    def _run():
+        return check_compliance(
+            fields.get("content_md", ""), fields.get("meta", ""),
+            fields.get("jsonld_json") or [], fields.get("faq_json") or [],
+            {**ctx, "title": fields.get("title", ""), "slug": fields.get("slug", "")},
+            keyword, known)
+
+    comp = _run()
+    if failing(comp):
+        _reapply_fixable_ensures(fields, ctx, keyword)
+        comp = _run()
+    fails = failing(comp)
+    if fails:
+        logger.error("COMPLIANCE FAIL %r: %s", keyword,
+                     [(c.key, c.detail) for c in fails])
+    return ([{"key": c.key, "label": c.label, "ok": c.ok,
+              "fixable": c.fixable, "detail": c.detail} for c in comp],
+            not fails)
+
+
 # ---------------------------------------------------------------------------
 # HTML sanitizer — strips/converts residual markdown artifacts
 # ---------------------------------------------------------------------------
@@ -2179,10 +2242,17 @@ def generate_scored_article(
     fields["jsonld_json"] = jsonld
     fields["seo_score"] = result["score"]
     fields["unsourced_terms"] = _audit_grounding(fields, keyword, transcript)
+
+    # ── Compliance gate (THE authoritative Wendy checklist) ──────────────────
+    # Every ensure above is idempotent, so one more pass can only fix ordering
+    # gaps; we run the whole checklist, re-apply the fixable ensures if anything
+    # slipped, and re-check. The result is attached so no caller can publish an
+    # article that silently missed a criterion. See core.article_criteria.
+    fields["compliance"], fields["compliant"] = _compliance_gate(fields, ctx, keyword, db)
     logger.info(
-        "generate_scored_article %r → score %d/100 (%d iters) failing=%s",
-        keyword, result["score"], it,
-        [c["key"] for c in result["checks"] if not c["pass"]],
+        "generate_scored_article %r → score %d/100 (%d iters) compliant=%s failing=%s",
+        keyword, result["score"], it, fields["compliant"],
+        [c["key"] for c in fields["compliance"] if not c["ok"]],
     )
     return fields
 

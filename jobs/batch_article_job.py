@@ -122,12 +122,17 @@ def _gen_one(keyword: str, role: str, pillar_slug: str | None, critique: bool) -
     _tls.rec = {"in": 0, "out": 0, "calls": 0}
     ctx = {"keyword": keyword, "role": role, "pillar_slug": pillar_slug}
     ok, err = True, None
-    crit = {}
+    compliant, compliance, crit = None, [], {}
     try:
         with _stamped_session(1) as db:
             fields = generate_scored_article(
                 keyword, ctx, llm=_fresh_vertex(), db=db, critique=critique,
             )
+        # THE authoritative compliance verdict, computed by the generative loop itself
+        # (jobs.article_job._compliance_gate → core.article_criteria). Same check the
+        # publish gate uses, so "compliant" here == publishable.
+        compliant = fields.get("compliant")
+        compliance = fields.get("compliance") or []
         crit = _criteria({**fields, "keyword": keyword})
     except Exception as exc:  # noqa: BLE001 — a failed article is data, not a crash
         ok, err = False, f"{type(exc).__name__}: {exc}"
@@ -135,6 +140,8 @@ def _gen_one(keyword: str, role: str, pillar_slug: str | None, critique: bool) -
     rec = _tls.rec
     return {
         "keyword": keyword, "role": role, "ok": ok, "error": err,
+        "compliant": compliant,
+        "failing_criteria": [c["key"] for c in compliance if not c["ok"]],
         "calls": rec["calls"], "in_tok": rec["in"], "out_tok": rec["out"],
         **crit,
     }
@@ -186,16 +193,20 @@ def _aggregate(records: list[dict]) -> dict:
 
     calls = [r["calls"] for r in ok]
     scores = [r["seo_score"] for r in ok if r.get("seo_score") is not None]
-    # "met all criteria" = structural spec + score 100 + real word floor
-    met = [r for r in ok if r.get("seo_score") == 100 and r.get("faq_ge4")
-           and r.get("has_videoobject") and r.get("has_faqpage")
-           and (r.get("words") or 0) >= 900]
+    # "met all criteria" = the AUTHORITATIVE compliance verdict from the loop.
+    met = [r for r in ok if r.get("compliant") is True]
+    # Per-criterion failure tally across the batch (which criteria ever slip).
+    crit_fail = {}
+    for r in ok:
+        for k in r.get("failing_criteria") or []:
+            crit_fail[k] = crit_fail.get(k, 0) + 1
     return {
         "articles_total": n,
         "articles_ok": len(ok),
         "articles_failed": n - len(ok),
-        "met_all_criteria": len(met),
-        "met_criteria_rate": round(len(met) / max(len(ok), 1), 3),
+        "fully_compliant": len(met),
+        "compliance_rate": round(len(met) / max(len(ok), 1), 3),
+        "criteria_failures": crit_fail,   # which Wendy criteria ever slipped, and how often
         "avg_llm_calls": round(statistics.mean(calls), 2) if calls else 0,
         "max_llm_calls": max(calls) if calls else 0,
         "per_article_in_tok": round(per_article_in),
