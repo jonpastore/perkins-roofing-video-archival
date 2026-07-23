@@ -30,6 +30,7 @@ from api.routes.knowify import router as knowify_router
 from api.routes.logs import router as logs_router
 from api.routes.measurements import router as measurements_router
 from api.routes.payments import router as payments_router
+from api.routes.portfolio import router as portfolio_router
 from api.routes.price_book import router as price_book_router
 from api.routes.pricing_configs import router as pricing_configs_router
 from api.routes.proposal_gen import router as proposal_gen_router
@@ -125,6 +126,7 @@ app.include_router(squares_router)
 app.include_router(admin_metrics_router)
 app.include_router(audit_router)
 app.include_router(connections_router)
+app.include_router(portfolio_router)
 
 
 class Query(BaseModel):
