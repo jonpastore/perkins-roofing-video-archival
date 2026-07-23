@@ -774,6 +774,12 @@ resource "google_cloud_scheduler_job" "knowify_sync" {
   schedule  = "0 8-18 * * *"
   time_zone = "America/New_York"
 
+  # Paused 2026-07-23 (Jon): Knowify's server-side OAuth bug (RFC 8707 resource
+  # param 500s token minting — ticket open with Knowify support) makes every run
+  # exit 1 with auth_error, which flapped the failed-execution alert ~2 emails/hr.
+  # Unpause when Knowify confirms the fix; the job + alert policy stay intact.
+  paused = true
+
   http_target {
     uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/knowify-sync:run"
     http_method = "POST"

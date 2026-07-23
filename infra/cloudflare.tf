@@ -173,20 +173,20 @@ resource "cloudflare_dns_record" "txt_dkim" {
 # failing. rua reports to dmarc@perkinsroofing.net
 # (create the group in Google Admin if it doesn't exist yet).
 #
-# ruf (forensic) added 2026-07-14. No `fo` tag = fo=0 = report only when NO
-# aligned mechanism passes. Do NOT set fo=1 here: Mailchimp mail is aligned on
-# DKIM but always SPF-fails on its mcdlv.net envelope, so fo=1 would emit a
-# forensic copy of every campaign send (noise + recipient PII). fo=0 reports
-# real DMARC failures only — i.e. the spoofing we actually want to see.
+# ruf (forensic) REMOVED 2026-07-23 (Jon: stop the dmarc notices): p=reject has
+# been live and healthy, forensic copies added inbox noise + carry recipient PII,
+# and most large receivers never send ruf anyway. rua (aggregate) stays — it is
+# the only way to notice legit-mail breakage under reject — but it lands in the
+# dmarc@ group archive, not Jon's inbox (his membership delivery is set to NONE).
 #
-# rua/ruf are same-domain (perkinsroofing.net), so RFC 7489 §7.1 external
+# rua is same-domain (perkinsroofing.net), so RFC 7489 §7.1 external
 # destination verification does not apply — no _report._dmarc record needed.
 resource "cloudflare_dns_record" "txt_dmarc" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "_dmarc.perkinsroofing.net"
   type    = "TXT"
-  content = "v=DMARC1; p=reject; rua=mailto:dmarc@perkinsroofing.net; ruf=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
+  content = "v=DMARC1; p=reject; rua=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
   ttl     = 3600
   proxied = false
 }

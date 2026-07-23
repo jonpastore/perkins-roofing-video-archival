@@ -25,7 +25,9 @@ variable "budget_amount" {
 variable "alert_email" {
   type        = string
   description = "Email address for budget + Cloud Monitoring alert notifications. Empty disables all alert policies + the notification channel (count=0)."
-  default     = "dmarc@perkinsroofing.net"
+  # jon@ direct since 2026-07-23 — alerts were routing through the dmarc@ report
+  # group, polluting it and reaching Jon second-hand. DMARC stays DMARC.
+  default     = "jon@perkinsroofing.net"
 }
 
 variable "extra_auth_domains" {
