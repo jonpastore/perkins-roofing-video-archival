@@ -60,3 +60,18 @@ def test_swap_image_src_replaces_only_the_thumbnail_img():
 def test_swap_image_src_noop_without_a_thumbnail():
     assert swap_image_src("<p>plain</p>", "x") == "<p>plain</p>"
     assert current_image_src("<p>plain</p>") is None
+
+
+def test_wp_frame_urls_accepted_including_webp_conversion():
+    # WP/GoDaddy auto-converts uploaded JPEGs to .webp — the returned source_url
+    # must still validate and swap.
+    for ext in ("jpg", "webp", "png"):
+        u = f"https://x.com/wp-content/uploads/2026/07/frame-{VID}-120s.{ext}"
+        assert valid_candidate_url(u, {VID}), ext
+        assert valid_candidate_url(f"/wp-content/uploads/2026/07/frame-{VID}-120s.{ext}", {VID})
+    assert not valid_candidate_url(f"/wp-content/uploads/frame-{VID}-120s.gif", {VID})
+    assert not valid_candidate_url("/wp-content/uploads/other.jpg", {VID})
+    # swap works when current image IS an extracted frame (relative webp)
+    body = f'<img src="/wp-content/uploads/2026/07/frame-{VID}-120s.webp" alt="x" />'
+    out = swap_image_src(body, f"https://i.ytimg.com/vi/{VID}/maxres1.jpg")
+    assert "maxres1.jpg" in out and "webp" not in out

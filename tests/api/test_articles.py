@@ -523,3 +523,60 @@ def test_image_candidates_lists_frames_with_timecode_links(monkeypatch):
     frames = [x for x in data["candidates"] if not x["is_title_card"]]
     assert len(frames) == 3
     assert all(x["watch_url"].startswith("https://www.youtube.com/watch") for x in frames)
+
+
+# ---------------------------------------------------------------------------
+# Timecode frame extraction (POST /articles/{slug}/extract-frame)
+# ---------------------------------------------------------------------------
+
+def _seed_video(vid: str = VID, archive_uri: str | None = "gs://bkt/videos/x.mp4",
+                duration: float = 600):
+    from app.models import SessionLocal, Video
+    with SessionLocal() as db:
+        v = db.get(Video, vid)
+        if v is None:
+            db.add(Video(id=vid, title="T", duration=duration, url="u",
+                         archive_uri=archive_uri, tenant_id=1))
+        else:
+            v.archive_uri, v.duration = archive_uri, duration
+        db.commit()
+
+
+def test_extract_frame_happy_path(monkeypatch):
+    import adapters.ffmpeg
+    import adapters.storage
+    import adapters.wordpress as wp
+    monkeypatch.setattr(adapters.storage, "signed_get_url", lambda b, k: "https://signed/x")
+    monkeypatch.setattr(adapters.ffmpeg, "extract_frame", lambda src, t: b"\xff\xd8jpeg")
+    monkeypatch.setattr(wp, "upload_media", lambda fn, data: {
+        "id": 99, "source_url": f"https://1228404.us6.myftpupload.com/wp-content/uploads/2026/07/{fn}"})
+    _seed_image_article("img-extract")
+    _seed_video()
+    c = _admin_client()
+    r = c.post("/articles/img-extract/extract-frame",
+               json={"video_id": VID, "timecode": 83}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["url"].endswith(f"frame-{VID}-83s.jpg")
+    assert d["watch_url"].endswith("&t=83s")
+
+    # the returned URL is a valid choice, and is stored host-relative
+    r2 = c.put("/articles/img-extract/image", json={"url": d["url"]}, headers=AUTH)
+    assert r2.status_code == 200, r2.text
+    assert f'src="/wp-content/uploads/2026/07/frame-{VID}-83s.jpg"' in r2.json()["content_md"]
+
+
+def test_extract_frame_rejects_unarchived_video_and_bad_timecode():
+    _seed_image_article("img-extract-bad")
+    _seed_video(archive_uri=None)
+    c = _admin_client()
+    r = c.post("/articles/img-extract-bad/extract-frame",
+               json={"video_id": VID, "timecode": 10}, headers=AUTH)
+    assert r.status_code == 409  # no archive
+    _seed_video(archive_uri="gs://bkt/videos/x.mp4", duration=100)
+    r = c.post("/articles/img-extract-bad/extract-frame",
+               json={"video_id": VID, "timecode": 500}, headers=AUTH)
+    assert r.status_code == 422  # past end
+    r = c.post("/articles/img-extract-bad/extract-frame",
+               json={"video_id": "AAAAAAAAAAA", "timecode": 10}, headers=AUTH)
+    assert r.status_code == 422  # foreign video

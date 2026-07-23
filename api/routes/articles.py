@@ -358,8 +358,89 @@ def image_candidates(
         for c in resolve_candidates(vid, v.duration if v else None):
             candidates.append({**c, "video_id": vid,
                                "video_title": v.title if v else None})
+        # Previously-extracted timecode frames for this video (WP media, public read).
+        try:
+            import re as _re  # noqa: PLC0415
+
+            from adapters.wordpress import search_media  # noqa: PLC0415
+            for m in search_media(f"frame-{vid}"):
+                src = m.get("source_url") or ""
+                t = _re.search(rf"frame-{_re.escape(vid)}-(\d+)s", src)
+                if not t:
+                    continue
+                tc = int(t.group(1))
+                candidates.append({
+                    "position": None, "url": src, "fallback_url": src,
+                    "timecode": tc,
+                    "watch_url": f"https://www.youtube.com/watch?v={vid}&t={tc}s",
+                    "is_title_card": False, "extracted": True,
+                    "video_id": vid, "video_title": v.title if v else None,
+                })
+        except Exception as exc:  # noqa: BLE001 — gallery must not break on a WP hiccup
+            logger.warning("media search failed for %s: %s", vid, exc)
     return {"slug": slug, "current": current_image_src(a.content_md or ""),
-            "candidates": candidates}
+            "candidates": candidates,
+            "video_durations": {vid: db.get(Video, vid).duration
+                                for vid in embedded_video_ids(a.content_md or "")
+                                if db.get(Video, vid)}}
+
+
+class ExtractFrameRequest(BaseModel):
+    video_id: str
+    timecode: int  # seconds into the video
+
+
+@router.post("/{slug}/extract-frame")
+def extract_frame_route(
+    slug: str,
+    body: ExtractFrameRequest,
+    claims=Depends(require_role("manage_articles")),
+    db: Session = Depends(get_db_session),
+):
+    """Extract a frame at an exact timecode from the article's archived source video
+    and host it in the WP media library. Returns the frame URL for the gallery; the
+    client then sets it via PUT /{slug}/image. Full source resolution (capped 1600px)
+    — sharper and more varied than the four YouTube-hosted thumbnails.
+    """
+    from app.models import Video  # noqa: PLC0415
+    from core.article_images import embedded_video_ids, frame_filename  # noqa: PLC0415
+
+    a = db.get(Article, slug)
+    if a is None:
+        raise HTTPException(status_code=404, detail="article not found")
+    if body.video_id not in embedded_video_ids(a.content_md or ""):
+        raise HTTPException(status_code=422, detail="video is not embedded in this article")
+    if body.timecode < 0:
+        raise HTTPException(status_code=422, detail="timecode must be >= 0")
+    v = db.get(Video, body.video_id)
+    if v is None or not v.archive_uri:
+        raise HTTPException(status_code=409, detail="video has no archived source to extract from")
+    if v.duration and body.timecode >= v.duration:
+        raise HTTPException(status_code=422,
+                            detail=f"timecode past end of video ({int(v.duration)}s)")
+
+    from adapters.ffmpeg import extract_frame  # noqa: PLC0415
+    from adapters.storage import signed_get_url  # noqa: PLC0415
+    from adapters.wordpress import upload_media  # noqa: PLC0415
+
+    bucket, _, key = v.archive_uri.removeprefix("gs://").partition("/")
+    try:
+        jpeg = extract_frame(signed_get_url(bucket, key), body.timecode)
+    except Exception as exc:  # noqa: BLE001 — surface extraction failure as a clean 502
+        logger.warning("frame extraction failed %s t=%s: %s", body.video_id, body.timecode, exc)
+        raise HTTPException(status_code=502, detail=f"frame extraction failed: {exc}") from exc
+    try:
+        media = upload_media(frame_filename(body.video_id, body.timecode), jpeg)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("frame upload to WP failed %s t=%s: %s", body.video_id, body.timecode, exc)
+        raise HTTPException(status_code=502, detail=f"WP media upload failed: {exc}") from exc
+    return {
+        "url": media["source_url"],
+        "media_id": media["id"],
+        "video_id": body.video_id,
+        "timecode": body.timecode,
+        "watch_url": f"https://www.youtube.com/watch?v={body.video_id}&t={body.timecode}s",
+    }
 
 
 class SetImageRequest(BaseModel):
@@ -394,7 +475,12 @@ def set_article_image(
                             detail="url is not a thumbnail variant of this article's video")
     if current_image_src(a.content_md or "") is None:
         raise HTTPException(status_code=409, detail="article has no image to replace")
-    a.content_md = swap_image_src(a.content_md, body.url)
+    # Extracted wp-content frames are stored host-relative: the repair pass strips
+    # absolute staging-host srcs (_image_allowed) and the host dies at cutover anyway.
+    url = body.url
+    if "/wp-content/uploads/" in url and url.startswith("http"):
+        url = "/" + url.split("://", 1)[1].split("/", 1)[1]
+    a.content_md = swap_image_src(a.content_md, url)
 
     if a.wp_post_id:
         try:

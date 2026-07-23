@@ -475,14 +475,24 @@ function HtmlEditor({ value, onChange }: HtmlEditorProps) {
 type ModalTab = "article" | "seo" | "image";
 
 interface ImageCandidate {
-  position: number;
+  position: number | null;
   url: string;
   fallback_url: string;
   timecode: number | null;
   watch_url: string;
   is_title_card: boolean;
+  extracted?: boolean;
   video_id: string;
   video_title: string | null;
+}
+
+/** "1:23" or "83" -> seconds */
+function parseTimecode(s: string): number | null {
+  const t = s.trim();
+  if (!t) return null;
+  if (/^\d+$/.test(t)) return parseInt(t, 10);
+  const m = t.match(/^(\d+):([0-5]?\d)$/);
+  return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : null;
 }
 
 /** Curated-image gallery: pick which in-video frame is the article's image. */
@@ -492,6 +502,8 @@ function ImageTab({ slug, onApplied }: { slug: string; onApplied: () => void }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState<string | null>(null);
+  const [tcInput, setTcInput] = useState("");
+  const [extracting, setExtracting] = useState(false);
 
   useEffect(() => {
     apiFetch(`/articles/${slug}/image-candidates`)
@@ -500,6 +512,34 @@ function ImageTab({ slug, onApplied }: { slug: string; onApplied: () => void }) 
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [slug]);
+
+  async function extractFrame() {
+    const t = parseTimecode(tcInput);
+    if (t == null) { setError("Enter a timecode as seconds or m:ss (e.g. 1:23)"); return; }
+    const vid = candidates[0]?.video_id;
+    if (!vid) return;
+    setExtracting(true);
+    setError(null);
+    try {
+      const r = await apiFetch(`/articles/${slug}/extract-frame`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ video_id: vid, timecode: t }),
+      });
+      if (!r.ok) throw new Error((await r.json())?.detail ?? `HTTP ${r.status}`);
+      const d = await r.json();
+      setCandidates((prev) => [...prev, {
+        position: null, url: d.url, fallback_url: d.url, timecode: d.timecode,
+        watch_url: d.watch_url, is_title_card: false, extracted: true,
+        video_id: d.video_id, video_title: null,
+      }]);
+      setTcInput("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExtracting(false);
+    }
+  }
 
   async function choose(url: string) {
     setApplying(url);
@@ -527,14 +567,43 @@ function ImageTab({ slug, onApplied }: { slug: string; onApplied: () => void }) 
       <p style={{ fontSize: 13, color: BRAND.sub, margin: "0 0 14px" }}>
         Choose the article image from real frames of its video. Frames are pulled at ~25/50/75%
         of the video; the title card is the same image YouTube shows as the video thumbnail.
+        For anything else, extract an exact moment below — full source quality.
       </p>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+        <input
+          value={tcInput}
+          onChange={(e) => setTcInput(e.target.value)}
+          placeholder="timecode — 1:23 or 83"
+          onKeyDown={(e) => e.key === "Enter" && !extracting && extractFrame()}
+          style={{
+            padding: "7px 10px", fontSize: 13, borderRadius: 6,
+            border: `1px solid ${BRAND.border}`, width: 170,
+          }}
+        />
+        <button
+          onClick={extractFrame}
+          disabled={extracting}
+          style={{
+            fontSize: 13, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
+            border: "none", background: BRAND.red, color: "#fff", fontWeight: 600,
+            opacity: extracting ? 0.6 : 1,
+          }}
+        >
+          {extracting ? "Extracting…" : "Extract frame"}
+        </button>
+        <span style={{ fontSize: 12, color: BRAND.sub }}>
+          Tip: find the moment via a frame's "in video ↗" link, note the time, extract it here.
+        </span>
+      </div>
       {error && <ErrorMsg>{error}</ErrorMsg>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}>
         {candidates.map((c) => {
-          const active = current === c.url || current === c.fallback_url;
+          // Extracted frames are stored host-relative in the article; match by path suffix.
+          const active = !!current && (current === c.url || current === c.fallback_url ||
+            (current.startsWith("/") && c.url.endsWith(current)));
           return (
             <div
-              key={`${c.video_id}-${c.position}`}
+              key={c.url}
               style={{
                 border: active ? `2px solid ${BRAND.red}` : `1px solid ${BRAND.border}`,
                 borderRadius: 10, overflow: "hidden", background: "#fff",
@@ -549,7 +618,9 @@ function ImageTab({ slug, onApplied }: { slug: string; onApplied: () => void }) 
               />
               <div style={{ padding: "8px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 12, color: BRAND.sub }}>
-                  {c.is_title_card ? "Title card" : `~${c.timecode != null ? `${Math.floor(c.timecode / 60)}:${String(c.timecode % 60).padStart(2, "0")}` : `frame ${c.position}`}`}
+                  {c.is_title_card ? "Title card"
+                    : `${c.extracted ? "" : "~"}${c.timecode != null ? `${Math.floor(c.timecode / 60)}:${String(c.timecode % 60).padStart(2, "0")}` : `frame ${c.position}`}`}
+                  {c.extracted && <em> · extracted</em>}
                   {active && <strong style={{ color: BRAND.red }}> · current</strong>}
                 </span>
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>

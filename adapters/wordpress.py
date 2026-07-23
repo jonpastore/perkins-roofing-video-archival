@@ -351,3 +351,27 @@ def push_llms_txt(content: str) -> dict:
     resp = _session.post(url, json={"content": content}, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return resp.json()
+
+
+def upload_media(filename: str, data: bytes, mime: str = "image/jpeg") -> dict:
+    """Upload a media file (POST /wp-json/wp/v2/media). Returns the created
+    attachment dict — ``source_url`` is the public URL, ``id`` the media id."""
+    url = _wp_api_url("/wp-json/wp/v2/media")
+    resp = _session.post(
+        url,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": mime,
+        },
+        data=data, auth=_auth(), timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def search_media(term: str, per_page: int = 20) -> list[dict]:
+    """Search the media library by filename/title (public REST read, no auth)."""
+    url = _wp_api_url("/wp-json/wp/v2/media")
+    resp = _session.get(url, params={"search": term, "per_page": per_page}, timeout=30)
+    resp.raise_for_status()
+    return resp.json()

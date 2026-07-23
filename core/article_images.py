@@ -14,9 +14,19 @@ import re
 
 FRAME_POSITIONS = (1, 2, 3)  # YouTube thumb N sits at ~N/4 of the video
 
-# The first <img> whose src is a YouTube thumbnail (either host).
+# The first <img> whose src is a YouTube thumbnail (either host) OR an extracted
+# wp-content frame (frame-<videoid>-<t>s.jpg, uploaded by the extract-frame route).
 _YT_IMG_SRC_RE = re.compile(
-    r'(<img\b[^>]*\bsrc=")(https?://(?:img\.youtube\.com|i\.ytimg\.com)/vi/[^/"]+/[^"]+)(")',
+    r'(<img\b[^>]*\bsrc=")'
+    r'(https?://(?:img\.youtube\.com|i\.ytimg\.com)/vi/[^/"]+/[^"]+'
+    r'|(?:https?://[^/"]+)?/wp-content/uploads/[^"]*frame-[A-Za-z0-9_-]{11}-\d+s[^"]*\.(?:jpe?g|webp|png))'
+    r'(")',
+    re.IGNORECASE,
+)
+
+# An extracted-frame URL: wp-content upload whose basename ties it to a video id.
+_WP_FRAME_RE = re.compile(
+    r"^(?:https?://[^/]+)?/wp-content/uploads/.*frame-([A-Za-z0-9_-]{11})-\d+s[^/]*\.(?:jpe?g|webp|png)$",
     re.IGNORECASE,
 )
 
@@ -70,9 +80,18 @@ def embedded_video_ids(content: str) -> list[str]:
 
 
 def valid_candidate_url(url: str, allowed_video_ids: set[str]) -> bool:
-    """True when *url* is a known thumbnail variant of an allowed video."""
+    """True when *url* is a known thumbnail variant OR an extracted wp-content
+    frame of an allowed video — the image must stay honest to the article's video."""
     m = _VARIANT_RE.match(url or "")
-    return bool(m and m.group(1) in allowed_video_ids)
+    if m:
+        return m.group(1) in allowed_video_ids
+    f = _WP_FRAME_RE.match(url or "")
+    return bool(f and f.group(1) in allowed_video_ids)
+
+
+def frame_filename(video_id: str, timecode: int) -> str:
+    """Canonical extracted-frame filename — _WP_FRAME_RE ties it back to its video."""
+    return f"frame-{video_id}-{int(timecode)}s.jpg"
 
 
 def current_image_src(content: str) -> str | None:

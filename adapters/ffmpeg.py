@@ -323,3 +323,31 @@ def run_ffmpeg_cmd(cmd: list[str]) -> None:
     if cmd:
         cmd = [_FFMPEG] + cmd[1:]
     subprocess.run(cmd, check=True, capture_output=True, timeout=_ENCODE_TIMEOUT)
+
+
+def extract_frame(src: str, timecode: float, *, max_width: int = 1600) -> bytes:
+    """Extract a single JPEG frame from *src* (path or URL) at *timecode* seconds.
+
+    ``-ss`` before ``-i`` seeks by keyframe index without reading the stream up to
+    the target, so extraction from a remote (signed GCS) URL only ranges the bytes
+    it needs. Frames wider than *max_width* are scaled down (source videos are up
+    to 4K; article images don't need more).
+
+    Returns:
+        JPEG bytes.
+
+    Raises:
+        subprocess.CalledProcessError: if ffmpeg exits non-zero.
+        subprocess.TimeoutExpired: if the call exceeds _ENCODE_TIMEOUT.
+        ValueError: if ffmpeg produced no frame (timecode past end of video).
+    """
+    cmd = [
+        _FFMPEG, "-ss", str(timecode), "-i", src,
+        "-frames:v", "1", "-q:v", "2",
+        "-vf", f"scale='min({max_width},iw)':-2",
+        "-f", "image2", "pipe:1",
+    ]
+    proc = subprocess.run(cmd, check=True, capture_output=True, timeout=_ENCODE_TIMEOUT)
+    if not proc.stdout:
+        raise ValueError(f"no frame at t={timecode}s (past end of video?)")
+    return proc.stdout
