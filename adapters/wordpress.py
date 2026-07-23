@@ -375,3 +375,72 @@ def search_media(term: str, per_page: int = 20) -> list[dict]:
     resp = _session.get(url, params={"search": term, "per_page": per_page}, timeout=30)
     resp.raise_for_status()
     return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Avada Portfolio (extracted from scripts/portfolio_publish.py so the admin
+# API route and the CLI script share one implementation — see #384)
+# ---------------------------------------------------------------------------
+
+PORTFOLIO_TAXONOMIES = {"category": "portfolio_category", "tags": "portfolio_tags", "skills": "portfolio_skills"}
+
+
+def _get_or_create_portfolio_term(taxonomy_rest: str, name: str) -> int:
+    """Look up an Avada Portfolio taxonomy term by exact (case-insensitive) name,
+    creating it if missing."""
+    url = _wp_api_url(f"/wp-json/wp/v2/{taxonomy_rest}")
+    resp = _session.get(url, auth=_auth(), params={"search": name, "per_page": 100}, timeout=20)
+    resp.raise_for_status()
+    for term in resp.json():
+        if term["name"].strip().lower() == name.strip().lower():
+            return term["id"]
+    resp = _session.post(url, auth=_auth(), json={"name": name}, timeout=20)
+    resp.raise_for_status()
+    return resp.json()["id"]
+
+
+def find_portfolio_post(title: str) -> dict | None:
+    """Find an existing avada_portfolio post (any status) by exact (case-insensitive)
+    title match. Returns {"id": int, "status": str} or None."""
+    url = _wp_api_url("/wp-json/wp/v2/avada_portfolio")
+    resp = _session.get(url, auth=_auth(),
+                         params={"search": title, "status": "any", "per_page": 100}, timeout=20)
+    resp.raise_for_status()
+    for post in resp.json():
+        if post["title"]["rendered"].strip().lower() == title.strip().lower():
+            return {"id": post["id"], "status": post["status"]}
+    return None
+
+
+def publish_portfolio_post(post: dict, *, dry_run: bool = False) -> dict:
+    """Create an Avada Portfolio draft from a post payload
+    ({title, content, status, category, tags[], skills[]}), or report the existing post if
+    one with the same title already exists (idempotent — never creates a duplicate).
+    Creates the 3 taxonomy terms (portfolio_category/portfolio_tags/portfolio_skills) on
+    first use if missing.
+    """
+    existing = find_portfolio_post(post["title"])
+    if existing:
+        return {"title": post["title"], "status": "skipped-exists", "post_id": existing["id"]}
+
+    if dry_run:
+        return {"title": post["title"], "status": "dry-run", "category": post["category"],
+                 "tags": post["tags"], "skills": post["skills"]}
+
+    term_ids = {"portfolio_category": [
+        _get_or_create_portfolio_term(PORTFOLIO_TAXONOMIES["category"], post["category"])
+    ]}
+    if post["tags"]:
+        term_ids["portfolio_tags"] = [
+            _get_or_create_portfolio_term(PORTFOLIO_TAXONOMIES["tags"], t) for t in post["tags"]
+        ]
+    if post["skills"]:
+        term_ids["portfolio_skills"] = [
+            _get_or_create_portfolio_term(PORTFOLIO_TAXONOMIES["skills"], s) for s in post["skills"]
+        ]
+
+    payload = {"title": post["title"], "content": post["content"], "status": post["status"], **term_ids}
+    url = _wp_api_url("/wp-json/wp/v2/avada_portfolio")
+    resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
+    resp.raise_for_status()
+    return {"title": post["title"], "status": "created", "post_id": resp.json()["id"]}

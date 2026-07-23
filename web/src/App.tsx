@@ -7,6 +7,7 @@ import { SearchAsk } from "./pages/SearchAsk";
 import { VideoApproval } from "./pages/VideoApproval";
 import { Status } from "./pages/Status";
 import { Articles } from "./pages/Articles";
+import { Portfolio } from "./pages/Portfolio";
 import { Scheduling } from "./pages/Scheduling";
 import { Faq } from "./pages/Faq";
 import { Opportunities } from "./pages/Opportunities";
@@ -86,6 +87,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         tabs: [
           ["opportunities", "Opportunities"],
           ["articles", "Articles"],
+          ["portfolio", "Portfolio"],
           ["scheduling", "Scheduling"],
           ["clip-studio", "Clip Studio"],
           ["comments", "Comments"],
@@ -134,6 +136,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
         tabs: [
           ["opportunities", "Opportunities"],
           ["articles", "Articles"],
+          ["portfolio", "Portfolio"],
           ["scheduling", "Scheduling"],
           ["clip-studio", "Clip Studio"],
           ["comments", "Comments"],
@@ -548,6 +551,7 @@ function TabContent({ tab, role }: { tab: string; role: Role }) {
       {tab === "search-ask" && <SearchAsk />}
       {tab === "opportunities" && <Opportunities />}
       {tab === "articles" && <Articles />}
+      {tab === "portfolio" && <Portfolio />}
       {tab === "faq" && <Faq />}
       {tab === "email" && <Email />}
       {tab === "scheduling" && <Scheduling />}
