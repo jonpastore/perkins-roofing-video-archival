@@ -173,20 +173,19 @@ resource "cloudflare_dns_record" "txt_dkim" {
 # failing. rua reports to dmarc@perkinsroofing.net
 # (create the group in Google Admin if it doesn't exist yet).
 #
-# ruf (forensic) REMOVED 2026-07-23 (Jon: stop the dmarc notices): p=reject has
-# been live and healthy, forensic copies added inbox noise + carry recipient PII,
-# and most large receivers never send ruf anyway. rua (aggregate) stays — it is
-# the only way to notice legit-mail breakage under reject — but it lands in the
-# dmarc@ group archive, not Jon's inbox (his membership delivery is set to NONE).
-#
-# rua is same-domain (perkinsroofing.net), so RFC 7489 §7.1 external
-# destination verification does not apply — no _report._dmarc record needed.
+# ruf (forensic) + rua (aggregate) REMOVED 2026-07-23 (Jon: stop the dmarc
+# notices; only actionable email). p=reject is live and healthy, so the daily
+# aggregate digests are diagnostics nobody reads — receivers stop sending them
+# when the rua tag is gone. Enforcement (p=reject) is unaffected: the policy
+# works with zero reporting. If a legit-mail delivery problem ever needs
+# investigating, re-add `rua=mailto:dmarc@perkinsroofing.net; ` temporarily —
+# reports resume within ~a day.
 resource "cloudflare_dns_record" "txt_dmarc" {
   count   = var.cloudflare_zone_id != "" ? 1 : 0
   zone_id = var.cloudflare_zone_id
   name    = "_dmarc.perkinsroofing.net"
   type    = "TXT"
-  content = "v=DMARC1; p=reject; rua=mailto:dmarc@perkinsroofing.net; adkim=r; aspf=r"
+  content = "v=DMARC1; p=reject; adkim=r; aspf=r"
   ttl     = 3600
   proxied = false
 }
@@ -195,15 +194,9 @@ resource "cloudflare_dns_record" "txt_dmarc" {
 # Reporting only: no enforcement, so this cannot affect mail delivery. Stands
 # alone (does not require MTA-STS); it is the visibility half of the pair.
 # MTA-STS itself is NOT provisioned — see the MTA-STS note below.
-resource "cloudflare_dns_record" "txt_tlsrpt" {
-  count   = var.cloudflare_zone_id != "" ? 1 : 0
-  zone_id = var.cloudflare_zone_id
-  name    = "_smtp._tls.perkinsroofing.net"
-  type    = "TXT"
-  content = "v=TLSRPTv1; rua=mailto:dmarc@perkinsroofing.net"
-  ttl     = 3600
-  proxied = false
-}
+# TLS-RPT record REMOVED 2026-07-23 (Jon: only actionable email) — same
+# diagnostics-nobody-reads class as the DMARC rua reports; without MTA-STS
+# enforce mode it informed nothing. Re-add alongside MTA-STS if that ships.
 
 # ---------------------------------------------------------------------------
 # MTA-STS — DEFERRED, blocked on two things only Jon can provision:
