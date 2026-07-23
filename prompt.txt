@@ -1,71 +1,62 @@
 Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-22.md (full state). docs/PRODUCTION_CUTOVER_PLAN.md (cutover
-checklist + model routing + the CF prod flip). HEAD == origin/main, clean. Deployed prod image
-== HEAD (d1e25b5 or newer — check `git rev-parse --short HEAD` vs the api image).
+READ FIRST: CONTINUATION-2026-07-22-pm.md (full state). docs/PRODUCTION_CUTOVER_PLAN.md
+(cutover checklist + the CF prod flip). HEAD == origin/main (clean).
+PROD IMAGE IS BEHIND HEAD: prod runs platform:1a96dda; commits 6657a7d (article_repair
+pipeline) + ac77a44 (portfolio) are NOT deployed. Deploy BEFORE any bulk article generation.
 
 STANDING RULE — BINDING model routing (Jon 2026-07-22):
-- All creative/content (articles, llms.txt, portfolio write-ups, scope-of-work AI rewrite) →
-  CLOUDFLARE free-tier llama (LLM_BACKEND=cloudflare, @cf/meta/llama-3.3-70b-instruct-fp8-fast),
-  VALIDATED by Vertex/Gemini. Local gpt-oss was 1-time priming only — prod does NOT depend on it.
-- App code (toggles, estimator, connectors) → build with SONNET or qwen-coder 3.6, review with OPUS 4.8.
-- .env is ONLY a secure key transport into the vault — NEVER a runtime config source. Site URL etc.
-  come from the admin config (PlatformConfig), not env.
+- All creative/content (articles, llms.txt, portfolio write-ups, scope-of-work rewrite) →
+  CLOUDFLARE free-tier llama (@cf/meta/llama-3.3-70b-instruct-fp8-fast), VALIDATED by
+  Vertex/Gemini. CF free tier = 10k neurons/day ≈ 3 articles — bursts run paid (~$145/3k total).
+- App code → SONNET or qwen-coder 3.6 executors; OPUS only for plan/review. Offload to
+  llm/Hermes free lanes first.
+- .env is ONLY a secure key transport — NEVER runtime config. WP_URL etc. come from admin
+  config (PlatformConfig via adapters.wordpress.resolved_wp_url) — zero env reads remain.
 
 FIRST STEPS on resume:
-- Start the Cloud SQL proxy: `/tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &`
-  (needs GOOGLE_APPLICATION_CREDENTIALS=/home/jon/.config/gcloud/perkins-deploy-sa.json). DB reads:
-  raw psycopg + `SET app.tenant_id='1'`, or jobs.article_job._stamped_session(1).
+- Cloud SQL proxy: `/tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &`
+  (GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json). Real DB:
+  `PW=$(gcloud secrets versions access latest --secret=db-password)` →
+  DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins" (.env DB_URL is dev sqlite!).
+  Reads: raw psycopg + `SET app.tenant_id='1'`, or jobs.article_job._stamped_session(1).
+- CF Workers-AI creds: CLOUDFLARE_ACCOUNT_ID=3303058f686721d6877d6d1e8b8a448c,
+  token = Secret Manager `cloudflare-api-token`. adapters.llm.CloudflareLLM verified live.
 
-STATE: 61 articles LIVE + validated on new staging https://1228404.us6.myftpupload.com (30 new +
-31 refreshed; FAQ+Video schema, no /blog/, footer, 200 service links). Ready for Wendy's review.
-Prod on d1e25b5, LLM_BACKEND=vertex (CF adapter dormant), SEO submission OFF, email test-mode.
-CF Workers-AI verified: token=Secret Manager cloudflare-api-token (has Workers AI), account
-3303058f686721d6877d6d1e8b8a448c. WP staging app pw vaulted (wordpress-app-password v3), WP_USER=jon,
-admin PlatformConfig WP_URL=1228404. o365 mail MCP wired (drafts to DeGenito Outlook).
+STATE: staging 1228404 fully audited+repaired — 61 articles (FAQ 61/61, VideoObject 61/61,
+categories/featured/TOC/service-links/no-dead-links all verified live), llms.txt (Wendy
+preamble preserved) + robots AI allowlist live, 13 portfolio drafts (8287-8299). The repair
+passes are now IN the pipeline (core/article_repair.py). Wendy reply DRAFT sits in the
+DeGenito Outlook with the prefill CSV attached, 13-point verified — JON SENDS IT (don't
+Graph-edit while he has it open: Outlook autosave clobbers; recipe in continuation).
 
-DONE 2026-07-22 pm: (1) llms.txt SHIPPED+LIVE on staging (plugin v1.2.0 serves /llms.txt +
-robots.txt AI allowlist via filter; jobs/llms_txt_job appends 61 articles to Wendy's hand-written
-preamble = PlatformConfig LLMS_TXT_PREAMBLE; NEVER push without the preamble). (2) Repair/re-roof
-toggle + scope-of-work AI rewrite SHIPPED (POST /estimator/scope-of-work/rewrite via app.llm.chat;
-template in config scope_of_work.default_template; repair proposals now send-valid). Residual for
-#387: scope_of_work_text not yet rendered into the contract PDF (proposal_render) — phase-4.
+PICK UP:
+1. DEPLOY main → prod (picks up article_repair + portfolio; clean tree; deploy.sh hardcodes
+   vertex). Then prod smoke.
+2. CF PROD FLIP on Jon's go — terraform: inject CLOUDFLARE_API_TOKEN into Cloud Run api+jobs,
+   set LLM_BACKEND=cloudflare + CLOUDFLARE_ACCOUNT_ID; apply + deploy + 1-article smoke.
+   See PRODUCTION_CUTOVER_PLAN.md §2.
+3. After Wendy/Tim respond: portfolio follow-ups (#407 extend her candidates doc from
+   CRM/YouTube; expand 13 write-ups to 500-1500-word case studies from punch-list answers;
+   CompanyCam import when Jon lands creds). #384 UI remains.
+4. Zoom-gap tasks #396-402 (price book tab, license placeholder, YT comments, go-live banner,
+   GitHub org, lumber PDF, aluminum YT link) + #410 (generation-side placeholder-video-id
+   guard) + #409 (test_topics live-LLM hang fix) + #387 residual (SOW text → contract PDF).
+5. 3,000-article run ONLY after: deploy (repair live) + CF flip + Wendy sign-off + 1-2 live
+   test posts. Cadence 10/day via ScheduledContent (bulk publish = spam risk).
 
-DONE 2026-07-22 pm (2): (3) Portfolio automation SHIPPED (ac77a44) — 13 Avada Portfolio DRAFTS
-on staging (8287-8299, cats/tags/skills verified); wendy sheet prefilled at
-docs/portfolio/wendy-sheet-prefill-2026-07-22.csv (~22-27/30 fields still need Tim/Wendy);
-4 projects doc-only (no Knowify match): River Place, Abacoa, SL Construction, Malooly.
-Re-run: portfolio_prefill.py -> portfolio_publish.py (idempotent; targets admin-config WP_URL).
-CompanyCam photo pull still blocked on creds (Jon). Zoom-gap tasks filed: Jarvis #396-403;
-o365-api stale-RT bug #404 (drafts work via direct Graph on cerberus meanwhile).
+WAITING: Jon (send Wendy draft; CF flip go; CompanyCam creds; #403 browser_check decision —
+zone is NOT ours, Jon corrected; #408 webadmin invite; prod WP app pw; SEO creds). Wendy
+(staging review + criteria; parity confirm). Tim (punch-list tier-1 + permissions;
+residential/Jupiter candidates; 6 pricing items; lumber PDF).
 
-SHIPPED LATE 7/22 (commit 6657a7d, NOT yet deployed — next deploy picks it up; needed before
-any bulk generation run): core/article_repair.py — deterministic repair+QA pass IN the
-generative loop (fuzzy-fix corrupted YT ids, strip invented images, unwrap dead links, host
-rewrite, VideoObject sync, service links, TOC H2-only; wp-field hooks for category/featured).
-Staging 61 fully audited+fixed twice over (validate_all.py + second_pass.py patterns in the
-7/22 memory); Wendy draft in Outlook is FINAL (surgically patched around Jon's edits) — SEND IT.
-Categories (28-cat taxonomy via CF llama) + featured images now set on all 61.
+OPERATE: deploy = `set -a; source .env; set +a; export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json; bash scripts/deploy.sh` (CLEAN tree). Smoke = .venv/bin/python
+scripts/prod_smoke.py. SPA = cd web && npm run build && firebase deploy --only hosting:app.
+R6: every commit updates docs + Jarvis + memory.
 
-PICK UP (build to the routing policy above):
-OLD-3. Portfolio automation (Wendy): 30-field Google Sheet -> Avada Portfolio (cats Commercial/
-   Residential/Construction, tags=location, skills=roof-type). CF write-ups from CompanyCam+proposal+
-   YouTube; permissions human-gated. Doc/Sheet IDs in the O365 "Meeting notes and info" thread.
-4. CF PROD FLIP (terraform: inject CLOUDFLARE_API_TOKEN into Cloud Run api+jobs + set
-   LLM_BACKEND=cloudflare; apply + deploy). See docs/PRODUCTION_CUTOVER_PLAN.md §2.
-5. Deploy SPA if any web/ changes shipped: cd web && npm run build && firebase deploy --only hosting:app.
-
-WAITING ON WENDY (wendy@webpowermarketing.com): staging<->prod parity (breadcrumbs on prod 7/16 not
-staging); prod Rank Math config (no dup FAQ schema); review the 61; project data. WAITING ON TIM:
-6 pricing items ($1185/$1435 labor CONFIRMED). WAITING ON JON: CF prod-flip go; prod WP app password
-at cutover; SEO submission creds (IndexNow key + Google Indexing SA).
-
-OPERATE: deploy = `set -a; source .env; set +a; export GOOGLE_APPLICATION_CREDENTIALS=/home/jon/
-.config/gcloud/perkins-deploy-sa.json; bash scripts/deploy.sh` (CLEAN tree; deploy.sh hardcodes
-vertex+prod, bakes WP_URL from .env but runtime uses admin-config WP_URL). Prod smoke =
-.venv/bin/python scripts/prod_smoke.py. R6: every commit updates docs + Jarvis + memory.
-
-GOTCHAS: prod LLM_BACKEND flip to cloudflare is DELIBERATE (terraform, not automatic). Never run a
-writer executor + deploy.sh concurrently (deploy needs clean tree). Agent-tool worktrees can spawn
-STALE (pre-merge) — use `git worktree add <path> main` for a current base. Cloud SQL proxy must be
-running for DB work.
+GOTCHAS: staging WP 429s under fast crawls — throttle 1-1.5s + backoff, fresh cache-buster
+per run. GoDaddy 31-day static cache — flush via wp-admin admin-bar nonce URL (Playwright
+navigate; link hidden in dropdown). Outlook mail: pull FULL untruncated bodies (cerberus
+~/gmail-enhanced-mcp msal + Graph, scope must be https://graph.microsoft.com/Mail.ReadWrite).
+Never run writer executors + deploy.sh concurrently. Agent worktrees can spawn stale — use
+`git worktree add <path> main`.
