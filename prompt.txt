@@ -35,6 +35,21 @@ SPA favicon/title now Perkins logo + "Perkins Roofing - Marketing and Sales" (de
 DeGenito Outlook with the prefill CSV attached, 13-point verified — JON SENDS IT (don't
 Graph-edit while he has it open: Outlook autosave clobbers; recipe in continuation).
 
+2026-07-23pm STATE: CF PROD FLIP DEPLOYED (LLM_BACKEND=cloudflare, token from SM).
+gsutil: zero usage repo-wide (email item satisfied). #398/#399/#396 done (+#399 root
+cause = /quoting/settings missing TENANT_LICENSE env fallback); #384 at 85% (UI+API
+shipped DARK behind all-False permission gate — needs Wendy's confirmations + a small
+admin store; publish list uses one-fetch WP match). #409 fixed (test_topics 36/36,
+network seams mocked); #410 fixed (unknown video ids never promoted to iframe).
+CF FREE TIER EXHAUSTS at ~1-2 real articles/day (10k neurons; error 4006) — 3+6
+quality batch BLOCKED on Workers Paid opt-in (Tim's CF account, Jon decision) or
+3-day drip. 24k-ctx fixes shipped (grounding budget 36k chars + max_tokens clamp).
+2 degraded drafts exist (metal-roof-fasteners, roof-inspection-after-hurricane —
+429-starved, ~800 words, no TOC/img); regenerate when neurons flow, then re-run
+scratchpad/cf_quality_eval.py vs the 61 baseline (baseline: rank 66%/aio 88%/1422w).
+GoDaddy WAF STILL blocking Cloud Run→WP writes (image-tab sync + article publish
+from prod BLOCKED; works from morpheus). #402 parked — depends on unbuilt #382.
+
 PICK UP:
 1. DEPLOY main → prod (picks up article_repair + portfolio; clean tree; deploy.sh hardcodes
    vertex). Then prod smoke.
