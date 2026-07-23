@@ -116,7 +116,14 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     re-pass AND by the publish path, so both routes converge on identical output.
     (Video-link is LLM-free when a YouTube URL is already in the body; it only
     reaches for retrieval when none is, hence the optional db.)"""
+    # Slug carries the focus keyword (rm_kw_in_slug) — it's also the WP permalink and
+    # the DB key, and the "focus keyword is derived FROM the slug" invariant. Derive
+    # from the keyword when the LLM's slug is empty or doesn't contain it.
+    from api.routes.articles import _slugify  # noqa: PLC0415
     from core.seo import ensure_toc  # noqa: PLC0415
+    kw_slug = _slugify(keyword)
+    if kw_slug and (not fields.get("slug") or kw_slug not in fields["slug"]):
+        fields["slug"] = kw_slug
 
     # FAQ ≥4
     if not fields.get("faq_json"):
