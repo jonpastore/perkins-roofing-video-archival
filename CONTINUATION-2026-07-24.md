@@ -1,6 +1,28 @@
-# CONTINUATION 2026-07-24 — deterministic compliance gate + grounding critic + 100-run
+# CONTINUATION 2026-07-24 — deterministic gate + grounding critic + 100-run + 210-run
 
-Resume after a restart. **HEAD == `4a01cd7`** (clean tree, all pushed to origin/main).
+## ⚡ LATEST STATE (end of 2026-07-24 session) — HEAD `187b65b`, clean, pushed
+**Library = 374 articles on STAGING** (120 pillar / 252 cluster / 2 standalone; 373 topics;
+322/374 linked to source videos). All compliant. Prod perkinsroofing.net untouched (Jon-gated).
+Done since the 100-run below: **one calibrated grounding critic per generation iteration**
+(9ba04a9 + 0ae4607 — Tim's videos are the spine, accurate general/scientific enrichment ALLOWED,
+only hallucinations/invented metrics block); **valid_video_ids auto-heal** (187b65b — strip a
+hallucinated video id and embed a real grounded one instead of blocking); **DB video linkage**
+(20014ba, migration 0045 + scripts/backfill_article_videos.py); **de-dup** of 27 restart-cruft
+rows (WP trashed, reversible — the ~122 non-DB WP posts are WENDY'S, off-limits); and a **210-run**
+(scripts/plan_coherent.py: 70 pillars × 2 clusters, deduped, clusters by video co-occurrence, 20
+metal pillars, 10 parallel processes) → 209/210 + the 1 miss recovered.
+
+**WHAT'S LEFT:** fill each pillar's clusters out to 5-7 + cover the remaining ~1700 harvested
+topics (repeat plan_coherent → 10-way run → backfill); prod cutover + paid 3k (Jon-gated); optional
+polish: fuzzy-backfill the 52 unlinked originals, persist source_video_ids inline in _publish_fields,
+run the calibrated critic over the pre-calibration 100-run articles. New generation self-heals
+video hallucinations and runs the calibrated critic, so future batches land clean.
+
+---
+
+# (earlier in the session) deterministic compliance gate + grounding critic + 100-run
+
+Resume after a restart. **HEAD == `4a01cd7`** (superseded — see LATEST STATE above).
 SCRATCH = `/tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/fc25f81c-006d-444d-a7cf-26ac94fa2737/scratchpad`
 (NOTE: scratch is per-session; on a fresh session it changes. The durable state is the DB +
 git. The plan/report files below live in the 07-24 scratch above — copy any you still need.)
