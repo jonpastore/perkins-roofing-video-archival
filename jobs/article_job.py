@@ -1923,6 +1923,43 @@ def _run_critics(fields: dict, keyword: str, transcript: str, *, llm) -> list[di
     return findings
 
 
+def _grounding_critic_pass(fields: dict, keyword: str, transcript: str, *, llm,
+                           goal: int = 1800) -> dict:
+    """Run the SINGLE grounding critic at the end of a generation-loop iteration and revise
+    once if it raises a blocking finding.
+
+    ONE critic, not the 3-lens panel: SEO is already guaranteed by the deterministic gate
+    (core.seo/rank_math), and grounding is the moat — a fabricated price or code reference is
+    the worst failure a licensed roofer's article can ship (core.article_critique docstring).
+    No-op without a transcript: a grounding critic with no evidence passes anything, which is
+    worse than not running (same trap that made every silent check fail — see _run_critics).
+    Fail-open: a critic error skips this pass rather than losing the article."""
+    if not transcript:
+        return fields
+    from core.article_critique import (  # noqa: PLC0415
+        blocking, critique_prompt, parse_findings)
+    from core.json_repair import parse_model_json  # noqa: PLC0415
+
+    article = {**fields, "focus_keyword": keyword}
+    try:
+        prompt = critique_prompt("grounding", article, transcript)
+        # want_json only, NOT response_schema: Vertex's response_schema demands uppercase
+        # OpenAPI type names and KeyErrors on core.article_critique's lowercase JSON-Schema
+        # (the same reason _run_critics silently yields nothing on Vertex). Critic output is a
+        # short findings list and parse_findings is fail-closed on shape, so JSON mode suffices.
+        raw = llm.chat(prompt, want_json=True)
+        findings = parse_findings(parse_model_json(raw) if isinstance(raw, str) else raw)
+    except Exception as exc:  # noqa: BLE001 — a failed critic must not kill the article
+        logger.warning("grounding critic failed for %r, skipping: %s", keyword, exc)
+        return fields
+    blockers = blocking(findings)
+    logger.info("grounding critic on %r: %d finding(s), %d blocking", keyword,
+                len(findings), len(blockers))
+    if blockers:
+        fields = _revise_without_regressing_length(fields, keyword, blockers, goal, llm=llm)
+    return fields
+
+
 def critique_and_revise(fields: dict, keyword: str, *, llm, transcript: str = "",
                         target_words: int = 1800, rounds: int = CRITIQUE_ROUNDS) -> dict:
     """Generate -> critique (3 lenses) -> revise, up to `rounds` times.
@@ -2271,6 +2308,15 @@ def generate_scored_article(
             fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
                                          fields.get("content_md", ""), keyword)
         # Deterministically strip any Markdown the refine pass emitted.
+        fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
+        jsonld = _build_article_jsonld(fields, ctx)
+        result = _score(fields, jsonld)
+        # ── One grounding critic at the END of each generation iteration ─────
+        # Validates the draft's factual grounding against Tim's transcript and revises once if
+        # it finds an invented specific, so fabrications are caught DURING generation rather than
+        # only by the report-only numeric/proper-noun guards downstream. Single lens by design.
+        fields = _grounding_critic_pass(
+            fields, keyword, transcript, llm=llm, goal=int(ctx.get("target_words", 1800)))
         fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
         jsonld = _build_article_jsonld(fields, ctx)
         result = _score(fields, jsonld)

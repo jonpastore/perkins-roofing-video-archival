@@ -163,3 +163,51 @@ def test_enforce_grounding_costs_nothing_when_the_article_is_clean():
 
 
 
+
+
+def test_grounding_critic_pass_no_transcript_is_a_noop():
+    # No evidence base -> the single grounding critic must not run (it would pass anything).
+    from jobs.article_job import _grounding_critic_pass
+
+    calls = []
+
+    class _LLM:
+        def chat(self, *a, **k):
+            calls.append(1)
+            return '{"findings": []}'
+
+    f = {"content_md": "<p>x</p>", "title": "t", "meta": "m", "faq_json": []}
+    out = _grounding_critic_pass(f, "kw", "", llm=_LLM())
+    assert out is f and calls == []
+
+
+def test_grounding_critic_pass_minor_findings_do_not_revise(monkeypatch):
+    import jobs.article_job as aj
+
+    revised = []
+    monkeypatch.setattr(aj, "_revise_without_regressing_length",
+                        lambda f, *a, **k: (revised.append(1), f)[1])
+
+    class _LLM:
+        def chat(self, *a, **k):
+            return '{"findings": [{"severity": "minor", "issue": "nit", "fix": "x"}]}'
+
+    f = {"content_md": "<p>x</p>", "title": "t", "meta": "m", "faq_json": []}
+    aj._grounding_critic_pass(f, "kw", "some evidence transcript", llm=_LLM())
+    assert revised == []  # minor is advisory, never forces a revision
+
+
+def test_grounding_critic_pass_blocker_triggers_one_revision(monkeypatch):
+    import jobs.article_job as aj
+
+    revised = []
+    monkeypatch.setattr(aj, "_revise_without_regressing_length",
+                        lambda f, *a, **k: (revised.append(1), {**f, "content_md": "<p>fixed</p>"})[1])
+
+    class _LLM:
+        def chat(self, *a, **k):
+            return '{"findings": [{"severity": "blocker", "issue": "invented $9,999 price", "fix": "cut it"}]}'
+
+    f = {"content_md": "<p>bad</p>", "title": "t", "meta": "m", "faq_json": []}
+    out = aj._grounding_critic_pass(f, "kw", "evidence transcript", llm=_LLM())
+    assert revised == [1] and out["content_md"] == "<p>fixed</p>"
