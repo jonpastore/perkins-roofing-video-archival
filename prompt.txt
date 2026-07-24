@@ -11,15 +11,15 @@ generation until a validation batch shows compliance_rate == 1.0, criteria_failu
 CAN CLEAR NOW: YES. The val4 validation batch is a detached nohup process (measure-mode,
 ephemeral — nothing persisted, DB still 66) writing to a file that survives /clear.
 - SCRATCH=/tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/a9f99bd5-709e-494b-a155-babbcc42071b/scratchpad
-- On resume: read $SCRATCH/val4_report.json (compliance verdict). If missing:
-  grep -c compliant= $SCRATCH/val4_run.log  (x/12). No keeper work at risk.
+- On resume: read $SCRATCH/val5_report.json (compliance verdict). If missing:
+  grep -c compliant= $SCRATCH/val5_run.log  (x/12). No keeper work at risk.
 
 FIRST STEPS:
 - Cloud SQL proxy (likely still up): GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json
   /tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
   PW=$(gcloud secrets versions access latest --secret=db-password);
   DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"
-- Read val4_report.json. compliance_rate==1.0 → small publish-mode smoke then real run.
+- Read val5_report.json. compliance_rate==1.0 → small publish-mode smoke then real run.
   Else fix the named ensure in the loop and re-validate (recipe in continuation).
 
 THE PIPELINE (built today, all pushed):

@@ -6,18 +6,18 @@ Resume after /clear. HEAD == `ad502e5` (clean tree, all pushed to origin/main).
 **Every generated article must pass ALL compliance checks (the full Wendy checklist)
 before it ships.** The pipeline now enforces this in a loop, but it has NOT yet been
 proven at 100% end-to-end. The last validation (val3) exposed a regression I fixed;
-val4 is the re-validation. DO NOT run the paid 3k generation until a validation batch
+val4 crashed mid-run (pathological article); val5 relaunched clean. Early signal: 4/5 compliant with the fixes (vs 0/10 before). DO NOT run the paid 3k generation until a validation batch
 shows `compliance_rate == 1.0` with empty `criteria_failures`.
 
 ## CAN WE CLEAR NOW? — YES.
 The val4 validation batch is a **detached nohup process** (measure-mode, ephemeral
 articles — nothing persisted, DB still 66) that writes its report to a FILE that
 survives /clear:
-- Report:  `<SCRATCH>/val4_report.json`
-- Log:     `<SCRATCH>/val4_run.log`
+- Report:  `<SCRATCH>/val5_report.json`
+- Log:     `<SCRATCH>/val5_run.log`
 - SCRATCH = `/tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/a9f99bd5-709e-494b-a155-babbcc42071b/scratchpad`
 
-After resume: read val4_report.json. If not there yet, `grep -c compliant= val4_run.log`
+After resume: read val5_report.json. If not there yet, `grep -c compliant= val5_run.log`
 (x/12). No keeper work is at risk — val4 is a compliance probe, not the real run.
 
 ## FIRST STEPS ON RESUME
@@ -25,7 +25,7 @@ After resume: read val4_report.json. If not there yet, `grep -c compliant= val4_
    `GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json /tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &`
    `PW=$(gcloud secrets versions access latest --secret=db-password)` →
    `DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"`
-2. Read `<SCRATCH>/val4_report.json` → the authoritative compliance verdict.
+2. Read `<SCRATCH>/val5_report.json` → the authoritative compliance verdict.
    - If `compliance_rate == 1.0`: proceed to a small PUBLISH-mode smoke, then the real run.
    - Else: `criteria_failures` names each remaining check → fix the ensure in the loop,
      re-run val (see "how to validate" below). Same disciplined cycle.
