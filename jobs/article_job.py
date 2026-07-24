@@ -153,6 +153,7 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     c = ensure_toc(c)
     c = _ensure_internal_links(c, keyword, ctx)
     c = _ensure_footer_link(c)
+    c = _relativize_internal_links(c)
     fields["content_md"] = c
     fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""), c, keyword)
     fields["jsonld_json"] = _build_article_jsonld(fields, ctx)
@@ -1567,6 +1568,21 @@ def _ensure_footer_link(content_md: str) -> str:
     from core.brand_identity import YOUTUBE_CHANNEL_URL  # noqa: PLC0415
     footer = f'<p>{_YOUTUBE_FOOTER_TEXT} <a href="{YOUTUBE_CHANNEL_URL}">{YOUTUBE_CHANNEL_URL}</a></p>'
     return f"{content_md}\n{footer}"
+
+
+_ABS_INTERNAL_RE = re.compile(r'href="https?://(?:www\.)?perkinsroofing\.net(/[^"]*)"', re.IGNORECASE)
+
+
+def _relativize_internal_links(content_md: str) -> str:
+    """Convert absolute perkinsroofing.net internal links to relative (host-portable) paths.
+
+    The prompt asks for relative `<a href="/slug">`, but the LLM routinely writes full
+    https://perkinsroofing.net/... URLs for the service pages anyway. On staging those bounce a
+    reviewer to the PROD site, and they couple the body to one host. Relative paths resolve on
+    whatever host serves the page (staging is a clone with the same pages; prod after cutover).
+    External links (youtube, floridabuilding.org, manufacturers) are left untouched.
+    """
+    return _ABS_INTERNAL_RE.sub(r'href="\1"', content_md or "")
 
 
 def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:

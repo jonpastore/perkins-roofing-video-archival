@@ -820,3 +820,18 @@ def test_budget_sources_trims_to_char_budget():
     assert _budget_sources(srcs, None) == srcs  # no budget -> untouched
     # budget crossing with <500 room drops instead of emitting a useless fragment
     assert [s["video_id"] for s in _budget_sources(srcs, 3200)] == ["a"]
+
+
+def test_relativize_internal_links_converts_prod_absolute_to_relative():
+    # The LLM writes full https://perkinsroofing.net/... URLs for service pages despite the
+    # prompt asking for relative; on staging those bounce reviewers to prod. Must be relativized;
+    # external links (youtube, manufacturers) must be left alone.
+    from jobs.article_job import _relativize_internal_links
+    body = ('<a href="https://perkinsroofing.net/metal-roofing-company/">a</a> '
+            '<a href="https://www.perkinsroofing.net/flat-roofs/">b</a> '
+            '<a href="https://youtu.be/x">c</a> <a href="/roof-repair-services/">d</a> '
+            '<a href="https://floridabuilding.org/">e</a>')
+    out = _relativize_internal_links(body)
+    assert "perkinsroofing.net" not in out
+    assert 'href="/metal-roofing-company/"' in out and 'href="/flat-roofs/"' in out
+    assert "youtu.be/x" in out and "floridabuilding.org" in out  # external untouched
