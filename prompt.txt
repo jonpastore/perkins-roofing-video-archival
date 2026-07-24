@@ -1,33 +1,32 @@
-Resume perkins-roofing/video-archival after a restart (config changes for token optimization).
+Resume perkins-roofing/video-archival after a restart.
 
-READ FIRST: CONTINUATION-2026-07-24.md (full state). HEAD == 4a01cd7 (clean, pushed).
-SCRATCH (this run's plans/reports/logs): /tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/fc25f81c-006d-444d-a7cf-26ac94fa2737/scratchpad
-  (scratch is per-session; if it's gone, the durable state is the DB + git. Re-derive plans if needed.)
+READ FIRST: CONTINUATION-2026-07-24-pm.md (full state). HEAD == 738b638 (clean, pushed).
+SCRATCH: /tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/fc25f81c-006d-444d-a7cf-26ac94fa2737/scratchpad
+  (per-session; if gone, durable state = DB + git + ~/perkins-corpus/)
 
-⛔ FIRST THING — a 100-article generation run may still be in flight:
-  pgrep -af '[j]obs.batch_article_job'      # 5 detached procs (systemd PPID 1508), Vertex inference
-  for i in 0 1 2 3 4; do echo -n "s$i: "; grep -c generate_scored_article $SCRATCH/run100_s$i.log; done
-  It's a LOCAL orchestrator on morpheus calling Vertex (Gemini 2.5 Flash), publishing to STAGING WP
-  (1228404.us6.myftpupload.com). Prod perkinsroofing.net is untouched (Jon-gated). Let it finish.
+WHERE THINGS STAND (2026-07-24 pm):
+- ARTICLES DONE: 375 compliant on STAGING; all 62 metal articles now LIVE. QC pass applied
+  (relativized prod-absolute links, repointed 169 dead cluster→pillar links, added down-links —
+  commit 12966ff / scripts/relink_hub.py). Gate fully deterministic (critic + video auto-heal).
+  Re-run after any new batch: scripts/backfill_article_videos.py + scripts/relink_hub.py --apply.
+- GMAIL-ENHANCED MCP fixed to run locally (cwd bug patched in ~/.claude.json — restart applies it;
+  copied cerberus's live DeGenito token). Read Tim's mail from ~/projects/gmail-enhanced-mcp.
+- TIM CORPUS pulled → ~/perkins-corpus/ (37 RoofR PDFs + OH calculators + pricing + manifest).
 
-DONE TODAY (all pushed): the compliance gate is now FULLY DETERMINISTIC — closed every seo_ranking/
-answer_first flake (bb843d1, 35e776b, 17bc445); reprocessed the existing 66 pre-gate articles to
-100% on staging (scripts/reprocess_articles.py, 89b6950 — whole DB 113/113 compliant, all 61
-published posts confirmed live-updated); added ONE grounding critic per generation iteration
-(9ba04a9, fixed a Vertex response_schema bug); built scripts/validate_run_with_critic.py (4a01cd7).
+⛔ NEXT ACTIONS:
+1. Marketing meeting 7/27 2pm EST — build a content/SEO status brief (375 articles, metal live,
+   llms.txt/AIO, hub). Confirm agenda owner (DeGenito vs Wendy).
+2. TIM-GATED estimator writes (prod-critical — confirm with Tim first): apply the daily_series
+   overhead model from docs/ROOFR_OVERHEAD_TIERS.md (days=setup+rate*SQ), refresh PREFERRED
+   adder $160→$165, run scripts/seed_gutters_config.py (gutters already built, 13 tests).
+3. Get Wendy's actual style guide → then do #7 (settings page + site scan). BLOCKED without it.
+4. Optional: fuzzy-backfill the ~52 keyword-mismatch video links; T&C/FAQ proposal toggle.
+5. JON-GATED: prod cutover (staging→perkinsroofing.net); paid 3k article run.
 
-⛔ OPEN DECISION (do NOT skip): the grounding critic is AGGRESSIVE — smoke-test flagged 1 article
-with 20 blockers incl. general explanatory prose, not just fabricated specifics. DO NOT run
-validate_run_with_critic.py --apply until the critic severity/prompt is calibrated to treat only
-truly-invented specifics (prices/codes/measures absent from the transcript) as blocking. See the
-CONTINUATION "OPEN DECISION" section.
+DONE THIS SESSION (all pushed): articles QC + relativize + hub-relink (12966ff), lumber-chart
+optional proposal attachment (738b638), estimator overhead-tier analysis (docs/ROOFR_OVERHEAD_TIERS.md).
+Verified: #2 gutters already built, #4 warranty checker + page live, #5 metal live, #6 Greener done.
 
-NEXT ACTIONS (in order): (1) confirm the 100-run finished (reports in $SCRATCH/run100_s*_report.json);
-(2) verify whole-DB compliance (scripts/reprocess_articles.py dry = lists any non-compliant);
-(3) calibrate the grounding critic before any regen; (4) fix valid_video_ids blockers (only embed
-grounded video ids) for a literal 100/100; (5) then Jon-gated: validate_run_with_critic --apply,
-prod cutover, paid 3k run.
-
-ENV RECIPE + gotchas: see CONTINUATION-2026-07-24.md "HOW TO VALIDATE". EMBED_BACKEND=vertex required;
-one process per --workers 1 (parallelize with SEPARATE processes, not --workers>1 which wedges);
-Cloud SQL proxy already up. R6: every commit updates docs + Jarvis + memory.
+GOTCHAS: EMBED_BACKEND=vertex for grounding; parallelize with separate processes not --workers>1;
+Cloud SQL proxy up; estimator config is the PAID product — don't write values without Tim.
+R6: every commit updates docs + Jarvis + memory.
