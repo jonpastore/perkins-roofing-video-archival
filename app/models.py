@@ -237,6 +237,7 @@ class Article(Base):
     status = Column(String)
     publish_at = Column(DateTime)
     focus_keyword = Column(String)
+    source_video_ids = Column(JSON, nullable=True)  # Tim's videos this article was built from
     cluster_id = Column(Integer, ForeignKey("clusters.id"), nullable=True)
     priority = Column(Integer, nullable=True)
     scheduled_at = Column(DateTime, nullable=True)
