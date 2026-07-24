@@ -1349,11 +1349,28 @@ def _ensure_video_link(content_md: str, keyword: str, db=None) -> str:
     """Guarantee an embedded YouTube player.
 
     A plain citation link is not enough: the console preview and WordPress article
-    should show a real player. If the body already has a YouTube iframe, keep it.
+    should show a real player. If the body already has a GROUNDED YouTube iframe, keep it.
     Otherwise convert the first YouTube URL already present into a responsive
     iframe; if none exists, append the top grounded clip from retrieval.
     """
-    if re.search(r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)", content_md or "", re.IGNORECASE):
+    c = content_md or ""
+    # Self-heal FIRST: strip any HALLUCINATED (ungrounded) YouTube id before guaranteeing a
+    # player. The LLM occasionally embeds an iframe with an invented id; the old early-return
+    # kept it, so it survived to fail valid_video_ids and BLOCK an otherwise-good article even
+    # though the topic had real grounded clips. Strip fakes, then fall through to embed a real
+    # grounded video. Only runs with a db (to validate ids against ingested videos).
+    if db is not None:
+        from app.models import Video  # noqa: PLC0415
+        from core.article_repair import _YT_ID_RE, _strip_video_id_refs  # noqa: PLC0415
+        for vid in dict.fromkeys(_YT_ID_RE.findall(c)):
+            try:
+                if db.get(Video, vid) is not None:
+                    continue
+            except Exception:  # noqa: BLE001 — validation must never break generation
+                continue
+            c = _strip_video_id_refs(c, vid)
+    content_md = c
+    if re.search(r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)", content_md, re.IGNORECASE):
         return content_md
 
     def _iframe(url: str) -> str | None:

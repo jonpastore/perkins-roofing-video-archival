@@ -767,6 +767,36 @@ def test_ensure_video_link_does_not_promote_unknown_video_id(tmp_path):
     assert "youtube.com/embed/exampleXYZ1" not in out
 
 
+def test_ensure_video_link_strips_a_hallucinated_iframe_id():
+    # The LLM sometimes embeds an iframe with an INVENTED id; the old early-return kept it, so it
+    # survived to fail valid_video_ids and block the article. It must be stripped (then replaced
+    # with a grounded clip via retrieval — exercised in an integration test with a real db).
+    from jobs.article_job import _ensure_video_link
+
+    class _FakeDB:
+        def get(self, model, vid):
+            return None  # the embedded id is not a real ingested video
+
+    fake = "Zo1e6eLZO4s"
+    body = (f'<p>intro</p><div class="video-embed">'
+            f'<iframe src="https://www.youtube.com/embed/{fake}" title="x"></iframe></div><p>rest</p>')
+    out = _ensure_video_link(body, "roofing", db=_FakeDB())
+    assert fake not in out, "hallucinated iframe id must be stripped, not kept"
+
+
+def test_ensure_video_link_keeps_a_grounded_iframe():
+    from jobs.article_job import _ensure_video_link
+
+    class _FakeDB:
+        def get(self, model, vid):
+            return object() if vid == "BnsaVtCb0GU" else None
+
+    body = ('<div class="video-embed"><iframe src="https://www.youtube.com/embed/BnsaVtCb0GU">'
+            '</iframe></div><p>x</p>')
+    out = _ensure_video_link(body, "roofing", db=_FakeDB())
+    assert "BnsaVtCb0GU" in out and out.count("<iframe") == 1
+
+
 def test_ensure_video_link_promotes_known_video_id():
     from jobs.article_job import _ensure_video_link
 
