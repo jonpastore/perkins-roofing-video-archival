@@ -130,8 +130,10 @@ def test_max_is_100():
 # ---------------------------------------------------------------------------
 
 from jobs.article_job import (  # noqa: E402
+    _clamp_meta,
     _ensure_answer_first,
     _ensure_heading,
+    _ensure_keyword_in_intro,
     _ensure_title,
 )
 
@@ -231,6 +233,49 @@ class TestEnsureAnswerFirst:
         plain = re.sub(r"<[^>]+>", " ", result)
         head = re.sub(r"\s+", " ", plain).strip()[:200]
         assert re.search(r"\w{4,}.*\.", head, re.DOTALL)
+
+
+class TestEnsureKeywordInIntro:
+    """_ensure_keyword_in_intro must guarantee rm_kw_in_intro deterministically — the fix that
+    stops seo_ranking depending on the stochastic LLM re-refine."""
+
+    def _intro_has_kw(self, body, kw):
+        c = next(x for x in rank_math_checks("t", "m", "s", body, kw) if x["key"] == "rm_kw_in_intro")
+        return c["pass"]
+
+    def test_prepends_lede_when_keyword_absent_from_intro(self):
+        kw = "florida building code"
+        # Valid answer-first intro that never names the keyword — the exact flake case.
+        body = "<p>Roofs matter for homeowners in the region.</p>" + ("<p>filler word here </p>" * 120)
+        assert self._intro_has_kw(body, kw) is False
+        fixed = _ensure_keyword_in_intro(body, kw)
+        assert self._intro_has_kw(fixed, kw) is True
+
+    def test_noop_when_keyword_already_in_intro(self):
+        kw = "roof inspection"
+        body = f"<p>A {kw} protects your home.</p>" + ("<p>word </p>" * 50)
+        assert _ensure_keyword_in_intro(body, kw) == body
+
+    def test_parenthetical_keyword_placed_in_intro(self):
+        kw = "foam tile installation (icph160)"
+        body = "<p>Tile roofs are common in South Florida.</p>" + ("<p>word </p>" * 120)
+        fixed = _ensure_keyword_in_intro(body, kw)
+        assert self._intro_has_kw(fixed, kw) is True
+
+
+class TestClampMetaKeyword:
+    """_clamp_meta(..., keyword) must guarantee rm_kw_in_meta even when the meta is already
+    in the 120-160 band but happens not to name the keyword."""
+
+    def test_inband_meta_missing_keyword_gets_keyword(self):
+        kw = "roof inspection"
+        title = "Roof Inspection: The Complete South Florida Homeowner Guide"
+        meta = "A thorough overview of what licensed professionals examine on your home " \
+               "and why it protects your investment over the long term today."
+        assert 120 <= len(meta) <= 160 and kw not in meta.lower()
+        out = _clamp_meta(meta, title, "<p>body</p>", kw)
+        assert kw in out.lower()
+        assert 120 <= len(out) <= 160
 
 
 class TestDeterministicGuaranteesScore100:
@@ -495,6 +540,16 @@ class TestRankMathBasicSeo:
         )
         c = next(x for x in checks if x["key"] == "rm_kw_in_slug")
         assert c["pass"] is False
+
+    def test_kw_in_slug_punctuation_tolerant(self):
+        # A focus keyword with a parenthetical code the slug can't hold still matches on
+        # alphanumerics: "foam tile installation (icph160)" -> "foam-tile-installation-icph160".
+        checks = rank_math_checks(
+            "Foam Tile Installation (icph160) Guide", "meta", "foam-tile-installation-icph160",
+            _rm_good_body(), "foam tile installation (icph160)",
+        )
+        c = next(x for x in checks if x["key"] == "rm_kw_in_slug")
+        assert c["pass"] is True
 
     def test_kw_in_intro_pass(self):
         kw = "roof repair miami"

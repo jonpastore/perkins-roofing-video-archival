@@ -260,9 +260,12 @@ def rank_math_checks(
     # 2. Keyword in meta description
     kw_in_meta = bool(kw) and (kw in meta.lower())
 
-    # 3. Keyword in URL slug
+    # 3. Keyword in URL slug. Compare on alphanumerics only so a focus keyword carrying
+    # punctuation the slug can't hold — "foam tile installation (icph160)" → slug
+    # "foam-tile-installation-icph160" — still matches instead of failing on the stripped paren.
     kw_slug = kw.replace(" ", "-")
-    kw_in_slug = bool(kw) and (kw_slug in slug.lower() or kw.replace(" ", "") in slug.replace("-", ""))
+    kw_alnum = re.sub(r"[^a-z0-9]", "", kw)
+    kw_in_slug = bool(kw) and (kw_slug in slug.lower() or kw_alnum in re.sub(r"[^a-z0-9]", "", slug.lower()))
 
     # 4. Keyword in beginning of content (first ~10%)
     kw_in_intro = bool(kw) and (kw in intro_text)

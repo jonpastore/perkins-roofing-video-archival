@@ -143,11 +143,12 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     c = _ensure_heading(c, keyword)
     c = _ensure_keyword_in_heading(c, keyword)
     c = _ensure_answer_first(c, keyword, fields.get("faq_json") or [])
+    c = _ensure_keyword_in_intro(c, keyword)
     c = ensure_toc(c)
     c = _ensure_internal_links(c, keyword, ctx)
     c = _ensure_footer_link(c)
     fields["content_md"] = c
-    fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""), c)
+    fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""), c, keyword)
     fields["jsonld_json"] = _build_article_jsonld(fields, ctx)
 
 
@@ -1294,11 +1295,21 @@ def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
     return jsonld
 
 
-def _clamp_meta(meta: str, title: str, content_md: str) -> str:
-    """Deterministically coerce the meta description into the 120-160 char band."""
+def _clamp_meta(meta: str, title: str, content_md: str, keyword: str = "") -> str:
+    """Deterministically coerce the meta description into the 120-160 char band, and (when a
+    keyword is given) guarantee the focus keyword appears in it (rm_kw_in_meta). A meta already
+    in-band but missing the keyword otherwise escaped unchanged — the other half of the
+    seo_ranking flake alongside rm_kw_in_intro."""
     meta = re.sub(r"\s+", " ", (meta or "").strip())
-    if 120 <= len(meta) <= 160:
+    kw_alnum = re.sub(r"[^a-z0-9]", "", (keyword or "").lower())
+    kw_ok = (not kw_alnum) or kw_alnum in re.sub(r"[^a-z0-9]", "", meta.lower())
+    if 120 <= len(meta) <= 160 and kw_ok:
         return meta
+    if not kw_ok and title and keyword.lower() in title.lower():
+        # Title carries the keyword; lead with it so the check passes and the meta reads naturally.
+        meta = re.sub(r"\s+", " ", f"{title}: {meta}").strip()
+        if 120 <= len(meta) <= 160:
+            return meta
     text = re.sub(r"\s+", " ", _strip_html(content_md or "")).strip()
     base = meta or (f"{title}: {text}" if title else text)
     if len(base) < 120:
@@ -1796,6 +1807,27 @@ def _ensure_answer_first(content_md: str, keyword: str, faq: list) -> str:
     return lede + (content_md or "")
 
 
+def _ensure_keyword_in_intro(content_md: str, keyword: str) -> str:
+    """Guarantee the focus keyword appears in the first ~10% of plain text (rm_kw_in_intro).
+
+    Rank Math scores the keyword in the first ``max(200, plain_len // 10)`` chars. When the
+    LLM's intro is a valid answer-first sentence that simply doesn't name the keyword,
+    ``_ensure_answer_first`` is a no-op and this check falls to the stochastic LLM re-refine —
+    the sole reason seo_ranking flaked in validation. Deterministic and idempotent: prepend a
+    one-sentence keyword lede only when the keyword is absent from the intro window.
+    """
+    if not content_md or not keyword:
+        return content_md
+    plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", content_md)).strip().lower()
+    intro = plain[:max(200, len(plain) // 10)]
+    if keyword.strip().lower() in intro:
+        return content_md
+    kw_tc = _title_case_keyword(keyword)
+    lede = (f"<p>{kw_tc} is a key consideration for South Florida homeowners. "
+            f"Here's what you need to know.</p>\n")
+    return lede + content_md
+
+
 def _grounding_transcript(keyword: str, db=None) -> str:
     """Evidence base for the grounding critic — the SAME topic slices the generator was given.
 
@@ -2217,7 +2249,7 @@ def generate_scored_article(
         # Meta gaps → deterministic clamp into 120-160
         if fails & {"meta_present", "meta_len"}:
             fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
-                                         fields.get("content_md", ""))
+                                         fields.get("content_md", ""), keyword)
         # Deterministically strip any Markdown the refine pass emitted.
         fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
         jsonld = _build_article_jsonld(fields, ctx)
@@ -2258,7 +2290,7 @@ def generate_scored_article(
 
     # 2. Meta description (meta_present + meta_len checks)
     fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
-                                 fields.get("content_md", ""))
+                                 fields.get("content_md", ""), keyword)
 
     # 3. FAQ (faq + faq_count checks): ensure ≥4 pairs
     if not fields.get("faq_json"):
@@ -2288,6 +2320,10 @@ def generate_scored_article(
     # 6. Answer-first lede: first ~200 plain-text chars must contain a sentence
     fields["content_md"] = _ensure_answer_first(
         fields.get("content_md", ""), keyword, fields.get("faq_json") or [])
+
+    # 6b. Keyword in the intro window (rm_kw_in_intro) — deterministic, so seo_ranking no longer
+    #     depends on the stochastic LLM re-refine landing the keyword early.
+    fields["content_md"] = _ensure_keyword_in_intro(fields.get("content_md", ""), keyword)
 
     # 7. Table of contents (REQUIRED): anchor-linked TOC + <h2> ids. Inserted after the intro so
     #    it doesn't displace the answer-first lede. AI answer engines and Rank Math both credit it;
