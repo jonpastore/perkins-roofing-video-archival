@@ -667,6 +667,7 @@ export function Quoting() {
 
   // Scope of work (Zoom 2026-07-20 [42:06]/[44:12]) — shared by both modes.
   const [scopeOfWork, setScopeOfWork] = useState("");
+  const [includeLumberChart, setIncludeLumberChart] = useState(false);
   const [scopeOfWorkPrefilled, setScopeOfWorkPrefilled] = useState(false);
   const [scopeInstruction, setScopeInstruction] = useState("");
   const [scopeRewriting, setScopeRewriting] = useState(false);
@@ -1206,6 +1207,7 @@ export function Quoting() {
       estimator_version: "1.0.0",
       // Fallback only for responses cached before the backend started returning floors.
       floors: quoteResult.floors ?? { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
+      include_lumber_chart: includeLumberChart,
       ...(scopeOfWork.trim() ? { scope_of_work_text: scopeOfWork.trim() } : {}),
     };
 
@@ -2191,9 +2193,19 @@ export function Quoting() {
                       Proposal #{proposalCreated.id} created. Switch to the <strong>Proposals</strong> tab to send it.
                     </div>
                   ) : (
-                    <Button onClick={handleCreateProposal} disabled={creatingProposal || !selectedPropertyId || inputsDirty} style={{ fontSize: 13, width: "100%" }}>
-                      {creatingProposal ? "Creating…" : "Create proposal draft"}
-                    </Button>
+                    <>
+                      <div style={{ marginBottom: 10 }}>
+                        <EstimateCheckbox
+                          checked={includeLumberChart}
+                          onChange={setIncludeLumberChart}
+                          label="Include lumber chart"
+                          title="Attach Tim's Lumber Schedule / additional-work pricing exhibit to the proposal PDF"
+                        />
+                      </div>
+                      <Button onClick={handleCreateProposal} disabled={creatingProposal || !selectedPropertyId || inputsDirty} style={{ fontSize: 13, width: "100%" }}>
+                        {creatingProposal ? "Creating…" : "Create proposal draft"}
+                      </Button>
+                    </>
                   )}
                   {proposalError && <div style={{ marginTop: 8 }}><ErrorMsg>Error: {proposalError}</ErrorMsg></div>}
                 </Card>

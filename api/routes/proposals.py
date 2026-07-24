@@ -41,6 +41,7 @@ import os
 from contextlib import contextmanager
 from datetime import timezone
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -376,6 +377,21 @@ def _upload_gcs_bytes(uri: str, data: bytes, content_type: str) -> None:
 
     bucket, key = _split_gs_uri(uri)
     storage.Client().bucket(bucket).blob(key).upload_from_string(data, content_type=content_type)
+
+
+# Bundled optional attachment: Tim's lumber/additional-work pricing exhibit. Shipped
+# in the app image alongside api/ (see Dockerfile `COPY assets ./assets`).
+_LUMBER_SCHEDULE_PDF_PATH = Path(__file__).resolve().parents[2] / "assets" / "Lumber Schedule.pdf"
+
+
+def _lumber_schedule_pdf_bytes() -> bytes | None:
+    """Read the bundled Lumber Schedule PDF. None if the asset is missing so a
+    proposal still renders without the optional attachment rather than failing."""
+    try:
+        return _LUMBER_SCHEDULE_PDF_PATH.read_bytes()
+    except OSError:
+        _log.warning("lumber schedule PDF not found at %s", _LUMBER_SCHEDULE_PDF_PATH)
+        return None
 
 
 def _proposal_as_dict(row: Proposal) -> dict:
@@ -1469,9 +1485,10 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
     except Exception as exc:
         raise HTTPException(500, f"Render error: {exc}") from exc
 
+    attachment_bytes = _lumber_schedule_pdf_bytes() if snap.get("include_lumber_chart") else None
     try:
         import adapters.gotenberg as gotenberg_adapter  # noqa: PLC0415
-        pdf_bytes = gotenberg_adapter.html_to_pdf(html)
+        pdf_bytes = gotenberg_adapter.html_to_pdf(html, attachment_pdf_bytes=attachment_bytes)
     except Exception as exc:
         raise HTTPException(503, f"PDF generation failed: {exc}") from exc
 
