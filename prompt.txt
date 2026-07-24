@@ -1,26 +1,32 @@
 Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-23-pm.md (full state). HEAD == ad502e5 (clean, pushed).
+READ FIRST: CONTINUATION-2026-07-23-pm.md (full state). HEAD == 3faba8a (clean, pushed).
+SCRATCH=/tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/a9f99bd5-709e-494b-a155-babbcc42071b/scratchpad
 
-⛔ GATE BEFORE ANY PAID 3K RUN: every article must pass ALL compliance checks (the full
-Wendy checklist in core/article_criteria.py). The generative loop now enforces this
-(jobs.article_job._compliance_gate = a real loop that re-ensures/repairs/re-refines until
-green, else BLOCKS). It is NOT yet proven at 100% end-to-end. DO NOT run the 3k
-generation until a validation batch shows compliance_rate == 1.0, criteria_failures == {}.
+⛔ REAL VALIDATION STATE (both proven by running core.article_criteria):
+- NEW pipeline (fresh gen through the gate) = 8/12 compliant (val5). The 4 fails were ALL
+  seo_ranking — the loop correctly BLOCKED them, but the LLM re-refine isn't reliably
+  clearing ranking-tier Rank Math within the 4-iter cap. Gate is safe, NOT yet 100%.
+- EXISTING staging articles = 0/12 pass ($SCRATCH/validate_recent.py on the 12 newest DB rows).
+  REAL gaps: subscribe CTA missing 7/12; absolute (not relative) links 7/12; 2 CF-degraded
+  stubs. ARTIFACTS: 9/12 have focus_keyword=NULL (rm_kw_* fail as artifact); video_embed
+  regex false-negatives (embeds ARE present). Old articles predate today's gate.
 
-CAN CLEAR NOW: YES. The val4 validation batch is a detached nohup process (measure-mode,
-ephemeral — nothing persisted, DB still 66) writing to a file that survives /clear.
-- SCRATCH=/tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/a9f99bd5-709e-494b-a155-babbcc42071b/scratchpad
-- On resume: read $SCRATCH/val5_report.json (compliance verdict). If missing:
-  grep -c compliant= $SCRATCH/val5_run.log  (x/12). No keeper work at risk.
+⛔ NEXT ACTIONS (in order): (1) fix the checker — core/article_criteria.py _VIDEO_EMBED_RE
+false-negatives + keyword resolution when focus_keyword NULL; (2) close seo_ranking in the
+loop so new gen hits 12/12; (3) re-process the existing 66 DB articles through the gate so
+LIVE content meets standard before cutover; (4) THEN the paid 3k run (only after a
+validation shows compliance_rate==1.0, criteria_failures=={}).
+
+CAN CLEAR NOW: YES. val5 done (8/12); nothing important running; DB durable (66, unchanged —
+validation batches were ephemeral). Code all committed+pushed.
 
 FIRST STEPS:
-- Cloud SQL proxy (likely still up): GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json
+- Cloud SQL proxy (likely up): GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json
   /tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
   PW=$(gcloud secrets versions access latest --secret=db-password);
   DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"
-- Read val5_report.json. compliance_rate==1.0 → small publish-mode smoke then real run.
-  Else fix the named ensure in the loop and re-validate (recipe in continuation).
+- Run $SCRATCH/validate_recent.py to re-check the live DB articles after fixes.
 
 THE PIPELINE (built today, all pushed):
 - core/article_criteria.py = ONE Wendy checklist (16 criteria). Loop gate + batch + tests share it.

@@ -1,24 +1,48 @@
 # CONTINUATION 2026-07-23 pm — Vertex flip + compliant-article generation pipeline
 
-Resume after /clear. HEAD == `ad502e5` (clean tree, all pushed to origin/main).
+Resume after /clear. HEAD == `3faba8a` (clean tree, all pushed to origin/main).
 
-## ⛔ THE ONE THING THAT MUST BE TRUE BEFORE SPENDING ON THE 3K RUN
-**Every generated article must pass ALL compliance checks (the full Wendy checklist)
-before it ships.** The pipeline now enforces this in a loop, but it has NOT yet been
-proven at 100% end-to-end. The last validation (val3) exposed a regression I fixed;
-val4 crashed mid-run (pathological article); val5 relaunched clean. Early signal: 4/5 compliant with the fixes (vs 0/10 before). DO NOT run the paid 3k generation until a validation batch
-shows `compliance_rate == 1.0` with empty `criteria_failures`.
+## ⛔ TWO VALIDATION FINDINGS — READ BEFORE ANYTHING (this is the real state)
+Two separate compliance realities, both proven by running `core.article_criteria`:
+
+1. **NEW pipeline (fresh generation through the gate) = 8/12 compliant** (val5, measured).
+   The 4 failures were ALL `seo_ranking` — the loop correctly BLOCKED them (not
+   published), but the LLM re-refine isn't reliably clearing the ranking-tier
+   Rank Math checks within the 4-iter cap. So the gate is safe (blocks misses) but
+   NOT yet at 100% first-pass. FIX: strengthen the seo_ranking close (more
+   deterministic ensures for kw-density/content-length/external-link, and/or raise
+   the re-refine budget) → re-validate until 12/12.
+
+2. **EXISTING staging articles = 0/12 pass the full checklist** (validated the 12
+   most-recent DB rows). Breakdown — DON'T conflate real vs artifact:
+   - REAL gaps: **Subscribe CTA missing on 7/12**; **absolute (not relative) internal
+     links on 7/12** (fail rm_internal_link); 2 short CF-degraded stubs
+     (metal-roof-fasteners, roof-inspection-after-hurricane).
+   - ARTIFACTS (my checker, not the content): **9/12 have focus_keyword=NULL in the
+     DB** → all rm_kw_* fail as an artifact (real keyword may be in WP Rank Math);
+     **video_embed regex false-negatives** (DB shows youtube.com/embed on all 12).
+   These OLD articles predate today's gate (made by the prior pipeline + backfill).
+
+## ⛔ NEXT ACTIONS (in order)
+1. **Fix the checker** so verdicts are trustworthy: core/article_criteria.py
+   `_VIDEO_EMBED_RE` (false-negatives on real embeds) + keyword resolution when the
+   article's focus_keyword is NULL (derive/skip rather than use the hyphenated slug).
+2. **Close seo_ranking in the loop** so new generation hits 12/12 (see finding #1).
+3. **Re-process the existing 66 DB articles through the gate** (a job that loads each
+   Article, runs _reapply_fixable_ensures + _compliance_gate, re-publishes to WP) so
+   the LIVE content Wendy reviews actually meets the standard — before prod cutover.
+4. THEN the paid 3k run. DO NOT run it until a validation shows compliance_rate==1.0.
+
+## VALIDATE THE REAL DB ARTICLES (the honest check)
+`<SCRATCH>/validate_recent.py` runs check_compliance on the 12 most-recent DB rows.
+Re-run it after the checker fix + re-process to confirm the live content passes.
 
 ## CAN WE CLEAR NOW? — YES.
-The val4 validation batch is a **detached nohup process** (measure-mode, ephemeral
-articles — nothing persisted, DB still 66) that writes its report to a FILE that
-survives /clear:
-- Report:  `<SCRATCH>/val5_report.json`
-- Log:     `<SCRATCH>/val5_run.log`
+val5 finished (8/12). Nothing running that matters; all code committed+pushed; the
+DB is the durable store (still 66, unchanged — validation batches were ephemeral).
 - SCRATCH = `/tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/a9f99bd5-709e-494b-a155-babbcc42071b/scratchpad`
-
-After resume: read val5_report.json. If not there yet, `grep -c compliant= val5_run.log`
-(x/12). No keeper work is at risk — val4 is a compliance probe, not the real run.
+- val5 report: `<SCRATCH>/val5_report.json` (8/12, failures {seo_ranking: 4}).
+- DB validator: `<SCRATCH>/validate_recent.py`.
 
 ## FIRST STEPS ON RESUME
 1. Cloud SQL proxy (check `pgrep -f cloud-sql-proxy` first; likely still up):
