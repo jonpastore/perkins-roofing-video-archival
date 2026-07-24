@@ -135,6 +135,7 @@ from jobs.article_job import (  # noqa: E402
     _ensure_heading,
     _ensure_keyword_in_intro,
     _ensure_title,
+    _reapply_fixable_ensures,
 )
 
 
@@ -261,6 +262,27 @@ class TestEnsureKeywordInIntro:
         body = "<p>Tile roofs are common in South Florida.</p>" + ("<p>word </p>" * 120)
         fixed = _ensure_keyword_in_intro(body, kw)
         assert self._intro_has_kw(fixed, kw) is True
+
+
+class TestReapplyEnsuresSlugLength:
+    """_reapply_fixable_ensures must produce a slug < 75 chars (rm_slug_length) even when the
+    LLM handed it a verbose slug that merely contains the keyword — the class of miss that
+    blocked seo_ranking on a fresh 100-run."""
+
+    def test_overlong_llm_slug_shortened_to_keyword_slug(self):
+        kw = "underlayment installation"
+        long_slug = "the-complete-2026-guide-to-underlayment-installation-for-south-florida-roofs-and-homes"
+        assert len(long_slug) >= 75 and "underlayment-installation" in long_slug
+        body = ('<p>Intro.</p><h2>Section</h2>' + ("<p>word here </p>" * 120)
+                + ' <iframe src="https://www.youtube.com/embed/abc12345678"></iframe>')
+        fields = {"content_md": body, "faq_json": [], "title": "", "meta": "",
+                  "slug": long_slug, "jsonld_json": []}
+        ctx = {"role": "cluster", "pillar_slug": "flat-roof"}
+        _reapply_fixable_ensures(fields, ctx, kw, db=None)
+        assert len(fields["slug"]) < 75
+        checks = rank_math_checks(fields["title"], fields["meta"], fields["slug"], fields["content_md"], kw)
+        for key in ("rm_slug_length", "rm_kw_in_slug"):
+            assert next(c for c in checks if c["key"] == key)["pass"], key
 
 
 class TestClampMetaKeyword:

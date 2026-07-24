@@ -122,7 +122,13 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     from api.routes.articles import _slugify  # noqa: PLC0415
     from core.seo import ensure_toc  # noqa: PLC0415
     kw_slug = _slugify(keyword)
-    if kw_slug and (not fields.get("slug") or kw_slug not in fields["slug"]):
+    if len(kw_slug) >= 75:  # keep the permalink/DB key under Rank Math's 75-char cap
+        kw_slug = kw_slug[:74].rsplit("-", 1)[0]
+    cur_slug = fields.get("slug") or ""
+    # Replace the LLM's slug when it's missing, doesn't carry the keyword, OR is ≥75 chars
+    # (rm_slug_length). A verbose LLM slug that merely CONTAINS the keyword used to be kept,
+    # blowing the length check — the short keyword slug satisfies both.
+    if kw_slug and (not cur_slug or kw_slug not in cur_slug or len(cur_slug) >= 75):
         fields["slug"] = kw_slug
 
     # FAQ ≥4
@@ -1706,6 +1712,18 @@ def _ensure_title(title: str, keyword: str) -> str:
         else:
             candidate = kw_tc
         title = candidate
+
+    # Step 1b: keyword must sit in the FIRST HALF of the title (rm_title_kw_position). When the
+    # model buried it ("Everything You Need to Know About Underlayment Installation"), lead with
+    # the keyword instead: "<Keyword TC>: <rest>". Presence alone was ensured above; position
+    # was not, so a late keyword silently failed seo_ranking on fresh titles.
+    kw_pos = title.lower().find(kw_lower)
+    if kw_pos > len(title) // 2:
+        span = _kw_span_re(keyword)
+        m = span.search(title) if span else None
+        rest = re.sub(r"\s+", " ", (title[:m.start()] + " " + title[m.end():]) if m else title)
+        rest = rest.strip(" :-–—|,")
+        title = f"{_title_case_keyword(keyword)}: {rest}".rstrip(" :-–—|,").strip()
 
     # Step 2: enforce 30–65 char band.
     # Cut at a CLAUSE boundary, never mid-clause. Trimming at the last space ≤65 kept the length

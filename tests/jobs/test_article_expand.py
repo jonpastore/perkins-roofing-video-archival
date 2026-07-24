@@ -180,6 +180,22 @@ def test_title_still_gets_keyword_when_genuinely_absent():
     assert "roof ventilation" in out.lower()
 
 
+def test_title_keyword_moved_to_front_when_buried_late():
+    """rm_title_kw_position: a keyword the model buried past the halfway mark must be pulled to
+    the front, not left late — the slip that failed seo_ranking on fresh titles."""
+    from jobs.article_job import _ensure_title
+    kw = "underlayment installation"
+    out = _ensure_title("Everything You Really Need to Know About Underlayment Installation", kw)
+    assert out.lower().find(kw) <= len(out) // 2, out
+    assert kw in out.lower()
+
+
+def test_title_already_front_loaded_is_left_alone():
+    from jobs.article_job import _ensure_title
+    out = _ensure_title("Tile Roof: The Definitive 2026 Guide", "tile roof")
+    assert out == "Tile Roof: The Definitive 2026 Guide"
+
+
 def test_ensure_title_number_adds_a_digit():
     from jobs.article_job import _ensure_title_number
     out = _ensure_title_number("Wall Flashings: Your Essential Guide", "wall flashings")
