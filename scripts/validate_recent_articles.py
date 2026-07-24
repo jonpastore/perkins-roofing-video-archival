@@ -1,6 +1,7 @@
 """Validate the 12 most-recent DB articles against THE compliance checklist
 (core.article_criteria) — the real persisted content, not a pipeline self-report."""
 import sys
+
 sys.path.insert(0, "/home/jon/projects/perkins-roofing/video-archival")
 from sqlalchemy import text  # noqa: E402
 
