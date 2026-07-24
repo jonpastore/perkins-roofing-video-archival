@@ -1798,7 +1798,9 @@ def _ensure_answer_first(content_md: str, keyword: str, faq: list) -> str:
     def _plain_head(text: str) -> str:
         t = TAG_RE.sub(" ", text or "")
         t = _re.sub(r"[#*>`_~\[\]]", " ", t)
-        return _re.sub(r"\s+", " ", t).strip()[:200]
+        # 300 to match core.article_criteria._has_answer_first_lede: a 200-char window put a
+        # normal opening sentence's period at 201 and missed it, prepending a duplicate lede.
+        return _re.sub(r"\s+", " ", t).strip()[:300]
 
     if ANSWER_FIRST_RE.search(_plain_head(content_md)):
         return content_md

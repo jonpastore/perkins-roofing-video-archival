@@ -87,3 +87,20 @@ def test_dead_staging_host_is_caught():
 def test_cluster_missing_pillar_link_is_caught():
     bad = _GOOD.replace("https://perkinsroofing.net/metal-roofing-guide", "https://perkinsroofing.net/other")
     assert "pillar_link" in _keys_failing(content=bad)
+
+
+def test_answer_first_lede_passes_on_a_long_opening_sentence():
+    # A normal declarative opening can exceed 200 chars; its terminating period must still be
+    # detected (the 200-char window missed it and made answer_first flake).
+    long_lede = ("<p>In Florida's hot and humid coastal climate, proper roof ventilation "
+                 "prevents excessive heat buildup in the attic, which over time can lead to "
+                 "thermal expansion damage like nail pops, a measurably reduced roof lifespan, "
+                 "and noticeably higher monthly energy bills for homeowners.</p>")
+    assert len(long_lede) > 220
+    ok = _keys_failing(content=long_lede + _GOOD, keyword="roof ventilation")
+    assert "answer_first" not in ok
+
+
+def test_answer_first_caught_when_lede_is_only_fragments():
+    bad = "<h2>Heading</h2><ul><li>a</li><li>b</li></ul>" + ("<p>word word word</p>" * 20)
+    assert "answer_first" in _keys_failing(content=bad)

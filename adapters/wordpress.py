@@ -183,6 +183,8 @@ def update(
     jsonld: list[dict],
     status: str = "draft",
     focus_keyword: str | None = None,
+    category_ids: list[int] | None = None,
+    featured_media: int | None = None,
 ) -> None:
     """Update an existing WordPress post (PUT /wp-json/wp/v2/posts/{id}).
 
@@ -193,6 +195,8 @@ def update(
         meta_description: New meta description / excerpt.
         jsonld:           Updated JSON-LD list for post-meta.
         status:           New WP post status.
+        category_ids:     Category term ids (omit to leave the post's categories untouched).
+        featured_media:   Featured image media id (omit to leave the existing featured image).
 
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
@@ -206,6 +210,10 @@ def update(
         "author": _author_id(),  # policy: always Tim Kanak
         "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
+    if category_ids:
+        payload["categories"] = category_ids
+    if featured_media:
+        payload["featured_media"] = featured_media
     resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
 

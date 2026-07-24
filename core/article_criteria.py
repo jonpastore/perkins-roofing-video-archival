@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 
 from core.internal_links import BASE_URL, matching_service_links
-from core.seo import aio_signals, check_tier, rank_math_checks
+from core.seo import check_tier, rank_math_checks
 
 _YT_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/|img\.youtube\.com/vi/|i\.ytimg\.com/vi/)"
@@ -112,9 +112,8 @@ def check_compliance(
     toc_ok = True if h2_count < 3 else bool(_ANCHOR_LINK_RE.search(c))
     add("toc", "Anchor TOC when ≥3 sections (H2-only)", toc_ok, True,
         "≥3 H2 sections but no anchor TOC" if not toc_ok else "")
-    aio = {s["key"]: s["pass"] for s in aio_signals(c)}
-    add("answer_first", "Answer-first lede (direct sentence early)",
-        aio.get("aio_answer_first", aio.get("answer_first", False)), True)
+    add("answer_first", "Answer-first lede (direct declarative sentence in the intro)",
+        _has_answer_first_lede(c), True)
     add("meta_len", "Meta description 120–160 chars", 120 <= len(meta or "") <= 160, True,
         f"meta is {len(meta or '')} chars")
     add("subscribe_cta", "YouTube subscribe CTA + channel link",
@@ -131,6 +130,25 @@ def check_compliance(
 
 def _plain(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html or "")
+
+
+_ANSWER_FIRST_LEDE_RE = re.compile(r"\w{4,}.*?\.", re.DOTALL)
+
+
+def _has_answer_first_lede(content: str) -> bool:
+    """The first ~200 plain-text chars contain a complete declarative sentence — the exact
+    guarantee `jobs.article_job._ensure_answer_first` provides, so the gate criterion matches
+    its own label ("answer-first LEDE") and its deterministic ensure. The stricter
+    per-section `aio_answer_first` (≥70% of H2s open with 30+ words) stays an ADVISORY signal
+    in `core.seo.aio_signals`, consistent with "AIO signals are advisory, never a gate"
+    (core.seo) — gating on it made answer_first flake because no ensure (and not even the LLM
+    re-refine within the cap) can reliably restructure every section."""
+    head = re.sub(r"[#*>`_~\[\]]", " ", re.sub(r"<[^>]+>", " ", content or ""))
+    # 300, not 200: a normal declarative opening sentence runs 15-40 words (~250 chars); a tight
+    # 200-char window put the terminating period at 201 and missed it, so the ensure kept
+    # prepending a duplicate lede. Must match _ensure_answer_first's window.
+    head = re.sub(r"\s+", " ", head).strip()[:300]
+    return bool(_ANSWER_FIRST_LEDE_RE.search(head))
 
 
 def failing(criteria: list[Criterion]) -> list[Criterion]:
