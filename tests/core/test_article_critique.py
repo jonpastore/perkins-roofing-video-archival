@@ -24,7 +24,7 @@ def test_the_three_lenses_are_actually_different():
     assert set(prompts) == {"seo", "grounding", "reader"}
     assert "density" in prompts["seo"].lower()
     assert "density" not in prompts["reader"].lower()
-    assert "traceable" in prompts["grounding"].lower()
+    assert "liability" in prompts["grounding"].lower()
     assert "homeowner" in prompts["reader"].lower()
     # each lens is told to ignore the others' territory, so they don't converge
     assert "another reviewer" in prompts["reader"].lower()
