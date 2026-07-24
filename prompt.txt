@@ -1,88 +1,51 @@
 Resume perkins-roofing/video-archival after a /clear.
 
-READ FIRST: CONTINUATION-2026-07-22-pm.md (full state). docs/PRODUCTION_CUTOVER_PLAN.md
-(cutover checklist + the CF prod flip). HEAD == origin/main (clean).
-PROD IMAGE IS BEHIND HEAD: prod runs platform:1a96dda; commits 6657a7d (article_repair
-pipeline) + ac77a44 (portfolio) are NOT deployed. Deploy BEFORE any bulk article generation.
+READ FIRST: CONTINUATION-2026-07-23-pm.md (full state). HEAD == ad502e5 (clean, pushed).
 
-STANDING RULE — BINDING model routing (Jon 2026-07-22):
-- All creative/content (articles, llms.txt, portfolio write-ups, scope-of-work rewrite) →
-  CLOUDFLARE free-tier llama (@cf/meta/llama-3.3-70b-instruct-fp8-fast), VALIDATED by
-  Vertex/Gemini. CF free tier = 10k neurons/day ≈ 3 articles — bursts run paid (~$145/3k total).
-- App code → SONNET or qwen-coder 3.6 executors; OPUS only for plan/review. Offload to
-  llm/Hermes free lanes first.
-- .env is ONLY a secure key transport — NEVER runtime config. WP_URL etc. come from admin
-  config (PlatformConfig via adapters.wordpress.resolved_wp_url) — zero env reads remain.
+⛔ GATE BEFORE ANY PAID 3K RUN: every article must pass ALL compliance checks (the full
+Wendy checklist in core/article_criteria.py). The generative loop now enforces this
+(jobs.article_job._compliance_gate = a real loop that re-ensures/repairs/re-refines until
+green, else BLOCKS). It is NOT yet proven at 100% end-to-end. DO NOT run the 3k
+generation until a validation batch shows compliance_rate == 1.0, criteria_failures == {}.
 
-FIRST STEPS on resume:
-- Cloud SQL proxy: `/tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &`
-  (GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json). Real DB:
-  `PW=$(gcloud secrets versions access latest --secret=db-password)` →
-  DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins" (.env DB_URL is dev sqlite!).
-  Reads: raw psycopg + `SET app.tenant_id='1'`, or jobs.article_job._stamped_session(1).
-- CF Workers-AI creds: CLOUDFLARE_ACCOUNT_ID=3303058f686721d6877d6d1e8b8a448c,
-  token = Secret Manager `cloudflare-api-token`. adapters.llm.CloudflareLLM verified live.
+CAN CLEAR NOW: YES. The val4 validation batch is a detached nohup process (measure-mode,
+ephemeral — nothing persisted, DB still 66) writing to a file that survives /clear.
+- SCRATCH=/tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/a9f99bd5-709e-494b-a155-babbcc42071b/scratchpad
+- On resume: read $SCRATCH/val4_report.json (compliance verdict). If missing:
+  grep -c compliant= $SCRATCH/val4_run.log  (x/12). No keeper work at risk.
 
-STATE: staging 1228404 fully audited+repaired — 61 articles (FAQ 61/61, VideoObject 61/61,
-categories/featured/TOC/service-links/no-dead-links all verified live), llms.txt (Wendy
-preamble preserved) + robots AI allowlist live, 13 portfolio drafts (8287-8299). The repair
-passes are now IN the pipeline (core/article_repair.py). CURATED IMAGES (buildout item 12)
-SHIPPED 07-22pm: article images are Gemini-vision-picked in-video frames (maxres1/2/3 =
-~25/50/75%), NOT the hqdefault title card — 60/61 live on staging (skip: water-drainage,
-no img). core/article_images.py + adapters/frame_pick.py + gallery API
-(GET/PUT /articles/{slug}/image-candidates|image) + Articles.tsx "Image" tab (deployed).
-SPA favicon/title now Perkins logo + "Perkins Roofing - Marketing and Sales" (deployed). Wendy reply DRAFT sits in the
-DeGenito Outlook with the prefill CSV attached, 13-point verified — JON SENDS IT (don't
-Graph-edit while he has it open: Outlook autosave clobbers; recipe in continuation).
+FIRST STEPS:
+- Cloud SQL proxy (likely still up): GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json
+  /tmp/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
+  PW=$(gcloud secrets versions access latest --secret=db-password);
+  DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"
+- Read val4_report.json. compliance_rate==1.0 → small publish-mode smoke then real run.
+  Else fix the named ensure in the loop and re-validate (recipe in continuation).
 
-2026-07-23pm STATE: CF PROD FLIP DEPLOYED (LLM_BACKEND=cloudflare, token from SM).
-gsutil: zero usage repo-wide (email item satisfied). #398/#399/#396 done (+#399 root
-cause = /quoting/settings missing TENANT_LICENSE env fallback); #384 at 85% (UI+API
-shipped DARK behind all-False permission gate — needs Wendy's confirmations + a small
-admin store; publish list uses one-fetch WP match). #409 fixed (test_topics 36/36,
-network seams mocked); #410 fixed (unknown video ids never promoted to iframe).
-CF FREE TIER EXHAUSTS at ~1-2 real articles/day (10k neurons; error 4006) — 3+6
-quality batch BLOCKED on Workers Paid opt-in (Tim's CF account, Jon decision) or
-3-day drip. 24k-ctx fixes shipped (grounding budget 36k chars + max_tokens clamp).
-2 degraded drafts exist (metal-roof-fasteners, roof-inspection-after-hurricane —
-429-starved, ~800 words, no TOC/img); regenerate when neurons flow, then re-run
-scratchpad/cf_quality_eval.py vs the 61 baseline (baseline: rank 66%/aio 88%/1422w).
-GoDaddy WAF STILL blocking Cloud Run→WP writes (image-tab sync + article publish
-from prod BLOCKED; works from morpheus). #402 parked — depends on unbuilt #382.
+THE PIPELINE (built today, all pushed):
+- core/article_criteria.py = ONE Wendy checklist (16 criteria). Loop gate + batch + tests share it.
+- _compliance_gate loops (4 iters: ensures + _apply_repair + LLM re-refine) until 100% or blocks.
+  Wired into generate_scored_article AND generate_article (publish path blocks non-compliant live).
+- Publish also sets WP category (core/wp_category) + featured image (curated frame) — Wendy criteria.
+- jobs/batch_article_job.py = the 3k vehicle. --mode publish [--status draft] [--per-day 10]:
+  persist Article row (durable) + WP draft + ScheduledContent paced go-live (promote_job flips live).
+  --workers 1 ONLY (8-worker wedges on Vertex). measure mode = no side effects.
+- Topic plans: scripts/plan_placement.py (+core/topic_placement.py) = content-hub aware
+  (join existing pillar vs new pillar). Plans in $SCRATCH/topic_plan_300.json, placement_plan.json.
 
-PICK UP:
-1. DEPLOY main → prod (picks up article_repair + portfolio; clean tree; deploy.sh hardcodes
-   vertex). Then prod smoke.
-2. CF PROD FLIP on Jon's go — terraform: inject CLOUDFLARE_API_TOKEN into Cloud Run api+jobs,
-   set LLM_BACKEND=cloudflare + CLOUDFLARE_ACCOUNT_ID; apply + deploy + 1-article smoke.
-   See PRODUCTION_CUTOVER_PLAN.md §2.
-3. After Wendy/Tim respond: portfolio follow-ups (#407 extend her candidates doc from
-   CRM/YouTube; expand 13 write-ups to 500-1500-word case studies from punch-list answers;
-   CompanyCam import when Jon lands creds). #384 UI remains.
-4. Zoom-gap tasks #396-402 (price book tab, license placeholder, YT comments, go-live banner,
-   GitHub org, lumber PDF, aluminum YT link) + #410 (generation-side placeholder-video-id
-   guard) + #409 (test_topics live-LLM hang fix) + #387 residual (SOW text → contract PDF).
-5. 3,000-article run ONLY after: deploy (repair live) + CF flip + Wendy sign-off + 1-2 live
-   test posts. Cadence 10/day via ScheduledContent (bulk publish = spam risk).
+COST (measured, Gemini 2.5 Flash): 6 calls, 43k in/24k out per article → 3k ≈ $218 standard /
+$109 BATCH. Use batch/Flex for the real run. CF free tier dead for volume.
 
-WAITING: Jon (send Wendy draft; CF flip go; CompanyCam creds; #403 browser_check decision —
-zone is NOT ours, Jon corrected; #408 webadmin invite; prod WP app pw; SEO creds). Wendy
-(staging review + criteria; parity confirm). Tim (punch-list tier-1 + permissions;
-residential/Jupiter candidates; 6 pricing items; lumber PDF).
+VALIDATE recipe:
+  set -a; source .env; set +a; export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json
+  PW=$(gcloud secrets versions access latest --secret=db-password); export DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"
+  export PYTHONPATH=$PWD EMBED_BACKEND=vertex GOOGLE_CLOUD_PROJECT=video-archival-and-content-gen GCP_REGION=us-central1 LLM_BACKEND=vertex LLM_MODEL=gemini-2.5-flash
+  python -m jobs.batch_article_job $SCRATCH/plan_val.json --workers 1 --no-critique --out $SCRATCH/valN_report.json
 
-OPERATE: deploy = `set -a; source .env; set +a; export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/perkins-deploy-sa.json; bash scripts/deploy.sh` (CLEAN tree). Smoke = .venv/bin/python
-scripts/prod_smoke.py. SPA = cd web && npm run build && firebase deploy --only hosting:app.
+ALSO DONE: CI green (fixed 7 tests, trashed 81 CI-fail emails); Metal Warranty plugin+page on
+staging (#382; needs Google Maps key referrer allowlist for geocoding); email flood fixed;
+Knowify MCP-synced; CF browser_check OFF (#403). Wendy draft w/ WAF note in Outlook — JON SENDS.
+
+GOTCHAS: EMBED_BACKEND=vertex required for grounding; batch --workers 1 only; repair whitelists
+SERVICE_SLUGS + the pillar slug (don't regress); GoDaddy WAF blocks Cloud-Run→WP (morpheus OK).
 R6: every commit updates docs + Jarvis + memory.
-
-GOTCHAS: GoDaddy WAF began stripping Authorization on WP REST writes FROM CLOUD RUN
-~2026-07-23 03:44Z (after the 60-post image backfill burst): TLS-fingerprint + IP class,
-NOT credentials/UA (curl blocked even from morpheus w/ identical headers; python-requests
-from morpheus works). Image-tab WP sync fails from prod until it clears — retest with
-scratchpad e2e_image_flip.py; if persistent, Jon must loosen GoDaddy Website Security
-firewall. DB is still updated on every edit; resync from morpheus works (recipe in
-curated-article-images memory). staging WP 429s under fast crawls — throttle 1-1.5s + backoff, fresh cache-buster
-per run. GoDaddy 31-day static cache — flush via wp-admin admin-bar nonce URL (Playwright
-navigate; link hidden in dropdown). Outlook mail: pull FULL untruncated bodies (cerberus
-~/gmail-enhanced-mcp msal + Graph, scope must be https://graph.microsoft.com/Mail.ReadWrite).
-Never run writer executors + deploy.sh concurrently. Agent worktrees can spawn stale — use
-`git worktree add <path> main`.
