@@ -52,15 +52,15 @@ def main() -> None:
         if current and current.get("text") == text:
             print(f"{name!r}: already current — skipped")
             continue
-        verb = "would update" if current else "would add"
+        verb = "updated" if current else "added"
         if args.dry_run:
-            print(f"{name!r}: {verb} ({len(text)} chars, job_type={job_type})")
+            print(f"{name!r}: would be {verb} ({len(text)} chars, job_type={job_type})")
             continue
         by_name[name.strip().lower()] = {
             "name": name, "text": text, "job_type": job_type,
             "updated_by": "seed_scope_templates.py",
         }
-        print(f"{name!r}: {verb.replace('would ', '')}d ({len(text)} chars)")
+        print(f"{name!r}: {verb} ({len(text)} chars)")
 
     if not args.dry_run:
         # Reassign — SQLAlchemy only flushes a JSON column when the value identity changes.
