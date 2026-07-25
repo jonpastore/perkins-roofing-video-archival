@@ -142,6 +142,12 @@ interface EstimateDiscountRow {
   value: string;
 }
 
+interface ScopeTemplate {
+  name: string;
+  text: string;
+  job_type?: string;
+}
+
 interface EstimatorRates {
   roof_types?: string[];
   sloped_roof_types?: string[];
@@ -160,6 +166,7 @@ interface EstimatorRates {
     daily_labor_rate?: { one_man?: number | null; two_man?: number | null };
   };
   scope_of_work?: { default_template?: string };
+  daily_overhead_day_model?: { series?: Record<string, { setup: number; rate: number }> };
 }
 
 interface RepairQuoteResult {
@@ -673,6 +680,11 @@ export function Quoting() {
   const [includeTerms, setIncludeTerms] = useState(true);
   const [includeContractFaq, setIncludeContractFaq] = useState(true);
   const [scopeOfWorkPrefilled, setScopeOfWorkPrefilled] = useState(false);
+  // Named scope templates (the blocks Josh reuses). Live on tenant settings, not the
+  // immutably-versioned pricing config — saving one must not mint a priced config version.
+  const [scopeTemplates, setScopeTemplates] = useState<ScopeTemplate[]>([]);
+  const [scopeTemplateSaving, setScopeTemplateSaving] = useState(false);
+  const [scopeTemplateError, setScopeTemplateError] = useState<string | null>(null);
   const [scopeInstruction, setScopeInstruction] = useState("");
   const [scopeRewriting, setScopeRewriting] = useState(false);
   const [scopeRewriteError, setScopeRewriteError] = useState<string | null>(null);
@@ -759,15 +771,19 @@ export function Quoting() {
       .catch((e: unknown) => setRatesError(e instanceof Error ? e.message : String(e)));
   }, [quoteRegion, selectedCustomer?.branch]);
 
-  // Pre-fill scope-of-work from the config template exactly once, so it never clobbers edits.
+  useEffect(() => { loadScopeTemplates(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-fill the scope exactly once so it never clobbers edits. A saved template for this job
+  // type wins over the legacy single config default (which the template system replaces).
   useEffect(() => {
     if (scopeOfWorkPrefilled) return;
-    const template = rates?.scope_of_work?.default_template;
+    const saved = scopeTemplates.find((t) => (t.job_type ?? "reroof") === jobMode);
+    const template = saved?.text || rates?.scope_of_work?.default_template;
     if (template) {
       setScopeOfWork(template);
       setScopeOfWorkPrefilled(true);
     }
-  }, [rates, scopeOfWorkPrefilled]);
+  }, [rates, scopeTemplates, jobMode, scopeOfWorkPrefilled]);
 
   function loadCustomerDetail(id: number) {
     setCustomerDetailLoading(true);
@@ -1136,6 +1152,32 @@ export function Quoting() {
       setRepairError(e instanceof Error ? e.message : String(e));
     } finally {
       setRepairQuoting(false);
+    }
+  }
+
+  function loadScopeTemplates() {
+    apiFetch("/quoting/scope-templates")
+      .then(async (r) => (r.ok ? r.json() : Promise.reject(new Error(await errText(r)))))
+      .then((data: ScopeTemplate[]) => setScopeTemplates(data))
+      .catch((e: unknown) => setScopeTemplateError(e instanceof Error ? e.message : String(e)));
+  }
+
+  async function handleSaveScopeTemplate() {
+    const name = prompt("Save this scope of work as a template named:")?.trim();
+    if (!name) return;
+    setScopeTemplateSaving(true);
+    setScopeTemplateError(null);
+    try {
+      const r = await apiFetch("/quoting/scope-templates", {
+        method: "PUT",
+        body: JSON.stringify({ name, text: scopeOfWork, job_type: jobMode }),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      loadScopeTemplates();
+    } catch (e: unknown) {
+      setScopeTemplateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setScopeTemplateSaving(false);
     }
   }
 
@@ -1596,13 +1638,41 @@ export function Quoting() {
 
         {/* Scope of work — shared by both modes (Zoom 2026-07-20 [42:06]/[44:12]) */}
         <Card style={{ marginBottom: 20 }}>
-          <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 10 }}>Scope of work</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Scope of work</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                value=""
+                onChange={(e) => {
+                  const t = scopeTemplates.find((x) => x.name === e.target.value);
+                  if (!t) return;
+                  if (scopeOfWork.trim() && !confirm(`Replace the current scope with "${t.name}"?`)) return;
+                  setScopeOfWork(t.text);
+                  setScopeOfWorkPrefilled(true);
+                }}
+                style={{ ...selectStyle, fontSize: 12, width: 240 }}
+              >
+                <option value="">
+                  {scopeTemplates.length === 0 ? "— No saved templates —" : "— Load a template —"}
+                </option>
+                {scopeTemplates
+                  .filter((t) => (t.job_type ?? "reroof") === jobMode)
+                  .map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+              <Button variant="ghost" onClick={handleSaveScopeTemplate}
+                      disabled={!scopeOfWork.trim() || scopeTemplateSaving}
+                      style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                {scopeTemplateSaving ? "Saving…" : "Save as template"}
+              </Button>
+            </div>
+          </div>
           <textarea
             value={scopeOfWork}
             onChange={(e) => setScopeOfWork(e.target.value)}
             rows={6}
             style={{ ...inputStyle, width: "100%", fontSize: 13, resize: "vertical" }}
           />
+          {scopeTemplateError && <div style={{ marginTop: 8 }}><ErrorMsg>Error: {scopeTemplateError}</ErrorMsg></div>}
           <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
             <input
               value={scopeInstruction}

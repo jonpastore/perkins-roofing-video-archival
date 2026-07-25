@@ -1589,3 +1589,62 @@ class TestSendReview:
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "sent"
         assert "review_warning" in r.json()
+
+
+class TestScopeTemplates:
+    """Named scope-of-work templates (the blocks Josh reuses) live on tenant settings.
+
+    The tenant row is shared across tests in this module, so every case scopes its
+    assertions to its own uniquely-named templates instead of the whole list.
+    """
+
+    def test_list_is_readable(self, admin_client):
+        r = admin_client.get("/quoting/scope-templates", headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert isinstance(r.json(), list)
+
+    def test_upsert_then_list_roundtrip(self, admin_client):
+        name = f"Protector Tile {_uid()}"
+        body = {"name": name, "text": "1. Obtain the permit.", "job_type": "reroof"}
+        r = admin_client.put("/quoting/scope-templates", json=body, headers=AUTH)
+        assert r.status_code == 200, r.text
+        got = [t for t in admin_client.get("/quoting/scope-templates", headers=AUTH).json()
+               if t["name"] == name]
+        assert len(got) == 1 and got[0]["text"] == body["text"] and got[0]["job_type"] == "reroof"
+
+    def test_upsert_replaces_same_name_case_insensitively(self, admin_client):
+        name = f"Repair scope {_uid()}"
+        admin_client.put("/quoting/scope-templates",
+                         json={"name": name, "text": "old", "job_type": "repair"}, headers=AUTH)
+        admin_client.put("/quoting/scope-templates",
+                         json={"name": name.upper(), "text": "new", "job_type": "repair"},
+                         headers=AUTH)
+        got = [t for t in admin_client.get("/quoting/scope-templates", headers=AUTH).json()
+               if t["name"].lower() == name.lower()]
+        assert len(got) == 1, f"saving over a name must replace, not duplicate: {got}"
+        assert got[0]["text"] == "new"
+
+    def test_delete_removes_and_404s_when_absent(self, admin_client):
+        name = f"Gone {_uid()}"
+        admin_client.put("/quoting/scope-templates",
+                         json={"name": name, "text": "x", "job_type": "reroof"}, headers=AUTH)
+        assert admin_client.delete(f"/quoting/scope-templates/{name}",
+                                   headers=AUTH).status_code == 200
+        remaining = [t for t in admin_client.get("/quoting/scope-templates", headers=AUTH).json()
+                     if t["name"] == name]
+        assert remaining == []
+        assert admin_client.delete(f"/quoting/scope-templates/{name}",
+                                   headers=AUTH).status_code == 404
+
+    def test_bad_job_type_is_422(self, admin_client):
+        r = admin_client.put("/quoting/scope-templates",
+                             json={"name": f"x{_uid()}", "text": "y", "job_type": "nonsense"},
+                             headers=AUTH)
+        assert r.status_code == 422, r.text
+
+    def test_sales_can_read_but_not_write(self, sales_client):
+        assert sales_client.get("/quoting/scope-templates", headers=AUTH).status_code == 200
+        r = sales_client.put("/quoting/scope-templates",
+                             json={"name": f"x{_uid()}", "text": "y", "job_type": "reroof"},
+                             headers=AUTH)
+        assert r.status_code == 403, f"writes need quoting_manage_templates: {r.text}"

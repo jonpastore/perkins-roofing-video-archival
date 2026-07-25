@@ -13,6 +13,10 @@ Authenticated endpoints (prefix /quoting):
   POST   /quoting/templates               create template (quoting_manage_templates)
   PUT    /quoting/templates/{id}          update template (quoting_manage_templates)
 
+  GET    /quoting/scope-templates         list saved scope-of-work templates
+  PUT    /quoting/scope-templates         upsert one by name (quoting_manage_templates)
+  DELETE /quoting/scope-templates/{name}  delete one (quoting_manage_templates)
+
   GET    /quoting/settings                get tenant quoting settings
   PUT    /quoting/settings                update quoting settings (quoting_manage_settings)
 
@@ -244,6 +248,19 @@ def _fmt_money(value) -> float:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _tier_price(tiers: dict, key: str, fallback: float | None = None) -> str:
+    """Format one tier's price for the PDF, or "" when that tier isn't offered.
+
+    Every tier goes through here so they can't be formatted inconsistently.
+    """
+    raw = (tiers.get(key) or {}).get("total")
+    if raw in (None, "") and key == "good":
+        raw = fallback
+    if raw in (None, ""):
+        return ""
+    return f"${_fmt_money(raw):,.2f}"
 
 
 def _line_money(value, proposal_total: float = 0.0) -> float:
@@ -483,6 +500,14 @@ class TemplateCreate(BaseModel):
     footer_text: Optional[str] = None
     tc_attachment_gcs: Optional[str] = Field(default=None, max_length=1000)
     cover_page_html: Optional[str] = None
+
+
+class ScopeTemplateUpsert(BaseModel):
+    """One named scope-of-work template. Upserted by name — saving over an existing name
+    replaces its text, which is what "save this scope as <name>" means to a salesperson."""
+    name: str = Field(min_length=1, max_length=120)
+    text: str = Field(min_length=1, max_length=20000)
+    job_type: str = Field(default="reroof", pattern="^(reroof|repair)$")
 
 
 class TemplateUpdate(BaseModel):
@@ -1454,14 +1479,21 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         property_code_zone=prop.code_zone if prop else "",
         quote_roof_type=snap.get("roof_type", ""),
         quote_num_squares=float(snap.get("num_squares", 0)),
-        quote_good_price=f"${total:,.2f}" if total else str(tiers.get("good", {}).get("total", "")),
-        quote_better_price=str(tiers.get("better", {}).get("total", "")),
-        quote_best_price=str(tiers.get("best", {}).get("total", "")),
+        # All three tiers format identically. "good" previously fell back to the CONTRACT total
+        # (so it wasn't the good tier at all) while better/best printed raw str(float) —
+        # "$33,000.00" next to "39100.0" in the same table.
+        quote_good_price=_tier_price(tiers, "good", fallback=total),
+        quote_better_price=_tier_price(tiers, "better"),
+        quote_best_price=_tier_price(tiers, "best"),
         quote_line_items=scope_lines,
         deposit_amount=f"${_fmt_money(dp.get('amount')):,.2f}" if dp.get("amount") is not None else "",
         deposit_instructions=dp.get("instructions", ""),
         tenant_name=tenant_row.name if tenant_row else "",
-        tenant_license=None,
+        # Florida requires the contractor licence on the contract. This was hard-coded None,
+        # so the PDF printed no licence even with one configured. Same resolution order the
+        # settings endpoint uses: per-tenant settings, then the TENANT_LICENSE env fallback.
+        tenant_license=((tenant_row.settings or {}).get("license_number")
+                        if tenant_row else None) or (app_settings.TENANT_LICENSE or None),
         accept_url=f"{public_url.rstrip('/')}/p/{row.accept_token}",
         payment_draws=_proposal_payment_draws(snap, total),
         # Absent flag = included: proposals snapshotted before the toggles existed carried
@@ -1615,6 +1647,70 @@ def preview_template(
 # ---------------------------------------------------------------------------
 # Settings endpoints
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Scope-of-work templates — the named scope blocks Josh reuses per job type.
+# Stored on tenant.settings["scope_templates"] rather than in the pricing config:
+# the pricing config is immutably versioned, so saving a scope would mint a new
+# priced config version every time. No migration needed for a per-tenant list.
+# ---------------------------------------------------------------------------
+def _scope_templates(tenant: Tenant) -> list[dict]:
+    raw = (tenant.settings or {}).get("scope_templates") or []
+    return [t for t in raw if isinstance(t, dict) and t.get("name")]
+
+
+@router.get("/quoting/scope-templates")
+def list_scope_templates(
+    _claims=Depends(require_role("quoting_view")),
+    db: Session = Depends(get_db_session),
+):
+    """List saved scope-of-work templates (sales needs read access to pick one)."""
+    tenant = db.get(Tenant, _tenant_id(db))
+    if tenant is None:
+        return []
+    return sorted(_scope_templates(tenant), key=lambda t: (t.get("job_type", "reroof"), t["name"]))
+
+
+@router.put("/quoting/scope-templates")
+def upsert_scope_template(
+    body: ScopeTemplateUpsert,
+    claims=Depends(require_role("quoting_manage_templates")),
+    db: Session = Depends(get_db_session),
+):
+    """Create or replace a scope template by name."""
+    tenant = db.get(Tenant, _tenant_id(db))
+    if tenant is None:
+        raise HTTPException(404, "Tenant not found")
+    entry = {
+        "name": body.name.strip(),
+        "text": body.text,
+        "job_type": body.job_type,
+        "updated_by": claims.get("email") or "unknown",
+    }
+    kept = [t for t in _scope_templates(tenant) if t["name"].strip().lower() != entry["name"].lower()]
+    # Reassign (not mutate) — SQLAlchemy only flushes a JSON column on identity change.
+    tenant.settings = {**(tenant.settings or {}), "scope_templates": kept + [entry]}
+    db.flush()
+    return entry
+
+
+@router.delete("/quoting/scope-templates/{name}")
+def delete_scope_template(
+    name: str,
+    _claims=Depends(require_role("quoting_manage_templates")),
+    db: Session = Depends(get_db_session),
+):
+    tenant = db.get(Tenant, _tenant_id(db))
+    if tenant is None:
+        raise HTTPException(404, "Tenant not found")
+    existing = _scope_templates(tenant)
+    kept = [t for t in existing if t["name"].strip().lower() != name.strip().lower()]
+    if len(kept) == len(existing):
+        raise HTTPException(404, f"Scope template {name!r} not found")
+    tenant.settings = {**(tenant.settings or {}), "scope_templates": kept}
+    db.flush()
+    return {"ok": True, "deleted": name}
+
 
 @router.get("/quoting/settings")
 def get_settings(

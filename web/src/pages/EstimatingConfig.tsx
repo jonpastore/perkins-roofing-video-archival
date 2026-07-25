@@ -10,6 +10,7 @@ import {
   inputStyle,
 } from "../ui";
 import {
+  apiFetch,
   listPricingConfigs,
   getPricingConfig,
   createPricingConfig,
@@ -717,6 +718,27 @@ interface ConfigEditorProps {
 }
 
 function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
+  // Scope templates live on tenant settings (not this pricing config), so they are fetched and
+  // deleted directly rather than round-tripped through the config version being edited.
+  const [scopeTemplates, setScopeTemplates] = useState<Array<{ name: string; text: string; job_type?: string }>>([]);
+
+  const loadScopeTemplates = useCallback(() => {
+    apiFetch("/quoting/scope-templates")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: Array<{ name: string; text: string; job_type?: string }>) =>
+        setScopeTemplates(Array.isArray(data) ? data : []))
+      .catch(() => setScopeTemplates([]));
+  }, []);
+
+  useEffect(() => { loadScopeTemplates(); }, [loadScopeTemplates]);
+
+  function deleteScopeTemplate(name: string) {
+    if (!confirm(`Delete scope template "${name}"?`)) return;
+    apiFetch(`/quoting/scope-templates/${encodeURIComponent(name)}`, { method: "DELETE" })
+      .then(() => loadScopeTemplates())
+      .catch(() => loadScopeTemplates());
+  }
+
   // Raw JSON fallback for advanced editing / unknown keys.
   const [rawMode, setRawMode] = useState(false);
   const [rawText, setRawText] = useState(() => JSON.stringify(config, null, 2));
@@ -1052,10 +1074,42 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                 unit="$/day"
               />
             </div>
-            <SectionLabel>Scope of work</SectionLabel>
+            <SectionLabel>Scope of work — saved templates</SectionLabel>
             <p style={{ margin: "0 0 8px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
-              Default scope-of-work text pre-filled into the Quoting page; sales can edit or
-              rewrite it with AI per job.
+              Named templates replace the single default below. Sales picks one from the dropdown on
+              the Quoting page, edits it, rewrites it with AI, and saves it back with
+              <strong> Save as template</strong> — that is where templates are created, so there is
+              one editor instead of two. Templates are per-tenant, not per pricing-config version.
+            </p>
+            <div style={{ marginBottom: 14 }}>
+              {scopeTemplates.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 13, color: BRAND.sub }}>
+                  No saved templates yet.
+                </p>
+              ) : (
+                scopeTemplates.map((t) => (
+                  <div key={t.name} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    gap: 10, padding: "7px 10px", marginBottom: 6,
+                    border: `1px solid ${BRAND.border}`, borderRadius: 6, fontSize: 13,
+                  }}>
+                    <span>
+                      <strong>{t.name}</strong>
+                      <span style={{ color: BRAND.sub, marginLeft: 8, fontSize: 12 }}>
+                        {t.job_type ?? "reroof"} · {t.text.length.toLocaleString()} chars
+                      </span>
+                    </span>
+                    <Button variant="danger" disabled={disabled}
+                            onClick={() => deleteScopeTemplate(t.name)}
+                            style={{ fontSize: 12 }}>Delete</Button>
+                  </div>
+                ))
+              )}
+            </div>
+            <SectionLabel>Legacy default scope text</SectionLabel>
+            <p style={{ margin: "0 0 8px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+              Used only when no saved template matches the job type. Leave blank once your templates
+              are in place.
             </p>
             <textarea
               value={getStr(["scope_of_work", "default_template"], "")}
