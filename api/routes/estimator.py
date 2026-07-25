@@ -73,6 +73,29 @@ router = APIRouter(prefix="/estimator", tags=["estimator"])
 LOW_SLOPE_ROOF_TYPES = frozenset({"tpo", "coatings", "silicone", "bur"})
 
 
+def _audit_payload(result: dict) -> dict:
+    """Strip the debug trace before an estimate is persisted.
+
+    The `debug` flag is gated on estimating_manage at request time, but the audit row is not:
+    GET /estimator/estimates returns result_json verbatim to anyone with estimating_view, which
+    `sales` holds. One admin quote with debug=true would otherwise write the whole trace —
+    profit_scale, the pm_incentive table, office burn, scaled daily rates — into a row every
+    sales user can read, defeating the gate it sits next to.
+
+    The trace is an ephemeral response artefact anyway; reproduction is served by
+    pricing_config_hash, which is stored alongside. Keeping it out also stops audit rows having
+    caller-role-dependent shape at ~2x the JSONB size.
+    """
+    stripped = {k: v for k, v in result.items() if k != "calculation_trace"}
+    detail = stripped.get("line_items_detail")
+    if isinstance(detail, list):
+        stripped["line_items_detail"] = [
+            {k: v for k, v in li.items() if k != "explain"} if isinstance(li, dict) else li
+            for li in detail
+        ]
+    return stripped
+
+
 def _get_active_config_row(branch: str, db: Session) -> Optional[PricingConfig]:
     """Fetch the active PricingConfig row for (current tenant, branch), or None."""
     return db.execute(
@@ -249,9 +272,11 @@ def quote(
     # picks (his golden proposals price standard roofs off the flat base). Cut LFs ARE passed to
     # the headline quote, but with apply_cut_calc_to_base=False: they drive the geometry day
     # model without moving the base.
-    # The calculation trace names internal config keys, so it is gated on estimating_manage
-    # rather than the estimating_view every quote already carries. Asking for it without the
-    # role is not an error — the quote returns normally, just without the trace.
+    # Gated on estimating_manage rather than the estimating_view every quote carries. Asking
+    # without the role is not an error — the quote returns normally, minus the trace.
+    # NOT a confidentiality boundary: /rates already serves profit_scale, pm_incentive and the
+    # daily rates to estimating_view. The gate keeps the payload lean and the audit rows
+    # uniform (see _audit_payload, which strips the trace before persistence).
     debug = bool(body.debug) and can(claims.get("role"), "estimating_manage")
     qkwargs = dict(
         debug=debug,
@@ -371,6 +396,13 @@ def quote(
             warnings.append("profit_floor")
         if combined_pct < config.raw["profit_plus_oh_floor_pct"] and "combined_floor" not in warnings:
             warnings.append("combined_floor")
+        # The minimum-margin floor is applied in the ENGINE, pre-discount. A discount subtracts
+        # straight off profit here, so the first discount silently defeats it: a job floored to
+        # $2,500 with a $2,000 discount lands at $500 and, before this, warned only if profit
+        # went negative. Sales holds quoting_create, so that lever is exactly the one they have.
+        min_margin = config.min_margin_dollars()
+        if min_margin and adjusted_profit < min_margin and "min_margin_breached" not in warnings:
+            warnings.append("min_margin_breached")
         result["pre_discount_total"] = round(pre_discount_total, 2)
         result["discount_total"] = discount_total
         result["discounts"] = resolved_discounts
@@ -450,7 +482,7 @@ def quote(
         version_number=version_number,
         source_proposal_id=body.source_proposal_id,
         input_json=body.model_dump(),
-        result_json=result,
+        result_json=_audit_payload(result),
         created_by=claims.get("email") or "unknown",
     )
     db.add(est)
@@ -461,7 +493,7 @@ def quote(
     result["estimate_id"] = est.id
     result["estimate_root_id"] = est.root_id
     result["estimate_version"] = est.version_number
-    est.result_json = result
+    est.result_json = _audit_payload(result)
     db.flush()
 
     return result

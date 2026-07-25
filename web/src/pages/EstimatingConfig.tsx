@@ -1129,24 +1129,40 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
           {/* ── Group 3: Adders ── */}
           <CollapsibleGroup title="Adders">
             <SectionLabel>Per-square adders ($)</SectionLabel>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+            {/*
+              These four are keyed by code zone — Tim's FBC and HVHZ tabs carry different
+              numbers (7/12+ is $305 FBC vs $200 HVHZ). They were previously rendered as a
+              single scalar field, so getNum returned the {FBC, HVHZ} object, cast it to a
+              number, and the first keystroke collapsed the whole dict to one value applied to
+              BOTH zones — silently, because the engine tolerates the legacy scalar shape.
+            */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
               {(
                 [
                   ["pitch_7_12_add", "Pitch ≥ 7/12 (tile)"],
                   ["tile_demo_add", "Tile demo/tear-off"],
                   ["metal_demo_add", "Metal demo/tear-off"],
-                  ["secondary_water_barrier_add", "Secondary water barrier"],
                   ["winterguard_add", "WinterGuard"],
                 ] as [string, string][]
-              ).map(([key, label]) => (
-                <NumericField
-                  key={key}
-                  label={label}
-                  value={getNum([key])}
-                  onChange={(v) => set([key], v)}
-                  disabled={disabled}
-                />
-              ))}
+              ).flatMap(([key, label]) =>
+                (["FBC", "HVHZ"] as const).map((zone) => (
+                  <NumericField
+                    key={`${key}.${zone}`}
+                    label={`${label} — ${zone}`}
+                    value={getNum([key, zone])}
+                    onChange={(v) => set([key, zone], v)}
+                    disabled={disabled}
+                  />
+                )),
+              )}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <NumericField
+                label="Secondary water barrier"
+                value={getNum(["secondary_water_barrier_add"])}
+                onChange={(v) => set(["secondary_water_barrier_add"], v)}
+                disabled={disabled}
+              />
             </div>
             <SectionLabel>Linear / each adders</SectionLabel>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>

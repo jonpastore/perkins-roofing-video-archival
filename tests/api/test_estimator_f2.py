@@ -1391,3 +1391,29 @@ class TestQuoteCutCalculator:
         pb = pure.json()["cut_calc"]["cut_base_per_sq"]
         assert mb > pb        # eaves override raised the cut base
         assert pb > 770.0     # measurement's 5 other LFs still applied
+
+
+def test_audit_payload_strips_the_debug_trace():
+    """The debug flag is gated on estimating_manage, but the audit row is not: GET
+    /estimator/estimates serves result_json to estimating_view, which `sales` holds. One admin
+    quote with debug=true would otherwise persist the whole trace where sales can read it.
+    Found by R2 critic review."""
+    from api.routes.estimator import _audit_payload
+
+    result = {
+        "project_total": 100.0,
+        "calculation_trace": [{"section": "Per-square total", "inputs": {"profit": 100}}],
+        "line_items_detail": [
+            {"key": "profit", "amount": 100.0,
+             "explain": {"formula": "x", "inputs": {"profit_scale": [[1, 400]]}}},
+        ],
+    }
+    stripped = _audit_payload(result)
+
+    assert "calculation_trace" not in stripped
+    assert "explain" not in stripped["line_items_detail"][0]
+    # everything else survives — reproduction still works off pricing_config_hash
+    assert stripped["project_total"] == 100.0
+    assert stripped["line_items_detail"][0]["amount"] == 100.0
+    # and the caller's own response object is untouched
+    assert "calculation_trace" in result
