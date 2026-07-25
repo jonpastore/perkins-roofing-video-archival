@@ -52,13 +52,13 @@ His overhead is **production-rate driven**: a daily crew cost divided by squares
   metal $315.
 
 **`days = SQ ÷ squares_per_day` — pure rate, no fixed setup term.** That makes his OH per square
-*constant* with job size, which is exactly why a flat per-square OH is correct in his framework.
+*constant* with job size, which is why a flat per-square OH is coherent in his framework.
 
-This invalidates the fitted `days = setup + rate × SQ` model in
-`docs/ROOFR_OVERHEAD_TIERS.md`: the setup constant is what made by-days diverge from per-square
-(higher on small jobs, lower on big ones). The fix is to drop the setup term and derive days from
-his production rates, which reproduces the per-square OH the config already carries — the two
-modes then agree by construction instead of needing a reconciliation.
+⚠️ **But do not conclude from this tab that the setup term is wrong** — see §3 of the 30-home
+appendix below, which tests both shapes against his own 30 estimates. Dropping the setup term makes
+shingle *worse than predicting the mean* (R² −0.10 vs 0.378). The OH Metrics tab describes his
+crew **planning** rates; his per-home estimates carry a real fixed setup component. Keep
+`days = setup + rate × SQ` (`docs/ROOFR_OVERHEAD_TIERS.md`).
 
 ⛔ Still needs Tim: which **crew-size column** each branch should price from (9/12/15 men, or the
 FBC 11/14/18 variant). The config's current values sit between his columns.

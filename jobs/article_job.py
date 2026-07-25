@@ -2026,8 +2026,7 @@ def _grounding_critic_pass(fields: dict, keyword: str, transcript: str, *, llm,
     Fail-open: a critic error skips this pass rather than losing the article."""
     if not transcript:
         return fields
-    from core.article_critique import (  # noqa: PLC0415
-        blocking, critique_prompt, parse_findings)
+    from core.article_critique import blocking, critique_prompt, parse_findings  # noqa: PLC0415
     from core.json_repair import parse_model_json  # noqa: PLC0415
 
     article = {**fields, "focus_keyword": keyword}
