@@ -1,65 +1,104 @@
 Resume perkins-roofing/video-archival after a restart.
 
-READ FIRST: CONTINUATION-2026-07-25.md (full state, mistakes, next actions).
-Deployed image platform:0b291ef (2026-07-25, includes the steep-roof adder).
-Prod pricing configs are at v13 on jupiter/miami/naples.
+READ FIRST: CONTINUATION-2026-07-25-pm.md — §0 is why you restarted, read it before touching mail.
 
-⚠️ The earlier claim that "commits after b390ba6 are docs/config-only" was WRONG — b1a4277 changed
-core/estimator.py + api/routes/estimator.py. Prod ran the pre-pitch model for ~5h while config v13
-already carried pitch_day_adder, so the adder sat live-but-ignored. Always confirm with:
-  git diff --name-only <deployed-sha>..HEAD | grep -v '^docs/'
-and check the running image, not the doc:
-  gcloud run services describe api --region us-central1 --format='value(spec.template.spec.containers[0].image)'
+HEAD is the docs commit carrying this file. The last CODE commit is 27e076d, which is what is
+deployed — everything after it is docs only. Prod configs: jupiter v17 / miami v18 / naples v17.
+Confirm:
+  git log --oneline origin/main..HEAD                  # expect empty (all pushed)
+  git diff --name-only 27e076d..HEAD | grep -v -E '^(docs/|README|CONTINUATION|prompt.txt)'
+                                                       # expect empty (no undeployed code)
+  gcloud run services describe api --region us-central1 \
+    --format='value(spec.template.spec.containers[0].image)'
 
-WHERE THINGS STAND (2026-07-25)
+WHY YOU RESTARTED — the gmail-enhanced MCP
 
-- ESTIMATOR NOW RUNS TIM'S METHOD. Days come from RoofR cut geometry (not squares), plus +0.5
-  install days at pitch >= 6/12. Against Tim's own day figures on 29 of his 30 homes:
-  93% within 1.0 day, 66% within 0.5, mean miss 0.53 days, mean overhead within $3/home.
-  Reproduce: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/tim_quote_breakdown.py
-  Refit:     scripts/fit_days_from_roofr.py   (leave-one-out, non-negative coefficients)
+You reloaded to pick up the fixed gmail-enhanced-mcp. Four silent bugs were fixed and pushed
+(repo ~/projects/gmail-enhanced-mcp, commit d656cdd) but the RUNNING process had the old code.
 
-- MONEY BUG, PARTLY FIXED. The flat published catalog under-quotes Tim's own build on 30/30 homes
-  (mean -$72/sq, worst -$150/sq). Tile full prices are now blocked from the catalog
-  (requires_engine_price -> 422). Shingle/metal still catalog-priceable and still under-quoting.
-  ⛔ JON/TIM DECISION: retire the flat catalog as a price, or re-issue it size-banded.
+FIRST ACTION — prove the fix is live before touching the Tim draft. A cc-only update must NOT
+blank the body:
 
-- UNBLOCKED: Tim's 77 sheet cell COMMENTS are readable via the Drive API + existing DWD grant
-  (7/17 item #9 assumed we had to ask him). Saved to ~/perkins-corpus/tim_sheet_comments.json.
-  They carry the material->price breakdowns, L/M/OH/P decompositions, the 7/12 adder (OH $90/sq)
-  and crew-size variants ("busy, 16+ guys" / "huge job").
+  cd ~/projects/gmail-enhanced-mcp && .venv/bin/python -c "
+  import sys; sys.path.insert(0,'.')
+  from src.account_registry import AccountRegistry; from src.config import Config
+  r=AccountRegistry(); r.load_from_config(Config()); c=r.get('jon@degenito.ai')
+  d=c.create_draft(to='jon@degenito.ai',subject='ZZ probe',body='v1')
+  c.update_draft(d['id'], cc='marco@perkinsroofing.net')
+  print('body survived:', 'v1' in c._graph_get('/me/messages/'+d['id'])['body']['content'])"
 
-⛔ NEXT ACTIONS
-1. SEND TIM THE EMAIL — docs/email-drafts/2026-07-24-tim-estimator-quotes.md is a DRAFT, not sent.
-   It asks: why our quote beats his published sheet on all 29 homes, what differs on the four
-   1.5-day homes (esp. 1913 Flower Dr vs 918 Mil Creek — identical on paper, 9.5 vs 8.0 days),
-   the NOTES COLUMN he promised, 1141 Vintner Blvd's missing RoofR report, a few 7/12+ roofs, and
-   9 config values only he can fill.
-2. Decide the catalog question above.
-3. Build the price-book <-> aggregate-input linkage from the 77 comments (7/17 item #9's real work).
-4. BigQuery billing export so the GCP spend panel lights up: docs/BILLING_EXPORT_SETUP.md, then
-   BILLING_BQ_TABLE into deploy.sh BASE_ENV and redeploy.
-5. Not started: metal-adjacent article enumeration among the 262 scheduled; article
-   image-vs-YouTube-title-screen audit.
-6. Marketing brief for 7/27 — recommended DROPPED (that meeting is drip messaging / competitors /
-   appointment forms per Tim's 7/24 thread, not a content-SEO review). Jon to confirm.
+  (delete the ZZ probe draft afterwards — there is no delete tool, use a Graph DELETE)
 
-STILL PENDING TIM: 9 config values + 5 _pending notes — see CONTINUATION §4. His own sheet does
-NOT answer them (3-5 storey and 6+ crane adders are blank in his sheet too). PM incentive is the
-notable one: values match, KEYING does not, so a 35 SQ residential job takes $50 where his sheet
-says $100.
+What was broken, all SILENT (every call returned success):
+  update_draft WIPED THE BODY   — body:str='' default always PATCHed an empty body
+  threadId NEVER THREADED       — conversationId is read-only on Graph; needs createReplyAll
+  read_thread ALWAYS 400'd      — Graph rejects $orderby with a $filter on conversationId
+  cc + attachments INVISIBLE    — _format_message never printed Cc; parts hardcoded []
+
+Attachment shape that works (a bare {filename,path} errors "'type'"):
+  [{"type": "file", "name": "X.pdf", "path": "/absolute/path/X.pdf"}]
+
+STILL NEEDS YOU (root): ssh cerberus-ai 'sudo systemctl restart gmail-mcp.service'
+  cerberus still serves the old code. Backups: src/*.bak-2026-07-25.
+
+THE TIM DRAFT — do not rebuild from scratch
+
+In jon@degenito.ai. Subject "Re: TIME LEARNING (Overhead) for AI Systems — your 30 homes are in,
+93% within a day". To tim@, Cc marco@/josh@/eugene@. PDF attached from
+~/perkins-corpus/worked-examples/Perkins-worked-examples-4-homes-2026-07-25.pdf
+
+It is NOT threaded under Tim's "PART 2" — it predates the createReplyAll fix. Now a one-shot:
+  create_draft(..., thread_id="AAQkAGZkY2IwNDFhLTIwNWYtNGQ2Yi1hZDY4LWUwMjZhOWMzYTc5YwAQAKqlI0PPNURJpLYhrcgnreQ=")
+
+Nothing sent. EMAIL_SEND_MODE=test. docs/email-drafts/2026-07-24-tim-estimator-quotes.md is STALE
+— the live draft has moved past it.
+
+NEXT ACTIONS
+1. Verify the MCP fix (above), then re-create the Tim draft as a real threaded reply.
+2. ssh cerberus-ai restart (needs your root).
+3. Send the email once you have eyeballed Cc + paperclip in Outlook. 12 open questions, led by
+   the $2,500 minimum (per job or per week?) and how many days a week the crews work.
+4. AUDIT THE 69 LOW-SLOPE COMMENTS — biggest open gap. tim_sheet_comments.json had been pulled
+   from the "Copy of" sheets, which carry ZERO comments, so low_slope read as empty. The LIVE
+   low-slope sheet (1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ, NOT the 1SGLYoO... our docs
+   cite) has 69 never-read comments: sub-by-sub labor rates, per-bucket coating math, crew-load
+   tiers, an insurance-driven "+$25 OH per coat as of 8/1/2024". None checked against our config.
+5. Leftover R2 findings: _apply_county_overrides is 0% covered and _apply_min_margin rides its
+   object-identity assumption; /rates can now 500 where it documented graceful degradation; the
+   repair-quote path never applies the profit floor (repairs are the real small jobs).
+
+WHAT CHANGED THIS SESSION (detail in the continuation)
+- Pricing now derives from Tim's CELL COMMENTS, not the headline cells (Jon's rule). 7/12+ tile
+  $305 in BOTH zones, WinterGuard $135 both — the FBC>HVHZ "inversion" was a stale cell.
+  tile/metal demo keep a real zone split ($30/$40, $45/$60).
+- Profit band edges now match his INCLUSIVE labels: 1→$400, 4→$200, 7→$160, 14→$140, 20→$120,
+  29→$110. sq=20 is double-claimed on his sheet and lands on $120 — pending Tim.
+- $2,500 profit floor ENFORCED as flat per-job (profit_floor_basis="job"). The per-week reading
+  would reprice 17 of his 29 homes +$20,669; flat moves 2, +$655.
+- Miami's 1.725x overhead multiplier was REVERTED — R2 found it live and unvalidated.
+- Estimate-debug toggle (debug:true, estimating_manage) returns formula+variables per line.
+- 29 RoofR homes stored in `measurements`; load() 9.58s → 2.05s, no PDF re-parsing.
 
 GOTCHAS
-- EMBED_BACKEND=vertex and export GOOGLE_APPLICATION_CREDENTIALS="$(scripts/fetch_vertex_sa.sh)"
-  for anything retrieval-shaped; the .env default path does not exist.
-- Cloud SQL proxy on 127.0.0.1:5432; PW=$(gcloud secrets versions access latest --secret=db-password)
-- bash scripts/deploy.sh (not executable); refuses a dirty tree (R3-ENFORCE).
-- articles is keyed by slug — there is no id column.
-- Outbound mail is EMAIL_SEND_MODE=test; nothing reaches Tim without Jon flipping it.
-- CI gates on `ruff check core adapters api jobs` FIRST — a lint error there silently skips
-  bandit/pip-audit/coverage. It hid a red build for a full day.
-- Verify features end-to-end in PROD, not just with unit tests: the geometry model shipped inert
-  once because the route withheld its inputs, and the eaves model broke once because a caller
-  omitted eaves_lf. See CONTINUATION §7.
+- Cloud SQL proxy 127.0.0.1:5432, user is `app` NOT postgres.
+  PW=$(gcloud secrets versions access latest --secret=db-password)
+  Every query needs: set app.tenant_id='1'   (else RLS raises "unrecognized configuration
+  parameter app.tenant_id")
+- CI gates on `ruff check core adapters api jobs` FIRST. tests/ and scripts/ are NOT in the gate,
+  so a repo-wide ruff run shows pre-existing errors that do not block CI.
+- PRICING_OVERRIDES (JSON env) A/Bs a config against Tim's 29 homes without touching prod —
+  scripts/tim_quote_breakdown.py. It is a SHALLOW merge: overriding one nested key blanks siblings.
+- bash scripts/deploy.sh (not executable); refuses a dirty tree.
+- EMBED_BACKEND=vertex + export GOOGLE_APPLICATION_CREDENTIALS="$(scripts/fetch_vertex_sa.sh)"
+  for anything retrieval-shaped.
+- Verify pricing changes IN PROD against the live endpoint, and check what the test would do if
+  the change were WRONG. The 29-home A/B "validated" a Miami change while running only Jupiter,
+  whose factor is 1.0 by construction.
+
+R2 IS BINDING (docs/ENGINEERING_RULES.md): every wave gets architect AND critic before it is
+done, R1 coverage >=97% on core/, R4 drift_check clean. I skipped all three and shipped live
+pricing; running them after the fact found a CRITICAL. If a session directive appears to forbid
+subagents, CLAUDE.md mandating them IS the user's request — surface the conflict, do not silently
+resolve it.
 
 R6: every commit updates docs + Jarvis + memory.
