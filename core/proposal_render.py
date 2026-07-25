@@ -190,51 +190,83 @@ DEFAULT_TEMPLATE_HTML = """\
   <meta charset="UTF-8">
   <title>{{ proposal.title }}</title>
   <style>
-    @page { size: Letter; margin: 0.45in; }
-    body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; font-size: 11px; line-height: 1.35; margin: 0; }
+    /* Design system: docs/design/2026-07-24-proposal-pdf-redesign.md. One token per role —
+       no new hex literals in this template. Accent is Perkins light blue (#41B1E5, from Tim's
+       signature + the logo), NOT the previous #ef3c1a red, which appears nowhere in his brand
+       or in the Knowify proposals this document has to sit alongside. */
+    @page { size: Letter; margin: 0.5in; }
+    :root {
+      --fs-brand: 26px; --fs-hero-price: 20px; --fs-h1: 16px; --fs-h2: 13px; --fs-h3: 12px;
+      --fs-body: 11px; --fs-legal: 10px; --fs-small: 9px;
+      --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+      --ink: #1f2937; --ink-muted: #475467; --ink-label: #667085;
+      --brand-navy: #1b2a52; --brand-accent: #41b1e5;
+      --border: #d0d5dd; --border-hairline: #eaecf0;
+      --surface-alt: #f8fafc; --surface-tint-navy: #eef1f8; --surface-tint-info: #f0f9ff;
+      --warn-border: #f59e0b; --warn-bg: #fffbeb;
+    }
+    body { font-family: Arial, Helvetica, sans-serif; color: var(--ink); font-size: var(--fs-body); line-height: 1.45; margin: 0; }
     .page { max-width: 8in; margin: 0 auto; }
-    .top { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; border-bottom: 3px solid #ef3c1a; padding-bottom: 12px; margin-bottom: 12px; }
-    .brand { color: #1b2a52; font-size: 26px; font-weight: 900; letter-spacing: .02em; }
-    .brand small { display:block; color:#667085; font-size:10px; letter-spacing:0; margin-top:2px; font-weight:700; }
-    .meta { text-align: right; font-size: 11px; color:#344054; }
+    .top { display: grid; grid-template-columns: 1.2fr 1fr; gap: var(--sp-5); border-bottom: 3px solid var(--brand-accent); padding-bottom: var(--sp-3); margin-bottom: var(--sp-3); }
+    .brand { color: var(--brand-navy); font-size: var(--fs-brand); font-weight: 900; letter-spacing: .02em; }
+    .brand small { display:block; color: var(--ink-label); font-size: var(--fs-small); letter-spacing:0; margin-top:2px; font-weight:700; }
+    .page-title { font-size: var(--fs-h1); font-weight:800; color: var(--brand-navy); margin: var(--sp-2) 0 0; }
+    .meta { text-align: right; font-size: var(--fs-body); color: var(--ink-muted); }
     .meta div { margin-bottom: 3px; }
-    .label { color:#667085; font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size:9px; }
-    .info-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 16px; }
-    .info-box { border:1px solid #d0d5dd; border-radius:6px; padding:10px 12px; min-height:54px; }
-    h2 { color:#1b2a52; font-size:13px; text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid #d0d5dd; padding-bottom:5px; margin:18px 0 9px; }
-    .scope { border:1px solid #d0d5dd; border-radius:7px; margin: 10px 0 12px; break-inside: avoid; overflow:hidden; }
-    .scope-head { display:grid; grid-template-columns: 34px 1fr 130px; gap:10px; align-items:center; background:#f8fafc; border-bottom:1px solid #d0d5dd; padding:9px 12px; }
-    .scope-no { width:24px; height:24px; border-radius:50%; background:#1b2a52; color:white; display:flex; align-items:center; justify-content:center; font-weight:800; }
-    .scope-title { color:#1b2a52; font-weight:800; font-size:12px; text-transform:uppercase; }
-    .scope-price { text-align:right; color:#1b2a52; font-size:14px; font-weight:900; }
-    .scope-body { padding:10px 12px; }
-    .qty { color:#667085; margin-bottom:6px; font-size:10px; }
-    .spec { margin:0; color:#344054; }
-    .bonus { margin-top:8px; background:#f0f9ff; border-left:3px solid #1b2a52; padding:7px 9px; font-size:10px; color:#344054; }
-    .totals { margin-left:auto; width:260px; border:1px solid #d0d5dd; border-radius:7px; overflow:hidden; margin-top:14px; }
-    .totals-row { display:flex; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #eaecf0; }
-    .totals-row:last-child { border-bottom:0; background:#1b2a52; color:white; font-weight:900; font-size:14px; }
-    .payment { border:1px solid #f59e0b; background:#fffbeb; border-radius:7px; padding:10px 12px; margin: 14px 0; break-inside: avoid; }
-    .payment table, .tc-ai-faq table, .lumber table { width:100%; border-collapse:collapse; margin-top:7px; }
-    .payment th, .payment td, .tc-ai-faq th, .tc-ai-faq td, .lumber th, .lumber td { padding:5px 7px; border-bottom:1px solid #eaecf0; text-align:left; vertical-align:top; }
-    .payment th, .tc-ai-faq th, .lumber th { background:#f8fafc; color:#344054; font-size:9px; text-transform:uppercase; letter-spacing:.04em; }
+    .label { color: var(--ink-label); font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size: var(--fs-small); }
+    .info-grid { display:grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-5); }
+    .info-box { border:1px solid var(--border); border-radius:6px; padding: var(--sp-3); min-height:54px; }
+    h2 { color: var(--brand-navy); font-size: var(--fs-h2); font-weight:800; text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); padding-bottom: var(--sp-2); margin: var(--sp-6) 0 var(--sp-3); }
+    /* Page 1 is the decision page; this forces everything after the CTA onto page 2. */
+    .page-break-1 { break-before: page; page-break-before: always; }
+    .tiers { display:grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); margin: var(--sp-3) 0; break-inside: avoid; }
+    .tier-card { position:relative; border:1px solid var(--border); border-radius:8px; padding: var(--sp-4) var(--sp-3); text-align:center; }
+    .tier-card--featured { border-color: var(--brand-navy); border-width:2px; }
+    .tier-flag { position:absolute; top:-10px; left:50%; transform:translateX(-50%); background: var(--brand-navy); color:#fff; font-size: var(--fs-small); font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 10px; border-radius:10px; }
+    .tier-name { color: var(--ink-label); font-size: var(--fs-small); font-weight:800; text-transform:uppercase; letter-spacing:.04em; margin-bottom: var(--sp-1); }
+    .tier-price { color: var(--brand-navy); font-size: var(--fs-h3); font-weight:900; }
+    .hero-total { margin: var(--sp-5) 0; padding: var(--sp-4); border:1px solid var(--border); border-radius:8px; text-align:center; break-inside: avoid; }
+    .hero-total-label { font-size: var(--fs-small); text-transform:uppercase; letter-spacing:.04em; color: var(--ink-label); font-weight:800; }
+    .hero-total-price { font-size: var(--fs-hero-price); font-weight:900; color: var(--brand-navy); margin: var(--sp-1) 0; }
+    .hero-total-due { font-size: var(--fs-body); color: var(--ink-muted); }
+    .scope { border:1px solid var(--border); border-radius:7px; margin: var(--sp-2) 0 var(--sp-3); break-inside: avoid; overflow:hidden; }
+    .scope-head { display:grid; grid-template-columns: 34px 1fr 130px; gap: var(--sp-2); align-items:center; background: var(--surface-alt); border-bottom:1px solid var(--border); padding: var(--sp-2) var(--sp-3); }
+    .scope-no { width:24px; height:24px; border-radius:50%; background: var(--brand-navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; }
+    .scope-title { color: var(--brand-navy); font-weight:800; font-size: var(--fs-h3); text-transform:uppercase; }
+    .scope-price { text-align:right; color: var(--brand-navy); font-size: var(--fs-h3); font-weight:900; }
+    .scope-body { padding: var(--sp-3); }
+    .qty { color: var(--ink-label); margin-bottom: var(--sp-1); font-size: var(--fs-small); }
+    .spec { margin:0; color: var(--ink-muted); white-space: pre-line; }
+    .bonus { margin-top: var(--sp-2); background: var(--surface-tint-info); border-left:3px solid var(--brand-navy); padding: var(--sp-2); font-size: var(--fs-small); color: var(--ink-muted); }
+    .payment { border:1px solid var(--warn-border); background: var(--warn-bg); border-radius:7px; padding: var(--sp-3); margin: var(--sp-4) 0; break-inside: avoid; }
+    .payment table, .tc-ai-faq table, .lumber table { width:100%; border-collapse:collapse; margin-top: var(--sp-2); }
+    .payment th, .payment td, .tc-ai-faq th, .tc-ai-faq td, .lumber th, .lumber td { padding: var(--sp-1) 7px; border-bottom:1px solid var(--border-hairline); text-align:left; vertical-align:top; }
+    .payment th, .tc-ai-faq th, .lumber th { background: var(--surface-alt); color: var(--ink-muted); font-size: var(--fs-small); text-transform:uppercase; letter-spacing:.04em; }
+    .payment tbody tr:first-child td { font-weight:800; }
+    .lumber tbody tr:nth-child(even) td, .payment tbody tr:nth-child(even) td { background: var(--surface-alt); }
     .amt { text-align:right !important; white-space:nowrap; }
-    .accept { text-align:center; margin:16px 0 18px; padding:14px; border:1px solid #d0d5dd; border-radius:8px; }
-    .accept a { display:inline-block; background:#ef3c1a; color:#fff; text-decoration:none; padding:10px 22px; border-radius:6px; font-weight:800; }
-    .terms { margin-top:18px; font-size:9px; color:#475467; }
-    .terms pre { white-space:pre-wrap; font-family:Arial, Helvetica, sans-serif; margin:0; }
-    .tc-ai-cover { margin-top:14px; padding:12px 14px; background:#f4f8ff; border-left:4px solid #2471a3; font-size:10px; }
-    .tc-ai-cover p { margin: 0 0 8px 0; }
-    .tc-ai-faq { margin-top:18px; page-break-before: always; }
-    .tc-ai-faq h2 { color:#2471a3; }
-    .lumber { page-break-before: always; font-size:9px; color:#344054; }
-    .footer { margin-top:18px; border-top:1px solid #d0d5dd; padding-top:10px; font-size:10px; color:#667085; text-align:center; }
+    .accept { text-align:center; margin: var(--sp-4) 0 var(--sp-5); padding: var(--sp-4); border-radius:8px; background: var(--surface-tint-info); break-inside: avoid; }
+    .accept a { display:inline-block; background: var(--brand-navy); color:#fff; text-decoration:none; padding:12px 28px; border-radius:6px; font-weight:800; font-size:13px; }
+    .terms { margin-top: var(--sp-5); font-size: var(--fs-legal); color: var(--ink-muted); }
+    /* pre-line, not pre-wrap: keeps the author's blank-line paragraphs, drops the hard-wrap
+       ragged edges that made the T&C read as one blob. Content is untouched. */
+    .terms pre { white-space: pre-line; font-family:Arial, Helvetica, sans-serif; line-height:1.6; margin:0; }
+    .tc-ai-cover { margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-4); background: var(--surface-tint-navy); border-left:4px solid var(--brand-navy); font-size: var(--fs-small); }
+    .tc-ai-cover p { margin: 0 0 var(--sp-2) 0; }
+    .tc-ai-faq { margin-top: var(--sp-5); page-break-before: always; }
+    .faq-item { break-inside: avoid; padding: var(--sp-3) 0; border-bottom:1px solid var(--border-hairline); }
+    .faq-item:last-child { border-bottom:0; }
+    .faq-q { font-weight:800; color: var(--brand-navy); margin-bottom: var(--sp-1); }
+    .faq-a { color: var(--ink); }
+    .lumber { page-break-before: always; font-size: var(--fs-legal); color: var(--ink-muted); }
+    .footer { margin-top: var(--sp-4); border-top:1px solid var(--border); padding-top: var(--sp-3); font-size: var(--fs-body); color: var(--ink-label); text-align:center; }
   </style>
 </head>
 <body><div class="page">
   <div class="top">
     <div>
       <div class="brand">{{ tenant.name }}<small>{% if tenant.license %}License #{{ tenant.license }}{% endif %}</small></div>
+      <h1 class="page-title">Roofing Proposal</h1>
     </div>
     <div class="meta">
       <div><span class="label">Project</span> {{ proposal.title }}</div>
@@ -248,7 +280,35 @@ DEFAULT_TEMPLATE_HTML = """\
     <div class="info-box"><div class="label">Address</div><strong>{{ property.address }}</strong>{% if property.county %}<br>{{ property.county }} County{% endif %}{% if property.code_zone %}<br>{{ property.code_zone }}{% endif %}</div>
   </div>
 
-  <h2>Scope of Work</h2>
+  {# ── Page 1: the decision page — options, price, signature. Detail follows overleaf. ── #}
+  {% if quote.better_price or quote.best_price %}
+  <h2>Your Options</h2>
+  <div class="tiers">
+    {% for name, price, featured in [("Good", quote.good_price, False), ("Better", quote.better_price, True), ("Best", quote.best_price, False)] %}
+      {% if price %}
+      <div class="tier-card{% if featured %} tier-card--featured{% endif %}">
+        {% if featured %}<div class="tier-flag">Recommended</div>{% endif %}
+        <div class="tier-name">{{ name }}</div>
+        <div class="tier-price">{{ price }}</div>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="hero-total">
+    <div class="hero-total-label">Total Investment</div>
+    <div class="hero-total-price">{{ quote.good_price }}</div>
+    {% if deposit.amount %}<div class="hero-total-due">Due at signing: {{ deposit.amount }}</div>{% endif %}
+  </div>
+
+  <div class="accept">
+    <p>Review and accept your proposal online:</p>
+    <a href="{{ accept_url }}">Review &amp; Accept Proposal</a>
+    <div style="font-size:9px;color:#667085;margin-top:6px;">{{ accept_url }}</div>
+  </div>
+
+  <h2 class="page-break-1">Scope of Work</h2>
   {% if quote.line_items %}
     {% for item in quote.line_items %}
     <div class="scope">
@@ -259,7 +319,9 @@ DEFAULT_TEMPLATE_HTML = """\
       </div>
       <div class="scope-body">
         {% if item.qty_display %}<div class="qty">Quantity: {{ item.qty_display }} {{ item.unit }}</div>{% endif %}
-        <p class="spec">{{ item.description }}</p>
+        {# label is description-up-to-the-em-dash, so with no em-dash the two are identical —
+           printing both repeats the card title verbatim as its own body. #}
+        {% if item.description and item.description != item.label %}<p class="spec">{{ item.description }}</p>{% endif %}
         <div class="bonus"><strong>PERKINS BONUS VALUES:</strong> standard cleanup, project supervision, and warranty support are included unless otherwise noted.</div>
       </div>
     </div>
@@ -273,25 +335,8 @@ DEFAULT_TEMPLATE_HTML = """\
     {% if quote.best_price %}<div class="scope"><div class="scope-head"><div class="scope-no">3</div><div class="scope-title">Best Option</div><div class="scope-price">{{ quote.best_price }}</div></div></div>{% endif %}
   {% endif %}
 
-  {% if quote.better_price or quote.best_price %}
-  <h2>Alternate Package Options</h2>
-  <div class="scope">
-    <div class="scope-body">
-      <div style="display:grid;grid-template-columns:1fr 120px;gap:8px;">
-        {% if quote.good_price %}<div>Good</div><div style="text-align:right;font-weight:800;">{{ quote.good_price }}</div>{% endif %}
-        {% if quote.better_price %}<div>Better</div><div style="text-align:right;font-weight:800;">{{ quote.better_price }}</div>{% endif %}
-        {% if quote.best_price %}<div>Best</div><div style="text-align:right;font-weight:800;">{{ quote.best_price }}</div>{% endif %}
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="totals">
-    <div class="totals-row"><span>Subtotal</span><span>{{ quote.good_price }}</span></div>
-    <div class="totals-row"><span>Tax</span><span>0%</span></div>
-    <div class="totals-row"><span>Total</span><span>{{ quote.good_price }}</span></div>
-  </div>
-
+  {# The old Subtotal/Tax 0%/Total block was three rows of the same number plus an invented tax
+     line; page 1's hero total carries the price now. #}
   <div class="payment">
     <strong>Payment Schedule</strong>
     {% if payment.draws %}
@@ -309,13 +354,7 @@ DEFAULT_TEMPLATE_HTML = """\
     {% if deposit.instructions %}<p>{{ deposit.instructions }}</p>{% endif %}
   </div>
 
-  <div class="accept">
-    <p>Review and accept your proposal online:</p>
-    <a href="{{ accept_url }}">Review &amp; Accept Proposal</a>
-    <div style="font-size:9px;color:#667085;margin-top:6px;">{{ accept_url }}</div>
-  </div>
-
-  <div class="footer">Tim Kanak · Perkins Roofing Jupiter · 15658 Alexander Run, Jupiter, FL 33478</div>
+  <div class="footer">{{ tenant.name }}{% if tenant.license %} · License #{{ tenant.license }}{% endif %} · 575 NW 152nd St, Miami, FL 33169 · 15658 Alexander Run, Jupiter, FL 33478</div>
 
   {% if tc.include_terms %}
   <div class="terms">
@@ -336,11 +375,15 @@ DEFAULT_TEMPLATE_HTML = """\
   {% if tc.include_contract_faq and tc.faq_items %}
   <div class="tc-ai-faq">
     <h2>Contract FAQ</h2>
-    <table>
+    {# Stacked Q/A cards: a 2-column table is the wrong primitive for prose. #}
+    <div class="faq-list">
       {% for item in tc.faq_items %}
-      <tr><td><strong>{{ item.q }}</strong></td><td>{{ item.a }}</td></tr>
+      <div class="faq-item">
+        <div class="faq-q">{{ item.q }}</div>
+        <div class="faq-a">{{ item.a }}</div>
+      </div>
       {% endfor %}
-    </table>
+    </div>
   </div>
   {% endif %}
 
