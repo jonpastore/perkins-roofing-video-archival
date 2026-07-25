@@ -321,7 +321,7 @@
     "sloped": 0.1,
     "low_slope": 0.15,
     "sloped_hvhz": null,
-    "_pending_sloped_hvhz": "Tim \u2014 PC-1: confirm sloped HVHZ commission rate (10% same as sloped, or 15% same as low_slope); engine defaults to sloped (0.10) until this is filled (OI-7)"
+    "_pending_sloped_hvhz": "Tim \u2014 PC-1/OI-7: commission rate is NOT keyed by zone. Investigated 2026-07-25: on the NEW sloped sheet (1KHHGIyt...) the Marco and Josh tabs have an IDENTICAL price grid (7/12 +$200, tile demo +$35, dumpster 'more than 15 sq') yet read A27 = 15% and 7.5% respectively, so the rate varies per PERSON on the same zone shape. The zone reading only looks right on the live sheet, where Marco/Josh are FBC-shaped and both read 10%. 'Tim (HVHZ)'!A27 = 15% is equally well explained by it being Tim's own tab. No Jupiter tab on any sheet has a commission cell. ASK: is commission set by zone, or per salesperson \u2014 and what is each person's rate? If per-person, commission_pct keyed by (slope_type, zone) is the wrong shape. Engine defaults to sloped (0.10) until answered. See docs/open-questions-resolved-from-live-sheets-2026-07-25.md \u00a7S3."
   },
   "pm_incentive": {
     "_pending_verify": "Tim \u2014 full matrix must be verified before activation (OI-8); values from PRD F2-11 plan \u00a710.5",

@@ -19,29 +19,36 @@ across the three. Corpus: `~/perkins-corpus/tim_lowslope_comments_by_cell.json`.
 
 ## 1. Answered — drop from the ask
 
-### A1. Sloped-HVHZ commission is 15%. (was OI-7)
+### ~~A1. Sloped-HVHZ commission is 15%.~~ **WITHDRAWN — see §S3. I got this wrong.**
 
-`Tim (HVHZ)!A27` = **"ESTIMATED COMMISSION (15% of P)"**. `FBC!A27` = **"(10% of P)"**. Identical on
-the live *and* NEW sheets. The split is not sloped-vs-low-slope, it is **branch**: Miami/HVHZ 15%,
-Jupiter/FBC 10% — which is why low-slope "looked like" 15% (that calculator is Miami's).
+I read `Tim (HVHZ)!A27` = "ESTIMATED COMMISSION (15% of P)" against `FBC!A27` = "(10% of P)",
+concluded the rate was zone-keyed, set `sloped_hvhz: 0.15`, and wrote a seeder. The R2 critic
+refuted it and I confirmed the refutation against my own pull. **Reverted; `sloped_hvhz` is null
+again** with a sharpened open item. What was wrong is recorded in §S3 — it is the more useful
+finding.
 
-**This is a live defect.** `commission_pct.sloped_hvhz` is `null`, and `core/pricing_config.py:208`
-falls back to `sloped` = 0.10, so every sloped HVHZ job pays commission a third light. Fix: set
-`sloped_hvhz: 0.15`.
+### A2. PM incentive — **PARTLY WITHDRAWN. Our config is not right, and the defect is customer-facing.**
 
-### A2. PM incentive — our config is already right; the email's description is wrong.
+I claimed our `pm_incentive` matched both schemes. It does not. Tim's **FBC** block (`N7:O9`) is
+**size-only** — `<20 sq $50`, `20–50 $100`, `>50 $250`, with no residential/commercial dimension —
+but we key two of those three bands as `commercial_*`, so a residential FBC job can never reach
+them. `core/pricing_config.py:226-236` then silently falls back to `residential_lt20`:
 
-Two different schemes, one per branch, both on the sheets and both already in the fixture:
+```
+FBC  residential 35 sq -> $50    (Tim's N8: 20-50 squares = $100)
+FBC  residential 60 sq -> $50    (Tim's N9: >50 squares   = $250)
+HVHZ residential 35 sq -> $150   (correct — Tim's HVHZ block has no size dimension)
+FBC/HVHZ commercial 10 sq -> ConfigError (422)  <- neither zone can quote a small commercial job
+```
 
-| | live sheet | our `pm_incentive` |
-|---|---|---|
-| HVHZ | `N7/N8`: Residential **$150**, Commercial **$300** | `residential_lt20` 150, `commercial_*` 300 ✓ |
-| FBC | `N7–N9`: <20 sq **$50**, 20–50 **$100**, >50 **$250** | 50 / 100 / 250 ✓ |
+Unlike commission, **`pm_incentive` is a line item inside `project_total`** — this is real money on
+the customer's price, understated $50–$200 on the residential jobs that dominate Tim's book.
+`docs/TIM_SHEET_VERIFICATION_2026-07-24.md:33` had already caught exactly this ("a 35-square
+RESIDENTIAL job … receives $50 where his sheet says $100") and I marked it resolved a day later.
 
-The email says *"your sheet reads size-only … but ours also keys on residential vs commercial"* —
-that describes the FBC tab only; the HVHZ tab is exactly the res/comm scheme we implement. The single
-real gap: **HVHZ has no residential band above 20 squares** (`residential_lt20` is the only
-residential key). Narrow the question to that.
+The "gap" I *did* name — HVHZ having no residential band above 20 squares — is not a gap: Tim's
+HVHZ block is flat by project kind, so $150 at every size is correct. I had it backwards.
+**Keep this on the ask list**, and fix the FBC keys and the small-commercial 422 as their own item.
 
 ### A3. Verea and the specialty tile upgrades are priced — in two places.
 
@@ -117,6 +124,42 @@ We quote from the live sheet's structure ($650 + $1,350 + $500 and FBC base $770
 **every quote's fixed fees and most per-square rates change**. This is the same "published sheet vs
 build-up" question the email already asks, but with a concrete third answer: *there are three sheets*.
 
+### S3. Commission is set per SALESPERSON, not per zone — which is why A1 was wrong.
+
+Every commission cell on all three sheets:
+
+| sheet | tab | cell | rate |
+|---|---|---|--:|
+| sloped live | Tim (HVHZ) | A27 | 15% |
+| sloped live | FBC (Palm / Lee / St. Lucie) | A27 | 10% |
+| sloped live | Marco | A27 | 10% |
+| sloped live | Josh | A27 | 10% |
+| **sloped NEW** | **Marco** | **A27** | **15%** |
+| **sloped NEW** | **Josh** | **A27** | **7.5%** |
+| sloped NEW | Tim (HVHZ) / FBC | A27 | 15% / 10% |
+| low-slope live | Tim / Josh / Marco | A32 | 15% each |
+
+On the NEW sheet, **Marco and Josh have an identical price grid** — 7/12 +$200, tile demo +$35,
+dumpster "more than 15 sq", same profit scale, same base $755 — and read **15% and 7.5%**. A rate
+that differs between two identically-zoned tabs is not a function of zone. `Tim (HVHZ)!A27 = 15%`
+is at least as well explained by *it being Tim's own tab* as by HVHZ paying more; the price guide
+just happens to be named after him.
+
+Two further things I asserted and should not have:
+
+- **"Miami 15% / Jupiter 10%"** — no `Jupiter` tab on any of the three sheets has a commission cell
+  at all. That label was invented, not read.
+- **"low_slope reads 15% because that calculator is Miami's"** — the low-slope sheet has *no zone
+  split* (my own audit doc says so, `low-slope-comment-audit-2026-07-25.md` §method) and all three
+  person tabs read 15%. The story is false, not merely unverified.
+
+The zone reading holds on the live sheet and breaks only on the NEW one, which is a reasonable
+inference to have drawn — and exactly the kind this repo has been burned by. **Ask Tim: is
+commission set by zone/branch or per salesperson, and what is each person's rate?** If per-person,
+`commission_pct` keyed by `(slope_type, zone)` is the wrong shape and needs a per-user rate.
+
+Until then `sloped_hvhz` stays `null` and the engine keeps paying the 10% sloped rate.
+
 ---
 
 ## 3. Still genuinely open — no answer anywhere on the sheets
@@ -153,8 +196,22 @@ Searched every comment and cell; nothing addresses these.
 
 ## 5. Actions
 
-1. **Config fix, ship it:** `commission_pct.sloped_hvhz = 0.15` (§A1) — a live under-payment, and the
-   sheet states it twice.
-2. **Rewrite the email's open list** — drop A1/A4, narrow A2/A3/A5, re-ask S1/S2 with the NEW-sheet
-   conflict, keep §3.
-3. **Backlog:** random items, Perkins Penny, upgrade ladder, metal detail adders.
+1. ~~Ship `commission_pct.sloped_hvhz = 0.15`~~ — **withdrawn (§S3).** Attempted, reviewed, reverted.
+   `sloped_hvhz` stays null; the open item now carries the real question (zone vs salesperson).
+2. **Fix `pm_incentive` (§A2)** — real money in `project_total`, twice documented, still wrong. FBC's
+   bands are size-only, so residential ≥20 sq under-charges; and commercial <20 sq 422s in both
+   zones. Its own wave.
+3. **The email's open list** — A4 dropped, A3/A5 narrowed, S1/S2/S3 asked with the NEW-sheet
+   conflict, A2 restored, §3 kept.
+4. **Backlog:** random items, Perkins Penny, upgrade ladder, metal detail adders.
+
+## 6. Process note
+
+A1 is the second time in two sessions a pricing claim was reported as established on evidence that
+could not carry it. Last time the A/B ran only the branch whose factor is 1.0 by construction; this
+time a cell was read as zone-keyed without checking the tabs next to it, which take four different
+values. The sabotage check I ran (revert the value → two tests fail) proved the tests were not
+vacuous, but a test that hardcodes the same number the config does cannot tell you the number is
+right — config and test were two copies of one belief.
+
+What actually caught it was R2, run before applying to prod rather than after. Cost: one dry run.
