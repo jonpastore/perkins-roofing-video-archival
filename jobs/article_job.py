@@ -1563,6 +1563,12 @@ _FAQ_DT_DD_RE = re.compile(
     re.IGNORECASE | re.DOTALL)
 
 
+_FAQ_UL_RE = re.compile(r"<ul>\s*(<li>.*?</li>)\s*</ul>", re.IGNORECASE | re.DOTALL)
+_FAQ_LI_RE = re.compile(
+    r"<li>\s*<strong>\s*(.*?\?)\s*</strong>\s*(.*?)\s*</li>", re.IGNORECASE | re.DOTALL)
+_LI_ANY_RE = re.compile(r"<li>", re.IGNORECASE)
+
+
 def _ensure_faq_headings(content_md: str) -> str:
     """Render FAQ Q&A as <h3> question + <p> answer instead of a <dl>/<dt>/<dd> list.
 
@@ -1572,13 +1578,18 @@ def _ensure_faq_headings(content_md: str) -> str:
     as headings. Headings are what both Rank Math and AI extractors read, so this is the
     honest fix rather than gaming the count.
 
-    Same text, different element: nothing is rewritten, invented, or dropped. Idempotent — an
-    article with no <dl> is returned unchanged.
-    """
-    if not content_md or "<dl>" not in content_md.lower():
-        return content_md
+    Two legacy shapes are handled, both seen in the live library:
+      <dl><dt>Q: …</dt><dd>A: …</dd></dl>          (definition list)
+      <ul><li><strong>…?</strong> answer</li></ul>  (bold question in a bullet)
 
-    def _convert(match: re.Match) -> str:
+    Same text, different element: nothing is rewritten, invented, or dropped. Idempotent, and
+    conservative — a glossary <dl> or an ordinary bullet list is returned untouched.
+    """
+    if not content_md:
+        return content_md
+    out = content_md
+
+    def _convert_dl(match: re.Match) -> str:
         pairs = _FAQ_DT_DD_RE.findall(match.group(1))
         # Only a Q&A list qualifies: every term is "Q:"-prefixed or ends in a question mark.
         # A glossary <dl> stays a glossary — <dt>Term</dt> is not a heading.
@@ -1587,7 +1598,19 @@ def _ensure_faq_headings(content_md: str) -> str:
             return match.group(0)
         return "\n".join(f"<h3>{term}</h3>\n<p>{answer}</p>" for _, term, answer in pairs)
 
-    return _FAQ_DL_RE.sub(_convert, content_md)
+    def _convert_ul(match: re.Match) -> str:
+        body = match.group(1)
+        pairs = _FAQ_LI_RE.findall(body)
+        # EVERY item must be a bold question with an answer, else it's a normal bullet list.
+        if not pairs or len(pairs) != len(_LI_ANY_RE.findall(body)):
+            return match.group(0)
+        return "\n".join(f"<h3>{q}</h3>\n<p>{a}</p>" for q, a in pairs)
+
+    if "<dl>" in out.lower():
+        out = _FAQ_DL_RE.sub(_convert_dl, out)
+    if "<strong>" in out.lower():
+        out = _FAQ_UL_RE.sub(_convert_ul, out)
+    return out
 
 
 def _ensure_footer_link(content_md: str) -> str:

@@ -26,7 +26,8 @@ from app.models import Article, SessionLocal  # noqa: E402
 from core.article_criteria import check_compliance, failing  # noqa: E402
 from core.wp_category import pick_category_name  # noqa: E402
 from jobs.article_job import (  # noqa: E402
-    _compliance_gate, _markdown_to_html, _repair_inputs, _stamped_session)
+    _compliance_gate, _ensure_faq_headings, _markdown_to_html, _repair_inputs,
+    _stamped_session)
 from jobs.batch_article_job import _fresh_vertex  # noqa: E402
 
 
@@ -40,6 +41,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write to WordPress + DB (default: dry-run)")
     ap.add_argument("--limit", type=int, default=0, help="cap the number of articles processed")
+    ap.add_argument("--include-faq-headings", action="store_true",
+                    help="also reprocess COMPLIANT articles whose FAQ still renders as a <dl> "
+                         "(questions as <dt>, not headings — see _ensure_faq_headings)")
     args = ap.parse_args()
 
     with _stamped_session(1) as db:
@@ -54,11 +58,17 @@ def main() -> None:
         comp = check_compliance(content or "", meta or "", jsonld or [], faq or [],
                                 {"role": role, "pillar_slug": pillar, "title": title or "", "slug": slug},
                                 _kw_from(slug, fk), known)
-        if failing(comp):
+        # A compliant article can still carry a <dl> FAQ: it passes ≥1 question heading on the
+        # strength of other headings while its own Q&A stays unextractable. The ensures already
+        # fix it — this just widens WHICH articles get re-run through them.
+        needs_faq_headings = (args.include_faq_headings
+                              and _ensure_faq_headings(content or "") != (content or ""))
+        if failing(comp) or needs_faq_headings:
             targets.append(r)
     if args.limit:
         targets = targets[:args.limit]
-    print(f"{len(rows)} total articles; {len(targets)} non-compliant to reprocess "
+    label = "to reprocess" if args.include_faq_headings else "non-compliant to reprocess"
+    print(f"{len(rows)} total articles; {len(targets)} {label} "
           f"({'APPLY' if args.apply else 'DRY-RUN'})\n")
 
     ok_n, blocked = 0, []

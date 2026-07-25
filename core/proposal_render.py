@@ -216,7 +216,10 @@ DEFAULT_TEMPLATE_HTML = """\
     .label { color: var(--ink-label); font-weight:700; text-transform:uppercase; letter-spacing:.04em; font-size: var(--fs-small); }
     .info-grid { display:grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-5); }
     .info-box { border:1px solid var(--border); border-radius:6px; padding: var(--sp-3); min-height:54px; }
-    h2 { color: var(--brand-navy); font-size: var(--fs-h2); font-weight:800; text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); padding-bottom: var(--sp-2); margin: var(--sp-6) 0 var(--sp-3); }
+    /* break-after: avoid keeps a section header with its content. Without it the page-1 break
+       landed before "Scope of Work" and the scope card (break-inside: avoid) then didn't fit
+       the remainder, leaving page 2 holding nothing but a heading. */
+    h2 { color: var(--brand-navy); font-size: var(--fs-h2); font-weight:800; text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); padding-bottom: var(--sp-2); margin: var(--sp-6) 0 var(--sp-3); break-after: avoid; page-break-after: avoid; }
     /* Page 1 is the decision page; this forces everything after the CTA onto page 2. */
     .page-break-1 { break-before: page; page-break-before: always; }
     .tiers { display:grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); margin: var(--sp-3) 0; break-inside: avoid; }
@@ -229,8 +232,10 @@ DEFAULT_TEMPLATE_HTML = """\
     .hero-total-label { font-size: var(--fs-small); text-transform:uppercase; letter-spacing:.04em; color: var(--ink-label); font-weight:800; }
     .hero-total-price { font-size: var(--fs-hero-price); font-weight:900; color: var(--brand-navy); margin: var(--sp-1) 0; }
     .hero-total-due { font-size: var(--fs-body); color: var(--ink-muted); }
-    .scope { border:1px solid var(--border); border-radius:7px; margin: var(--sp-2) 0 var(--sp-3); break-inside: avoid; overflow:hidden; }
-    .scope-head { display:grid; grid-template-columns: 34px 1fr 130px; gap: var(--sp-2); align-items:center; background: var(--surface-alt); border-bottom:1px solid var(--border); padding: var(--sp-2) var(--sp-3); }
+    /* A real Perkins scope runs 5,000+ characters — longer than a page — so it must be allowed
+       to flow. Only the header is pinned to the body that follows it. */
+    .scope { border:1px solid var(--border); border-radius:7px; margin: var(--sp-2) 0 var(--sp-3); overflow:hidden; }
+    .scope-head { display:grid; grid-template-columns: 34px 1fr 130px; gap: var(--sp-2); align-items:center; background: var(--surface-alt); border-bottom:1px solid var(--border); padding: var(--sp-2) var(--sp-3); break-after: avoid; page-break-after: avoid; }
     .scope-no { width:24px; height:24px; border-radius:50%; background: var(--brand-navy); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; }
     .scope-title { color: var(--brand-navy); font-weight:800; font-size: var(--fs-h3); text-transform:uppercase; }
     .scope-price { text-align:right; color: var(--brand-navy); font-size: var(--fs-h3); font-weight:900; }
@@ -322,7 +327,11 @@ DEFAULT_TEMPLATE_HTML = """\
         {# label is description-up-to-the-em-dash, so with no em-dash the two are identical —
            printing both repeats the card title verbatim as its own body. #}
         {% if item.description and item.description != item.label %}<p class="spec">{{ item.description }}</p>{% endif %}
+        {# Josh's real scope templates carry their own itemised BONUS VALUES list; don't print
+           the generic summary underneath it. #}
+        {% if "BONUS VALUE" not in (item.description or "")|upper %}
         <div class="bonus"><strong>PERKINS BONUS VALUES:</strong> standard cleanup, project supervision, and warranty support are included unless otherwise noted.</div>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
