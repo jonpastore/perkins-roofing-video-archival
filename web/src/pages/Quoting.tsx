@@ -107,6 +107,7 @@ interface QuoteResult {
   margin_ok: boolean;
   margin_warnings?: string[];
   margin?: MarginInfo;
+  daily_series?: Array<{ series: string; days: number }>;
   package_options?: PackageOption[];
   cut_calc?: {
     flat_base_per_sq: number;
@@ -668,6 +669,9 @@ export function Quoting() {
   // Scope of work (Zoom 2026-07-20 [42:06]/[44:12]) — shared by both modes.
   const [scopeOfWork, setScopeOfWork] = useState("");
   const [includeLumberChart, setIncludeLumberChart] = useState(false);
+  // T&C + contract FAQ default ON — they were always printed before these toggles existed.
+  const [includeTerms, setIncludeTerms] = useState(true);
+  const [includeContractFaq, setIncludeContractFaq] = useState(true);
   const [scopeOfWorkPrefilled, setScopeOfWorkPrefilled] = useState(false);
   const [scopeInstruction, setScopeInstruction] = useState("");
   const [scopeRewriting, setScopeRewriting] = useState(false);
@@ -1208,6 +1212,8 @@ export function Quoting() {
       // Fallback only for responses cached before the backend started returning floors.
       floors: quoteResult.floors ?? { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
       include_lumber_chart: includeLumberChart,
+      include_terms: includeTerms,
+      include_contract_faq: includeContractFaq,
       ...(scopeOfWork.trim() ? { scope_of_work_text: scopeOfWork.trim() } : {}),
     };
 
@@ -1892,6 +1898,7 @@ export function Quoting() {
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 8 }}>
                     By-time overhead <strong>replaces</strong> the per-square overhead (it doesn&apos;t add to it). Demo days are set in the tear-off section above.
+                    Leave days blank and they auto-fill from squares using Tim&apos;s time-learning model; anything you type wins.
                   </div>
                   {Object.keys(rates?.daily_overhead_rates ?? {}).length === 0 ? (
                     <div style={{ fontSize: 12, color: BRAND.sub }}>No daily overhead rates configured for this branch.</div>
@@ -2061,7 +2068,18 @@ export function Quoting() {
                     const oh = quoteResult.line_items_detail?.find((li) => li.key === "overhead");
                     if (!oh) return null;
                     const mode = quoteOverheadMode === "daily" ? "by days" : "per-sq";
-                    return <ResultRow label={`Overhead (${mode})`} value={usd(oh.amount)} />;
+                    const days = quoteResult.daily_series ?? [];
+                    return (
+                      <>
+                        <ResultRow label={`Overhead (${mode})`} value={usd(oh.amount)} />
+                        {days.length > 0 && (
+                          <ResultRow
+                            label="Labor days used"
+                            value={days.map((d) => `${d.days} ${d.series.replace(/_/g, " ")}`).join(" + ")}
+                          />
+                        )}
+                      </>
+                    );
                   })()}
                   {quoteResult.pre_discount_total != null && (
                     <ResultRow label="Pre-discount total" value={usd(quoteResult.pre_discount_total)} />
@@ -2200,6 +2218,18 @@ export function Quoting() {
                           onChange={setIncludeLumberChart}
                           label="Include lumber chart"
                           title="Attach Tim's Lumber Schedule / additional-work pricing exhibit to the proposal PDF"
+                        />
+                        <EstimateCheckbox
+                          checked={includeTerms}
+                          onChange={setIncludeTerms}
+                          label="Include terms & conditions"
+                          title="Print the T&C text, plain-language summary, and AI review prompts in the proposal PDF"
+                        />
+                        <EstimateCheckbox
+                          checked={includeContractFaq}
+                          onChange={setIncludeContractFaq}
+                          label="Include contract FAQ"
+                          title="Print the approved contract-FAQ questions and answers in the proposal PDF"
                         />
                       </div>
                       <Button onClick={handleCreateProposal} disabled={creatingProposal || !selectedPropertyId || inputsDirty} style={{ fontSize: 13, width: "100%" }}>
