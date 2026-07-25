@@ -54,7 +54,9 @@ def test_compose_proposal_totals_optionals_discounts_and_schedule():
         "hvhz": True,
         "payment_variant": "standard",
         "scopes": [
-            {"roof_system": "tile", "tier": "PROTECTOR", "squares": "10"},
+            # tile full price must come from the estimator now, not the flat catalog
+            {"roof_system": "tile", "tier": "PROTECTOR", "squares": "10",
+             "unit_price": "1100.00"},
             # optional excluded by default
             {"roof_system": "shingle", "tier": "PROTECTOR", "squares": "1", "is_optional": True},
             # included optional counts in total
@@ -110,7 +112,8 @@ def test_compose_proposal_metal_roof_shortens_expiry():
 def test_freeze_quote_snapshot_pins_package_tables_price_book_and_hash():
     proposal = compose_proposal({
         "scopes": [
-            {"roof_system": "tile", "tier": "PROTECTOR", "squares": "1"},
+            {"roof_system": "tile", "tier": "PROTECTOR", "squares": "1",
+             "unit_price": "1100.00"},
             {"roof_system": "metal", "tier": "CARIBBEAN", "squares": "1"},
         ],
     })
@@ -155,3 +158,27 @@ def test_compose_proposal_percent_discount_resolves_to_frozen_amount():
     assert discount["discount_type"] == "percent"
     assert discount["discount_value"] == "10"
     assert proposal["contract_total"] == "900.00"
+
+
+def test_tile_full_price_requires_an_engine_unit_price():
+    """The catalog has ONE $/sq for the whole tile system, but Tim's guide prices 13" tile at
+    $770/sq base vs barrel tile at $1,435/sq. Quoting barrel tile off the catalog is below cost,
+    so a tile full price must be supplied by the estimator."""
+    import pytest
+    with pytest.raises(ValueError, match="needs an explicit unit_price"):
+        compose_proposal({"scopes": [{"roof_system": "tile", "tier": "PROTECTOR", "squares": "30"}]})
+
+
+def test_tile_upgrade_adder_still_prices_off_the_catalog():
+    """An upgrade IS a flat per-square material swap, so adders stay catalog-priced."""
+    p = compose_proposal({"scopes": [
+        {"roof_system": "tile", "tier": "PREMIUM_MEDITERRANEAN", "squares": "10"}]})
+    assert p["scope_lines"][0]["unit_price"] == str(sell_price_per_sq("tile", "PREMIUM_MEDITERRANEAN"))
+
+
+def test_shingle_and_metal_full_prices_still_work():
+    """Only tile is cost-ambiguous; shingle's spread is $25/sq and sloped metal has one type."""
+    p = compose_proposal({"scopes": [
+        {"roof_system": "shingle", "tier": "PROTECTOR", "squares": "10"},
+        {"roof_system": "metal", "tier": "PROTECTOR", "squares": "10"}]})
+    assert len(p["scope_lines"]) == 2

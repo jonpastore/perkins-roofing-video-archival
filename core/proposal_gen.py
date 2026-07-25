@@ -13,7 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from core.discounts import resolve_discounts
-from core.perkins_packages import package_prices_snapshot, sell_price_per_sq
+from core.perkins_packages import package_prices_snapshot, requires_engine_price, sell_price_per_sq
 from core.pricing_config import compute_snapshot_hash
 
 _Q2 = Decimal("0.01")
@@ -167,9 +167,21 @@ def compose_proposal(
         is_optional = bool(scope.get("is_optional", False))
         included = bool(scope.get("included", False))
 
-        # Resolve unit price: explicit override > table lookup
+        # Resolve unit price: explicit override > table lookup.
+        # A FULL price must come from Tim's guide (base cost + OH + sliding-scale profit — what
+        # the estimator computes and what quote_snapshot carries), never from the flat per-system
+        # catalog: that table cannot tell 13" tile from barrel tile, whose costs differ by
+        # $665/sq. Upgrade ADDERS still price off the catalog.
         if scope.get("unit_price") is not None:
             unit_price = Decimal(str(scope["unit_price"]))
+        elif requires_engine_price(system, tier):
+            raise ValueError(
+                f"scope {line_num} ({system}/{tier}) needs an explicit unit_price from the "
+                f"estimator. The ${sell_price_per_sq(system, tier)}/sq catalog entry is one flat "
+                f"price for the whole {system} system, and Tim's guide prices 13\" tile at "
+                f"$770/sq base against barrel tile at $1,435/sq — quoting barrel tile from the "
+                f"catalog is below cost before overhead or profit."
+            )
         else:
             unit_price = sell_price_per_sq(system, tier)
 

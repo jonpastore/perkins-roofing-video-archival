@@ -94,6 +94,26 @@ _STANDALONE: dict[str, set[str]] = {
 }
 
 
+# Systems whose roof types have materially different cost, so ONE flat $/sq cannot price them.
+# tile: 13" tile base $770/sq vs barrel tile $1,435/sq in Tim's guide — a $665/sq spread, while
+# this table has a single "tile" entry at $1,100/sq. Quoting barrel tile from it is below
+# material+labour cost before any overhead or profit. Shingle's spread is $25/sq (3-tab $395 vs
+# dimensional $420) and metal has one sloped type, so those stay catalog-priceable.
+_COST_AMBIGUOUS_SYSTEMS = frozenset({"tile"})
+
+
+def requires_engine_price(system: str, tier: str) -> bool:
+    """True when a FULL price for this system+tier must come from the estimator, not this table.
+
+    Tim's price guide — base cost + overhead + sliding-scale profit, which the estimator
+    reproduces exactly — is the source of truth for a full price. Upgrade ADDERS stay valid
+    here: an upgrade genuinely is a flat per-square material swap.
+    """
+    system = system.lower()
+    is_full_price = tier == "PROTECTOR" or tier in _STANDALONE[system]
+    return is_full_price and system in _COST_AMBIGUOUS_SYSTEMS
+
+
 def sell_price_per_sq(system: str, tier: str) -> Decimal:
     """Return the sell price ($/sq) for a system+tier combination.
 
