@@ -1,9 +1,24 @@
 # CONTINUATION 2026-07-25 — estimator now runs Tim's own method (93% within a day)
 
-Resume after restart. **HEAD == `b1a4277`** + this doc. Deployed image `platform:b390ba6`
-(the two commits after it are docs/config-only — verify with
-`git diff --name-only b390ba6..HEAD | grep -v '^docs/'`).
-Prod pricing configs at **v13** on all three branches.
+Deployed image **`platform:0b291ef`** (2026-07-25 05:2x UTC). Prod pricing configs at **v13** on
+all three branches.
+
+> **Correction (2026-07-25).** An earlier version of this line said the commits after `b390ba6`
+> were "docs/config-only". They were not — `b1a4277` changed `core/estimator.py` and
+> `api/routes/estimator.py`. Config v13 already carried `pitch_day_adder`, so for ~5h prod ran the
+> pre-pitch model while the config that feeds it sat live and ignored: mistake §7.1 again, with
+> config ahead of code instead of behind it. **Verified fixed in prod** — see §1.
+
+### Prod smoke, 2026-07-25 (918 Mil Creek geometry through the live `/estimator/quote`)
+
+| `pitch_primary` | tile days | project total |
+|---|--:|--:|
+| 5/12 | 5.0 | $41,875.00 |
+| **6/12** | **5.5** | **$42,247.50** |
+| omitted | 5.0 | $41,875.00 |
+
++$372.50 = 0.5 × $745/day, and omitting pitch adds nothing (no silent default). The $41,875 in
+Tim's email is now confirmed against the deployed endpoint, not just `tim_quote_breakdown.py`.
 
 ---
 
@@ -204,9 +219,14 @@ Nothing else from either call is unaccounted for.
 
 ## 8. NEXT ACTIONS
 
-1. **Send Tim the email** — `docs/email-drafts/2026-07-24-tim-estimator-quotes.md` (DRAFT, not
-   sent). Asks the two quote questions, the notes column, 1141 Vintner Blvd, some 7/12+ roofs, and
-   the 9 config values.
+1. **Send Tim the email** — now an **Outlook draft in jon@degenito.ai**, subject
+   `Re: TIME LEARNING (Overhead) for AI Systems — your 30 homes are in, 93% within a day`,
+   To tim@, Cc marco@/josh@/eugene@. Jon reviews and sends from Outlook.
+   ⚠️ Two bridge limits found: `gmail_create_draft` **silently drops `cc`**, and its `threadId` is
+   ignored (Graph needs `createReplyAll`), so the draft is a **new thread**, not threaded under
+   Tim's "PART 2". Also `gmail_update_draft` **blanks the body** unless `body` is resent — always
+   pass every field. Verify the Cc line in Outlook before sending.
+   Source of truth for the prose stays `docs/email-drafts/2026-07-24-tim-estimator-quotes.md`.
 2. **Decide the catalog question** (§2) — retire as a price, or re-issue size-banded.
 3. **Build the price-book ↔ aggregate-input linkage** from the 77 comments (§3).
 4. **BigQuery billing export** — `docs/BILLING_EXPORT_SETUP.md`, then `BILLING_BQ_TABLE` in

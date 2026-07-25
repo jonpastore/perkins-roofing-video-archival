@@ -1,10 +1,15 @@
 Resume perkins-roofing/video-archival after a restart.
 
 READ FIRST: CONTINUATION-2026-07-25.md (full state, mistakes, next actions).
-HEAD == b1a4277 (+ the docs commit that adds the continuation). Deployed image platform:b390ba6 —
-commits after it are docs/config-only; confirm with:
-  git diff --name-only b390ba6..HEAD | grep -v '^docs/'
+Deployed image platform:0b291ef (2026-07-25, includes the steep-roof adder).
 Prod pricing configs are at v13 on jupiter/miami/naples.
+
+⚠️ The earlier claim that "commits after b390ba6 are docs/config-only" was WRONG — b1a4277 changed
+core/estimator.py + api/routes/estimator.py. Prod ran the pre-pitch model for ~5h while config v13
+already carried pitch_day_adder, so the adder sat live-but-ignored. Always confirm with:
+  git diff --name-only <deployed-sha>..HEAD | grep -v '^docs/'
+and check the running image, not the doc:
+  gcloud run services describe api --region us-central1 --format='value(spec.template.spec.containers[0].image)'
 
 WHERE THINGS STAND (2026-07-25)
 
