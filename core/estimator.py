@@ -651,6 +651,44 @@ def _label(key: str) -> str:
 # -------------------------------------------------------------------------
 # Sloped engine
 # -------------------------------------------------------------------------
+def _apply_min_margin(
+    config: PricingConfig, items: list[LineItem], sq: float, explicit_profit: bool = False
+) -> Optional[str]:
+    """Raise the profit line to the configured dollar floor. Returns a warning code if it fired.
+
+    Applies to PROFIT alone, not profit-plus-overhead: overhead is what the office costs to run
+    and recovering it is break-even, not margin. So a job carrying $1,300 of overhead still owes
+    the full floor on top.
+
+    Mutates the profit LineItem in place because the floor has to move the quoted number, not
+    just annotate it — the whole point is that the customer sees the floored price.
+    """
+    floor = config.min_margin_dollars()
+    if not floor or sq <= 0:
+        return None
+    profit = next((li for li in items if li.key == "profit"), None)
+    if profit is None or profit.amount >= floor:
+        return None
+    if explicit_profit:
+        # An operator who typed a number owns it. Overriding a flat profit or a per-square
+        # override here would ALSO suppress the guardrail built to catch exactly that: the
+        # flat_profit_floor check runs later, off the profit line, so raising it first makes
+        # that check pass silently and the margin badge go green on a price nobody approved.
+        # Those paths have their own floor guidance; leave them to it.
+        return None
+
+    was = profit.amount
+    profit.amount = float(floor)
+    profit.per_sq = float(floor) / sq
+    profit.explain = {
+        "formula": f"min_margin_dollars floor applied — sliding scale gave ${was:,.2f}, "
+                   f"below the ${float(floor):,.2f} minimum profit per job",
+        "inputs": {"scale_profit": round(was, 2), "min_margin_dollars": float(floor),
+                   "squares": sq, "floored": True},
+    }
+    return f"min_margin_applied: profit raised from ${was:,.2f} to ${float(floor):,.2f}"
+
+
 def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     """Build line items for a sloped roof. Returns categorized list."""
     items: list[LineItem] = []
@@ -1099,6 +1137,17 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
 
     # County overrides applied last
     all_items = _apply_county_overrides(config, q.county, all_items, zone, q.roof_type)
+
+    # Minimum margin. Tim's sliding scale is per-square, so a small job earns almost nothing —
+    # a 1-square tile roof scales to $400 of profit while a day of Jupiter office overhead
+    # alone is $1,400. He does not take that work at scale price; his own sheet flags one
+    # square as "price as T&M". This lifts profit to the floor and says so, rather than
+    # quoting a job that cannot carry itself.
+    explicit_profit = (q.profit_mode == "flat" and q.flat_profit_dollars is not None) or (
+        q.override_profit_per_sq is not None)
+    floored = _apply_min_margin(config, all_items, q.num_squares, explicit_profit)
+    if floored:
+        warnings.append(floored)
 
     project_total = sum(li.amount for li in all_items)
 

@@ -128,7 +128,17 @@ class PricingConfig:
         single value for both zones) — no migration is required to deploy this.
         """
         val = self.raw[key]
-        return float(val[zone]) if isinstance(val, dict) else float(val)
+        if not isinstance(val, dict):
+            return float(val)
+        if zone not in val:
+            # An admin who edits this to a one-zone dict would otherwise KeyError at quote time,
+            # and the route only maps (ValueError, ConfigError) — so it escaped as a bare 500
+            # with no message. ConfigError is what the route turns into a readable 422.
+            raise ConfigError(
+                f"{key} has no entry for zone {zone!r} (has: {', '.join(sorted(val))}). "
+                f"Add {zone} to {key} in the pricing config."
+            )
+        return float(val[zone])
 
     def cuts_calc(self) -> Optional[dict]:
         """Return the RoofR cut-calculator config (rounding/coeff/fixed/standard_tile), or None.
@@ -369,6 +379,20 @@ class PricingConfig:
     def weekly_profit_floor(self) -> float:
         """Minimum profit per on-site week ($2,500)."""
         return float(self.raw.get("weekly_profit_floor") or 2500.0)
+
+    def min_margin_dollars(self) -> Optional[float]:
+        """Minimum PROFIT dollars a job must carry, or None when unset (floor disabled).
+
+        Distinct from `job_profit_floor` and `weekly_profit_floor`, which only surface guidance
+        for the margin badge — this one actually moves the quoted price. Tim's profit scale is
+        per-square, so a 1-square roof scales to $400 while a single day of Jupiter office
+        overhead is $1,400; he does not take that work at scale price.
+
+        Overhead does NOT count toward it: recovering the office's daily cost is break-even, so
+        a job carrying $1,300 of overhead still owes the full floor on top.
+        """
+        val = self.raw.get("min_margin_dollars")
+        return float(val) if val else None
 
     def job_profit_floor(self) -> float:
         """Absolute minimum profit per job ($2,500), regardless of size."""

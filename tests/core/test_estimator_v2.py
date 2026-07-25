@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from core.pricing_config import load_config, PricingConfig
+from core.pricing_config import ConfigError, load_config, PricingConfig
 from core.estimator import (
     QuoteInput,
     estimate,
@@ -1016,3 +1016,86 @@ def test_debug_is_off_by_default():
     r = estimate(_cfg_v2(), QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=35.0))
     assert "calculation_trace" not in r
     assert all("explain" not in i for i in r["line_items_detail"])
+
+
+def test_min_margin_lifts_profit_on_a_job_too_small_to_carry_itself():
+    """Tim's profit scale is per-square, so tiny jobs earn almost nothing.
+
+    A 1-square tile roof scales to $400 of profit while a single day of Jupiter office overhead
+    is $1,400. He does not take that work at scale price — his sheet flags one square as
+    "price as T&M". The floor applies to PROFIT alone: recovering overhead is break-even.
+    """
+    cfg = _cfg_v2()
+    cfg.raw["min_margin_dollars"] = 2500
+    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=1.0,
+                                 existing_roof="tile", debug=True))
+    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
+    assert profit["amount"] == 2500, "profit must be lifted to the floor"
+    assert profit["per_sq"] == 2500
+    assert profit["explain"]["inputs"]["floored"] is True
+    # NOTE: the scale returns $200 here, not the $400 his sheet shows for one square —
+    # a separate boundary defect (exact band edges take the next band's rate). Asserted
+    # dynamically so this test pins the FLOOR, not that bug.
+    assert profit["explain"]["inputs"]["scale_profit"] < 2500
+    assert any("min_margin_applied" in w for w in r["warnings"]), r["warnings"]
+    # the floor must move the quoted number, not merely annotate it
+    assert r["project_total"] > 2500
+
+
+def test_min_margin_leaves_a_normal_job_alone():
+    cfg = _cfg_v2()
+    cfg.raw["min_margin_dollars"] = 2500
+    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=35.0,
+                                 existing_roof="tile"))
+    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
+    assert profit["amount"] == 3500, "35 sq x $100 scale profit clears the floor untouched"
+    assert not any("min_margin_applied" in w for w in r["warnings"])
+
+
+def test_min_margin_is_off_when_unset():
+    """Live configs predate this key — absent it, nothing may move."""
+    cfg = _cfg_v2()
+    cfg.raw.pop("min_margin_dollars", None)
+    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=1.0,
+                                 existing_roof="tile"))
+    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
+    assert profit["amount"] == cfg.profit_per_sq(1.0), "untouched scale price"
+    assert profit["amount"] < 2500
+    assert cfg.min_margin_dollars() is None
+
+
+def test_min_margin_never_overrides_an_explicit_flat_profit():
+    """An operator who types a number owns it.
+
+    Raising a flat profit to the floor would ALSO suppress the guardrail built to catch it: the
+    flat_profit_floor check runs later off the profit line, so flooring first makes that check
+    pass and the margin badge go green on a price nobody approved. Found by R2 architect review.
+    """
+    cfg = _cfg_v2()
+    cfg.raw["min_margin_dollars"] = 2500
+    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
+                                 existing_roof="tile", profit_mode="flat",
+                                 flat_profit_dollars=1000))
+    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
+    assert profit["amount"] == 1000, "Tim's typed flat profit must survive the floor"
+    assert not any("min_margin_applied" in w for w in r["warnings"])
+
+
+def test_min_margin_never_overrides_an_explicit_per_square_override():
+    cfg = _cfg_v2()
+    cfg.raw["min_margin_dollars"] = 2500
+    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
+                                 existing_roof="tile", override_profit_per_sq=50))
+    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
+    assert profit["amount"] == 500
+    assert not any("min_margin_applied" in w for w in r["warnings"])
+
+
+def test_zoned_add_raises_config_error_on_a_missing_zone():
+    """A one-zone dict used to KeyError at quote time; the route maps only ValueError and
+    ConfigError, so it escaped as a bare 500. Found by R2 architect review."""
+    cfg = _cfg_v2()
+    cfg.raw["pitch_7_12_add"] = {"HVHZ": 200}
+    with pytest.raises(ConfigError) as exc:
+        cfg.zoned_add("pitch_7_12_add", "FBC")
+    assert "FBC" in str(exc.value) and "pitch_7_12_add" in str(exc.value)
