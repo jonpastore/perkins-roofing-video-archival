@@ -624,7 +624,14 @@ def rates(
             "line_items": (cfg.get("line_items") or {}).get(zone, {}),
             "pm_incentive": cfg.get("pm_incentive", {}),
             # v2: day-based overhead and profit-floor config fields for the UI
-            "daily_overhead_rates": cfg.get("daily_overhead_rates") or {},
+            # Rates as the engine will actually apply them — scaled to this branch's office
+            # burn, not the raw stored numbers, so the admin panel shows what gets quoted.
+            "daily_overhead_rates": load_config(cfg).daily_overhead_rates(),
+            "daily_overhead_rates_base": cfg.get("daily_overhead_rates") or {},
+            # Overhead is the office's gross daily cost of doing business (Tim: total office
+            # costs / working days) — a per-branch admin input, ~$1,390 Jupiter vs ~$4,140 Miami.
+            "office_daily_overhead": cfg.get("office_daily_overhead"),
+            "office_daily_overhead_reference": cfg.get("office_daily_overhead_reference"),
             "daily_overhead_weeks_rounding_mode": cfg.get("daily_overhead_weeks_rounding_mode") or "ceil",
             "daily_overhead_day_model": cfg.get("daily_overhead_day_model") or {},
             "weekly_profit_floor": cfg.get("weekly_profit_floor") or 2500,

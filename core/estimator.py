@@ -632,7 +632,7 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
         items.append(LineItem("specialty_tile", "Specialty Tile", st_val * sq, tags["specialty_tile"], st_val))
 
     if q.pitch_7_12 and _is_tile(rt):
-        p712 = config.raw["pitch_7_12_add"]
+        p712 = config.zoned_add("pitch_7_12_add", zone)
         items.append(LineItem("pitch_7_12_add", "7/12 Pitch Add", p712 * sq, tags["pitch_7_12_add"], p712))
 
     # Demo adds key off what's being TORN OFF when known; legacy callers (existing_roof
@@ -641,10 +641,10 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     if ex is None:
         ex = ("metal" if _is_metal(rt) else "tile" if _is_tile(rt) else "other") if q.demo else "none"
     if ex == "metal":
-        md = config.raw["metal_demo_add"]
+        md = config.zoned_add("metal_demo_add", zone)
         items.append(LineItem("metal_demo", "Metal Demo", md * sq, tags["metal_demo"], md))
     elif ex == "tile":
-        td = config.raw["tile_demo_add"]
+        td = config.zoned_add("tile_demo_add", zone)
         items.append(LineItem("tile_demo", "Tile Demo", td * sq, tags["tile_demo"], td))
 
     if q.secondary_water_barrier:
@@ -653,7 +653,7 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
         items.append(LineItem("secondary_water_barrier", "Secondary Water Barrier", swb * sq, tag, swb))
 
     if q.winterguard:
-        wg = config.raw["winterguard_add"]
+        wg = config.zoned_add("winterguard_add", zone)
         items.append(LineItem("winterguard", "WinterGuard", wg * sq, tags["winterguard"], wg))
 
     return items

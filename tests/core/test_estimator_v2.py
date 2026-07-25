@@ -910,3 +910,70 @@ def test_no_pitch_supplied_means_no_steep_adder():
     none = {s.series: s.days for s in derive_daily_series(cfg, QuoteInput(**kw))}
     five = {s.series: s.days for s in derive_daily_series(cfg, QuoteInput(**kw, pitch_primary=5))}
     assert none == five, (none, five)
+
+
+def test_zone_keyed_adders_use_the_right_office_tab():
+    """These four are priced per office tab on Tim's live sheet, not once for both zones.
+
+    They shipped as bare scalars holding the HVHZ (Miami) value while every price around them
+    was zone-keyed, so an FBC job billed 7/12+ at $200/sq where his FBC tab says $305 — a
+    $105/sq shortfall on every steep Palm Beach roof. Verified against the live sheet
+    2026-07-25: 7/12+ HVHZ $200 / FBC $305, tile demo $40/$30, metal demo $60/$45,
+    WinterGuard $140/$150.
+    """
+    cfg = _cfg_v2()
+    raw = cfg.raw
+    raw["pitch_7_12_add"] = {"HVHZ": 200, "FBC": 305}
+    raw["tile_demo_add"] = {"HVHZ": 40, "FBC": 30}
+    assert cfg.zoned_add("pitch_7_12_add", "FBC") == 305
+    assert cfg.zoned_add("pitch_7_12_add", "HVHZ") == 200
+    assert cfg.zoned_add("tile_demo_add", "FBC") == 30
+
+    kw = dict(roof_type="13_tile", num_squares=30.0, existing_roof="tile", pitch_7_12=True)
+    fbc = estimate(cfg, QuoteInput(code_zone="FBC", **kw))
+    hvhz = estimate(cfg, QuoteInput(code_zone="HVHZ", **kw))
+    pick = lambda r, k: next(i["amount"] for i in r["line_items_detail"] if i["key"] == k)
+    assert pick(fbc, "pitch_7_12_add") == 305 * 30
+    assert pick(hvhz, "pitch_7_12_add") == 200 * 30
+    assert pick(fbc, "tile_demo") == 30 * 30
+
+
+def test_zoned_add_still_reads_a_legacy_scalar():
+    """v13 is live in prod with these as scalars — the code must deploy without a config migration."""
+    cfg = _cfg_v2()
+    cfg.raw["pitch_7_12_add"] = 200
+    assert cfg.zoned_add("pitch_7_12_add", "FBC") == 200
+    assert cfg.zoned_add("pitch_7_12_add", "HVHZ") == 200
+
+
+def test_daily_rates_scale_with_the_office_oh_basis_not_the_raw_burn():
+    """Overhead is the office's daily cost of doing business, so it belongs to the BRANCH.
+
+    Tim's sheet states OH Basis = office daily burn / men. Miami burns ~$4,140/day against
+    Jupiter's ~$1,390 (2.98x) but runs 12 men to Jupiter's 7, so the same roof takes fewer days
+    and his published per-square OH differs by only 1.73x ($345/man-day vs $200). Scaling on
+    burn alone double-counts the crew: it quoted a 30 SQ Miami tile roof at $1,622/sq against a
+    $1,228/sq sold median.
+    """
+    cfg = _cfg_v2()
+    cfg.raw["daily_overhead_rates"] = {"tile": 745, "demo_dry_in_flat": 1050}
+    cfg.raw["office_oh_basis_reference"] = 200          # Jupiter at 7 men, $/man-day
+
+    cfg.raw.update(office_daily_overhead=1400, office_men=7)      # Jupiter: 7 x $200 exactly
+    jup = cfg.daily_overhead_rates()
+    assert jup == {"tile": 745.0, "demo_dry_in_flat": 1050.0}, "Jupiter is the reference"
+
+    cfg.raw.update(office_daily_overhead=4140, office_men=12)     # Miami: 1.725x, not 2.98x
+    miami = cfg.daily_overhead_rates()
+    assert miami["tile"] == pytest.approx(745 * 1.725, rel=0.01)
+    assert miami["tile"] < 745 * 2, "scaling on raw burn would double-count the bigger crew"
+
+
+def test_rates_pass_through_untouched_when_the_office_burn_is_unset():
+    """v13 is live without these keys — scaling must be inert until a branch is seeded."""
+    cfg = _cfg_v2()
+    cfg.raw["daily_overhead_rates"] = {"tile": 745}
+    for k in ("office_daily_overhead", "office_men", "office_oh_basis_reference"):
+        cfg.raw.pop(k, None)
+    assert cfg.daily_overhead_rates() == {"tile": 745}
+    assert cfg.office_daily_overhead() is None

@@ -112,6 +112,24 @@ class PricingConfig:
     def sloped_overhead(self, zone: str, roof_type: str) -> float:
         return self.raw["sloped_overhead"][zone][roof_type]
 
+    def zoned_add(self, key: str, zone: str) -> float:
+        """A per-square adder that Tim prices per office tab, tolerating the legacy scalar.
+
+        These four shipped as bare scalars carrying the HVHZ (Miami) value while every price
+        around them was zone-keyed, so FBC jobs silently took Miami's number — 7/12+ billed
+        $200/sq where his FBC tab says $305. Verified against the live sheet 2026-07-25:
+
+            7/12+ add    HVHZ $200   FBC $305
+            tile demo    HVHZ  $40   FBC  $30
+            metal demo   HVHZ  $60   FBC  $45
+            WinterGuard  HVHZ $140   FBC $150
+
+        Both shapes load so a config predating the split still prices (it just keeps the old
+        single value for both zones) — no migration is required to deploy this.
+        """
+        val = self.raw[key]
+        return float(val[zone]) if isinstance(val, dict) else float(val)
+
     def cuts_calc(self) -> Optional[dict]:
         """Return the RoofR cut-calculator config (rounding/coeff/fixed/standard_tile), or None.
 
@@ -302,12 +320,47 @@ class PricingConfig:
     # v2: Day-based overhead + flat profit mode                           #
     # ------------------------------------------------------------------ #
     def daily_overhead_rates(self) -> dict[str, float]:
-        """Return the per-series daily overhead rate map (v2 config key).
+        """Return the per-series daily overhead rate map, scaled to THIS office's daily burn.
 
-        Returns an empty dict when the key is absent so callers can detect
-        and raise a meaningful error rather than silently dividing zero.
+        Overhead is not a per-square price. Tim computes it as the office's gross daily cost of
+        being in business, divided across the working days a job consumes — so it is a property
+        of the BRANCH, not the roof. His sheet states it as `OH Basis = office daily burn / men`,
+        and multiplying back out gives the burn per office:
+
+            Jupiter  4x$345 = 7x$200 = 10x$140  ~= $1,390/day
+            Miami    9x$460 = 12x$345 = 15x$275 ~= $4,140/day
+
+        The per-series rates he emailed 2026-07-24 ($1,050 demo / $745 tile / $700 shingle /
+        $850 metal) came with his 30 time-learning homes, all Palm Beach County — i.e. they are
+        JUPITER's rates. They were being applied to every branch, so Miami quoted overhead at
+        roughly a third of what that office actually costs to run.
+
+        What scales is the BASIS (burn / men), not the burn. Miami burns 2.98x Jupiter but also
+        runs bigger crews (9/12/15 men vs 4/7/10), so the same roof finishes in fewer days and
+        the two effects partly cancel: his published per-square OH differs by only 1.73x
+        ($345/man-day vs $200). Scaling on burn alone double-counts the crew and quoted a 30 SQ
+        Miami tile roof at $1,622/sq against a $1,228/sq sold median.
+
+        `office_daily_overhead` and `office_men` are therefore the per-branch admin inputs; the
+        rates scale by their quotient against `office_oh_basis_reference` (the $/man-day of the
+        office the base rates were measured in — Jupiter at 7 men, $200). Jupiter scales by 1.0
+        and keeps Tim's emailed numbers to the dollar.
+
+        Absent any key, rates pass through unscaled — a config predating this loads unchanged.
         """
-        return dict(self.raw.get("daily_overhead_rates") or {})
+        rates = dict(self.raw.get("daily_overhead_rates") or {})
+        burn = self.raw.get("office_daily_overhead")
+        men = self.raw.get("office_men")
+        reference = self.raw.get("office_oh_basis_reference")
+        if not rates or not burn or not men or not reference:
+            return rates
+        factor = (float(burn) / float(men)) / float(reference)
+        return {series: round(rate * factor, 2) for series, rate in rates.items()}
+
+    def office_daily_overhead(self) -> Optional[float]:
+        """This branch's gross daily cost of doing business, or None when unset."""
+        val = self.raw.get("office_daily_overhead")
+        return float(val) if val else None
 
     def profit_mode_default(self) -> str:
         """Return 'scale' (default) or 'flat' — the tenant's default profit mode."""
