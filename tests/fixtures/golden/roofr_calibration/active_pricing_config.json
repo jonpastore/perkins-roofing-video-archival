@@ -20,7 +20,7 @@
   },
   "_pending_boundary": "Tim \u2014 PC-2: confirm lower-inclusive/upper-exclusive sliding-scale boundary rule (OI-9)",
   "_pending_tile_dumpster_boundary": "Tim \u2014 Adv-1: confirm whether threshold boundary SQ itself triggers next dumpster (default true = inclusive) (OI-10)",
-  "boundary_exclusive_upper": true,
+  "boundary_exclusive_upper": false,
   "boundary_inclusive_lower": true,
   "commission_pct": {
     "_pending_sloped_hvhz": "Tim \u2014 PC-1: confirm sloped HVHZ commission rate (10% same as sloped, or 15% same as low_slope); engine defaults to sloped (0.10) until this is filled (OI-7)",
@@ -164,12 +164,18 @@
     "tear_off_per_layer_per_sq": null,
     "trash_chute_flat_add": 1200
   },
-  "metal_demo_add": 60,
+  "metal_demo_add": {
+    "FBC": 45,
+    "HVHZ": 60
+  },
   "new_bonus_values": 1350,
   "penetration_each": 75,
   "permit_commercial_add": 500,
   "permit_processing": 500,
-  "pitch_7_12_add": 200,
+  "pitch_7_12_add": {
+    "FBC": 305,
+    "HVHZ": 305
+  },
   "pm_incentive": {
     "FBC": {
       "commercial_20_50": 100,
@@ -275,7 +281,10 @@
     }
   },
   "stucco_metal_per_lf": 9,
-  "tile_demo_add": 40,
+  "tile_demo_add": {
+    "FBC": 30,
+    "HVHZ": 40
+  },
   "tile_dumpster_boundary_inclusive": true,
   "tile_dumpster_cost": 300,
   "tile_dumpster_threshold": {
@@ -286,7 +295,10 @@
     "no": 0,
     "yes": 200
   },
-  "winterguard_add": 140,
+  "winterguard_add": {
+    "FBC": 135,
+    "HVHZ": 135
+  },
   "zones": [
     "HVHZ",
     "FBC"

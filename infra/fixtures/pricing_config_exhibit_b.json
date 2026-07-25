@@ -16,7 +16,7 @@
   "schema_version": 1,
   "exhibit_version": "B-2026-07-10-r2",
   "boundary_inclusive_lower": true,
-  "boundary_exclusive_upper": true,
+  "boundary_exclusive_upper": false,
   "_pending_boundary": "Tim \u2014 PC-2: confirm lower-inclusive/upper-exclusive sliding-scale boundary rule (OI-9)",
   "zones": [
     "HVHZ",
@@ -364,11 +364,23 @@
       "verea_s": 195
     }
   },
-  "pitch_7_12_add": 200,
-  "tile_demo_add": 40,
-  "metal_demo_add": 60,
+  "pitch_7_12_add": {
+    "FBC": 305,
+    "HVHZ": 305
+  },
+  "tile_demo_add": {
+    "FBC": 30,
+    "HVHZ": 40
+  },
+  "metal_demo_add": {
+    "FBC": 45,
+    "HVHZ": 60
+  },
   "secondary_water_barrier_add": 75,
-  "winterguard_add": 140,
+  "winterguard_add": {
+    "FBC": 135,
+    "HVHZ": 135
+  },
   "stucco_metal_per_lf": 9,
   "penetration_each": 75,
   "ridge_vent_per_lf": 9.79,

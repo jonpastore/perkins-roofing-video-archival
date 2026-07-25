@@ -320,19 +320,26 @@ def test_commission_default_sloped_hvhz(cfg: PricingConfig):
 # ---------------------------------------------------------------------------
 # §7.5 Boundary-band edge tests (profit sliding scale)
 # ---------------------------------------------------------------------------
+# boundary_exclusive_upper flipped to False (2026-07-25). profit_scale stores Tim's INCLUSIVE
+# band labels — [1, 400] is his "1 square" row, [4, 200] his "2-4 squares" row — so treating
+# max_sq as exclusive gave a job landing exactly on an edge the NEXT band's lower rate: one
+# square earned $200 where his sheet plainly says $400. Every edge now resolves to the band the
+# label names, which is also the never-under-quote direction.
+# sq=20 is genuinely double-claimed on his sheet ("15-20" AND "20-29") and now lands on $120 —
+# which agrees with the TRD annotation quoted in test_floor_exhibit_b_example. Pending Tim.
 @pytest.mark.parametrize("sq,expected_profit", [
     (0.5, 400),   # < 1 → first tier
-    (1.0, 200),   # boundary: lower-inclusive means ≥1 → next tier (1 is NOT < 1)
-    (3.9, 200),   # < 4 → 200
-    (4.0, 160),   # ≥ 4 and < 7 → 160
+    (1.0, 400),   # his "1 square" row
+    (3.9, 200),
+    (4.0, 200),   # top of his "2-4 squares" row
     (6.9, 160),
-    (7.0, 140),   # ≥ 7 and < 14 → 140
+    (7.0, 160),   # top of his "5-7 squares" row
     (13.9, 140),
-    (14.0, 120),  # ≥ 14 and < 20 → 120
+    (14.0, 140),  # top of his "8-14 squares" row
     (19.9, 120),
-    (20.0, 110),  # ≥ 20 and < 29 → 110
+    (20.0, 120),  # top of his "15-20" row; also claimed by "20-29" — pending Tim
     (28.9, 110),
-    (29.0, 100),  # ≥ 29 → catch-all 100
+    (29.0, 110),  # top of his "20-29 squares" row
     (100.0, 100),
 ])
 def test_sliding_scale_all_tiers(sq, expected_profit, cfg: PricingConfig):
@@ -340,7 +347,8 @@ def test_sliding_scale_all_tiers(sq, expected_profit, cfg: PricingConfig):
 
 
 def test_sliding_scale_at_boundary_7sq(cfg: PricingConfig):
-    assert cfg.profit_per_sq(7.0) == 140
+    """7 is the top of his "5-7 squares" row, so it takes $160 — not the next band's $140."""
+    assert cfg.profit_per_sq(7.0) == 160
 
 
 def test_sliding_scale_just_below_boundary(cfg: PricingConfig):
@@ -607,9 +615,12 @@ def test_all_sloped_adders(cfg: PricingConfig):
         secondary_water_barrier=True, winterguard=True,
     )
     r = estimate(cfg, q)
-    # base 780 + oh 270 + profit(7≤10<14→140) + cuts 50 + height 50 + pointing 200
-    # + specialty 160 + pitch 200 + tile demo 40 + swb 75 + winterguard 140 = 2105 per sq
-    expected_per_sq = 780 + 270 + 140 + 50 + 50 + 200 + 160 + 200 + 40 + 75 + 140
+    # base 780 + oh 270 + profit(8-14 band → 140) + cuts 50 + height 50 + pointing 200
+    # + specialty 160 + pitch 305 + tile demo 40 + swb 75 + winterguard 135 = 2205 per sq
+    # pitch 200→305 and winterguard 140→135: both re-derived from Tim's CELL COMMENTS, whose
+    # L/M/OH/P build-ups agree across tabs where the headline cells do not (7/12 builds to $305
+    # in both live comments; WinterGuard to $135 in both sheets).
+    expected_per_sq = 780 + 270 + 140 + 50 + 50 + 200 + 160 + 305 + 40 + 75 + 135
     assert r["per_square_total"] == expected_per_sq
 
 
