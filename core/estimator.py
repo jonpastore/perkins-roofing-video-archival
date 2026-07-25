@@ -195,7 +195,7 @@ def compute_profit_guidance(
     """Compute profit guidance fields for the flat-dollar profit mode (v2).
 
     When series is non-empty:
-        on_site_weeks = ceil(total_days / 5) — scheduling-window model (configurable).
+        on_site_weeks = max(1, ceil(total_days / profit_floor_days_per_week)) — 6-day week.
         effective_floor = max(job_profit_floor, on_site_weeks × weekly_profit_floor).
         implied_weekly_profit returned when flat_profit is supplied.
 
@@ -222,10 +222,17 @@ def compute_profit_guidance(
 
     total_days = sum(s.days for s in series)
     rounding = config.daily_oh_weeks_rounding()
+    # Days per working week — 6, since the crews work Monday to Saturday. Was hardcoded to 5,
+    # which over-counted weeks and so over-stated the floor on any job of 5-6 days.
+    # ⚠️ Assumed, not confirmed: ask Tim whether they run 5, 6 or 7 days.
+    per_week = config.profit_floor_days_per_week()
     if rounding == "floor":
-        on_site_weeks = max(1, math.floor(total_days / 5))
+        on_site_weeks = max(1, math.floor(total_days / per_week))
     else:
-        on_site_weeks = math.ceil(total_days / 5)
+        # Tim, 2026-07-17 Zoom [08:52]: "i like to make 2500 bucks a week that we're on the job
+        # ... and if it's one day it still counts as one week and i'm still gonna charge 2500
+        # bucks minimum on re-roofs". A one-day job is one week, so never round down to zero.
+        on_site_weeks = max(1, math.ceil(total_days / per_week))
 
     weekly_guidance = on_site_weeks * weekly_floor
     effective_floor = max(absolute_floor, weekly_guidance)
@@ -652,19 +659,25 @@ def _label(key: str) -> str:
 # Sloped engine
 # -------------------------------------------------------------------------
 def _apply_min_margin(
-    config: PricingConfig, items: list[LineItem], sq: float, explicit_profit: bool = False
+    config: PricingConfig, items: list[LineItem], sq: float, explicit_profit: bool = False,
+    effective_floor: float = 0.0, on_site_weeks: Optional[int] = None,
 ) -> Optional[str]:
-    """Raise the profit line to the configured dollar floor. Returns a warning code if it fired.
+    """Raise the profit line to the week-based floor. Returns a warning code if it fired.
 
-    Applies to PROFIT alone, not profit-plus-overhead: overhead is what the office costs to run
-    and recovering it is break-even, not margin. So a job carrying $1,300 of overhead still owes
-    the full floor on top.
+    Tim, 2026-07-17 Zoom [08:52]: "i like to make 2500 bucks a week that we're on the job ...
+    and if it's one day it still counts as one week and i'm still gonna charge 2500 bucks
+    minimum on re-roofs". So the floor is weeks-on-THIS-job x weekly_profit_floor, with a
+    one-week minimum — a one-day job owes the full $2,500, and five one-day jobs owe $2,500
+    each. Nothing pools across jobs or across a calendar week.
+
+    Applies to PROFIT alone, not profit-plus-overhead: recovering the office's daily cost is
+    break-even, not margin, so a job carrying $1,400 of overhead still owes the floor on top.
 
     Mutates the profit LineItem in place because the floor has to move the quoted number, not
     just annotate it — the whole point is that the customer sees the floored price.
     """
-    floor = config.min_margin_dollars()
-    if not floor or sq <= 0:
+    floor = effective_floor
+    if not config.enforce_profit_floor() or not floor or sq <= 0:
         return None
     profit = next((li for li in items if li.key == "profit"), None)
     if profit is None or profit.amount >= floor:
@@ -678,15 +691,21 @@ def _apply_min_margin(
         return None
 
     was = profit.amount
+    weeks = on_site_weeks or 1
     profit.amount = float(floor)
     profit.per_sq = float(floor) / sq
     profit.explain = {
-        "formula": f"min_margin_dollars floor applied — sliding scale gave ${was:,.2f}, "
-                   f"below the ${float(floor):,.2f} minimum profit per job",
-        "inputs": {"scale_profit": round(was, 2), "min_margin_dollars": float(floor),
+        "formula": f"profit floor applied — the sliding scale gave ${was:,.2f}, below the "
+                   f"{weeks}-week minimum of ${float(floor):,.2f} "
+                   f"(${config.weekly_profit_floor():,.0f}/week on the job, one week minimum)",
+        "inputs": {"scale_profit": round(was, 2), "effective_floor": float(floor),
+                   "on_site_weeks": weeks,
+                   "weekly_profit_floor": config.weekly_profit_floor(),
+                   "days_per_week": config.profit_floor_days_per_week(),
                    "squares": sq, "floored": True},
     }
-    return f"min_margin_applied: profit raised from ${was:,.2f} to ${float(floor):,.2f}"
+    return (f"min_margin_applied: profit raised from ${was:,.2f} to ${float(floor):,.2f} "
+            f"({weeks}-week minimum)")
 
 
 def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
@@ -1145,7 +1164,10 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     # quoting a job that cannot carry itself.
     explicit_profit = (q.profit_mode == "flat" and q.flat_profit_dollars is not None) or (
         q.override_profit_per_sq is not None)
-    floored = _apply_min_margin(config, all_items, q.num_squares, explicit_profit)
+    guidance = compute_profit_guidance(config, q.daily_series or [])
+    floored = _apply_min_margin(
+        config, all_items, q.num_squares, explicit_profit,
+        effective_floor=guidance["effective_floor"], on_site_weeks=guidance["on_site_weeks"])
     if floored:
         warnings.append(floored)
 

@@ -380,19 +380,26 @@ class PricingConfig:
         """Minimum profit per on-site week ($2,500)."""
         return float(self.raw.get("weekly_profit_floor") or 2500.0)
 
-    def min_margin_dollars(self) -> Optional[float]:
-        """Minimum PROFIT dollars a job must carry, or None when unset (floor disabled).
+    def enforce_profit_floor(self) -> bool:
+        """True when the profit floor MOVES THE PRICE instead of only warning.
 
-        Distinct from `job_profit_floor` and `weekly_profit_floor`, which only surface guidance
-        for the margin badge — this one actually moves the quoted price. Tim's profit scale is
-        per-square, so a 1-square roof scales to $400 while a single day of Jupiter office
-        overhead is $1,400; he does not take that work at scale price.
+        Tim, 2026-07-17 Zoom [08:52]: "i like to make 2500 bucks a week that we're on the job
+        ... and if it's one day it still counts as one week and i'm still gonna charge 2500
+        bucks minimum on re-roofs". The floor is per JOB and per WEEK ON THAT JOB — five
+        separate one-day jobs are five separate $2,500 minimums, not one shared week.
 
-        Overhead does NOT count toward it: recovering the office's daily cost is break-even, so
-        a job carrying $1,300 of overhead still owes the full floor on top.
+        The amount is `weekly_profit_floor` x on-site weeks (see compute_profit_guidance's
+        effective_floor); this flag only decides whether we enforce it or merely flag it.
         """
-        val = self.raw.get("min_margin_dollars")
-        return float(val) if val else None
+        return bool(self.raw.get("enforce_profit_floor"))
+
+    def profit_floor_days_per_week(self) -> float:
+        """Working days per week used to convert job days into billable weeks. Default 6.
+
+        Crews work Monday-Saturday, so 6. ⚠️ Assumed, pending Tim — 5, 6 or 7 changes which
+        jobs cross into a second week and therefore owe a second $2,500.
+        """
+        return float(self.raw.get("profit_floor_days_per_week") or 6)
 
     def job_profit_floor(self) -> float:
         """Absolute minimum profit per job ($2,500), regardless of size."""

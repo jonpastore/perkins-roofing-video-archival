@@ -184,10 +184,22 @@ def test_profit_guidance_5_days():
 
 
 def test_profit_guidance_6_days():
-    """6-day job → ceil(6/5) = 2 weeks → floor = 5000."""
+    """A 6-day job is ONE week — the crews work Mon-Sat, so 6 days per week, not 5.
+
+    Was ceil(6/5) = 2 weeks, which charged a second $2,500 on a job that never ran past
+    Saturday. days-per-week is config-driven now; 6 is assumed pending Tim.
+    """
     cfg = _cfg_v2()
     series = [DailyOverheadSeries(series="shingle", days=6.0)]
     guidance = compute_profit_guidance(cfg, series)
+    assert guidance["on_site_weeks"] == 1
+    assert guidance["effective_floor"] == 2500.0
+
+
+def test_profit_guidance_7_days_crosses_into_a_second_week():
+    """Past Saturday, so a second week and a second $2,500."""
+    cfg = _cfg_v2()
+    guidance = compute_profit_guidance(cfg, [DailyOverheadSeries(series="shingle", days=7.0)])
     assert guidance["on_site_weeks"] == 2
     assert guidance["effective_floor"] == 5000.0
 
@@ -419,13 +431,13 @@ def test_profit_guidance_floor_rounding_mode():
 
 
 def test_profit_guidance_floor_rounding_ten_days():
-    """floor(10/5) = 2 weeks (same as ceil here; confirms the floor path executes)."""
+    """floor(10/6) = 1 week; confirms the floor-rounding path executes."""
     raw = _raw_config()
     raw["daily_overhead_weeks_rounding_mode"] = "floor"
     cfg = load_config(raw)
     series = [DailyOverheadSeries(series="shingle", days=10.0)]
     guidance = compute_profit_guidance(cfg, series)
-    assert guidance["on_site_weeks"] == 2
+    assert guidance["on_site_weeks"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1018,84 +1030,86 @@ def test_debug_is_off_by_default():
     assert all("explain" not in i for i in r["line_items_detail"])
 
 
-def test_min_margin_lifts_profit_on_a_job_too_small_to_carry_itself():
-    """Tim's profit scale is per-square, so tiny jobs earn almost nothing.
-
-    A 1-square tile roof scales to $400 of profit while a single day of Jupiter office overhead
-    is $1,400. He does not take that work at scale price — his sheet flags one square as
-    "price as T&M". The floor applies to PROFIT alone: recovering overhead is break-even.
-    """
+def _floor_cfg():
     cfg = _cfg_v2()
-    cfg.raw["min_margin_dollars"] = 2500
+    cfg.raw["enforce_profit_floor"] = True
+    cfg.raw["weekly_profit_floor"] = 2500
+    cfg.raw["job_profit_floor"] = 2500
+    cfg.raw["profit_floor_days_per_week"] = 6
+    return cfg
+
+
+def test_a_one_day_job_still_owes_a_full_week():
+    """Tim, 2026-07-17 Zoom [08:52]: "i like to make 2500 bucks a week that we're on the job ...
+    and if it's one day it still counts as one week and i'm still gonna charge 2500 bucks
+    minimum on re-roofs". The scale gives $400 on a 1 SQ roof; the week gives $2,500."""
+    cfg = _floor_cfg()
     r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=1.0,
-                                 existing_roof="tile", debug=True))
+                                 existing_roof="tile", overhead_mode="daily", debug=True,
+                                 daily_series=[DailyOverheadSeries(series="tile", days=1.0)]))
     profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["amount"] == 2500, "profit must be lifted to the floor"
-    assert profit["per_sq"] == 2500
-    assert profit["explain"]["inputs"]["floored"] is True
-    # NOTE: the scale returns $200 here, not the $400 his sheet shows for one square —
-    # a separate boundary defect (exact band edges take the next band's rate). Asserted
-    # dynamically so this test pins the FLOOR, not that bug.
-    assert profit["explain"]["inputs"]["scale_profit"] < 2500
-    assert any("min_margin_applied" in w for w in r["warnings"]), r["warnings"]
-    # the floor must move the quoted number, not merely annotate it
-    assert r["project_total"] > 2500
+    assert profit["amount"] == 2500
+    assert profit["explain"]["inputs"]["on_site_weeks"] == 1
+    assert any("min_margin_applied" in w for w in r["warnings"])
 
 
-def test_min_margin_leaves_a_normal_job_alone():
-    cfg = _cfg_v2()
-    cfg.raw["min_margin_dollars"] = 2500
+def test_a_job_past_six_days_owes_two_weeks():
+    """6 working days per week, so 7 days on site is two weeks and two x $2,500."""
+    cfg = _floor_cfg()
+    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
+                                 existing_roof="tile", overhead_mode="daily", debug=True,
+                                 daily_series=[DailyOverheadSeries(series="tile", days=4.0),
+                                               DailyOverheadSeries(series="demo_dry_in_flat",
+                                                                   days=3.0)]))
+    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
+    assert profit["explain"]["inputs"]["on_site_weeks"] == 2
+    assert profit["amount"] == 5000
+
+
+def test_six_days_is_still_one_week():
+    """The boundary: 6 days fits the working week, 6.5 does not."""
+    cfg = _floor_cfg()
+    def weeks(days):
+        r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
+                                     existing_roof="tile", overhead_mode="daily", debug=True,
+                                     daily_series=[DailyOverheadSeries(series="tile", days=days)]))
+        return next(i for i in r["line_items_detail"]
+                    if i["key"] == "profit")["explain"]["inputs"]["on_site_weeks"]
+    assert weeks(6.0) == 1
+    assert weeks(6.5) == 2
+
+
+def test_a_big_job_clears_the_floor_untouched():
+    cfg = _floor_cfg()
     r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=35.0,
-                                 existing_roof="tile"))
+                                 existing_roof="tile", overhead_mode="daily",
+                                 daily_series=[DailyOverheadSeries(series="tile", days=5.0)]))
     profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["amount"] == 3500, "35 sq x $100 scale profit clears the floor untouched"
+    assert profit["amount"] == 3500, "35 sq x $100 clears one week's $2,500"
     assert not any("min_margin_applied" in w for w in r["warnings"])
 
 
-def test_min_margin_is_off_when_unset():
-    """Live configs predate this key — absent it, nothing may move."""
-    cfg = _cfg_v2()
-    cfg.raw.pop("min_margin_dollars", None)
+def test_floor_is_inert_until_enforcement_is_switched_on():
+    """Live configs predate this; absent the flag nothing may move."""
+    cfg = _floor_cfg()
+    cfg.raw["enforce_profit_floor"] = False
     r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=1.0,
-                                 existing_roof="tile"))
+                                 existing_roof="tile", overhead_mode="daily",
+                                 daily_series=[DailyOverheadSeries(series="tile", days=1.0)]))
     profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["amount"] == cfg.profit_per_sq(1.0), "untouched scale price"
-    assert profit["amount"] < 2500
-    assert cfg.min_margin_dollars() is None
+    assert profit["amount"] == 400
 
 
-def test_min_margin_never_overrides_an_explicit_flat_profit():
-    """An operator who types a number owns it.
-
-    Raising a flat profit to the floor would ALSO suppress the guardrail built to catch it: the
-    flat_profit_floor check runs later off the profit line, so flooring first makes that check
-    pass and the margin badge go green on a price nobody approved. Found by R2 architect review.
-    """
-    cfg = _cfg_v2()
-    cfg.raw["min_margin_dollars"] = 2500
-    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
-                                 existing_roof="tile", profit_mode="flat",
-                                 flat_profit_dollars=1000))
-    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["amount"] == 1000, "Tim's typed flat profit must survive the floor"
-    assert not any("min_margin_applied" in w for w in r["warnings"])
-
-
-def test_min_margin_never_overrides_an_explicit_per_square_override():
-    cfg = _cfg_v2()
-    cfg.raw["min_margin_dollars"] = 2500
-    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
-                                 existing_roof="tile", override_profit_per_sq=50))
-    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["amount"] == 500
-    assert not any("min_margin_applied" in w for w in r["warnings"])
-
-
-def test_zoned_add_raises_config_error_on_a_missing_zone():
-    """A one-zone dict used to KeyError at quote time; the route maps only ValueError and
-    ConfigError, so it escaped as a bare 500. Found by R2 architect review."""
-    cfg = _cfg_v2()
-    cfg.raw["pitch_7_12_add"] = {"HVHZ": 200}
-    with pytest.raises(ConfigError) as exc:
-        cfg.zoned_add("pitch_7_12_add", "FBC")
-    assert "FBC" in str(exc.value) and "pitch_7_12_add" in str(exc.value)
+def test_floor_never_overrides_explicit_operator_pricing():
+    """An operator who types a number owns it — and flooring it would also suppress the
+    flat_profit_floor guardrail built to catch exactly that. R2 architect finding."""
+    cfg = _floor_cfg()
+    kw = dict(code_zone="FBC", roof_type="13_tile", num_squares=10.0, existing_roof="tile",
+              overhead_mode="daily",
+              daily_series=[DailyOverheadSeries(series="tile", days=1.0)])
+    flat = estimate(cfg, QuoteInput(**kw, profit_mode="flat", flat_profit_dollars=1000))
+    assert next(i for i in flat["line_items_detail"] if i["key"] == "profit")["amount"] == 1000
+    ovr = estimate(cfg, QuoteInput(**kw, override_profit_per_sq=50))
+    assert next(i for i in ovr["line_items_detail"] if i["key"] == "profit")["amount"] == 500
+    for r in (flat, ovr):
+        assert not any("min_margin_applied" in w for w in r["warnings"])

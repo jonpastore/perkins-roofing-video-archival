@@ -400,8 +400,11 @@ def quote(
         # straight off profit here, so the first discount silently defeats it: a job floored to
         # $2,500 with a $2,000 discount lands at $500 and, before this, warned only if profit
         # went negative. Sales holds quoting_create, so that lever is exactly the one they have.
-        min_margin = config.min_margin_dollars()
-        if min_margin and adjusted_profit < min_margin and "min_margin_breached" not in warnings:
+        floor_after_discount = float(result.get("profit_floor_guidance") or 0) or \
+            float((result.get("margin") or {}).get("effective_floor") or 0)
+        if (config.enforce_profit_floor() and floor_after_discount
+                and adjusted_profit < floor_after_discount
+                and "min_margin_breached" not in warnings):
             warnings.append("min_margin_breached")
         result["pre_discount_total"] = round(pre_discount_total, 2)
         result["discount_total"] = discount_total
@@ -678,10 +681,11 @@ def rates(
             "daily_overhead_day_model": cfg.get("daily_overhead_day_model") or {},
             "weekly_profit_floor": cfg.get("weekly_profit_floor") or 2500,
             "job_profit_floor": cfg.get("job_profit_floor") or 2500,
-            # Enforced minimum PROFIT dollars per job — unlike the two floors above, this one
-            # moves the quoted price. null = off. Surfaced so the config panel can set it
-            # instead of the value only being reachable by hand-editing JSONB (R3).
-            "min_margin_dollars": cfg.get("min_margin_dollars"),
+            # When true the profit floor MOVES THE PRICE rather than only warning. The amount
+            # is weekly_profit_floor x on-site weeks (one week minimum) — Tim: "$2,500 a week
+            # that we're on the job ... if it's one day it still counts as one week".
+            "enforce_profit_floor": bool(cfg.get("enforce_profit_floor")),
+            "profit_floor_days_per_week": cfg.get("profit_floor_days_per_week") or 6,
             # v2: repair (time-based) quote config — roof-type categories + daily labor rates
             "repair": cfg.get("repair") or {},
             # scope-of-work AI rewrite: saved default template ({"default_template": str})

@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Set the enforced minimum-margin floor, and show what it would move before it does.
+"""Switch ON the enforced profit floor, and show what it moves before it does.
 
-R2 review, MEDIUM: `min_margin_dollars` shipped reachable only by hand-editing JSONB, which is
-an R3 violation (git -> apply, never the reverse). This is the git-tracked way to set it.
+Tim, 2026-07-17 Zoom [08:52]: "i like to make 2500 bucks a week that we're on the job ... and if
+it's one day it still counts as one week and i'm still gonna charge 2500 bucks minimum on
+re-roofs". The floor is therefore PER JOB and PER WEEK ON THAT JOB, one week minimum -- five
+separate one-day jobs owe $2,500 each, nothing pools across a calendar week.
+
+The amount already existed as weekly_profit_floor ($2,500) and job_profit_floor ($2,500), and
+compute_profit_guidance already computed effective_floor = max(absolute, weeks x weekly). It was
+advisory only. This flips enforce_profit_floor so it moves the price and warns.
 
 UNLIKE `job_profit_floor` and `weekly_profit_floor`, which only feed the margin badge, this one
 MOVES THE QUOTED PRICE: `_apply_min_margin` raises the profit line to it and stamps a
 `min_margin_applied` warning. Explicit operator pricing (`profit_mode="flat"`,
 `override_profit_per_sq`) is never overridden.
 
-⚠️ MEASURE BEFORE YOU SET IT. Jon's framing was a one-square job whose overhead alone is
-~$1,400. But Tim's sliding scale only reaches $2,500 of profit at ~23 squares, so a $2,500 floor
-reaches ordinary jobs, not just the T&M edge case. Measured against his own 29 homes:
+⚠️ profit_floor_days_per_week is ASSUMED 6 (Mon-Sat, off Sunday). It decides which jobs cross
+into a second week and so owe a second $2,500 -- at 6 days a 6-day job is one week and a 7-day
+job is two. Confirm 5, 6 or 7 with Tim.
 
-    314 5th St.        16.5 sq   $14,085 -> $14,605   +$520
-    892 Camellia Dr.   21.5 sq   $17,095 -> $17,230   +$135
-
-Two of twenty-nine of HIS OWN SOLD HOMES get more expensive. Confirm the number with Tim before
-seeding it, or pick a value that only bites where he says it should.
-
-Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/seed_min_margin.py --dollars 2500 [--apply]
+Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/seed_min_margin.py [--apply]
        (prints the impact and changes nothing unless --apply is passed)
 """
 from __future__ import annotations
@@ -32,8 +32,12 @@ BRANCH_ORDER = ("jupiter", "miami", "naples")
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dollars", type=float, required=True,
-                        help="minimum profit dollars per job; 0 disables the floor")
+    parser.add_argument("--weekly", type=float, default=2500.0,
+                        help="profit floor per on-site week (default 2500)")
+    parser.add_argument("--days-per-week", type=float, default=6.0,
+                        help="working days per week (default 6, Mon-Sat)")
+    parser.add_argument("--off", action="store_true",
+                        help="disable enforcement instead of enabling it")
     parser.add_argument("--apply", action="store_true",
                         help="write a new config version (otherwise print and exit)")
     args = parser.parse_args()
@@ -42,8 +46,6 @@ def main() -> None:
 
     from app.models import PricingConfig, SessionLocal
     from core.pricing_config import compute_hash, load_config
-
-    value = args.dollars or None
 
     s = SessionLocal()
     s.info["tenant_id"] = 1
@@ -55,19 +57,23 @@ def main() -> None:
         if active is None:
             print(f"{branch}: no active config", file=sys.stderr)
             continue
-        if active.config.get("min_margin_dollars") == value:
-            print(f"{branch}: already {value} — skipped")
+        want = not args.off
+        cfg = dict(active.config)
+        cfg["enforce_profit_floor"] = want
+        cfg["weekly_profit_floor"] = args.weekly
+        cfg["profit_floor_days_per_week"] = args.days_per_week
+        if cfg == dict(active.config):
+            print(f"{branch}: already set — skipped")
             continue
 
-        cfg = dict(active.config)
-        cfg["min_margin_dollars"] = value
-        # Smallest job size at which the sliding scale clears the floor on its own — anything
-        # under this gets repriced, which is the number worth eyeballing before applying.
         pc = load_config(cfg)
-        bites_below = next((sq for sq in range(1, 201)
-                            if value and pc.profit_per_sq(float(sq)) * sq >= value), None)
-        print(f"{branch}: min_margin_dollars {active.config.get('min_margin_dollars')} -> {value}"
-              + (f"  (repricing every job under ~{bites_below} squares)" if bites_below else ""))
+        # Smallest job the sliding scale carries unaided for ONE week — under this, a one-week
+        # job gets repriced. Longer jobs owe a multiple, so this is the floor's gentlest case.
+        bites = next((sq for sq in range(1, 401)
+                      if pc.profit_per_sq(float(sq)) * sq >= args.weekly), None)
+        print(f"{branch}: enforce_profit_floor -> {want}, ${args.weekly:,.0f}/week, "
+              f"{args.days_per_week:g}-day week"
+              + (f"  (a 1-week job under ~{bites} squares gets repriced)" if want and bites else ""))
 
         if not args.apply:
             continue
@@ -75,7 +81,8 @@ def main() -> None:
         s.flush()
         new = PricingConfig(
             branch=branch, version=active.version + 1,
-            label=f"min_margin_dollars={value}",
+            label=("enforce profit floor ${:,.0f}/wk, {:g}-day week"
+                   .format(args.weekly, args.days_per_week)),
             config=cfg, config_hash=compute_hash(cfg),
             is_active=True, created_by="seed_min_margin.py", tenant_id=1,
         )
