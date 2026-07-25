@@ -614,6 +614,7 @@ def rates(
             # v2: day-based overhead and profit-floor config fields for the UI
             "daily_overhead_rates": cfg.get("daily_overhead_rates") or {},
             "daily_overhead_weeks_rounding_mode": cfg.get("daily_overhead_weeks_rounding_mode") or "ceil",
+            "daily_overhead_day_model": cfg.get("daily_overhead_day_model") or {},
             "weekly_profit_floor": cfg.get("weekly_profit_floor") or 2500,
             "job_profit_floor": cfg.get("job_profit_floor") or 2500,
             # v2: repair (time-based) quote config — roof-type categories + daily labor rates

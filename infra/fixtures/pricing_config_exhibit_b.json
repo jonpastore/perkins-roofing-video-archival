@@ -119,6 +119,23 @@
     "shingle": 700
   },
   "daily_overhead_weeks_rounding_mode": "ceil",
+  "_note_daily_overhead_day_model": "days = setup + rate x SQ, least-squares fit over Tim's 30-home TIME LEARNING log (docs/ROOFR_OVERHEAD_TIERS.md). Tile R2 0.70 / Metal 0.66 fit well; demo+shingle are noisy (R2 ~0.37) — refit when Tim logs tear-off type. Low-slope systems are deliberately absent: no fitted data, so their labor days stay manual.",
+  "daily_overhead_day_model": {
+    "demo_series": "demo_dry_in_flat",
+    "install_series_by_roof_type": {
+      "13_tile": "tile",
+      "barrel_tile": "tile",
+      "standing_seam_metal": "metal",
+      "3tab_shingle": "shingle",
+      "dimensional_shingle": "shingle"
+    },
+    "series": {
+      "demo_dry_in_flat": { "setup": 1.31, "rate": 0.044 },
+      "shingle": { "setup": 1.06, "rate": 0.024 },
+      "tile": { "setup": 0.45, "rate": 0.129 },
+      "metal": { "setup": 0.59, "rate": 0.106 }
+    }
+  },
   "profit_mode_default": "scale",
   "weekly_profit_floor": 2500,
   "job_profit_floor": 2500,

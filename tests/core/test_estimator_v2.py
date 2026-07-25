@@ -27,6 +27,7 @@ from core.estimator import (
     DailyOverheadSeries,
     compute_daily_overhead,
     compute_profit_guidance,
+    derive_daily_series,
 )
 
 # ---------------------------------------------------------------------------
@@ -666,3 +667,101 @@ def test_margin_ok_true_when_flat_profit_above_floor():
     )
     r = estimate(cfg, q)
     assert "flat_profit_floor" not in r["margin_warnings"]
+
+
+# ---------------------------------------------------------------------------
+# Auto-derived labor days (days = setup + rate x SQ) — Tim's time-learning model
+# (docs/ROOFR_OVERHEAD_TIERS.md). Daily mode with no days supplied used to fall
+# silently back to per-square OH, which is the ~$2k PROTECTOR gap.
+# ---------------------------------------------------------------------------
+
+def test_derive_daily_series_tile_tear_off():
+    """43 SQ tile over tile: tile 0.45+0.129*43=6.0d, demo 1.31+0.044*43=3.2→3.0d."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=43.0,
+                   existing_roof="tile", overhead_mode="daily")
+    got = {s.series: s.days for s in derive_daily_series(cfg, q)}
+    assert got == {"tile": 6.0, "demo_dry_in_flat": 3.0}, got
+
+
+def test_derive_daily_series_skips_demo_on_new_construction():
+    """existing_roof='none' → install days only, no tear-off days."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=43.0,
+                   existing_roof="none", overhead_mode="daily")
+    assert [s.series for s in derive_daily_series(cfg, q)] == ["tile"]
+
+
+def test_derive_daily_series_empty_for_unmodelled_roof():
+    """Low-slope systems have no fitted model → no derivation (stays manual)."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=40.0,
+                   slope_type="low_slope", existing_roof="flat", overhead_mode="daily")
+    assert derive_daily_series(cfg, q) == []
+
+
+def test_derive_daily_series_always_half_day_multiples():
+    """Derived days must satisfy the DailyOverheadSeries contract for any job size."""
+    cfg = _cfg_v2()
+    for sq in [1, 7, 12.5, 23, 40, 61, 97, 150]:
+        for rt in ["13_tile", "standing_seam_metal", "3tab_shingle"]:
+            q = QuoteInput(code_zone="FBC", roof_type=rt, num_squares=float(sq),
+                           existing_roof="shingle", overhead_mode="daily")
+            for s in derive_daily_series(cfg, q):
+                assert s.days >= 0.5 and round(s.days % 0.5, 10) == 0.0, (rt, sq, s)
+
+
+def test_estimate_auto_fills_days_when_none_supplied():
+    """40 SQ metal over shingle: demo 3.0d ($1050) + metal 5.0d ($850) = $7,400 OH."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="FBC", roof_type="standing_seam_metal", num_squares=40.0,
+                   project_kind="commercial", existing_roof="shingle", overhead_mode="daily")
+    r = estimate(cfg, q)
+    oh = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
+    assert abs(oh["amount"] - 7400.0) < 0.01, oh
+    assert abs(oh["per_sq"] - 185.0) < 0.001, oh
+    assert {d["series"]: d["days"] for d in r["daily_series"]} == {
+        "demo_dry_in_flat": 3.0, "metal": 5.0,
+    }
+    assert r["profit_guidance"]["total_series_days"] == 8.0
+
+
+def test_estimate_typed_days_beat_derived_days():
+    """Days the estimator typed are never overwritten by the model."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="FBC", roof_type="standing_seam_metal", num_squares=40.0,
+                   project_kind="commercial", existing_roof="shingle", overhead_mode="daily",
+                   daily_series=[DailyOverheadSeries(series="metal", days=1.0)])
+    r = estimate(cfg, q)
+    oh = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
+    assert abs(oh["amount"] - 850.0) < 0.01, oh
+
+
+def test_estimate_per_sq_fallback_preserved_without_day_model():
+    """No day model in config → daily mode with no days still falls back to per-sq OH."""
+    raw = _raw_config()
+    raw.pop("daily_overhead_day_model")
+    cfg = load_config(raw)
+    q = QuoteInput(code_zone="FBC", roof_type="standing_seam_metal", num_squares=40.0,
+                   project_kind="commercial", existing_roof="shingle", overhead_mode="daily")
+    r = estimate(cfg, q)
+    oh = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
+    assert abs(oh["per_sq"] - cfg.sloped_overhead("FBC", "standing_seam_metal")) < 0.001, oh
+
+
+def test_auto_filled_days_are_warned_about():
+    """Auto-fill must be visible: by-days OH is far below per-sq OH on tile/metal."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="HVHZ", roof_type="barrel_tile", num_squares=43.0,
+                   project_kind="commercial", existing_roof="tile", overhead_mode="daily")
+    r = estimate(cfg, q)
+    assert any(w.startswith("daily_days_auto_filled") for w in r["warnings"]), r["warnings"]
+
+
+def test_typed_days_are_not_warned_about():
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="HVHZ", roof_type="barrel_tile", num_squares=43.0,
+                   project_kind="commercial", existing_roof="tile", overhead_mode="daily",
+                   daily_series=[DailyOverheadSeries(series="tile", days=6.0)])
+    r = estimate(cfg, q)
+    assert not any(w.startswith("daily_days_auto_filled") for w in r["warnings"])

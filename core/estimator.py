@@ -11,7 +11,7 @@ Every line item carries a cost_category tag for floor and grouping math.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 from core._legacy_rates import _profit_per_sq as profit_per_sq  # noqa: F401 — re-exported for backward compat
@@ -82,6 +82,51 @@ def compute_daily_overhead(
         oh_total += s.days * float(rates[s.series])
     per_sq_oh = oh_total / num_squares
     return oh_total, per_sq_oh
+
+
+def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOverheadSeries]:
+    """Auto-fill labor days from squares: days = setup + rate x SQ per series.
+
+    Calibrated off Tim's 30-home time-learning log (docs/ROOFR_OVERHEAD_TIERS.md); the model
+    lives in config["daily_overhead_day_model"] so it stays tunable without a code change.
+    A tear-off adds the demo series on top of the install series (summed when both resolve to
+    the same series, e.g. flat roofs). Days round to the nearest 0.5 the DailyOverheadSeries
+    contract requires, floored at 0.5.
+
+    Returns [] when the roof type has no fitted model (low-slope systems, unconfigured
+    branches) — the caller then keeps the per-square overhead it would have used anyway.
+    """
+    model = config.daily_overhead_day_model()
+    fits = model.get("series") or {}
+    rates = config.daily_overhead_rates()
+    if not fits or q.num_squares <= 0:
+        return []
+
+    def days_for(name: str) -> Optional[float]:
+        fit = fits.get(name)
+        if not fit or name not in rates:
+            return None
+        raw = float(fit["setup"]) + float(fit["rate"]) * q.num_squares
+        return max(0.5, round(raw * 2) / 2)
+
+    # ponytail: one demo fit for every tear-off type — Tim's sheet logs Demo as a single
+    # column (R2 0.37). Split per existing_roof when he logs tile vs shingle tear-off apart.
+    has_tear_off = q.demo if q.existing_roof is None else q.existing_roof != "none"
+    demo_series = model.get("demo_series")
+    install_series = (model.get("install_series_by_roof_type") or {}).get(q.roof_type)
+
+    # No fitted INSTALL model → derive nothing. Demo days alone would replace the per-square
+    # overhead with a fraction of it, quoting the job under cost.
+    install_days = days_for(install_series) if install_series else None
+    if install_days is None:
+        return []
+
+    totals: dict[str, float] = {install_series: install_days}
+    if has_tear_off and demo_series:
+        demo_days = days_for(demo_series)
+        if demo_days is not None:
+            totals[demo_series] = totals.get(demo_series, 0.0) + demo_days
+    return [DailyOverheadSeries(series=n, days=d) for n, d in totals.items()]
 
 
 def compute_profit_guidance(
@@ -793,12 +838,34 @@ def estimate(config_or_input, input_or_none=None) -> dict:
 
     config: PricingConfig = config_or_input
     q: QuoteInput = input_or_none
+
+    # Day-based OH with no days supplied: auto-fill them from squares instead of silently
+    # falling back to per-square OH (the ~$2k PROTECTOR gap — Zoom 2026-07-17). Days the
+    # caller typed always win.
+    auto_days = False
+    if q.overhead_mode == "daily" and not q.daily_series:
+        derived = derive_daily_series(config, q)
+        if derived:
+            q = replace(q, daily_series=derived)
+            auto_days = True
+
     result = _estimate_config(config, q).to_dict()
+    if auto_days:
+        # By-days OH lands well below the per-square OH on tile/metal, so an auto-filled
+        # estimate must never look hand-checked. Say the days came from the model.
+        days_txt = ", ".join(f"{s.series}={s.days}d" for s in q.daily_series)
+        result["warnings"] = list(result.get("warnings") or []) + [
+            f"daily_days_auto_filled: labor days were derived from {q.num_squares:g} squares "
+            f"({days_txt}) using the time-learning model, not entered by the estimator. "
+            "Confirm them against the crew schedule before sending."
+        ]
 
     # Attach profit_guidance when any v2 mode is active
     if q.overhead_mode == "daily" or q.profit_mode == "flat":
         flat_profit = q.flat_profit_dollars if q.profit_mode == "flat" else None
         result["profit_guidance"] = compute_profit_guidance(config, q.daily_series, flat_profit)
+    if q.overhead_mode == "daily":
+        result["daily_series"] = [{"series": s.series, "days": s.days} for s in q.daily_series]
 
     return result
 

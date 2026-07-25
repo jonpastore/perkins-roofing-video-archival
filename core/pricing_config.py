@@ -325,6 +325,16 @@ class PricingConfig:
         """'ceil' (default) or 'floor' — how total series days map to on-site weeks."""
         return str(self.raw.get("daily_overhead_weeks_rounding_mode") or "ceil")
 
+    def daily_overhead_day_model(self) -> dict[str, Any]:
+        """Return the fitted days-from-squares model (docs/ROOFR_OVERHEAD_TIERS.md).
+
+        Shape: {"demo_series": str,
+                "install_series_by_roof_type": {roof_type: series},
+                "series": {series: {"setup": days, "rate": days_per_sq}}}
+        Empty dict when unconfigured — callers then leave labor days manual.
+        """
+        return dict(self.raw.get("daily_overhead_day_model") or {})
+
     # ------------------------------------------------------------------ #
     # v2: Repair options (time-based pricing, Zoom 2026-07-20 [37:04]/[45:31]) #
     # ------------------------------------------------------------------ #
