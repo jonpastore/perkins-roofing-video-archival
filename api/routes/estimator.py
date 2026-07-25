@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.auth import get_db_session, require_role
+from api.auth import can, get_db_session, require_role
 from app.models import Estimate, Measurement, PricingConfig
 from core import estimator as E
 from core import scope_of_work as SOW
@@ -105,6 +105,10 @@ class QuoteRequest(BaseModel):
     project_kind: Literal["residential", "commercial"] = "residential"
     pitch_7_12: bool = False
     pitch_primary: float | None = Field(default=None, ge=0, le=24)   # rise per 12, e.g. 6 = 6/12
+    # Estimate-debug: return the formula, variables and values behind every priced line plus the
+    # section roll-ups. Ignored unless the caller holds estimating_manage — the trace exposes
+    # internal config keys and roughly doubles the payload, so it is not for the sales view.
+    debug: bool = False
     demo: bool = False
     secondary_water_barrier: bool = False
     winterguard: bool = False
@@ -245,7 +249,12 @@ def quote(
     # picks (his golden proposals price standard roofs off the flat base). Cut LFs ARE passed to
     # the headline quote, but with apply_cut_calc_to_base=False: they drive the geometry day
     # model without moving the base.
+    # The calculation trace names internal config keys, so it is gated on estimating_manage
+    # rather than the estimating_view every quote already carries. Asking for it without the
+    # role is not an error — the quote returns normally, just without the trace.
+    debug = bool(body.debug) and can(claims.get("role"), "estimating_manage")
     qkwargs = dict(
+        debug=debug,
         code_zone=body.code_zone,
         slope_type=effective_slope_type,
         roof_type=body.roof_type,
@@ -631,7 +640,8 @@ def rates(
             # Overhead is the office's gross daily cost of doing business (Tim: total office
             # costs / working days) — a per-branch admin input, ~$1,390 Jupiter vs ~$4,140 Miami.
             "office_daily_overhead": cfg.get("office_daily_overhead"),
-            "office_daily_overhead_reference": cfg.get("office_daily_overhead_reference"),
+            "office_men": cfg.get("office_men"),
+            "office_oh_basis_reference": cfg.get("office_oh_basis_reference"),
             "daily_overhead_weeks_rounding_mode": cfg.get("daily_overhead_weeks_rounding_mode") or "ceil",
             "daily_overhead_day_model": cfg.get("daily_overhead_day_model") or {},
             "weekly_profit_floor": cfg.get("weekly_profit_floor") or 2500,

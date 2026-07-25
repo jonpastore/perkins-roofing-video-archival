@@ -977,3 +977,42 @@ def test_rates_pass_through_untouched_when_the_office_burn_is_unset():
         cfg.raw.pop(k, None)
     assert cfg.daily_overhead_rates() == {"tile": 745}
     assert cfg.office_daily_overhead() is None
+
+
+def test_debug_trace_shows_the_formula_behind_every_priced_line():
+    """Estimate-debug: an estimator should be able to audit a quote, not just trust it."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=35.0, existing_roof="tile",
+                   overhead_mode="daily", debug=True,
+                   daily_series=[DailyOverheadSeries(series="tile", days=5.0),
+                                 DailyOverheadSeries(series="demo_dry_in_flat", days=3.0)])
+    r = estimate(cfg, q)
+
+    by_key = {i["key"]: i for i in r["line_items_detail"]}
+    base = by_key["base_cost_lm"]["explain"]
+    assert base["formula"] == "per_sq x squares"
+    assert base["inputs"] == {"per_sq": 770, "squares": 35.0}
+    assert base["result"] == 770 * 35
+
+    oh = by_key["overhead"]["explain"]
+    assert "days x daily_rate" in oh["formula"]
+    assert oh["inputs"]["tile_days"] == 5.0
+    assert oh["inputs"]["demo_dry_in_flat_days"] == 3.0
+
+    profit = by_key["profit"]["explain"]
+    assert "sliding scale" in profit["formula"]
+    assert profit["inputs"]["overridden"] is False
+
+    sections = {s["section"]: s for s in r["calculation_trace"]}
+    assert sections["Squares subtotal"]["result"] == r["squares_subtotal"]
+    assert sections["Project total"]["result"] == r["project_total"]
+    # the roll-up must actually reconcile, not just be printed
+    assert (sections["Squares subtotal"]["result"]
+            + sections["Project fixed costs"]["result"]) == pytest.approx(r["project_total"], abs=0.01)
+
+
+def test_debug_is_off_by_default():
+    """The trace names internal config keys and doubles the payload — never on implicitly."""
+    r = estimate(_cfg_v2(), QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=35.0))
+    assert "calculation_trace" not in r
+    assert all("explain" not in i for i in r["line_items_detail"])

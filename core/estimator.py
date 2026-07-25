@@ -410,6 +410,9 @@ class QuoteInput:
     # pitch_7_12 flag, which drives Tim's $305/sq tile MATERIAL adder — this one feeds the
     # steep-roof day adder, because a steep roof takes longer to walk regardless of material.
     pitch_primary: Optional[float] = None
+    # Estimate-debug: return the formula, variables and values behind every priced line, plus
+    # the section roll-ups, so a quote can be audited rather than trusted. Admin-gated.
+    debug: bool = False
 
     # Gutters — Tim's style-based price list (email 2026-07-17): per-LF price includes the
     # matching downspouts; 2-story is a per-LF uplift; elbows/leaf guards/leaderheads/removal
@@ -475,6 +478,28 @@ class LineItem:
     category: str       # "Labor" | "Materials" | "Equipment" | "Sub" | "Misc" | "OH" | "Profit"
     per_sq: Optional[float] = None
     floor_excluded: list[str] = field(default_factory=list)  # categories excluded from floor denom
+    # How this number was reached: {"formula": str, "inputs": {name: value}}. Set it only where
+    # the arithmetic is NOT the usual per_sq x squares — _explain() derives that shape for free,
+    # so annotating every call site would be noise.
+    explain: Optional[dict] = None
+
+
+def _explain(li: "LineItem", sq: float) -> dict:
+    """Show the caller how a line item got its number: formula, variables, values, result.
+
+    Most items are a rate times the roof area, so that is derived rather than hand-written at
+    each construction site. Anything with genuinely different arithmetic (overhead from days,
+    profit off the sliding scale, commission, dumpster counts) attaches its own `explain`.
+    """
+    if li.explain:
+        return {**li.explain, "result": round(li.amount, 2)}
+    if li.per_sq is not None:
+        return {
+            "formula": "per_sq x squares",
+            "inputs": {"per_sq": round(li.per_sq, 2), "squares": sq},
+            "result": round(li.amount, 2),
+        }
+    return {"formula": "fixed amount", "inputs": {}, "result": round(li.amount, 2)}
 
 
 @dataclass
@@ -510,6 +535,59 @@ class EstimateResult:
     margin_ok: bool = True
     margin_warnings: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Estimate-debug toggle: attach the formula, variables and values behind every priced line
+    # so an estimator can audit a quote instead of trusting it. Off by default — the payload
+    # roughly doubles, and the trace names internal config keys.
+    debug: bool = False
+
+    def _trace(self) -> list[dict]:
+        """Section-level roll-ups: how the per-square lines become the project total.
+
+        Mirrors Tim's own sheet so an estimator can check us against it line for line —
+        `TOTAL PER SQ =SUM(B2:B8)` then `PROJECT TOTAL =(B17*B18)+SUM(B19:B21)`.
+        """
+        per_sq_items = [li for li in self.line_items_detail if li.per_sq is not None]
+        fixed_items = [li for li in self.line_items_detail if li.per_sq is None]
+        return [
+            {
+                "section": "Per-square total",
+                "formula": "sum of every per-square rate  (Tim's B9 =SUM(B2:B8))",
+                "inputs": {li.key: round(li.per_sq, 2) for li in per_sq_items},
+                "result": round(self.per_square_total, 2),
+            },
+            {
+                "section": "Squares subtotal",
+                "formula": "per_square_total x squares  (Tim's B17*B18)",
+                "inputs": {"per_square_total": round(self.per_square_total, 2),
+                           "squares": self.num_squares},
+                "result": round(self.squares_subtotal, 2),
+            },
+            {
+                "section": "Project fixed costs",
+                "formula": "sum of the non-per-square items  (Tim's SUM(B19:B21))",
+                "inputs": {li.key: round(li.amount, 2) for li in fixed_items},
+                "result": round(self.project_total - self.squares_subtotal, 2),
+            },
+            {
+                "section": "Project total",
+                "formula": "squares_subtotal + fixed costs  (Tim's B22)",
+                "inputs": {"squares_subtotal": round(self.squares_subtotal, 2),
+                           "fixed": round(self.project_total - self.squares_subtotal, 2)},
+                "result": round(self.project_total, 2),
+            },
+            {
+                "section": "Margin check",
+                "formula": "profit / eligible_base, and (profit + OH) / eligible_base "
+                           "(Tim's B25 and B26; floors 13% and 33%)",
+                "inputs": {"profit_dollars": round(self.margin.profit_dollars, 2),
+                           "oh_dollars": round(self.margin.oh_dollars, 2),
+                           "eligible_base": round(self.margin.eligible_base, 2)},
+                "result": {"profit_pct": round(self.margin.profit_pct, 4),
+                           "combined_pct": round(self.margin.combined_pct, 4),
+                           "profit_floor_ok": self.margin.profit_floor_ok,
+                           "combined_floor_ok": self.margin.combined_floor_ok},
+            },
+        ]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -526,9 +604,11 @@ class EstimateResult:
                     "amount": round(li.amount, 2),
                     "category": li.category,
                     "per_sq": round(li.per_sq, 2) if li.per_sq is not None else None,
+                    **({"explain": _explain(li, self.num_squares)} if self.debug else {}),
                 }
                 for li in self.line_items_detail
             ],
+            **({"calculation_trace": self._trace()} if self.debug else {}),
             "margin": {
                 "profit_dollars": round(self.margin.profit_dollars, 2),
                 "oh_dollars": round(self.margin.oh_dollars, 2),
@@ -596,10 +676,24 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     # Overhead — per_sq mode (default) or day-based mode (v2)
     if q.overhead_mode == "daily" and q.daily_series:
         oh_total, oh_per_sq = compute_daily_overhead(config, q.daily_series, sq)
-        items.append(LineItem("overhead", "Overhead", oh_total, tags["overhead"], oh_per_sq))
+        rates = config.daily_overhead_rates()
+        items.append(LineItem("overhead", "Overhead", oh_total, tags["overhead"], oh_per_sq, explain={
+            "formula": "sum(days x daily_rate) per series, then / squares. Daily rate is the "
+                       "office's burn share: crew x (office_daily_overhead / office_men).",
+            "inputs": {
+                **{f"{s.series}_days": s.days for s in q.daily_series},
+                **{f"{s.series}_rate": rates.get(s.series) for s in q.daily_series},
+                "office_daily_overhead": config.raw.get("office_daily_overhead"),
+                "office_men": config.raw.get("office_men"),
+                "squares": sq,
+            }}))
     else:
         oh = q.override_overhead if q.override_overhead is not None else config.sloped_overhead(zone, rt)
-        items.append(LineItem("overhead", "Overhead", oh * sq, tags["overhead"], oh))
+        items.append(LineItem("overhead", "Overhead", oh * sq, tags["overhead"], oh, explain={
+            "formula": "override_overhead x squares" if q.override_overhead is not None
+                       else "sloped_overhead[zone][roof_type] x squares  (Tim's published $/sq)",
+            "inputs": {"per_sq": oh, "zone": zone, "roof_type": rt, "squares": sq,
+                       "overridden": q.override_overhead is not None}}))
 
     # Profit — scale mode (default) or flat-dollar mode (v2)
     if q.profit_mode == "flat" and q.flat_profit_dollars is not None:
@@ -608,7 +702,13 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
         items.append(LineItem("profit", "Profit", pft_total, tags["profit"], pft_per_sq))
     else:
         pft = q.override_profit_per_sq if q.override_profit_per_sq is not None else config.profit_per_sq(sq)
-        items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
+        items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft, explain={
+            "formula": "override x squares" if q.override_profit_per_sq is not None
+                       else "profit_scale band for this many squares, x squares  (Tim's sliding "
+                            "scale: 1sq $400 / 2-4 $200 / 5-7 $160 / 8-14 $140 / 15-20 $120 / "
+                            "20-29 $110 / 30+ $100)",
+            "inputs": {"per_sq": pft, "squares": sq, "profit_scale": config.raw.get("profit_scale"),
+                       "overridden": q.override_profit_per_sq is not None}}))
 
     cuts_val = config.raw["roof_cuts"][q.roof_cuts]
     if cuts_val:
@@ -683,7 +783,14 @@ def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineIt
     if (_is_tile(q.roof_type) or q.existing_roof == "tile") and q.num_squares > 0:
         count = config.tile_dumpster_count(q.num_squares, zone)
         dumpster_cost = count * config.raw["tile_dumpster_cost"]
-        items.append(LineItem("tile_dumpster", "Tile Dumpster", dumpster_cost, tags["tile_dumpster"]))
+        items.append(LineItem("tile_dumpster", "Tile Dumpster", dumpster_cost,
+                              tags["tile_dumpster"], explain={
+            "formula": "dumpsters x tile_dumpster_cost, one dumpster per threshold squares "
+                       "(Tim's sheet: every 30 sq FBC, more than 15 sq HVHZ)",
+            "inputs": {"dumpsters": count, "cost_each": config.raw["tile_dumpster_cost"],
+                       "threshold": config.raw["tile_dumpster_threshold"][zone],
+                       "squares": q.num_squares, "zone": zone,
+                       "boundary_inclusive": config.raw.get("tile_dumpster_boundary_inclusive")}}))
 
     return items
 
@@ -962,7 +1069,13 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
             f"pm_incentive_missing: {exc}. Estimate was calculated with PM Incentive = $0; "
             "confirm the correct PM incentive band with Tim."
         )
-    pm_item = LineItem("pm_incentive", "PM Incentive", pm_val, tags["pm_incentive"])
+    pm_item = LineItem("pm_incentive", "PM Incentive", pm_val, tags["pm_incentive"], explain={
+        "formula": "band lookup on squares. NOTE: Tim's sheet keys this on SIZE ONLY "
+                   "(<20 $50 / 20-50 $100 / >50 $250) while ours also keys on "
+                   "residential-vs-commercial with no residential band above 20 sq — pending "
+                   "item #1 with Tim, so a 35 sq residential job can take $50 where he says $100.",
+        "inputs": {"squares": q.num_squares, "project_kind": q.project_kind, "zone": zone,
+                   "pm_incentive_table": config.raw.get("pm_incentive")}})
 
     # Cut-calculator advisories. The geometry base and the categorical roof_cuts low/med/high
     # knob both price cut complexity; Tim keeps both (low=$0 default), so surface — not suppress —
@@ -1044,6 +1157,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
         margin_ok=margin.profit_floor_ok,
         margin_warnings=margin.margin_warnings,
         warnings=warnings,
+        debug=q.debug,
     )
 
 
