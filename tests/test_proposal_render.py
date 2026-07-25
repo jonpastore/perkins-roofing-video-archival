@@ -470,3 +470,41 @@ class TestTcAiFaqRendering:
         ctx = self._ctx(tc_summary_bullets=None, tc_faq_items=None)
         html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
         assert len(html) > 100
+
+
+class TestTcSectionToggles:
+    """quote_snapshot include_terms / include_contract_faq drop their sections from the PDF."""
+
+    def _ctx(self, **overrides) -> ProposalRenderContext:
+        base = _minimal_context()
+        object.__setattr__(base, "tc_text", "These are the terms.")
+        object.__setattr__(base, "tc_summary_bullets", ["Bullet one"])
+        object.__setattr__(base, "tc_faq_items", [{"q": "Q?", "a": "A."}])
+        for k, v in overrides.items():
+            object.__setattr__(base, k, v)
+        return base
+
+    def test_both_sections_render_by_default(self):
+        """Default must stay ON — a proposal that silently drops its T&C is a contract defect."""
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, self._ctx())
+        assert "These are the terms." in html
+        assert 'class="tc-ai-cover"' in html
+        assert 'class="tc-ai-faq"' in html
+
+    def test_include_terms_false_drops_terms_and_summary(self):
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, self._ctx(include_terms=False))
+        assert "These are the terms." not in html
+        assert "Terms and conditions to be attached." not in html
+        assert 'class="terms"' not in html
+        assert 'class="tc-ai-cover"' not in html
+        assert 'class="tc-ai-faq"' in html, "the FAQ has its own toggle"
+
+    def test_include_contract_faq_false_drops_only_the_faq(self):
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, self._ctx(include_contract_faq=False))
+        assert 'class="tc-ai-faq"' not in html
+        assert "These are the terms." in html
+
+    def test_custom_template_can_read_the_flags(self):
+        ctx = self._ctx(include_terms=False, include_contract_faq=True)
+        html = render_proposal_html("{{ tc.include_terms }}/{{ tc.include_contract_faq }}", ctx)
+        assert "False/True" in html

@@ -55,6 +55,11 @@ class ProposalRenderContext:
     tc_review_prompts: list[str] | None = field(default=None)
     tc_ai_disclaimer: str | None = field(default=None)
     tc_cover_letter: str | None = field(default=None)
+    # Section toggles (quote_snapshot.include_terms / include_contract_faq). Default True —
+    # every proposal rendered before the toggles existed included both, and a proposal that
+    # silently drops its T&C is a contract defect, not a formatting choice.
+    include_terms: bool = field(default=True)
+    include_contract_faq: bool = field(default=True)
 
 
 class _SilentUndefined(jinja2.Undefined):
@@ -153,6 +158,8 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "review_prompts": ctx.tc_review_prompts or [],
             "ai_disclaimer": ctx.tc_ai_disclaimer or "",
             "cover_letter": ctx.tc_cover_letter or "",
+            "include_terms": ctx.include_terms,
+            "include_contract_faq": ctx.include_contract_faq,
         },
     }
 
@@ -310,12 +317,14 @@ DEFAULT_TEMPLATE_HTML = """\
 
   <div class="footer">Tim Kanak · Perkins Roofing Jupiter · 15658 Alexander Run, Jupiter, FL 33478</div>
 
+  {% if tc.include_terms %}
   <div class="terms">
     <h2>Terms &amp; Conditions</h2>
     {% if tc.text %}<pre>{{ tc.text }}</pre>{% else %}<p>Terms and conditions to be attached.</p>{% endif %}
   </div>
+  {% endif %}
 
-  {% if tc.summary_bullets or tc.review_prompts %}
+  {% if tc.include_terms and (tc.summary_bullets or tc.review_prompts) %}
   <div class="tc-ai-cover">
     {% if tc.cover_letter %}<p>{{ tc.cover_letter }}</p>{% elif tc.summary_bullets %}<p>While we recommend reading everything yourself and thoroughly understanding the agreement you&#39;re entering into, we&#39;ve created an FAQ for your review and here&#39;s a concise summary:</p>{% endif %}
     {% if tc.summary_bullets %}<ul>{% for bullet in tc.summary_bullets %}<li>{{ bullet }}</li>{% endfor %}</ul>{% endif %}
@@ -324,7 +333,7 @@ DEFAULT_TEMPLATE_HTML = """\
   </div>
   {% endif %}
 
-  {% if tc.faq_items %}
+  {% if tc.include_contract_faq and tc.faq_items %}
   <div class="tc-ai-faq">
     <h2>Contract FAQ</h2>
     <table>

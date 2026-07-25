@@ -1464,6 +1464,10 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         tenant_license=None,
         accept_url=f"{public_url.rstrip('/')}/p/{row.accept_token}",
         payment_draws=_proposal_payment_draws(snap, total),
+        # Absent flag = included: proposals snapshotted before the toggles existed carried
+        # both sections, and dropping a T&C by default would be a contract defect.
+        include_terms=snap.get("include_terms", True) is not False,
+        include_contract_faq=snap.get("include_contract_faq", True) is not False,
     )
 
     try:
