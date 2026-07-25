@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 
 from core.internal_links import BASE_URL, matching_service_links
-from core.seo import check_tier, rank_math_checks
+from core.seo import aio_signals, check_tier, rank_math_checks
 
 _YT_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/|img\.youtube\.com/vi/|i\.ytimg\.com/vi/)"
@@ -118,6 +118,17 @@ def check_compliance(
         f"meta is {len(meta or '')} chars")
     add("subscribe_cta", "YouTube subscribe CTA + channel link",
         bool(_SUBSCRIBE_RE.search(c)), True)
+
+    # ── AIO: one gated signal ─────────────────────────────────────────────
+    # `aio_question_headings` is the ONE aio_* signal promoted from advisory to gated, because
+    # unlike per-section answer-first it is deterministically satisfiable: the FAQ this article
+    # already carries (faq_ge4) supplies real question headings, and _ensure_faq_headings
+    # renders them as <h3> instead of a <dl>. Every other aio_* signal stays advisory —
+    # see core.seo.aio_signals.
+    q_heads = [s for s in aio_signals(c) if s["key"] == "aio_question_headings"]
+    add("question_heading", "≥1 question-phrased heading (AI/Rank Math extract these)",
+        q_heads[0]["pass"] if q_heads else True, True,
+        q_heads[0].get("detail", "") if q_heads else "")
 
     # ── SEO ranking tier (Rank Math) — every ranking-relevant check must pass ─
     rm = rank_math_checks(ctx.get("title", "") or keyword, meta or "",

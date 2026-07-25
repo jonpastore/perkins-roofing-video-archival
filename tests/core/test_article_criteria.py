@@ -13,7 +13,7 @@ _GOOD = (
     '<li><a href="#a">A</a></li><li><a href="#b">B</a></li><li><a href="#c">C</a></li></ul></div>'
     '<h2 id="a">Cost factors</h2><p>Metal roof cost depends on square footage.</p>'
     '<h2 id="b">Materials</h2><p>Aluminum and steel differ in metal roof cost.</p>'
-    '<h2 id="c">Warranty</h2><p>Metal roof cost includes warranty coverage.</p>'
+    '<h2 id="c">What Does the Warranty Cover?</h2><p>Metal roof cost includes warranty coverage.</p>'
     f'<img src="https://i.ytimg.com/vi/{VID}/maxres2.jpg" alt="Metal Roof Cost — Perkins Roofing" />'
     f'<div class="video-embed"><iframe src="https://www.youtube.com/embed/{VID}"></iframe></div>'
     '<p class="related-links">Related: '
@@ -45,6 +45,13 @@ def test_all_structural_criteria_pass_on_a_good_article():
     # not here. Everything else must be green.
     fails = _keys_failing()
     assert fails <= {"seo_ranking", "answer_first"}, f"structural criteria failing: {fails}"
+
+
+def test_statement_only_headings_are_caught():
+    """≥1 question-phrased heading is GATED (not advisory) because _ensure_faq_headings can
+    always satisfy it from the article's own FAQ. An article of statement headings fails."""
+    statements = _GOOD.replace("What Does the Warranty Cover?", "Warranty Coverage")
+    assert "question_heading" in _keys_failing(content=statements)
 
 
 def test_blog_url_is_caught():

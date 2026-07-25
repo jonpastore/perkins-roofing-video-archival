@@ -240,7 +240,9 @@ def _proposal_pdf_key(row: Proposal) -> str:
     return f"tenants/{row.tenant_id}/proposals/{row.id}/rendered-v{row.version_number}-{stamp}.pdf"
 
 
-_PDF_TEMPLATE_VERSION = "perkins-scope-v2"
+# Stamped onto every rendered PDF so a stored proposal says which design produced it.
+# v3 = 2026-07-24 redesign (page-1 decision page, tier cards, pre-line T&C, FAQ cards).
+_PDF_TEMPLATE_VERSION = "perkins-scope-v3"
 
 
 def _fmt_money(value) -> float:
@@ -1360,6 +1362,21 @@ def list_templates(
         .order_by(ProposalTemplate.name)
     ).scalars().all()
     return [_template_row(r) for r in rows]
+
+
+@router.get("/quoting/templates/default-html")
+def default_template_html(
+    _claims=Depends(require_role("quoting_view")),
+):
+    """The built-in proposal template, as the starting point for a custom one.
+
+    "+ New template" used to seed a three-line stub whose placeholders
+    ({{ proposal_title }}, {{ customer_name }}, {{ quote_line_items }}) are not in the render
+    namespace at all — the real names are proposal.title / customer.name / quote.line_items — so
+    every template created that way rendered nearly empty. Serving the live default instead means
+    customising starts from something that works and can't drift from the code.
+    """
+    return {"html_body": DEFAULT_TEMPLATE_HTML, "version": _PDF_TEMPLATE_VERSION}
 
 
 @router.post("/quoting/templates")

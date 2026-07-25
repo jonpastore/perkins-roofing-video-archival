@@ -148,6 +148,7 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     c = _ensure_img_alt_keyword(c, keyword)
     c = _ensure_heading(c, keyword)
     c = _ensure_keyword_in_heading(c, keyword)
+    c = _ensure_faq_headings(c)
     c = _ensure_answer_first(c, keyword, fields.get("faq_json") or [])
     c = _ensure_keyword_in_intro(c, keyword)
     c = ensure_toc(c)
@@ -1554,6 +1555,39 @@ _YT_ID_RE = re.compile(
 
 
 _YOUTUBE_FOOTER_TEXT = "Subscribe to our YouTube channel for more!"
+
+
+_FAQ_DL_RE = re.compile(r"<dl>(.*?)</dl>", re.IGNORECASE | re.DOTALL)
+_FAQ_DT_DD_RE = re.compile(
+    r"<dt>\s*(Q:)?\s*(.*?)\s*</dt>\s*<dd>\s*(?:A:\s*)?(.*?)\s*</dd>",
+    re.IGNORECASE | re.DOTALL)
+
+
+def _ensure_faq_headings(content_md: str) -> str:
+    """Render FAQ Q&A as <h3> question + <p> answer instead of a <dl>/<dt>/<dd> list.
+
+    Articles generated before the compliance gate emitted their FAQ as a definition list, so
+    their questions were <dt> elements — which is why 5 of 375 articles scored "0 of N
+    question-phrased headings" while the other 370 passed: the questions were there, just not
+    as headings. Headings are what both Rank Math and AI extractors read, so this is the
+    honest fix rather than gaming the count.
+
+    Same text, different element: nothing is rewritten, invented, or dropped. Idempotent — an
+    article with no <dl> is returned unchanged.
+    """
+    if not content_md or "<dl>" not in content_md.lower():
+        return content_md
+
+    def _convert(match: re.Match) -> str:
+        pairs = _FAQ_DT_DD_RE.findall(match.group(1))
+        # Only a Q&A list qualifies: every term is "Q:"-prefixed or ends in a question mark.
+        # A glossary <dl> stays a glossary — <dt>Term</dt> is not a heading.
+        if not pairs or not all(q_prefix or term.rstrip().endswith("?")
+                                for q_prefix, term, _ in pairs):
+            return match.group(0)
+        return "\n".join(f"<h3>{term}</h3>\n<p>{answer}</p>" for _, term, answer in pairs)
+
+    return _FAQ_DL_RE.sub(_convert, content_md)
 
 
 def _ensure_footer_link(content_md: str) -> str:

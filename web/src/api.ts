@@ -312,6 +312,15 @@ export async function listProposalTemplates(): Promise<ProposalTemplate[]> {
   return res.json();
 }
 
+/** The built-in proposal template HTML — the starting point for a custom one, so
+ *  customising never begins from a stub with placeholder names that don't render. */
+export async function getDefaultProposalTemplateHtml(): Promise<string> {
+  const res = await apiFetch("/quoting/templates/default-html");
+  if (!res.ok) throw new Error(await errText(res));
+  const data: { html_body: string } = await res.json();
+  return data.html_body;
+}
+
 export async function createProposalTemplate(
   body: Pick<ProposalTemplate, "name" | "html_body"> & Partial<ProposalTemplate>,
 ): Promise<ProposalTemplate> {

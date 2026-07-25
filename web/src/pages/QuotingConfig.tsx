@@ -3,6 +3,7 @@ import { BRAND, FONT, Card, Button, Loading, ErrorMsg, Badge, inputStyle } from 
 import {
   getQuotingSettings,
   putQuotingSettings,
+  getDefaultProposalTemplateHtml,
   listProposalTemplates,
   createProposalTemplate,
   updateProposalTemplate,
@@ -147,7 +148,10 @@ interface QuotingConfigProps {
   role: Role;
 }
 
-const STARTER_HTML = "<h1>{{ proposal_title }}</h1>\n<p>Prepared for {{ customer_name }} — {{ property_address }}</p>\n{{ quote_line_items }}";
+// Fallback only. New templates start from the live built-in (fetched below) — the old stub
+// used placeholder names ({{ proposal_title }}, {{ customer_name }}) that are not in the render
+// namespace, so every template created from it came out nearly blank.
+const STARTER_HTML = "<h1>{{ proposal.title }}</h1>\n<p>Prepared for {{ customer.name }} — {{ property.address }}</p>";
 
 export function QuotingConfig({ role }: QuotingConfigProps) {
   const manage = canManage(role);
@@ -200,9 +204,11 @@ export function QuotingConfig({ role }: QuotingConfigProps) {
   async function handleCreateTemplate() {
     setCreating(true); setTplError(null);
     try {
+      let html = STARTER_HTML;
+      try { html = await getDefaultProposalTemplateHtml(); } catch { /* fall back to the stub */ }
       const created = await createProposalTemplate({
-        name: `New template ${templates.length + 1}`,
-        html_body: STARTER_HTML,
+        name: `Perkins Standard copy ${templates.length + 1}`,
+        html_body: html,
         is_default: templates.length === 0,
       });
       setTemplates((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
