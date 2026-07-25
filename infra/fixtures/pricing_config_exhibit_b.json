@@ -4,24 +4,24 @@
     "source": "Exhibit B (Ez-Bids legal package)",
     "exhibit_version": "B-2026-07-10-r2",
     "date": "2026-07-10",
-    "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit — engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. Remaining open items: OI-7, OI-8, OI-9, OI-10 (sloped HVHZ commission, pm_incentive matrix, boundary rules, dumpster boundary).",
+    "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit \u2014 engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. Remaining open items: OI-7, OI-8, OI-9, OI-10 (sloped HVHZ commission, pm_incentive matrix, boundary rules, dumpster boundary).",
     "tim_verify_open_items": [
-      "OI-7: commission_pct.sloped_hvhz — null; Tim must confirm whether sloped HVHZ jobs use 10% (sloped) or 15% (low_slope) rate (PC-1)",
-      "OI-8: pm_incentive — full matrix needs Tim verification before activation (PC matrix per PRD F2-11; current values from plan §10.5)",
-      "OI-9: boundary_inclusive_lower / boundary_exclusive_upper — presumed lower-inclusive/upper-exclusive per Exhibit B wording (PC-2); config flag means answer is a data change only",
-      "OI-10: tile_dumpster_boundary_inclusive — default true; Tim to confirm (Adv-1 per PRD)",
-      "OI-11: low_slope zones — Zoom 2026-07-20 confirmed Exhibit B §4 is a single table for both zones (FBC = HVHZ); confirm with Tim if his live calculator implies a delta"
+      "OI-7: commission_pct.sloped_hvhz \u2014 null; Tim must confirm whether sloped HVHZ jobs use 10% (sloped) or 15% (low_slope) rate (PC-1)",
+      "OI-8: pm_incentive \u2014 full matrix needs Tim verification before activation (PC matrix per PRD F2-11; current values from plan \u00a710.5)",
+      "OI-9: boundary_inclusive_lower / boundary_exclusive_upper \u2014 presumed lower-inclusive/upper-exclusive per Exhibit B wording (PC-2); config flag means answer is a data change only",
+      "OI-10: tile_dumpster_boundary_inclusive \u2014 default true; Tim to confirm (Adv-1 per PRD)",
+      "OI-11: low_slope zones \u2014 Zoom 2026-07-20 confirmed Exhibit B \u00a74 is a single table for both zones (FBC = HVHZ); confirm with Tim if his live calculator implies a delta"
     ]
   },
-
   "schema_version": 1,
   "exhibit_version": "B-2026-07-10-r2",
-
   "boundary_inclusive_lower": true,
   "boundary_exclusive_upper": true,
-  "_pending_boundary": "Tim — PC-2: confirm lower-inclusive/upper-exclusive sliding-scale boundary rule (OI-9)",
-
-  "zones": ["HVHZ", "FBC"],
+  "_pending_boundary": "Tim \u2014 PC-2: confirm lower-inclusive/upper-exclusive sliding-scale boundary rule (OI-9)",
+  "zones": [
+    "HVHZ",
+    "FBC"
+  ],
   "counties": {
     "miami_dade": "HVHZ",
     "broward": "HVHZ",
@@ -29,7 +29,6 @@
     "lee": "FBC",
     "st_lucie": "FBC"
   },
-
   "county_overrides": {
     "miami_dade": {
       "permit_fee_add": 0,
@@ -57,7 +56,6 @@
       "extra_line_items": {}
     }
   },
-
   "sloped_base_cost_lm": {
     "HVHZ": {
       "13_tile": 780,
@@ -74,27 +72,71 @@
       "standing_seam_metal": 750
     }
   },
-
   "cuts_calc": {
     "_source": "Tim 'Custom Tile Calc' tab, decoded 2026-07-17; see docs/plans/2026-07-17-cut-calculator-spec.md",
-    "rounding": {"eaves": 10, "hips_ridges": 10, "valleys": 50, "rakes": 10, "wall_flashings": 10},
-    "fixed_per_sq": {"FBC": 519, "HVHZ": null},
-    "coeff": {"drip_a": 1.10, "drip_b": 0.46, "valley_a_div": 50, "valley_a_rate": 90, "valley_b_div": 65, "valley_b_rate": 151, "hipridge_tile_rate": 2.30, "eave_closure_rate": 3.10, "field_tiles_addon": 5},
-    "standard_tile": {"field": 147.59, "rake": 4.82},
+    "rounding": {
+      "eaves": 10,
+      "hips_ridges": 10,
+      "valleys": 50,
+      "rakes": 10,
+      "wall_flashings": 10
+    },
+    "fixed_per_sq": {
+      "FBC": 519,
+      "HVHZ": null
+    },
+    "coeff": {
+      "drip_a": 1.1,
+      "drip_b": 0.46,
+      "valley_a_div": 50,
+      "valley_a_rate": 90,
+      "valley_b_div": 65,
+      "valley_b_rate": 151,
+      "hipridge_tile_rate": 2.3,
+      "eave_closure_rate": 3.1,
+      "field_tiles_addon": 5
+    },
+    "standard_tile": {
+      "field": 147.59,
+      "rake": 4.82
+    },
     "default_tile_brand": "eagle",
     "tile_brands": {
-      "eagle":    {"label": "Eagle (concrete, standard)", "field": 147.59, "rake": 4.82},
-      "crown":    {"label": "Crown (concrete)",           "field": 143.19, "rake": 4.30},
-      "westlake": {"label": "West Lake (concrete)",        "field": 145.71, "rake": 4.50},
-      "verea_s":          {"label": "Verea Spanish \"S\"", "field": null, "rake": 5.78,
-                            "_pending_field": "Tim — confirm Verea Spanish 'S' field-tile cost (rake unit confirmed 2026-07-21)"},
-      "verea_caribbean":  {"label": "Verea Caribbean",     "field": null, "rake": 19.14,
-                            "_pending_field": "Tim — confirm Verea Caribbean field-tile cost (rake unit confirmed 2026-07-21)"},
-      "other":            {"label": "Other / Custom",      "field": null, "rake": 45.00,
-                            "_pending_field": "Tim — manual/custom tile; field-tile cost entered per-job, not config-driven yet"}
+      "eagle": {
+        "label": "Eagle (concrete, standard)",
+        "field": 147.59,
+        "rake": 4.82
+      },
+      "crown": {
+        "label": "Crown (concrete)",
+        "field": 143.19,
+        "rake": 4.3
+      },
+      "westlake": {
+        "label": "West Lake (concrete)",
+        "field": 145.71,
+        "rake": 4.5
+      },
+      "verea_s": {
+        "label": "Verea Spanish \"S\"",
+        "field": null,
+        "rake": 5.78,
+        "_pending_field": "Tim \u2014 confirm Verea Spanish 'S' field-tile cost (rake unit confirmed 2026-07-21)"
+      },
+      "verea_caribbean": {
+        "label": "Verea Caribbean",
+        "field": null,
+        "rake": 19.14,
+        "_pending_field": "Tim \u2014 confirm Verea Caribbean field-tile cost (rake unit confirmed 2026-07-21)"
+      },
+      "other": {
+        "label": "Other / Custom",
+        "field": null,
+        "rake": 45.0,
+        "_pending_field": "Tim \u2014 manual/custom tile; field-tile cost entered per-job, not config-driven yet"
+      }
     }
   },
-
   "sloped_overhead": {
     "HVHZ": {
       "3tab_shingle": 125,
@@ -111,7 +153,6 @@
       "standing_seam_metal": 205
     }
   },
-
   "daily_overhead_rates": {
     "demo_dry_in_flat": 1050,
     "tile": 745,
@@ -119,7 +160,7 @@
     "shingle": 700
   },
   "daily_overhead_weeks_rounding_mode": "ceil",
-  "_note_daily_overhead_day_model": "days = setup + rate x SQ, least-squares fit over Tim's 30-home TIME LEARNING log (docs/ROOFR_OVERHEAD_TIERS.md). Tile R2 0.70 / Metal 0.66 fit well; demo+shingle are noisy (R2 ~0.37) — refit when Tim logs tear-off type. Low-slope systems are deliberately absent: no fitted data, so their labor days stay manual.",
+  "_note_daily_overhead_day_model": "days = setup + rate x SQ, least-squares fit over Tim's 30-home TIME LEARNING log (docs/ROOFR_OVERHEAD_TIERS.md). Tile R2 0.70 / Metal 0.66 fit well; demo+shingle are noisy (R2 ~0.37) \u2014 refit when Tim logs tear-off type. Low-slope systems are deliberately absent: no fitted data, so their labor days stay manual.",
   "daily_overhead_day_model": {
     "demo_series": "demo_dry_in_flat",
     "install_series_by_roof_type": {
@@ -130,161 +171,225 @@
       "dimensional_shingle": "shingle"
     },
     "series": {
-      "demo_dry_in_flat": { "setup": 1.31, "rate": 0.044 },
-      "shingle": { "setup": 1.06, "rate": 0.024 },
-      "tile": { "setup": 0.45, "rate": 0.129 },
-      "metal": { "setup": 0.59, "rate": 0.106 }
+      "demo_dry_in_flat": {
+        "setup": 1.31,
+        "rate": 0.044
+      },
+      "shingle": {
+        "setup": 1.06,
+        "rate": 0.024
+      },
+      "tile": {
+        "setup": 0.45,
+        "rate": 0.129
+      },
+      "metal": {
+        "setup": 0.59,
+        "rate": 0.106
+      }
+    },
+    "_note_geometry_model": "days = intercept + coef*feature over RoofR cut measurements, fitted per series on Tim's 30-home log with NON-NEGATIVE coefficients (scripts/fit_days_from_roofr.py). Preferred over the squares-only fit above whenever a quote carries cut LFs, because Tim's method is time-driven and time tracks complexity, not area (Zoom 2026-07-17 [10:12]). Leave-one-out R2 in loo_r2. Negative coefficients are eliminated on purpose: 'more valleys means fewer days' is noise, and it under-prices the complex roofs that actually take longer.",
+    "geometry_model": {
+      "demo_dry_in_flat": {
+        "intercept": 1.5263,
+        "squares": 0.003605,
+        "hips": 0.005557,
+        "ridges": 0.003321,
+        "rakes": 0.00203,
+        "wall_flash": 0.002937,
+        "loo_r2": 0.363
+      },
+      "tile": {
+        "intercept": 0.5478,
+        "squares": 0.032065,
+        "hips": 0.013461,
+        "valleys": 0.000695,
+        "ridges": 0.012978,
+        "rakes": 0.010716,
+        "wall_flash": 0.001379,
+        "loo_r2": 0.825
+      },
+      "shingle": {
+        "intercept": 0.8697,
+        "squares": 0.006587,
+        "hips": 0.001558,
+        "ridges": 0.006173,
+        "wall_flash": 0.003859,
+        "loo_r2": 0.549
+      },
+      "metal": {
+        "intercept": 0.8548,
+        "squares": 0.004172,
+        "hips": 0.013145,
+        "valleys": 0.00525,
+        "ridges": 0.008518,
+        "rakes": 0.013001,
+        "loo_r2": 0.883
+      }
     }
   },
   "profit_mode_default": "scale",
   "weekly_profit_floor": 2500,
   "job_profit_floor": 2500,
-
   "repair": {
-    "roof_types": ["shingle", "tile", "metal", "flat"],
+    "roof_types": [
+      "shingle",
+      "tile",
+      "metal",
+      "flat"
+    ],
     "daily_labor_rate": {
-      "one_man": 1185.00,
-      "two_man": 1435.00
+      "one_man": 1185.0,
+      "two_man": 1435.0
     },
-    "_note_daily_labor_rate": "CONFIRMED by Jon 2026-07-21 (Tim's words): $1185.00 per one-man day, $1435.00 per two-man day. Earlier draft mis-transcribed these as $11.85/$14.35 (100x decimal slip) — corrected."
+    "_note_daily_labor_rate": "CONFIRMED by Jon 2026-07-21 (Tim's words): $1185.00 per one-man day, $1435.00 per two-man day. Earlier draft mis-transcribed these as $11.85/$14.35 (100x decimal slip) \u2014 corrected."
   },
-
   "profit_scale": [
-    [1,    400],
-    [4,    200],
-    [7,    160],
-    [14,   140],
-    [20,   120],
-    [29,   110],
-    [null, 100]
+    [
+      1,
+      400
+    ],
+    [
+      4,
+      200
+    ],
+    [
+      7,
+      160
+    ],
+    [
+      14,
+      140
+    ],
+    [
+      20,
+      120
+    ],
+    [
+      29,
+      110
+    ],
+    [
+      null,
+      100
+    ]
   ],
-
   "cost_category_tags": {
-    "base_cost_lm":            "Materials",
-    "overhead":                "OH",
-    "profit":                  "Profit",
-    "roof_cuts":               "Labor",
-    "roof_height":             "Labor",
-    "tile_pointing":           "Labor",
-    "specialty_tile":          "Materials",
-    "pitch_7_12_add":          "Labor",
-    "tile_demo":               "Labor",
-    "metal_demo":              "Labor",
+    "base_cost_lm": "Materials",
+    "overhead": "OH",
+    "profit": "Profit",
+    "roof_cuts": "Labor",
+    "roof_height": "Labor",
+    "tile_pointing": "Labor",
+    "specialty_tile": "Materials",
+    "pitch_7_12_add": "Labor",
+    "tile_demo": "Labor",
+    "metal_demo": "Labor",
     "secondary_water_barrier": "Materials",
-    "winterguard":             "Materials",
-    "stucco_metal":            "Labor",
-    "penetrations":            "Labor",
-    "ridge_vents":             "Materials",
-    "delivery_plywood_vents":  "Materials",
-    "new_bonus_values":        "Misc",
-    "permit_processing":       "Misc",
-    "tile_dumpster":           "Equipment",
-    "pm_incentive":            "Misc",
-    "insulation":              "Materials",
-    "tapered":                 "Materials"
+    "winterguard": "Materials",
+    "stucco_metal": "Labor",
+    "penetrations": "Labor",
+    "ridge_vents": "Materials",
+    "delivery_plywood_vents": "Materials",
+    "new_bonus_values": "Misc",
+    "permit_processing": "Misc",
+    "tile_dumpster": "Equipment",
+    "pm_incentive": "Misc",
+    "insulation": "Materials",
+    "tapered": "Materials"
   },
-
   "profit_floor_pct": 0.13,
   "profit_plus_oh_floor_pct": 0.33,
-
   "floor_excluded_categories": {
-    "insulation": ["Profit"],
-    "tapered":    ["OH", "Profit"]
+    "insulation": [
+      "Profit"
+    ],
+    "tapered": [
+      "OH",
+      "Profit"
+    ]
   },
-
   "commission_pct": {
-    "sloped":       0.10,
-    "low_slope":    0.15,
-    "sloped_hvhz":  null,
-    "_pending_sloped_hvhz": "Tim — PC-1: confirm sloped HVHZ commission rate (10% same as sloped, or 15% same as low_slope); engine defaults to sloped (0.10) until this is filled (OI-7)"
+    "sloped": 0.1,
+    "low_slope": 0.15,
+    "sloped_hvhz": null,
+    "_pending_sloped_hvhz": "Tim \u2014 PC-1: confirm sloped HVHZ commission rate (10% same as sloped, or 15% same as low_slope); engine defaults to sloped (0.10) until this is filled (OI-7)"
   },
-
   "pm_incentive": {
-    "_pending_verify": "Tim — full matrix must be verified before activation (OI-8); values from PRD F2-11 plan §10.5",
+    "_pending_verify": "Tim \u2014 full matrix must be verified before activation (OI-8); values from PRD F2-11 plan \u00a710.5",
     "HVHZ": {
-      "residential_lt20":  150,
-      "commercial_20_50":  300,
-      "commercial_gt50":   300
+      "residential_lt20": 150,
+      "commercial_20_50": 300,
+      "commercial_gt50": 300
     },
     "FBC": {
-      "residential_lt20":   50,
-      "commercial_20_50":  100,
-      "commercial_gt50":   250
+      "residential_lt20": 50,
+      "commercial_20_50": 100,
+      "commercial_gt50": 250
     }
   },
-
   "roof_height": {
-    "1_story":     0,
-    "2_stories":   50,
+    "1_story": 0,
+    "2_stories": 50,
     "3_5_stories": null,
-    "6_plus":      null
+    "6_plus": null
   },
   "roof_height_3_5_flat_add": 1200,
-
   "roof_cuts": {
-    "low":    0,
+    "low": 0,
     "medium": 25,
-    "high":   50
+    "high": 50
   },
-
   "tile_pointing": {
-    "no":  0,
+    "no": 0,
     "yes": 200
   },
-
   "specialty_tile_upgrade": {
     "HVHZ": {
-      "santa_fe_clay_s":    160,
-      "verea_caribbean_s":  120,
-      "verea_s":            195
+      "santa_fe_clay_s": 160,
+      "verea_caribbean_s": 120,
+      "verea_s": 195
     },
     "FBC": {
-      "santa_fe_clay_s":          160,
-      "terracottagres_s_rustic":  120,
-      "verea_s":                  195
+      "santa_fe_clay_s": 160,
+      "terracottagres_s_rustic": 120,
+      "verea_s": 195
     }
   },
-
-  "pitch_7_12_add":              200,
-  "tile_demo_add":                40,
-  "metal_demo_add":               60,
-  "secondary_water_barrier_add":  75,
-  "winterguard_add":             140,
-
-  "stucco_metal_per_lf":   9,
-  "penetration_each":      75,
-  "ridge_vent_per_lf":     9.79,
-
-  "delivery_plywood_vents":  650,
-  "new_bonus_values":       1350,
-  "permit_processing":       500,
-  "permit_commercial_add":   500,
-
+  "pitch_7_12_add": 200,
+  "tile_demo_add": 40,
+  "metal_demo_add": 60,
+  "secondary_water_barrier_add": 75,
+  "winterguard_add": 140,
+  "stucco_metal_per_lf": 9,
+  "penetration_each": 75,
+  "ridge_vent_per_lf": 9.79,
+  "delivery_plywood_vents": 650,
+  "new_bonus_values": 1350,
+  "permit_processing": 500,
+  "permit_commercial_add": 500,
   "tile_dumpster_cost": 300,
   "tile_dumpster_threshold": {
     "HVHZ": 15,
-    "FBC":  30
+    "FBC": 30
   },
   "tile_dumpster_boundary_inclusive": true,
-  "_pending_tile_dumpster_boundary": "Tim — Adv-1: confirm whether threshold boundary SQ itself triggers next dumpster (default true = inclusive) (OI-10)",
-
+  "_pending_tile_dumpster_boundary": "Tim \u2014 Adv-1: confirm whether threshold boundary SQ itself triggers next dumpster (default true = inclusive) (OI-10)",
   "line_items": {
     "HVHZ": {
-      "blown_in_iso_r19":  135,
-      "turbine_vents":     257.50,
-      "solar_vents":      1339.00
+      "blown_in_iso_r19": 135,
+      "turbine_vents": 257.5,
+      "solar_vents": 1339.0
     },
     "FBC": {
-      "blown_in_iso_r19":  135,
-      "turbine_vents":     257.50,
-      "solar_vents":      1489.00
+      "blown_in_iso_r19": 135,
+      "turbine_vents": 257.5,
+      "solar_vents": 1489.0
     }
   },
-
   "low_slope": {
-    "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached — engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* — prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
-    "_note_fbc_deltas": "FBC values set equal to HVHZ — Exhibit B §4 is one table for both zones (confirmed Zoom 2026-07-20), unlike sloped §5 which is zone-split. Confirm with Tim if his live low-slope calculator implies a delta (OI-11).",
-
+    "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached \u2014 engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* \u2014 prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
+    "_note_fbc_deltas": "FBC values set equal to HVHZ \u2014 Exhibit B \u00a74 is one table for both zones (confirmed Zoom 2026-07-20), unlike sloped \u00a75 which is zone-split. Confirm with Tim if his live low-slope calculator implies a delta (OI-11).",
     "all_in_systems": [
       "pb_acrylic_2coat",
       "pb_premium_acrylic",
@@ -293,98 +398,95 @@
       "pb_silicone_3coat",
       "stockmeier_polyurethane_2coat"
     ],
-
     "base_cost_lm": {
       "HVHZ": {
-        "polyglass_sav_sap":            475,
-        "tpo_adhered":                  485,
-        "tpo_mech_attached":            485,
-        "pb_acrylic_2coat":             375,
-        "pb_premium_acrylic":           550,
-        "pb_silicone_1coat":            445,
-        "pb_silicone_2coat":            515,
-        "pb_silicone_3coat":            645,
+        "polyglass_sav_sap": 475,
+        "tpo_adhered": 485,
+        "tpo_mech_attached": 485,
+        "pb_acrylic_2coat": 375,
+        "pb_premium_acrylic": 550,
+        "pb_silicone_1coat": 445,
+        "pb_silicone_2coat": 515,
+        "pb_silicone_3coat": 645,
         "stockmeier_polyurethane_2coat": 595,
-        "_note_polyglass_upgrades": "SAV+ 3-ply +175 → 650; polyfresko upgrade +80 → 555; polyfresko+SAVplus +315 → 790; encode as adders when quoting (v2)",
-        "_note_stockmeier_floor": "stockmeier min 12 sq; under 12 sq = $390/sq T&M — floor note only, not engine logic v1"
+        "_note_polyglass_upgrades": "SAV+ 3-ply +175 \u2192 650; polyfresko upgrade +80 \u2192 555; polyfresko+SAVplus +315 \u2192 790; encode as adders when quoting (v2)",
+        "_note_stockmeier_floor": "stockmeier min 12 sq; under 12 sq = $390/sq T&M \u2014 floor note only, not engine logic v1"
       },
       "FBC": {
-        "polyglass_sav_sap":            450,
-        "_note_fbc_sav_sap": "FBC is $25 lower than HVHZ ($450 vs $475) — explicit in Tim's live operational sheet. Jon 2026-07-21: Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES the Exhibit B legal snapshot (one §4 table). Confirm with Tim if his live calculator disagrees.",
-        "tpo_adhered":                  485,
-        "tpo_mech_attached":            485,
-        "pb_acrylic_2coat":             375,
-        "pb_premium_acrylic":           550,
-        "pb_silicone_1coat":            445,
-        "pb_silicone_2coat":            515,
-        "pb_silicone_3coat":            645,
+        "polyglass_sav_sap": 450,
+        "_note_fbc_sav_sap": "FBC is $25 lower than HVHZ ($450 vs $475) \u2014 explicit in Tim's live operational sheet. Jon 2026-07-21: Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES the Exhibit B legal snapshot (one \u00a74 table). Confirm with Tim if his live calculator disagrees.",
+        "tpo_adhered": 485,
+        "tpo_mech_attached": 485,
+        "pb_acrylic_2coat": 375,
+        "pb_premium_acrylic": 550,
+        "pb_silicone_1coat": 445,
+        "pb_silicone_2coat": 515,
+        "pb_silicone_3coat": 645,
         "stockmeier_polyurethane_2coat": 595
       }
     },
-
     "overhead": {
       "_note": "OH rates apply only to non-all-in systems. flat_oh covers BUR/polyglass; tpo_oh covers TPO systems; coatings_inhouse_oh is informational (coatings are all-in).",
       "HVHZ": {
-        "flat_oh":            155,
-        "tpo_oh":             135,
+        "flat_oh": 155,
+        "tpo_oh": 135,
         "coatings_inhouse_oh": 95
       },
       "FBC": {
-        "flat_oh":            155,
-        "tpo_oh":             135,
+        "flat_oh": 155,
+        "tpo_oh": 135,
         "coatings_inhouse_oh": 95
       }
     },
-
     "wood_deck_oh_adder": 50,
-    "_note_wood_deck_oh": "Add $50/sq to overhead when deck_type is a wood variant (concrete is baseline). Jon corrected 45→50 on 2026-07-10 from Tim's operational sheet; Jon 2026-07-21 reaffirmed Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES Exhibit B §4.2's $45 snapshot.",
-
+    "_note_wood_deck_oh": "Add $50/sq to overhead when deck_type is a wood variant (concrete is baseline). Jon corrected 45\u219250 on 2026-07-10 from Tim's operational sheet; Jon 2026-07-21 reaffirmed Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES Exhibit B \u00a74.2's $45 snapshot.",
     "insulation_tiers": [
-      [null, 255],
-      [null, 275],
-      [null, 310]
+      [
+        null,
+        255
+      ],
+      [
+        null,
+        275
+      ],
+      [
+        null,
+        310
+      ]
     ],
-    "_note_insulation_tiers": "From sheet: board_1in $255, board_1_5in $275, board_2in $310 per sq (no profit). Tiers are type-based not sq-range-based — all have null max so first match wins; v1 uses first entry (1-in board default). Tapered system is separate (tapered_cost_per_sq). No OH or profit on insulation per Exhibit B.",
-
+    "_note_insulation_tiers": "From sheet: board_1in $255, board_1_5in $275, board_2in $310 per sq (no profit). Tiers are type-based not sq-range-based \u2014 all have null max so first match wins; v1 uses first entry (1-in board default). Tapered system is separate (tapered_cost_per_sq). No OH or profit on insulation per Exhibit B.",
     "tapered_cost_per_sq": 400,
-
     "deck_types": {
-      "existing_concrete":       0,
+      "existing_concrete": 0,
       "bur_tpo_concrete_primer": 15,
-      "bur_wood_wb3000":         35,
-      "_note_bur_wood_wb3000":   "Not HVHZ, 1-story only",
-      "bur_wood_sav_flashing":   55,
+      "bur_wood_wb3000": 35,
+      "_note_bur_wood_wb3000": "Not HVHZ, 1-story only",
+      "bur_wood_sav_flashing": 55,
       "_note_bur_wood_sav_flashing": "Not HVHZ, plywood",
-      "bur_wood_elastobase":     110,
-      "tpo_wood_versashield":    135,
-      "tpo_wood_densdeck_iso":   120,
-      "plywood_replace":         null,
-      "_pending_plywood_replace": "Tim — generic plywood deck replacement adder per sq (OI-5 — partial; specific deck adders now filled above)"
+      "bur_wood_elastobase": 110,
+      "tpo_wood_versashield": 135,
+      "tpo_wood_densdeck_iso": 120,
+      "plywood_replace": null,
+      "_pending_plywood_replace": "Tim \u2014 generic plywood deck replacement adder per sq (OI-5 \u2014 partial; specific deck adders now filled above)"
     },
-
     "tear_off_per_layer_per_sq": 20,
     "_note_tear_off": "Additional hauling $20/sq, labor $20/sq, OH $35/sq per layer (+$75/sq per extra layer per sheet note). Engine v1 uses $20/layer/sq for base labor; OH and hauling encoded in tear_off_extras for line-item reporting in v2.",
-
     "tear_off_extras": {
       "additional_hauling": 20,
-      "labor":              20,
-      "oh":                 35,
-      "_note_extra_layer":  "+$75/sq per additional layer beyond first"
+      "labor": 20,
+      "oh": 35,
+      "_note_extra_layer": "+$75/sq per additional layer beyond first"
     },
-
     "pressure_cleaning": {
-      "flat":   30,
+      "flat": 30,
       "sloped": 40
     },
-
     "roof_height_notes": {
       "1_4_stories": 0,
-      "5_plus":       null,
-      "_note_5_plus": "5+ stories requires crane — manual quote only (null = not engine-quoted). 3-5 stories uses trash_chute_flat_add."
+      "5_plus": null,
+      "_note_5_plus": "5+ stories requires crane \u2014 manual quote only (null = not engine-quoted). 3-5 stories uses trash_chute_flat_add."
     },
-
     "trash_chute_flat_add": 1500,
-
     "crane_threshold_stories": 3
   }
 }

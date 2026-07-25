@@ -56,14 +56,27 @@ def parse_roofr(path: Path) -> dict:
     }
 
 
-def _norm(s: str) -> str:
-    s = s.lower()
-    for a, b in (("north", "n"), ("drive", "dr"), ("court", "ct"), ("street", "st"),
-                 ("place", "pl"), ("circle", "cir"), ("terrace", "ter"), ("road", "rd"),
-                 ("lane", "ln"), ("boulevard", "blvd"), ("avenue", "ave"), ("southwest", "sw"),
-                 ("southeast", "se"), ("northeast", "ne")):
-        s = s.replace(a, b)
-    return re.sub(r"[^a-z0-9]", "", s)
+_DIRS = {"n", "s", "e", "w", "ne", "nw", "se", "sw", "north", "south", "east", "west",
+         "northeast", "northwest", "southeast", "southwest"}
+
+
+def _key(address: str) -> tuple[str, str]:
+    """(house number, first 4 letters of the street name) — the robust join key.
+
+    Tim and RoofR disagree on spelling and abbreviation constantly (Mil/Mill,
+    Greenview/Greensview, NE/Northeast, Ct/Court), so string-normalising the whole address is a
+    losing game: an earlier attempt applied "north"→"n" before "northeast"→"ne", silently turned
+    northeast into "neast", and dropped 5 homes that DID have reports. House number plus a short
+    street prefix survives all of it — and the directional word is skipped because it may be
+    abbreviated on either side.
+    """
+    tokens = re.sub(r"[^a-z0-9 ]", " ", address.lower()).split()
+    if not tokens:
+        return "", ""
+    number, rest = tokens[0], [t for t in tokens[1:] if t not in _DIRS]
+    # 3 chars, not 4: Tim writes "Mil Creek" where RoofR writes "Mill Creek". Numeric street
+    # names (152nd, 5th, 35th) must NOT be skipped — they ARE the street.
+    return number, (rest[0][:3] if rest else "")
 
 
 def load() -> list[dict]:
@@ -78,16 +91,53 @@ def load() -> list[dict]:
                       "tile": float(r[9] or 0), "metal": float(r[10] or 0)})
     pdfs = {}
     for p in CORPUS.glob("*TIME_LEARNING*.pdf"):
-        stem = p.stem.split("__")[-1]
-        pdfs[_norm(re.sub(r"_(FL|fl)_\d{5}.*$", "", stem))] = p
-    matched = 0
+        # Split on the mail-subject prefix, NOT on "__": "Port_St__Lucie" contains a double
+        # underscore, so split("__")[-1] returned "Lucie" and lost two Port St. Lucie homes.
+        stem = re.sub(r"^.*?_Systems(?:_-_\w+)?__", "", p.stem)
+        stem = re.sub(r"_(FL|fl)_\d{5}.*$", "", stem).replace("_", " ")
+        pdfs[_key(stem)] = p
+    matched, missing = 0, []
     for h in homes:
-        key = _norm(re.sub(r"[.,]", "", h["address"]))
-        hit = next((p for k, p in pdfs.items() if key[:14] in k or k[:14] in key), None)
+        hit = pdfs.get(_key(h["address"]))
         if hit:
             h.update(parse_roofr(hit)); h["pdf"] = hit.name; matched += 1
+        else:
+            missing.append(h["address"])
     print(f"{len(homes)} homes, {matched} matched to a RoofR report")
+    if missing:
+        print(f"  no report for: {', '.join(missing)}")
     return [h for h in homes if "pdf" in h]
+
+
+def fit_nonneg(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Least squares with all SLOPE coefficients forced >= 0, by backward elimination.
+
+    Plain OLS on 24 rows hands back negative coefficients (demo valleys −0.005, wall flashing
+    −0.006), i.e. "more valleys means fewer days". That is fitting noise, and in a money path it
+    under-prices exactly the complex roofs Tim says take longer. Dropping the most-negative slope
+    and refitting until none remain keeps the model monotonic — more geometry never means less
+    time — and leaves a sparser model that is easier to explain to him. The intercept (column 0)
+    is free: it is the mobilisation day, not a geometry term.
+    """
+    keep = list(range(X.shape[1]))
+    while True:
+        beta, *_ = np.linalg.lstsq(X[:, keep], y, rcond=None)
+        neg = [(b, i) for b, i in zip(beta[1:], keep[1:]) if b < 0]
+        if not neg:
+            full = np.zeros(X.shape[1])
+            full[keep] = beta
+            return full
+        keep.remove(min(neg)[1])
+
+
+def loo_r2_nonneg(X: np.ndarray, y: np.ndarray) -> float:
+    preds = []
+    for i in range(len(y)):
+        mask = np.ones(len(y), bool); mask[i] = False
+        preds.append(X[i] @ fit_nonneg(X[mask], y[mask]))
+    preds = np.array(preds)
+    sst = float(((y - y.mean()) ** 2).sum())
+    return 1 - float(((y - preds) ** 2).sum()) / sst if sst else float("nan")
 
 
 def loo_r2(X: np.ndarray, y: np.ndarray) -> float:

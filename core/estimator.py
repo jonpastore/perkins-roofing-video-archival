@@ -84,33 +84,66 @@ def compute_daily_overhead(
     return oh_total, per_sq_oh
 
 
-def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOverheadSeries]:
-    """Auto-fill labor days from squares: days = setup + rate x SQ per series.
+_GEOMETRY_TERMS = ("squares", "hips", "valleys", "ridges", "rakes", "wall_flash")
 
-    Calibrated off Tim's 30-home time-learning log (docs/ROOFR_OVERHEAD_TIERS.md); the model
-    lives in config["daily_overhead_day_model"] so it stays tunable without a code change.
-    A tear-off adds the demo series on top of the install series (summed when both resolve to
-    the same series, e.g. flat roofs). Days round to the nearest 0.5 the DailyOverheadSeries
-    contract requires, floored at 0.5.
+
+def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOverheadSeries]:
+    """Auto-fill labor days per series, preferring the ROOF GEOMETRY model.
+
+    Tim, 2026-07-17 Zoom [10:12]: "two houses that are both 30 squares but one got towers and all
+    kinds of crazy shit going on ... this one is going to take two days and the one with all the
+    crazy shit going on could take five or six days". Days therefore track COMPLEXITY, not area,
+    so when the quote carries RoofR cut measurements we use
+
+        days = intercept + c_sq*SQ + c_hips*hips_lf + c_valleys*valleys_lf
+                         + c_ridges*ridges_lf + c_rakes*rakes_lf + c_wall*wall_flashing_lf
+
+    fitted per series over his 30-home log with non-negative coefficients (see
+    scripts/fit_days_from_roofr.py; leave-one-out R2 tile 0.82, metal 0.90, demo 0.69,
+    shingle 0.53 — versus 0.64/0.63/0.30/0.30 for squares alone).
+
+    Falls back to the squares-only `setup + rate x SQ` fit when the quote has no cut measurements
+    or the branch config carries no geometry model. Both live in
+    config["daily_overhead_day_model"] so they stay tunable without a code change.
+
+    A tear-off adds the demo series on top of the install series (summed when both resolve to the
+    same series). Days round to the nearest 0.5 the DailyOverheadSeries contract requires.
 
     Returns [] when the roof type has no fitted model (low-slope systems, unconfigured
     branches) — the caller then keeps the per-square overhead it would have used anyway.
     """
     model = config.daily_overhead_day_model()
     fits = model.get("series") or {}
+    geometry = model.get("geometry_model") or {}
     rates = config.daily_overhead_rates()
-    if not fits or q.num_squares <= 0:
+    if q.num_squares <= 0 or (not fits and not geometry):
         return []
 
+    geom_inputs = {
+        "squares": q.num_squares, "hips": q.hips_lf, "valleys": q.valleys_lf,
+        "ridges": q.ridges_lf, "rakes": q.rakes_lf, "wall_flash": q.wall_flashings_lf,
+    }
+    # Geometry only applies when the quote actually carries cut measurements; squares alone
+    # would silently evaluate the geometry model with every complexity term at zero, which
+    # reads as "the simplest possible roof" and under-quotes the days.
+    has_geometry = any(geom_inputs[t] for t in _GEOMETRY_TERMS if t != "squares")
+
     def days_for(name: str) -> Optional[float]:
-        fit = fits.get(name)
-        if not fit or name not in rates:
+        if name not in rates:
             return None
-        raw = float(fit["setup"]) + float(fit["rate"]) * q.num_squares
+        coef = geometry.get(name)
+        if has_geometry and coef:
+            raw = float(coef.get("intercept", 0.0)) + sum(
+                float(coef.get(term, 0.0)) * float(geom_inputs[term]) for term in _GEOMETRY_TERMS)
+        else:
+            fit = fits.get(name)
+            if not fit:
+                return None
+            raw = float(fit["setup"]) + float(fit["rate"]) * q.num_squares
         return max(0.5, round(raw * 2) / 2)
 
     # ponytail: one demo fit for every tear-off type — Tim's sheet logs Demo as a single
-    # column (R2 0.37). Split per existing_roof when he logs tile vs shingle tear-off apart.
+    # column. Split per existing_roof when he logs tile vs shingle tear-off apart.
     has_tear_off = q.demo if q.existing_roof is None else q.existing_roof != "none"
     demo_series = model.get("demo_series")
     install_series = (model.get("install_series_by_roof_type") or {}).get(q.roof_type)

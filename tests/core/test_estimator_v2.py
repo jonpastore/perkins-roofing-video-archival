@@ -765,3 +765,66 @@ def test_typed_days_are_not_warned_about():
                    daily_series=[DailyOverheadSeries(series="tile", days=6.0)])
     r = estimate(cfg, q)
     assert not any(w.startswith("daily_days_auto_filled") for w in r["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# Geometry-driven days — Tim's actual method (Zoom 2026-07-17 [10:12]): two 30-SQ
+# roofs take 2 vs 5-6 days depending on complexity, so days track cuts, not area.
+# ---------------------------------------------------------------------------
+
+def _tile_q(**kw):
+    base = dict(code_zone="FBC", roof_type="13_tile", num_squares=30.0,
+                project_kind="commercial", existing_roof="tile", overhead_mode="daily")
+    base.update(kw)
+    return QuoteInput(**base)
+
+
+def test_two_same_size_roofs_differ_when_geometry_differs():
+    """The whole point of Tim's method: same squares, different complexity, different days."""
+    cfg = _cfg_v2()
+    simple = derive_daily_series(cfg, _tile_q(hips_lf=20, ridges_lf=20))
+    complex_ = derive_daily_series(cfg, _tile_q(hips_lf=260, ridges_lf=200, valleys_lf=180,
+                                                rakes_lf=150, wall_flashings_lf=90))
+    simple_days = sum(s.days for s in simple)
+    complex_days = sum(s.days for s in complex_)
+    assert complex_days > simple_days, (
+        f"a heavily-cut roof must take longer than a simple one of the same size: "
+        f"{complex_days} vs {simple_days}")
+
+
+def test_geometry_days_beat_squares_only_on_a_cut_up_roof():
+    """With cut LFs present the geometry model is used, not the squares-only fit."""
+    cfg = _cfg_v2()
+    cut_up = _tile_q(hips_lf=260, ridges_lf=200, valleys_lf=180, rakes_lf=150)
+    plain = _tile_q()
+    assert sum(s.days for s in derive_daily_series(cfg, cut_up)) > \
+           sum(s.days for s in derive_daily_series(cfg, plain))
+
+
+def test_squares_only_fallback_when_no_cut_measurements():
+    """No cut LFs → the squares-only fit, NOT the geometry model evaluated at all-zero
+    complexity (which would read as the simplest possible roof and under-quote the days)."""
+    cfg = _cfg_v2()
+    got = {s.series: s.days for s in derive_daily_series(cfg, _tile_q())}
+    # squares-only tile fit: 0.45 + 0.129*30 = 4.32 -> 4.5; demo 1.31 + 0.044*30 = 2.63 -> 2.5
+    assert got == {"tile": 4.5, "demo_dry_in_flat": 2.5}, got
+
+
+def test_geometry_coefficients_are_all_non_negative():
+    """More geometry must never mean fewer days — a negative coefficient would under-price
+    exactly the complex roofs Tim says take longest."""
+    model = _cfg_v2().daily_overhead_day_model()["geometry_model"]
+    for series, coef in model.items():
+        for term, value in coef.items():
+            if term == "loo_r2":
+                continue
+            assert value >= 0, f"{series}.{term} is negative ({value})"
+
+
+def test_geometry_days_still_half_day_multiples():
+    cfg = _cfg_v2()
+    for hips in (0, 45, 130, 300):
+        for sq in (12.0, 30.0, 76.0):
+            q = _tile_q(num_squares=sq, hips_lf=hips, ridges_lf=hips / 2)
+            for s in derive_daily_series(cfg, q):
+                assert s.days >= 0.5 and round(s.days % 0.5, 10) == 0.0, (sq, hips, s)
