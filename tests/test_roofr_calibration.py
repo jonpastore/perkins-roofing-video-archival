@@ -110,3 +110,71 @@ def test_surcharged_jobs_estimate_is_positive_and_under_sold(pid):
 
 def test_roofr_baseline_has_seven_addresses():
     assert len(ROOFR) == 7
+
+
+# ---------------------------------------------------------------------------
+# Observability pins — R2 critic C6
+#
+# Every golden job above is FBC, <=6/12, no demo, per-square OH mode, so a config change to the
+# HVHZ, 7/12+ or WinterGuard paths moves NOTHING in this file: the critic ran the whole suite
+# across two config versions and measured delta $0 on all six jobs. Two live pricing changes
+# shipped that no harness in this repo could observe.
+#
+# These are NOT sold-price evidence — there is no sold HVHZ or 7/12 job in the corpus, and
+# inventing one would be worse than having none. They pin the engine's current output on those
+# paths so the NEXT change to them is visible in a diff instead of silent. Replace with real
+# sold jobs the moment Tim sends one.
+# ---------------------------------------------------------------------------
+
+def _q(**kw) -> dict:
+    base = dict(slope_type="sloped", roof_type="13_tile", num_squares=30.0,
+                project_kind="residential")
+    return estimate(CFG, QuoteInput(**{**base, **kw}))
+
+
+def _per_sq(result: dict, key: str) -> float:
+    return next(i["per_sq"] for i in result["line_items_detail"] if i["key"] == key)
+
+
+def test_hvhz_and_fbc_are_priced_differently():
+    """The zone axis must reach the total. If these ever converge, a zone lookup has collapsed
+    to a scalar — which is exactly what the admin panel used to do to the zoned adders."""
+    fbc, hvhz = _q(code_zone="FBC"), _q(code_zone="HVHZ")
+    assert hvhz["project_total"] > fbc["project_total"]
+    assert _per_sq(hvhz, "overhead") > _per_sq(fbc, "overhead")
+    assert _per_sq(hvhz, "base_cost_lm") > _per_sq(fbc, "base_cost_lm")
+
+
+def test_steep_tile_adder_is_305_in_both_zones():
+    """Re-derived from Tim's cell comments 2026-07-25: Demo L 70 + Tile L 70 + M 40 + OH 90/95
+    + P 35/30 = $305 in both live comments. The $200 headline contradicted its own comment."""
+    for zone in ("FBC", "HVHZ"):
+        r = _q(code_zone=zone, pitch_7_12=True, existing_roof="tile")
+        assert _per_sq(r, "pitch_7_12_add") == 305, zone
+
+
+def test_winterguard_is_135_in_both_zones():
+    """Same comment on the live sloped AND the NEW sheet: M 60 + L 25 + OH 32 + P 18 = $135."""
+    for zone in ("FBC", "HVHZ"):
+        assert _per_sq(_q(code_zone=zone, winterguard=True), "winterguard") == 135, zone
+
+
+def test_demo_adders_keep_their_real_zone_split():
+    """tile/metal demo DO differ by zone — no comment exists on either, so the per-tab headlines
+    are the evidence, and they run HVHZ > FBC like every other paired price."""
+    assert _per_sq(_q(code_zone="FBC", existing_roof="tile"), "tile_demo") == 30
+    assert _per_sq(_q(code_zone="HVHZ", existing_roof="tile"), "tile_demo") == 40
+    assert _per_sq(_q(code_zone="FBC", roof_type="standing_seam_metal",
+                      existing_roof="metal"), "metal_demo") == 45
+    assert _per_sq(_q(code_zone="HVHZ", roof_type="standing_seam_metal",
+                      existing_roof="metal"), "metal_demo") == 60
+
+
+@pytest.mark.parametrize("sq,profit_per_sq", [
+    (1.0, 400), (4.0, 200), (7.0, 160), (14.0, 140), (20.0, 120), (29.0, 110), (30.0, 100),
+])
+def test_profit_band_edges_match_tims_labels(sq, profit_per_sq):
+    """profit_scale stores Tim's INCLUSIVE band labels, so a job landing exactly on an edge takes
+    the band the label names — not the next band down. sq=20 is double-claimed on his sheet
+    ("15-20" and "20-29") and resolves to $120 pending his answer."""
+    assert _per_sq(_q(code_zone="FBC", num_squares=sq), "profit") == profit_per_sq

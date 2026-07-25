@@ -678,6 +678,10 @@ def rates(
             "daily_overhead_day_model": cfg.get("daily_overhead_day_model") or {},
             "weekly_profit_floor": cfg.get("weekly_profit_floor") or 2500,
             "job_profit_floor": cfg.get("job_profit_floor") or 2500,
+            # Enforced minimum PROFIT dollars per job — unlike the two floors above, this one
+            # moves the quoted price. null = off. Surfaced so the config panel can set it
+            # instead of the value only being reachable by hand-editing JSONB (R3).
+            "min_margin_dollars": cfg.get("min_margin_dollars"),
             # v2: repair (time-based) quote config — roof-type categories + daily labor rates
             "repair": cfg.get("repair") or {},
             # scope-of-work AI rewrite: saved default template ({"default_template": str})

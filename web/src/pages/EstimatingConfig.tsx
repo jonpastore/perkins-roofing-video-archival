@@ -963,6 +963,19 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                 disabled={disabled}
                 unit="$"
               />
+              {/*
+                Unlike the two floors above — which only surface guidance for the margin badge —
+                this one MOVES THE QUOTED PRICE: profit is raised to it when the sliding scale
+                comes in lower, and the quote carries a min_margin_applied warning. Leave empty
+                to disable. Explicit flat-profit and per-square overrides are never overridden.
+              */}
+              <NumericField
+                label="Minimum margin (raises the price)"
+                value={config.min_margin_dollars as number | null | undefined}
+                onChange={(v) => set(["min_margin_dollars"], v)}
+                disabled={disabled}
+                unit="$"
+              />
             </div>
             <SectionLabel>Rounding & profit mode</SectionLabel>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
