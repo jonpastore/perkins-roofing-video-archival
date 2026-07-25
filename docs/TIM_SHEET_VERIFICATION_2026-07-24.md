@@ -21,12 +21,19 @@ Source: Tim's own sloped calculator, read read-only via the DWD service account
 | Roof cuts low/med/high | $0 / $25 / $50 | same | ✅ |
 | 2 stories | $50 | same | ✅ |
 | Tile pointing | $200 | same | ✅ |
-| PM incentive | <20sq $50 · 20-50 $100 · >50 $250 | same | ✅ |
+| PM incentive | <20sq $50 · 20-50 $100 · >50 $250 (size ONLY) | keyed by kind+size: `residential_lt20` 50, `commercial_20_50` 100, `commercial_gt50` 250 | ⚠️ **values match, keying does not** |
 | Delivery/plywood/vents | $650 | $650 | ✅ |
 | New bonus values | $1,350 | $1,350 | ✅ |
 | Permit processing | $500 | $500 | ✅ |
 | Tile dumpster | $300 | $300 | ✅ |
 | Santa Fe Clay "S" upgrade | $160 | $160 | ✅ |
+
+⚠️ **Correction (same day):** the PM-incentive row above was first recorded as a clean match. The
+three FBC *values* do match, but Tim's bands are **size-only** while ours are keyed by project kind
+as well — there is no `residential_20_50` entry, so a 35-square RESIDENTIAL job (most of his 30
+homes) receives $50 where his sheet says $100. The config's own `_pending_verify` note already flags
+this matrix as unverified (OI-8), so it is left alone rather than silently changed: Tim needs to say
+whether the PM incentive depends on residential vs commercial at all.
 
 **The estimator engine reproduces Tim's method.** His tab is the same cost-up build:
 base + OH + sliding-scale profit + adders + fixed costs, and his worked example shows
