@@ -84,7 +84,11 @@ def compute_daily_overhead(
     return oh_total, per_sq_oh
 
 
-_GEOMETRY_TERMS = ("squares", "hips", "valleys", "ridges", "rakes", "wall_flash")
+# Terms the geometry model may use. Each series carries only the ones that earned their place in
+# its own fit, so "eaves" appearing here does not mean every series uses it — measured on Tim's 29
+# homes, eaves lifts DEMO from 0.363 to 0.662 leave-one-out (tear-off and haul-away scale with the
+# eave line) while making tile and metal slightly worse, so only demo carries an eaves coefficient.
+_GEOMETRY_TERMS = ("squares", "hips", "valleys", "ridges", "rakes", "wall_flash", "eaves")
 
 
 def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOverheadSeries]:
@@ -122,6 +126,7 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
     geom_inputs = {
         "squares": q.num_squares, "hips": q.hips_lf, "valleys": q.valleys_lf,
         "ridges": q.ridges_lf, "rakes": q.rakes_lf, "wall_flash": q.wall_flashings_lf,
+        "eaves": q.eaves_lf,
     }
     # Geometry only applies when the quote actually carries cut measurements; squares alone
     # would silently evaluate the geometry model with every complexity term at zero, which
@@ -132,9 +137,17 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
         if name not in rates:
             return None
         coef = geometry.get(name)
+        # A series whose fit leans on ONE measurement is worthless without it: demo is
+        # 1.11 + 0.006*eaves, so a quote missing eaves_lf silently returns ~1.1 days instead of
+        # 2-5 and under-bills the tear-off. "requires" names the inputs that must be present, and
+        # the squares-only fit takes over when they are not.
+        needed = (coef or {}).get("requires") or []
+        if coef and any(not geom_inputs.get(t) for t in needed):
+            coef = None
         if has_geometry and coef:
             raw = float(coef.get("intercept", 0.0)) + sum(
-                float(coef.get(term, 0.0)) * float(geom_inputs[term]) for term in _GEOMETRY_TERMS)
+                float(coef.get(term, 0.0) or 0.0) * float(geom_inputs[term])
+                for term in _GEOMETRY_TERMS)
         else:
             fit = fits.get(name)
             if not fit:

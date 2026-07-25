@@ -191,13 +191,13 @@
     "_note_geometry_model": "days = intercept + coef*feature over RoofR cut measurements, fitted per series on Tim's 30-home log with NON-NEGATIVE coefficients (scripts/fit_days_from_roofr.py). Preferred over the squares-only fit above whenever a quote carries cut LFs, because Tim's method is time-driven and time tracks complexity, not area (Zoom 2026-07-17 [10:12]). Leave-one-out R2 in loo_r2. Negative coefficients are eliminated on purpose: 'more valleys means fewer days' is noise, and it under-prices the complex roofs that actually take longer.",
     "geometry_model": {
       "demo_dry_in_flat": {
-        "intercept": 1.5263,
-        "squares": 0.003605,
-        "hips": 0.005557,
-        "ridges": 0.003321,
-        "rakes": 0.00203,
-        "wall_flash": 0.002937,
-        "loo_r2": 0.363
+        "intercept": 1.1129,
+        "rakes": 0.001008,
+        "eaves": 0.005993,
+        "loo_r2": 0.662,
+        "requires": [
+          "eaves"
+        ]
       },
       "tile": {
         "intercept": 0.5478,
@@ -210,12 +210,15 @@
         "loo_r2": 0.825
       },
       "shingle": {
-        "intercept": 0.8697,
-        "squares": 0.006587,
-        "hips": 0.001558,
-        "ridges": 0.006173,
-        "wall_flash": 0.003859,
-        "loo_r2": 0.549
+        "intercept": 0.7963,
+        "squares": 0.004672,
+        "ridges": 0.004597,
+        "wall_flash": 0.002465,
+        "eaves": 0.00183,
+        "loo_r2": 0.563,
+        "requires": [
+          "squares"
+        ]
       },
       "metal": {
         "intercept": 0.8548,

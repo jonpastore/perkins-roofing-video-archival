@@ -816,7 +816,7 @@ def test_geometry_coefficients_are_all_non_negative():
     model = _cfg_v2().daily_overhead_day_model()["geometry_model"]
     for series, coef in model.items():
         for term, value in coef.items():
-            if term == "loo_r2":
+            if term in ("loo_r2", "requires"):   # metadata, not coefficients
                 continue
             assert value >= 0, f"{series}.{term} is negative ({value})"
 
@@ -852,3 +852,36 @@ def test_cuts_drive_days_without_moving_the_base():
     flat_days = sum(d["days"] for d in flat["daily_series"])
     assert geom_days > flat_days, (
         f"cut LFs must lengthen the job even with the flat base: {geom_days} vs {flat_days}")
+
+
+def test_series_falls_back_when_a_required_measurement_is_missing():
+    """The demo fit is 1.11 + 0.006*eaves, so without eaves_lf it would return ~1.1 days instead
+    of 2-5 and under-bill the tear-off. A caller that omitted eaves silently dropped the whole
+    library's day accuracy from 55% to 10% within half a day — the "requires" guard makes that
+    case fall back to the squares-only fit instead."""
+    cfg = _cfg_v2()
+    kw = dict(code_zone="FBC", roof_type="13_tile", num_squares=35.0, project_kind="commercial",
+              existing_roof="tile", overhead_mode="daily")
+    # cuts present but NO eaves → demo must use the squares-only fit (1.31 + 0.044*35 = 2.85 → 3.0)
+    no_eaves = {s.series: s.days for s in
+                derive_daily_series(cfg, QuoteInput(**kw, hips_lf=200, ridges_lf=150))}
+    assert no_eaves["demo_dry_in_flat"] == 3.0, no_eaves
+    # with eaves → the geometry fit takes over and gives a different (higher) demo figure
+    # 600ft of eaves: 1.1129 + 0.005993*600 = 4.71 -> 4.5, clearly distinct from the 3.0 above
+    with_eaves = {s.series: s.days for s in
+                  derive_daily_series(cfg, QuoteInput(**kw, hips_lf=200, ridges_lf=150,
+                                                      eaves_lf=600))}
+    assert with_eaves["demo_dry_in_flat"] != no_eaves["demo_dry_in_flat"]
+    assert with_eaves["demo_dry_in_flat"] >= 3.0, with_eaves
+
+
+def test_requires_is_not_summed_as_a_coefficient():
+    """"requires" is a list living in the same dict as the coefficients; treating it as a number
+    would raise. Guard the arithmetic explicitly."""
+    cfg = _cfg_v2()
+    model = cfg.daily_overhead_day_model()["geometry_model"]["demo_dry_in_flat"]
+    assert isinstance(model.get("requires"), list) and model["requires"] == ["eaves"]
+    days = derive_daily_series(cfg, QuoteInput(
+        code_zone="FBC", roof_type="13_tile", num_squares=35.0, project_kind="commercial",
+        existing_roof="tile", overhead_mode="daily", eaves_lf=330, hips_lf=200))
+    assert all(d.days > 0 for d in days)

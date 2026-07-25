@@ -49,9 +49,9 @@ DAY_MODEL = {
             "metal": {"setup": 0.59, "rate": 0.106},              # R² 0.66
         },
         "geometry_model": {
-            "demo_dry_in_flat": {"intercept": 1.5263, "squares": 0.003605, "hips": 0.005557, "ridges": 0.003321, "rakes": 0.00203, "wall_flash": 0.002937, "loo_r2": 0.363},
+            "demo_dry_in_flat": {"intercept": 1.1129, "rakes": 0.001008, "eaves": 0.005993, "loo_r2": 0.662, "requires": ["eaves"]},
             "tile": {"intercept": 0.5478, "squares": 0.032065, "hips": 0.013461, "valleys": 0.000695, "ridges": 0.012978, "rakes": 0.010716, "wall_flash": 0.001379, "loo_r2": 0.825},
-            "shingle": {"intercept": 0.8697, "squares": 0.006587, "hips": 0.001558, "ridges": 0.006173, "wall_flash": 0.003859, "loo_r2": 0.549},
+            "shingle": {"intercept": 0.7963, "squares": 0.004672, "ridges": 0.004597, "wall_flash": 0.002465, "eaves": 0.00183, "loo_r2": 0.563, "requires": ["squares"]},
             "metal": {"intercept": 0.8548, "squares": 0.004172, "hips": 0.013145, "valleys": 0.00525, "ridges": 0.008518, "rakes": 0.013001, "loo_r2": 0.883},
         },
     },

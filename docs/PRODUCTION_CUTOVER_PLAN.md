@@ -48,16 +48,32 @@ the article/content platform from staging (`https://1228404.us6.myftpupload.com`
 - [ ] **Rank Math on prod**: confirm its FAQ/schema output does NOT duplicate our FAQ+Video nodes.
       (Owner: Wendy)
 - [ ] **Permalinks = "Post name" on prod** (top-level no-`/blog/` URLs + REST routes).
-- [ ] **CF token injected into Cloud Run + `LLM_BACKEND=cloudflare`** (§2 — the prod flip).
+- [x] ~~**CF token injected into Cloud Run + `LLM_BACKEND=cloudflare`**~~ — SUPERSEDED 2026-07-23:
+      `LLM_BACKEND=vertex` was chosen instead (CF free tier walls at ~1-2 articles/day and a
+      24k-ctx ceiling; Vertex measured at ~$30-60 per 3k articles). No CF token needed.
 - [ ] **SEO submission creds** provisioned IF enabling: IndexNow key (+ key-file at site root) and
       Google Indexing API service account (Search Console owner). Toggle is OFF by default.
 - [ ] `WP_AUTHOR_ID=3` (Tim Kanak) confirmed stable on prod.
 - [x] `core/internal_links.py` service slugs verified 200 against live `perkinsroofing.net`
       (done 2026-07-22 — was 2 hard 404s + 4 redirects, corrected).
-- [ ] **Deploy `main` to prod** (`scripts/deploy.sh`) — bundles estimator repair, SEO submission,
-      internal-links fix, article-schema fix, CF adapter, gutter downspout.
-- [x] Tim's `$1185/$1435` labor rates confirmed. [ ] Remaining Tim pricing items (per-branch OH,
-      gutter hangers, downspout $10.50, Verea field-tile, FBC low-slope deltas, T&C).
+- [x] ~~**Deploy `main` to prod**~~ — done 2026-07-24, five deploys through
+      `platform:1c3e721` (estimator repair, SEO submission, internal-links fix, article-schema
+      fix, gutter downspout, scope templates, proposal redesign, geometry day model).
+- [x] Tim's `$1185/$1435` labor rates confirmed — **and now seeded to prod** (all 3 branches
+      carried a NULL `repair` block until 2026-07-24, so repair quotes would have failed).
+- [x] **All 20 sloped pricing values verified against Tim's LIVE calculator** 2026-07-24
+      (`docs/TIM_SHEET_VERIFICATION_2026-07-24.md`): base costs, overheads, profit sliding scale,
+      roof cuts, height, pointing, PM incentive bands, all four fixed costs. Low-slope base costs
+      are also fully priced (11/11) — the `OI-1: ALL cells null` note in the config `_meta` is
+      stale.
+- [ ] **Remaining Tim pricing items** — narrowed to what his own sheet does NOT answer:
+      sloped-HVHZ commission rate (10% or 15%), PM-incentive matrix sign-off, sliding-scale
+      boundary rule, Verea/Other field-tile costs, and the 3-5 storey / 6+ crane adders
+      (**blank in his sheet too**). Gutter hangers + the $14.70 upgraded downspout and copper K
+      $50/$70 are still open from his 7/17 list.
+- [ ] **A published barrel-tile price** — or confirmation that barrel tile is always
+      engine-priced. The single `tile` catalog entry at $1,100/sq is below barrel tile's
+      $1,435/sq base cost, so `proposal_gen` now refuses it (422).
 
 ## 4. Cutover steps (ordered)
 

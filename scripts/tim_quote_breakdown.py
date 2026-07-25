@@ -68,11 +68,15 @@ def main() -> None:
             continue
         rt, day_key = LIKE_FOR_LIKE[h["existing"]]
         sq = h["squares"]
+        # apply_cut_calc_to_base=False mirrors what /estimator/quote does: cuts drive the DAYS,
+        # the base stays on Tim's flat standard pricing. Without it these totals would be
+        # cut-calculator numbers, which is not what we would quote.
         q = QuoteInput(code_zone="FBC", county="palm_beach", roof_type=rt, num_squares=sq,
                        project_kind="residential", demo=True, existing_roof=h["existing"],
-                       overhead_mode="daily",
+                       overhead_mode="daily", apply_cut_calc_to_base=False,
                        hips_lf=h["hips"], valleys_lf=h["valleys"], ridges_lf=h["ridges"],
-                       rakes_lf=h["rakes"], wall_flashings_lf=h["wall_flash"])
+                       rakes_lf=h["rakes"], wall_flashings_lf=h["wall_flash"],
+                       eaves_lf=h["eaves"])
         ours = derive_daily_series(cfg, q)
         our_days = sum(s.days for s in ours)
         our_oh = sum(s.days * float(rates[s.series]) for s in ours)
