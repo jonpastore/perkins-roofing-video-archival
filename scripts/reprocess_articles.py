@@ -26,8 +26,8 @@ from app.models import Article, SessionLocal  # noqa: E402
 from core.article_criteria import check_compliance, failing  # noqa: E402
 from core.wp_category import pick_category_name  # noqa: E402
 from jobs.article_job import (  # noqa: E402
-    _compliance_gate, _ensure_faq_headings, _markdown_to_html, _repair_inputs,
-    _stamped_session)
+    _compliance_gate, _ensure_faq_headings, _markdown_to_html, _reapply_fixable_ensures,
+    _repair_inputs, _stamped_session)
 from jobs.batch_article_job import _fresh_vertex  # noqa: E402
 
 
@@ -79,6 +79,13 @@ def main() -> None:
                   "meta": meta or "", "slug": slug, "jsonld_json": list(jsonld or [])}
         ctx = {"role": role, "pillar_slug": pillar}
         with _stamped_session(1) as gdb:
+            # Apply the deterministic ensures FIRST. _compliance_gate short-circuits before its
+            # ensure pass when the article already passes every criterion, so an
+            # already-compliant article reached the WP write with its content untouched — which
+            # silently no-op'd the whole --include-faq-headings set (its articles are compliant
+            # by definition; that's why they need reaching). Idempotent, so the gate's own
+            # re-application below is harmless.
+            _reapply_fixable_ensures(fields, ctx, kw, db=gdb)
             comp, compliant = _compliance_gate(fields, ctx, kw, gdb, llm=_fresh_vertex())
         fields["slug"] = slug  # never change the live permalink
         recheck = check_compliance(fields["content_md"], fields["meta"], fields["jsonld_json"],
