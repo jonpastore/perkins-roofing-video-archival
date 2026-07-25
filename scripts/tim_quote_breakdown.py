@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import importlib.util
+import json
 import os
 from pathlib import Path
 
@@ -53,8 +54,14 @@ def main() -> None:
     eng = create_engine(os.environ["DB_URL"])
     with eng.connect() as c:
         c.execute(text("SET app.tenant_id='1'"))
-        cfg = load_config(c.execute(text(
-            "select config from pricing_configs where is_active and branch='jupiter'")).scalar())
+        raw = c.execute(text(
+            "select config from pricing_configs where is_active and branch='jupiter'")).scalar()
+    # A/B a config change against his 30 homes before seeding it: PRICING_OVERRIDES is a JSON
+    # object merged over the active config, so a candidate value can be measured against Tim's
+    # own numbers without creating a config version or touching prod.
+    if os.environ.get("PRICING_OVERRIDES"):
+        raw = {**raw, **json.loads(os.environ["PRICING_OVERRIDES"])}
+    cfg = load_config(raw)
     rates = cfg.daily_overhead_rates()
 
     hdr = (f"{'address':<25}{'roof':<9}{'SQ':>5}{'cutLF':>7}"
