@@ -60,7 +60,8 @@ def main() -> None:
     hdr = (f"{'address':<25}{'roof':<9}{'SQ':>5}{'cutLF':>7}"
            f"{'Tim d':>7}{'our d':>7}{'Δd':>6}"
            f"{'Tim OH':>9}{'our OH':>9}{'our quote':>11}{'catalog':>10}{'Δ$':>10}")
-    print(hdr); print("-" * len(hdr))
+    print(hdr)
+    print("-" * len(hdr))
     rows = []
     for h in homes:
         if h["existing"] not in LIKE_FOR_LIKE:
@@ -109,7 +110,8 @@ def main() -> None:
     if args.csv:
         with open(args.csv, "w", newline="") as fh:
             w = csv.DictWriter(fh, fieldnames=list(rows[0]))
-            w.writeheader(); w.writerows(rows)
+            w.writeheader()
+            w.writerows(rows)
         print(f"wrote {args.csv}")
 
 

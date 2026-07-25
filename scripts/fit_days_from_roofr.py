@@ -61,7 +61,7 @@ _DIRS = {"n", "s", "e", "w", "ne", "nw", "se", "sw", "north", "south", "east", "
 
 
 def _key(address: str) -> tuple[str, str]:
-    """(house number, first 4 letters of the street name) — the robust join key.
+    """(house number, first 3 letters of the street name) — the robust join key.
 
     Tim and RoofR disagree on spelling and abbreviation constantly (Mil/Mill,
     Greenview/Greensview, NE/Northeast, Ct/Court), so string-normalising the whole address is a
@@ -100,7 +100,9 @@ def load() -> list[dict]:
     for h in homes:
         hit = pdfs.get(_key(h["address"]))
         if hit:
-            h.update(parse_roofr(hit)); h["pdf"] = hit.name; matched += 1
+            h.update(parse_roofr(hit))
+            h["pdf"] = hit.name
+            matched += 1
         else:
             missing.append(h["address"])
     print(f"{len(homes)} homes, {matched} matched to a RoofR report")
@@ -133,7 +135,8 @@ def fit_nonneg(X: np.ndarray, y: np.ndarray) -> np.ndarray:
 def loo_r2_nonneg(X: np.ndarray, y: np.ndarray) -> float:
     preds = []
     for i in range(len(y)):
-        mask = np.ones(len(y), bool); mask[i] = False
+        mask = np.ones(len(y), bool)
+        mask[i] = False
         preds.append(X[i] @ fit_nonneg(X[mask], y[mask]))
     preds = np.array(preds)
     sst = float(((y - y.mean()) ** 2).sum())
@@ -144,18 +147,21 @@ def loo_r2(X: np.ndarray, y: np.ndarray) -> float:
     """Leave-one-out cross-validated R² — honest predictive power on 30 rows."""
     preds = []
     for i in range(len(y)):
-        mask = np.ones(len(y), bool); mask[i] = False
+        mask = np.ones(len(y), bool)
+        mask[i] = False
         beta, *_ = np.linalg.lstsq(X[mask], y[mask], rcond=None)
         preds.append(X[i] @ beta)
     preds = np.array(preds)
-    sse = float(((y - preds) ** 2).sum()); sst = float(((y - y.mean()) ** 2).sum())
+    sse = float(((y - preds) ** 2).sum())
+    sst = float(((y - y.mean()) ** 2).sum())
     return 1 - sse / sst if sst else float("nan")
 
 
 def main() -> None:
     homes = load()
     if len(homes) < 10:
-        print("not enough matched homes to fit"); return
+        print("not enough matched homes to fit")
+        return
     print(f"\n{'target':<9}{'model':<34}{'in-sample R2':>13}{'LOO R2':>9}")
     print("-" * 66)
     for target in ("demo", "tile", "shingle", "metal"):
