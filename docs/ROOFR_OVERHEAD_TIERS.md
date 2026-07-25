@@ -78,3 +78,52 @@ per-square OH is carrying fixed costs the day rates omit. **Ask Tim which mode i
 before by-days becomes the default;** the margin floors (13% profit / 33% profit+OH, $2,500 per
 job and per on-site week) are the only thing currently catching the difference.
 Auto-filled quotes carry a `daily_days_auto_filled` warning so they can't pass as hand-checked.
+
+---
+
+## SUPERSEDED 2026-07-24 pm — days are not a function of squares
+
+Tim's own words on the 2026-07-17 Zoom [10:12], which this whole document's model contradicts:
+
+> "two houses that are both **30 squares** but one got towers and all kinds of crazy shit going on
+> and one could just be like this up and over — this one is going to take **two days** and the one
+> with all the crazy shit going on could take **five or six days** … that's why it's very important
+> to do things based on time"
+
+And [09:46]: "the way to **properly** generate the overhead is based on how long the job is going to
+take … **this is just a guide** than it is a rule" — i.e. the per-square OH we default to is, in his
+framework, explicitly the guide, not the price.
+
+So fitting days from squares alone was the wrong shape from the start. `scripts/fit_days_from_roofr.py`
+re-fits days against the COMPLEXITY features in each home's RoofR report, leave-one-out
+cross-validated (24 of the 30 homes matched to their report):
+
+| Days for | squares only | + pitch + facets | **+ all cut LFs** | all 10 features |
+|---|--:|--:|--:|--:|
+| demo | 0.296 | 0.578 | **0.666** | 0.460 |
+| tile | 0.638 | 0.790 | **0.802** | 0.753 |
+| shingle | 0.300 | −0.057 | **0.364** | 0.231 |
+| metal | 0.627 | 0.890 | **0.897** | 0.881 |
+
+(LOO R². "All 10 features" overfits 24 rows — in-sample R² rises while predictive R² falls.)
+
+**Winner: squares + hips + valleys + ridges + rakes + wall-flashing LF.** Tile 0.64→0.80,
+metal 0.63→0.90, demo 0.30→0.67. Shingle stays weak (0.36) because his shingle days barely vary
+(1–3 days across every home) — there is little signal to learn.
+
+This is exactly the exercise Tim proposed at [10:49–12:40] ("if we just took like 20 or 30
+different [RoofR reports] … and you just said tim put how long these are going to take for each
+phase … then i can have it back into an algorithm that would support your gut feeling"), and the
+2026-07-24 sheet is the data he promised for it.
+
+**We already ingest every one of those inputs** — `measurements.hips_lf / valleys_lf / ridges_lf /
+rakes_lf / eaves_lf` are populated from RoofR for the cut calculator, and `QuoteInput` already
+accepts them. So the change is: put the fitted coefficients in the pricing config, derive days from
+cut geometry instead of squares, and keep per-square OH as the documented guide-level fallback.
+
+⛔ **Still needed from Tim:** the **notes column** he promised at [12:21–12:40] — "i would have a
+notes column that says why you think … so that it's creating like the framing of the logic and how
+you're coming up with it, then we can turn that … it's like a word problem being turned into an
+algebra equation". The delivered sheet has squares + days for all four materials (as promised) but
+no notes, so we can fit his numbers without capturing his reasoning. Also 6 of the 30 homes have no
+matching RoofR report in the pull.
