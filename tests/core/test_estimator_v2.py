@@ -828,3 +828,27 @@ def test_geometry_days_still_half_day_multiples():
             q = _tile_q(num_squares=sq, hips_lf=hips, ridges_lf=hips / 2)
             for s in derive_daily_series(cfg, q):
                 assert s.days >= 0.5 and round(s.days % 0.5, 10) == 0.0, (sq, hips, s)
+
+
+def test_cuts_drive_days_without_moving_the_base():
+    """The bug that reached prod: the quote route withheld cut LFs from the headline quote to keep
+    Tim's flat base, so the geometry day model saw zero complexity on every real quote and fell
+    back to the squares-only fit. Cuts must feed the DAYS while the base stays flat."""
+    cfg = _cfg_v2()
+    kw = dict(code_zone="FBC", roof_type="13_tile", num_squares=30.0, project_kind="commercial",
+              existing_roof="tile", overhead_mode="daily")
+    cuts = dict(hips_lf=260, ridges_lf=200, valleys_lf=180, rakes_lf=150, wall_flashings_lf=90)
+
+    flat = estimate(cfg, QuoteInput(**kw))
+    geom = estimate(cfg, QuoteInput(**kw, **cuts, apply_cut_calc_to_base=False))
+    cut_adj = estimate(cfg, QuoteInput(**kw, **cuts))          # default: cuts DO move the base
+
+    def base_ps(r):
+        return next(li["per_sq"] for li in r["line_items_detail"] if li["key"] == "base_cost_lm")
+
+    assert base_ps(geom) == base_ps(flat), "flat base must survive apply_cut_calc_to_base=False"
+    assert base_ps(cut_adj) != base_ps(flat), "the cut calculator still moves the base by default"
+    geom_days = sum(d["days"] for d in geom["daily_series"])
+    flat_days = sum(d["days"] for d in flat["daily_series"])
+    assert geom_days > flat_days, (
+        f"cut LFs must lengthen the job even with the flat base: {geom_days} vs {flat_days}")

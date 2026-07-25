@@ -376,6 +376,11 @@ class QuoteInput:
     rakes_lf: float = 0
     wall_flashings_lf: float = 0
     base_tile_brand: Optional[str] = None  # key into cuts_calc.tile_brands; None = config default
+    # Cut LFs have TWO independent uses: they can recompute the base from geometry (the cut
+    # calculator) and they drive the geometry day model. The headline quote wants the second
+    # without the first — Tim prices standard roofs off the flat base but his DAYS still track
+    # how cut-up the roof is. Set False to feed cuts to the day model only.
+    apply_cut_calc_to_base: bool = True
 
     # Gutters — Tim's style-based price list (email 2026-07-17): per-LF price includes the
     # matching downspouts; 2-story is a per-LF uplift; elbows/leaf guards/leaderheads/removal
@@ -552,7 +557,9 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
         base = q.override_base_cost
     else:
         base = config.sloped_base(zone, rt)
-        cut_base = compute_cut_adjusted_base(config, q, zone, rt)
+        # apply_cut_calc_to_base=False keeps Tim's flat standard base while still letting the cut
+        # LFs drive the geometry day model — the headline quote's contract.
+        cut_base = compute_cut_adjusted_base(config, q, zone, rt) if q.apply_cut_calc_to_base else None
         if cut_base is not None:
             base = cut_base
     items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))

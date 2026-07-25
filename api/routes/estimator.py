@@ -235,10 +235,11 @@ def quote(
             if not cut_lfs[field_name]:  # explicit field wins when non-zero; else measurement
                 cut_lfs[field_name] = getattr(m, field_name) or 0
 
-    # Build QuoteInput kwargs. The headline quote uses the FLAT base (Tim's standard pricing);
-    # cut LFs are applied only to a separate cut_calc reference block below, so both the flat
-    # and cut-adjusted numbers are shown side-by-side and Tim picks (golden proposals show he
-    # prices standard roofs off the flat base, not the cut calculator).
+    # Build QuoteInput kwargs. The headline quote keeps the FLAT base (Tim's standard pricing) —
+    # the cut-adjusted base is shown alongside it in the cut_calc reference block below and Tim
+    # picks (his golden proposals price standard roofs off the flat base). Cut LFs ARE passed to
+    # the headline quote, but with apply_cut_calc_to_base=False: they drive the geometry day
+    # model without moving the base.
     qkwargs = dict(
         code_zone=body.code_zone,
         slope_type=effective_slope_type,
@@ -283,7 +284,11 @@ def quote(
         commission_basis=body.commission_basis,
         commission_rate_override=body.commission_rate,
     )
-    q = E.QuoteInput(**qkwargs)
+    # The cut LFs reach the headline quote so the geometry day model can see how cut-up the roof
+    # is (Tim: two 30-SQ roofs can be 2 days or 6), but apply_cut_calc_to_base=False keeps the
+    # base on his flat standard pricing. Without this the day model silently evaluated every
+    # quote at zero complexity and fell back to the squares-only fit.
+    q = E.QuoteInput(**qkwargs, **cut_lfs, apply_cut_calc_to_base=False)
 
     config = load_config(cfg_row.config)
 
