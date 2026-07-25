@@ -104,6 +104,7 @@ class QuoteRequest(BaseModel):
     specialty_tile: Optional[str] = None
     project_kind: Literal["residential", "commercial"] = "residential"
     pitch_7_12: bool = False
+    pitch_primary: float | None = Field(default=None, ge=0, le=24)   # rise per 12, e.g. 6 = 6/12
     demo: bool = False
     secondary_water_barrier: bool = False
     winterguard: bool = False
@@ -227,6 +228,8 @@ def quote(
         "valleys_lf": body.valleys_lf, "rakes_lf": body.rakes_lf,
         "wall_flashings_lf": body.wall_flashings_lf,
     }
+    # Predominant pitch drives the steep-roof day adder; same explicit-wins-else-measurement rule.
+    pitch_primary = body.pitch_primary
     if body.measurement_id is not None:
         m = db.get(Measurement, body.measurement_id)
         if m is None or m.tenant_id != db.info.get("tenant_id"):
@@ -234,6 +237,8 @@ def quote(
         for field_name in cut_lfs:
             if not cut_lfs[field_name]:  # explicit field wins when non-zero; else measurement
                 cut_lfs[field_name] = getattr(m, field_name) or 0
+        if not pitch_primary:
+            pitch_primary = m.pitch_primary
 
     # Build QuoteInput kwargs. The headline quote keeps the FLAT base (Tim's standard pricing) —
     # the cut-adjusted base is shown alongside it in the cut_calc reference block below and Tim
@@ -288,7 +293,8 @@ def quote(
     # is (Tim: two 30-SQ roofs can be 2 days or 6), but apply_cut_calc_to_base=False keeps the
     # base on his flat standard pricing. Without this the day model silently evaluated every
     # quote at zero complexity and fell back to the squares-only fit.
-    q = E.QuoteInput(**qkwargs, **cut_lfs, apply_cut_calc_to_base=False)
+    q = E.QuoteInput(**qkwargs, **cut_lfs, apply_cut_calc_to_base=False,
+                     pitch_primary=pitch_primary)
 
     config = load_config(cfg_row.config)
 
@@ -391,7 +397,8 @@ def quote(
     # Pre-discount totals so the flat-vs-cut delta is purely the base difference.
     if any(cut_lfs.values()):
         try:
-            cut_res = E.estimate(config, E.QuoteInput(**qkwargs, **cut_lfs))
+            cut_res = E.estimate(config, E.QuoteInput(**qkwargs, **cut_lfs,
+                                                      pitch_primary=pitch_primary))
         except (ValueError, ConfigError):
             cut_res = None
         if cut_res:

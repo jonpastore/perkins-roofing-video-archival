@@ -885,3 +885,28 @@ def test_requires_is_not_summed_as_a_coefficient():
         code_zone="FBC", roof_type="13_tile", num_squares=35.0, project_kind="commercial",
         existing_roof="tile", overhead_mode="daily", eaves_lf=330, hips_lf=200))
     assert all(d.days > 0 for d in days)
+
+
+def test_steep_roof_adds_a_day_to_the_install_series():
+    """Tim books more time than the geometry model predicts on steep roofs — measured residual
+    -0.29 days at <=4/12, +0.03 at 5/12, +0.64 at >=6/12 over his 29 homes. A threshold rule
+    (>=6/12 -> +0.5 install days) takes the library from 86% to 93% of homes within a day of him."""
+    cfg = _cfg_v2()
+    kw = dict(code_zone="FBC", roof_type="13_tile", num_squares=36.0, project_kind="commercial",
+              existing_roof="tile", overhead_mode="daily", hips_lf=125, ridges_lf=32,
+              valleys_lf=16, rakes_lf=27, wall_flashings_lf=21, eaves_lf=232)
+    shallow = {s.series: s.days for s in derive_daily_series(cfg, QuoteInput(**kw, pitch_primary=5))}
+    steep = {s.series: s.days for s in derive_daily_series(cfg, QuoteInput(**kw, pitch_primary=6))}
+    assert steep["tile"] > shallow["tile"], (steep, shallow)
+    # demo is untouched: the adder applies once per job, to the install series only
+    assert steep["demo_dry_in_flat"] == shallow["demo_dry_in_flat"]
+
+
+def test_no_pitch_supplied_means_no_steep_adder():
+    """pitch_primary is optional; a quote without it must not silently gain days."""
+    cfg = _cfg_v2()
+    kw = dict(code_zone="FBC", roof_type="13_tile", num_squares=36.0, project_kind="commercial",
+              existing_roof="tile", overhead_mode="daily", hips_lf=125, eaves_lf=232)
+    none = {s.series: s.days for s in derive_daily_series(cfg, QuoteInput(**kw))}
+    five = {s.series: s.days for s in derive_daily_series(cfg, QuoteInput(**kw, pitch_primary=5))}
+    assert none == five, (none, five)

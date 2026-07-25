@@ -48,6 +48,7 @@ DAY_MODEL = {
             "tile": {"setup": 0.45, "rate": 0.129},               # R² 0.70
             "metal": {"setup": 0.59, "rate": 0.106},              # R² 0.66
         },
+        "pitch_day_adder": {"threshold": 6, "days": 0.5, "_note": "Steep-roof day adder. Tim books more time than the geometry model predicts on steep roofs: measured residual -0.29 days at <=4/12, +0.03 at 5/12, +0.64 at >=6/12 across his 29 homes. Applied to the INSTALL series only, once per job. A threshold rule rather than a fitted coefficient because only 7 of the 29 homes are >=6/12 and pitch as a regressor made every install series worse out-of-sample. NO homes in the sample are >=7/12, where Tim's own sheet says cost jumps ($305/sq tile adder) \u2014 revisit when he labels steeper roofs."},
         "geometry_model": {
             "demo_dry_in_flat": {"intercept": 1.1129, "rakes": 0.001008, "eaves": 0.005993, "loo_r2": 0.662, "requires": ["eaves"]},
             "tile": {"intercept": 0.5478, "squares": 0.032065, "hips": 0.013461, "valleys": 0.000695, "ridges": 0.012978, "rakes": 0.010716, "wall_flash": 0.001379, "loo_r2": 0.825},

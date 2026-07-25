@@ -167,6 +167,18 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
     if install_days is None:
         return []
 
+    # Steep-roof day adder. Measured on Tim's 29 homes, the leftover error after the geometry
+    # model tracks pitch monotonically: -0.29 days at <=4/12, +0.03 at 5/12, +0.64 at >=6/12
+    # (he books more time than we predict on steep roofs). Tim already prices steepness on the
+    # material side ($305/sq for 7/12 tile); this is the same idea on the time side.
+    # Deliberately a THRESHOLD RULE, not a fitted coefficient: with only 7 steep homes, adding
+    # pitch as a 7th regressor made every install series worse out-of-sample (tile 0.825 -> 0.778)
+    # while this rule takes the library from 86% to 93% of homes within a day of Tim and moves the
+    # bias from -0.10 to +0.02. Config-driven so it can be retuned or removed without a deploy.
+    adder = model.get("pitch_day_adder") or {}
+    if adder and q.pitch_primary and float(q.pitch_primary) >= float(adder.get("threshold", 99)):
+        install_days = max(0.5, round((install_days + float(adder.get("days", 0))) * 2) / 2)
+
     totals: dict[str, float] = {install_series: install_days}
     if has_tear_off and demo_series:
         demo_days = days_for(demo_series)
@@ -394,6 +406,10 @@ class QuoteInput:
     # without the first — Tim prices standard roofs off the flat base but his DAYS still track
     # how cut-up the roof is. Set False to feed cuts to the day model only.
     apply_cut_calc_to_base: bool = True
+    # Predominant pitch as rise-per-12 from the RoofR report (5.0 = 5/12). Distinct from the
+    # pitch_7_12 flag, which drives Tim's $305/sq tile MATERIAL adder — this one feeds the
+    # steep-roof day adder, because a steep roof takes longer to walk regardless of material.
+    pitch_primary: Optional[float] = None
 
     # Gutters — Tim's style-based price list (email 2026-07-17): per-LF price includes the
     # matching downspouts; 2-story is a per-LF uplift; elbows/leaf guards/leaderheads/removal

@@ -229,6 +229,11 @@
         "rakes": 0.013001,
         "loo_r2": 0.883
       }
+    },
+    "pitch_day_adder": {
+      "threshold": 6,
+      "days": 0.5,
+      "_note": "Steep-roof day adder. Tim books more time than the geometry model predicts on steep roofs: measured residual -0.29 days at <=4/12, +0.03 at 5/12, +0.64 at >=6/12 across his 29 homes. Applied to the INSTALL series only, once per job. A threshold rule rather than a fitted coefficient because only 7 of the 29 homes are >=6/12 and pitch as a regressor made every install series worse out-of-sample. NO homes in the sample are >=7/12, where Tim's own sheet says cost jumps ($305/sq tile adder) \u2014 revisit when he labels steeper roofs."
     }
   },
   "profit_mode_default": "scale",
