@@ -1053,9 +1053,28 @@ def test_a_one_day_job_still_owes_a_full_week():
     assert any("min_margin_applied" in w for w in r["warnings"])
 
 
-def test_a_job_past_six_days_owes_two_weeks():
-    """6 working days per week, so 7 days on site is two weeks and two x $2,500."""
+def test_a_long_job_still_owes_only_the_flat_floor_on_the_job_basis():
+    """Jon's call 2026-07-25: one flat $2,500 per job however long it runs.
+
+    Enforcing the weekly multiple instead repriced 17 of Tim's 29 homes upward, because most of
+    his re-roofs run 7-10 days and a 2-week floor of $5,000 beats his own sliding scale on
+    nearly every tile job. He said "$2,500 a week"; he never said "$5,000 on a two-week job".
+    """
     cfg = _floor_cfg()
+    r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
+                                 existing_roof="tile", overhead_mode="daily", debug=True,
+                                 daily_series=[DailyOverheadSeries(series="tile", days=4.0),
+                                               DailyOverheadSeries(series="demo_dry_in_flat",
+                                                                   days=3.0)]))
+    profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
+    assert profit["amount"] == 2500, "7 days is still one flat floor"
+    assert profit["explain"]["inputs"]["profit_floor_basis"] == "job"
+
+
+def test_weekly_basis_multiplies_when_explicitly_selected():
+    """Kept switchable: flip profit_floor_basis to "weekly" if Tim confirms the multiple."""
+    cfg = _floor_cfg()
+    cfg.raw["profit_floor_basis"] = "weekly"
     r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
                                  existing_roof="tile", overhead_mode="daily", debug=True,
                                  daily_series=[DailyOverheadSeries(series="tile", days=4.0),
@@ -1067,8 +1086,10 @@ def test_a_job_past_six_days_owes_two_weeks():
 
 
 def test_six_days_is_still_one_week():
-    """The boundary: 6 days fits the working week, 6.5 does not."""
+    """The boundary: 6 days fits the working week, 6.5 does not. Guidance either way; only the
+    "weekly" basis lets it move the price."""
     cfg = _floor_cfg()
+    cfg.raw["profit_floor_basis"] = "weekly"
     def weeks(days):
         r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
                                      existing_roof="tile", overhead_mode="daily", debug=True,

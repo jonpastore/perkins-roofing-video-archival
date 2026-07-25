@@ -393,6 +393,21 @@ class PricingConfig:
         """
         return bool(self.raw.get("enforce_profit_floor"))
 
+    def profit_floor_basis(self) -> str:
+        """What the enforced floor is measured against: "job" (default) or "weekly".
+
+        "job"    — one flat `job_profit_floor` per job however long it runs. Jon's call
+                   2026-07-25 after seeing the alternative reprice 17 of Tim's 29 homes.
+        "weekly" — `weekly_profit_floor` x on-site weeks. Follows from Tim's "$2,500 a week
+                   that we're on the job", but he never said "$5,000 on a two-week job" out
+                   loud, and most of his re-roofs run 7-10 days, so the multiple would fire on
+                   nearly every normal tile job. Flip to this only if he confirms it.
+
+        The weekly figure is still computed and returned as guidance either way — the estimator
+        sees it, it just doesn't move the price unless this says so.
+        """
+        return str(self.raw.get("profit_floor_basis") or "job")
+
     def profit_floor_days_per_week(self) -> float:
         """Working days per week used to convert job days into billable weeks. Default 6.
 

@@ -15,9 +15,14 @@ MOVES THE QUOTED PRICE: `_apply_min_margin` raises the profit line to it and sta
 `min_margin_applied` warning. Explicit operator pricing (`profit_mode="flat"`,
 `override_profit_per_sq`) is never overridden.
 
-⚠️ profit_floor_days_per_week is ASSUMED 6 (Mon-Sat, off Sunday). It decides which jobs cross
-into a second week and so owe a second $2,500 -- at 6 days a 6-day job is one week and a 7-day
-job is two. Confirm 5, 6 or 7 with Tim.
+BASIS: "job" (Jon's call 2026-07-25) -- one flat $2,500 however long the job runs. The "weekly"
+basis multiplies by on-site weeks, which follows from his words but repriced 17 of his own 29
+homes upward, because most re-roofs run 7-10 days and a $5,000 two-week floor beats his sliding
+scale on nearly every tile job. He said "$2,500 a week"; he never said "$5,000 on a two-week
+job". Flip with --basis weekly if he confirms.
+
+⚠️ profit_floor_days_per_week is ASSUMED 6 (Mon-Sat). Only used by the "weekly" basis and by the
+guidance figures. Confirm 5, 6 or 7 with Tim.
 
 Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/seed_min_margin.py [--apply]
        (prints the impact and changes nothing unless --apply is passed)
@@ -36,6 +41,9 @@ def main() -> None:
                         help="profit floor per on-site week (default 2500)")
     parser.add_argument("--days-per-week", type=float, default=6.0,
                         help="working days per week (default 6, Mon-Sat)")
+    parser.add_argument("--basis", choices=("job", "weekly"), default="job",
+                        help="'job' = one flat floor per job (default); "
+                             "'weekly' = x on-site weeks")
     parser.add_argument("--off", action="store_true",
                         help="disable enforcement instead of enabling it")
     parser.add_argument("--apply", action="store_true",
@@ -60,6 +68,8 @@ def main() -> None:
         want = not args.off
         cfg = dict(active.config)
         cfg["enforce_profit_floor"] = want
+        cfg["profit_floor_basis"] = args.basis
+        cfg["job_profit_floor"] = args.weekly
         cfg["weekly_profit_floor"] = args.weekly
         cfg["profit_floor_days_per_week"] = args.days_per_week
         if cfg == dict(active.config):
@@ -71,9 +81,9 @@ def main() -> None:
         # job gets repriced. Longer jobs owe a multiple, so this is the floor's gentlest case.
         bites = next((sq for sq in range(1, 401)
                       if pc.profit_per_sq(float(sq)) * sq >= args.weekly), None)
-        print(f"{branch}: enforce_profit_floor -> {want}, ${args.weekly:,.0f}/week, "
-              f"{args.days_per_week:g}-day week"
-              + (f"  (a 1-week job under ~{bites} squares gets repriced)" if want and bites else ""))
+        unit = "per job" if args.basis == "job" else "per on-site week"
+        print(f"{branch}: enforce_profit_floor -> {want}, ${args.weekly:,.0f} {unit}"
+              + (f"  (repricing jobs under ~{bites} squares)" if want and bites else ""))
 
         if not args.apply:
             continue

@@ -676,7 +676,16 @@ def _apply_min_margin(
     Mutates the profit LineItem in place because the floor has to move the quoted number, not
     just annotate it — the whole point is that the customer sees the floored price.
     """
-    floor = effective_floor
+    # "job" basis (the default): one flat floor however long the job runs. The weekly figure is
+    # still computed and returned as guidance, it just doesn't move the price. Enforcing the
+    # weekly multiple instead repriced 17 of Tim's 29 homes upward — most of his re-roofs run
+    # 7-10 days, so a 2-week floor of $5,000 beats his own sliding scale on nearly every tile
+    # job. He said "$2,500 a week"; he never said "$5,000 on a two-week job". Pending his answer.
+    if config.profit_floor_basis() == "weekly":
+        floor = effective_floor
+    else:
+        floor = config.job_profit_floor()
+        on_site_weeks = 1
     if not config.enforce_profit_floor() or not floor or sq <= 0:
         return None
     profit = next((li for li in items if li.key == "profit"), None)
@@ -694,18 +703,21 @@ def _apply_min_margin(
     weeks = on_site_weeks or 1
     profit.amount = float(floor)
     profit.per_sq = float(floor) / sq
+    basis = config.profit_floor_basis()
+    how = (f"{weeks}-week minimum at ${config.weekly_profit_floor():,.0f}/week on the job"
+           if basis == "weekly" else "flat minimum per job")
     profit.explain = {
         "formula": f"profit floor applied — the sliding scale gave ${was:,.2f}, below the "
-                   f"{weeks}-week minimum of ${float(floor):,.2f} "
-                   f"(${config.weekly_profit_floor():,.0f}/week on the job, one week minimum)",
+                   f"${float(floor):,.2f} {how}",
         "inputs": {"scale_profit": round(was, 2), "effective_floor": float(floor),
-                   "on_site_weeks": weeks,
+                   "profit_floor_basis": basis, "on_site_weeks": weeks,
                    "weekly_profit_floor": config.weekly_profit_floor(),
+                   "job_profit_floor": config.job_profit_floor(),
                    "days_per_week": config.profit_floor_days_per_week(),
                    "squares": sq, "floored": True},
     }
     return (f"min_margin_applied: profit raised from ${was:,.2f} to ${float(floor):,.2f} "
-            f"({weeks}-week minimum)")
+            + (f"({weeks}-week minimum)" if basis == "weekly" else "(minimum per job)"))
 
 
 def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:

@@ -400,8 +400,9 @@ def quote(
         # straight off profit here, so the first discount silently defeats it: a job floored to
         # $2,500 with a $2,000 discount lands at $500 and, before this, warned only if profit
         # went negative. Sales holds quoting_create, so that lever is exactly the one they have.
-        floor_after_discount = float(result.get("profit_floor_guidance") or 0) or \
-            float((result.get("margin") or {}).get("effective_floor") or 0)
+        floor_after_discount = (config.job_profit_floor()
+                                if config.profit_floor_basis() != "weekly"
+                                else float(result.get("profit_floor_guidance") or 0))
         if (config.enforce_profit_floor() and floor_after_discount
                 and adjusted_profit < floor_after_discount
                 and "min_margin_breached" not in warnings):
@@ -686,6 +687,8 @@ def rates(
             # that we're on the job ... if it's one day it still counts as one week".
             "enforce_profit_floor": bool(cfg.get("enforce_profit_floor")),
             "profit_floor_days_per_week": cfg.get("profit_floor_days_per_week") or 6,
+            # "job" = one flat floor per job (current). "weekly" = x on-site weeks.
+            "profit_floor_basis": cfg.get("profit_floor_basis") or "job",
             # v2: repair (time-based) quote config — roof-type categories + daily labor rates
             "repair": cfg.get("repair") or {},
             # scope-of-work AI rewrite: saved default template ({"default_template": str})
