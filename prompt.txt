@@ -1,32 +1,60 @@
 Resume perkins-roofing/video-archival after a restart.
 
-READ FIRST: CONTINUATION-2026-07-24-pm.md (full state). HEAD == 738b638 (clean, pushed).
-SCRATCH: /tmp/claude-1000/-home-jon-projects-perkins-roofing-video-archival/fc25f81c-006d-444d-a7cf-26ac94fa2737/scratchpad
-  (per-session; if gone, durable state = DB + git + ~/perkins-corpus/)
+READ FIRST: CONTINUATION-2026-07-25.md (full state, mistakes, next actions).
+HEAD == b1a4277 (+ the docs commit that adds the continuation). Deployed image platform:b390ba6 —
+commits after it are docs/config-only; confirm with:
+  git diff --name-only b390ba6..HEAD | grep -v '^docs/'
+Prod pricing configs are at v13 on jupiter/miami/naples.
 
-WHERE THINGS STAND (2026-07-24 pm):
-- ARTICLES DONE: 375 compliant on STAGING; all 62 metal articles now LIVE. QC pass applied
-  (relativized prod-absolute links, repointed 169 dead cluster→pillar links, added down-links —
-  commit 12966ff / scripts/relink_hub.py). Gate fully deterministic (critic + video auto-heal).
-  Re-run after any new batch: scripts/backfill_article_videos.py + scripts/relink_hub.py --apply.
-- GMAIL-ENHANCED MCP fixed to run locally (cwd bug patched in ~/.claude.json — restart applies it;
-  copied cerberus's live DeGenito token). Read Tim's mail from ~/projects/gmail-enhanced-mcp.
-- TIM CORPUS pulled → ~/perkins-corpus/ (37 RoofR PDFs + OH calculators + pricing + manifest).
+WHERE THINGS STAND (2026-07-25)
 
-⛔ NEXT ACTIONS:
-1. Marketing meeting 7/27 2pm EST — build a content/SEO status brief (375 articles, metal live,
-   llms.txt/AIO, hub). Confirm agenda owner (DeGenito vs Wendy).
-2. TIM-GATED estimator writes (prod-critical — confirm with Tim first): apply the daily_series
-   overhead model from docs/ROOFR_OVERHEAD_TIERS.md (days=setup+rate*SQ), refresh PREFERRED
-   adder $160→$165, run scripts/seed_gutters_config.py (gutters already built, 13 tests).
-3. Get Wendy's actual style guide → then do #7 (settings page + site scan). BLOCKED without it.
-4. Optional: fuzzy-backfill the ~52 keyword-mismatch video links; T&C/FAQ proposal toggle.
-5. JON-GATED: prod cutover (staging→perkinsroofing.net); paid 3k article run.
+- ESTIMATOR NOW RUNS TIM'S METHOD. Days come from RoofR cut geometry (not squares), plus +0.5
+  install days at pitch >= 6/12. Against Tim's own day figures on 29 of his 30 homes:
+  93% within 1.0 day, 66% within 0.5, mean miss 0.53 days, mean overhead within $3/home.
+  Reproduce: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/tim_quote_breakdown.py
+  Refit:     scripts/fit_days_from_roofr.py   (leave-one-out, non-negative coefficients)
 
-DONE THIS SESSION (all pushed): articles QC + relativize + hub-relink (12966ff), lumber-chart
-optional proposal attachment (738b638), estimator overhead-tier analysis (docs/ROOFR_OVERHEAD_TIERS.md).
-Verified: #2 gutters already built, #4 warranty checker + page live, #5 metal live, #6 Greener done.
+- MONEY BUG, PARTLY FIXED. The flat published catalog under-quotes Tim's own build on 30/30 homes
+  (mean -$72/sq, worst -$150/sq). Tile full prices are now blocked from the catalog
+  (requires_engine_price -> 422). Shingle/metal still catalog-priceable and still under-quoting.
+  ⛔ JON/TIM DECISION: retire the flat catalog as a price, or re-issue it size-banded.
 
-GOTCHAS: EMBED_BACKEND=vertex for grounding; parallelize with separate processes not --workers>1;
-Cloud SQL proxy up; estimator config is the PAID product — don't write values without Tim.
+- UNBLOCKED: Tim's 77 sheet cell COMMENTS are readable via the Drive API + existing DWD grant
+  (7/17 item #9 assumed we had to ask him). Saved to ~/perkins-corpus/tim_sheet_comments.json.
+  They carry the material->price breakdowns, L/M/OH/P decompositions, the 7/12 adder (OH $90/sq)
+  and crew-size variants ("busy, 16+ guys" / "huge job").
+
+⛔ NEXT ACTIONS
+1. SEND TIM THE EMAIL — docs/email-drafts/2026-07-24-tim-estimator-quotes.md is a DRAFT, not sent.
+   It asks: why our quote beats his published sheet on all 29 homes, what differs on the four
+   1.5-day homes (esp. 1913 Flower Dr vs 918 Mil Creek — identical on paper, 9.5 vs 8.0 days),
+   the NOTES COLUMN he promised, 1141 Vintner Blvd's missing RoofR report, a few 7/12+ roofs, and
+   9 config values only he can fill.
+2. Decide the catalog question above.
+3. Build the price-book <-> aggregate-input linkage from the 77 comments (7/17 item #9's real work).
+4. BigQuery billing export so the GCP spend panel lights up: docs/BILLING_EXPORT_SETUP.md, then
+   BILLING_BQ_TABLE into deploy.sh BASE_ENV and redeploy.
+5. Not started: metal-adjacent article enumeration among the 262 scheduled; article
+   image-vs-YouTube-title-screen audit.
+6. Marketing brief for 7/27 — recommended DROPPED (that meeting is drip messaging / competitors /
+   appointment forms per Tim's 7/24 thread, not a content-SEO review). Jon to confirm.
+
+STILL PENDING TIM: 9 config values + 5 _pending notes — see CONTINUATION §4. His own sheet does
+NOT answer them (3-5 storey and 6+ crane adders are blank in his sheet too). PM incentive is the
+notable one: values match, KEYING does not, so a 35 SQ residential job takes $50 where his sheet
+says $100.
+
+GOTCHAS
+- EMBED_BACKEND=vertex and export GOOGLE_APPLICATION_CREDENTIALS="$(scripts/fetch_vertex_sa.sh)"
+  for anything retrieval-shaped; the .env default path does not exist.
+- Cloud SQL proxy on 127.0.0.1:5432; PW=$(gcloud secrets versions access latest --secret=db-password)
+- bash scripts/deploy.sh (not executable); refuses a dirty tree (R3-ENFORCE).
+- articles is keyed by slug — there is no id column.
+- Outbound mail is EMAIL_SEND_MODE=test; nothing reaches Tim without Jon flipping it.
+- CI gates on `ruff check core adapters api jobs` FIRST — a lint error there silently skips
+  bandit/pip-audit/coverage. It hid a red build for a full day.
+- Verify features end-to-end in PROD, not just with unit tests: the geometry model shipped inert
+  once because the route withheld its inputs, and the eaves model broke once because a caller
+  omitted eaves_lf. See CONTINUATION §7.
+
 R6: every commit updates docs + Jarvis + memory.

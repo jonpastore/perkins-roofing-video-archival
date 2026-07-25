@@ -78,5 +78,5 @@ The days/SQ RANGE = economy-of-scale (small roofs higher per-SQ), which the min-
 4. Get Wendy's style guide → do #7.
 5. Prod cutover + paid 3k run (Jon-gated).
 
-## ENV RECIPE (articles): see CONTINUATION-2026-07-24.md. EMBED_BACKEND=vertex; parallelize with
+## ENV RECIPE (articles): see docs/continuations/CONTINUATION-2026-07-24.md. EMBED_BACKEND=vertex; parallelize with
 separate processes not --workers>1; Cloud SQL proxy up. R6: commits update docs + memory.
