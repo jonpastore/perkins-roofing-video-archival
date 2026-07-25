@@ -16,6 +16,7 @@ Usage: PYTHONPATH=. .venv/bin/python scripts/fit_days_from_roofr.py
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -79,7 +80,54 @@ def _key(address: str) -> tuple[str, str]:
     return number, (rest[0][:3] if rest else "")
 
 
+def load_from_db() -> list[dict]:
+    """Rehydrate the homes from `measurements` instead of re-parsing 29 RoofR PDFs.
+
+    Seeded by scripts/seed_tim_measurements.py. Returns [] when nothing is stored or DB_URL is
+    unset, so `load()` falls back to parsing and this stays a cache, never a hard dependency.
+    """
+    if not os.environ.get("DB_URL"):
+        return []
+    try:
+        from sqlalchemy import select
+
+        from app.models import Measurement, SessionLocal
+    except Exception:
+        return []
+    s = SessionLocal()
+    s.info["tenant_id"] = 1
+    try:
+        rows = s.scalars(
+            select(Measurement).where(
+                Measurement.tenant_id == 1, Measurement.provider == "roofr"
+            )
+        ).all()
+        homes = []
+        for m in rows:
+            raw = m.raw_payload or {}
+            days = raw.get("tim_days") or {}
+            homes.append({
+                "address": m.address, "existing": raw.get("existing", ""),
+                "squares": m.total_sq or 0.0,
+                "demo": days.get("demo", 0.0), "shingle": days.get("shingle", 0.0),
+                "tile": days.get("tile", 0.0), "metal": days.get("metal", 0.0),
+                "area_sqft": raw.get("area_sqft", 0.0), "pitch": m.pitch_primary or 0.0,
+                "hips": m.hips_lf or 0.0, "valleys": m.valleys_lf or 0.0,
+                "ridges": m.ridges_lf or 0.0, "eaves": m.eaves_lf or 0.0,
+                "rakes": m.rakes_lf or 0.0, "wall_flash": m.wall_flashings_lf or 0.0,
+                "facets": raw.get("facets", 0.0), "two_story_sq": raw.get("two_story_sq", 0.0),
+                "pdf": raw.get("pdf", ""),
+            })
+        return homes
+    finally:
+        s.close()
+
+
 def load() -> list[dict]:
+    stored = load_from_db()
+    if stored:
+        print(f"{len(stored)} homes loaded from measurements (no PDF parsing)")
+        return stored
     ws = openpyxl.load_workbook(XLSX, data_only=True)["Sheet1"]
     homes = []
     for r in ws.iter_rows(min_row=2, values_only=True):
