@@ -1146,3 +1146,57 @@ def test_steepness_double_count_warns(cfg: PricingConfig):
     # and the adder really is the larger of the two effects, which is why it must be operator-visible
     li = {x["key"]: x["amount"] for x in steep["line_items_detail"]}
     assert li.get("pitch_7_12_add", 0) > 10_000
+
+
+def test_mixed_roof_prices_both_sections_as_one_job(cfg: PricingConfig):
+    """A sloped+flat roof is ONE job: both areas priced, whole-job items charged once.
+
+    Tim's 30-home sheet has a "Squares (Flat)" column and 9 of those homes use it — up to 34% of
+    the roof. slope_type is exclusive, so before this the flat area was silently not quoted at all.
+    """
+    kw = dict(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
+              project_kind="residential", demo=True, existing_roof="tile")
+    sloped = estimate(cfg, QuoteInput(num_squares=32.5, **kw))
+    mixed = estimate(cfg, QuoteInput(num_squares=32.5, flat_squares=17.0,
+                                     flat_roof_type="polyglass_sav_sap", **kw))
+    keys = [li["key"] for li in mixed["line_items_detail"]]
+
+    assert mixed["project_total"] > sloped["project_total"]          # the flat area is now priced
+    assert "flat_base_cost_lm" in keys and "flat_overhead" in keys   # ...with its own L+M and OH
+    assert keys.count("profit") == 1                                 # one profit line, not two
+    assert keys.count("permit_processing") == 1                      # fixed fees charged once
+    assert keys.count("delivery_plywood_vents") == 1
+    assert not any(k.startswith("flat_") and k.endswith(("roof_height", "trash_chute"))
+                   for k in keys)                                    # whole-job items stay singular
+    assert any("mixed_roof_priced" in w for w in mixed["warnings"])
+
+
+def test_mixed_roof_profit_bands_on_combined_squares(cfg: PricingConfig):
+    """Profit bands on JOB SIZE. 28 sloped + 8 flat is a 36-square job, not a 28-square one.
+
+    Sizes chosen above the $2,500 floor's bite (~23 sq) so this measures the BAND, not the floor —
+    at 18 squares the floor returns $138.89/sq and the band is invisible.
+    """
+    kw = dict(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
+              project_kind="residential", demo=True, existing_roof="tile")
+    sloped = estimate(cfg, QuoteInput(num_squares=28.0, **kw))
+    mixed = estimate(cfg, QuoteInput(num_squares=28.0, flat_squares=8.0,
+                                     flat_roof_type="polyglass_sav_sap", **kw))
+
+    def profit_per_sq(r):
+        return next(li["per_sq"] for li in r["line_items_detail"] if li["key"] == "profit")
+
+    # 28 sq sits in the 20-29 band ($110); 36 sq sits in 30+ ($100)
+    assert profit_per_sq(sloped) == 110
+    assert profit_per_sq(mixed) == 100
+    # and it is applied to the whole roof, not just the sloped part
+    total = next(li["amount"] for li in mixed["line_items_detail"] if li["key"] == "profit")
+    assert abs(total - 100 * 36.0) < 0.01
+
+
+def test_mixed_roof_requires_a_flat_system(cfg: PricingConfig):
+    """Flat squares with no system named must fail loudly, not price at $0."""
+    with pytest.raises(ConfigError, match="flat_roof_type"):
+        estimate(cfg, QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
+                                 num_squares=30.0, flat_squares=10.0,
+                                 project_kind="residential"))

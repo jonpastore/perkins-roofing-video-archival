@@ -630,6 +630,10 @@ export function Quoting() {
   // permit_commercial_add and both commercial PM bands were dead), tile pointing was always "no",
   // and the specialty-tile upgrades were never sent at all.
   const [quoteRoofCutsPerSq, setQuoteRoofCutsPerSq] = useState("");
+  // Mixed roofs: 9 of the 30 homes Tim sent have a flat section, up to 34% of the roof, and it was
+  // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
+  const [quoteFlatSquares, setQuoteFlatSquares] = useState("");
+  const [quoteFlatRoofType, setQuoteFlatRoofType] = useState("");
   const [quoteProjectKind, setQuoteProjectKind] = useState<"residential" | "commercial">("residential");
   const [quoteTilePointing, setQuoteTilePointing] = useState<"no" | "yes">("no");
   const [quoteSpecialtyTile, setQuoteSpecialtyTile] = useState<string>("");
@@ -1080,6 +1084,8 @@ export function Quoting() {
       roof_type: quoteRoofType,
       slope_type: isLowSlopeRoofType ? "low_slope" : "sloped",
       num_squares: selectedMeasurement.total_sq,
+      flat_squares: quoteFlatSquares.trim() === "" ? undefined : Number(quoteFlatSquares),
+      flat_roof_type: quoteFlatSquares.trim() === "" ? undefined : (quoteFlatRoofType || undefined),
       measurement_id: selectedMeasurement.id,
       project_kind: quoteProjectKind,
       roof_cuts: quoteRoofCuts,
@@ -1837,6 +1843,28 @@ export function Quoting() {
                       {quotePitch712 ? " — adder applies" : ""}
                     </span>
                   </label>
+                </div>
+              )}
+              {!isLowSlopeRoofType && (
+                <div>
+                  <FieldLabel>Flat section (squares)</FieldLabel>
+                  <input
+                    value={quoteFlatSquares}
+                    onChange={(e) => setQuoteFlatSquares(e.target.value)}
+                    placeholder="0 — leave blank if none"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+              {!isLowSlopeRoofType && quoteFlatSquares.trim() !== "" && (
+                <div>
+                  <FieldLabel>Flat section system</FieldLabel>
+                  <select value={quoteFlatRoofType} onChange={(e) => setQuoteFlatRoofType(e.target.value)} style={selectStyle}>
+                    <option value="">Select a system…</option>
+                    {lowSlopeTypes.map((t) => (
+                      <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+                    ))}
+                  </select>
                 </div>
               )}
               <div>

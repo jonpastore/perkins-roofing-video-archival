@@ -121,6 +121,9 @@ class QuoteRequest(BaseModel):
     # at the boundary with a length cap and let the engine's ConfigError guard unknown keys (→422).
     roof_type: str = Field(default="13_tile", max_length=40)
     num_squares: float = Field(..., gt=0)
+    # A roof with both sections is one job. Tim's own sheet has a "Squares (Flat)" column.
+    flat_squares: float = Field(default=0, ge=0)
+    flat_roof_type: Optional[str] = Field(default=None, max_length=40)
     roof_cuts: Literal["low", "medium", "high"] = "low"
     roof_cuts_per_sq: Optional[float] = Field(default=None, ge=0)  # explicit $/sq overrides the pick
     roof_height: Literal["1_story", "2_stories", "3_5_stories", "6_plus"] = "1_story"
@@ -290,6 +293,8 @@ def quote(
         slope_type=effective_slope_type,
         roof_type=body.roof_type,
         num_squares=body.num_squares,
+        flat_squares=body.flat_squares,
+        flat_roof_type=body.flat_roof_type,
         county=body.county,
         roof_cuts=body.roof_cuts,
         roof_cuts_per_sq=body.roof_cuts_per_sq,

@@ -376,6 +376,10 @@ class QuoteInput:
     code_zone: Optional[Zone] = None      # "HVHZ" | "FBC" — preferred field name (F2)
     slope_type: SlopeType = "sloped"      # "sloped" | "low_slope"
     county: Optional[str] = None          # "miami_dade" | "broward" | "palm_beach" | "lee" | "st_lucie"
+    # A roof with both a sloped and a flat section is one job, not two. Tim's own sheet has a
+    # "Squares (Flat)" column alongside the sloped one and prices them together.
+    flat_squares: float = 0.0
+    flat_roof_type: Optional[str] = None   # a low_slope.base_cost_lm key, e.g. polyglass_sav_sap
     roof_cuts: str = "low"               # low | medium | high (the guide)
     roof_cuts_per_sq: Optional[float] = None   # explicit $/sq; overrides the categorical pick
     roof_height: str = "1_story"         # 1_story | 2_stories | 3_5_stories | 6_plus
@@ -1138,6 +1142,42 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     else:
         per_sq_items = _build_low_slope(config, q)
 
+    # MIXED ROOFS. Tim's own 30-home sheet carries a "Squares (Flat)" column and a
+    # "Flat (days) - if existing" column: 9 of those 30 homes have a flat section, up to 34% of the
+    # roof. slope_type is exclusive, so before this the flat area was simply not quoted — $60,535 of
+    # marginal value missing across 8 homes. The flat section contributes only its own PER-AREA
+    # lines; everything whole-job (profit, roof height, trash chute) stays singular and is banded on
+    # the COMBINED squares below.
+    total_sq = q.num_squares + (q.flat_squares or 0.0)
+    flat_items: list[LineItem] = []
+    if q.slope_type == "sloped" and q.flat_squares and q.flat_squares > 0:
+        if not q.flat_roof_type:
+            raise ConfigError(
+                "flat_squares supplied without flat_roof_type — a flat section cannot be priced "
+                "without knowing its system. Pick one from low_slope.base_cost_lm."
+            )
+        flat_q = replace(q, slope_type="low_slope", roof_type=q.flat_roof_type,
+                         num_squares=q.flat_squares)
+        CARRIES_OVER = {"base_cost_lm", "overhead", "tear_off", "deck_type",
+                        "insulation", "tapered"}
+        for li in _build_low_slope(config, flat_q):
+            if li.key not in CARRIES_OVER:
+                continue
+            flat_items.append(replace(li, key=f"flat_{li.key}", label=f"Flat roof — {li.label}"))
+        per_sq_items = per_sq_items + flat_items
+
+        # Profit bands on JOB SIZE, so a 32.5 + 17 roof is a 49.5-square job and must not be
+        # priced at the 32.5-square band. Rebuild the single profit line on the combined squares.
+        # (Skipped when the operator set profit explicitly — that is never overridden.)
+        if q.profit_mode != "flat" and q.override_profit_per_sq is None:
+            pft = config.profit_per_sq(total_sq)
+            per_sq_items = [li for li in per_sq_items if li.key != "profit"] + [
+                LineItem("profit", "Profit", pft * total_sq,
+                         config.raw["cost_category_tags"]["profit"], pft, explain={
+                             "formula": "profit_per_sq(sloped_sq + flat_sq) x (sloped_sq + flat_sq)",
+                             "inputs": {"sloped_sq": q.num_squares, "flat_sq": q.flat_squares,
+                                        "total_sq": total_sq, "per_sq": pft}})]
+
     fixed_items = _build_fixed(config, q, zone)
     optional_items = _build_optional(config, q, zone)
 
@@ -1179,6 +1219,15 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
                 "additional layer beyond first'. Confirm the basis before sending — pending Tim."
             )
 
+    if flat_items:
+        warnings.append(
+            f"mixed_roof_priced: {q.num_squares:g} sloped + {q.flat_squares:g} flat squares quoted "
+            f"as ONE job. Profit, PM incentive and the profit floor band on the combined "
+            f"{total_sq:g} squares; the flat section contributes its own base, overhead and "
+            "tear-off only. Tim prices these together on his own sheet, but we have no sold mixed "
+            "roof to check the split against — review before sending."
+        )
+
     # Tim's sheet, note behind the coating block: "Coating Prices Based on 25+ squares (Demo not
     # included in price - add $100)". Deliberately unpriced: we know the published rate assumes a
     # 25-square job and excludes demo, but not what a 10-square coating should carry, and inventing
@@ -1197,7 +1246,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
                 "(Tim's sheet says add $100/sq). Confirm the demo charge — pending Tim."
             )
     try:
-        pm_val = config.pm_incentive(zone, q.project_kind, q.num_squares)
+        pm_val = config.pm_incentive(zone, q.project_kind, total_sq)
     except ConfigError as exc:
         pm_val = 0.0
         warnings.append(
@@ -1209,7 +1258,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
                    "(<20 $50 / 20-50 $100 / >50 $250) while ours also keys on "
                    "residential-vs-commercial with no residential band above 20 sq — pending "
                    "item #1 with Tim, so a 35 sq residential job can take $50 where he says $100.",
-        "inputs": {"squares": q.num_squares, "project_kind": q.project_kind, "zone": zone,
+        "inputs": {"squares": total_sq, "project_kind": q.project_kind, "zone": zone,
                    "pm_incentive_table": config.raw.get("pm_incentive")}})
 
     # Cut-calculator advisories. The geometry base and the categorical roof_cuts low/med/high
@@ -1244,7 +1293,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
         q.override_profit_per_sq is not None)
     guidance = compute_profit_guidance(config, q.daily_series or [])
     floored = _apply_min_margin(
-        config, all_items, q.num_squares, explicit_profit,
+        config, all_items, total_sq, explicit_profit,
         effective_floor=guidance["effective_floor"], on_site_weeks=guidance["on_site_weeks"])
     if floored:
         warnings.append(floored)
@@ -1253,9 +1302,9 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
 
     # Per-square subtotal (sum of per-sq items only)
     per_sq_total_val = sum(
-        li.amount / q.num_squares
+        li.amount / total_sq
         for li in per_sq_items
-        if li.per_sq is not None and q.num_squares > 0
+        if li.per_sq is not None and total_sq > 0
     )
     squares_subtotal = sum(li.amount for li in per_sq_items)
 
