@@ -31,14 +31,16 @@ from __future__ import annotations
 import argparse
 import sys
 
-# Verified against the live sheet 2026-07-25. HVHZ = the "Tim (HVHZ)" tab (Miami),
-# FBC = the "FBC (Palm / Lee / St. Lucie)" tab (Jupiter).
-ZONED_ADDS = {
-    "pitch_7_12_add": {"HVHZ": 200, "FBC": 305},
-    "tile_demo_add": {"HVHZ": 40, "FBC": 30},
-    "metal_demo_add": {"HVHZ": 60, "FBC": 45},
-    "winterguard_add": {"HVHZ": 140, "FBC": 150},
-}
+# ⚠️ REMOVED 2026-07-25. This block used to carry the zoned adders read off the sheet HEADLINES
+# (pitch_7_12 HVHZ 200 / FBC 305, winterguard HVHZ 140 / FBC 150). scripts/seed_comment_derived_adders.py
+# later replaced those with the values Tim's own CELL COMMENTS build to (305/305 and 135/135), which
+# is now what prod runs. The two seeders were not idempotent against each other: re-running this one —
+# a plausible thing to do when finally seeding Naples' office burn — silently reverted the
+# comment-derived pricing with no diff to review.
+#
+# This script now writes ONLY office burn. Zoned adders belong to seed_comment_derived_adders.py;
+# that is the single writer. See docs/four-way-review-2026-07-25.md F11.
+ZONED_ADDS: dict = {}
 
 # $/man-day of the office the base daily_overhead_rates were measured in (Jupiter, 7-men column).
 OH_BASIS_REFERENCE = 200

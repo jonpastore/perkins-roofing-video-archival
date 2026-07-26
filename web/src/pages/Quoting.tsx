@@ -156,6 +156,7 @@ interface EstimatorRates {
   daily_overhead_rates?: Record<string, number>;
   cut_calc_available?: boolean;
   tile_brands?: Record<string, string>;
+  specialty_tile?: Record<string, number>;
   default_tile_brand?: string | null;
   low_slope?: {
     deck_types?: Record<string, number | null>;
@@ -618,6 +619,18 @@ export function Quoting() {
   const [quoteRoofCuts, setQuoteRoofCuts] = useState<"low" | "medium" | "high">("low");
   const [baseTileBrand, setBaseTileBrand] = useState<string>("");
   const [quoteRoofHeight, setQuoteRoofHeight] = useState<"1_story" | "2_stories" | "3_5_stories">("1_story");
+  // These four were hardcoded in buildQuoteBody, which made every dimension they drive unreachable
+  // from the app: the 7/12+ adder could never fire, no commercial job could be quoted (so
+  // permit_commercial_add and both commercial PM bands were dead), tile pointing was always "no",
+  // and the specialty-tile upgrades were never sent at all.
+  const [quoteRoofCutsPerSq, setQuoteRoofCutsPerSq] = useState("");
+  const [quoteProjectKind, setQuoteProjectKind] = useState<"residential" | "commercial">("residential");
+  const [quoteTilePointing, setQuoteTilePointing] = useState<"no" | "yes">("no");
+  const [quoteSpecialtyTile, setQuoteSpecialtyTile] = useState<string>("");
+  // Pitch comes from the RoofR measurement, which already drives the day model's steep-roof adder.
+  // Tim's sheet steps the money adder at 7/12; the day model steps at 6/12 (fitted). Different
+  // thresholds for one phenomenon — flagged for Tim, not reconciled here.
+  const pitch712 = Number(selectedMeasurement?.pitch_primary ?? 0) >= 7;
   const [quoteExistingRoof, setQuoteExistingRoof] = useState<"none" | "shingle" | "tile" | "metal" | "flat">("none");
   const [quoteLayersToRemove, setQuoteLayersToRemove] = useState("0");
   // Low-slope builder inputs (deck/attach system + insulation/tapered) — only sent when the
@@ -639,7 +652,9 @@ export function Quoting() {
   const [quoteLeafGuard, setQuoteLeafGuard] = useState<"none" | "std" | "upgraded">("none");
   const [quoteLeaderheadsRes, setQuoteLeaderheadsRes] = useState("");
   const [quoteLeaderheadsComm, setQuoteLeaderheadsComm] = useState("");
-  const [quoteOverheadMode, setQuoteOverheadMode] = useState<"per_sq" | "daily">("per_sq");
+  // By-time is the default: Tim prices overhead off how long the job takes, and calls the
+  // per-square column "a guide, not a rule" (Zoom 2026-07-17). Days auto-derive from geometry.
+  const [quoteOverheadMode, setQuoteOverheadMode] = useState<"per_sq" | "daily">("daily");
   const [quoteDemoDays, setQuoteDemoDays] = useState("");
   const [quoteInstallDays, setQuoteInstallDays] = useState("");
   const [targetProfitPct, setTargetProfitPct] = useState("");
@@ -1036,10 +1051,12 @@ export function Quoting() {
     // If both map to the same series (flat roofs), sum them.
     const demoD = Number(quoteDemoDays || 0);
     const installD = Number(quoteInstallDays || 0);
-    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? "demo_dry_in_flat";
+    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? null;
     const dailyMap: Record<string, number> = {};
     if (demoD > 0) dailyMap["demo_dry_in_flat"] = (dailyMap["demo_dry_in_flat"] ?? 0) + demoD;
-    if (installD > 0) dailyMap[installSeries] = (dailyMap[installSeries] ?? 0) + installD;
+    // No mapping for this roof type => omit the install series entirely rather than billing it
+    // at the DEMO day rate ($1,050), which the old `?? "demo_dry_in_flat"` fallback did silently.
+    if (installD > 0 && installSeries) dailyMap[installSeries] = (dailyMap[installSeries] ?? 0) + installD;
     const dailySeries = Object.entries(dailyMap).map(([series, days]) => ({ series, days }));
     return {
       branch: selectedCustomer?.branch || "miami",
@@ -1048,12 +1065,14 @@ export function Quoting() {
       slope_type: isLowSlopeRoofType ? "low_slope" : "sloped",
       num_squares: selectedMeasurement.total_sq,
       measurement_id: selectedMeasurement.id,
-      project_kind: "residential",
+      project_kind: quoteProjectKind,
       roof_cuts: quoteRoofCuts,
+      roof_cuts_per_sq: quoteRoofCutsPerSq.trim() === "" ? undefined : Number(quoteRoofCutsPerSq),
       base_tile_brand: baseTileBrand || undefined,
       roof_height: quoteRoofHeight,
-      tile_pointing: "no",
-      pitch_7_12: false,
+      tile_pointing: quoteTilePointing,
+      pitch_7_12: pitch712,
+      specialty_tile: quoteSpecialtyTile || undefined,
       existing_roof: quoteExistingRoof,
       demo: quoteExistingRoof !== "none",
       layers_to_remove: Number(quoteLayersToRemove || 0),
@@ -1778,6 +1797,43 @@ export function Quoting() {
                   <option value="high">High</option>
                 </select>
               </div>
+              <div>
+                <FieldLabel>Roof cuts $/sq (overrides the pick)</FieldLabel>
+                <input
+                  value={quoteRoofCutsPerSq}
+                  onChange={(e) => setQuoteRoofCutsPerSq(e.target.value)}
+                  placeholder="e.g. 45 — hand-load, no truck access"
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <FieldLabel>Project kind</FieldLabel>
+                <select value={quoteProjectKind} onChange={(e) => setQuoteProjectKind(e.target.value as "residential" | "commercial")} style={selectStyle}>
+                  <option value="residential">Residential</option>
+                  <option value="commercial">Commercial</option>
+                </select>
+              </div>
+              {!isLowSlopeRoofType && (
+                <div>
+                  <FieldLabel>Tile pointing / alum upgrade</FieldLabel>
+                  <select value={quoteTilePointing} onChange={(e) => setQuoteTilePointing(e.target.value as "no" | "yes")} style={selectStyle}>
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </div>
+              )}
+              {!isLowSlopeRoofType && rates?.specialty_tile
+                && Object.keys(rates.specialty_tile).length > 0 && (
+                <div>
+                  <FieldLabel>Specialty tile upgrade</FieldLabel>
+                  <select value={quoteSpecialtyTile} onChange={(e) => setQuoteSpecialtyTile(e.target.value)} style={selectStyle}>
+                    <option value="">None</option>
+                    {Object.keys(rates.specialty_tile).map((k) => (
+                      <option key={k} value={k}>{k.replace(/_/g, " ")}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {rates?.cut_calc_available
                 && (quoteRoofType === "13_tile" || quoteRoofType === "barrel_tile")
                 && rates.tile_brands && Object.keys(rates.tile_brands).length > 0 && (
@@ -1973,12 +2029,12 @@ export function Quoting() {
                   {Object.keys(rates?.daily_overhead_rates ?? {}).length === 0 ? (
                     <div style={{ fontSize: 12, color: BRAND.sub }}>No daily overhead rates configured for this branch.</div>
                   ) : (() => {
-                    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? "demo_dry_in_flat";
+                    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? null;
                     const rate = rates?.daily_overhead_rates?.[installSeries];
                     return (
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10, alignItems: "end" }}>
                         <div style={{ fontSize: 12, color: BRAND.sub }}>
-                          Install crew rate: <strong>{rate != null ? usd(rate) : "—"}/day</strong> ({installSeries.replace(/_/g, " ")})
+                          Install crew rate: <strong>{rate != null ? usd(rate) : "—"}/day</strong>{installSeries ? ` (${installSeries.replace(/_/g, " ")})` : " — no daily rate mapped for this roof type"}
                         </div>
                         <div>
                           <FieldLabel>Install days</FieldLabel>

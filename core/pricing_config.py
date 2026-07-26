@@ -306,17 +306,61 @@ class PricingConfig:
         """
         return float(self.raw["low_slope"].get("wood_deck_oh_adder") or 0)
 
-    def low_slope_insulation_cost(self, num_squares: float) -> float:
-        tiers = self.raw["low_slope"]["insulation_tiers"]
-        if not tiers:
+    #: legacy `insulation_tiers` rows, in the order Tim's sheet lists them (cells K15/K16/K17).
+    INSULATION_THICKNESSES = ("1in", "1_5in", "2in")
+
+    def low_slope_insulation_cost(self, thickness: str = "1in") -> float:
+        """Return the per-sq insulation cost for a board THICKNESS.
+
+        Tim keys these on thickness, not job size: 1" $255 / 1.5" $275 / 2" $310 (K15/K16/K17).
+        The old schema was `insulation_tiers = [[max_sq, price], ...]`, a job-size breakpoint shape.
+        Because thickness is not size, every row was written with `max_sq: null`, so the lookup
+        returned on the first row and **every low-slope job priced at the 1" rate** — the $275 and
+        $310 rows were unreachable and no input selected between them. Silent under-quote of
+        $20-55/sq on any 1.5" or 2" spec.
+
+        Reads `insulation_by_thickness` when present; otherwise maps the legacy null-bounded
+        `insulation_tiers` rows positionally, which is exactly what their own config note says they
+        mean ("type-based not sq-range-based").
+        """
+        ls = self.raw["low_slope"]
+        by_thickness = ls.get("insulation_by_thickness")
+        if not by_thickness:
+            tiers = ls.get("insulation_tiers") or []
+            if not tiers:
+                raise ConfigError(
+                    "low_slope insulation is unpriced: set low_slope.insulation_by_thickness "
+                    "{1in, 1_5in, 2in} from Tim's sheet (K15/K16/K17)."
+                )
+            by_thickness = {
+                name: row[1]
+                for name, row in zip(self.INSULATION_THICKNESSES, tiers)
+                if row and row[1] is not None
+            }
+        if thickness not in by_thickness:
             raise ConfigError(
-                "low_slope.insulation_tiers is empty. "
-                "Tim must supply tiered insulation cost-per-sq breakpoints."
+                f"low_slope insulation thickness {thickness!r} is not priced. "
+                f"Known: {sorted(by_thickness)}."
             )
-        for max_sq, cost_per_sq in tiers:
-            if max_sq is None or num_squares <= max_sq:
-                return float(cost_per_sq)
-        return float(tiers[-1][1])
+        return float(self.get_or_raise(
+            by_thickness[thickness], f"low_slope.insulation_by_thickness[{thickness}]"
+        ))
+
+    def low_slope_tear_off_total(self) -> float:
+        """Full per-sq, per-layer low-slope tear-off cost.
+
+        Tim's sheet (M15-N18) breaks a layer into additional hauling $20 + labor $20 + OH $35 = $75,
+        and notes "$75 extra per layer". The engine previously charged only
+        `tear_off_per_layer_per_sq` ($20) and left `tear_off_extras` unread, billing ~27% of the
+        configured cost. Sums the numeric components of tear_off_extras when present; falls back to
+        the single scalar for configs that predate the block.
+        """
+        extras = self.raw["low_slope"].get("tear_off_extras") or {}
+        components = [v for k, v in extras.items()
+                      if not k.startswith("_") and isinstance(v, (int, float))]
+        if components:
+            return float(sum(components))
+        return self.low_slope_tear_off_cost()
 
     def low_slope_tapered_cost(self) -> float:
         val = self.raw["low_slope"]["tapered_cost_per_sq"]

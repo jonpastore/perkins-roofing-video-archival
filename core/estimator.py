@@ -376,7 +376,8 @@ class QuoteInput:
     code_zone: Optional[Zone] = None      # "HVHZ" | "FBC" — preferred field name (F2)
     slope_type: SlopeType = "sloped"      # "sloped" | "low_slope"
     county: Optional[str] = None          # "miami_dade" | "broward" | "palm_beach" | "lee" | "st_lucie"
-    roof_cuts: str = "low"               # low | medium | high
+    roof_cuts: str = "low"               # low | medium | high (the guide)
+    roof_cuts_per_sq: Optional[float] = None   # explicit $/sq; overrides the categorical pick
     roof_height: str = "1_story"         # 1_story | 2_stories | 3_5_stories | 6_plus
     tile_pointing: str = "no"            # no | yes
     specialty_tile: Optional[str] = None
@@ -396,6 +397,7 @@ class QuoteInput:
     layers_to_remove: int = 0
     deck_type: Optional[str] = None
     include_insulation: bool = False
+    insulation_thickness: str = "1in"    # 1in | 1_5in | 2in — Tim prices board by thickness
     include_tapered: bool = False
 
     # RoofR cut linear-footages — drive Tim's custom cut calculator. When any is set and the
@@ -779,7 +781,13 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
             "inputs": {"per_sq": pft, "squares": sq, "profit_scale": config.raw.get("profit_scale"),
                        "overridden": q.override_profit_per_sq is not None}}))
 
-    cuts_val = config.raw["roof_cuts"][q.roof_cuts]
+    # Tim uses this cell as a free-form dollar catch-all, not a three-way pick: his own worked
+    # example was $45/sq to hand-load a rear roof a delivery truck cannot reach, and he describes
+    # the field as "for roof cuts or for random stuff like extra delivery fee" (Zoom 2026-07-17
+    # [03:29]). $45 is not expressible as low/medium/high ($0/$25/$50), so the categorical picker
+    # stays as the guide and an explicit dollar amount overrides it.
+    cuts_val = (q.roof_cuts_per_sq if q.roof_cuts_per_sq is not None
+                else config.raw["roof_cuts"][q.roof_cuts])
     if cuts_val:
         items.append(LineItem("roof_cuts", "Roof Cuts", cuts_val * sq, tags["roof_cuts"], cuts_val))
 
@@ -1130,6 +1138,24 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     # PM incentive
     tags = config.raw["cost_category_tags"]
     warnings: list[str] = []
+
+    # Tim's sheet, note behind the coating block: "Coating Prices Based on 25+ squares (Demo not
+    # included in price - add $100)". Deliberately unpriced: we know the published rate assumes a
+    # 25-square job and excludes demo, but not what a 10-square coating should carry, and inventing
+    # that number is how the last several pricing defects happened. Warn, and let Tim answer.
+    if q.slope_type == "low_slope" and config.is_all_in(q.roof_type):
+        min_sq = config.raw["low_slope"].get("coating_price_basis_min_sq") or 25
+        if q.num_squares < min_sq:
+            warnings.append(
+                f"coating_below_price_basis: {q.roof_type} is published on a {min_sq:g}-square "
+                f"basis but this job is {q.num_squares:g} squares, so the per-square price does not "
+                "carry a smaller job's profit density. Review before sending — pending Tim."
+            )
+        if q.demo or q.layers_to_remove:
+            warnings.append(
+                f"coating_demo_not_in_price: {q.roof_type} is an all-in price that EXCLUDES demo "
+                "(Tim's sheet says add $100/sq). Confirm the demo charge — pending Tim."
+            )
     try:
         pm_val = config.pm_incentive(zone, q.project_kind, q.num_squares)
     except ConfigError as exc:
@@ -1278,6 +1304,7 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     base = config.low_slope_base(zone, rt)
     items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
 
+
     if not config.is_all_in(rt):
         # Overhead — per_sq mode (default) or day-based mode (v2)
         if q.overhead_mode == "daily" and q.daily_series:
@@ -1301,7 +1328,11 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
             items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
 
     if q.layers_to_remove:
-        tear_off = config.low_slope_tear_off_cost()
+        # Tim's sheet (M15-N18) prices a low-slope tear-off layer as three components:
+        # additional hauling $20 + labor $20 + OH $35 = $75/sq, with "NOTE: $75 extra per layer".
+        # We were charging only tear_off_per_layer_per_sq ($20) — about 27% of the real cost, with
+        # the other two components sitting unread in tear_off_extras. Sum them when present.
+        tear_off = config.low_slope_tear_off_total()
         items.append(LineItem("tear_off", "Tear-Off", tear_off * q.layers_to_remove * sq, "Labor"))
 
     if q.deck_type and q.deck_type != "existing_concrete":
@@ -1309,7 +1340,7 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
         items.append(LineItem("deck_type", "Deck Replacement", deck_cost * sq, "Materials"))
 
     if q.include_insulation:
-        ins_cost = config.low_slope_insulation_cost(sq)
+        ins_cost = config.low_slope_insulation_cost(q.insulation_thickness)
         items.append(LineItem(
             "insulation", "Insulation", ins_cost * sq, tags["insulation"],
             floor_excluded=config.raw["floor_excluded_categories"].get("insulation", []),

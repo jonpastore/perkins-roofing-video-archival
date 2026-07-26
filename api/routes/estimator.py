@@ -122,6 +122,7 @@ class QuoteRequest(BaseModel):
     roof_type: str = Field(default="13_tile", max_length=40)
     num_squares: float = Field(..., gt=0)
     roof_cuts: Literal["low", "medium", "high"] = "low"
+    roof_cuts_per_sq: Optional[float] = Field(default=None, ge=0)  # explicit $/sq overrides the pick
     roof_height: Literal["1_story", "2_stories", "3_5_stories", "6_plus"] = "1_story"
     tile_pointing: Literal["no", "yes"] = "no"
     specialty_tile: Optional[str] = None
@@ -161,6 +162,7 @@ class QuoteRequest(BaseModel):
     leaderheads_comm: int = Field(default=0, ge=0)
     deck_type: Optional[str] = None
     include_insulation: bool = False
+    insulation_thickness: Literal["1in", "1_5in", "2in"] = "1in"
     include_tapered: bool = False
     measurement_id: Optional[int] = None
     config_id: Optional[int] = None      # null = use active config; explicit = pin to version
@@ -168,8 +170,12 @@ class QuoteRequest(BaseModel):
     override_overhead: Optional[float] = None
     override_profit_per_sq: Optional[float] = None
 
-    # v2: day-based overhead + flat profit mode
-    overhead_mode: Literal["per_sq", "daily"] = "per_sq"
+    # Day-based overhead is the DEFAULT. Tim, Zoom 2026-07-17 [09:46]: "that's how we get the
+    # overhead is based on time, it's not using this thing here, this is just a guide ... more of a
+    # guide than it is a rule". per_sq remains available for comparison, but shipping it as the
+    # default meant every quote used the number he calls a guide. Days are auto-derived from the
+    # roof's geometry when the caller supplies none (see derive_daily_series).
+    overhead_mode: Literal["per_sq", "daily"] = "daily"
     daily_series: list[DailySeriesItem] = Field(default_factory=list)
     profit_mode: Literal["scale", "flat"] = "scale"
     flat_profit_dollars: Optional[float] = Field(default=None, ge=0)
@@ -286,6 +292,7 @@ def quote(
         num_squares=body.num_squares,
         county=body.county,
         roof_cuts=body.roof_cuts,
+        roof_cuts_per_sq=body.roof_cuts_per_sq,
         roof_height=body.roof_height,
         tile_pointing=body.tile_pointing,
         specialty_tile=body.specialty_tile,
@@ -311,6 +318,7 @@ def quote(
         leaderheads_comm=body.leaderheads_comm,
         deck_type=body.deck_type,
         include_insulation=body.include_insulation,
+        insulation_thickness=body.insulation_thickness,
         include_tapered=body.include_tapered,
         override_base_cost=body.override_base_cost,
         override_overhead=body.override_overhead,
@@ -400,9 +408,16 @@ def quote(
         # straight off profit here, so the first discount silently defeats it: a job floored to
         # $2,500 with a $2,000 discount lands at $500 and, before this, warned only if profit
         # went negative. Sales holds quoting_create, so that lever is exactly the one they have.
-        floor_after_discount = (config.job_profit_floor()
-                                if config.profit_floor_basis() != "weekly"
-                                else float(result.get("profit_floor_guidance") or 0))
+        # profit_floor_guidance is nested inside result["profit_guidance"], never top level. Reading
+        # it flat returned None -> 0.0 -> falsy, so the `and floor_after_discount` conjunct below
+        # short-circuited and this guard could NEVER fire under the weekly basis. Dead since it was
+        # written; only harmless because prod ran "job".
+        if config.profit_floor_basis() == "weekly":
+            guidance = result.get("profit_guidance") or {}
+            floor_after_discount = float(guidance.get("effective_floor")
+                                         or guidance.get("profit_floor_guidance") or 0)
+        else:
+            floor_after_discount = config.job_profit_floor()
         if (config.enforce_profit_floor() and floor_after_discount
                 and adjusted_profit < floor_after_discount
                 and "min_margin_breached" not in warnings):

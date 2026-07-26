@@ -474,7 +474,7 @@
         310
       ]
     ],
-    "_note_insulation_tiers": "From sheet: board_1in $255, board_1_5in $275, board_2in $310 per sq (no profit). Tiers are type-based not sq-range-based \u2014 all have null max so first match wins; v1 uses first entry (1-in board default). Tapered system is separate (tapered_cost_per_sq). No OH or profit on insulation per Exhibit B.",
+    "_note_insulation_tiers": "LEGACY \u2014 superseded by insulation_by_thickness. Do not edit.",
     "tapered_cost_per_sq": 400,
     "deck_types": {
       "existing_concrete": 0,
@@ -507,6 +507,16 @@
       "_note_5_plus": "5+ stories requires crane \u2014 manual quote only (null = not engine-quoted). 3-5 stories uses trash_chute_flat_add."
     },
     "trash_chute_flat_add": 1500,
-    "crane_threshold_stories": 3
-  }
+    "crane_threshold_stories": 3,
+    "insulation_by_thickness": {
+      "1in": 255,
+      "1_5in": 275,
+      "2in": 310
+    },
+    "_note_insulation_by_thickness": "Tim's sheet K15/K16/K17: 1\" board ($50 L, $155 M, $50 OH) = $255; 1.5\" ($50/$175/$50) = $275; 2\" ($50/$210/$50) = $310. Per-sq, no profit. These are keyed on BOARD THICKNESS, not job size. The old insulation_tiers schema was [max_sq, price]; because thickness is not size every row carried max_sq:null, so the lookup returned on the first row and EVERY low-slope job priced at the 1\" rate. Superseded 2026-07-25; insulation_tiers is retained only so already-seeded configs keep resolving via the positional fallback in low_slope_insulation_cost()."
+  },
+  "enforce_profit_floor": true,
+  "profit_floor_basis": "job",
+  "profit_floor_days_per_week": 6.0,
+  "_note_profit_floor_keys": "Added to the fixture 2026-07-25. These live in prod (set by scripts/seed_min_margin.py) but were absent from git, so pricing_config.enforce_profit_floor() returned False against the fixture and any tenant built from it \u2014 GC, tenant-2, a DR rebuild \u2014 shipped with NO profit floor and quoted a 1-square tile roof at $400 profit. ENGINEERING_RULES R3. profit_floor_days_per_week=6 is still ASSUMED; Tim's own Miramar commercial calculator says '5 days per week' twice."
 }

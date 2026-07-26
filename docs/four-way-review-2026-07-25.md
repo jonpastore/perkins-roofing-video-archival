@@ -264,3 +264,61 @@ boundary fix, which is correct for fractional squares as well as integers.
 `fit_nonneg`'s monotonicity constraint, rejecting pitch-as-a-linear-term because it degraded
 out-of-sample, and testing and rejecting Jon's own padding hypothesis are the most disciplined
 decisions in this body of work.
+
+---
+
+## 7. FIXES APPLIED (same day) and the recalculation
+
+### Config/engine changes
+
+| finding | fix |
+|---|---|
+| F1 insulation always $255 | re-keyed to `insulation_by_thickness {1in:255, 1_5in:275, 2in:310}` + `insulation_thickness` input on `QuoteInput` and the API. Legacy `insulation_tiers` rows now map **positionally** as a fallback, so **already-seeded prod configs resolve all three thicknesses without a reseed**. Unknown thickness raises `ConfigError` (→422) rather than defaulting. |
+| F2 four dimensions unreachable | `Quoting.tsx` now sends `project_kind`, `tile_pointing`, `specialty_tile` from real controls, and derives `pitch_7_12` from `selectedMeasurement.pitch_primary >= 7`. Commercial jobs, tile pointing, the specialty-tile upgrades and the 7/12 adder are all reachable for the first time. |
+| F6 dead discount guard | reads `result["profit_guidance"]["effective_floor"]`, the path the value actually lives at. `min_margin_breached` can now fire under the weekly basis. |
+| F10 floor switch not in git | fixture gained `enforce_profit_floor`, `profit_floor_basis`, `profit_floor_days_per_week`. **This immediately broke two tests that had been passing against a floor-less config** — proof the fixture had not been reproducing prod. |
+| F11 seeders disagree | `seed_office_overhead_config.py`'s stale `ZONED_ADDS` removed; `seed_comment_derived_adders.py` is now the single writer of the zoned adders. |
+| F14 tear-off billed 27% | new `low_slope_tear_off_total()` sums `tear_off_extras` (hauling $20 + labor $20 + OH $35 = $75/layer/sq), falling back to the old scalar for configs without the block. |
+| F15 `roof_cuts` not free-form | added `roof_cuts_per_sq` (engine + API + a UI field). The low/medium/high picker stays as the guide; an explicit dollar amount wins — so Tim's own $45/sq hand-load example is now expressible. |
+| F18 silent demo-rate fallback | `INSTALL_SERIES_BY_ROOF[...] ?? "demo_dry_in_flat"` removed. An unmapped roof type now omits the install series instead of billing it at the $1,050/day demo rate. |
+| F19 coating basis | two warnings — `coating_below_price_basis` (published on a 25-sq basis) and `coating_demo_not_in_price` (+$100/sq). **Deliberately not priced**: we know the basis is wrong, not what the right number is, and inventing it is how the earlier defects happened. |
+
+### Overhead mode now defaults to BY-TIME (Jon's call)
+
+Tim, 2026-07-17 [09:46]: *"that's how we get the overhead is based on time … this is just a guide
+… more of a guide than it is a rule."* `overhead_mode` now defaults to `"daily"` in both the API and
+the SPA. With no days typed the engine derives them from the roof's geometry.
+
+This also makes the weekly profit-floor basis **operable** — under `per_sq` the day series was empty,
+so `on_site_weeks` was `None` and a `basis="weekly"` config silently behaved as `"job"` (F4).
+
+### Recalculation over Tim's 29 homes — `scripts/compare_overhead_modes_29_homes.py`
+
+| | mean | min | max | total |
+|---|--:|--:|--:|--:|
+| **B−A** repricing caused by the default flip | **+$227** | −$1,758 | +$2,212 | **+$6,588** |
+| **B−C** derived days vs Tim's OWN days | **+$2** | −$1,375 | +$1,050 | — |
+
+Days: **mean absolute error 0.53 d, 93% within one day, 66% within half a day** — the previously
+claimed figures, reproduced against prod config.
+
+**The falsification test the review asked for, run:** predicting every job at the mean 7.0 days lands
+within one day on **7/29 (24%)**. The geometry model lands **27/29 (93%)**. The headline metric is
+not riding on low variance — geometry beats the constant baseline by a factor of ~4. **F8's
+overfitting objection does not survive this test.**
+
+**And F7's clustering objection is wrong on the facts.** The 9 Evergrene Parkway files are in
+`~/perkins-corpus/roofr-attachments/` but are **not** in the fitted set: all 29 stored measurements
+are distinct addresses, none of them Evergrene. The reviewer conflated the corpus directory (37 PDFs)
+with the training set (29 homes). Leave-one-out does not leak.
+
+**What does survive from F7:** all 29 fitted homes are Palm Beach County, so there is still **zero
+HVHZ calibration**, and the model is applied to all three branches. That remains open.
+
+### Still open after this wave
+
+F3 (the floor inflates the commission base) needs Tim, not a code change — though the sheet formula
+`B27 = (B4*B18)*rate` confirms commission is computed **from** profit and never added to the total,
+so his "$2,500 minimum" is a pre-commission floor and our implementation matches his structure.
+F5 (the $4,000 second tier), F9 (commercial pricing as a % of cost), F12 (repair day rates), F13
+(shingle daily rate) are all in the draft email. F16/F17 dead config keys are untouched.

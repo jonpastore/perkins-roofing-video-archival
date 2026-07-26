@@ -366,10 +366,20 @@ def test_estimate_scale_profit_mode_unchanged():
         project_kind="residential",
         profit_mode="scale",
     )
-    r = estimate(cfg, q)
+    # The $2,500 job floor is now enabled in the fixture (it is enabled in prod, and was missing
+    # from git). It fires at 10 squares and would mask the scale, which is what this test is about,
+    # so isolate the scale here and assert the floor separately below.
+    raw_nofloor = dict(cfg.raw)
+    raw_nofloor["enforce_profit_floor"] = False
+    r = estimate(load_config(raw_nofloor), q)
     profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
     # 10 SQ → scale tier 7≤10<14 → $140/sq → total 1400
     assert abs(profit_item["amount"] - 1400.0) < 0.01
+
+    # ...and with the floor on, the same job is lifted to the floor, not left on the scale.
+    r_floored = estimate(cfg, q)
+    floored_item = next(li for li in r_floored["line_items_detail"] if li["key"] == "profit")
+    assert abs(floored_item["amount"] - 2500.0) < 0.01
 
 
 # ---------------------------------------------------------------------------

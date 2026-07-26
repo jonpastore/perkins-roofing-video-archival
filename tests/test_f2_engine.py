@@ -126,9 +126,13 @@ def test_config_null_tear_off_raises():
 
 
 def test_config_empty_insulation_tiers_raises():
-    cfg = _cfg_low_slope_nulled("insulation_tiers")
-    with pytest.raises(ConfigError, match="insulation_tiers"):
-        cfg.low_slope_insulation_cost(10.0)
+    """No thickness table and no legacy rows -> ConfigError, not a silent default."""
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    raw["low_slope"].pop("insulation_by_thickness", None)
+    raw["low_slope"]["insulation_tiers"] = []
+    with pytest.raises(ConfigError, match="insulation"):
+        load_config(raw).low_slope_insulation_cost("1in")
 
 
 # ---------------------------------------------------------------------------
@@ -620,8 +624,20 @@ def test_all_sloped_adders(cfg: PricingConfig):
     # pitch 200→305 and winterguard 140→135: both re-derived from Tim's CELL COMMENTS, whose
     # L/M/OH/P build-ups agree across tabs where the headline cells do not (7/12 builds to $305
     # in both live comments; WinterGuard to $135 in both sheets).
-    expected_per_sq = 780 + 270 + 140 + 50 + 50 + 200 + 160 + 305 + 40 + 75 + 135
-    assert r["per_square_total"] == expected_per_sq
+    # The $2,500 job profit floor now fires here, and that is the point: the fixture gained
+    # enforce_profit_floor / profit_floor_basis on 2026-07-25 because prod had them and git did
+    # not, so anything built from the fixture ran with NO floor. At 10 squares the sliding scale
+    # pays 10 x $140 = $1,400, under the floor, so profit lifts to $2,500 = $250/sq. The adder
+    # math is unchanged; only the profit term moves.
+    scale_profit, floored_profit = 140, 250
+    adders = 780 + 270 + 50 + 50 + 200 + 160 + 305 + 40 + 75 + 135
+    assert r["per_square_total"] == adders + floored_profit
+    assert r["margin"]["profit_dollars"] == 2500.0
+    # ...and with the floor off, the same adders sum against the sliding-scale profit
+    raw_nofloor = dict(_raw_config())
+    raw_nofloor["enforce_profit_floor"] = False
+    r2 = estimate(load_config(raw_nofloor), q)
+    assert r2["per_square_total"] == adders + scale_profit
 
 
 def test_metal_demo_not_tile_demo(cfg: PricingConfig):
@@ -758,9 +774,12 @@ def _cfg_with_low_slope_data(**overrides) -> PricingConfig:
         "HVHZ": {"flat_oh": 60, "tpo_oh": 65, "coatings_oh": 55},
         "FBC":  {"flat_oh": 55, "tpo_oh": 60, "coatings_oh": 50},
     }
-    ls["insulation_tiers"] = [[20, 80], [None, 60]]
+    # thickness-keyed (1in/1_5in/2in), matching Tim's K15/K16/K17
+    ls["insulation_by_thickness"] = {"1in": 80, "1_5in": 90, "2in": 100}
+    ls["insulation_tiers"] = [[20, 80], [None, 60]]   # legacy rows, exercised by the fallback test
     ls["tapered_cost_per_sq"] = 45
     ls["tear_off_per_layer_per_sq"] = 30
+    ls["tear_off_extras"] = {"additional_hauling": 10, "labor": 10, "oh": 10}   # -> $30/layer/sq
     ls["deck_types"] = {"existing_concrete": 0, "plywood_replace": 120}
     ls.update(overrides)
     raw = dict(raw)
@@ -768,13 +787,20 @@ def _cfg_with_low_slope_data(**overrides) -> PricingConfig:
     return load_config(raw)
 
 
-def test_low_slope_insulation_tiers_path():
-    """Exercises the insulation tier loop and the null-max catch-all tier."""
+def test_low_slope_insulation_priced_by_thickness_not_size():
+    """Insulation is keyed on board thickness. Job size must not change the rate.
+
+    Regression: the old schema was [max_sq, price] and every row carried max_sq=null, so the
+    lookup returned the first row for every job and the 1.5"/2" prices were unreachable.
+    """
     cfg2 = _cfg_with_low_slope_data()
-    # 15 SQ — first tier max=20, 15 <= 20 → cost=80
-    assert cfg2.low_slope_insulation_cost(15.0) == 80
-    # 25 SQ — past first tier max=20, hits null catch-all → cost=60
-    assert cfg2.low_slope_insulation_cost(25.0) == 60
+    assert cfg2.low_slope_insulation_cost("1in") == 80
+    assert cfg2.low_slope_insulation_cost("1_5in") == 90
+    assert cfg2.low_slope_insulation_cost("2in") == 100
+    # three distinct prices, and none of them a function of squares
+    assert len({cfg2.low_slope_insulation_cost(t) for t in ("1in", "1_5in", "2in")}) == 3
+    with pytest.raises(ConfigError, match="thickness"):
+        cfg2.low_slope_insulation_cost("3in")
 
 
 def test_low_slope_deck_null_raises():
@@ -802,7 +828,9 @@ def test_low_slope_build_tear_off_branch():
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "tear_off" in keys
-    assert abs(keys["tear_off"] - 30 * 2 * 10.0) < 0.01   # 30/layer * 2 layers * 10 sq
+    # Tim prices a layer as hauling + labor + OH (10+10+10 here); the engine used to bill only
+    # tear_off_per_layer_per_sq and leave tear_off_extras unread, charging a fraction of the cost.
+    assert abs(keys["tear_off"] - 30 * 2 * 10.0) < 0.01   # $30/layer * 2 layers * 10 sq
 
 
 def test_low_slope_build_deck_branch():
@@ -872,18 +900,20 @@ def test_low_slope_6_plus_raises():
         estimate(cfg2, q)
 
 
-def test_low_slope_insulation_fallback_tier():
-    """Exercises line 255 — insulation tiers with no null catch-all, sq exceeds last bound."""
-    cfg2 = _cfg_with_low_slope_data()
-    # Override insulation_tiers with all explicit max_sq values (no null catch-all)
-    raw = dict(cfg2.raw)
-    ls = dict(raw["low_slope"])
-    ls["insulation_tiers"] = [[10, 90], [20, 80]]   # max tier is 20 SQ, no null
-    raw["low_slope"] = ls
+def test_low_slope_insulation_legacy_tiers_fallback():
+    """Configs already seeded with only the legacy rows still resolve all three thicknesses.
+
+    Prod carries insulation_tiers and no insulation_by_thickness, so this is the path prod takes
+    until it is reseeded — the rows map positionally, which is what their own config note says
+    they mean ("type-based not sq-range-based").
+    """
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    raw["low_slope"].pop("insulation_by_thickness", None)
     cfg3 = load_config(raw)
-    # 25 SQ exceeds last tier max (20) — falls through to return last tier's cost
-    result = cfg3.low_slope_insulation_cost(25.0)
-    assert result == 80   # last tier cost
+    assert cfg3.low_slope_insulation_cost("1in") == 255
+    assert cfg3.low_slope_insulation_cost("1_5in") == 275
+    assert cfg3.low_slope_insulation_cost("2in") == 310
 
 
 def test_low_slope_2_story_height_add():
