@@ -17,7 +17,7 @@
   "exhibit_version": "B-2026-07-10-r2",
   "boundary_inclusive_lower": true,
   "boundary_exclusive_upper": false,
-  "_pending_boundary": "Tim \u2014 PC-2: confirm lower-inclusive/upper-exclusive sliding-scale boundary rule (OI-9)",
+  "_pending_boundary": "Tim \u2014 NARROWED 2026-07-26. The boundary RULE is settled: his own band labels are inclusive of the upper number (1 sq $400, 2-4 $200, ... 30+ $100), so boundary_exclusive_upper=false. What remains is only that his sheet claims 20 squares in TWO bands ('15-20' AND '20-29'); we resolve it to $120, the higher of the two.",
   "zones": [
     "HVHZ",
     "FBC"
@@ -119,21 +119,22 @@
       },
       "verea_s": {
         "label": "Verea Spanish \"S\"",
-        "field": null,
+        "field": 297.04,
         "rake": 5.78,
-        "_pending_field": "Tim \u2014 confirm Verea Spanish 'S' field-tile cost (rake unit confirmed 2026-07-21)"
+        "_source_field": "Live sloped sheet Custom Tile Calc: D32 \"Field (post tax 7% & waste 8%)\" $297.04, total $312.81. Filled 2026-07-26."
       },
       "verea_caribbean": {
         "label": "Verea Caribbean",
-        "field": null,
+        "field": 230.0,
         "rake": 19.14,
-        "_pending_field": "Tim \u2014 confirm Verea Caribbean field-tile cost (rake unit confirmed 2026-07-21)"
+        "_source_field": "Live sloped sheet Custom Tile Calc: D39 \"Field\" $230, total $249. Filled 2026-07-26.",
+        "_pending_rake": "Tim \u2014 our rake is $19.14 but the live Custom Tile Calc reads $13.98 for Verea Caribbean (and the NEWER sheet reads $57.24, which looks per-square rather than per-tile). Field cost is filled from the live sheet; the rake is left as-is pending Tim rather than silently changed."
       },
       "other": {
         "label": "Other / Custom",
-        "field": null,
+        "field": 310.0,
         "rake": 45.0,
-        "_pending_field": "Tim \u2014 manual/custom tile; field-tile cost entered per-job, not config-driven yet"
+        "_source_field": "Live sloped sheet Custom Tile Calc: B39 \"Field (reminder add waste and tax)\" $310, total $370. Filled 2026-07-26."
       }
     }
   },
@@ -409,7 +410,7 @@
   },
   "low_slope": {
     "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached \u2014 engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* \u2014 prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
-    "_note_fbc_deltas": "FBC values set equal to HVHZ \u2014 Exhibit B \u00a74 is one table for both zones (confirmed Zoom 2026-07-20), unlike sloped \u00a75 which is zone-split. Confirm with Tim if his live low-slope calculator implies a delta (OI-11).",
+    "_note_fbc_deltas": "RESOLVED 2026-07-25: FBC == HVHZ is correct. The live low-slope sheet (1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ) has ONE price table \u2014 the Tim, Josh and Marco tabs are three copies of it, differing only in the calculator inputs in column A/B. There is no zone split to model. See docs/low-slope-comment-audit-2026-07-25.md.",
     "all_in_systems": [
       "pb_acrylic_2coat",
       "pb_premium_acrylic",
@@ -434,7 +435,7 @@
       },
       "FBC": {
         "polyglass_sav_sap": 450,
-        "_note_fbc_sav_sap": "FBC is $25 lower than HVHZ ($450 vs $475) \u2014 explicit in Tim's live operational sheet. Jon 2026-07-21: Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES the Exhibit B legal snapshot (one \u00a74 table). Confirm with Tim if his live calculator disagrees.",
+        "_note_fbc_sav_sap": "RESOLVED 2026-07-25 with cell-level evidence: the live low-slope sheet cell F24 reads '-$25 FBC (no FR)' beside the $260 dry-in/roll-goods line, which is exactly the $475 -> $450 delta. No longer an assumption.",
         "tpo_adhered": 485,
         "tpo_mech_attached": 485,
         "pb_acrylic_2coat": 375,
