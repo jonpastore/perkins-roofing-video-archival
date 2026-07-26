@@ -508,3 +508,43 @@ class TestTcSectionToggles:
         ctx = self._ctx(include_terms=False, include_contract_faq=True)
         html = render_proposal_html("{{ tc.include_terms }}/{{ tc.include_contract_faq }}", ctx)
         assert "False/True" in html
+
+
+def test_calc_lines_show_days_for_overhead_and_leak_no_internals():
+    """The build-up must show Tim's DAY math and never print config keys at a customer.
+
+    Overhead is the one line he insists is time-driven; collapsing it to a per-square figure hides
+    the days that justify it. And the engine's raw formula strings carry internal annotations
+    ("NOTE: ...", pending-Tim asides, config key names) that must not reach a proposal.
+    """
+    from core.proposal_render import calc_lines_from_estimate
+
+    result = {
+        "line_items_detail": [
+            {"key": "base_cost_lm", "label": "Base Cost (L+M)", "amount": 27435.76, "per_sq": 783.88,
+             "explain": {"formula": "per_sq x squares", "inputs": {"per_sq": 783.88, "squares": 35.0}}},
+            {"key": "overhead", "label": "Overhead", "amount": 6875.0, "per_sq": 196.43,
+             "explain": {"formula": "sum(days x daily_rate) per series, then / squares.",
+                         "inputs": {"tile_days": 5.0, "tile_rate": 745.0,
+                                    "demo_dry_in_flat_days": 3.0, "demo_dry_in_flat_rate": 1050.0}}},
+            {"key": "pm_incentive", "label": "PM Incentive", "amount": 100.0,
+             "explain": {"formula": "band lookup on squares. NOTE: Tim's sheet keys this on SIZE "
+                                    "ONLY (<20 $50 / 20-50 $100), pending item #1 with Tim",
+                         "inputs": {"squares": 35.0}}},
+        ]
+    }
+    lines = calc_lines_from_estimate(result)
+
+    assert "5 days tile x $745" in lines[1]["formula"]
+    assert "3 days demo dry in flat x $1,050" in lines[1]["formula"]
+    assert "196.43" not in lines[1]["formula"]          # days, not the collapsed per-square
+    assert lines[0]["formula"] == "35 squares x $783.88"
+
+    # no internal annotation, config key or pending-Tim aside survives into the document
+    for ln in lines:
+        assert "NOTE" not in ln["formula"]
+        assert "pending" not in ln["formula"].lower()
+        assert "_" not in ln["formula"]
+
+    # running total is verifiable line by line
+    assert lines[-1]["running_display"] == "$34,410.76"

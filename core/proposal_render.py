@@ -13,6 +13,7 @@ The default Perkins template is available as DEFAULT_TEMPLATE_HTML.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -60,6 +61,13 @@ class ProposalRenderContext:
     # silently drops its T&C is a contract defect, not a formatting choice.
     include_terms: bool = field(default=True)
     include_contract_faq: bool = field(default=True)
+    # "How this price was built" — the per-line formula trace the engine already produces for
+    # debug=true. Off by default: it is internal build-up, not customer-facing boilerplate. Turned
+    # on when the reader needs to check our arithmetic against their own sheet rather than take a
+    # total on faith, which is exactly what Tim asked for on the 2026-07-17 call.
+    calc_lines: list[dict[str, Any]] | None = field(default=None)
+    calc_trace: list[dict[str, Any]] | None = field(default=None)
+    include_calc_breakdown: bool = field(default=False)
 
 
 class _SilentUndefined(jinja2.Undefined):
@@ -145,6 +153,12 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "license": ctx.tenant_license or "",
         },
         "accept_url": ctx.accept_url,
+        "calc": {
+            "include": ctx.include_calc_breakdown,
+            "lines": ctx.calc_lines or [],
+            "trace": ctx.calc_trace or [],
+            "total_display": (ctx.calc_lines or [{}])[-1].get("running_display") if ctx.calc_lines else None,
+        },
         "tc_summary_bullets": ctx.tc_summary_bullets,
         "tc_faq_items": ctx.tc_faq_items,
         "tc_text": ctx.tc_text or "",
@@ -252,6 +266,14 @@ DEFAULT_TEMPLATE_HTML = """\
     .amt { text-align:right !important; white-space:nowrap; }
     .accept { text-align:center; margin: var(--sp-4) 0 var(--sp-5); padding: var(--sp-4); border-radius:8px; background: var(--surface-tint-info); break-inside: avoid; }
     .accept a { display:inline-block; background: var(--brand-navy); color:#fff; text-decoration:none; padding:12px 28px; border-radius:6px; font-weight:800; font-size:13px; }
+    .calc { margin: var(--sp-4) 0; border:1px solid var(--border); border-radius:7px; overflow:hidden; break-inside: avoid; }
+    .calc-head { background: var(--surface-tint-navy); border-bottom:1px solid var(--border); padding: var(--sp-2) var(--sp-3); font-weight:800; color: var(--brand-navy); font-size: var(--fs-h3); }
+    .calc table { width:100%; border-collapse:collapse; }
+    .calc th, .calc td { padding: var(--sp-1) var(--sp-3); border-bottom:1px solid var(--border-hairline); text-align:left; vertical-align:top; font-size: var(--fs-small); }
+    .calc th { background: var(--surface-alt); color: var(--ink-label); text-transform:uppercase; letter-spacing:.04em; }
+    .calc td.formula { color: var(--ink-label); font-family: "Courier New", monospace; }
+    .calc tr.total td { font-weight:800; color: var(--brand-navy); border-top:2px solid var(--brand-navy); font-size: var(--fs-body); }
+    .calc-note { padding: var(--sp-2) var(--sp-3); background: var(--surface-alt); color: var(--ink-muted); font-size: var(--fs-small); }
     .terms { margin-top: var(--sp-5); font-size: var(--fs-legal); color: var(--ink-muted); }
     /* pre-line, not pre-wrap: keeps the author's blank-line paragraphs, drops the hard-wrap
        ragged edges that made the T&C read as one blob. Content is untouched. */
@@ -363,6 +385,30 @@ DEFAULT_TEMPLATE_HTML = """\
     {% if deposit.instructions %}<p>{{ deposit.instructions }}</p>{% endif %}
   </div>
 
+  {% if calc.include and calc.lines %}
+  <div class="calc">
+    <div class="calc-head">How this price was built</div>
+    <table>
+      <thead><tr><th>Line</th><th>How it is calculated</th><th class="amt">Amount</th></tr></thead>
+      <tbody>
+        {% for line in calc.lines %}
+        <tr>
+          <td>{{ line.label }}</td>
+          <td class="formula">{{ line.formula }}</td>
+          <td class="amt">{{ line.amount_display }}</td>
+        </tr>
+        {% endfor %}
+        {% if calc.total_display %}
+        <tr class="total"><td>Total</td><td></td><td class="amt">{{ calc.total_display }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <div class="calc-note">Every figure above comes from the price book in force on the date of
+      this proposal; nothing is entered by hand. The reference beside each line is the rule it was
+      taken from, so this quote can be checked line by line rather than accepted on the total.</div>
+  </div>
+  {% endif %}
+
   <div class="footer">{{ tenant.name }}{% if tenant.license %} · License #{{ tenant.license }}{% endif %} · 575 NW 152nd St, Miami, FL 33169 · 15658 Alexander Run, Jupiter, FL 33478</div>
 
   {% if tc.include_terms %}
@@ -409,3 +455,52 @@ DEFAULT_TEMPLATE_HTML = """\
   </div>
 </div></body></html>
 """
+
+
+def calc_lines_from_estimate(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Turn an estimate's debug trace into proposal-ready "how this was built" rows.
+
+    The engine already produces a formula + inputs for every priced line when debug=true; it was
+    only ever returned to an admin on the quote response and stripped before persistence, so a
+    customer could see the total but never the arithmetic. Tim's whole objection on the
+    2026-07-17 call was to numbers he could not check against his own sheet.
+
+    Substitutes the actual values into the formula so a reader sees "35 sq x $783.88" rather than
+    "per_sq x squares", and keeps a running subtotal so the last row's total is verifiable.
+    """
+    out: list[dict[str, Any]] = []
+    running = 0.0
+    for li in result.get("line_items_detail") or []:
+        amount = float(li.get("amount") or 0)
+        running += amount
+        explain = li.get("explain") or {}
+        inputs = explain.get("inputs") or {}
+        per_sq, squares = inputs.get("per_sq"), inputs.get("squares")
+        day_parts = [
+            f"{v:g} days {k[:-5].replace('_', ' ')} x ${float(inputs.get(k[:-5] + '_rate', 0)):,.0f}"
+            for k, v in inputs.items()
+            if k.endswith("_days") and v and inputs.get(k[:-5] + "_rate")
+        ]
+        if day_parts:
+            # Overhead is the one line Tim insists is time-driven, so show the DAYS rather than
+            # collapsing to a per-square figure that hides them.
+            formula = " + ".join(day_parts)
+        elif per_sq is not None and squares:
+            formula = f"{squares:g} squares x ${float(per_sq):,.2f}"
+        elif li.get("per_sq"):
+            formula = f"{result.get('num_squares', 0):g} squares x ${float(li['per_sq']):,.2f}"
+        else:
+            # Config-key names leak internals into a customer document; keep the first clause only.
+            # Internal annotations ("NOTE: ...", config key names, pending-Tim asides) must not
+            # reach a customer document.
+            raw = (explain.get("formula") or "")
+            raw = re.split(r"\.\s|\(|,|NOTE:", raw)[0].strip().rstrip(".")
+            formula = raw if raw and "_" not in raw else "fixed amount"
+        out.append({
+            "key": li.get("key"),
+            "label": li.get("label") or li.get("key"),
+            "formula": formula,
+            "amount_display": f"${amount:,.2f}",
+            "running_display": f"${running:,.2f}",
+        })
+    return out
