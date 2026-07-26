@@ -518,5 +518,53 @@
   "enforce_profit_floor": true,
   "profit_floor_basis": "job",
   "profit_floor_days_per_week": 6.0,
-  "_note_profit_floor_keys": "Added to the fixture 2026-07-25. These live in prod (set by scripts/seed_min_margin.py) but were absent from git, so pricing_config.enforce_profit_floor() returned False against the fixture and any tenant built from it \u2014 GC, tenant-2, a DR rebuild \u2014 shipped with NO profit floor and quoted a 1-square tile roof at $400 profit. ENGINEERING_RULES R3. profit_floor_days_per_week=6 is still ASSUMED; Tim's own Miramar commercial calculator says '5 days per week' twice."
+  "_note_profit_floor_keys": "Added to the fixture 2026-07-25. These live in prod (set by scripts/seed_min_margin.py) but were absent from git, so pricing_config.enforce_profit_floor() returned False against the fixture and any tenant built from it \u2014 GC, tenant-2, a DR rebuild \u2014 shipped with NO profit floor and quoted a 1-square tile roof at $400 profit. ENGINEERING_RULES R3. profit_floor_days_per_week=6 is still ASSUMED; Tim's own Miramar commercial calculator says '5 days per week' twice.",
+  "gutters": {
+    "styles": {
+      "k6_alum": {
+        "label": "6\" Alum K-Style (w/ 3x4 corrugated DS)",
+        "per_lf": 11.55,
+        "elbow_each": 7,
+        "two_story_per_lf": 12.95
+      },
+      "k7_alum": {
+        "label": "7\" Alum K-Style (w/ 4x5 corrugated DS)",
+        "per_lf": 16.8,
+        "elbow_each": 9,
+        "two_story_per_lf": 18.2
+      },
+      "box6_comm": {
+        "label": "6\" Commercial Alum Box (w/ 3x4 box DS)",
+        "per_lf": 15.4
+      },
+      "box7_comm": {
+        "label": "7\" Commercial Alum Box (w/ 4x4 box DS)",
+        "per_lf": 21.0
+      },
+      "k6_copper": {
+        "label": "6\" Copper K-Style (w/ 3x4 corrugated DS)",
+        "per_lf": 50.0
+      },
+      "k7_copper": {
+        "label": "7\" Copper K-Style (w/ 4x5 corrugated DS)",
+        "per_lf": 70.0
+      },
+      "halfround_alum": {
+        "label": "Half-Round Alum (w/ 4\" round DS)",
+        "per_lf": 14.0
+      },
+      "halfround_copper": {
+        "label": "Copper Half-Round (w/ 4\" round DS)",
+        "per_lf": 55.0
+      }
+    },
+    "removal_per_lf": 3.85,
+    "leaderhead_res_each": 98,
+    "leaderhead_comm_each": 168,
+    "small_job_add_per_lf": 2.0,
+    "leaf_guard_std_per_lf": 9.8,
+    "small_job_threshold_lf": 100,
+    "leaf_guard_upgraded_per_lf": 14.0
+  },
+  "_note_gutters": "Added to the fixture 2026-07-25. It was in prod (scripts/seed_gutters_config.py) but not in git, and core/estimator.py raises ConfigError on any quote carrying gutter_lf/downspout_lf/leaderheads, so a tenant built from the fixture 422'd on every gutter quote while the SPA shipped a full gutter UI. F10 named four missing keys; the first pass added three."
 }

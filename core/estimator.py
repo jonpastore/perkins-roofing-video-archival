@@ -439,7 +439,13 @@ class QuoteInput:
     leaderheads_comm: int = 0
 
     # v2: Day-based overhead mode
-    overhead_mode: str = "per_sq"        # "per_sq" (default, existing) | "daily"
+    # NOTE: the dataclass default stays per_sq while the API default is "daily". Deliberate, and
+    # ugly. Flipping this too reprices the golden regression fixtures, which pin totals computed
+    # under per_sq — they are the baseline, so they must not move underneath a mode change. The
+    # divergence is tracked against the open question of whether "daily" should be the default at
+    # all: it reproduces Tim's stated METHOD but quotes ~10% under his actual SOLD prices, where
+    # per_sq is within 0.8%. Resolve the mode question first, then make the two agree.
+    overhead_mode: str = "per_sq"        # "per_sq" | "daily" (the API defaults to daily)
     daily_series: list[DailyOverheadSeries] = field(default_factory=list)
 
     # v2: Profit mode
@@ -1157,6 +1163,22 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
                 "no 7/12+ job exists in the calibration set. Review before sending — pending Tim."
             )
 
+    # Low-slope tear-off: the repo holds $20 / $35 / $75 for what is arguably the same thing, and
+    # the extras block's own note says "beyond first". Surface it rather than silently pick.
+    if q.slope_type == "low_slope" and q.layers_to_remove:
+        ls_cfg = config.raw["low_slope"]
+        extras = ls_cfg.get("tear_off_extras") or {}
+        summed = sum(v for k, v in extras.items()
+                     if not k.startswith("_") and isinstance(v, (int, float))
+                     and not isinstance(v, bool))
+        if summed and abs(summed - float(ls_cfg.get("tear_off_per_layer_per_sq") or 0)) > 0.01:
+            warnings.append(
+                f"tear_off_basis_unconfirmed: billing ${ls_cfg['tear_off_per_layer_per_sq']:g}/sq "
+                f"per layer, but tear_off_extras sums to ${summed:g}/sq and the comment audit "
+                "records $35 for an additional layer of demo. Tim's note says the $75 is 'per "
+                "additional layer beyond first'. Confirm the basis before sending — pending Tim."
+            )
+
     # Tim's sheet, note behind the coating block: "Coating Prices Based on 25+ squares (Demo not
     # included in price - add $100)". Deliberately unpriced: we know the published rate assumes a
     # 25-square job and excludes demo, but not what a 10-square coating should carry, and inventing
@@ -1346,11 +1368,19 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
             items.append(LineItem("profit", "Profit", pft * sq, tags["profit"], pft))
 
     if q.layers_to_remove:
-        # Tim's sheet (M15-N18) prices a low-slope tear-off layer as three components:
-        # additional hauling $20 + labor $20 + OH $35 = $75/sq, with "NOTE: $75 extra per layer".
-        # We were charging only tear_off_per_layer_per_sq ($20) — about 27% of the real cost, with
-        # the other two components sitting unread in tear_off_extras. Sum them when present.
-        tear_off = config.low_slope_tear_off_total()
+        # REVERTED to the $20 scalar 2026-07-25 after R2. I had summed tear_off_extras to $75 and
+        # billed it on every layer. The repo holds THREE different numbers and none of them is
+        # unambiguously "the cost of the first layer":
+        #   tear_off_per_layer_per_sq            $20
+        #   tear_off_extras 20+20+35             $75, and its own note reads
+        #                                        "+$75/sq per additional layer BEYOND FIRST"
+        #   low-slope comment audit, "Additional layer of demo"   $35
+        # `_note_tear_off` also says the extras block was recorded "for line-item reporting in v2",
+        # not for pricing. Summing it moved a 30-square single-layer job from $600 to $2,250 (+275%)
+        # on a misreading — and tear_off_extras.oh is OVERHEAD, which would have been billed inside
+        # a Labor-tagged line while the overhead line is computed separately. That is the same
+        # double-count shape as the 7/12 adder. Warn and ask Tim; do not pick a number.
+        tear_off = config.low_slope_tear_off_cost()
         items.append(LineItem("tear_off", "Tear-Off", tear_off * q.layers_to_remove * sq, "Labor"))
 
     if q.deck_type and q.deck_type != "existing_concrete":

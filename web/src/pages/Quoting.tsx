@@ -211,8 +211,14 @@ const INSTALL_SERIES_BY_ROOF: Record<string, string> = {
   "13_tile": "tile", barrel_tile: "tile",
   standing_seam_metal: "metal",
   "3tab_shingle": "shingle", dimensional_shingle: "shingle",
-  tpo: "demo_dry_in_flat", coatings: "demo_dry_in_flat", silicone: "demo_dry_in_flat", bur: "demo_dry_in_flat",
 };
+// Low-slope systems are config-driven (tpo_adhered, pb_silicone_2coat, polyglass_sav_sap, ...), so
+// they cannot be enumerated here. Tim quotes one daily rate for "demo and flat" ($1,050), which is
+// the flat-roof install rate too — so resolve by SLOPE rather than by listing system keys, which is
+// what the old tpo/coatings/silicone/bur entries tried and missed (those keys never existed).
+function installSeriesFor(roofType: string, isLowSlope: boolean): string | null {
+  return INSTALL_SERIES_BY_ROOF[roofType] ?? (isLowSlope ? "demo_dry_in_flat" : null);
+}
 
 const GUTTER_STYLES: Array<{ value: string; label: string }> = [
   { value: "k6_alum", label: "6\" Alum K-Style" },
@@ -643,6 +649,10 @@ export function Quoting() {
   // selected roof_type is a low-slope system. Default deck = existing_concrete ($0 adder).
   const [quoteDeckType, setQuoteDeckType] = useState("existing_concrete");
   const [quoteIncludeInsulation, setQuoteIncludeInsulation] = useState(false);
+  // Tim prices board by THICKNESS (1" $255 / 1.5" $275 / 2" $310). Without this the engine took its
+  // "1in" default and every low-slope job billed the 1" rate whatever was specified.
+  const [quoteInsulationThickness, setQuoteInsulationThickness] =
+    useState<"1in" | "1_5in" | "2in">("1in");
   const [quoteIncludeTapered, setQuoteIncludeTapered] = useState(false);
   const [quoteSecondaryWater, setQuoteSecondaryWater] = useState(false);
   const [quoteWinterguard, setQuoteWinterguard] = useState(false);
@@ -1057,7 +1067,7 @@ export function Quoting() {
     // If both map to the same series (flat roofs), sum them.
     const demoD = Number(quoteDemoDays || 0);
     const installD = Number(quoteInstallDays || 0);
-    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? null;
+    const installSeries = installSeriesFor(quoteRoofType, isLowSlopeRoofType);
     const dailyMap: Record<string, number> = {};
     if (demoD > 0) dailyMap["demo_dry_in_flat"] = (dailyMap["demo_dry_in_flat"] ?? 0) + demoD;
     // No mapping for this roof type => omit the install series entirely rather than billing it
@@ -1084,6 +1094,7 @@ export function Quoting() {
       layers_to_remove: Number(quoteLayersToRemove || 0),
       deck_type: isLowSlopeRoofType ? quoteDeckType : undefined,
       include_insulation: isLowSlopeRoofType ? quoteIncludeInsulation : false,
+      insulation_thickness: quoteInsulationThickness,
       include_tapered: isLowSlopeRoofType ? quoteIncludeTapered : false,
       secondary_water_barrier: quoteSecondaryWater,
       winterguard: quoteWinterguard,
@@ -1954,6 +1965,17 @@ export function Quoting() {
                 </select>
                 <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <EstimateCheckbox checked={quoteIncludeInsulation} onChange={setQuoteIncludeInsulation} label="Insulation" />
+                  {quoteIncludeInsulation && (
+                    <select
+                      value={quoteInsulationThickness}
+                      onChange={(e) => setQuoteInsulationThickness(e.target.value as "1in" | "1_5in" | "2in")}
+                      style={selectStyle}
+                    >
+                      <option value="1in">1&quot; board</option>
+                      <option value="1_5in">1½&quot; board</option>
+                      <option value="2in">2&quot; board</option>
+                    </select>
+                  )}
                   <EstimateCheckbox checked={quoteIncludeTapered} onChange={setQuoteIncludeTapered} label="Tapered ISO" />
                 </div>
               </div>
@@ -2051,7 +2073,7 @@ export function Quoting() {
                   {Object.keys(rates?.daily_overhead_rates ?? {}).length === 0 ? (
                     <div style={{ fontSize: 12, color: BRAND.sub }}>No daily overhead rates configured for this branch.</div>
                   ) : (() => {
-                    const installSeries = INSTALL_SERIES_BY_ROOF[quoteRoofType] ?? null;
+                    const installSeries = installSeriesFor(quoteRoofType, isLowSlopeRoofType);
                     const rate = rates?.daily_overhead_rates?.[installSeries];
                     return (
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10, alignItems: "end" }}>

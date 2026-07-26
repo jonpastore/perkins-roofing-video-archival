@@ -302,10 +302,16 @@ so `on_site_weeks` was `None` and a `basis="weekly"` config silently behaved as 
 Days: **mean absolute error 0.53 d, 93% within one day, 66% within half a day** — the previously
 claimed figures, reproduced against prod config.
 
-**The falsification test the review asked for, run:** predicting every job at the mean 7.0 days lands
-within one day on **7/29 (24%)**. The geometry model lands **27/29 (93%)**. The headline metric is
-not riding on low variance — geometry beats the constant baseline by a factor of ~4. **F8's
-overfitting objection does not survive this test.**
+**Baseline test, run:** predicting every job at the mean 7.0 days lands within one day on **7/29
+(24%)**; the geometry model lands **27/29 (93%)**. So the headline is not riding on low variance.
+
+⚠️ **WITHDRAWN — this does NOT refute F8.** The R2 pass was right to call it out: this compares a
+6-parameter model fitted on these 29 homes against a 1-parameter mean of the same 29, both scored
+in-sample. A 6-parameter model wins that by construction. F8's actual objection was that the *rule
+choices* (eaves-on-demo, the ≥6/12 threshold, the elimination stopping point) were selected
+in-sample across four rounds — and the steep-roof rule is still inside the 93%. **F8 stands
+unrefuted.** The honest test is to refit with the steep-roof rule held out, or to cross-validate
+over rule selection, neither of which has been done.
 
 **And F7's clustering objection is wrong on the facts.** The 9 Evergrene Parkway files are in
 `~/perkins-corpus/roofr-attachments/` but are **not** in the fitted set: all 29 stored measurements

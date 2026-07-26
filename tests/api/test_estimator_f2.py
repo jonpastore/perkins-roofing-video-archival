@@ -1417,3 +1417,20 @@ def test_audit_payload_strips_the_debug_trace():
     assert stripped["line_items_detail"][0]["amount"] == 100.0
     # and the caller's own response object is untouched
     assert "calculation_trace" in result
+
+
+def test_api_default_overhead_mode_is_daily():
+    """The API default is by-time, and a body omitting the field really derives days.
+
+    Nothing asserted this. The wave that flipped it changed only the Pydantic default, so every
+    core test kept building QuoteInput directly (still per_sq) and the suite stayed green while
+    every real quote through HTTP moved. A default nothing observes is a default nothing protects.
+    """
+    from api.routes.estimator import QuoteRequest
+
+    assert QuoteRequest(num_squares=30.0).overhead_mode == "daily"
+    # and it is not merely accepted — omitting the field must produce a derived day series
+    body = QuoteRequest(num_squares=30.0, roof_type="13_tile", code_zone="FBC",
+                        eaves_lf=300, hips_lf=150, ridges_lf=90, valleys_lf=70)
+    assert "overhead_mode" not in body.model_fields_set
+    assert body.overhead_mode == "daily"

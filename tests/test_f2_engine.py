@@ -779,7 +779,10 @@ def _cfg_with_low_slope_data(**overrides) -> PricingConfig:
     ls["insulation_tiers"] = [[20, 80], [None, 60]]   # legacy rows, exercised by the fallback test
     ls["tapered_cost_per_sq"] = 45
     ls["tear_off_per_layer_per_sq"] = 30
-    ls["tear_off_extras"] = {"additional_hauling": 10, "labor": 10, "oh": 10}   # -> $30/layer/sq
+    # DELIBERATELY different from tear_off_per_layer_per_sq (30) so a test asserting the billed
+    # amount can actually discriminate between the scalar and the summed block. The previous values
+    # summed to exactly 30 and passed identically whichever the engine used.
+    ls["tear_off_extras"] = {"additional_hauling": 11, "labor": 12, "oh": 13}   # sums to 36, not 30
     ls["deck_types"] = {"existing_concrete": 0, "plywood_replace": 120}
     ls.update(overrides)
     raw = dict(raw)
@@ -828,9 +831,12 @@ def test_low_slope_build_tear_off_branch():
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "tear_off" in keys
-    # Tim prices a layer as hauling + labor + OH (10+10+10 here); the engine used to bill only
-    # tear_off_per_layer_per_sq and leave tear_off_extras unread, charging a fraction of the cost.
+    # Bills the SCALAR ($30), not the summed extras ($36). Those differ on purpose: three numbers
+    # exist in the repo for this ($20 scalar / $75 extras / $35 comment audit) and the extras note
+    # says "beyond first", so the engine bills the scalar and warns instead of picking.
     assert abs(keys["tear_off"] - 30 * 2 * 10.0) < 0.01   # $30/layer * 2 layers * 10 sq
+    assert abs(keys["tear_off"] - 36 * 2 * 10.0) > 0.01   # and NOT the summed extras
+    assert any("tear_off_basis_unconfirmed" in w for w in r["warnings"])
 
 
 def test_low_slope_build_deck_branch():
