@@ -22,6 +22,10 @@ router = APIRouter(prefix="/measurements", tags=["measurements"])
 class MeasurementCreateRequest(BaseModel):
     property_id: Optional[int] = None
     total_sq: Optional[float] = None
+    # RoofR reports total = pitched + flat. Capturing only the total made total_sq ambiguous
+    # (Tim's sheet = sloped only; a RoofR transcription = pitched+flat). See migration 0046.
+    pitched_sq: Optional[float] = None
+    flat_sq: Optional[float] = None
     hips_lf: Optional[float] = None
     ridges_lf: Optional[float] = None
     valleys_lf: Optional[float] = None
@@ -40,6 +44,8 @@ def _row_to_dict(row: Measurement) -> dict:
         "provider": row.provider,
         "status": row.status,
         "total_sq": row.total_sq,
+        "pitched_sq": row.pitched_sq,
+        "flat_sq": row.flat_sq,
         "hips_lf": row.hips_lf,
         "ridges_lf": row.ridges_lf,
         "valleys_lf": row.valleys_lf,
@@ -73,6 +79,8 @@ def create_measurement(
         provider="manual",
         status="complete",
         total_sq=body.total_sq,
+        pitched_sq=body.pitched_sq,
+        flat_sq=body.flat_sq,
         hips_lf=body.hips_lf,
         ridges_lf=body.ridges_lf,
         valleys_lf=body.valleys_lf,

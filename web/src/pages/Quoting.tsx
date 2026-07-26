@@ -51,6 +51,8 @@ interface Measurement {
   provider: string;
   status: string;
   total_sq: number | null;
+  pitched_sq?: number | null;
+  flat_sq?: number | null;
   hips_lf: number | null;
   ridges_lf: number | null;
   valleys_lf: number | null;
@@ -455,6 +457,10 @@ function MeasurementForm({
   saving: boolean;
 }) {
   const [totalSq, setTotalSq] = useState("");
+  // RoofR prints all three: total, pitched and flat. Capturing only the total left total_sq
+  // ambiguous — Tim's sheet means sloped-only, a RoofR transcription means pitched+flat.
+  const [pitchedSq, setPitchedSq] = useState("");
+  const [flatSq, setFlatSq] = useState("");
   const [hipsLf, setHipsLf] = useState("");
   const [ridgesLf, setRidgesLf] = useState("");
   const [valleysLf, setValleysLf] = useState("");
@@ -504,6 +510,14 @@ function MeasurementForm({
           <FieldLabel>Primary Pitch</FieldLabel>
           <input type="number" min="0" step="0.5" value={pitchPrimary} onChange={(e) => setPitchPrimary(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="e.g. 4.5" />
         </div>
+        <div>
+          <FieldLabel>Pitched SQ (RoofR)</FieldLabel>
+          <input type="number" min="0" step="0.5" value={pitchedSq} onChange={(e) => setPitchedSq(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="sloped area only" />
+        </div>
+        <div>
+          <FieldLabel>Flat SQ (RoofR)</FieldLabel>
+          <input type="number" min="0" step="0.5" value={flatSq} onChange={(e) => setFlatSq(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="0 if none" />
+        </div>
         <div style={{ gridColumn: "1 / -1" }}>
           <FieldLabel>Provenance Note</FieldLabel>
           <input value={provenanceNote} onChange={(e) => setProvenanceNote(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="e.g. EagleView report, field measure…" />
@@ -513,6 +527,8 @@ function MeasurementForm({
         <Button
           onClick={() => onSave({
             total_sq: num(totalSq),
+            pitched_sq: num(pitchedSq),
+            flat_sq: num(flatSq),
             hips_lf: num(hipsLf),
             ridges_lf: num(ridgesLf),
             valleys_lf: num(valleysLf),
@@ -634,6 +650,14 @@ export function Quoting() {
   // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
   const [quoteFlatSquares, setQuoteFlatSquares] = useState("");
   const [quoteFlatRoofType, setQuoteFlatRoofType] = useState("");
+  // The measurement is the source of truth when it carries RoofR's split; the manual box is only
+  // a fallback for legacy measurements saved before we captured pitched/flat separately.
+  const measPitchedSq = selectedMeasurement?.pitched_sq ?? null;
+  const measFlatSq = selectedMeasurement?.flat_sq ?? null;
+  const effectiveFlatSq =
+    measFlatSq != null ? measFlatSq
+    : quoteFlatSquares.trim() === "" ? 0
+    : Number(quoteFlatSquares);
   const [quoteProjectKind, setQuoteProjectKind] = useState<"residential" | "commercial">("residential");
   const [quoteTilePointing, setQuoteTilePointing] = useState<"no" | "yes">("no");
   const [quoteSpecialtyTile, setQuoteSpecialtyTile] = useState<string>("");
@@ -1083,9 +1107,12 @@ export function Quoting() {
       code_zone: quoteRegion,
       roof_type: quoteRoofType,
       slope_type: isLowSlopeRoofType ? "low_slope" : "sloped",
-      num_squares: selectedMeasurement.total_sq,
-      flat_squares: quoteFlatSquares.trim() === "" ? undefined : Number(quoteFlatSquares),
-      flat_roof_type: quoteFlatSquares.trim() === "" ? undefined : (quoteFlatRoofType || undefined),
+      num_squares: measPitchedSq ?? selectedMeasurement.total_sq,
+      flat_squares: effectiveFlatSq || undefined,
+      // Every mixed-roof proposal in the golden set sells the flat section as
+      // "PERKINS PROTECTOR - Flat Re-Roof — Polyglass SAP modified bitumen" (3 of 3), so that is
+      // the default rather than a question. Overridable below.
+      flat_roof_type: effectiveFlatSq ? (quoteFlatRoofType || "polyglass_sav_sap") : undefined,
       measurement_id: selectedMeasurement.id,
       project_kind: quoteProjectKind,
       roof_cuts: quoteRoofCuts,
@@ -1845,7 +1872,7 @@ export function Quoting() {
                   </label>
                 </div>
               )}
-              {!isLowSlopeRoofType && (
+              {!isLowSlopeRoofType && measFlatSq == null && (
                 <div>
                   <FieldLabel>Flat section (squares)</FieldLabel>
                   <input
@@ -1856,7 +1883,7 @@ export function Quoting() {
                   />
                 </div>
               )}
-              {!isLowSlopeRoofType && quoteFlatSquares.trim() !== "" && (
+              {!isLowSlopeRoofType && effectiveFlatSq > 0 && (
                 <div>
                   <FieldLabel>Flat section system</FieldLabel>
                   <select value={quoteFlatRoofType} onChange={(e) => setQuoteFlatRoofType(e.target.value)} style={selectStyle}>

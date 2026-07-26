@@ -1194,9 +1194,22 @@ def test_mixed_roof_profit_bands_on_combined_squares(cfg: PricingConfig):
     assert abs(total - 100 * 36.0) < 0.01
 
 
-def test_mixed_roof_requires_a_flat_system(cfg: PricingConfig):
-    """Flat squares with no system named must fail loudly, not price at $0."""
-    with pytest.raises(ConfigError, match="flat_roof_type"):
-        estimate(cfg, QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
-                                 num_squares=30.0, flat_squares=10.0,
-                                 project_kind="residential"))
+def test_mixed_roof_defaults_the_flat_system_from_config(cfg: PricingConfig):
+    """Flat squares with no system named use the configured default, not $0 and not a 422.
+
+    All three mixed-roof proposals in the golden set sell the flat section as "PERKINS PROTECTOR -
+    Flat Re-Roof - Polyglass SAP modified bitumen", so the default is evidence, not a guess.
+    """
+    kw = dict(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
+              num_squares=30.0, flat_squares=10.0, project_kind="residential")
+    defaulted = estimate(cfg, QuoteInput(**kw))
+    explicit = estimate(cfg, QuoteInput(flat_roof_type="polyglass_sav_sap", **kw))
+    assert defaulted["project_total"] == explicit["project_total"]
+    assert any(li["key"] == "flat_base_cost_lm" for li in defaulted["line_items_detail"])
+
+    # ...but with no default configured either, refuse rather than price the section at zero
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    raw["low_slope"].pop("default_flat_system", None)
+    with pytest.raises(ConfigError, match="default_flat_system"):
+        estimate(load_config(raw), QuoteInput(**kw))

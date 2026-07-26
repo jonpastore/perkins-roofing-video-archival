@@ -1151,12 +1151,16 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     total_sq = q.num_squares + (q.flat_squares or 0.0)
     flat_items: list[LineItem] = []
     if q.slope_type == "sloped" and q.flat_squares and q.flat_squares > 0:
-        if not q.flat_roof_type:
+        # Every mixed-roof proposal in the golden set sells the flat section the same way —
+        # "PERKINS PROTECTOR - Flat Re-Roof — Polyglass SAP modified bitumen", 3 of 3 — so default
+        # to it rather than refusing to quote. Config-driven so it is not a constant in the engine.
+        flat_rt = q.flat_roof_type or config.raw["low_slope"].get("default_flat_system")
+        if not flat_rt:
             raise ConfigError(
-                "flat_squares supplied without flat_roof_type — a flat section cannot be priced "
-                "without knowing its system. Pick one from low_slope.base_cost_lm."
+                "flat_squares supplied without flat_roof_type and low_slope.default_flat_system "
+                "is unset — a flat section cannot be priced without knowing its system."
             )
-        flat_q = replace(q, slope_type="low_slope", roof_type=q.flat_roof_type,
+        flat_q = replace(q, slope_type="low_slope", roof_type=flat_rt,
                          num_squares=q.flat_squares)
         CARRIES_OVER = {"base_cost_lm", "overhead", "tear_off", "deck_type",
                         "insulation", "tapered"}

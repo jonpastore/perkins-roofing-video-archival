@@ -571,6 +571,10 @@ class Measurement(Base):
     provider          = Column(String, nullable=False, default="manual")
     status            = Column(String, nullable=False, default="complete")
     total_sq          = Column(Float, nullable=True)
+    # RoofR reports total = pitched + flat. Capturing only the total left it ambiguous — see
+    # migration 0046. NULL means the split is unknown (legacy rows), not that there is no flat.
+    pitched_sq        = Column(Float, nullable=True)
+    flat_sq           = Column(Float, nullable=True)
     hips_lf           = Column(Float, nullable=True)
     ridges_lf         = Column(Float, nullable=True)
     valleys_lf        = Column(Float, nullable=True)

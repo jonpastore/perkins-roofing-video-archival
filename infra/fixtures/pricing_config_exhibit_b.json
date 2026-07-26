@@ -513,7 +513,9 @@
       "1_5in": 275,
       "2in": 310
     },
-    "_note_insulation_by_thickness": "Tim's sheet K15/K16/K17: 1\" board ($50 L, $155 M, $50 OH) = $255; 1.5\" ($50/$175/$50) = $275; 2\" ($50/$210/$50) = $310. Per-sq, no profit. These are keyed on BOARD THICKNESS, not job size. The old insulation_tiers schema was [max_sq, price]; because thickness is not size every row carried max_sq:null, so the lookup returned on the first row and EVERY low-slope job priced at the 1\" rate. Superseded 2026-07-25; insulation_tiers is retained only so already-seeded configs keep resolving via the positional fallback in low_slope_insulation_cost()."
+    "_note_insulation_by_thickness": "Tim's sheet K15/K16/K17: 1\" board ($50 L, $155 M, $50 OH) = $255; 1.5\" ($50/$175/$50) = $275; 2\" ($50/$210/$50) = $310. Per-sq, no profit. These are keyed on BOARD THICKNESS, not job size. The old insulation_tiers schema was [max_sq, price]; because thickness is not size every row carried max_sq:null, so the lookup returned on the first row and EVERY low-slope job priced at the 1\" rate. Superseded 2026-07-25; insulation_tiers is retained only so already-seeded configs keep resolving via the positional fallback in low_slope_insulation_cost().",
+    "default_flat_system": "polyglass_sav_sap",
+    "_note_default_flat_system": "The flat section of a MIXED sloped+flat roof, when the estimator does not pick a system. Evidence: all three mixed-roof proposals in the golden set sell it as 'PERKINS PROTECTOR - Flat Re-Roof - Polyglass SAP modified bitumen' (butterworth 2026-05-14, allen 2026-06-23, thompson 2026-05-05). Confirm with Tim that this is always the default."
   },
   "enforce_profit_floor": true,
   "profit_floor_basis": "job",
