@@ -627,10 +627,16 @@ export function Quoting() {
   const [quoteProjectKind, setQuoteProjectKind] = useState<"residential" | "commercial">("residential");
   const [quoteTilePointing, setQuoteTilePointing] = useState<"no" | "yes">("no");
   const [quoteSpecialtyTile, setQuoteSpecialtyTile] = useState<string>("");
-  // Pitch comes from the RoofR measurement, which already drives the day model's steep-roof adder.
-  // Tim's sheet steps the money adder at 7/12; the day model steps at 6/12 (fitted). Different
-  // thresholds for one phenomenon — flagged for Tim, not reconciled here.
-  const pitch712 = Number(selectedMeasurement?.pitch_primary ?? 0) >= 7;
+  // The 7/12+ adder is $305/sq — on a 35-square roof that is +$10,675, a ~25% swing — and NONE of
+  // the 29 homes Tim calibrated us on are 7/12 or steeper. It also overlaps the day model, which
+  // already adds half a labour day at 6/12, while Tim's own $305 build-up contains $90/sq of
+  // overhead. So it is suggested from the measurement but never applied silently: the operator
+  // sees the box, sees it pre-ticked, and can untick it.
+  const [quotePitch712, setQuotePitch712] = useState(false);
+  const measuredPitch = Number(selectedMeasurement?.pitch_primary ?? 0);
+  useEffect(() => {
+    setQuotePitch712(measuredPitch >= 7);
+  }, [measuredPitch]);
   const [quoteExistingRoof, setQuoteExistingRoof] = useState<"none" | "shingle" | "tile" | "metal" | "flat">("none");
   const [quoteLayersToRemove, setQuoteLayersToRemove] = useState("0");
   // Low-slope builder inputs (deck/attach system + insulation/tapered) — only sent when the
@@ -1071,7 +1077,7 @@ export function Quoting() {
       base_tile_brand: baseTileBrand || undefined,
       roof_height: quoteRoofHeight,
       tile_pointing: quoteTilePointing,
-      pitch_7_12: pitch712,
+      pitch_7_12: quotePitch712,
       specialty_tile: quoteSpecialtyTile || undefined,
       existing_roof: quoteExistingRoof,
       demo: quoteExistingRoof !== "none",
@@ -1806,6 +1812,22 @@ export function Quoting() {
                   style={inputStyle}
                 />
               </div>
+              {!isLowSlopeRoofType && (
+                <div>
+                  <FieldLabel>Steep roof (7/12+)</FieldLabel>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={quotePitch712}
+                      onChange={(e) => setQuotePitch712(e.target.checked)}
+                    />
+                    <span>
+                      {measuredPitch > 0 ? `measured ${measuredPitch}/12` : "no pitch on file"}
+                      {quotePitch712 ? " — adder applies" : ""}
+                    </span>
+                  </label>
+                </div>
+              )}
               <div>
                 <FieldLabel>Project kind</FieldLabel>
                 <select value={quoteProjectKind} onChange={(e) => setQuoteProjectKind(e.target.value as "residential" | "commercial")} style={selectStyle}>

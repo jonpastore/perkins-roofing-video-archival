@@ -1139,6 +1139,24 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     tags = config.raw["cost_category_tags"]
     warnings: list[str] = []
 
+    # Steepness is priced on BOTH sides and they overlap. The day model adds +0.5 install days at
+    # >=6/12, and Tim's 7/12 material adder is $305/sq — whose own comment build-up is
+    # "Demo L $70 + Tile L $70 + M $40 + OH $90 + P $35", i.e. it already contains $90/sq of
+    # OVERHEAD. So a 7/12 roof pays for steep-roof overhead twice: once inside the adder and again
+    # through the extra half day. Nobody noticed while pitch_7_12 was hardcoded false and never
+    # fired; it fires now. We have ZERO 7/12+ homes in the 29 Tim sent, so there is no calibration
+    # in the band where his own sheet says cost jumps — warn rather than silently pick a side.
+    if q.pitch_7_12 and q.overhead_mode == "daily":
+        model = config.raw.get("daily_overhead_day_model") or {}
+        thr = (model.get("pitch_day_adder") or {}).get("threshold")
+        if thr and q.pitch_primary and float(q.pitch_primary) >= float(thr):
+            warnings.append(
+                f"steepness_counted_twice: the {thr:g}/12+ day adder added labour days AND the "
+                "7/12 material adder is applied, but that adder already includes $90/sq of "
+                "overhead in Tim's own build-up. Steep-roof overhead is charged on both sides and "
+                "no 7/12+ job exists in the calibration set. Review before sending — pending Tim."
+            )
+
     # Tim's sheet, note behind the coating block: "Coating Prices Based on 25+ squares (Demo not
     # included in price - add $100)". Deliberately unpriced: we know the published rate assumes a
     # 25-square job and excludes demo, but not what a 10-square coating should carry, and inventing

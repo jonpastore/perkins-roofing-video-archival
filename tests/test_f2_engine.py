@@ -1116,3 +1116,27 @@ def test_estimate_residential_ge20_pm_incentive_does_not_warn(cfg: PricingConfig
     assert r["project_total"] > 0
     assert r["pm_incentive"] == 150.0
     assert not any("pm_incentive_missing" in w for w in r["warnings"])
+
+
+def test_steepness_double_count_warns(cfg: PricingConfig):
+    """A 7/12 roof is charged for steepness on both sides; the engine must say so.
+
+    The day model adds +0.5 install days at >=6/12, and Tim's 7/12 material adder is $305/sq whose
+    own comment build-up contains $90/sq of OVERHEAD. Nobody noticed while the SPA hardcoded
+    pitch_7_12=false and the adder never fired. It fires now, and there is no 7/12+ job in the
+    29-home calibration set, so the overlap must be visible rather than silently priced.
+    """
+    kw = dict(code_zone="FBC", slope_type="sloped", roof_type="13_tile", num_squares=35.0,
+              project_kind="residential", overhead_mode="daily",
+              eaves_lf=336, hips_lf=158, ridges_lf=95, valleys_lf=74)
+    steep = estimate(cfg, QuoteInput(pitch_primary=8, pitch_7_12=True, **kw))
+    assert any("steepness_counted_twice" in w for w in steep["warnings"])
+
+    # not warned when only one side applies
+    shallow = estimate(cfg, QuoteInput(pitch_primary=4, pitch_7_12=False, **kw))
+    assert not any("steepness_counted_twice" in w for w in shallow["warnings"])
+    day_only = estimate(cfg, QuoteInput(pitch_primary=6, pitch_7_12=False, **kw))
+    assert not any("steepness_counted_twice" in w for w in day_only["warnings"])
+    # and the adder really is the larger of the two effects, which is why it must be operator-visible
+    li = {x["key"]: x["amount"] for x in steep["line_items_detail"]}
+    assert li.get("pitch_7_12_add", 0) > 10_000
