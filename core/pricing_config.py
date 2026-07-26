@@ -214,7 +214,20 @@ class PricingConfig:
     # PM incentive                                                         #
     # ------------------------------------------------------------------ #
     def pm_incentive(self, zone: str, project_kind: str, num_squares: float) -> float:
-        """Return PM incentive amount; raises ConfigError on unmatched cell."""
+        """Return the PM incentive, keyed the way Tim's LIVE sheet keys it — per zone.
+
+        The two zones use DIFFERENT axes, and reading them as one matrix is what produced the
+        earlier defect where a 35-square residential Palm Beach job took $50 instead of $100:
+
+            Miami / HVHZ  (N7:O8)  -> by PROJECT KIND only.  Residential $150, Commercial $300.
+                                      No size dimension at all: $150 holds at any size.
+            Palm Beach / FBC (N7:O9) -> by SIZE only.  <20 $50, 20-50 $100, >50 $250.
+                                      No residential/commercial split: the bands apply to both.
+
+        `basis` says which axis a zone uses, so neither zone inherits an axis its sheet does not
+        have. Legacy `residential_lt20` / `commercial_*` blocks still resolve, for configs seeded
+        before 2026-07-26.
+        """
         matrix = self.raw["pm_incentive"]
         zone_matrix = matrix.get(zone)
         if zone_matrix is None:
@@ -222,34 +235,44 @@ class PricingConfig:
                 f"pm_incentive has no entry for zone '{zone}'. "
                 "Add it to the config or verify the zone value."
             )
-
-        if project_kind == "residential":
-            if num_squares < 20:
-                key = "residential_lt20"
-            elif "residential_gte20" in zone_matrix:
-                key = "residential_gte20"
-            else:
-                # Golden proposals show residential jobs at 26–76 SQ are normal, so a
-                # missing ≥20 SQ band must not hard-fail. Reuse the residential band
-                # value (already Tim-approved) rather than inventing a new figure.
-                key = "residential_lt20"
-        elif project_kind == "commercial":
-            if 20 <= num_squares <= 50:
-                key = "commercial_20_50"
-            elif num_squares > 50:
-                key = "commercial_gt50"
-            else:
-                raise ConfigError(
-                    f"pm_incentive: no commercial band for zone='{zone}', "
-                    f"num_squares={num_squares} (<20 SQ commercial has no PM incentive band). "
-                    "Check project_kind."
-                )
-        else:
+        if project_kind not in ("residential", "commercial"):
             raise ConfigError(
                 f"pm_incentive: unknown project_kind='{project_kind}'. "
                 "Expected 'residential' or 'commercial'."
             )
 
+        basis = zone_matrix.get("basis")
+        if basis == "project_kind":
+            val = zone_matrix.get(project_kind)
+            if val is None:
+                raise ConfigError(
+                    f"pm_incentive: zone '{zone}' is keyed by project kind and has no "
+                    f"'{project_kind}' amount."
+                )
+            return float(val)
+
+        if basis == "size":
+            for max_sq, amount in zone_matrix.get("bands") or []:
+                if max_sq is None or num_squares <= max_sq:
+                    return float(self.get_or_raise(amount, f"pm_incentive[{zone}].bands"))
+            raise ConfigError(
+                f"pm_incentive: zone '{zone}' size bands do not cover {num_squares} squares."
+            )
+
+        # --- legacy shape, pre-2026-07-26 ---
+        if project_kind == "residential":
+            key = ("residential_gte20" if num_squares >= 20 and "residential_gte20" in zone_matrix
+                   else "residential_lt20")
+        elif 20 <= num_squares <= 50:
+            key = "commercial_20_50"
+        elif num_squares > 50:
+            key = "commercial_gt50"
+        else:
+            raise ConfigError(
+                f"pm_incentive: no commercial band for zone='{zone}', "
+                f"num_squares={num_squares} (<20 SQ commercial has no PM incentive band). "
+                "Check project_kind."
+            )
         val = zone_matrix.get(key)
         if val is None:
             raise ConfigError(
@@ -258,9 +281,6 @@ class PricingConfig:
             )
         return float(val)
 
-    # ------------------------------------------------------------------ #
-    # Tile dumpster                                                        #
-    # ------------------------------------------------------------------ #
     def tile_dumpster_count(self, num_squares: float, zone: str) -> int:
         """Return number of dumpsters needed.
 

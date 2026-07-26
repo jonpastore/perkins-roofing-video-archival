@@ -545,9 +545,19 @@ def test_pm_fbc_residential_lt20_edge(cfg: PricingConfig):
     assert cfg.pm_incentive("FBC", "residential", 19.9) == 50
 
 
-def test_pm_fbc_commercial_20_50(cfg: PricingConfig):
-    assert cfg.pm_incentive("FBC", "commercial", 20.0) == 100
-    assert cfg.pm_incentive("FBC", "commercial", 35.0) == 100
+def test_pm_fbc_bands_are_size_only_and_ignore_project_kind(cfg: PricingConfig):
+    """Palm Beach keys PM incentive on SIZE ALONE — the bands apply to residential too.
+
+    Live sheet FBC!N7:O9 reads "< 20 squares $50 / 20 - 50 squares $100 / > 50 squares $250" with no
+    residential-vs-commercial split. We had the top two wired as commercial-only, so a 35-square
+    RESIDENTIAL job silently fell back to the <20 band and took $50 instead of $100 — real money on
+    the job class that dominates his book.
+    """
+    for kind in ("residential", "commercial"):
+        assert cfg.pm_incentive("FBC", kind, 19.9) == 50
+        assert cfg.pm_incentive("FBC", kind, 20.0) == 50     # 20 is the top of the <=20 band
+        assert cfg.pm_incentive("FBC", kind, 35.0) == 100
+        assert cfg.pm_incentive("FBC", kind, 60.0) == 250
 
 
 def test_pm_fbc_commercial_gt50(cfg: PricingConfig):
@@ -563,10 +573,16 @@ def test_pm_residential_ge20_uses_residential_band(cfg: PricingConfig):
     assert cfg.pm_incentive("HVHZ", "residential", 20.0) == 150
 
 
-def test_pm_raises_on_commercial_lt20(cfg: PricingConfig):
-    """Commercial with <20 SQ has no PM band — engine raises ConfigError."""
-    with pytest.raises(ConfigError, match="commercial"):
-        cfg.pm_incentive("HVHZ", "commercial", 15.0)
+def test_pm_hvhz_is_project_kind_only_and_ignores_size(cfg: PricingConfig):
+    """Miami keys PM incentive on PROJECT KIND ALONE — $150/$300 hold at any size.
+
+    Live sheet 'Tim (HVHZ)'!N7:O8 is just "Residential $150 / Commercial $300"; there is no size
+    dimension. Previously a small commercial job raised ConfigError because we forced Miami onto
+    Palm Beach's size axis, so it could not be quoted at all.
+    """
+    for sq in (5.0, 15.0, 35.0, 200.0):
+        assert cfg.pm_incentive("HVHZ", "residential", sq) == 150
+        assert cfg.pm_incentive("HVHZ", "commercial", sq) == 300
 
 
 def test_pm_raises_on_unknown_project_kind(cfg: PricingConfig):
@@ -749,17 +765,26 @@ def test_sloped_hvhz_commission_explicit_rate():
     assert rate == 0.12
 
 
-def test_pm_null_cell_raises():
-    """Exercises the pm_incentive null-cell ConfigError branch."""
-    raw = dict(_raw_config())
-    pm = {k: dict(v) for k, v in raw["pm_incentive"].items() if not k.startswith("_")}
-    pm["HVHZ"] = dict(pm["HVHZ"])
-    pm["HVHZ"]["residential_lt20"] = None   # force null
-    raw = dict(raw)
-    raw["pm_incentive"] = pm
+def test_pm_null_band_raises():
+    """A null amount must raise, not price at zero."""
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    raw["pm_incentive"]["FBC"]["bands"] = [[20, None], [None, 250]]
+    with pytest.raises(ConfigError, match="pm_incentive"):
+        load_config(raw).pm_incentive("FBC", "residential", 10.0)
+
+
+def test_pm_legacy_shape_still_resolves():
+    """Configs seeded before 2026-07-26 carry the old keys and must keep pricing."""
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    raw["pm_incentive"] = {
+        "HVHZ": {"residential_lt20": 150, "commercial_20_50": 300, "commercial_gt50": 300},
+        "FBC": {"residential_lt20": 50, "commercial_20_50": 100, "commercial_gt50": 250},
+    }
     cfg2 = load_config(raw)
-    with pytest.raises(ConfigError, match="null"):
-        cfg2.pm_incentive("HVHZ", "residential", 10.0)
+    assert cfg2.pm_incentive("HVHZ", "residential", 15.0) == 150
+    assert cfg2.pm_incentive("FBC", "commercial", 35.0) == 100
 
 
 def _cfg_with_low_slope_data(**overrides) -> PricingConfig:
