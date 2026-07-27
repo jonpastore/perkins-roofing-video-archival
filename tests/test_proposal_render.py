@@ -618,9 +618,9 @@ def test_customer_mode_hides_profit_but_still_sums_to_the_same_total():
     # the folded line is a real per-square price, not "fixed amount"
     fold = customer[0]
     assert fold["label"] == "Labour, materials and overhead"
-    assert fold["formula"] == "35 squares x $1,112.14"
-    # base + overhead + every back-end line (profit, PM incentive)
-    assert _amount(fold) == pytest.approx(26950 + 6875 + 5000 + 100, abs=0.01)
+    assert fold["formula"] == "everything required to install this roof"
+    # base + overhead + every back-end line (profit, PM incentive, bonus values)
+    assert _amount(fold) == pytest.approx(26950 + 6875 + 5000 + 100 + 1350, abs=0.01)
 
 
 def test_customer_mode_cannot_be_differenced_back_to_profit():
@@ -668,7 +668,7 @@ def test_no_back_end_key_survives_customer_mode():
     blob = " ".join(f"{ln['key']} {ln['label']} {ln['formula']}" for ln in customer).lower()
     for key in _BACK_END_KEYS:
         assert key not in keys, f"{key!r} still prints as its own row for a customer"
-    for word in ("profit", "margin", "markup", "incentive", "commission"):
+    for word in ("profit", "margin", "markup", "incentive", "bonus", "commission"):
         assert word not in blob, f"{word!r} leaked into the customer build-up"
 
     # sanity: the fixture actually carries these rows, so the assertions above can fail

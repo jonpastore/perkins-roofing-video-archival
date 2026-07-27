@@ -464,15 +464,21 @@ DEFAULT_TEMPLATE_HTML = """\
 def _fold_for_customer(
     details: list[dict[str, Any]], result: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Collapse base cost, overhead and profit into a single per-square line.
+    """Collapse base cost, overhead and every back-end line into one figure.
 
     Order is preserved by folding in place at the position of the first folded line, so the
     customer's page reads in the same sequence as the internal one.
+
+    NOT divided back out to a per-square rate. Jon, 2026-07-27: *"the general cost per sq is an old
+    calculation"* — the price is overhead + materials + add-ons + upgrades + margin + fees, and Tim
+    killed the per-square mechanism on the same call (*"that profit thing per square is an old thing
+    I used to use before I really nailed it down… I would just eliminate it"*). Dividing the fold by
+    squares re-derived exactly that dead number and printed it at a customer. Per-square survives
+    only where an item genuinely IS per square — the demo and upgrade lines below keep their own
+    "35 squares x $40.00", because those are real rates off his sheet, not a synthesised average.
     """
     folded_total = sum(float(li.get("amount") or 0)
                        for li in details if li.get("key") in _CUSTOMER_FOLDED_KEYS)
-    squares = float(result.get("num_squares") or 0)
-    per_sq = folded_total / squares if squares else 0.0
     out: list[dict[str, Any]] = []
     placed = False
     for li in details:
@@ -486,9 +492,9 @@ def _fold_for_customer(
             "key": "labour_materials_overhead",
             "label": _CUSTOMER_FOLD_LABEL,
             "amount": folded_total,
-            # A pre-substituted formula: _line_formula would otherwise see no per_sq/explain and
-            # fall through to "fixed amount", which is exactly the opposite of the point.
-            "explain": {"inputs": {"per_sq": per_sq, "squares": squares}},
+            # Pre-substituted: _line_formula would otherwise fall through to "fixed amount". No
+            # commas or underscores — the customer-safety filter there truncates on both.
+            "explain": {"formula": _CUSTOMER_FOLD_FORMULA},
         })
     return out
 
@@ -499,10 +505,12 @@ def _fold_for_customer(
 # margin-recovery set (base+overhead+profit) rather than the back-end set, so PM Incentive still
 # printed as its own row on a customer document.
 #
-# `new_bonus_values` ($1,350 fixed) is the open case and is deliberately NOT here: Tim's sheet lists
-# it beside permit and delivery, which customers do see, and his proposals show a customer-facing
-# "PERKINS BONUS VALUES" stack — so folding it is a guess, not his instruction. Pending Tim.
-_BACK_END_KEYS = ("profit", "pm_incentive")
+# `new_bonus_values` ($1,350 fixed) IS back-end, resolved 2026-07-27 from his sent proposals rather
+# than by asking him. The customer-facing "PERKINS BONUS VALUES" block is a marketing value stack
+# ($10,665 standard, $30,665 metal with SWR — see docs/superpowers/specs/tim-docs/proposals.md:321)
+# listing what the homeowner gets at no charge. It is not this $1,350 internal cost line; the names
+# collide and nothing else. No Perkins proposal shows a cost line of any kind.
+_BACK_END_KEYS = ("profit", "pm_incentive", "new_bonus_values")
 
 # Lines folded into one figure for a customer. Overhead and profit alone are not enough: Tim
 # publishes a per-square overhead ($185/sq FBC 13" tile), so "base + overhead+profit" would let a
@@ -510,6 +518,7 @@ _BACK_END_KEYS = ("profit", "pm_incentive")
 # base in too leaves one all-in per-square price, which is what his published sheet quotes anyway.
 _CUSTOMER_FOLDED_KEYS = ("base_cost_lm", "overhead", *_BACK_END_KEYS)
 _CUSTOMER_FOLD_LABEL = "Labour, materials and overhead"
+_CUSTOMER_FOLD_FORMULA = "everything required to install this roof"
 
 
 def calc_lines_from_estimate(
@@ -531,7 +540,7 @@ def calc_lines_from_estimate(
     ``internal``  Tim, Marco, Josh, us. Every line, overhead as "5 days tile x $745 + 3 days demo
                   x $1,050" because the days are the whole argument, and profit shown.
     ``customer``  the homeowner. Base cost, overhead and every back-end line (profit, PM
-                  incentive) fold into ONE per-square figure.
+                  incentive, bonus values) fold into ONE figure.
 
     Hiding the profit row is not sufficient on its own — the remaining rows still sum to the total,
     so anything left out can be recovered by subtraction. Folding keeps the arithmetic closed:
