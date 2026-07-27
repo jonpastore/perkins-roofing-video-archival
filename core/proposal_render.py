@@ -68,6 +68,9 @@ class ProposalRenderContext:
     calc_lines: list[dict[str, Any]] | None = field(default=None)
     calc_trace: list[dict[str, Any]] | None = field(default=None)
     include_calc_breakdown: bool = field(default=False)
+    # Which build-up was rendered. Frozen into the snapshot at send time so a re-render of an old
+    # proposal reproduces what the customer actually received, not what today's default would be.
+    calc_audience: str = field(default="internal")
 
 
 class _SilentUndefined(jinja2.Undefined):
@@ -158,6 +161,7 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "lines": ctx.calc_lines or [],
             "trace": ctx.calc_trace or [],
             "total_display": (ctx.calc_lines or [{}])[-1].get("running_display") if ctx.calc_lines else None,
+            "audience": ctx.calc_audience,
         },
         "tc_summary_bullets": ctx.tc_summary_bullets,
         "tc_faq_items": ctx.tc_faq_items,
@@ -457,7 +461,49 @@ DEFAULT_TEMPLATE_HTML = """\
 """
 
 
-def calc_lines_from_estimate(result: dict[str, Any]) -> list[dict[str, Any]]:
+def _fold_for_customer(
+    details: list[dict[str, Any]], result: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Collapse base cost, overhead and profit into a single per-square line.
+
+    Order is preserved by folding in place at the position of the first folded line, so the
+    customer's page reads in the same sequence as the internal one.
+    """
+    folded_total = sum(float(li.get("amount") or 0)
+                       for li in details if li.get("key") in _CUSTOMER_FOLDED_KEYS)
+    squares = float(result.get("num_squares") or 0)
+    per_sq = folded_total / squares if squares else 0.0
+    out: list[dict[str, Any]] = []
+    placed = False
+    for li in details:
+        if li.get("key") not in _CUSTOMER_FOLDED_KEYS:
+            out.append(li)
+            continue
+        if placed:
+            continue
+        placed = True
+        out.append({
+            "key": "labour_materials_overhead",
+            "label": _CUSTOMER_FOLD_LABEL,
+            "amount": folded_total,
+            # A pre-substituted formula: _line_formula would otherwise see no per_sq/explain and
+            # fall through to "fixed amount", which is exactly the opposite of the point.
+            "explain": {"inputs": {"per_sq": per_sq, "squares": squares}},
+        })
+    return out
+
+
+# Lines folded into one figure for a customer. Overhead and profit alone are not enough: Tim
+# publishes a per-square overhead ($185/sq FBC 13" tile), so "base + overhead+profit" would let a
+# reader subtract the published overhead and land within a few dollars of the margin. Folding the
+# base in too leaves one all-in per-square price, which is what his published sheet quotes anyway.
+_CUSTOMER_FOLDED_KEYS = ("base_cost_lm", "overhead", "profit")
+_CUSTOMER_FOLD_LABEL = "Labour, materials and overhead"
+
+
+def calc_lines_from_estimate(
+    result: dict[str, Any], *, audience: str = "internal",
+) -> list[dict[str, Any]]:
     """Turn an estimate's debug trace into proposal-ready "how this was built" rows.
 
     The engine already produces a formula + inputs for every priced line when debug=true; it was
@@ -467,10 +513,29 @@ def calc_lines_from_estimate(result: dict[str, Any]) -> list[dict[str, Any]]:
 
     Substitutes the actual values into the formula so a reader sees "35 sq x $783.88" rather than
     "per_sq x squares", and keeps a running subtotal so the last row's total is verifiable.
+
+    Two audiences, because they want opposite things (Jon, 2026-07-25: *"we can collapse the price
+    with days in to price per sq. to show the customer. we don't want to show them the profit"*):
+
+    ``internal``  Tim, Marco, Josh, us. Every line, overhead as "5 days tile x $745 + 3 days demo
+                  x $1,050" because the days are the whole argument, and profit shown.
+    ``customer``  the homeowner. Base cost, overhead and profit fold into ONE per-square figure.
+
+    Hiding the profit row is not sufficient on its own — the remaining rows still sum to the total,
+    so anything left out can be recovered by subtraction. Folding keeps the arithmetic closed:
+    every row a customer sees is real, they add up to the total, and no combination of them
+    isolates the margin. ``test_customer_mode_cannot_be_differenced_back_to_profit`` proves it by
+    brute force over every subset of the customer rows.
     """
+    if audience not in ("internal", "customer"):
+        raise ValueError(f"unknown calc audience {audience!r}")
+    details = list(result.get("line_items_detail") or [])
+    if audience == "customer":
+        details = _fold_for_customer(details, result)
+
     out: list[dict[str, Any]] = []
     running = 0.0
-    for li in result.get("line_items_detail") or []:
+    for li in details:
         amount = float(li.get("amount") or 0)
         running += amount
         explain = li.get("explain") or {}

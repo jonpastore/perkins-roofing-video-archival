@@ -738,6 +738,11 @@ export function Quoting() {
   // T&C + contract FAQ default ON — they were always printed before these toggles existed.
   const [includeTerms, setIncludeTerms] = useState(true);
   const [includeContractFaq, setIncludeContractFaq] = useState(true);
+  // "How this price was built" defaults OFF — the two above default ON because a proposal that
+  // silently drops its T&C is a contract defect, whereas this one exposes the build-up and is
+  // opt-in per job. Audience decides whether the customer sees days and profit or one $/sq line.
+  const [includeCalcBreakdown, setIncludeCalcBreakdown] = useState(false);
+  const [calcAudience, setCalcAudience] = useState<"internal" | "customer">("customer");
   const [scopeOfWorkPrefilled, setScopeOfWorkPrefilled] = useState(false);
   // Named scope templates (the blocks Josh reuses). Live on tenant settings, not the
   // immutably-versioned pricing config — saving one must not mint a priced config version.
@@ -1325,6 +1330,8 @@ export function Quoting() {
       include_lumber_chart: includeLumberChart,
       include_terms: includeTerms,
       include_contract_faq: includeContractFaq,
+      include_calc_breakdown: includeCalcBreakdown,
+      calc_audience: calcAudience,
       ...(scopeOfWork.trim() ? { scope_of_work_text: scopeOfWork.trim() } : {}),
     };
 
@@ -2456,6 +2463,41 @@ export function Quoting() {
                           label="Include contract FAQ"
                           title="Print the approved contract-FAQ questions and answers in the proposal PDF"
                         />
+                        <EstimateCheckbox
+                          checked={includeCalcBreakdown}
+                          onChange={setIncludeCalcBreakdown}
+                          label="Show how this price was built"
+                          title="Print the line-by-line build-up — base cost, overhead, demo, fees — so the reader can check every figure against the price book"
+                        />
+                        {includeCalcBreakdown && (
+                          <div style={{ margin: "6px 0 0 24px", fontSize: 12.5 }}>
+                            <label style={{ display: "block", marginBottom: 3 }}>
+                              <input
+                                type="radio"
+                                name="calc-audience"
+                                checked={calcAudience === "customer"}
+                                onChange={() => setCalcAudience("customer")}
+                                style={{ marginRight: 6 }}
+                              />
+                              Customer — one price per square, no margin shown
+                            </label>
+                            <label style={{ display: "block" }}>
+                              <input
+                                type="radio"
+                                name="calc-audience"
+                                checked={calcAudience === "internal"}
+                                onChange={() => setCalcAudience("internal")}
+                                style={{ marginRight: 6 }}
+                              />
+                              Internal — days &times; daily rate, profit shown
+                            </label>
+                            {calcAudience === "internal" && (
+                              <div style={{ marginTop: 4, color: "#b45309" }}>
+                                This prints your profit. Only send it to Perkins staff.
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <Button onClick={handleCreateProposal} disabled={creatingProposal || !selectedPropertyId || inputsDirty} style={{ fontSize: 13, width: "100%" }}>
                         {creatingProposal ? "Creating…" : "Create proposal draft"}

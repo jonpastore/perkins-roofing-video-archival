@@ -87,6 +87,7 @@ from core.proposal import (
 from core.proposal_render import (
     DEFAULT_TEMPLATE_HTML,
     ProposalRenderContext,
+    calc_lines_from_estimate,
     render_proposal_html,
 )
 
@@ -1006,6 +1007,62 @@ def list_proposals(
     return {"items": out, "total": total, "status_counts": status_counts}
 
 
+def _freeze_calc_breakdown(snapshot: dict | None) -> dict | None:
+    """Render the "how this price was built" rows once, at create time, and drop the raw trace.
+
+    Two things have to be true at once and neither survives doing this lazily at render:
+
+    1. **Frozen.** A proposal must re-render as it was SENT. Rebuilding the rows from live config
+       on every render would silently restate an old customer's quote the next time prices move.
+    2. **No trace in the database.** `api/routes/estimator._audit_payload` strips `explain` and
+       `calculation_trace` before an estimate row is persisted, because `sales` can read those
+       rows and the trace carries profit_scale, the pm_incentive table and office burn. A
+       proposal snapshot is readable by exactly the same role, so the same rule applies here —
+       otherwise ticking a checkbox would route around that gate.
+
+    `calc_lines_from_estimate` has already stripped internals from what it emits, so the stored
+    rows are customer-safe by construction. The audience is stored beside them: the whole point is
+    that a customer-mode proposal never re-renders with the internal build-up.
+    """
+    if not snapshot or snapshot.get("include_calc_breakdown") is not True:
+        return snapshot
+    snap = dict(snapshot)
+    audience = snap.get("calc_audience") or "internal"
+    if audience not in ("internal", "customer"):
+        raise HTTPException(422, f"calc_audience must be 'internal' or 'customer', got {audience!r}")
+    result = snap.get("estimate_result") or {}
+    # The debug flag is gated on estimating_manage, so a sales user's quote arrives with no
+    # `explain` on any line. calc_lines_from_estimate would still emit rows — every formula
+    # reading "fixed amount" — which is a build-up section that builds up nothing. Fail closed on
+    # the SOURCE carrying no derivation, not on the output being empty: the output never is.
+    detail = result.get("line_items_detail") or []
+    if not any(isinstance(li, dict) and li.get("explain") for li in detail):
+        snap["include_calc_breakdown"] = False
+        snap.pop("calc_lines", None)
+        return snap
+    try:
+        snap["calc_lines"] = calc_lines_from_estimate(result, audience=audience)
+    except Exception as exc:
+        _log.warning("calc breakdown could not be built, section suppressed: %s", exc)
+        snap["include_calc_breakdown"] = False
+        snap.pop("calc_lines", None)
+        return snap
+    if not snap["calc_lines"]:
+        snap["include_calc_breakdown"] = False
+        snap.pop("calc_lines", None)
+    snap["calc_audience"] = audience
+    if isinstance(result, dict):
+        clean = {k: v for k, v in result.items() if k != "calculation_trace"}
+        detail = clean.get("line_items_detail")
+        if isinstance(detail, list):
+            clean["line_items_detail"] = [
+                {k: v for k, v in li.items() if k != "explain"} if isinstance(li, dict) else li
+                for li in detail
+            ]
+        snap["estimate_result"] = clean
+    return snap
+
+
 @router.post("/quoting/proposals")
 def create_proposal(
     body: ProposalCreate,
@@ -1021,7 +1078,7 @@ def create_proposal(
         estimate_id=body.estimate_id,
         template_id=body.template_id,
         title=body.title,
-        quote_snapshot=body.quote_snapshot,
+        quote_snapshot=_freeze_calc_breakdown(body.quote_snapshot),
         status="draft",
         accept_token=generate_accept_token(),
         created_by=email,
@@ -1517,6 +1574,14 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         # both sections, and dropping a T&C by default would be a contract defect.
         include_terms=snap.get("include_terms", True) is not False,
         include_contract_faq=snap.get("include_contract_faq", True) is not False,
+        # "How this price was built". Unlike the two above, absent means OFF: it is internal
+        # build-up, not contract boilerplate, so a proposal that never opted in must never
+        # acquire it on a later re-render. The ROWS are read from the snapshot, not recomputed —
+        # they were frozen at send time, so re-rendering an old proposal reproduces what the
+        # customer actually received even if prices or the audience default have moved since.
+        include_calc_breakdown=snap.get("include_calc_breakdown") is True,
+        calc_lines=snap.get("calc_lines") or None,
+        calc_audience=snap.get("calc_audience") or "internal",
     )
 
     try:

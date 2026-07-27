@@ -9,6 +9,8 @@ Tests cover:
 """
 from __future__ import annotations
 
+import pytest
+
 from core.proposal_render import (
     DEFAULT_TEMPLATE_HTML,
     ProposalRenderContext,
@@ -548,3 +550,166 @@ def test_calc_lines_show_days_for_overhead_and_leak_no_internals():
 
     # running total is verifiable line by line
     assert lines[-1]["running_display"] == "$34,410.76"
+
+
+# ---------------------------------------------------------------------------
+# Customer vs internal build-up. Jon, 2026-07-25: "we can collapse the price with days in to price
+# per sq. to show the customer. we don't want to show them the profit."
+# ---------------------------------------------------------------------------
+
+def _calc_result():
+    """918 Mil Creek as the estimator produces it — the home in Tim's worked-proposals pack."""
+    return {
+        "num_squares": 35.0,
+        "line_items_detail": [
+            {"key": "base_cost_lm", "label": "Base Cost (L+M)", "amount": 26950.0,
+             "explain": {"formula": "per_sq x squares", "inputs": {"per_sq": 770.0, "squares": 35.0}}},
+            {"key": "overhead", "label": "Overhead", "amount": 6875.0,
+             "explain": {"formula": "sum(days x daily_rate) per series",
+                         "inputs": {"tile_days": 5.0, "tile_rate": 745.0,
+                                    "demo_dry_in_flat_days": 3.0, "demo_dry_in_flat_rate": 1050.0}}},
+            {"key": "profit", "label": "Profit", "amount": 5000.0,
+             "explain": {"formula": "profit floor applied", "inputs": {"per_sq": 142.86, "squares": 35.0}}},
+            {"key": "tile_demo", "label": "Tile Demo", "amount": 1050.0,
+             "explain": {"formula": "per_sq x squares", "inputs": {"per_sq": 30.0, "squares": 35.0}}},
+            {"key": "delivery_plywood_vents", "label": "Delivery / Plywood / Vents", "amount": 650.0,
+             "explain": {"formula": "fixed"}},
+            {"key": "new_bonus_values", "label": "Bonus Values", "amount": 1350.0,
+             "explain": {"formula": "fixed"}},
+            {"key": "permit_processing", "label": "Permit Processing", "amount": 500.0,
+             "explain": {"formula": "fixed"}},
+            {"key": "tile_dumpster", "label": "Tile Dumpsters", "amount": 600.0,
+             "explain": {"formula": "fixed"}},
+            {"key": "pm_incentive", "label": "PM Incentive", "amount": 100.0,
+             "explain": {"formula": "band lookup on squares", "inputs": {"squares": 35.0}}},
+        ],
+    }
+
+
+def _amount(line):
+    return float(line["amount_display"].replace("$", "").replace(",", ""))
+
+
+def test_internal_mode_still_shows_days_and_profit():
+    from core.proposal_render import calc_lines_from_estimate
+    lines = calc_lines_from_estimate(_calc_result(), audience="internal")
+    keys = [ln["key"] for ln in lines]
+    assert "profit" in keys
+    assert "5 days tile x $745" in lines[1]["formula"]
+    assert lines[-1]["running_display"] == "$43,075.00"
+
+
+def test_customer_mode_hides_profit_but_still_sums_to_the_same_total():
+    """The whole point: rows a customer can add up, landing on the price they were quoted."""
+    from core.proposal_render import calc_lines_from_estimate
+    result = _calc_result()
+    internal = calc_lines_from_estimate(result, audience="internal")
+    customer = calc_lines_from_estimate(result, audience="customer")
+
+    assert customer[-1]["running_display"] == internal[-1]["running_display"] == "$43,075.00"
+    assert sum(_amount(ln) for ln in customer) == pytest.approx(43075.00, abs=0.01)
+
+    # no profit row, and nothing that names one
+    assert not any(ln["key"] == "profit" for ln in customer)
+    blob = " ".join(f"{ln['label']} {ln['formula']}" for ln in customer).lower()
+    for word in ("profit", "margin", "markup"):
+        assert word not in blob, f"{word!r} leaked into the customer build-up"
+
+    # the folded line is a real per-square price, not "fixed amount"
+    fold = customer[0]
+    assert fold["label"] == "Labour, materials and overhead"
+    assert fold["formula"] == "35 squares x $1,109.29"
+    assert _amount(fold) == pytest.approx(26950 + 6875 + 5000, abs=0.01)
+
+
+def test_customer_mode_cannot_be_differenced_back_to_profit():
+    """Hiding the row is not enough — brute-force every subset of what the customer can see.
+
+    If any combination of the visible amounts equalled the profit figure, a customer with a
+    calculator could recover the margin, and the section would be worse than not shipping it.
+    Checks the profit value itself AND the total-minus-subset complement, which is the same
+    attack from the other end.
+    """
+    from itertools import combinations
+
+    from core.proposal_render import calc_lines_from_estimate
+    result = _calc_result()
+    profit = 5000.0
+    total = 43075.0
+    amounts = [_amount(ln) for ln in calc_lines_from_estimate(result, audience="customer")]
+
+    reachable = set()
+    for r in range(1, len(amounts) + 1):
+        for combo in combinations(amounts, r):
+            s = round(sum(combo), 2)
+            reachable.add(s)
+            reachable.add(round(total - s, 2))
+    assert profit not in reachable, "profit is recoverable by differencing the customer rows"
+
+    # sanity: the check is capable of failing — the internal rows DO expose it
+    internal_amounts = [_amount(ln)
+                        for ln in calc_lines_from_estimate(result, audience="internal")]
+    assert profit in {round(a, 2) for a in internal_amounts}
+
+
+def test_unknown_audience_is_rejected():
+    """A typo must not silently fall through to the internal view on a customer document."""
+    from core.proposal_render import calc_lines_from_estimate
+    with pytest.raises(ValueError, match="audience"):
+        calc_lines_from_estimate(_calc_result(), audience="homeowner")
+
+
+# ---------------------------------------------------------------------------
+# Snapshot freezing — the rows a customer received must survive a later re-render
+# ---------------------------------------------------------------------------
+
+def _snap(**over):
+    snap = {
+        "include_calc_breakdown": True,
+        "calc_audience": "customer",
+        "estimate_result": _calc_result() | {"calculation_trace": [{"section": "profit_scale"}]},
+    }
+    snap.update(over)
+    return snap
+
+
+def test_freeze_stores_rows_and_keeps_the_raw_trace_out_of_the_database():
+    """Ticking a checkbox must not route around the gate that keeps traces out of readable rows.
+
+    api/routes/estimator._audit_payload strips explain + calculation_trace before an estimate is
+    persisted, because `sales` can read those rows. A proposal snapshot has the same readership.
+    """
+    from api.routes.proposals import _freeze_calc_breakdown
+    snap = _freeze_calc_breakdown(_snap())
+
+    assert snap["calc_lines"], "rows must be frozen at create time, not rebuilt on render"
+    assert snap["calc_audience"] == "customer"
+    assert "calculation_trace" not in snap["estimate_result"]
+    assert not any("explain" in li for li in snap["estimate_result"]["line_items_detail"])
+    # and the frozen rows are the customer view, not the internal one
+    assert not any(ln["key"] == "profit" for ln in snap["calc_lines"])
+
+
+def test_freeze_is_a_no_op_when_the_box_is_unticked():
+    from api.routes.proposals import _freeze_calc_breakdown
+    snap = _freeze_calc_breakdown(_snap(include_calc_breakdown=False))
+    assert "calc_lines" not in snap
+
+
+def test_freeze_fails_closed_when_the_estimate_carries_no_trace():
+    """debug is gated on estimating_manage. A sales quote has no `explain`, so every formula would
+    read "fixed amount" — a build-up section that builds up nothing. Suppress it instead."""
+    from api.routes.proposals import _freeze_calc_breakdown
+    bare = {"num_squares": 35.0,
+            "line_items_detail": [{"key": "base_cost_lm", "label": "Base", "amount": 100.0}]}
+    snap = _freeze_calc_breakdown(_snap(estimate_result=bare))
+    assert snap["include_calc_breakdown"] is False
+    assert "calc_lines" not in snap
+
+
+def test_freeze_rejects_an_unknown_audience():
+    from fastapi import HTTPException
+
+    from api.routes.proposals import _freeze_calc_breakdown
+    with pytest.raises(HTTPException):
+        _freeze_calc_breakdown(_snap(calc_audience="homeowner"))
