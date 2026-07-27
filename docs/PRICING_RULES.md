@@ -88,6 +88,11 @@ Overhead is the office's daily cost of being open, spread over the days a job ru
 rows reduce to about **$4,140/day for Miami** (9×$460, 12×$345, 15×$275) and **$1,400/day for
 Jupiter** (4×$345, 7×$200, 10×$140).
 
+**Settled 2026-07-27 — Miami is $4,250/day.** Tim did the arithmetic himself: *"my branch is like 28
+grand, their branch is like 85 grand, and we just divide that by 20 work days."* $28,000/20 =
+**$1,400/day Jupiter** (already our config); $85,000/20 = **$4,250/day Miami**, which supersedes the
+$4,140 read off the OH Basis rows above. Not yet seeded into the config. Naples remains unstated.
+
 - **Naples carries zero overhead.** "Miami's overhead is more than Jupiter's and Naples has zero
   overhead right now" (7/17 [40:20]).
 - **OPEN:** which crew-size column each office actually prices from, and Miami's true daily figure.
@@ -174,9 +179,10 @@ override is left alone.
 occupancy rather than crew-days. We currently count **crew days ÷ 5**. If a job has a long inspection
 gap in the middle, counting schedule time end to end would give a higher number.
 
-**OPEN — the "four grand".** On 7/17 [08:15], about a 6-square roof, he said "I'm not gonna do this
-job unless I make at least $2,500 — unless I make at least four grand." His written position is
-$2,500 at any size, so $4,000 is treated as thinking aloud until confirmed.
+**CLOSED 2026-07-27 — the "four grand" is dead.** On 7/17 [08:15], about a 6-square roof, he had
+said "I'm not gonna do this job unless I make at least $2,500 — unless I make at least four grand."
+Confirmed verbally on 7/27: **$2,500 at any size**, applied per on-site week
+($2,500 × ceil(crew_days / 5)). $4,000 was thinking aloud.
 
 ### 4c. Margin floors
 
@@ -233,7 +239,7 @@ and vents $350 + permit and PM bonus $550. If that sheet is live, every quote ch
 | Stucco metal | **$9 per LF** | his subs quote "+$1–2 per LF stucco", so the "$9 per 10 LF" wording elsewhere is a typo |
 | Roof cuts (access) | Low $0 / Medium $25 / High $50 per sq | identical in both zones |
 | Roof height 3–5 storeys | +$1,200 flat | "min. add $1,200 delivery and trash chute". 6+ needs a crane → manual review |
-| HVHZ upgrade | +$100/sq | tile calculator |
+| HVHZ upgrade | +$100/sq — **NOT IMPLEMENTED** | tile calculator. No shipped config carries this adder, and the actual FBC→HVHZ base-cost deltas are +$10/sq (13" tile), +$20 (barrel), +$270 (standing seam). `cuts_calc.fixed_per_sq.HVHZ` is null, so the cut calculator is not calibrated for HVHZ either. **Pending Tim** — audit 2026-07-27 |
 | Specialty tile upgrades | Santa Fe Clay "S" $160, Verea "S" $195, Verea Caribbean "S" $120 | |
 
 ⚠️ A 7/12+ tile roof pays for steepness **twice** — once in the $305 adder (whose own build-up
@@ -295,6 +301,10 @@ undertook to send a fixed repair price list by email; it has not arrived.
 **Set per salesperson, not per branch or zone.**
 
 > "mostly net … unless it's like outside so like it just varies by the salesperson." — Tim, 7/20 [03:49]
+
+⚠️ **The engine does not do this yet** (audit 2026-07-27). `commission_pct` is keyed by slope type —
+low_slope 0.15, sloped 0.10, sloped_hvhz null — with no salesperson axis at all. Until that is
+rekeyed, the rule below describes Tim's intent, not the shipped behaviour.
 
 Two tabs on the newest sheet with an identical price grid read 15% (Marco) and 7.5% (Josh), which
 settles it: a rate that differs between identically-zoned tabs is not a function of zone. The earlier

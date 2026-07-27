@@ -493,11 +493,22 @@ def _fold_for_customer(
     return out
 
 
+# Back-end lines: what the money pays US, not what it buys the homeowner. Tim, 2026-07-27:
+# *"the PM incentive is not something the customer ever needs to see… we usually don't want to show
+# them any of the back-end stuff."* The first cut of the fold list was built as the
+# margin-recovery set (base+overhead+profit) rather than the back-end set, so PM Incentive still
+# printed as its own row on a customer document.
+#
+# `new_bonus_values` ($1,350 fixed) is the open case and is deliberately NOT here: Tim's sheet lists
+# it beside permit and delivery, which customers do see, and his proposals show a customer-facing
+# "PERKINS BONUS VALUES" stack — so folding it is a guess, not his instruction. Pending Tim.
+_BACK_END_KEYS = ("profit", "pm_incentive")
+
 # Lines folded into one figure for a customer. Overhead and profit alone are not enough: Tim
 # publishes a per-square overhead ($185/sq FBC 13" tile), so "base + overhead+profit" would let a
 # reader subtract the published overhead and land within a few dollars of the margin. Folding the
 # base in too leaves one all-in per-square price, which is what his published sheet quotes anyway.
-_CUSTOMER_FOLDED_KEYS = ("base_cost_lm", "overhead", "profit")
+_CUSTOMER_FOLDED_KEYS = ("base_cost_lm", "overhead", *_BACK_END_KEYS)
 _CUSTOMER_FOLD_LABEL = "Labour, materials and overhead"
 
 
@@ -519,7 +530,8 @@ def calc_lines_from_estimate(
 
     ``internal``  Tim, Marco, Josh, us. Every line, overhead as "5 days tile x $745 + 3 days demo
                   x $1,050" because the days are the whole argument, and profit shown.
-    ``customer``  the homeowner. Base cost, overhead and profit fold into ONE per-square figure.
+    ``customer``  the homeowner. Base cost, overhead and every back-end line (profit, PM
+                  incentive) fold into ONE per-square figure.
 
     Hiding the profit row is not sufficient on its own — the remaining rows still sum to the total,
     so anything left out can be recovered by subtraction. Folding keeps the arithmetic closed:

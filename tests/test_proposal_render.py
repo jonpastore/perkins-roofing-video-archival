@@ -618,8 +618,9 @@ def test_customer_mode_hides_profit_but_still_sums_to_the_same_total():
     # the folded line is a real per-square price, not "fixed amount"
     fold = customer[0]
     assert fold["label"] == "Labour, materials and overhead"
-    assert fold["formula"] == "35 squares x $1,109.29"
-    assert _amount(fold) == pytest.approx(26950 + 6875 + 5000, abs=0.01)
+    assert fold["formula"] == "35 squares x $1,112.14"
+    # base + overhead + every back-end line (profit, PM incentive)
+    assert _amount(fold) == pytest.approx(26950 + 6875 + 5000 + 100, abs=0.01)
 
 
 def test_customer_mode_cannot_be_differenced_back_to_profit():
@@ -650,6 +651,31 @@ def test_customer_mode_cannot_be_differenced_back_to_profit():
     internal_amounts = [_amount(ln)
                         for ln in calc_lines_from_estimate(result, audience="internal")]
     assert profit in {round(a, 2) for a in internal_amounts}
+
+
+def test_no_back_end_key_survives_customer_mode():
+    """Tim, 2026-07-27: "the PM incentive is not something the customer ever needs to see…
+    we usually don't want to show them any of the back-end stuff."
+
+    Every back-end key must be gone as a row AND as a word — a folded amount is fine, a labelled
+    row is not. Driven off _BACK_END_KEYS so adding one there without folding it fails here.
+    """
+    from core.proposal_render import _BACK_END_KEYS, calc_lines_from_estimate
+    result = _calc_result()
+    customer = calc_lines_from_estimate(result, audience="customer")
+
+    keys = {ln["key"] for ln in customer}
+    blob = " ".join(f"{ln['key']} {ln['label']} {ln['formula']}" for ln in customer).lower()
+    for key in _BACK_END_KEYS:
+        assert key not in keys, f"{key!r} still prints as its own row for a customer"
+    for word in ("profit", "margin", "markup", "incentive", "commission"):
+        assert word not in blob, f"{word!r} leaked into the customer build-up"
+
+    # sanity: the fixture actually carries these rows, so the assertions above can fail
+    internal_keys = {ln["key"] for ln in calc_lines_from_estimate(result, audience="internal")}
+    assert set(_BACK_END_KEYS) <= internal_keys
+    # and folding them kept the arithmetic closed
+    assert sum(_amount(ln) for ln in customer) == pytest.approx(43075.00, abs=0.01)
 
 
 def test_unknown_audience_is_rejected():

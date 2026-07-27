@@ -596,30 +596,69 @@ def test_pm_raises_on_unknown_zone(cfg: PricingConfig):
 
 
 # ---------------------------------------------------------------------------
-# §7.10 Low-slope tests (skip-marked pending Tim data)
+# §7.10 Low-slope
+#
+# These four were skip-marked "pending Tim data: low_slope base costs are null (OI-1) /
+# tapered_cost_per_sq is null (OI-4)". Both reasons went stale — the fixture AND all three prod
+# configs carry base_cost_lm and tapered_cost_per_sq — and three of the four were empty `pass`
+# stubs, so low-slope shipped with no engine-level coverage at all. Audit 2026-07-27 (R2 / #440).
 # ---------------------------------------------------------------------------
-@pytest.mark.skip(reason="pending Tim data: low_slope base costs are null (OI-1)")
+_LOW_SLOPE_GOLDEN = GOLDEN_DIR / "498sq_low_slope_hvhz.json"
+
+
+@pytest.mark.skipif(not _LOW_SLOPE_GOLDEN.exists(),
+                    reason="golden 498sq_low_slope_hvhz.json not written — needs Tim's quoted "
+                           "total for a 498 sq commercial TPO job, not a number we invent")
 def test_low_slope_tpo_hvhz(cfg: PricingConfig):
-    q = QuoteInput(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo",
+    q = QuoteInput(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
                    num_squares=498.0, project_kind="commercial")
-    golden = json.loads((GOLDEN_DIR / "498sq_low_slope_hvhz.json").read_text())
+    golden = json.loads(_LOW_SLOPE_GOLDEN.read_text())
     r = estimate(cfg, q)
     assert abs(r["project_total"] - golden["expected_total"]) <= golden["tolerance_abs"]
 
 
-@pytest.mark.skip(reason="pending Tim data: low_slope base costs are null (OI-1)")
-def test_low_slope_insulation_no_profit():
-    pass
+def _low_slope_q(cfg: PricingConfig, **kw) -> dict:
+    return estimate(cfg, QuoteInput(
+        code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
+        num_squares=100.0, project_kind="commercial", **kw))
 
 
-@pytest.mark.skip(reason="pending Tim data: low_slope.tapered_cost_per_sq is null (OI-4)")
-def test_low_slope_tapered_no_oh_no_profit():
-    pass
+def test_low_slope_insulation_no_profit(cfg: PricingConfig):
+    """Exhibit B: insulation carries overhead but NO profit.
+
+    Behavioural, not structural: the same job with and without insulation must differ by exactly
+    the board cost, and the insulation line must be out of the profit floor's denominator — so a
+    big insulation package cannot inflate the floor and quietly raise the price.
+    """
+    base = _low_slope_q(cfg)
+    with_ins = _low_slope_q(cfg, include_insulation=True, insulation_thickness="1in")
+    cost_per_sq = cfg.low_slope_insulation_cost("1in")
+
+    line = next(li for li in with_ins["line_items_detail"] if li["key"] == "insulation")
+    assert line["amount"] == pytest.approx(cost_per_sq * 100.0, abs=0.01)
+    assert with_ins["project_total"] - base["project_total"] == pytest.approx(
+        cost_per_sq * 100.0, abs=0.01), "insulation must not pull profit with it"
+    assert cfg.raw["floor_excluded_categories"]["insulation"] == ["Profit"]
 
 
-@pytest.mark.skip(reason="pending Tim data: low_slope base costs are null (OI-1)")
-def test_low_slope_commission_15pct():
-    pass
+def test_low_slope_tapered_no_oh_no_profit(cfg: PricingConfig):
+    """Exhibit B: tapered insulation carries neither overhead nor profit."""
+    base = _low_slope_q(cfg)
+    with_tap = _low_slope_q(cfg, include_tapered=True)
+    cost_per_sq = cfg.low_slope_tapered_cost()
+
+    line = next(li for li in with_tap["line_items_detail"] if li["key"] == "tapered")
+    assert line["amount"] == pytest.approx(cost_per_sq * 100.0, abs=0.01)
+    assert with_tap["project_total"] - base["project_total"] == pytest.approx(
+        cost_per_sq * 100.0, abs=0.01), "tapered must not pull OH or profit with it"
+    assert sorted(cfg.raw["floor_excluded_categories"]["tapered"]) == ["OH", "Profit"]
+
+
+def test_low_slope_commission_15pct(cfg: PricingConfig):
+    """Low slope commissions at 15% — a different rate from sloped (10%), and off PROFIT."""
+    r = _low_slope_q(cfg)
+    assert cfg.commission_rate("low_slope", "HVHZ") == pytest.approx(0.15)
+    assert r["commission"] == pytest.approx(r["profit_dollars"] * 0.15, abs=0.01)
 
 
 # ---------------------------------------------------------------------------
