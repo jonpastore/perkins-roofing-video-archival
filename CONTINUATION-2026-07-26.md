@@ -1,10 +1,12 @@
 # CONTINUATION 2026-07-26 — proposal build-up, customer-facing collapse, PM $50 in prod
 
-**HEAD `d3c0a39`.** Prod configs unchanged: **jupiter v17 / miami v18 / naples v17**, deployed code
+**HEAD `2f12c1b`.** Prod configs unchanged: **jupiter v17 / miami v18 / naples v17**, deployed code
 still `platform:27e076d`. Everything this session is committed but **nothing new is deployed and
 nothing is seeded to prod** — see §3, that is the first job.
 
-The Tim draft is written, threaded, and **unsent**, with two attachments. Do not send it without
+The Tim draft is written, threaded, and **unsent**, with ONE attachment —
+`Perkins-worked-proposals-4-homes-2026-07-26.pdf`, 16 pages: four of his homes as real proposals
+in the shipping format, each followed by full audit pages. Do not send it without
 Jon, and read §1 before touching it — it currently contains a misattributed quote.
 
 ---
@@ -36,7 +38,7 @@ which is about putting **metal-roof warranty content** on quotes — unrelated.
 **Consequences:**
 
 1. **The "How this price was built" section was my inference, not Tim's requirement.** It is real
-   and it works (`d3c0a39`), but it should be treated as a product proposal to Jon, not as
+   and it works (`d3c0a39`/`2f12c1b`), but it should be treated as a product proposal to Jon, not as
    something Tim asked for.
 2. ⚠️ **THE DRAFT EMAIL MISATTRIBUTES JON'S WORDS TO TIM AND MUST BE FIXED BEFORE SENDING.** In the
    "Which brings me to the notes column" section it says *"On the call you offered exactly the fix:
@@ -73,11 +75,11 @@ to show them the profit."*
 Today the section renders the internal view:
 
 ```
-Base Cost (L+M)   35 squares x $783.88                             $27,435.76
+Base Cost (L+M)   35 squares x $770.00                             $26,950.00
 Overhead          5 days tile x $745 + 3 days demo x $1,050         $6,875.00
 Profit            35 squares x $100.00                              $3,500.00     <-- must not ship
 Tile Demo         35 squares x $30.00                               $1,050.00
-...
+...                                                        TOTAL   $41,575.00
 ```
 
 Two distinct audiences, so this wants **two modes**, not one:
@@ -132,6 +134,8 @@ are all new. **Diff prod against the fixture and decide deliberately what ships.
 | `49d1df4` | full attachment audit — the Evergrene commercial bid had been sitting unopened in the corpus all week. |
 | `9757a53`, `e20aa18` | closed 11 pending-Tim config labels from the live sheet. |
 | `d3c0a39` | the proposal build-up section (§1a/1b above). |
+| `3852a8f` | Tim's four homes rendered as REAL proposals (`scripts/gen_tim_worked_proposals.py`), superseding `gen_tim_worked_examples.py` which used bespoke HTML. Renders from the GIT FIXTURE, not prod — so 918 Mil Creek totals **$41,575**, not the $41,525 in earlier notes, because PM incentive is corrected to $100. |
+| `2f12c1b` | restored the audit detail I had dropped: measurements, the days table with HIS figure adjacent, and every line's inputs. Also fixed a stale `pm_incentive` explain string that still said "pending item #1 … can take $50 where he says $100" while printing $100 — it prints on every estimate-debug trace. |
 
 **Accuracy as measured** (2025–26 sold jobs, per_sq mode): 20–50 SQ band median within ~3%, ~70%
 of jobs within 15%. Mixed roofs −2.1% median. Commercial flat **−47%** (Miramar). Multi-building
@@ -139,6 +143,10 @@ of jobs within 15%. Mixed roofs −2.1% median. Commercial flat **−47%** (Mira
 −7.8% only because the errors offset.
 
 ---
+
+⚠️ **The attachment renders from the git fixture, not prod.** That is deliberate — prod still
+charges the old $50 PM incentive — but it means the PDF Tim receives shows numbers prod does not
+yet produce. Seeding prod (§1c) closes that gap; until then the two disagree by $50 a job.
 
 ## 3. OPEN, RANKED
 
@@ -163,6 +171,15 @@ days per week, repair day rates, and commission — and exist only in the Zoom c
   finding and a client-facing conclusion. `[[slice-price-data-by-time]]`.
 - **Enumerate attachments before generalising from the ones already opened.** I answered "the 30
   homes have no prices" twice while a full commercial bid sat in the same folder.
+- **Two audiences, two views.** `calc_lines_from_estimate()` strips config keys and internal notes
+  because they must never reach a homeowner. I then used that same stripped view for Tim's REVIEW
+  document and silently lost the measurements, the days-vs-his-figure table and every line's inputs
+  — the thing he was being asked to check. The review document appends its own audit pages
+  (`_audit()` in `scripts/gen_tim_worked_proposals.py`); the proposal keeps the clean section. Do not
+  collapse them back into one.
+- **Rendering a document catches stale strings nothing else does.** The PM incentive explain block
+  still read "pending item #1 with Tim … can take $50 where he says $100" while printing $100, and
+  it prints on every estimate-debug trace.
 - **Check reachability before valuing a config change.** `Quoting.tsx` hardcoded four dimensions,
   so values verified against Tim's sheet could never fire.
 - Cloud SQL proxy `127.0.0.1:5432`, user **`app`**; every query needs `set app.tenant_id='1'`.

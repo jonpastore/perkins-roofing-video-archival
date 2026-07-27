@@ -3,7 +3,7 @@ Resume perkins-roofing/video-archival.
 READ FIRST: CONTINUATION-2026-07-26.md — §0 answers a question Jon asked and the answer changes
 what you build, so read it before writing code or touching the Tim draft.
 
-HEAD is d3c0a39 (or the docs commit above it). Everything from the 7/26 session is COMMITTED but
+HEAD is 2f12c1b (or the docs commit above it). Everything from the 7/26 session is COMMITTED but
 NOTHING IS DEPLOYED and NOTHING IS SEEDED TO PROD. Prod configs: jupiter v17 / miami v18 / naples
 v17; deployed code platform:27e076d.
 
@@ -20,7 +20,7 @@ agreeing to write the notes. Tim documenting HIS reasoning FOR US is the opposit
 build-up to a customer. Both transcripts were searched; there is no such request.
 
 Two consequences:
-  1. The "How this price was built" proposal section (d3c0a39) is a product proposal to Jon, not a
+  1. The "How this price was built" proposal section (d3c0a39/2f12c1b) is a product proposal to Jon, not a
      Tim requirement.
   2. THE DRAFT EMAIL MISATTRIBUTES JON'S WORDS TO TIM and must be fixed before sending — it says
      "On the call you offered exactly the fix: 'a notes column…'". Rewrite as something Jon asked
@@ -55,9 +55,17 @@ THE WORK, in Jon's priority order
 
 THE TIM DRAFT
 In jon@degenito.ai, subject "Re: TIME LEARNING (Overhead) for AI Systems — your 30 homes are in,
-93% within a day". Threaded under Tim's PART 2 thread, To tim@, Cc marco@/josh@/eugene@, TWO
-attachments (the 4-home worked examples PDF and a sample proposal). 14 questions. UNSENT — Jon
+93% within a day". Threaded under Tim's PART 2 thread, To tim@, Cc marco@/josh@/eugene@, ONE
+attachment: Perkins-worked-proposals-4-homes-2026-07-26.pdf (16 pages — four homes as real
+proposals in the shipping format, each followed by audit pages showing the RoofR measurements we
+read, the days against HIS figure, and every line's rule and inputs). 14 questions. UNSENT — Jon
 sends it, after the §0 misattribution is fixed and he has re-read it.
+
+That PDF renders from the GIT FIXTURE, not prod, so 918 Mil Creek reads $41,575 (PM incentive
+corrected to $100). Prod still says $41,525/$50. Regenerate after seeding:
+  PYTHONPATH=. .venv/bin/python scripts/gen_tim_worked_proposals.py
+Graph attachments are ADDITIVE — delete the old one before attaching a new one or the draft ends up
+carrying both.
 
 R2 IS BINDING (docs/ENGINEERING_RULES.md): architect AND critic on every wave, R1 >=97% on core/,
 R4 drift_check clean. R2 caught five defects in my own fix wave this week, including a test I wrote
