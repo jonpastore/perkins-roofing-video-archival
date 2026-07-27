@@ -4,10 +4,14 @@ Jon: *"validate the contents of the email, make sure it's all accurate, and note
 the Zoom transcription. I'm afraid you have not 100% analysed everything because there are too many
 questions."*
 
-He was right on both counts. **Both Zoom transcripts were read end to end this session** (7/17,
-11,682 words; 7/20, 12,027 words) — not grepped, read. Three of the email's fourteen questions are
-already answered on the calls, one asks Tim for something he supplied on camera, and the email's
-headline number does not survive its own repo's review.
+He was right on both counts, and then right a second time when he asked whether the *comments and
+emails* had been swept too — they had not, and that pass found two more.
+
+**Both Zoom transcripts were read end to end** (7/17, 11,682 words; 7/20, 12,027 words) — not
+grepped, read — then **273 cell comments** and **all 89 emails from Tim** (plus Josh 12, Marco 6).
+Net: **five of the email's fourteen questions were already answered**, one asks Tim for something he
+supplied on camera, one asserts a number is ours when he sent it twice in writing, and the email's
+headline does not survive its own repo's review.
 
 Method: every claim traced to a primary source — transcript line, RoofR PDF, live-sheet cell, prod
 DB row, or a re-run of the script that produced it. Where a number could not be reproduced, that is
@@ -87,6 +91,81 @@ Tim hands off to Josh by name immediately before the $1,400, so that is most lik
 number, not a third Tim number** — the same per-person pattern as commission. And "$14.85" is an ASR
 slip for $14.35 in the same breath. Presenting four numbers as Tim contradicting himself is unfair to
 him and misreads the evidence. ✓ Accurate: he did promise the fixed prices by email ([42:37]).
+
+---
+
+## 2 (round two). The corpora I had taken on trust
+
+Jon: *"are you sure we don't have any values in comments or email or transcript that fill those
+specific gaps?"* I was not sure, and I was right not to be. Round one read the transcripts but took
+the **cell comments** from last session's audit and never searched **Tim's emails at all**. Round two
+searched **273 comment nodes** and **all 89 emails from Tim** (plus Josh 12, Marco 6, Eugene 0)
+against every open question. Two more fell.
+
+### 2d. "Shingle overhead per day" — he sent it twice, in writing
+
+The draft asked for it and asserted *"$700 … is our number, not yours."* From his **2026-07-10**
+email, "Re: Requested documents":
+
+> `DEMO / DRY-IN / FLAT ROOF: $1,050 per day` · `TILE INSTALL: $745` · `METAL INSTALL: $850` ·
+> **`SHINGLE INSTALL: $700 per day`**
+
+Repeated **2026-07-24**: *"Shingle: $700 per day."* The value we ship is right; the provenance claim
+was wrong, and the question should never have been asked. Same email confirms the overhead formula
+we built — 40 SQ, demo 2 × $1,050 + metal 5 × $850 = $6,350 / 40 = **$158.75/sq**.
+
+### 2e. The $2,500 basis — answered in writing, and we shipped the opposite
+
+> *"I generally like to make **$2,500 min. per week the crew will be on-site**…. Even though the
+> total is 7 days of work, on a 40 SQ metal roof, I would charge closer to **$5,000 at a min. for
+> profit**, because it's still taking up **2 weeks of work in window after inspections**. A smaller
+> roof that might be 8 squares and take 1.5 days, I would still want to make at least $2,500 on,
+> because a re-roof of any size is not worth the liability."* — Tim, 2026-07-10
+
+`scripts/seed_min_margin.py`'s docstring justifies `basis="job"` with *"He said '$2,500 a week'; he
+never said '$5,000 on a two-week job'."* **He did — in writing, a week before the call that docstring
+cites.** We measured that per-week repriced 17 of 29 homes upward and treated that as grounds to
+reject the reading; his own example says the repricing is the intent.
+
+Measured against prod: 29 homes total **$1,086,612** at `job` vs **$1,110,298** at `weekly` —
+**+$23,685 (+2.2%)**.
+
+**Jon's call: leave prod flat and ask him**, rather than reprice on our reading of his email. Prod
+stays `profit_floor_basis="job"`; the draft now quotes the email back to him and asks for a yes.
+
+It also mostly settles the "four grand": his written position is **$2,500 on a roof of any size**, so
+the 7/17 verbal *"unless I make at least four grand"* is the outlier, not a second rule.
+
+And it **sharpens days-per-week into a better question**. His weeks are calendar occupancy — *"in
+window after inspections"* — not crew-days ÷ a crew week. "5 or 6?" was the wrong question; the right
+one is whether weeks count crew days on the roof or schedule time end to end.
+
+### 2f. Confirmed genuinely open — zero hits across all 380 documents
+
+Plywood deck replacement on flat, the 20-square band overlap, dumpster thresholds, commission rates,
+commercial structure (general conditions / parapet / profit-as-%-of-cost), the Miami cut calculator,
+and which calculator is current. Nothing in any comment, email or transcript touches them.
+
+Two sharpened rather than closed:
+
+- **Stucco metal per LF.** The draft calls "$9/LF vs $9/10LF" a coin-flip typo. The comments settle
+  the unit: his subs quote *"plus $2 per LF stucco"*, *"$1 per foot stucco stop"*, *"$1 per LF stucco
+  metal"*. Per-LF is real and $9/10LF (\$0.90/LF) would sit below his own sub cost — so \$9/LF is
+  almost certainly right.
+- **Silicone insurance.** The 2024-08-01 note *"Added $25 OH on each coat thanks to insurance"* sits
+  on **two different cells, $445 and $485** — so the increase appears to have landed on one sheet and
+  not the other. Ask which set is current rather than asking whether it happened.
+
+### 2g. What the emails confirm the draft got right
+
+- **The repair fixed-price list never came.** Tim promised it 7/20 [42:37]; no email from him after
+  that date carries it. The draft's claim stands.
+- **Gutters did come** — "Gutters", 2026-07-17, with the full per-LF list including *"4x5 downspouts
+  are $10.50"*, matching what shipped in `7fb6ffa`.
+
+**Method note.** Round one asked "do the transcripts answer this?" and stopped. The gap was never
+having asked the same question of the mailbox. Two of the fourteen were sitting in a single email
+from 10 July that predates every document in this repo's analysis.
 
 ---
 
