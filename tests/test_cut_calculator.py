@@ -177,21 +177,36 @@ def test_unknown_tile_brand_falls_back_to_standard():
     assert compute_cut_adjusted_base(CFG, q, "FBC", "13_tile") == pytest.approx(820.8956, abs=0.01)
 
 
-def test_new_tile_brands_have_confirmed_rake_units():
-    """Verea 'S' / Verea Caribbean / Other rake units confirmed 2026-07-21 (buildout plan);
-    field-tile cost is still pending Tim, so these price the rake/H&R line only for now.
+def test_every_tile_brand_matches_the_live_custom_tile_calc():
+    """Every brand now carries BOTH a field-tile cost and a rake, read off the live sheet's
+    Custom Tile Calc tab (e20aa18). Caribbean's rake moved 19.14 -> 13.98 (E42): 19.14 matched
+    nothing on that tab and had the cheaper Caribbean tile quoting above Verea Spanish "S".
     """
     brands = CFG.raw["cuts_calc"]["tile_brands"]
     assert brands["verea_s"]["rake"] == pytest.approx(5.78)
-    assert brands["verea_caribbean"]["rake"] == pytest.approx(19.14)
+    assert brands["verea_caribbean"]["rake"] == pytest.approx(13.98)
     assert brands["other"]["rake"] == pytest.approx(45.00)
+    assert brands["verea_s"]["field"] == pytest.approx(297.04)
+    assert brands["verea_caribbean"]["field"] == pytest.approx(230.00)
+    assert brands["other"]["field"] == pytest.approx(310.00)
+    # The whole point of filling the field costs: no brand is un-quotable any more.
+    assert all(b.get("field") for b in brands.values())
+    # Caribbean is the cheaper tile and must price below Verea Spanish "S", which is what the
+    # old 19.14 rake inverted.
+    assert brands["verea_caribbean"]["field"] < brands["verea_s"]["field"]
 
 
-def test_new_tile_brand_without_field_cost_raises_config_error():
-    """Selecting a brand whose field-tile cost isn't confirmed yet raises a clear ConfigError
-    instead of crashing — same convention as other pending Tim fields in pricing_config.py."""
-    from core.pricing_config import ConfigError
+def test_tile_brand_missing_a_field_cost_still_raises_config_error():
+    """The guard must survive the field costs being filled in — a brand added later without one
+    has to fail loudly, not price at zero. Asserted against a config with the cost removed rather
+    than against a brand that happens to be blank today.
+    """
+    import copy
+
+    from core.pricing_config import ConfigError, load_config
+    raw = copy.deepcopy(CFG.raw)
+    raw["cuts_calc"]["tile_brands"]["verea_s"]["field"] = None
     q = QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=SHEET_SQ,
                    base_tile_brand="verea_s", **SHEET_CUTS)
     with pytest.raises(ConfigError, match="verea_s"):
-        compute_cut_adjusted_base(CFG, q, "FBC", "13_tile")
+        compute_cut_adjusted_base(load_config(raw), q, "FBC", "13_tile")

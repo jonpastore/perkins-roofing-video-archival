@@ -19,9 +19,9 @@ import copy
 import sys
 
 NEW_BRANDS = {
-    "verea_s":         {"label": "Verea Spanish \"S\"", "field": None, "rake": 5.78},
-    "verea_caribbean": {"label": "Verea Caribbean",     "field": None, "rake": 19.14},
-    "other":           {"label": "Other / Custom",      "field": None, "rake": 45.00},
+    "verea_s":         {"label": "Verea Spanish \"S\"", "field": 297.04, "rake": 5.78},
+    "verea_caribbean": {"label": "Verea Caribbean",     "field": 230.00, "rake": 13.98},
+    "other":           {"label": "Other / Custom",      "field": 310.00, "rake": 45.00},
 }
 
 
