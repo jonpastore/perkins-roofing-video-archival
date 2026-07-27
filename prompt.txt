@@ -1,67 +1,71 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-27.md.
+READ FIRST: CONTINUATION-2026-07-27-pm.md, then docs/meetings/2026-07-27-marketing-and-estimator.md.
 
-HEAD 542434f — pushed AND deployed. Prod configs: jupiter v19 / miami v20 / naples v19.
-drift_check clean. The Tim email WENT OUT at 16:08 on 2026-07-27 with two attachments.
+HEAD 18b75ac, pushed. Deployed platform:d44fb51 (the commits above it are docs only).
+Prod configs jupiter v20 / miami v21 / naples v20. drift_check clean.
+The Tim email went out 2026-07-27 16:08. He replied 3x (20:22, 20:24, 20:36) and the 2pm
+meeting is transcribed. Work is in Jarvis #432-#445 under project perkins-buildout-2026-07.
 
 Confirm:
-  git log --oneline origin/main..HEAD          # expect empty
+  git log --oneline origin/main..HEAD                       # expect empty
   gcloud run services describe api --region us-central1 \
-    --format='value(spec.template.spec.containers[0].image)'   # expect platform:542434f
+    --format='value(spec.template.spec.containers[0].image)' # expect platform:d44fb51
 
-WHAT IS NOW TRUE (do not re-derive)
-  - Profit floor is PER ON-SITE WEEK: $2,500 x ceil(crew_days / 5). Tim's 2026-07-10 email
-    works the example himself ("7 days of work ... closer to $5,000 ... 2 weeks"). NOT per job.
-  - Accuracy against his day figures is 83% within a day / 0.67 d, measured OUT of sample with
-    rule selection nested in the CV loop. 93% was in-sample. Quote 83%.
-  - PM incentive: FBC is size-only, HVHZ is project-kind-only. A 35-sq Palm Beach residential
-    job takes $100.
-  - Shingle overhead $700/day is TIM'S number (his 7/10 and 7/24 emails), not ours.
-  - The "how this price was built" section has a checkbox and two audiences; customer mode
-    folds base+overhead+profit into one $/sq line so profit cannot be differenced out.
+WHAT IS SETTLED — do not re-derive
+  - 5-day week, 20 work days/month. Profit floor $2,500 x ceil(crew_days/5). $4,000 is dead:
+    $2,500 at any size. All confirmed verbally on 7/27.
+  - Miami office overhead = $85k/month / 20 = $4,250/day. Jupiter $28k/20 = $1,400 (already
+    our config). Naples still unstated.
+  - Accuracy: 83% within a day out-of-sample; validated against his ACTUAL prices at
+    median +1.0%, 18/21 within 10%. He wants 95%+ on overhead.
+  - Accessibility has NO fixed price — a MANUAL $ input, not a tier (his email 20:36).
 
 THE WORK, ranked
 
-1. R2 ON THE LAST TWO WAVES — architect AND critic, binding per docs/ENGINEERING_RULES.md,
-   still UNRUN. Blocked on a conflict I surfaced rather than resolved: the session directive
-   says no subagents, CLAUDE.md mandates them. R2 is what caught the invented
-   "Miami 15% / Jupiter 10%" claim. Ask Jon, do not silently skip it again.
+1. #432 PROFIT MODEL. Tim: "that profit thing per square is an old thing... let's not have
+   duplicate mechanisms. I would just eliminate it... $2,500 minimum and then use the sliding
+   scale to figure out your percent." Replace the per-square band table with an operator
+   PERCENTAGE + the $2,500 floor. Keep profit_scale readable so old proposals still render.
+   This makes the "20 squares $120 or $110" question moot.
 
-2. TIM'S ANSWERS land as config changes. 13 questions went out. The one that can move money
-   again: WHAT COUNTS AS A WEEK — we count crew-days / 5; his wording ("in window after
-   inspections") suggests calendar occupancy, which is a bigger number on any job with an
-   inspection gap.
+2. #433 CUSTOMER-VIEW LEAK, shipped this morning. Tim: "the PM incentive is not something the
+   customer ever needs to see." calc_lines_from_estimate(audience="customer") folds
+   base+overhead+profit but still prints PM Incentive as a row. Fold it, and add a test that
+   no back-end key survives customer mode.
 
-3. COPY-CONFIG, step 1 — docs/specs/2026-07-27-copy-config-between-branches.md.
-   Classify-only, no numbers move, assert none did. Jon's rule: material = shared,
-   labour/overhead = branch. Then the badges, which make visible that all 50 keys are
-   currently identical across branches and Miami+Naples quote Jupiter's crew rates.
+3. #434 REPAIR PROFIT. A repair quote returns COST only — he caught it live: 1 day, 1 man,
+   $500 materials printed $1,685 ($1,185 + $500). Add the profit slider, $250 minimum profit,
+   $500 minimum service call. Maintenance prices identically: relabel "Repair / Maintenance",
+   ONE path (Josh wanted three; Tim and Jon overruled).
 
-4. SPLIT L FROM M. sloped_base_cost_lm fuses labour and material in one number, so Jon's
-   scope rule only reaches about half the money. 29 of Tim's 273 cell comments carry
-   L / M / OH / P breakdowns.
+4. #437 FOUR INPUTS he asked for by email 20:24: accessibility input box (manual $),
+   Resi/Commercial button, crane flag for >2.5 stories, waterfront/salinity gate for Coastal.
+   Coastal is a FOURTH tier: good/better/best/coastal, on every roof type not just metal.
 
-5. Jarvis #430 project container, #427 commercial scope model, #418/419/424/428/429/431.
+5. #436 REFIT THE DAY MODEL on Stories + Pitch + Accessibility — all three are now columns in
+   ~/perkins-corpus/tim30_with_actual_prices.json — and measure against his 27 ACTUAL prices,
+   not just his day figures. He offered another 20 houses if it helps.
+
+6. #435 seed Miami $4,250/day. #438 TEST the salinity tool before wiring Coastal (built,
+   converted to a WP plugin, never verified). #439 scrape TIM's Knowify catalog, not Josh's.
+   #440 finish R2. #441 chase the 7 unanswered pricing questions.
 
 GOTCHAS
-- Cloud SQL proxy 127.0.0.1:5432, db `perkins`, user `app` (NOT postgres).
-  PW=$(gcloud secrets versions access latest --secret=db-password)
-  Every query needs: set app.tenant_id='1'
-- CI gates on `ruff check core adapters api jobs` FIRST; tests/ and scripts/ are NOT in the gate.
-  Full suite ~20 min; core/ coverage ~97.7% (R1 >= 97%). .coveragerc fail_under=100 is
-  pre-existing and fails on a clean tree — do not treat it as your regression.
-- `pgrep -f "pytest tests/"` MATCHES YOUR OWN WAITER SHELL. An until-loop on it waits forever.
-  Wait on the PID.
-- A config change is FOUR places: fixture, prod, tests, and any seeder that could replay the
-  old value. e20aa18 did one of four and shipped two failing tests.
-- A test docstring is not a source. "6-day week" was justified in one and treated as fact.
-- Render a proposal and LOOK at it:
-  google-chrome --headless --print-to-pdf=out.pdf file://.../proposal.html && pdftoppm -png
-- Never take an all-time median of a price series — slice by period.
-- Sweep ALL THREE corpora before asking Tim anything: Zoom transcripts, the 273 cell comments,
-  and his 89 emails (Graph $search="from:tim@perkinsroofing.net"; $filter+$orderby together
-  400s). The mailbox is the one that got missed. Record zero-hit counts as the evidence a
-  question is real.
-- Graph attachments are ADDITIVE — delete before re-attaching or the draft carries both.
+- Excel ate Tim's pitch column as DATES: "4/12" is stored 2026-04-12. The MONTH is the rise.
+- Transcribe locally for $0: ffmpeg -ac 1 -ar 16000 -b:a 32k -f segment -segment_time 600,
+  then POST each chunk to http://cerberus-ai:4000/v1/audio/transcriptions model=whisper-turbo.
+  Key: grep '^LITELLM_MASTER_KEY=' ~/litellm/providers.env. 69 min took ~4 min and cost $0.
+- `pgrep -f "pytest tests/"` MATCHES YOUR OWN WAITER SHELL — an until-loop on it never exits.
+  Wait on the PID. Same trap hit a deploy.sh waiter.
+- A config change is FOUR places: fixture, prod, tests, any seeder that could replay it.
+- Cloud SQL proxy 127.0.0.1:5432, db `perkins`, user `app`; every query needs
+  set app.tenant_id='1'. PW=$(gcloud secrets versions access latest --secret=db-password)
+- CI gates on `ruff check core adapters api jobs` FIRST. Full suite ~20 min, core/ ~97.7%
+  (R1 >= 97%). .coveragerc fail_under=100 fails on a clean tree — pre-existing, not yours.
+- Sweep ALL THREE corpora before asking Tim anything: transcripts, the 273 cell comments, and
+  his ~92 emails (Graph $search="from:tim@perkinsroofing.net"; $filter+$orderby together 400s).
+  The mailbox is the one that got missed and it cost two wrong pricing rules.
+- Graph attachments are ADDITIVE — delete before re-attaching.
+- Render a proposal and LOOK at it; reading the template is not the same.
 - bash scripts/deploy.sh (not executable); refuses a dirty tree.
