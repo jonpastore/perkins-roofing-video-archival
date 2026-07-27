@@ -56,6 +56,86 @@ def _half(x: float) -> float:
     return max(0.5, round(x * 2) / 2)
 
 
+SKIP_INPUTS = {"profit_scale", "pm_incentive_table", "boundary_inclusive_lower",
+               "boundary_exclusive_upper"}
+
+
+def _esc(v) -> str:
+    return str(v).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _audit(home: dict, ours, tim_series, rates, result) -> str:
+    """The reviewer's view: what we read, the days, and every input behind every line.
+
+    This is Tim's checking document, not a customer's. calc_lines_from_estimate() deliberately
+    strips config key names and annotations because they must never reach a homeowner — but here
+    they are exactly what is being checked, so the raw explain block is shown in full alongside.
+    """
+    meas = [("squares", f"{home['squares']:g}"), ("pitch", f"{home['pitch']:g}/12"),
+            ("eaves", f"{home['eaves']:,.0f} ft"), ("hips", f"{home['hips']:,.0f} ft"),
+            ("ridges", f"{home['ridges']:,.0f} ft"), ("valleys", f"{home['valleys']:,.0f} ft"),
+            ("rakes", f"{home['rakes']:,.0f} ft"),
+            ("wall flashing", f"{home['wall_flash']:,.0f} ft")]
+    meas_rows = "".join(
+        f"<tr><td>{_esc(n)}</td><td style='text-align:right'>{_esc(v)}</td></tr>" for n, v in meas)
+
+    def day_rows(series, label, bold=False):
+        w = "font-weight:700;" if bold else ""
+        return "".join(
+            f"<tr style='{w}'><td>{_esc(s.series.replace('_', ' '))}</td>"
+            f"<td style='text-align:right'>{s.days:g} d</td>"
+            f"<td style='text-align:right'>${float(rates[s.series]):,.0f}/d</td>"
+            f"<td style='text-align:right'>${s.days * float(rates[s.series]):,.2f}</td></tr>"
+            for s in series) or f"<tr><td colspan=4>{label}: none</td></tr>"
+
+    our_oh = sum(s.days * float(rates[s.series]) for s in ours)
+    tim_oh = sum(s.days * float(rates[s.series]) for s in tim_series)
+
+    line_rows = ""
+    for li in result["line_items_detail"]:
+        ex = li.get("explain") or {}
+        inputs = " &middot; ".join(
+            f"{_esc(k)} = {_esc(v)}" for k, v in (ex.get("inputs") or {}).items()
+            if v is not None and k not in SKIP_INPUTS)
+        line_rows += (
+            f"<tr><td><b>{_esc(li['label'])}</b>"
+            f"<div style='color:#475467;font-style:italic;font-size:9px'>"
+            f"{_esc(ex.get('formula', 'fixed amount'))}</div>"
+            f"<div style='color:#667085;font-family:monospace;font-size:8.5px'>{inputs}</div></td>"
+            f"<td style='text-align:right;white-space:nowrap'>${li['amount']:,.2f}</td></tr>")
+
+    css = ("width:100%;border-collapse:collapse;font-size:10px;margin:0 0 14px")
+    td = "padding:4px 7px;border-bottom:1px solid #eaecf0;vertical-align:top"
+    th = "padding:4px 7px;background:#1b2a52;color:#fff;text-align:left;font-size:9px"
+    return (
+        "<div style='break-before:page;page-break-before:always'>"
+        "<h2>How we reached this number</h2>"
+        "<h3 style='font-size:11px;color:#1b2a52;margin:12px 0 4px'>"
+        "1 — Your RoofR measurements, as we read them</h3>"
+        f"<table style='{css}'><tbody>{meas_rows}</tbody></table>"
+        "<h3 style='font-size:11px;color:#1b2a52;margin:12px 0 4px'>"
+        "2 — Days, and the overhead they carry</h3>"
+        f"<table style='{css}'><thead><tr><th style='{th}'>phase</th>"
+        f"<th style='{th};text-align:right'>days</th><th style='{th};text-align:right'>rate</th>"
+        f"<th style='{th};text-align:right'>overhead</th></tr></thead><tbody>"
+        f"{day_rows(ours, 'ours')}"
+        f"<tr style='background:#f8fafc;font-weight:700'><td>our total</td>"
+        f"<td style='text-align:right'>{sum(s.days for s in ours):g} d</td><td></td>"
+        f"<td style='text-align:right'>${our_oh:,.2f}</td></tr>"
+        f"<tr style='background:#fffbeb;font-weight:700'><td>your figure</td>"
+        f"<td style='text-align:right'>{sum(s.days for s in tim_series):g} d</td><td></td>"
+        f"<td style='text-align:right'>${tim_oh:,.2f}</td></tr>"
+        "</tbody></table>"
+        "<h3 style='font-size:11px;color:#1b2a52;margin:12px 0 4px'>"
+        "3 — Every line, the rule behind it, and the values that went in</h3>"
+        f"<table style='{css}'><tbody>{line_rows}"
+        f"<tr style='background:#f8fafc;font-weight:800;border-top:2px solid #1b2a52'>"
+        f"<td>PROJECT TOTAL</td><td style='text-align:right'>"
+        f"${result['project_total']:,.2f}</td></tr></tbody></table>"
+        f"<style>table td{{{td}}}</style></div>"
+    )
+
+
 def _banner(home: dict, our_days: float, tim_days: float, verdict: str) -> str:
     """Our days against his, stated plainly — this is the thing he is being asked to check."""
     delta = our_days - tim_days
@@ -142,8 +222,10 @@ def _proposal_for(home: dict, verdict: str, cfg) -> str:
         include_calc_breakdown=True,
     )
     html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
-    # Banner goes immediately after <body> so it leads the page Tim is checking.
-    return html.replace("<body>", "<body>" + _banner(home, our_days, tim_days, verdict), 1)
+    audit = _audit(home, ours, tim_series, cfg.daily_overhead_rates(), result)
+    html = html.replace("<body>", "<body>" + _banner(home, our_days, tim_days, verdict), 1)
+    # Audit pages go last, after the proposal a customer would actually receive.
+    return html.replace("</body>", audit + "</body>", 1)
 
 
 def main() -> None:

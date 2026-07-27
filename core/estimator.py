@@ -1258,10 +1258,12 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
             "confirm the correct PM incentive band with Tim."
         )
     pm_item = LineItem("pm_incentive", "PM Incentive", pm_val, tags["pm_incentive"], explain={
-        "formula": "band lookup on squares. NOTE: Tim's sheet keys this on SIZE ONLY "
-                   "(<20 $50 / 20-50 $100 / >50 $250) while ours also keys on "
-                   "residential-vs-commercial with no residential band above 20 sq — pending "
-                   "item #1 with Tim, so a 35 sq residential job can take $50 where he says $100.",
+        # Was a pending-Tim note claiming we mis-key this. Resolved 2026-07-26 (e20aa18): the two
+        # zones genuinely use different axes and the config now matches his live sheet, so the
+        # warning became false while still printing on every estimate-debug trace.
+        "formula": "band lookup, keyed the way this zone's sheet keys it — Palm Beach by SIZE "
+                   "(<20 $50 / 20-50 $100 / >50 $250, both residential and commercial), "
+                   "Miami by PROJECT KIND (residential $150 / commercial $300, any size)",
         "inputs": {"squares": total_sq, "project_kind": q.project_kind, "zone": zone,
                    "pm_incentive_table": config.raw.get("pm_incentive")}})
 
