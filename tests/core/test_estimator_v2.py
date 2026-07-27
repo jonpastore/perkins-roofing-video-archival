@@ -183,17 +183,18 @@ def test_profit_guidance_5_days():
     assert guidance["effective_floor"] == 2500.0
 
 
-def test_profit_guidance_6_days():
-    """A 6-day job is ONE week — the crews work Mon-Sat, so 6 days per week, not 5.
+def test_profit_guidance_6_days_is_two_weeks_on_a_five_day_week():
+    """A 6-day job crosses into a second week, because the working week is FIVE days.
 
-    Was ceil(6/5) = 2 weeks, which charged a second $2,500 on a job that never ran past
-    Saturday. days-per-week is config-driven now; 6 is assumed pending Tim.
+    An earlier pass moved this to 6 days/week on the reasoning that "the crews work Mon-Sat", and
+    wrote that assumption into the test as if it were sourced. Tim's 2026-07-10 email settles it:
+    7 days of work is "2 weeks", which only holds at ceil(7/5). His Miramar commercial calculator
+    says "5 days per week" twice.
     """
     cfg = _cfg_v2()
-    series = [DailyOverheadSeries(series="shingle", days=6.0)]
-    guidance = compute_profit_guidance(cfg, series)
-    assert guidance["on_site_weeks"] == 1
-    assert guidance["effective_floor"] == 2500.0
+    guidance = compute_profit_guidance(cfg, [DailyOverheadSeries(series="shingle", days=6.0)])
+    assert guidance["on_site_weeks"] == 2
+    assert guidance["effective_floor"] == 5000.0
 
 
 def test_profit_guidance_7_days_crosses_into_a_second_week():
@@ -441,13 +442,17 @@ def test_profit_guidance_floor_rounding_mode():
 
 
 def test_profit_guidance_floor_rounding_ten_days():
-    """floor(10/6) = 1 week; confirms the floor-rounding path executes."""
+    """floor(10/5) = 2 weeks; confirms the floor-rounding path executes and differs from ceil."""
     raw = _raw_config()
     raw["daily_overhead_weeks_rounding_mode"] = "floor"
     cfg = load_config(raw)
     series = [DailyOverheadSeries(series="shingle", days=10.0)]
-    guidance = compute_profit_guidance(cfg, series)
-    assert guidance["on_site_weeks"] == 1
+    assert compute_profit_guidance(cfg, series)["on_site_weeks"] == 2
+    # 10.5 days: floor -> 2, ceil -> 3. Proves the mode is actually read.
+    series = [DailyOverheadSeries(series="shingle", days=10.5)]
+    assert compute_profit_guidance(cfg, series)["on_site_weeks"] == 2
+    raw["daily_overhead_weeks_rounding_mode"] = "ceil"
+    assert compute_profit_guidance(load_config(raw), series)["on_site_weeks"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -1022,8 +1027,14 @@ def test_debug_trace_shows_the_formula_behind_every_priced_line():
     assert oh["inputs"]["demo_dry_in_flat_days"] == 3.0
 
     profit = by_key["profit"]["explain"]
-    assert "sliding scale" in profit["formula"]
-    assert profit["inputs"]["overridden"] is False
+    # 8 days is 2 on-site weeks, so the $5,000 weekly floor beats the scale's 35 x $100, and the
+    # explain block has to say WHY it moved — that string prints on the customer-facing build-up.
+    assert profit["inputs"]["scale_profit"] == 3500.0
+    assert profit["inputs"]["on_site_weeks"] == 2
+    assert profit["inputs"]["days_per_week"] == 5.0
+    assert profit["inputs"]["floored"] is True
+    assert "$2,500/week" in profit["formula"]
+    assert by_key["profit"]["amount"] == 5000
 
     sections = {s["section"]: s for s in r["calculation_trace"]}
     assert sections["Squares subtotal"]["result"] == r["squares_subtotal"]
@@ -1064,13 +1075,14 @@ def test_a_one_day_job_still_owes_a_full_week():
 
 
 def test_a_long_job_still_owes_only_the_flat_floor_on_the_job_basis():
-    """Jon's call 2026-07-25: one flat $2,500 per job however long it runs.
+    """The "job" basis, kept switchable: one flat $2,500 however long the job runs.
 
-    Enforcing the weekly multiple instead repriced 17 of Tim's 29 homes upward, because most of
-    his re-roofs run 7-10 days and a 2-week floor of $5,000 beats his own sliding scale on
-    nearly every tile job. He said "$2,500 a week"; he never said "$5,000 on a two-week job".
+    This is no longer the default. The old docstring here read: 'He said "$2,500 a week"; he never
+    said "$5,000 on a two-week job".' He did — 2026-07-10, in writing, a week before the Zoom that
+    claim leaned on. Default is now "weekly"; this test only proves the "job" branch still works.
     """
     cfg = _floor_cfg()
+    cfg.raw["profit_floor_basis"] = "job"
     r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
                                  existing_roof="tile", overhead_mode="daily", debug=True,
                                  daily_series=[DailyOverheadSeries(series="tile", days=4.0),
@@ -1079,6 +1091,29 @@ def test_a_long_job_still_owes_only_the_flat_floor_on_the_job_basis():
     profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
     assert profit["amount"] == 2500, "7 days is still one flat floor"
     assert profit["explain"]["inputs"]["profit_floor_basis"] == "job"
+
+
+def test_tims_own_worked_example_reproduces_exactly():
+    """The 2026-07-10 email, both halves, against the shipped fixture.
+
+    "I generally like to make $2,500 min. per week the crew will be on-site.... Even though the
+     total is 7 days of work, on a 40 SQ metal roof, I would charge closer to $5,000 at a min. for
+     profit, because it's still taking up 2 weeks of work in window after inspections. A smaller
+     roof that might be 8 squares and take 1.5 days, I would still want to make at least $2,500 on."
+
+    Fails if the basis flips back to "job" OR if days-per-week moves off 5 — the two ways this rule
+    has already been got wrong once each.
+    """
+    cfg = _cfg_v2()
+    big = compute_profit_guidance(cfg, [DailyOverheadSeries(series="demo_dry_in_flat", days=2.0),
+                                        DailyOverheadSeries(series="metal", days=5.0)])
+    assert big["total_series_days"] == 7.0
+    assert big["on_site_weeks"] == 2
+    assert big["effective_floor"] == 5000.0
+
+    small = compute_profit_guidance(cfg, [DailyOverheadSeries(series="shingle", days=1.5)])
+    assert small["on_site_weeks"] == 1
+    assert small["effective_floor"] == 2500.0
 
 
 def test_weekly_basis_multiplies_when_explicitly_selected():

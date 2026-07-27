@@ -15,14 +15,24 @@ MOVES THE QUOTED PRICE: `_apply_min_margin` raises the profit line to it and sta
 `min_margin_applied` warning. Explicit operator pricing (`profit_mode="flat"`,
 `override_profit_per_sq`) is never overridden.
 
-BASIS: "job" (Jon's call 2026-07-25) -- one flat $2,500 however long the job runs. The "weekly"
-basis multiplies by on-site weeks, which follows from his words but repriced 17 of his own 29
-homes upward, because most re-roofs run 7-10 days and a $5,000 two-week floor beats his sliding
-scale on nearly every tile job. He said "$2,500 a week"; he never said "$5,000 on a two-week
-job". Flip with --basis weekly if he confirms.
+BASIS: "weekly" (2026-07-27) -- $2,500 for each on-site week, one week minimum.
 
-⚠️ profit_floor_days_per_week is ASSUMED 6 (Mon-Sat). Only used by the "weekly" basis and by the
-guidance figures. Confirm 5, 6 or 7 with Tim.
+This reverses an earlier call. The old note here read: 'He said "$2,500 a week"; he never said
+"$5,000 on a two-week job".' He did, in writing, in "Re: Requested documents" on 2026-07-10 --
+a week BEFORE the Zoom this file cites:
+
+    "I generally like to make $2,500 min. per week the crew will be on-site.... Even though the
+     total is 7 days of work, on a 40 SQ metal roof, I would charge closer to $5,000 at a min.
+     for profit, because it's still taking up 2 weeks of work in window after inspections. A
+     smaller roof that might be 8 squares and take 1.5 days, I would still want to make at least
+     $2,500 on, because a re-roof of any size is not worth the liability."
+
+Both halves of his example reproduce exactly at a 5-DAY week: ceil(7/5) = 2 weeks = $5,000, and
+ceil(1.5/5) = 1 week = $2,500. Five is also what his Miramar commercial calculator states twice.
+The repricing this causes (+2.2% over his own 29 homes) was previously treated as evidence AGAINST
+the reading; his worked example says it is the intent.
+
+Flip back with --basis job --days-per-week 6 if he ever says otherwise.
 
 Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/seed_min_margin.py [--apply]
        (prints the impact and changes nothing unless --apply is passed)

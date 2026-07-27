@@ -537,8 +537,8 @@
     "_note_stockmeier_floor": "Live low-slope sheet M29: 'STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is $390 M per SQ and T&M)'. Now enforced as a warning rather than kept as prose."
   },
   "enforce_profit_floor": true,
-  "profit_floor_basis": "job",
-  "profit_floor_days_per_week": 6.0,
+  "profit_floor_basis": "weekly",
+  "profit_floor_days_per_week": 5.0,
   "_note_profit_floor_keys": "Added to the fixture 2026-07-25. These live in prod (set by scripts/seed_min_margin.py) but were absent from git, so pricing_config.enforce_profit_floor() returned False against the fixture and any tenant built from it \u2014 GC, tenant-2, a DR rebuild \u2014 shipped with NO profit floor and quoted a 1-square tile roof at $400 profit. ENGINEERING_RULES R3. profit_floor_days_per_week=6 is still ASSUMED; Tim's own Miramar commercial calculator says '5 days per week' twice.",
   "gutters": {
     "styles": {
@@ -587,5 +587,6 @@
     "small_job_threshold_lf": 100,
     "leaf_guard_upgraded_per_lf": 14.0
   },
-  "_note_gutters": "Added to the fixture 2026-07-25. It was in prod (scripts/seed_gutters_config.py) but not in git, and core/estimator.py raises ConfigError on any quote carrying gutter_lf/downspout_lf/leaderheads, so a tenant built from the fixture 422'd on every gutter quote while the SPA shipped a full gutter UI. F10 named four missing keys; the first pass added three."
+  "_note_gutters": "Added to the fixture 2026-07-25. It was in prod (scripts/seed_gutters_config.py) but not in git, and core/estimator.py raises ConfigError on any quote carrying gutter_lf/downspout_lf/leaderheads, so a tenant built from the fixture 422'd on every gutter quote while the SPA shipped a full gutter UI. F10 named four missing keys; the first pass added three.",
+  "_source_profit_floor": "Tim, email 2026-07-10 'Re: Requested documents': \"I generally like to make $2,500 min. per week the crew will be on-site.... Even though the total is 7 days of work, on a 40 SQ metal roof, I would charge closer to $5,000 at a min. for profit, because it's still taking up 2 weeks of work in window after inspections. A smaller roof that might be 8 squares and take 1.5 days, I would still want to make at least $2,500 on.\" 5-day week (Jon 2026-07-27; also what Tim's Miramar commercial calculator states twice). ceil(7/5)=2 weeks = $5,000, matching his worked example exactly; ceil(1.5/5)=1 week = $2,500, matching the small-roof half."
 }

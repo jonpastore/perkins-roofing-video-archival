@@ -195,7 +195,7 @@ def compute_profit_guidance(
     """Compute profit guidance fields for the flat-dollar profit mode (v2).
 
     When series is non-empty:
-        on_site_weeks = max(1, ceil(total_days / profit_floor_days_per_week)) — 6-day week.
+        on_site_weeks = max(1, ceil(total_days / profit_floor_days_per_week)) — 5-day week.
         effective_floor = max(job_profit_floor, on_site_weeks × weekly_profit_floor).
         implied_weekly_profit returned when flat_profit is supplied.
 
@@ -222,9 +222,11 @@ def compute_profit_guidance(
 
     total_days = sum(s.days for s in series)
     rounding = config.daily_oh_weeks_rounding()
-    # Days per working week — 6, since the crews work Monday to Saturday. Was hardcoded to 5,
-    # which over-counted weeks and so over-stated the floor on any job of 5-6 days.
-    # ⚠️ Assumed, not confirmed: ask Tim whether they run 5, 6 or 7 days.
+    # Days per working week — 5, config-driven. Not an assumption any more: Tim's 2026-07-10
+    # email works the arithmetic himself — "7 days of work ... I would charge closer to $5,000 at
+    # a min. for profit, because it's still taking up 2 weeks" — and ceil(7/5) = 2. His Miramar
+    # commercial calculator also states "5 days per week" twice. An earlier pass moved this to 6
+    # to stop over-counting weeks; the real fix was the basis, not the divisor.
     per_week = config.profit_floor_days_per_week()
     if rounding == "floor":
         on_site_weeks = max(1, math.floor(total_days / per_week))
