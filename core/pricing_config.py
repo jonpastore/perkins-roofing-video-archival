@@ -151,6 +151,12 @@ class PricingConfig:
     def profit_per_sq(self, num_squares: float) -> float:
         """Sliding-scale profit lookup using boundary_inclusive_lower / boundary_exclusive_upper.
 
+        LEGACY as of 2026-07-27 (Tim, Jarvis #432): "that profit thing per square is like an old
+        thing that I used to use before I really nailed it down ... I would just eliminate it
+        for simplification". Kept — and NOT removed from the config schema — only so a stored
+        old-proposal snapshot still re-renders its original number. New quotes should use
+        QuoteInput.profit_mode="percent" (operator % of eligible_base) instead.
+
         Tiers are pairs [max_sq, profit_per_sq] where max_sq is the upper bound of the tier
         (null = catch-all). The boundary flags control whether the boundary value falls in the
         tier BELOW (lower-inclusive/upper-exclusive default) or the tier ABOVE.

@@ -1287,9 +1287,18 @@ export function Quoting() {
     if (!quoteResult?.margin || !Number.isFinite(pct) || pct <= 0) return;
     setActiveProfitPreset(pct);
     setTargetProfitPct(String(pct));
+    // The percentage is applied SERVER-side (profit_mode="percent") against the same
+    // eligible_base the margin badge reports. Computing it here and posting a flat dollar amount
+    // was a second mechanism for one number, and flat mode is "the operator owns it" — so the
+    // $2,500/on-site-week floor only warned instead of applying. Tim, 2026-07-27: "let's not have
+    // duplicate mechanisms ... 2,500 minimum and then use the sliding scale to figure out your
+    // percent". Min $ now RAISES that floor rather than replacing it.
     const minDollars = Number(targetProfitMinDollars || 0);
-    const flatProfitDollars = Math.max((pct / 100) * quoteResult.margin.eligible_base, minDollars);
-    await runQuote({ profit_mode: "flat", flat_profit_dollars: flatProfitDollars });
+    await runQuote({
+      profit_mode: "percent",
+      percent_profit_pct: pct / 100,
+      ...(minDollars > 0 ? { min_profit_dollars: minDollars } : {}),
+    });
   }
 
   async function handleCreateProposal() {
@@ -2136,7 +2145,10 @@ export function Quoting() {
                     <div style={{ fontSize: 12, color: BRAND.sub }}>No daily overhead rates configured for this branch.</div>
                   ) : (() => {
                     const installSeries = installSeriesFor(quoteRoofType, isLowSlopeRoofType);
-                    const rate = rates?.daily_overhead_rates?.[installSeries];
+                    // installSeriesFor returns null for a roof type with no mapped series; the
+                    // JSX below already renders "no daily rate mapped" for that case, but indexing
+                    // with the null first is a type error that fails `tsc -b`, i.e. `npm run build`.
+                    const rate = installSeries ? rates?.daily_overhead_rates?.[installSeries] : undefined;
                     return (
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10, alignItems: "end" }}>
                         <div style={{ fontSize: 12, color: BRAND.sub }}>

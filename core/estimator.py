@@ -455,8 +455,19 @@ class QuoteInput:
     daily_series: list[DailyOverheadSeries] = field(default_factory=list)
 
     # v2: Profit mode
-    profit_mode: str = "scale"           # "scale" (default, sliding scale) | "flat"
+    # "scale" is LEGACY as of 2026-07-27 (Tim, Jarvis #432 call): "that profit thing per square
+    # is like an old thing that I used to use before I really nailed it down ... I would just
+    # eliminate it for simplification ... you have the profit sliding scale on there now, so if
+    # we are using the days to figure overhead ... we can just use the slider for profit
+    # percentage with a minimum 2,500". profit_scale / config.profit_per_sq() stay wired ONLY so
+    # a stored old-proposal snapshot still re-renders its original number — new quoting should
+    # use "percent" instead. "flat" is an operator-typed dollar amount (unaffected by this call).
+    profit_mode: str = "scale"           # "scale" (default; legacy scale table) | "flat" | "percent"
     flat_profit_dollars: Optional[float] = None   # used when profit_mode="flat"
+    percent_profit_pct: Optional[float] = None    # used when profit_mode="percent"; a fraction
+    # Operator "Min $" from the Quoting slider. Raises the config profit floor for this job only.
+    min_profit_dollars: Optional[float] = None
+                                                   # of eligible_base, e.g. 0.20 for 20% — NOT 20
 
     # Commission lever: basis = "profit" (% of profit dollars) or "job" (% of project total).
     # commission_rate_override is a fraction (e.g. 0.30); None falls back to the config rate.
@@ -1017,6 +1028,23 @@ def _apply_county_overrides(
 # -------------------------------------------------------------------------
 # Margin floor computation
 # -------------------------------------------------------------------------
+def _eligible_base(config: PricingConfig, items: list[LineItem]) -> float:
+    """total - Profit lines - floor-excluded lines.
+
+    Shared by the margin badge (_compute_margin) and the percent-profit-mode line-item
+    build (Jarvis #432) so an operator's typed percentage and the badge's profit_pct always
+    describe the same base — computing it two different ways would make the badge lie about
+    the number the operator just typed.
+    """
+    floor_excl = config.raw["floor_excluded_categories"]
+    total = sum(li.amount for li in items)
+    excluded_amount = sum(
+        li.amount for li in items
+        if li.key in floor_excl or li.category == "Profit"
+    )
+    return total - excluded_amount
+
+
 def _compute_margin(
     config: PricingConfig,
     items: list[LineItem],
@@ -1041,13 +1069,7 @@ def _compute_margin(
         and "OH" not in floor_excl.get(li.key, [])
     )
 
-    # eligible_base = total − Profit lines − floor-excluded lines
-    total = sum(li.amount for li in items)
-    excluded_amount = sum(
-        li.amount for li in items
-        if li.key in floor_excl or li.category == "Profit"
-    )
-    eligible_base = total - excluded_amount
+    eligible_base = _eligible_base(config, items)
 
     profit_pct = (profit_dollars / eligible_base) if eligible_base else 0.0
     combined_pct = ((profit_dollars + oh_dollars) / eligible_base) if eligible_base else 0.0
@@ -1292,6 +1314,29 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     # County overrides applied last
     all_items = _apply_county_overrides(config, q.county, all_items, zone, q.roof_type)
 
+    # Percent profit mode (v2 — Jarvis #432). Tim, 2026-07-27: "I would just eliminate [the
+    # scale] for simplification ... use the slider for profit percentage with a minimum 2,500".
+    # The scale/flat placeholder profit line built inside _build_sloped/_build_low_slope can't
+    # know eligible_base yet — fixed/optional/pm items and county overrides hadn't run. Same
+    # shape as the mixed-roof profit rebuild above: strip the placeholder, recompute now that
+    # all_items is final, re-add it. This runs uniformly for sloped AND low-slope (both land in
+    # all_items by this point) and is a no-op when the roof type carries no profit line at all
+    # (low-slope all-in systems bake profit into the base price, in every mode).
+    if q.profit_mode == "percent" and q.percent_profit_pct is not None and any(
+            li.key == "profit" for li in all_items):
+        eligible_base = _eligible_base(config, all_items)
+        pct = q.percent_profit_pct
+        pft_total = pct * eligible_base
+        all_items = [li for li in all_items if li.key != "profit"] + [LineItem(
+            "profit", "Profit", pft_total, tags["profit"],
+            (pft_total / total_sq) if total_sq else None,
+            explain={
+                "formula": "percent_profit_pct x eligible_base  (Tim, 2026-07-27: profit_scale "
+                           "retired for simplification — operator sets a % of eligible_base, "
+                           "still subject to the $2,500/on-site-week floor)",
+                "inputs": {"percent_profit_pct": pct, "eligible_base": round(eligible_base, 2)},
+            })]
+
     # Minimum margin. Tim's sliding scale is per-square, so a small job earns almost nothing —
     # a 1-square tile roof scales to $400 of profit while a day of Jupiter office overhead
     # alone is $1,400. He does not take that work at scale price; his own sheet flags one
@@ -1300,9 +1345,12 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     explicit_profit = (q.profit_mode == "flat" and q.flat_profit_dollars is not None) or (
         q.override_profit_per_sq is not None)
     guidance = compute_profit_guidance(config, q.daily_series or [])
+    # An operator minimum RAISES the config floor, never lowers it — the Quoting slider's "Min $"
+    # box is a "don't go under this on this job" input, not a way to quote below Tim's $2,500.
+    effective_floor = max(guidance["effective_floor"], q.min_profit_dollars or 0.0)
     floored = _apply_min_margin(
         config, all_items, total_sq, explicit_profit,
-        effective_floor=guidance["effective_floor"], on_site_weeks=guidance["on_site_weeks"])
+        effective_floor=effective_floor, on_site_weeks=guidance["on_site_weeks"])
     if floored:
         warnings.append(floored)
 

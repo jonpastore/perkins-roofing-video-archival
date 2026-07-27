@@ -180,8 +180,12 @@ class QuoteRequest(BaseModel):
     # roof's geometry when the caller supplies none (see derive_daily_series).
     overhead_mode: Literal["per_sq", "daily"] = "daily"
     daily_series: list[DailySeriesItem] = Field(default_factory=list)
-    profit_mode: Literal["scale", "flat"] = "scale"
+    # "scale" is legacy (Jarvis #432, Tim 2026-07-27) — kept only so stored old-proposal
+    # snapshots still re-render. "percent" is a fraction of eligible_base (0.20 = 20%, not 20).
+    profit_mode: Literal["scale", "flat", "percent"] = "scale"
     flat_profit_dollars: Optional[float] = Field(default=None, ge=0)
+    percent_profit_pct: Optional[float] = Field(default=None, ge=0, le=1)
+    min_profit_dollars: Optional[float] = Field(default=None, ge=0)
     commission_basis: Literal["profit", "job"] = "profit"
     commission_rate: Optional[float] = Field(default=None, ge=0, le=1)  # fraction, e.g. 0.30
     discounts: list[DiscountInput] = Field(default_factory=list)
@@ -332,6 +336,8 @@ def quote(
         daily_series=[DailyOverheadSeries(series=s.series, days=s.days) for s in body.daily_series],
         profit_mode=body.profit_mode,
         flat_profit_dollars=body.flat_profit_dollars,
+        percent_profit_pct=body.percent_profit_pct,
+        min_profit_dollars=body.min_profit_dollars,
         base_tile_brand=body.base_tile_brand,
         commission_basis=body.commission_basis,
         commission_rate_override=body.commission_rate,

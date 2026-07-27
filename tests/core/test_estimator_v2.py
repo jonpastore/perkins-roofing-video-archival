@@ -384,6 +384,150 @@ def test_estimate_scale_profit_mode_unchanged():
 
 
 # ---------------------------------------------------------------------------
+# Percent profit mode (v2 — Jarvis #432). Tim, 2026-07-27: "that profit thing per square is
+# like an old thing that I used to use before I really nailed it down ... I would just
+# eliminate it for simplification ... use the slider for profit percentage with a minimum
+# 2,500." profit_scale/config.profit_per_sq() stay wired for old-proposal snapshots only.
+# ---------------------------------------------------------------------------
+
+def test_estimate_percent_profit_mode_matches_eligible_base():
+    """percent mode: profit = percent_profit_pct x eligible_base, and the margin badge's
+    profit_pct equals the operator's own input — the SAME eligible_base definition on both
+    sides (else the badge lies about the number the operator just typed)."""
+    cfg = _cfg_v2()
+    raw_nofloor = dict(cfg.raw)
+    raw_nofloor["enforce_profit_floor"] = False
+    q = QuoteInput(
+        code_zone="FBC",
+        slope_type="sloped",
+        roof_type="3tab_shingle",
+        num_squares=30.0,
+        project_kind="residential",
+        profit_mode="percent",
+        percent_profit_pct=0.20,
+    )
+    r = estimate(load_config(raw_nofloor), q)
+    profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
+    eligible_base = r["margin"]["eligible_base"]
+    assert abs(profit_item["amount"] - 0.20 * eligible_base) < 0.01, (
+        f"profit should be 20% of eligible_base ({eligible_base}), got {profit_item['amount']}"
+    )
+    assert abs(r["margin"]["profit_pct"] - 0.20) < 0.0001, (
+        f"margin.profit_pct must equal the operator's percent_profit_pct, got "
+        f"{r['margin']['profit_pct']}"
+    )
+
+
+def test_estimate_percent_profit_mode_floor_fires_below_2500():
+    """A percentage that lands under $2,500 is still raised to the floor — Tim: '2,500 minimum
+    AND use the slider'. Unlike flat mode, percent is not operator-typed-and-owned, so the
+    floor must move the price, not just warn."""
+    cfg = _cfg_v2()  # enforce_profit_floor=True in the shipped fixture (prod default)
+    q = QuoteInput(
+        code_zone="FBC",
+        slope_type="sloped",
+        roof_type="3tab_shingle",
+        num_squares=1.0,
+        project_kind="residential",
+        profit_mode="percent",
+        percent_profit_pct=0.01,  # 1% of a 1-square job's eligible_base is far under $2,500
+    )
+    r = estimate(cfg, q)
+    profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
+    assert abs(profit_item["amount"] - 2500.0) < 0.01
+    assert any("min_margin_applied" in w for w in r["warnings"])
+
+
+def test_estimate_percent_profit_mode_floor_not_fired_above_2500():
+    """A percentage that clears $2,500 on its own is left untouched — no floor warning."""
+    cfg = _cfg_v2()
+    q = QuoteInput(
+        code_zone="FBC",
+        slope_type="sloped",
+        roof_type="3tab_shingle",
+        num_squares=30.0,
+        project_kind="residential",
+        profit_mode="percent",
+        percent_profit_pct=0.20,
+    )
+    r = estimate(cfg, q)
+    profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
+    eligible_base = r["margin"]["eligible_base"]
+    expected = 0.20 * eligible_base
+    assert expected > 2500.0, "sanity: this scenario must clear the floor on its own"
+    assert abs(profit_item["amount"] - expected) < 0.01
+    assert not any("min_margin_applied" in w for w in r["warnings"])
+
+
+def test_operator_min_dollars_raises_the_floor_but_never_lowers_it():
+    """The Quoting slider's "Min $" box. It is a "don't go under this on THIS job" input.
+
+    Both directions matter. A min ABOVE the config floor must move the price — otherwise the box
+    does nothing. A min BELOW it must be ignored — otherwise the box becomes a way to quote under
+    Tim's $2,500 ("it's just not worth the liability to make less than that"), which is the one
+    thing the floor exists to prevent.
+    """
+    cfg = _cfg_v2()
+    base = dict(
+        code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+        num_squares=1.0, project_kind="residential",
+        profit_mode="percent", percent_profit_pct=0.01,
+    )
+
+    def profit(**kw):
+        r = estimate(cfg, QuoteInput(**base, **kw))
+        return next(li for li in r["line_items_detail"] if li["key"] == "profit")["amount"]
+
+    assert abs(profit() - 2500.0) < 0.01                              # config floor
+    assert abs(profit(min_profit_dollars=6000.0) - 6000.0) < 0.01     # operator raises it
+    assert abs(profit(min_profit_dollars=500.0) - 2500.0) < 0.01      # cannot go under Tim's floor
+
+
+def test_low_slope_percent_profit_mode():
+    """Percent mode must work identically on the low-slope path, not just sloped — the profit
+    rebuild lives once in _estimate_config, after both builders' output lands in all_items."""
+    cfg = _cfg_low_slope_v2()
+    q = QuoteInput(
+        code_zone="FBC",
+        slope_type="low_slope",
+        roof_type="polyglass_sav_sap",
+        num_squares=30.0,
+        project_kind="residential",
+        profit_mode="percent",
+        percent_profit_pct=0.20,
+    )
+    r = estimate(cfg, q)
+    profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
+    eligible_base = r["margin"]["eligible_base"]
+    assert abs(profit_item["amount"] - 0.20 * eligible_base) < 0.01
+    assert abs(r["margin"]["profit_pct"] - 0.20) < 0.0001
+
+
+def test_scale_mode_still_byte_for_byte_unchanged():
+    """profit_scale/profit_mode='scale' must be untouched by the percent-mode addition — old
+    proposal snapshots re-render exactly. Golden: same 10 SQ FBC 3tab_shingle case as
+    test_estimate_scale_profit_mode_unchanged, both with and without the floor."""
+    cfg = _cfg_v2()
+    q = QuoteInput(
+        code_zone="FBC",
+        slope_type="sloped",
+        roof_type="3tab_shingle",
+        num_squares=10.0,
+        project_kind="residential",
+        profit_mode="scale",
+    )
+    raw_nofloor = dict(cfg.raw)
+    raw_nofloor["enforce_profit_floor"] = False
+    r = estimate(load_config(raw_nofloor), q)
+    profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
+    assert profit_item["amount"] == 1400.0, "golden: 10 SQ -> scale tier $140/sq -> $1,400"
+
+    r_floored = estimate(cfg, q)
+    floored_item = next(li for li in r_floored["line_items_detail"] if li["key"] == "profit")
+    assert floored_item["amount"] == 2500.0, "golden: floor still lifts the scale result"
+
+
+# ---------------------------------------------------------------------------
 # Config: daily_overhead_rates present in exhibit_b fixture
 # ---------------------------------------------------------------------------
 
