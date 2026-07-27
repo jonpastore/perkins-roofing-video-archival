@@ -80,19 +80,47 @@ invisible, which is the whole point.
 
 ## What to build
 
-### 1. `_scope` declared per key, and editable
+### 1. One top-level `_scopes` map — SHIPPED 2026-07-27
 
-Scope lives next to the value, in the same config the numbers live in — so it versions, diffs and
-rolls back with everything else, and there is no second source of truth to drift:
+**Correcting this spec's first draft.** It proposed a `_scope` marker *beside each value*, which
+reads better and does not work: `PricingConfig.daily_overhead_rates()` does `rate * factor` over
+`.items()`, so an inline string raises `TypeError` on every quote that touches overhead, and
+`profit_scale` is a list with nowhere to put a marker at all. Caught by reading the consumers before
+writing the annotation.
+
+So scope lives in a single top-level map, still inside the config so it versions, diffs and rolls
+back with the numbers:
 
 ```json
-"daily_overhead_rates": { "_scope": "branch", "tile": 745, ... },
-"profit_scale":         { "_scope": "shared", "bands": [...] },
-"sloped_base_cost_lm":  { "_scope": "mixed",  "_split_hint": "Tim comment: L/M/OH/P", ... }
+"_scopes": { "daily_overhead_rates": "branch", "profit_scale": "shared",
+             "sloped_base_cost_lm": "mixed", "commission_pct": "unclassified" }
 ```
 
-**Default for an unclassified key is `branch`** — fail closed. A new key nobody thought about is
-never copied silently; worst case it has to be set three times, which is today's behaviour anyway.
+`PricingConfig.scope_of(key)` returns it; **an absent key defaults to `branch`** — fail closed.
+`copyable_keys()` returns only the `shared` ones. A test asserts every top-level key is classified,
+so the map cannot rot as keys are added.
+
+### 1a. What the classification actually came out as
+
+| scope | count | |
+|---|--:|---|
+| `shared` | 24 | policy, rules, band edges, the whole profit block, PM incentive axes, geography |
+| `branch` | 13 | `daily_overhead_rates`, `sloped_overhead`, `office_*`, demo adders, `roof_cuts`, `roof_height`, `repair`, `tile_pointing`, `pitch_7_12_add` |
+| **`mixed`** | **15** | keys that fuse labour and material in one figure |
+| `unclassified` | 1 | `commission_pct` — wrong shape, per salesperson |
+
+**The headline is that 15 of 50 are `mixed`.** Tim prices everything as **L + M + OH + P**, so almost
+no key is purely material: `sloped_base_cost_lm`, `cuts_calc`, `gutters`, `low_slope`,
+`winterguard_add`, `specialty_tile_upgrade`, every fixed fee. Jon's rule is right, and at
+top-level-key granularity it can only reach **34 of the 50** until labour and material are separated.
+
+That reframes the L/M split from a follow-on into a **precondition**: it is what makes the other 15
+classifiable, and what would let Miami carry Miami's labour against the same ABC material price.
+The data exists — 29 of Tim's 273 cell comments carry the `L / M / OH / P` breakdown.
+
+Shipped as `scripts/seed_config_scopes.py`, which refuses to write if any priced value differs
+before and after the merge. Verified end to end: the total across Tim's 29 homes is
+**$1,115,267.50 before and after**. Prod is on jupiter v20 / miami v21 / naples v20.
 
 ### 2. Yes, scope is toggleable — but the two directions are not symmetric
 
@@ -188,9 +216,8 @@ the write are the same code path. Idempotent: no change means no new version.
 
 ## Rollout
 
-1. **Classify only, change nothing.** Annotate `_scope` across
-   `infra/fixtures/pricing_config_exhibit_b.json` per the table above, `mixed` where L and M are
-   fused, evidence in `_source`. Seed to all three and assert no number moved.
+1. ~~**Classify only, change nothing.**~~ **DONE 2026-07-27** — `_scopes` in the fixture and on all
+   three branches, inertness asserted by re-pricing Tim's 29 homes to the cent.
 2. The **"branches differ"** badge and the scope badges — read-only, no write path yet. This alone
    surfaces that Miami and Naples are running Jupiter's crew rates.
 3. Scope toggle, `shared` → `branch` first (the safe direction), then promotion with the winner

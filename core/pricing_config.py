@@ -391,6 +391,42 @@ class PricingConfig:
         return self.get_or_raise(val, "low_slope.tear_off_per_layer_per_sq")
 
     # ------------------------------------------------------------------ #
+    # Branch scope — which values may be copied between branches           #
+    # ------------------------------------------------------------------ #
+    SCOPES = ("shared", "branch", "mixed", "unclassified")
+
+    def scope_of(self, key: str) -> str:
+        """Whether `key` may be propagated when one branch's config is copied to another.
+
+        Jon, 2026-07-27: *"material cost should be shared by default, overhead and labor costs
+        are branch specific."*
+
+        ``shared``        one company, one rule or one negotiated price — safe to copy.
+        ``branch``        what THIS branch's crews and office cost. Never copied.
+        ``mixed``         the key fuses labour and material in a single figure. Tim prices
+                          everything as L + M + OH + P, so 15 of the 50 keys land here and the
+                          rule cannot reach them until those components are split. Never copied.
+        ``unclassified``  the key's SHAPE is wrong, so scoping it would propagate a known-bad
+                          shape (``commission_pct`` is per salesperson, not per zone).
+
+        **Absent defaults to ``branch``** — fail closed. A key nobody has thought about is never
+        propagated silently; the cost of that is having to set it three times, which is exactly
+        what everyone does today anyway.
+
+        Stored as ONE top-level ``_scopes`` map rather than a ``_scope`` beside each value.
+        Inline would have been prettier, and wrong: ``daily_overhead_rates()`` does
+        ``rate * factor`` over ``.items()``, so a string sitting in that dict raises TypeError on
+        every quote, and ``profit_scale`` is a list with nowhere to put one.
+        """
+        scope = (self.raw.get("_scopes") or {}).get(key)
+        return scope if scope in self.SCOPES else "branch"
+
+    def copyable_keys(self) -> list[str]:
+        """Top-level keys a branch-to-branch copy may carry, in stable order."""
+        return sorted(k for k in self.raw
+                      if not k.startswith("_") and self.scope_of(k) == "shared")
+
+    # ------------------------------------------------------------------ #
     # v2: Day-based overhead + flat profit mode                           #
     # ------------------------------------------------------------------ #
     def daily_overhead_rates(self) -> dict[str, float]:

@@ -1238,3 +1238,73 @@ def test_mixed_roof_defaults_the_flat_system_from_config(cfg: PricingConfig):
     raw["low_slope"].pop("default_flat_system", None)
     with pytest.raises(ConfigError, match="default_flat_system"):
         estimate(load_config(raw), QuoteInput(**kw))
+
+
+# ---------------------------------------------------------------------------
+# Branch scope — classification only. It must move no money, ever.
+# ---------------------------------------------------------------------------
+
+def _fixture_raw():
+    import json
+    import pathlib
+    return json.loads(pathlib.Path("infra/fixtures/pricing_config_exhibit_b.json").read_text())
+
+
+def test_every_top_level_key_is_classified():
+    """The map must not rot. A new key added without a scope silently becomes un-copyable, which
+    is safe but invisible — this makes it loud instead."""
+    from core.pricing_config import load_config
+    raw = _fixture_raw()
+    cfg = load_config(raw)
+    scopes = raw.get("_scopes") or {}
+    missing = sorted(k for k in raw if not k.startswith("_") and k not in scopes)
+    assert not missing, f"unclassified config keys: {missing}"
+    bad = {k: v for k, v in scopes.items() if v not in cfg.SCOPES}
+    assert not bad, f"unknown scope values: {bad}"
+
+
+def test_an_unknown_key_fails_closed_to_branch():
+    from core.pricing_config import load_config
+    cfg = load_config(_fixture_raw())
+    assert cfg.scope_of("a_key_added_next_year") == "branch"
+    assert cfg.scope_of("daily_overhead_rates") == "branch"
+    assert cfg.scope_of("profit_scale") == "shared"
+
+
+def test_labour_and_overhead_are_never_copyable():
+    """Jon's rule, as an assertion. If someone reclassifies one of these to `shared`, a copy
+    would overwrite Miami's crew cost with Jupiter's — the exact defect this exists to prevent.
+    """
+    from core.pricing_config import load_config
+    copyable = set(load_config(_fixture_raw()).copyable_keys())
+    for key in ("daily_overhead_rates", "sloped_overhead", "office_daily_overhead",
+                "office_men", "office_oh_basis_reference", "tile_demo_add", "metal_demo_add",
+                "roof_cuts", "roof_height", "repair", "commission_pct"):
+        assert key not in copyable, f"{key} must never be copied between branches"
+
+
+def test_fused_labour_material_keys_are_marked_mixed_not_shared():
+    """Tim prices everything L + M + OH + P, so a key carrying a sell price cannot be called
+    'material' and shared. Marking them `mixed` keeps them out of a copy AND records the work."""
+    from core.pricing_config import load_config
+    cfg = load_config(_fixture_raw())
+    for key in ("sloped_base_cost_lm", "gutters", "low_slope", "cuts_calc"):
+        assert cfg.scope_of(key) == "mixed", f"{key} fuses labour and material"
+        assert key not in cfg.copyable_keys()
+
+
+def test_classification_carries_no_pricing_value():
+    """The whole promise of step 1: annotating scope changes no number anywhere."""
+    import json
+    raw = _fixture_raw()
+    scopes = raw.get("_scopes") or {}
+    assert scopes, "fixture carries no _scopes map"
+    for value in scopes.values():
+        assert isinstance(value, str)
+    # _scopes lives beside the values, never inside them: an inline marker would be iterated by
+    # daily_overhead_rates() as if it were a series and raise on `rate * factor`.
+    for key, value in raw.items():
+        if key.startswith("_") or not isinstance(value, dict):
+            continue
+        assert "_scope" not in value, f"{key} carries an inline _scope; use the top-level map"
+    json.dumps(raw)  # still serialisable
