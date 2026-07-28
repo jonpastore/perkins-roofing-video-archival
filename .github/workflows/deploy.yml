@@ -69,7 +69,10 @@ jobs:
           TF_VAR_cloudflare_api_token: ${{ steps.cf.outputs.token }}
         run: |
           terraform init -input=false
-          terraform plan -input=false -lock=false -detailed-exitcode && code=$? || code=$?
+          # State LOCKING stays on. The GCS backend locks natively, and combined with the
+          # deploy-prod concurrency group above it guarantees infra changes serialise.
+          # -lock=false was a convenience while iterating and should never ship.
+          terraform plan -input=false -detailed-exitcode && code=$? || code=$?
           if [ "$code" = "2" ]; then
             echo "::error::Terraform plan is NOT clean — infra has drifted from git (R4)."
             echo "::error::Run 'cd infra && terraform apply' deliberately, then re-run this deploy."

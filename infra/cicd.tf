@@ -48,15 +48,25 @@ resource "google_service_account" "deployer" {
   description  = "Builds the app image and rolls Cloud Run. Cannot change IAM or delete data."
 }
 
-# Only the main branch may impersonate the deployer. A PR from a fork runs with ref != main and
-# gets nothing, so CI on untrusted code can still lint and test but can never reach prod.
+# Only the main branch may impersonate the deployer.
+#
+# This binding used to key on attribute.repository, which is EVERY ref in the repo — a branch or
+# PR could have assumed the deployer and reached prod. The comment claimed main-only; the binding
+# did not enforce it.
+#
+# Both conditions are needed and they live in different places, because a principalSet matches
+# ONE attribute:
+#   - the provider's attribute_condition pins the REPOSITORY (a token from any other repo is
+#     rejected before it is ever exchanged)
+#   - this principalSet pins the REF to main
+# Together: a token must come from this repo AND be running on main.
 resource "google_service_account_iam_member" "deployer_wif" {
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
   member = join("", [
     "principalSet://iam.googleapis.com/",
     google_iam_workload_identity_pool.github.name,
-    "/attribute.repository/${local.github_repo}",
+    "/attribute.ref/refs/heads/main",
   ])
 }
 
@@ -96,6 +106,16 @@ resource "google_service_account_iam_member" "deployer_actas" {
     google_service_account.jobs_sa.name,
   ])
   service_account_id = each.value
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# `gcloud builds submit` runs the BUILD as the project's default compute service account, and
+# submitting a build is itself an "act as" on it — a third identity beyond the two Cloud Run
+# runtime accounts above. Without this the build fails at submit with
+# "caller does not have permission to act as service account .../115464044346810929753".
+resource "google_service_account_iam_member" "deployer_actas_cloudbuild" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/${data.google_project.this.number}-compute@developer.gserviceaccount.com"
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.deployer.email}"
 }
