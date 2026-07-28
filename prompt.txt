@@ -1,71 +1,94 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-27-pm.md, then docs/meetings/2026-07-27-marketing-and-estimator.md.
+READ FIRST: CONTINUATION-2026-07-28.md, then docs/R2-2026-07-27.md §5 and
+docs/knowify-scrape-plan-2026-07-28.md.
 
-HEAD 18b75ac, pushed. Deployed platform:d44fb51 (the commits above it are docs only).
-Prod configs jupiter v20 / miami v21 / naples v20. drift_check clean.
-The Tim email went out 2026-07-27 16:08. He replied 3x (20:22, 20:24, 20:36) and the 2pm
-meeting is transcribed. Work is in Jarvis #432-#445 under project perkins-buildout-2026-07.
+HEAD 5219dd9, pushed. DEPLOYED platform:372be23 — the three commits above it are NOT deployed.
+Prod configs jupiter v25 / miami v27 / naples v25. drift_check clean.
 
 Confirm:
   git log --oneline origin/main..HEAD                       # expect empty
   gcloud run services describe api --region us-central1 \
-    --format='value(spec.template.spec.containers[0].image)' # expect platform:d44fb51
+    --format='value(spec.template.spec.containers[0].image)' # expect platform:372be23
 
 WHAT IS SETTLED — do not re-derive
-  - 5-day week, 20 work days/month. Profit floor $2,500 x ceil(crew_days/5). $4,000 is dead:
-    $2,500 at any size. All confirmed verbally on 7/27.
-  - Miami office overhead = $85k/month / 20 = $4,250/day. Jupiter $28k/20 = $1,400 (already
-    our config). Naples still unstated.
-  - Accuracy: 83% within a day out-of-sample; validated against his ACTUAL prices at
-    median +1.0%, 18/21 within 10%. He wants 95%+ on overhead.
-  - Accessibility has NO fixed price — a MANUAL $ input, not a tier (his email 20:36).
+  - Overhead = ONE daily number per branch x days. monthly overhead (calculated OUTSIDE this
+    system) / 20. Margin is the only negotiable lever; materials and OH are floors. BUILT as
+    overhead_basis="branch"; DEFAULTS to "series" so nothing repriced. DO NOT FLIP without Tim.
+  - Profit = operator percentage x eligible_base + the $2,500/on-site-week floor. profit_scale
+    is retired as a mechanism but kept readable so old proposals still render.
+  - Per-square is dead for job costs. It survives ONLY where an item genuinely is per-square
+    (demo, and material upgrades: Eagle +$5/SQ, West Lake +$15/SQ, colored mortar +$10/SQ).
+  - #433 is CLOSED AND DEPLOYED. Customer mode folds base+overhead+profit+PM incentive+bonus.
+  - Day model is 86% within a day out-of-sample, NOT 90%. Nest the feature-set choice or the
+    number is dishonest.
 
 THE WORK, ranked
 
-1. #432 PROFIT MODEL. Tim: "that profit thing per square is an old thing... let's not have
-   duplicate mechanisms. I would just eliminate it... $2,500 minimum and then use the sliding
-   scale to figure out your percent." Replace the per-square band table with an operator
-   PERCENTAGE + the $2,500 floor. Keep profit_scale readable so old proposals still render.
-   This makes the "20 squares $120 or $110" question moot.
+1. KNOWIFY -> JUPITER (#439). The MCP is still bound to Josh's tenant (Company 11267 /
+   Tenant 9258, 575 NW 152 St Miami). Re-auth via `/mcp` -> knowify -> log in as JUPITER; that
+   is the proven path. Our REST client is separate and Knowify's auth server 500s on the RFC
+   8707 `resource` param and 401s tokens minted without it (reproduced 7/28) — a support ticket
+   if the resource-free link also fails.
+   Tim asked for: scope-of-work templates, accent items (skylight/solar vent/chimney),
+   PROTECTOR/PREFERRED/PREMIUM per roof type, repair scopes by type. Apply to the scope-of-work
+   section on BOTH re-roof and repair as a type-ahead drop-down.
+   Miami baseline is captured (~/perkins-corpus/knowify/, 26 tier items + 54,307 chars of scope
+   text) — DIFF Tim's against it. Josh's is untouched since 2026-05-07 and his accent items are
+   $0 placeholders from 2024. 21/22 tier prices match ours; the exception is tile/PREFERRED
+   (ours $165, Josh $160, and our 165 is verified against a real sold proposal).
 
-2. #433 CUSTOMER-VIEW LEAK, shipped this morning. Tim: "the PM incentive is not something the
-   customer ever needs to see." calc_lines_from_estimate(audience="customer") folds
-   base+overhead+profit but still prints PM Incentive as a row. Fold it, and add a test that
-   no back-end key survives customer mode.
+2. COMPANYCAM creds + API, for project posts. Connector is BUILT and INERT (0c35be9):
+   core/companycam/{rest,mirror}.py, adapters/companycam.py, api/routes/companycam.py (HMAC
+   webhook), jobs/companycam_sync.py, migration 0043, advisory lock 8274126, tenant-1 scoped.
+   API base https://api.companycam.com/v2. Gated on COMPANYCAM_PAT.
+   To do: PAT into Secret Manager + deploy env; confirm webhook envelope/signature against live
+   traffic (NEVER verified); the mirror is WRITE-ONLY today so reads need building; then the
+   project gallery (buildout plan P4-13: auto-extract from the PROPOSAL + CompanyCam, one page
+   per project).
 
-3. #434 REPAIR PROFIT. A repair quote returns COST only — he caught it live: 1 day, 1 man,
-   $500 materials printed $1,685 ($1,185 + $500). Add the profit slider, $250 minimum profit,
-   $500 minimum service call. Maintenance prices identically: relabel "Repair / Maintenance",
-   ONE path (Josh wanted three; Tim and Jon overruled).
+3. #430 PROJECT DIMENSION (Jarvis #449, biggest). A project owns a COLLECTION of estimates and
+   proposals. The $2,500 floor becomes PER SITE PER WEEK. Fixed fees charge once per project,
+   not per building. General Conditions is a project-level block. Evergrene = 9 buildings at one
+   address; today ~$2,500 of fixed fees AND the floor apply nine times (Bus Stop 3sq: Tim $4,763
+   vs ours $9,995).
+   ASK BEFORE MIGRATING: is a SITE the same as a PROJECT, or can one project span several sites?
+   Also belongs here: per-building base cost ($750-930 on Evergrene) and Verea Caribbean/Spanish
+   $230/$275 vs our $120/$195.
 
-4. #437 FOUR INPUTS he asked for by email 20:24: accessibility input box (manual $),
-   Resi/Commercial button, crane flag for >2.5 stories, waterfront/salinity gate for Coastal.
-   Coastal is a FOURTH tier: good/better/best/coastal, on every roof type not just metal.
+4. DEPLOY 5219dd9 (bash scripts/deploy.sh). Carries #437 + #436 + the overhead mechanism.
+   Nothing in it moves an existing price. Then SEND the Tim draft (unsent, in Jon's DeGenito
+   Outlook) — consider folding in tile/PREFERRED and OI-10 so it is one email, not three.
 
-5. #436 REFIT THE DAY MODEL on Stories + Pitch + Accessibility — all three are now columns in
-   ~/perkins-corpus/tim30_with_actual_prices.json — and measure against his 27 ACTUAL prices,
-   not just his day figures. He offered another 20 houses if it helps.
+5. Smaller: cerberus gmail-enhanced needs a git pull + restart (serving old code, fixes in
+   d656cdd) · Naples still has no office burn and silently inherits Jupiter's rates (OI-12).
 
-6. #435 seed Miami $4,250/day. #438 TEST the salinity tool before wiring Coastal (built,
-   converted to a WP plugin, never verified). #439 scrape TIM's Knowify catalog, not Josh's.
-   #440 finish R2. #441 chase the 7 unanswered pricing questions.
+THE OVERHEAD DECISION IS THE BIG OPEN ONE
+  Tim says the branch burns $1,400/day (Jupiter) and $4,250/day (Miami). His actual prices
+  recover $840-950/day. Flat $1,400 x days prices his own 21 sold jobs at median -0.4% margin
+  with 19 of 21 BELOW his $2,500/week floor. At $4,250/day an 8-day Miami job carries $34,000 of
+  overhead on a $65,900 quote (52%). Either that gap IS the margin squeeze (Jarvis #431:
+  materials +8% YoY, realised prices -24% from the 2024 peak) or the branch number covers more
+  than one job. It is a business decision — the draft asks it.
 
 GOTCHAS
-- Excel ate Tim's pitch column as DATES: "4/12" is stored 2026-04-12. The MONTH is the rise.
-- Transcribe locally for $0: ffmpeg -ac 1 -ar 16000 -b:a 32k -f segment -segment_time 600,
-  then POST each chunk to http://cerberus-ai:4000/v1/audio/transcriptions model=whisper-turbo.
-  Key: grep '^LITELLM_MASTER_KEY=' ~/litellm/providers.env. 69 min took ~4 min and cost $0.
-- `pgrep -f "pytest tests/"` MATCHES YOUR OWN WAITER SHELL — an until-loop on it never exits.
-  Wait on the PID. Same trap hit a deploy.sh waiter.
+- `pkill -f <pattern>` MATCHES YOUR OWN SHELL when the pattern is in your command line. It kills
+  the shell and everything after it in that command never runs. Use Write for scripts.
+- Python buffers stdout when not a TTY — a backgrounded script that prints a URL logs NOTHING
+  until exit. Use `-u`.
+- Whisper transcribes "Knowify" as "notify". Search both.
+- o365 MCP's Graph token is EXPIRED (90-day inactivity). gmail-enhanced with
+  account=jon@degenito.ai reaches the same Outlook mailbox on a different token and works.
+- jon@perkinsroofing.net is READ-ONLY (access/auth). ALL customer comms go from jon@degenito.ai.
+- Sweep ALL THREE corpora before asking Tim: transcripts, the 273 cell comments, his ~92 emails.
+  AND the PDFs — OI-5's answer was in the Lumber Schedule, which no text sweep would have found.
+  The local-model sweep returned NOT FOUND on all five questions and was WRONG on three.
+- Excel ate Tim's pitch column as DATES; the MONTH is the rise. tim30_with_actual_prices.json is
+  already decoded.
 - A config change is FOUR places: fixture, prod, tests, any seeder that could replay it.
 - Cloud SQL proxy 127.0.0.1:5432, db `perkins`, user `app`; every query needs
-  set app.tenant_id='1'. PW=$(gcloud secrets versions access latest --secret=db-password)
-- CI gates on `ruff check core adapters api jobs` FIRST. Full suite ~20 min, core/ ~97.7%
-  (R1 >= 97%). .coveragerc fail_under=100 fails on a clean tree — pre-existing, not yours.
-- Sweep ALL THREE corpora before asking Tim anything: transcripts, the 273 cell comments, and
-  his ~92 emails (Graph $search="from:tim@perkinsroofing.net"; $filter+$orderby together 400s).
-  The mailbox is the one that got missed and it cost two wrong pricing rules.
-- Graph attachments are ADDITIVE — delete before re-attaching.
+  set app.tenant_id='1'. DB_URL=postgresql+pg8000://app:$PW@127.0.0.1:5432/perkins for scripts.
+- CI gates on `ruff check core adapters api jobs` FIRST (scripts/ and tests/ are NOT gated).
+  Full suite ~20 min. SPA: cd web && npx tsc -b must exit 0.
 - Render a proposal and LOOK at it; reading the template is not the same.
 - bash scripts/deploy.sh (not executable); refuses a dirty tree.
