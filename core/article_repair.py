@@ -38,10 +38,24 @@ _IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _IMG_SRC_RE = re.compile(r'src="([^"]+)"')
 _YT_THUMB_RE = re.compile(r"(?:img\.youtube\.com|i\.ytimg\.com)/vi/([^/]+)/")
 
+# The leading slash is OPTIONAL here on purpose. The LLM routinely writes href="some-slug" with
+# no slash, and WordPress's sanitizer STRIPS an href it considers unsafe — the anchor reaches the
+# reader as a bare <a>text</a> with no link at all. That is what Wendy saw as "Learn More ... not
+# linking anywhere": the markup had an <a>, so every source-side check passed, while the published
+# page had 9 dead ones. Matching the slashless form lets us normalise it to /slug/.
 _REL_A_RE = re.compile(
-    r'<a\s[^>]*href="(/[a-z0-9][a-z0-9-]*)/?(?:#[^"]*)?"[^>]*>(.*?)</a>',
+    r'<a\s[^>]*href="(/?[a-z0-9][a-z0-9-]*)/?(?:#[^"]*)?"[^>]*>(.*?)</a>',
     re.IGNORECASE | re.DOTALL,
 )
+
+# An anchor carrying no href at all — already dead in the stored content.
+# (?![a-z]) is load-bearing: "<a" without it also matches "<aside class=...>", and these articles
+# use <aside> callouts everywhere. With DOTALL the ".*?</a>" would then swallow everything up to
+# the next real </a> — silently deleting body copy.
+# id=/name= are excluded too: `<a id="section"></a>` is an anchor TARGET, not a broken link.
+# Unwrapping those silently breaks every deep link that points into the page.
+_NO_HREF_A_RE = re.compile(
+    r'<a(?![a-z])(?![^>]*\b(?:href|id|name)\s*=)[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 
 _MYFTP_RE = re.compile(r'(href|src)="https?://[^/"]*\.myftpupload\.com(/[^"]*)?"', re.IGNORECASE)
 
@@ -250,18 +264,33 @@ def _repair_relative_links(
     fixes: list[str] = []
 
     def _sub(m: re.Match) -> str:
-        path, text = m.group(1).lstrip("/"), m.group(2)
+        raw, text = m.group(1), m.group(2)
+        path = raw.lstrip("/")
+        rooted = raw.startswith("/")
         if path in valid_slugs:
-            return m.group(0)
+            if rooted:
+                return m.group(0)
+            # Slashless: WordPress strips it, so the link dies on publish. Re-anchor it.
+            fixes.append(f"rooted slashless link {path} -> /{path}/")
+            return f'<a href="/{path}/">{text}</a>'
         if path in pillar_map:
             fixes.append(f"rewrote dead link /{path} -> /{pillar_map[path]}/")
-            # Prefix replace only (no trailing slash forced on): preserves whatever the
-            # original href had after the slug — trailing slash, #fragment, or neither.
-            return m.group(0).replace(f'"/{path}', f'"/{pillar_map[path]}')
+            if rooted:
+                # Prefix replace only (no trailing slash forced on): preserves whatever the
+                # original href had after the slug — trailing slash, #fragment, or neither.
+                return m.group(0).replace(f'"/{path}', f'"/{pillar_map[path]}')
+            return f'<a href="/{pillar_map[path]}/">{text}</a>'
         fixes.append(f"unwrapped dead link /{path}")
         return text
 
     out = _REL_A_RE.sub(_sub, content)
+
+    # Anchors with NO href are dead on arrival — keep the words, drop the fake link.
+    def _unwrap(m: re.Match) -> str:
+        fixes.append("unwrapped href-less anchor")
+        return m.group(1)
+
+    out = _NO_HREF_A_RE.sub(_unwrap, out)
     out = _tidy_related_links(out)
     return out, fixes
 

@@ -34,13 +34,17 @@ _REL_RE = re.compile(r'<p class="related-links">.*?</p>', re.IGNORECASE | re.DOT
 _EMBED_RE = re.compile(r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)", re.IGNORECASE)
 
 
-def _fix_content(content: str) -> str:
+def _fix_content(content: str, valid_slugs=frozenset(), pillar_map=None) -> str:
     """Every deterministic ensure Wendy's review added, in the generator's own order."""
-    from core.article_repair import _tidy_related_links
+    from core.article_repair import _repair_relative_links, _tidy_related_links
     from core.brand_identity import YOUTUBE_CHANNEL_URL, YOUTUBE_CHANNEL_URL_LEGACY
     from jobs.article_job import _ensure_learn_more_links, _ensure_table_borders, _strip_toc
 
-    c = _ensure_table_borders(_ensure_learn_more_links(_strip_toc(content or "")))
+    # Anchors FIRST: a slashless href is stripped by WordPress, so the anchor arrives dead. Rooting
+    # or unwrapping it before the "Learn more" pass means a pointer that CAN be saved is kept
+    # rather than dropped for looking unlinked.
+    c, _ = _repair_relative_links(content or "", set(valid_slugs), dict(pillar_map or {}))
+    c = _ensure_table_borders(_ensure_learn_more_links(_strip_toc(c)))
     c = _tidy_related_links(c)
     # The channel moved to the @handle; the old channel-ID URL is retired, not merely alternative.
     return c.replace(YOUTUBE_CHANNEL_URL_LEGACY, YOUTUBE_CHANNEL_URL).replace(
@@ -67,15 +71,28 @@ def main() -> None:
     ap.add_argument("--repush", action="store_true",
                     help="also push updated bodies to WordPress for ALREADY-PUBLISHED articles")
     ap.add_argument("--limit", type=int, default=0, help="cap rows processed (0 = all)")
+    ap.add_argument("--repush-limit", type=int, default=0,
+                    help="cap the repush (0 = all) — use 1 to smoke-test one live post first")
     args = ap.parse_args()
 
     from sqlalchemy import select
 
     from app.models import Article, SessionLocal
-    from core.article_criteria import _BARE_TABLE_RE, _LEARN_MORE_P_RE, _TOC_BLOCK_RE
+    from core.article_criteria import (
+        _BARE_TABLE_RE,
+        _DEAD_ANCHOR_RE,
+        _LEARN_MORE_P_RE,
+        _TOC_BLOCK_RE,
+        _is_linked,
+    )
+    from core.internal_links import SERVICE_SLUGS
+    from jobs.article_job import _repair_inputs
 
     s = SessionLocal()
     s.info["tenant_id"] = 1
+    inputs = _repair_inputs(s)
+    valid_slugs = set(inputs["valid_slugs"]) | set(SERVICE_SLUGS)
+    pillar_map = inputs["pillar_map"]
     rows = s.execute(select(Article)).scalars().all()
     if args.limit:
         rows = rows[:args.limit]
@@ -83,13 +100,15 @@ def main() -> None:
     stats, changed = Counter(), []
     for a in rows:
         before, before_jl = a.content_md or "", a.jsonld_json
-        after = _fix_content(before)
+        after = _fix_content(before, valid_slugs, pillar_map)
         after_jl = _fix_jsonld(before_jl, after)
 
         if _TOC_BLOCK_RE.search(before):
             stats["toc_block"] += 1
-        if [x for x in _LEARN_MORE_P_RE.findall(before) if "<a " not in x.lower()]:
+        if [x for x in _LEARN_MORE_P_RE.findall(before) if not _is_linked(x)]:
             stats["unlinked_learn_more"] += 1
+        if _DEAD_ANCHOR_RE.search(before):
+            stats["dead_anchor"] += 1
         if _BARE_TABLE_RE.search(before):
             stats["bare_table"] += 1
         if "UChJZpBYXOuR0j1EHJugv5hg" in before:
@@ -126,13 +145,20 @@ def main() -> None:
     print(f"\nwrote {len(changed)} articles")
 
     if args.repush:
-        from adapters.wordpress import update
+        from adapters.wordpress import resolved_wp_url, update
+        from jobs.article_job import _markdown_to_html, split_featured_image
+
+        # Every PUBLISHED row, not just the ones this run changed. Fixing the rows and pushing
+        # them are separate steps, and the backfill is idempotent — so on the run where you
+        # actually push, `changed` is already empty and keying off it would push nothing.
+        targets = [a for a in rows
+                   if (a.status or "") == "published" and getattr(a, "wp_post_id", None)]
+        if args.repush_limit:
+            targets = targets[:args.repush_limit]
+        print(f"\nrepushing {len(targets)} published articles to {resolved_wp_url()} …")
         pushed = failed = 0
-        for a in changed:
-            if (a.status or "") != "published" or not getattr(a, "wp_post_id", None):
-                continue
+        for a in targets:
             try:
-                from jobs.article_job import _markdown_to_html, split_featured_image
                 body, _ = split_featured_image(a.content_md or "")
                 # status MUST be passed explicitly: adapters.wordpress.update defaults it to
                 # "draft", so omitting it would UNPUBLISH every live article this touches.
@@ -147,10 +173,11 @@ def main() -> None:
                     focus_keyword=getattr(a, "focus_keyword", None),
                 )
                 pushed += 1
+                print(f"  ok {a.slug}")
             except Exception as exc:                      # noqa: BLE001
                 failed += 1
                 print(f"  repush FAILED {a.slug}: {exc}", file=sys.stderr)
-        print(f"repushed {pushed} published articles to WordPress ({failed} failed)")
+        print(f"repushed {pushed} published articles ({failed} failed)")
     else:
         n_pub = sum(1 for a in changed if (a.status or "") == "published")
         if n_pub:

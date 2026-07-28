@@ -128,6 +128,14 @@ def test_in_content_toc_block_is_rejected():
     assert "no_toc_block" in _keys_failing(content=with_toc)
     assert "no_toc_block" not in _keys_failing()      # the good article has none
 
+    # SECOND shape: the old pillar prompt asked for a "Table of Contents" H2 + list rather than
+    # core.seo.ensure_toc's <div class="toc">. 59 pillar articles carry it, and matching only the
+    # div form left every one of them live.
+    h2_toc = _GOOD.replace(
+        '<h2 id="a">',
+        '<h2>Table of Contents</h2><ul><li><a href="#a">Cost factors</a></li></ul><h2 id="a">', 1)
+    assert "no_toc_block" in _keys_failing(content=h2_toc)
+
 
 def test_unlinked_learn_more_is_rejected_but_a_real_link_passes():
     """"The Learn More content at the bottom of each section is not linking anywhere."
@@ -136,6 +144,14 @@ def test_unlinked_learn_more_is_rejected_but_a_real_link_passes():
     assert "learn_more_linked" in _keys_failing(content=unlinked)
     linked = _GOOD + '<p>Learn more: <a href="/metal-roof-gauge/">Metal Roof Gauge</a></p>'
     assert "learn_more_linked" not in _keys_failing(content=linked)
+
+    # BARE MARKDOWN form — the common one, and the one that reached the live site. content_md
+    # stores it unwrapped; _markdown_to_html adds the <p> only at publish, so gating on the <p>
+    # form alone passed the stored row while readers saw dead pointers.
+    bare = _GOOD + "\n\nLearn more: Understanding Roofing Metal Corrosion Prevention\n"
+    assert "learn_more_linked" in _keys_failing(content=bare)
+    bare_linked = _GOOD + "\n\nLearn more: [Metal Roof Gauge](/metal-roof-gauge/)\n"
+    assert "learn_more_linked" not in _keys_failing(content=bare_linked)
 
 
 def test_videoobject_may_not_outnumber_embedded_players():
@@ -166,6 +182,23 @@ def test_retired_youtube_channel_url_is_rejected():
     assert "subscribe_cta" in _keys_failing(content=legacy)
     assert "subscribe_cta" in _keys_failing(content="<p>subscribe</p>")
     assert "subscribe_cta" not in _keys_failing()
+
+
+def test_dead_anchors_are_rejected_but_aside_callouts_are_not():
+    """WordPress STRIPS a slashless relative href, so <a href="some-slug"> reaches the reader as
+    a bare <a> with nothing to click — literally what Wendy saw as "not linking anywhere".
+    The <aside> guard is load-bearing: "<a" also prefixes "<aside", and without it this flagged
+    333 of 375 articles and the repair would have eaten the callout bodies."""
+    assert "no_dead_anchors" in _keys_failing(
+        content=_GOOD + '<p>See <a href="metal-roof-gauge">this</a>.</p>')
+    assert "no_dead_anchors" in _keys_failing(content=_GOOD + "<p>See <a>this</a>.</p>")
+    assert "no_dead_anchors" not in _keys_failing(
+        content=_GOOD + '<aside class="note"><p>A callout, not a link.</p></aside>')
+    # <a id="..."></a> is an anchor TARGET, not a broken link. Older articles put the id there
+    # instead of on the <h2>; deleting them breaks every deep link into the page.
+    assert "no_dead_anchors" not in _keys_failing(
+        content=_GOOD + '<h2><a id="section-one"></a>Section One</h2>')
+    assert "no_dead_anchors" not in _keys_failing()
 
 
 def test_bare_table_without_a_border_is_rejected():

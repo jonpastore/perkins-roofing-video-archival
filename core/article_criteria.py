@@ -28,8 +28,46 @@ _DEAD_HOST_RE = re.compile(r'(?:href|src)="https?://[^"]*(?:myftpupload\.com|jhk
 # Wendy's 2026-07-28 review. These MUST stay in lockstep with the deterministic ensures in
 # jobs.article_job (_strip_toc / _ensure_learn_more_links / _ensure_table_borders) — the gate and
 # the fix have to agree on the same shape or the loop can never converge.
-_TOC_BLOCK_RE = re.compile(r'<div class="toc">.*?</div>', re.IGNORECASE | re.DOTALL)
-_LEARN_MORE_P_RE = re.compile(r"<p>\s*Learn more:.*?</p>", re.IGNORECASE | re.DOTALL)
+# TWO shapes, because two generators made them. core.seo.ensure_toc emits <div class="toc">, but
+# the pillar prompt used to ask for an "H2 near the top linking to each major section", so 59
+# pillar articles carry <h2>Table of Contents</h2><ul>…</ul> instead. Matching only the div form
+# left those live and would have let Wendy raise it a second time.
+_TOC_BLOCK_RE = re.compile(
+    r'<div class="toc">.*?</div>'
+    r'|<h2[^>]*>\s*Table of Contents\s*</h2>\s*<ul>.*?</ul>',
+    re.IGNORECASE | re.DOTALL)
+# TWO forms again, and this one bit on the LIVE site: content_md stores most "Learn more:"
+# pointers as a BARE MARKDOWN LINE, and _markdown_to_html wraps it in <p> only at publish. Gating
+# on the <p> form alone passed the stored row while the reader saw 9 dead pointers.
+# A pointer counts as linked if it carries an <a> or a markdown [text](url).
+_LEARN_MORE_P_RE = re.compile(
+    r"<p>\s*Learn more:.*?</p>"
+    r"|^[ \t]*Learn more:[^\n]*",
+    re.IGNORECASE | re.DOTALL | re.MULTILINE)
+
+
+_DEAD_ANCHOR_RE = re.compile(
+    # <a> with no href at all, OR an href WordPress will strip (bare relative, no leading slash,
+    # no scheme). Either way the reader gets un-clickable text where a link was promised.
+    # (?![a-z]) is load-bearing: without it "<a" also matches "<aside class=...>", which these
+    # articles use heavily for callouts. That mis-flagged 333 of 375 articles.
+    # id=/name= anchors are excluded because `<a id="section"></a>` is an anchor TARGET, not a
+    # broken link — deleting those breaks every existing deep link into the page.
+    r'<a(?![a-z])(?![^>]*\b(?:href|id|name)\s*=)[^>]*>'
+    r'|<a\s[^>]*href\s*=\s*"(?!/|https?://|#|mailto:|tel:)[^"]*"',
+    re.IGNORECASE)
+
+
+def _is_linked(segment: str) -> bool:
+    """A pointer counts as linked only if the link SURVIVES publishing.
+
+    `"<a " in segment` was not enough: WordPress strips a slashless relative href, so
+    `<a href="some-slug">` reaches the reader as a bare `<a>` with nothing to click. That is
+    literally what Wendy reported — the source had anchors, the live page had none.
+    """
+    if _DEAD_ANCHOR_RE.search(segment):
+        return False
+    return "<a " in segment.lower() or bool(re.search(r"\[[^\]]+\]\([^)]+\)", segment))
 _BARE_TABLE_RE = re.compile(r"<table(?![^>]*\bclass=)[^>]*>", re.IGNORECASE)
 _RELATED_BLOCK_RE = re.compile(r'<p class="related-links">.*?</p>', re.IGNORECASE | re.DOTALL)
 # Derived from the canonical constant so the two can't drift; www. is optional because both
@@ -142,10 +180,15 @@ def check_compliance(
         not _TOC_BLOCK_RE.search(c), True,
         "in-content TOC block found" if _TOC_BLOCK_RE.search(c) else "")
 
-    unlinked_lm = [s for s in _LEARN_MORE_P_RE.findall(c) if "<a " not in s.lower()]
+    unlinked_lm = [s for s in _LEARN_MORE_P_RE.findall(c) if not _is_linked(s)]
     add("learn_more_linked", "Every 'Learn more:' pointer is an actual link",
         not unlinked_lm, True,
         f"{len(unlinked_lm)} unlinked 'Learn more:' paragraph(s)" if unlinked_lm else "")
+
+    dead_anchors = _DEAD_ANCHOR_RE.findall(c)
+    add("no_dead_anchors", "Every <a> has an href WordPress will keep",
+        not dead_anchors, True,
+        f"{len(dead_anchors)} anchor(s) with a missing or strippable href" if dead_anchors else "")
 
     bare_tables = _BARE_TABLE_RE.findall(c)
     add("table_bordered", "Tables carry a visible border", not bare_tables, True,

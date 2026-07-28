@@ -1617,10 +1617,20 @@ def _ensure_faq_headings(content_md: str) -> str:
     return out
 
 
+# Must match core.article_criteria._TOC_BLOCK_RE — two shapes, because two generators made them:
+# core.seo.ensure_toc emits <div class="toc">, while the old pillar prompt asked for a "Table of
+# Contents" H2 + list. 59 pillar articles carry the second form.
 _TOC_BLOCK_RE = re.compile(
-    r'<div class="toc">.*?</div>\s*', re.IGNORECASE | re.DOTALL)
+    r'<div class="toc">.*?</div>\s*'
+    r'|<h2[^>]*>\s*Table of Contents\s*</h2>\s*<ul>.*?</ul>\s*',
+    re.IGNORECASE | re.DOTALL)
+# Must match core.article_criteria._LEARN_MORE_P_RE. The BARE-markdown form is the common one —
+# _markdown_to_html only wraps it in <p> at publish, so stripping just the <p> form left the
+# defect visible to readers while the stored row looked clean.
 _LEARN_MORE_P_RE = re.compile(
-    r"<p>\s*Learn more:.*?</p>\s*", re.IGNORECASE | re.DOTALL)
+    r"<p>\s*Learn more:.*?</p>\s*"
+    r"|^[ \t]*Learn more:[^\n]*\n?",
+    re.IGNORECASE | re.DOTALL | re.MULTILINE)
 _BARE_TABLE_RE = re.compile(r"<table(?![^>]*\bclass=)([^>]*)>", re.IGNORECASE)
 
 
@@ -1671,8 +1681,10 @@ def _ensure_learn_more_links(content_md: str) -> str:
     carries the real internal linking. If the model DID emit a proper <a>, the paragraph is kept
     untouched.
     """
+    from core.article_criteria import _is_linked  # noqa: PLC0415
+
     def _sub(m: "re.Match") -> str:
-        return m.group(0) if "<a " in m.group(0).lower() else ""
+        return m.group(0) if _is_linked(m.group(0)) else ""
     return _LEARN_MORE_P_RE.sub(_sub, content_md or "")
 
 
