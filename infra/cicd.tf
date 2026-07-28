@@ -72,6 +72,12 @@ resource "google_project_iam_member" "deployer_roles" {
     "roles/secretmanager.viewer",       # resolve :latest for --set-secrets (NOT accessor: it
                                         # never reads a secret's payload, only its metadata)
     "roles/viewer",                     # terraform plan must read every managed resource
+    # The google provider sends a "user project override" on Storage reads for billing/quota
+    # attribution, and that call itself needs serviceusage.services.use. Without it the plan
+    # 403s on google_storage_bucket.media/.reels — roles/viewer is NOT enough (observed on the
+    # second CI deploy run). Consumer, not admin: it can consume enabled services, not enable
+    # or disable them.
+    "roles/serviceusage.serviceUsageConsumer",
   ])
   project = var.project_id
   role    = each.value
