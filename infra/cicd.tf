@@ -99,6 +99,22 @@ resource "google_secret_manager_secret_iam_member" "deployer_cf_token" {
   member    = "serviceAccount:${google_service_account.deployer.email}"
 }
 
+# The plan itself READS this one: main.tf has a
+# `data "google_secret_manager_secret_version" "google_idp_client_secret"`, and a data source is
+# resolved during plan, not apply. Without accessor the drift gate 403s before it can compare
+# anything (observed on the first CI deploy run).
+#
+# So the honest scope of the deployer's secret access is these TWO values, granted per-secret —
+# not project-wide. Every other credential is passed to Cloud Run BY REFERENCE
+# (--set-secrets name:latest), which needs only secretmanager.viewer, so the deployer never sees
+# those payloads. Adding another secret data source to the config would extend this list; prefer
+# passing by reference so it doesn't have to.
+resource "google_secret_manager_secret_iam_member" "deployer_idp_secret" {
+  secret_id = google_secret_manager_secret.secrets["google-idp-client-secret"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.deployer.email}"
+}
+
 output "ci_workload_identity_provider" {
   description = "Value for the deploy workflow's google-github-actions/auth workload_identity_provider"
   value       = google_iam_workload_identity_pool_provider.github.name
