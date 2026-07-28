@@ -478,6 +478,31 @@ class PricingConfig:
         val = self.raw.get("office_daily_overhead")
         return float(val) if val else None
 
+    def overhead_basis(self) -> str:
+        """How a day of overhead is priced. ``"series"`` (legacy) or ``"branch"``.
+
+        ``branch``  ONE number per branch: monthly fixed overhead (calculated outside this system)
+                    divided by the working days in a month, and a job carries ``days x that``.
+                    Jon, 2026-07-28: *"we need a daily OH number for branch that we use… the
+                    estimator picks number of days to price the proposal and OH x days is what's
+                    used."* Tim, 2026-07-27: *"our monthly fixed overhead… my branch is like 28
+                    grand, their branch is like 85 grand, and we just divide that by 20 work days."*
+
+        ``series``  the legacy per-activity rates Tim emailed on 2026-07-24 ($1,050 demo / $745
+                    tile / $700 shingle / $850 metal), optionally rescaled by office_men. Kept as
+                    the default because the two disagree by ~1.7x and switching reprices every
+                    quote: measured against Tim's 21 actual sold prices, the per-series rates land
+                    at +1.0% median while a flat $1,400/day lands at +13.3% and leaves 19 of the 21
+                    below his own $2,500/week floor. Which number is right is a business decision
+                    (Jarvis #431), so the mechanism ships first and the switch flips after.
+        """
+        basis = str(self.raw.get("overhead_basis") or "series")
+        if basis not in ("series", "branch"):
+            raise ConfigError(
+                f"overhead_basis must be 'series' or 'branch'; got {basis!r}."
+            )
+        return basis
+
     def profit_mode_default(self) -> str:
         """Return 'scale' (default) or 'flat' — the tenant's default profit mode."""
         return str(self.raw.get("profit_mode_default") or "scale")

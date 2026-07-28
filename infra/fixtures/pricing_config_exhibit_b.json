@@ -359,6 +359,8 @@
   },
   "roof_height_3_5_flat_add": 1200,
   "crane_threshold_stories": 3,
+  "overhead_basis": "series",
+  "_note_overhead_basis": "How a day of overhead is priced. 'branch' = ONE number per branch (monthly fixed overhead, calculated outside this system, divided by the working days in a month) x the days the job runs \u2014 Jon 2026-07-28, and Tim 2026-07-27 'my branch is like 28 grand... divide that by 20 work days'. 'series' = the legacy per-activity rates Tim emailed 2026-07-24 ($1,050 demo / $745 tile / $700 shingle / $850 metal). Defaults to 'series' because the two disagree by ~1.7x: against Tim's 21 actual sold prices the series rates land at +1.0% median, a flat $1,400/day at +13.3% with 19 of 21 below his own $2,500/week floor. Which is correct is a business decision (Jarvis #431) \u2014 the mechanism ships first, the switch flips after Tim answers.",
   "_note_crane_threshold_stories": "Tim, email 2026-07-27 20:24: crane flag for >2.5 stories. low_slope.crane_threshold_stories has said 3 since the low-slope wave but NOTHING read it — both engine paths hardcoded a 6+ manual-review raise, so a 3-storey job was quoted with no crane signal at all. Now read by both paths as a WARNING at 3+; the hard manual-review raise stays at 6+ because 3-5 storeys still quotes (trash chute / $1,200 flat add).",
   "roof_cuts": {
     "low": 0,
@@ -610,6 +612,7 @@
     "boundary_inclusive_lower": "shared",
     "commission_pct": "unclassified",
     "crane_threshold_stories": "shared",
+    "overhead_basis": "shared",
     "cost_category_tags": "shared",
     "counties": "shared",
     "county_overrides": "shared",

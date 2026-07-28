@@ -1402,3 +1402,76 @@ def test_accessibility_reaches_the_low_slope_path_too():
     base = estimate(cfg, QuoteInput(**q))
     with_acc = estimate(cfg, QuoteInput(**q, accessibility_flat=950.0))
     assert with_acc["project_total"] - base["project_total"] == pytest.approx(950.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Overhead basis — Jon, 2026-07-28: "we need a daily OH number for branch that we use... the
+# estimator picks number of days to price the proposal and OH x days is what's used."
+# ---------------------------------------------------------------------------
+
+def _oh_cfg(**over):
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    raw.update(over)
+    return load_config(raw)
+
+
+def _oh_quote(cfg, days_install=5.0, days_demo=3.0, sq=30.0):
+    from core.estimator import DailyOverheadSeries
+    r = estimate(cfg, QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="13_tile", num_squares=sq,
+        project_kind="residential", demo=True, overhead_mode="daily", debug=True,
+        daily_series=[DailyOverheadSeries(series="tile", days=days_install),
+                      DailyOverheadSeries(series="demo_dry_in_flat", days=days_demo)]))
+    return next(li for li in r["line_items_detail"] if li["key"] == "overhead")
+
+
+def test_branch_basis_is_total_days_times_one_number():
+    """The whole point: what the crew is doing that day does not change what the office costs."""
+    cfg = _oh_cfg(overhead_basis="branch", office_daily_overhead=1400)
+    oh = _oh_quote(cfg, days_install=5.0, days_demo=3.0)
+    assert oh["amount"] == pytest.approx(8 * 1400)          # 8 days, one rate
+    assert oh["explain"]["inputs"]["total_days"] == 8.0
+    assert oh["explain"]["inputs"]["overhead_basis"] == "branch"
+
+
+def test_branch_basis_ignores_office_men_entirely():
+    """office_men/office_oh_basis_reference exist only to rescale the per-series rates. Under the
+    branch basis they must not touch the number — otherwise the crew-size guess is still in the
+    price, just hidden."""
+    plain = _oh_cfg(overhead_basis="branch", office_daily_overhead=1400)
+    scaled = _oh_cfg(overhead_basis="branch", office_daily_overhead=1400,
+                     office_men=14, office_oh_basis_reference=200)
+    assert _oh_quote(plain)["amount"] == _oh_quote(scaled)["amount"] == pytest.approx(8 * 1400)
+
+
+def test_branch_basis_raises_when_the_branch_number_is_missing():
+    """Falling back to Jupiter's rates is how Miami came to be priced on a Palm Beach office."""
+    cfg = _oh_cfg(overhead_basis="branch")          # no office_daily_overhead
+    with pytest.raises(ConfigError, match="office_daily_overhead"):
+        _oh_quote(cfg)
+
+
+def test_series_basis_is_unchanged_and_is_the_default():
+    """Default must stay legacy — flipping it reprices every live quote (Jarvis #431)."""
+    assert _cfg_v2().overhead_basis() == "series"
+    cfg = _oh_cfg()                                  # untouched fixture
+    rates = cfg.daily_overhead_rates()
+    oh = _oh_quote(cfg, days_install=5.0, days_demo=3.0)
+    assert oh["amount"] == pytest.approx(5 * rates["tile"] + 3 * rates["demo_dry_in_flat"])
+
+
+def test_unknown_overhead_basis_is_rejected():
+    with pytest.raises(ConfigError, match="overhead_basis"):
+        _oh_cfg(overhead_basis="monthly").overhead_basis()
+
+
+def test_branch_basis_reaches_the_low_slope_path_too():
+    from core.estimator import DailyOverheadSeries
+    cfg = _oh_cfg(overhead_basis="branch", office_daily_overhead=1400)
+    r = estimate(cfg, QuoteInput(
+        code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered", num_squares=40.0,
+        project_kind="commercial", overhead_mode="daily",
+        daily_series=[DailyOverheadSeries(series="demo_dry_in_flat", days=4.0)]))
+    oh = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
+    assert oh["amount"] == pytest.approx(4 * 1400)

@@ -53,15 +53,28 @@ OH_BASIS_REFERENCE = 200
 # $4,250. Jupiter's $28,000/20 = $1,400 confirms the method — it reproduces the existing value
 # exactly. So 4140 is stale and 4250 is his number.
 #
-# ⚠️ `men` is the open half and it moves more money than the burn does. His three Miami rows pair a
-# crew size with a $/man-day, and picking between them swings a 30 SQ HVHZ tile job from $41,318
-# (15 men) to $46,964 (9 men) — 13%, against $274 (0.6%) for 4140-vs-4250. 12 is kept because it is
-# his middle row and closest to his published $345/man-day ($4,250/12 = $354, +2.7%). It is a
-# choice, not a fact. Naples is deliberately absent: Tim has never stated it, and an absent key
-# leaves rates unscaled rather than guessing.
+# `men` moves more money than the burn does, and the sheet answers it once you read the labels
+# rather than the numbers. Both tabs of "**Low-Slope Roof Price Calculator" carry THREE OH-basis
+# columns, and each pairs a crew size with a THROUGHPUT — the $/man-day falls left to right because
+# the same office overhead spreads over more jobs per week:
+#
+#   Jupiter   (gid=1121451883)  C1 4 men 1 re-roof/wk $345 | F1  7 men 2/wk $200 | I1 10 men 3/wk $140
+#   Overhead Metrics (gid=8964429)  C1 9 men 1/wk $460 | F1 12 men 2/wk $345 | I1 15 men 3/wk $275
+#
+# Jupiter is already configured off its 2-re-roofs-per-week column (7 men, $200) — that IS
+# office_oh_basis_reference. So Miami's figure is the same tempo column, not a middle-of-three pick.
+#
+# ⚠️ Miami's row 1 is STALE. Jon, 2026-07-28: "miami grew and row 1 not updated." The detail rows
+# below it (D3/E3/F3) read 11 / 14 / 18 men against row 1's 9 / 12 / 15, while Jupiter's two blocks
+# agree (4/7/10 in both) — which is why Jupiter is the trusted side. Miami's CURRENT 2-per-week crew
+# is therefore 14, not row 1's 12. Taking the stale 12 would price $4,250/12 = $354/man-day against
+# the true $4,250/14 = $304, overcharging a 30 SQ tile job by $1,512 (43,435 vs 41,923).
+#
+# Naples stays absent on purpose: Tim has never stated it, and an absent key leaves rates unscaled
+# rather than guessing.
 OFFICE = {
-    "jupiter": {"office_daily_overhead": 1400, "office_men": 7},    # 7 x $200  -> factor 1.000
-    "miami": {"office_daily_overhead": 4250, "office_men": 12},     # 12 x $354 -> factor 1.7708
+    "jupiter": {"office_daily_overhead": 1400, "office_men": 7},    # 7 x $200 -> factor 1.0000
+    "miami": {"office_daily_overhead": 4250, "office_men": 14},     # 14 x $304 -> factor 1.5179
 }
 
 
