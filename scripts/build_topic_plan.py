@@ -51,11 +51,35 @@ def main() -> int:
         print(f"WARNING: only {len(topics)} groundable topics available, need {need}. "
               f"Reducing plan.", file=sys.stderr)
 
-    campaigns, i = [], 0
-    step = 1 + args.clusters
-    while i + step <= len(topics):
-        campaigns.append({"pillar": topics[i], "clusters": topics[i + 1:i + step]})
-        i += step
+    # Pair each pillar with the topics that actually SUPPORT it, by shared significant terms.
+    # The old sequential slice (topics[i] pillar, topics[i+1:] clusters) paired alphabetical
+    # neighbours — "ac unit roof damage" got "approval process for roofing products" as a
+    # supporting article. Topics come back ordered by num_videos DESC, so taking pillars in order
+    # still gives the best-grounded topic the pillar role; only the pairing changes.
+    stop = {"the", "a", "an", "of", "for", "and", "or", "to", "in", "on", "with", "vs",
+            "roof", "roofing", "roofs"}          # too common here to signal relatedness
+
+    def terms(t: str) -> set:
+        return {w for w in re.findall(r"[a-z0-9]+", t) if w not in stop and len(w) > 2}
+
+    campaigns = []
+    unused = list(topics)
+    while unused and len(campaigns) < args.pillars:
+        pillar = unused.pop(0)
+        pt = terms(pillar)
+        scored = sorted(
+            ((len(pt & terms(t)), -i, t) for i, t in enumerate(unused)), reverse=True)
+        picked = [t for score, _, t in scored[:args.clusters] if score > 0]
+        # Not enough related topics left — fall back to the next best-grounded ones so the plan
+        # still hits its count, rather than silently emitting a short campaign.
+        for t in unused:
+            if len(picked) >= args.clusters:
+                break
+            if t not in picked:
+                picked.append(t)
+        for t in picked:
+            unused.remove(t)
+        campaigns.append({"pillar": pillar, "clusters": picked})
 
     plan = {"campaigns": campaigns}
     with open(args.out, "w") as f:
