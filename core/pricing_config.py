@@ -610,6 +610,19 @@ class PricingConfig:
         """
         return float((self.raw.get("plywood_replacement") or {}).get("sheets_included") or 0)
 
+    def crane_threshold_stories(self) -> float:
+        """Storey count at or above which a crane is likely needed (Tim: ">2.5 stories").
+
+        `low_slope.crane_threshold_stories` has carried 3 since the low-slope wave and NOTHING
+        read it — both engine paths hardcoded a 6+ manual-review raise, so a three-storey job got
+        no crane signal at all. Prefers the top-level key, falls back to the low-slope one so a
+        config predating the promotion still answers, then to 3.
+        """
+        val = self.raw.get("crane_threshold_stories")
+        if val is None:
+            val = (self.raw.get("low_slope") or {}).get("crane_threshold_stories")
+        return float(val if val is not None else 3)
+
     def low_slope_not_hvhz_deck_types(self) -> dict[str, str]:
         """Deck-type keys -> restriction text, for low-slope deck systems Tim's sheet marks as
         not legal in HVHZ (e.g. "BUR Wood (WB-3000 Primer) - not HVHZ (1 story only)").

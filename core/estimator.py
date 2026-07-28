@@ -434,6 +434,17 @@ class QuoteInput:
     flat_roof_type: Optional[str] = None   # a low_slope.base_cost_lm key, e.g. polyglass_sav_sap
     roof_cuts: str = "low"               # low | medium | high (the guide)
     roof_cuts_per_sq: Optional[float] = None   # explicit $/sq; overrides the categorical pick
+    # Accessibility, Tim's email 2026-07-27 20:36: "just manual inputs for additional labor and
+    # delivery. There isn't a set price, it all depends on SF in the area and what the delivery
+    # company or subs will charge for handloading and/or hand-demo." So it is a MANUAL dollar
+    # figure, never a tier. The PER-SQUARE half already existed as roof_cuts_per_sq (his own
+    # worked example: $45/sq to hand-load a rear roof a truck cannot reach). This is the other
+    # half — a flat quoted charge from the delivery company or sub, which no per-sq rate expresses.
+    accessibility_flat: Optional[float] = None
+    # Waterfront/salinity gate for the COASTAL tier (his email 20:24). The tier itself already
+    # exists on tile, shingle AND metal in core/perkins_packages.py; what was missing is anything
+    # that says WHEN to reach for it.
+    waterfront: bool = False
     roof_height: str = "1_story"         # 1_story | 2_stories | 3_5_stories | 6_plus
     tile_pointing: str = "no"            # no | yes
     specialty_tile: Optional[str] = None
@@ -868,7 +879,8 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     cuts_val = (q.roof_cuts_per_sq if q.roof_cuts_per_sq is not None
                 else config.raw["roof_cuts"][q.roof_cuts])
     if cuts_val:
-        items.append(LineItem("roof_cuts", "Roof Cuts", cuts_val * sq, tags["roof_cuts"], cuts_val))
+        items.append(LineItem("roof_cuts", "Roof Cuts / Access", cuts_val * sq,
+                              tags["roof_cuts"], cuts_val))
 
     height_val = config.raw["roof_height"].get(q.roof_height)
     if q.roof_height == "6_plus":
@@ -947,6 +959,15 @@ def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineIt
                        "threshold": config.raw["tile_dumpster_threshold"][zone],
                        "squares": q.num_squares, "zone": zone,
                        "boundary_inclusive": config.raw.get("tile_dumpster_boundary_inclusive")}}))
+
+    # Accessibility, flat half (Tim 2026-07-27 20:36) — a quoted delivery/hand-load charge that
+    # no per-square rate expresses. In _build_fixed so it reaches low-slope too, not just sloped.
+    if q.accessibility_flat:
+        items.append(LineItem(
+            "accessibility", "Accessibility (hand-load / delivery)", float(q.accessibility_flat),
+            tags.get("roof_cuts", "Labor"), explain={
+                "formula": "manual amount entered by the estimator",
+                "inputs": {"accessibility_flat": float(q.accessibility_flat)}}))
 
     # Plywood deck replacement (OI-5) — priced per SHEET regardless of roof type, with the
     # first N sheets free per Tim's proposal scope language.
@@ -1344,6 +1365,28 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
                 f"coating_demo_not_in_price: {q.roof_type} is an all-in price that EXCLUDES demo "
                 "(Tim's sheet says add $100/sq). Confirm the demo charge — pending Tim."
             )
+
+    # Crane flag (Tim, email 2026-07-27 20:24: ">2.5 stories"). The hard manual-review raise stays
+    # at 6+; a 3-5 storey job still quotes (trash chute / $1,200 flat add) and until now carried no
+    # crane signal at all, because the configured threshold of 3 was never read by anything.
+    _storey_floor = {"1_story": 1, "2_stories": 2, "3_5_stories": 3, "6_plus": 6}
+    _stories = _storey_floor.get(q.roof_height or "")
+    if _stories is not None and _stories >= config.crane_threshold_stories():
+        warnings.append(
+            f"crane_likely: {q.roof_height.replace('_', ' ')} is at or above the "
+            f"{config.crane_threshold_stories():g}-storey crane threshold. Price the crane or "
+            "confirm the trash-chute approach reaches — Tim asked for this flag by email 7/27."
+        )
+
+    # Waterfront gate for the COASTAL tier (same email). The tier already exists on tile, shingle
+    # and metal; nothing said WHEN to reach for it, so a salt-exposed home could be quoted on a
+    # package whose own manufacturer warranty will not cover it.
+    if q.waterfront:
+        warnings.append(
+            "waterfront_coastal_tier: this property was marked waterfront/salt-exposed. Quote the "
+            "COASTAL package — non-coastal metals and fasteners carry manufacturer setback "
+            "provisions that void near salt water. Tidal and brackish canals count."
+        )
 
     # Not-HVHZ-legal deck systems (OI-11). Tim's sheet labels these explicitly; warn rather than
     # block because he sometimes overrides his own sheet.

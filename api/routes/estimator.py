@@ -130,6 +130,10 @@ class QuoteRequest(BaseModel):
     flat_roof_type: Optional[str] = Field(default=None, max_length=40)
     roof_cuts: Literal["low", "medium", "high"] = "low"
     roof_cuts_per_sq: Optional[float] = Field(default=None, ge=0)  # explicit $/sq overrides the pick
+    # Accessibility: MANUAL dollars, never a tier (Tim 2026-07-27 20:36). roof_cuts_per_sq is the
+    # per-square half; this is the flat quoted delivery/hand-load charge.
+    accessibility_flat: Optional[float] = Field(default=None, ge=0)
+    waterfront: bool = False   # salt exposure -> gate the COASTAL package
     roof_height: Literal["1_story", "2_stories", "3_5_stories", "6_plus"] = "1_story"
     tile_pointing: Literal["no", "yes"] = "no"
     specialty_tile: Optional[str] = None
@@ -309,6 +313,8 @@ def quote(
         county=body.county,
         roof_cuts=body.roof_cuts,
         roof_cuts_per_sq=body.roof_cuts_per_sq,
+        accessibility_flat=body.accessibility_flat,
+        waterfront=body.waterfront,
         roof_height=body.roof_height,
         tile_pointing=body.tile_pointing,
         specialty_tile=body.specialty_tile,

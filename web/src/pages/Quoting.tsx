@@ -650,6 +650,8 @@ export function Quoting() {
   // permit_commercial_add and both commercial PM bands were dead), tile pointing was always "no",
   // and the specialty-tile upgrades were never sent at all.
   const [quoteRoofCutsPerSq, setQuoteRoofCutsPerSq] = useState("");
+  const [quoteAccessibilityFlat, setQuoteAccessibilityFlat] = useState("");
+  const [quoteWaterfront, setQuoteWaterfront] = useState(false);
   // Mixed roofs: 9 of the 30 homes Tim sent have a flat section, up to 34% of the roof, and it was
   // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
   const [quoteFlatSquares, setQuoteFlatSquares] = useState("");
@@ -1130,6 +1132,8 @@ export function Quoting() {
       project_kind: quoteProjectKind,
       roof_cuts: quoteRoofCuts,
       roof_cuts_per_sq: quoteRoofCutsPerSq.trim() === "" ? undefined : Number(quoteRoofCutsPerSq),
+      accessibility_flat: quoteAccessibilityFlat.trim() === "" ? undefined : Number(quoteAccessibilityFlat),
+      waterfront: quoteWaterfront,
       base_tile_brand: baseTileBrand || undefined,
       roof_height: quoteRoofHeight,
       tile_pointing: quoteTilePointing,
@@ -1875,13 +1879,40 @@ export function Quoting() {
                 </select>
               </div>
               <div>
-                <FieldLabel>Roof cuts $/sq (overrides the pick)</FieldLabel>
+                <FieldLabel>Cuts / access $ per sq (overrides the pick)</FieldLabel>
                 <input
                   value={quoteRoofCutsPerSq}
                   onChange={(e) => setQuoteRoofCutsPerSq(e.target.value)}
                   placeholder="e.g. 45 — hand-load, no truck access"
                   style={inputStyle}
                 />
+              </div>
+              <div>
+                <FieldLabel>Accessibility $ (flat)</FieldLabel>
+                <input
+                  value={quoteAccessibilityFlat}
+                  onChange={(e) => setQuoteAccessibilityFlat(e.target.value)}
+                  placeholder="e.g. 1800 — quoted hand-load / delivery"
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
+                  Tim, 7/27: there is no set price — enter what the delivery company or sub
+                  actually charges for handloading or hand-demo.
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Waterfront / salt exposed</FieldLabel>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={quoteWaterfront}
+                    onChange={(e) => setQuoteWaterfront(e.target.checked)}
+                  />
+                  Quote the Coastal package
+                </label>
+                <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
+                  Tidal and brackish canals count, not just the ocean and Intracoastal.
+                </div>
               </div>
               {!isLowSlopeRoofType && (
                 <div>

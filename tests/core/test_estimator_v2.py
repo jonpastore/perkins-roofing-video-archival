@@ -1323,3 +1323,82 @@ def test_floor_never_overrides_explicit_operator_pricing():
     assert next(i for i in ovr["line_items_detail"] if i["key"] == "profit")["amount"] == 500
     for r in (flat, ovr):
         assert not any("min_margin_applied" in w for w in r["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# #437 — the four inputs Tim asked for by email, 2026-07-27 20:24 / 20:36.
+# Two of the four already existed: Resi/Commercial is a working select, and COASTAL is already a
+# tier on tile, shingle AND metal in core/perkins_packages.py. These cover the two real gaps.
+# ---------------------------------------------------------------------------
+
+def _q437(**kw) -> dict:
+    cfg = _cfg_v2()
+    return estimate(cfg, QuoteInput(
+        code_zone="HVHZ", slope_type="sloped", roof_type="13_tile", num_squares=30.0,
+        project_kind="residential", demo=True, **kw))
+
+
+def _codes(result: dict) -> set[str]:
+    return {w.split(":")[0] for w in result["warnings"]}
+
+
+def test_crane_flag_fires_at_three_storeys_not_only_at_six():
+    """Tim asked for a crane flag at ">2.5 stories" (email 7/27 20:24).
+
+    `crane_threshold_stories` was already 3 in config and NOTHING read it — both engine paths
+    hardcoded a 6+ manual-review raise, so a three-storey job carried no crane signal at all.
+    The flag must fire at 3-5 storeys, which still quotes, and must NOT fire below that.
+    """
+    assert "crane_likely" not in _codes(_q437(roof_height="1_story"))
+    assert "crane_likely" not in _codes(_q437(roof_height="2_stories"))
+    assert "crane_likely" in _codes(_q437(roof_height="3_5_stories"))
+
+
+def test_crane_flag_is_driven_by_the_config_threshold():
+    """Raising the configured threshold must silence the flag — otherwise 3 is hardcoded twice."""
+    import copy
+    raw = copy.deepcopy(_raw_config())
+    raw["crane_threshold_stories"] = 6
+    r = estimate(load_config(raw), QuoteInput(
+        code_zone="HVHZ", slope_type="sloped", roof_type="13_tile", num_squares=30.0,
+        project_kind="residential", demo=True, roof_height="3_5_stories"))
+    assert "crane_likely" not in {w.split(":")[0] for w in r["warnings"]}
+
+
+def test_six_plus_storeys_still_raises_rather_than_merely_warning():
+    """The flag is advisory; 6+ is still a hard stop. A warning must not have replaced the raise."""
+    from core.estimator import QuoteRequiresManualReview
+    with pytest.raises(QuoteRequiresManualReview):
+        _q437(roof_height="6_plus")
+
+
+def test_waterfront_gates_the_coastal_tier():
+    assert "waterfront_coastal_tier" not in _codes(_q437())
+    assert "waterfront_coastal_tier" in _codes(_q437(waterfront=True))
+
+
+def test_accessibility_is_a_flat_manual_amount_not_a_tier():
+    """Tim: "just manual inputs ... There isn't a set price." So it adds exactly what was typed."""
+    base = _q437()
+    with_acc = _q437(accessibility_flat=1800.0)
+    line = next(li for li in with_acc["line_items_detail"] if li["key"] == "accessibility")
+    assert line["amount"] == pytest.approx(1800.0)
+    assert with_acc["project_total"] - base["project_total"] == pytest.approx(1800.0, abs=0.01)
+
+
+def test_accessibility_flat_and_per_sq_are_separate_halves():
+    """roof_cuts_per_sq is the per-square half (his $45/sq hand-load); accessibility_flat is the
+    quoted delivery charge. Both may apply to one job and must not collapse into each other."""
+    base = _q437()
+    both = _q437(accessibility_flat=1800.0, roof_cuts_per_sq=45.0)
+    assert both["project_total"] - base["project_total"] == pytest.approx(1800.0 + 45.0 * 30, abs=0.01)
+
+
+def test_accessibility_reaches_the_low_slope_path_too():
+    """It lives in _build_fixed, not _build_sloped — a flat roof can be just as inaccessible."""
+    cfg = _cfg_v2()
+    q = dict(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
+             num_squares=40.0, project_kind="commercial")
+    base = estimate(cfg, QuoteInput(**q))
+    with_acc = estimate(cfg, QuoteInput(**q, accessibility_flat=950.0))
+    assert with_acc["project_total"] - base["project_total"] == pytest.approx(950.0, abs=0.01)
