@@ -17,7 +17,12 @@ logs/
 # Local tooling state
 .omc/
 .morpheus-ek/
-.claude/
+.claude/*
+# Project-scoped SKILLS are meant to be shared — they encode repo rules the whole team
+# (and every future session) should follow. Local settings under .claude/ stay ignored.
+# The parent must be re-included as .claude/* rather than .claude/, because git does not
+# descend into an excluded DIRECTORY and a negation inside it would never be evaluated.
+!.claude/skills/
 
 # SPA build artifacts
 web/node_modules/
