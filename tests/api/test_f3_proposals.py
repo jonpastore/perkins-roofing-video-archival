@@ -1612,6 +1612,25 @@ class TestScopeTemplates:
                if t["name"] == name]
         assert len(got) == 1 and got[0]["text"] == body["text"] and got[0]["job_type"] == "reroof"
 
+    def test_accent_items_accept_job_type_both(self, admin_client):
+        """Tim, 2026-07-27, asked for accent items (skylight / solar vent / chimney) on the scope
+        section of re-roof AND repair. Dedupe here is by name alone, so the same accent scope
+        cannot be seeded once per mode — it needs a job_type that means both."""
+        name = f"(OPTIONAL) Impact Skylight Replacement {_uid()}"
+        r = admin_client.put("/quoting/scope-templates",
+                             json={"name": name, "text": "1. Remove the existing skylight.",
+                                   "job_type": "both"}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        got = [t for t in admin_client.get("/quoting/scope-templates", headers=AUTH).json()
+               if t["name"] == name]
+        assert len(got) == 1 and got[0]["job_type"] == "both"
+
+    def test_unknown_job_type_is_still_rejected(self, admin_client):
+        r = admin_client.put("/quoting/scope-templates",
+                             json={"name": f"x{_uid()}", "text": "y", "job_type": "gutters"},
+                             headers=AUTH)
+        assert r.status_code == 422, r.text
+
     def test_upsert_replaces_same_name_case_insensitively(self, admin_client):
         name = f"Repair scope {_uid()}"
         admin_client.put("/quoting/scope-templates",

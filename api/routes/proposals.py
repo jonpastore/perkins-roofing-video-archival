@@ -510,7 +510,10 @@ class ScopeTemplateUpsert(BaseModel):
     replaces its text, which is what "save this scope as <name>" means to a salesperson."""
     name: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=20000)
-    job_type: str = Field(default="reroof", pattern="^(reroof|repair)$")
+    # "both" is for ACCENT items — skylights, solar/turbine vents, chimney caps. Tim, 2026-07-27,
+    # asked for those on the scope-of-work section of re-roof AND repair, and dedupe here is by
+    # name alone, so the same accent scope cannot be seeded once per mode.
+    job_type: str = Field(default="reroof", pattern="^(reroof|repair|both)$")
 
 
 class TemplateUpdate(BaseModel):

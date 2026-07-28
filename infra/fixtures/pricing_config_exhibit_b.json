@@ -418,14 +418,23 @@
     "HVHZ": {
       "blown_in_iso_r19": 135,
       "turbine_vents": 257.5,
-      "solar_vents": 1339.0
+      "solar_vents": 1339.0,
+      "skylight_impact_replacement": 1590.0,
+      "skylight_curb_mounted_impact": 2860.0,
+      "solar_vents_metal_roof": 2689.0,
+      "chimney_cap_replacement": 2393.46
     },
     "FBC": {
       "blown_in_iso_r19": 135,
       "turbine_vents": 257.5,
-      "solar_vents": 1489.0
+      "solar_vents": 1489.0,
+      "skylight_impact_replacement": 1590.0,
+      "skylight_curb_mounted_impact": 2860.0,
+      "solar_vents_metal_roof": 2689.0,
+      "chimney_cap_replacement": 2393.46
     }
   },
+  "_note_line_items_accent": "skylight_impact_replacement / skylight_curb_mounted_impact / solar_vents_metal_roof / chimney_cap_replacement added 2026-07-28 from Tim's OWN Knowify catalog (Perkins Roofing Jupiter, Company 30586 / Tenant 28403), which he asked us to scrape over Josh's: 'I would scrape my notify... it's more updated as far as, like, accent items' (2026-07-27). The convention was already prod-verified — solar_vents $1,489.00 and turbine_vents $257.50 match his catalog entries to the cent. HVHZ CARRIES FBC FORWARD and is NOT measured: Jupiter is Palm Beach = FBC, and the one item that differs by zone goes the counter-intuitive way (solar_vents FBC 1489 vs HVHZ 1339), so there is no rule to extrapolate. Ask Tim for Miami's. These keys are inert until a quote names them in extra_line_items, so adding them repriced nothing.",
   "low_slope": {
     "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached \u2014 engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* \u2014 prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
     "_note_fbc_deltas": "RESOLVED 2026-07-25: FBC == HVHZ is correct. The live low-slope sheet (1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ) has ONE price table \u2014 the Tim, Josh and Marco tabs are three copies of it, differing only in the calculator inputs in column A/B. There is no zone split to model. See docs/low-slope-comment-audit-2026-07-25.md.",

@@ -759,6 +759,9 @@ export function Quoting() {
   const [scopeTemplates, setScopeTemplates] = useState<ScopeTemplate[]>([]);
   const [scopeTemplateSaving, setScopeTemplateSaving] = useState(false);
   const [scopeTemplateError, setScopeTemplateError] = useState<string | null>(null);
+  // What the user has typed into the template type-ahead. Tim, 2026-07-27: "one or two letters
+  // auto-populates the whole scope" — his Knowify library is 219 templates, far past a <select>.
+  const [templatePick, setTemplatePick] = useState("");
   const [scopeInstruction, setScopeInstruction] = useState("");
   const [scopeRewriting, setScopeRewriting] = useState(false);
   const [scopeRewriteError, setScopeRewriteError] = useState<string | null>(null);
@@ -848,10 +851,13 @@ export function Quoting() {
   useEffect(() => { loadScopeTemplates(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-fill the scope exactly once so it never clobbers edits. A saved template for this job
-  // type wins over the legacy single config default (which the template system replaces).
+  // type wins over the legacy single config default (which the template system replaces) — but
+  // ONLY when it is unambiguous. Tim's Knowify library seeded 219 templates, and "first match
+  // wins" would paste an arbitrary one into every new quote.
   useEffect(() => {
     if (scopeOfWorkPrefilled) return;
-    const saved = scopeTemplates.find((t) => (t.job_type ?? "reroof") === jobMode);
+    const matches = scopeTemplates.filter((t) => (t.job_type ?? "reroof") === jobMode);
+    const saved = matches.length === 1 ? matches[0] : undefined;
     const template = saved?.text || rates?.scope_of_work?.default_template;
     if (template) {
       setScopeOfWork(template);
@@ -1741,24 +1747,35 @@ export function Quoting() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
             <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Scope of work</div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <select
-                value=""
+              <input
+                list="scope-template-list"
+                value={templatePick}
                 onChange={(e) => {
-                  const t = scopeTemplates.find((x) => x.name === e.target.value);
+                  const v = e.target.value;
+                  setTemplatePick(v);
+                  // Fires on every keystroke; only act once the text IS a template name, which
+                  // is what picking from the datalist produces.
+                  const t = scopeTemplates.find((x) => x.name === v);
                   if (!t) return;
-                  if (scopeOfWork.trim() && !confirm(`Replace the current scope with "${t.name}"?`)) return;
+                  if (scopeOfWork.trim() && !confirm(`Replace the current scope with "${t.name}"?`)) {
+                    setTemplatePick("");
+                    return;
+                  }
                   setScopeOfWork(t.text);
                   setScopeOfWorkPrefilled(true);
+                  setTemplatePick("");
                 }}
-                style={{ ...selectStyle, fontSize: 12, width: 240 }}
-              >
-                <option value="">
-                  {scopeTemplates.length === 0 ? "— No saved templates —" : "— Load a template —"}
-                </option>
+                placeholder={scopeTemplates.length === 0 ? "No saved templates" : "Type to find a template…"}
+                style={{ ...inputStyle, fontSize: 12, width: 240 }}
+              />
+              <datalist id="scope-template-list">
                 {scopeTemplates
-                  .filter((t) => (t.job_type ?? "reroof") === jobMode)
-                  .map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
-              </select>
+                  .filter((t) => {
+                    const jt = t.job_type ?? "reroof";
+                    return jt === jobMode || jt === "both";   // accent items show in either mode
+                  })
+                  .map((t) => <option key={t.name} value={t.name} />)}
+              </datalist>
               <Button variant="ghost" onClick={handleSaveScopeTemplate}
                       disabled={!scopeOfWork.trim() || scopeTemplateSaving}
                       style={{ fontSize: 12, whiteSpace: "nowrap" }}>
