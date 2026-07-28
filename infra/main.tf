@@ -1059,6 +1059,10 @@ locals {
     "companycam-pat",            # CompanyCam PAT (adapters/companycam.py): no account yet — same
     # ahead-of-account pattern as pexels-api-key above; value added out-of-band once issued.
     "companycam-webhook-secret", # CompanyCam webhook signature secret: value out-of-band once issued.
+    "squares-api-key",           # SquareQuote API key. Was a PLAIN env var sourced from a laptop's
+    # untracked .env, so a deploy from anywhere else silently shipped it
+    # blank — and CI has no .env at all. Moved here 2026-07-28 so the
+    # value is injected via --set-secrets like every other credential.
   ])
 }
 

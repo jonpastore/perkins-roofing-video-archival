@@ -1,0 +1,92 @@
+name: deploy
+
+# R3: git is the source of truth and there are no manual deploys. This is the only path to prod.
+#
+# Runs ONLY on a push to main, and only after ci.yml has gone green for that same commit — a red
+# lint/SAST/coverage run therefore cannot ship. Authentication is keyless (Workload Identity
+# Federation, infra/cicd.tf); no service-account JSON exists in the repo or in GitHub secrets.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  # Manual re-run for a failed rollout. Still deploys the CURRENT main, never an arbitrary ref.
+  workflow_dispatch:
+
+# One deploy at a time. scripts/deploy.sh updates a Cloud Run service and six jobs; two
+# concurrent runs race on the service's optimistic lock and the second ABORTs mid-way,
+# leaving the jobs on a different image than the service.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write        # required to mint the OIDC token WIF exchanges
+
+jobs:
+  deploy:
+    # workflow_run fires on failure too — only ship when ci actually passed.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Deploy the commit CI validated, not whatever main has drifted to since.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          fetch-depth: 0        # deploy.sh tags the image with `git rev-parse --short HEAD`
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/981279422576/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ci-deployer@video-archival-and-content-gen.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      # ::add-mask:: BEFORE the value is ever used, so a later failure can't echo it into logs.
+      - id: cf
+        name: Read the Cloudflare token for the plan
+        run: |
+          token="$(gcloud secrets versions access latest --secret=cloudflare-api-token)"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      # R4: infra must already match git before app code ships. This does NOT apply — an
+      # `apply` from CI would need near-editor rights, and a plan that silently converges prod
+      # to a bad commit is worse than a failed build. Exit 2 = drift, and the deploy stops.
+      - name: Terraform drift gate (plan must be clean)
+        working-directory: infra
+        env:
+          # The cloudflare provider READS the zone during plan; without a real token every CF
+          # resource errors and the gate can never go green. Same source scripts/drift_check.sh
+          # uses. The deployer has accessor on this ONE secret (infra/cicd.tf), nothing else.
+          TF_VAR_cloudflare_api_token: ${{ steps.cf.outputs.token }}
+        run: |
+          terraform init -input=false
+          terraform plan -input=false -lock=false -detailed-exitcode && code=$? || code=$?
+          if [ "$code" = "2" ]; then
+            echo "::error::Terraform plan is NOT clean — infra has drifted from git (R4)."
+            echo "::error::Run 'cd infra && terraform apply' deliberately, then re-run this deploy."
+            exit 1
+          fi
+          exit "$code"
+
+      - name: Deploy (build image, roll service + jobs)
+        run: bash scripts/deploy.sh
+
+      - name: Verify the served image is this commit
+        run: |
+          want="$(git rev-parse --short HEAD)"
+          got="$(gcloud run services describe api --region us-central1 \
+                   --format='value(spec.template.spec.containers[0].image)')"
+          echo "want=$want got=$got"
+          case "$got" in
+            *":$want") echo "serving $want" ;;
+            *) echo "::error::prod is serving '$got', expected tag '$want'"; exit 1 ;;
+          esac

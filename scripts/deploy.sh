@@ -20,7 +20,24 @@ fi
 # owner channel). Sensitive creds live in Secret Manager and are injected via --set-secrets
 # below — resettable in the Config UI (which writes new secret versions); new revisions read
 # ':latest'. WP_URL/WP_USER are not secrets (a site URL + username), so they stay env vars.
-set -a; [ -f .env ] && source .env; set +a
+# infra/deploy.config.env holds the NON-SECRET values and is committed, so a deploy is
+# reproducible from git alone (R3) — CI has no .env. A local .env is sourced second so a
+# developer can still override for their own environment.
+set -a
+source infra/deploy.config.env
+[ -f .env ] && source .env
+set +a
+
+# Fail loudly rather than shipping blanks. These land in --set-env-vars, so an empty value
+# doesn't "keep the old setting", it OVERWRITES prod's config with "". That is precisely what a
+# CI deploy would have done before deploy.config.env existed.
+for _required in WP_URL WP_USER OAUTH_CLIENT_ID SIGN_PUBLIC_URL OAUTH_REDIRECT_BASE EMAIL_SEND_MODE; do
+  if [ -z "${!_required:-}" ]; then
+    echo "ERROR: ${_required} is empty. Deploying would blank it in prod." >&2
+    echo "       Set it in infra/deploy.config.env (non-secret) or your local .env." >&2
+    exit 1
+  fi
+done
 
 PROJECT="${GOOGLE_CLOUD_PROJECT:-video-archival-and-content-gen}"
 REGION="${GCP_REGION:-us-central1}"
@@ -45,7 +62,7 @@ BASE_ENV="PERKINS_ENV=prod|GOOGLE_CLOUD_PROJECT=${PROJECT}|GCP_REGION=${REGION}|
 # existing pipeline consumers (articles, faq, scheduling, jobs) still read os.environ. Full
 # per-tenant migration (Tenant.settings.integrations) is deferred to a later wave. The proposals
 # accept-link email (proposals.py) already reads from Tenant.settings.integrations exclusively.
-CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|SQUARES_API_KEY=${SQUARES_API_KEY:-}|GOTENBERG_URL=${GOTENBERG_URL:-}|SIGN_PUBLIC_URL=${SIGN_PUBLIC_URL:-}|OAUTH_REDIRECT_BASE=${OAUTH_REDIRECT_BASE:-}|EMAIL_SEND_MODE=${EMAIL_SEND_MODE:-test}|EMAIL_TEST_RECIPIENT_ALLOWLIST=${EMAIL_TEST_RECIPIENT_ALLOWLIST:-jpastore79@gmail.com,@degenito.ai,@perkinsroofing.net}"
+CFG_ENV="WP_URL=${WP_URL:-}|WP_USER=${WP_USER:-}|OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}|YT_OWNER_CHANNEL_ID=${YT_OWNER_CHANNEL_ID:-}|GOTENBERG_URL=${GOTENBERG_URL:-}|SIGN_PUBLIC_URL=${SIGN_PUBLIC_URL:-}|OAUTH_REDIRECT_BASE=${OAUTH_REDIRECT_BASE:-}|EMAIL_SEND_MODE=${EMAIL_SEND_MODE:-test}|EMAIL_TEST_RECIPIENT_ALLOWLIST=${EMAIL_TEST_RECIPIENT_ALLOWLIST:-jpastore79@gmail.com,@degenito.ai,@perkinsroofing.net}"
 
 # Vault-backed secrets (resettable in the Config UI). One source of truth: Secret Manager.
 SECRETS="INTERNAL_SECRET=internal-secret:latest,PGPASSWORD=db-password:latest,WP_APP_PWD=wordpress-app-password:latest,RESEND_API_KEY=resend-api-key:latest,YOUTUBE_API_KEY=youtube-api-key:latest,SERPER_API_KEY=serper-api-key:latest,WHISPER_TOKEN=whisper-token:latest,OAUTH_CLIENT_SECRET=google-idp-client-secret:latest,OAUTH_STATE_HMAC_KEY=oauth-state-hmac:latest"
@@ -63,6 +80,9 @@ SECRETS="${SECRETS},CLOUDFLARE_API_TOKEN=cloudflare-api-token:latest"
 # (gcloud secrets versions add pexels-api-key --data-file=-) — deploy will fail to
 # resolve ":latest" until that's done, same as any other pre-bootstrap secret here.
 SECRETS="${SECRETS},PEXELS_API_KEY=pexels-api-key:latest"
+# SquareQuote API key. Was a plain env var read from an untracked .env, so any deploy from a
+# machine without that file shipped it blank. Injected like every other credential now.
+SECRETS="${SECRETS},SQUARES_API_KEY=squares-api-key:latest"
 # CompanyCam (adapters/companycam.py): NOT wired into --set-secrets yet — the connector is
 # inert without these env vars (configured()==False, webhook 503s), and injecting versionless
 # secrets would fail EVERY deploy (incl. unrelated changes). When Jon is on the account and the

@@ -44,3 +44,8 @@ infra/*.auto.tfvars
 web/.firebase/
 docs/perkins-analysis/
 .morpheus/
+
+# Committed on purpose: NON-SECRET deploy config (site URL, username, public OAuth client id).
+# scripts/deploy.sh sources it, so a deploy must be reproducible from git alone (R3) — CI has no
+# .env. The broad *.env rules above would otherwise silently exclude it and break the CI deploy.
+!infra/deploy.config.env
