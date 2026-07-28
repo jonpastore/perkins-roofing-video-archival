@@ -450,11 +450,12 @@ DEFAULT_TEMPLATE_HTML = """\
     <h2>Lumber Schedule / Additional Work Exhibit</h2>
     <p>Wood replacement and unforeseen substrate repairs are billed as required by the contract. Standard proposals include the wood allotment stated in the scope; additional wood and extra work are billed at the schedule below unless otherwise written in the proposal.</p>
     <table>
-      <tr><th>Category</th><th>Representative schedule</th></tr>
-      <tr><td>Decking</td><td>T&amp;G 1x6, T&amp;G 1x8, 1/2&quot;, 5/8&quot;, and 3/4&quot; plywood charged per published Perkins schedule.</td></tr>
-      <tr><td>Fascia / nailers</td><td>Yellow pine and cedar dimensional lumber billed per linear foot by actual size used.</td></tr>
-      <tr><td>Double demo / insulation</td><td>Additional interply, anchor sheet, self-adhered direct-to-deck, and insulation work billed per square foot where required.</td></tr>
+      <tr><th>Category</th><th>Schedule</th></tr>
+      <tr><td>Roof deck</td><td>5/8&quot; plywood <strong>$120 per sheet</strong> &middot; 1/2&quot; plywood <strong>$110 per sheet</strong> &middot; 3/4&quot; plywood <strong>$145 per sheet</strong> &middot; T&amp;G 1&quot;x6&quot; $8.25 per LF &middot; T&amp;G 1&quot;x8&quot; $8.75 per LF</td></tr>
+      <tr><td>Fascia / nailers</td><td>Yellow pine $4.25&ndash;$15.00 per LF and cedar $8.25&ndash;$26.00 per LF, by actual size used.</td></tr>
+      <tr><td>Double demo / insulation</td><td>Insulation layer (per inch) $0.75 per SF &middot; additional interply $0.75 per SF &middot; additional anchor sheet $0.85 per SF &middot; self-adhered direct to deck $1.50 per SF.</td></tr>
       <tr><td>Other unit work</td><td>Vents, drains, hurricane straps, flashing, stucco, and related extras billed by unit or time-and-materials as applicable.</td></tr>
+      <tr><td>Conditions</td><td>Prices are installed and un-primed; add $4.25 per LF to prime prior to install. Two-storey work adds $5.00 per LF or $85.00 per sheet for carpentry &mdash; <strong>roof decking wood excepted</strong>. Structures 3+ storeys (above 20 ft) or pitched beyond 7/12 are billed at $110 per man-hour plus materials.</td></tr>
     </table>
   </div>
 </div></body></html>

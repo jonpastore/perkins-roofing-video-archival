@@ -46,20 +46,27 @@ def open_items(cfg: dict[str, Any]) -> list[str]:
     """
     items: list[str] = []
 
-    # OI-3: the COSTS are filled ([_, 255], [_, 275], [_, 310]) but every breakpoint is null, so
-    # the engine cannot tell which tier a given thickness falls into. Partially open, not closed.
-    tiers = _get(cfg, "low_slope", "insulation_tiers") or []
-    if any(t[0] is None for t in tiers if isinstance(t, list) and t):
+    # OI-3: RESOLVED 2026-07-27 — insulation_by_thickness (keyed on board thickness, matching
+    # Tim's sheet K15/K16/K17) is the current pricing key and low_slope_insulation_cost() prefers
+    # it. insulation_tiers is the vestigial [max_sq, price] shape that generated this open item in
+    # the first place; it is kept only as a fallback for older configs and no longer gates this
+    # check. Open only if the current key is missing or still carries a null rate.
+    by_thickness = _get(cfg, "low_slope", "insulation_by_thickness") or {}
+    if not by_thickness or any(v is None for v in by_thickness.values()):
         items.append(
-            "OI-3: low_slope.insulation_tiers — per-sq costs are filled (255/275/310) but the "
-            "tier BREAKPOINTS are all null; Tim must supply the thickness cut-offs"
+            "OI-3: low_slope.insulation_by_thickness — missing or has null thickness rates; "
+            "Tim must supply per-thickness insulation cost-per-sq"
         )
 
-    # OI-5: still null, and it is the one open item that BLOCKS a flat-roof quote outright.
-    if _get(cfg, "low_slope", "deck_types", "plywood_replace") is None:
+    # OI-5: RESOLVED 2026-07-27 — Tim prices plywood per SHEET (Lumber Schedule), not per SQUARE.
+    # low_slope.deck_types.plywood_replace stays null ON PURPOSE (it was the wrong unit); the real
+    # adder lives at top-level plywood_replacement.per_sheet, keyed by thickness. Open only if that
+    # key is missing or still carries a null rate.
+    per_sheet = _get(cfg, "plywood_replacement", "per_sheet") or {}
+    if not per_sheet or any(v is None for v in per_sheet.values()):
         items.append(
-            "OI-5: low_slope.deck_types.plywood_replace — null; Tim must supply the plywood deck "
-            "replacement adder per sq. BLOCKS a flat-roof quote"
+            "OI-5: plywood_replacement.per_sheet — missing or has null thickness rates; Tim must "
+            "supply the per-sheet plywood pricing (Lumber Schedule)"
         )
 
     # OI-7: still null. Note the shape is also wrong — commission is per SALESPERSON (Marco 15% /
@@ -85,12 +92,20 @@ def open_items(cfg: dict[str, Any]) -> list[str]:
             "triggers the next dumpster), never confirmed (Adv-1)"
         )
 
-    # OI-11: Exhibit B §4 is one low-slope table for both zones (confirmed Zoom 2026-07-20), so
-    # FBC was set equal to HVHZ. His LIVE calculator may disagree; the note records that doubt.
+    # OI-11: NARROWED 2026-07-27. His sheet expresses the zone distinction as AVAILABILITY, not
+    # as a second price column — two deck systems are labelled "not HVHZ" and everything else
+    # carries one price for both zones. That half is now encoded as data (not_hvhz_deck_types) and
+    # the engine warns on it. What is left is only confirming the PRICES against his live
+    # calculator, so the item stays open until that check happens — but it no longer implies the
+    # zone rule is unknown.
     if _get(cfg, "low_slope", "_note_fbc_deltas"):
+        restrictions = _get(cfg, "low_slope", "not_hvhz_deck_types") or {}
+        encoded = (f"the not-HVHZ deck restrictions ARE encoded ({len(restrictions)} systems) and "
+                   "the engine warns on them; " if restrictions else "")
         items.append(
-            "OI-11: low_slope zones — Zoom 2026-07-20 confirmed Exhibit B §4 is a single table for "
-            "both zones (FBC = HVHZ); confirm with Tim if his live calculator implies a delta"
+            "OI-11: low_slope zones — Exhibit B §4 is one table for both zones (Zoom 2026-07-20) "
+            f"and his sheet shows the zone split as availability, not price. {encoded}what remains "
+            "is confirming the PRICES against his live low-slope calculator"
         )
 
     # Office burn: an absent key silently inherits Jupiter's daily_overhead_rates, which is how

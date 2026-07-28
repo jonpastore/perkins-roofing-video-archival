@@ -1005,6 +1005,104 @@ def test_low_slope_2_story_height_add():
 
 
 # ---------------------------------------------------------------------------
+# OI-5: plywood deck replacement — Tim prices this per SHEET (Lumber Schedule), not per
+# square, and it applies to ANY roof type, not just low-slope.
+# ---------------------------------------------------------------------------
+
+def test_plywood_deck_types_raises_pointing_at_new_key(cfg: PricingConfig):
+    """low_slope.deck_types.plywood_replace stays null on purpose (wrong unit); the error
+    must point at the real per-sheet key instead of a bare null error."""
+    with pytest.raises(ConfigError, match="plywood_sheets"):
+        cfg.low_slope_deck_cost("plywood_replace")
+
+
+def test_plywood_sheet_rate_by_thickness(cfg: PricingConfig):
+    """Each thickness rate from Tim's Lumber Schedule."""
+    assert cfg.plywood_sheet_rate("5_8in") == 120
+    assert cfg.plywood_sheet_rate("1_2in") == 110
+    assert cfg.plywood_sheet_rate("3_4in") == 145
+
+
+def test_plywood_sheets_included(cfg: PricingConfig):
+    assert cfg.plywood_sheets_included() == 2
+
+
+def test_plywood_allowance_two_sheets_free(cfg: PricingConfig):
+    """2 sheets = the included allowance; no line item, no charge. Applies on a SLOPED
+    roof too — the adder is not low_slope-scoped."""
+    q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+                   num_squares=10.0, project_kind="residential",
+                   plywood_sheets=2, plywood_thickness="5_8in")
+    r = estimate(cfg, q)
+    assert not any(li["key"] == "plywood_replacement" for li in r["line_items_detail"])
+
+
+def test_plywood_bills_only_the_excess_sheet(cfg: PricingConfig):
+    """3 sheets = 1 billable sheet at the thickness rate ($120 for 5/8"), and it flows into
+    both the project total and eligible_base like any other fixed line item."""
+    q_base = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+                         num_squares=10.0, project_kind="residential")
+    q_ply = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+                        num_squares=10.0, project_kind="residential",
+                        plywood_sheets=3, plywood_thickness="5_8in")
+    r_base = estimate(cfg, q_base)
+    r_ply = estimate(cfg, q_ply)
+    item = next(li for li in r_ply["line_items_detail"] if li["key"] == "plywood_replacement")
+    assert item["amount"] == 120.0
+    assert abs(r_ply["project_total"] - r_base["project_total"] - 120.0) < 0.01
+    assert abs(r_ply["margin"]["eligible_base"] - r_base["margin"]["eligible_base"] - 120.0) < 0.01
+
+
+def test_plywood_other_thicknesses_bill_at_their_own_rate(cfg: PricingConfig):
+    q_half = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+                         num_squares=10.0, project_kind="residential",
+                         plywood_sheets=3, plywood_thickness="1_2in")
+    q_3q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+                       num_squares=10.0, project_kind="residential",
+                       plywood_sheets=3, plywood_thickness="3_4in")
+    r_half = estimate(cfg, q_half)
+    r_3q = estimate(cfg, q_3q)
+    half_item = next(li for li in r_half["line_items_detail"] if li["key"] == "plywood_replacement")
+    q3_item = next(li for li in r_3q["line_items_detail"] if li["key"] == "plywood_replacement")
+    assert half_item["amount"] == 110.0
+    assert q3_item["amount"] == 145.0
+
+
+# ---------------------------------------------------------------------------
+# OI-11: not-HVHZ-legal low-slope deck systems — warn, never block.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("deck_type,detail", [
+    ("bur_wood_wb3000", "1 story only"),
+    ("bur_wood_sav_flashing", "plywood only"),
+])
+def test_deck_type_not_hvhz_warns_on_hvhz_job(cfg: PricingConfig, deck_type, detail):
+    q = QuoteInput(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
+                   num_squares=10.0, project_kind="residential", deck_type=deck_type)
+    r = estimate(cfg, q)
+    warning = next((w for w in r["warnings"] if w.startswith("deck_type_not_hvhz")), None)
+    assert warning is not None
+    assert deck_type in warning
+    assert detail in warning
+
+
+@pytest.mark.parametrize("deck_type", ["bur_wood_wb3000", "bur_wood_sav_flashing"])
+def test_deck_type_not_hvhz_does_not_warn_in_fbc(cfg: PricingConfig, deck_type):
+    q = QuoteInput(code_zone="FBC", slope_type="low_slope", roof_type="tpo_adhered",
+                   num_squares=10.0, project_kind="residential", deck_type=deck_type)
+    r = estimate(cfg, q)
+    assert not any(w.startswith("deck_type_not_hvhz") for w in r["warnings"])
+
+
+def test_deck_type_hvhz_legal_does_not_warn(cfg: PricingConfig):
+    """A deck type NOT in not_hvhz_deck_types must never warn, even on an HVHZ job."""
+    q = QuoteInput(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
+                   num_squares=10.0, project_kind="residential", deck_type="bur_wood_elastobase")
+    r = estimate(cfg, q)
+    assert not any(w.startswith("deck_type_not_hvhz") for w in r["warnings"])
+
+
+# ---------------------------------------------------------------------------
 # Fix 4 (H3): Insulation OH — low-slope insulation carries OH (excluded from Profit only)
 # Per TRD-F2 §4.2: insulation is excluded from Profit floor denominator but
 # IS included in the OH total (combined floor denominator).

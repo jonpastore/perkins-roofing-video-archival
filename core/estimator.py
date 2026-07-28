@@ -455,6 +455,12 @@ class QuoteInput:
     include_insulation: bool = False
     insulation_thickness: str = "1in"    # 1in | 1_5in | 2in — Tim prices board by thickness
     include_tapered: bool = False
+    # Plywood deck replacement — Tim's Lumber Schedule prices this per SHEET, not per square,
+    # and it applies to ANY roof type (his golden proposal attaching it is a TILE re-roof), so
+    # it is a fixed item, not a low_slope.deck_types entry (OI-5). The first
+    # plywood_replacement.sheets_included sheets are free per his proposal scope language.
+    plywood_sheets: float = 0
+    plywood_thickness: str = "5_8in"     # 5_8in | 1_2in | 3_4in
 
     # RoofR cut linear-footages — drive Tim's custom cut calculator. When any is set and the
     # config carries cuts_calc for the zone, the base_cost line is recomputed from the geometry
@@ -942,6 +948,21 @@ def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineIt
                        "squares": q.num_squares, "zone": zone,
                        "boundary_inclusive": config.raw.get("tile_dumpster_boundary_inclusive")}}))
 
+    # Plywood deck replacement (OI-5) — priced per SHEET regardless of roof type, with the
+    # first N sheets free per Tim's proposal scope language.
+    if q.plywood_sheets:
+        rate = config.plywood_sheet_rate(q.plywood_thickness)
+        included = config.plywood_sheets_included()
+        billable_sheets = max(0.0, q.plywood_sheets - included)
+        if billable_sheets:
+            items.append(LineItem(
+                "plywood_replacement", "Plywood Deck Replacement", billable_sheets * rate,
+                tags.get("plywood_replacement", "Materials"), explain={
+                    "formula": "max(0, sheets - sheets_included) x per_sheet_rate[thickness]",
+                    "inputs": {"sheets": q.plywood_sheets, "sheets_included": included,
+                               "billable_sheets": billable_sheets,
+                               "thickness": q.plywood_thickness, "rate": rate}}))
+
     return items
 
 
@@ -1322,6 +1343,17 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
             warnings.append(
                 f"coating_demo_not_in_price: {q.roof_type} is an all-in price that EXCLUDES demo "
                 "(Tim's sheet says add $100/sq). Confirm the demo charge — pending Tim."
+            )
+
+    # Not-HVHZ-legal deck systems (OI-11). Tim's sheet labels these explicitly; warn rather than
+    # block because he sometimes overrides his own sheet.
+    if q.slope_type == "low_slope" and zone == "HVHZ" and q.deck_type:
+        restriction = config.low_slope_not_hvhz_deck_types().get(q.deck_type)
+        if restriction:
+            warnings.append(
+                f"deck_type_not_hvhz: {q.deck_type} is marked 'not HVHZ' on Tim's sheet "
+                f"({restriction}) but this job's zone is HVHZ. Tim overrides his own sheet "
+                "sometimes — confirm before sending."
             )
     try:
         pm_val = config.pm_incentive(zone, q.project_kind, total_sq)

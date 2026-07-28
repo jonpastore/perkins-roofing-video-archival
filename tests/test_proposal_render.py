@@ -315,10 +315,23 @@ class TestDefaultTemplate:
         assert "Substantial completion (net balance)" in html
 
     def test_default_template_contains_lumber_schedule_exhibit(self):
+        """The exhibit must state RATES, not promise a schedule it never shows.
+
+        It shipped for weeks saying decking was "charged per published Perkins schedule" and
+        fascia "billed per linear foot by actual size used" — no numbers anywhere. This is an
+        exhibit to the contract, so a customer signing it was agreeing to prices they could not
+        read. Tim's real schedule (~/perkins-corpus/pricing/Lumber Schedule.pdf) is a full rate
+        card; these are his figures.
+        """
         ctx = _minimal_context()
         html = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
         assert "Lumber Schedule" in html
-        assert "Decking" in html
+        assert "Roof deck" in html
+        for rate in ("$120 per sheet", "$110 per sheet", "$145 per sheet",
+                     "$8.25 per LF", "$0.75 per SF", "$110 per man-hour"):
+            assert rate in html, f"lumber exhibit no longer states {rate!r}"
+        # The 2-storey carpentry surcharge explicitly does NOT apply to roof decking.
+        assert "roof decking wood excepted" in html
 
     def test_default_template_is_valid_html_fragment(self):
         ctx = _minimal_context()

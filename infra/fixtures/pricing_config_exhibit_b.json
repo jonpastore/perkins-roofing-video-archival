@@ -6,12 +6,10 @@
     "date": "2026-07-10",
     "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit \u2014 engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. tim_verify_open_items is regenerated from this config by scripts/prune_stale_open_items.py \u2014 do not hand-edit it.",
     "tim_verify_open_items": [
-      "OI-3: low_slope.insulation_tiers \u2014 per-sq costs are filled (255/275/310) but the tier BREAKPOINTS are all null; Tim must supply the thickness cut-offs",
-      "OI-5: low_slope.deck_types.plywood_replace \u2014 null; Tim must supply the plywood deck replacement adder per sq. BLOCKS a flat-roof quote",
       "OI-7: commission_pct.sloped_hvhz \u2014 null; engine defaults to sloped (0.10). NOTE the key SHAPE is wrong regardless: commission is per salesperson, not per zone (PC-1)",
       "OI-9: boundary_inclusive_lower / boundary_exclusive_upper \u2014 PRESUMED lower-inclusive / upper-exclusive per Exhibit B wording, never confirmed (PC-2). Answering it is a data change only",
       "OI-10: tile_dumpster_boundary_inclusive \u2014 PRESUMED true (the threshold SQ itself triggers the next dumpster), never confirmed (Adv-1)",
-      "OI-11: low_slope zones \u2014 Zoom 2026-07-20 confirmed Exhibit B \u00a74 is a single table for both zones (FBC = HVHZ); confirm with Tim if his live calculator implies a delta",
+      "OI-11: low_slope zones \u2014 Exhibit B \u00a74 is one table for both zones (Zoom 2026-07-20) and his sheet shows the zone split as availability, not price. the not-HVHZ deck restrictions ARE encoded (2 systems) and the engine warns on them; what remains is confirming the PRICES against his live low-slope calculator",
       "OI-12: office_daily_overhead / office_men \u2014 unset, so daily_overhead_rates pass through UNSCALED (i.e. this branch prices at Jupiter's rates). Tim stated Jupiter $28k/20 = $1,400 and Miami $85k/20 = $4,250 on 2026-07-27; Naples is still unstated"
     ]
   },
@@ -505,8 +503,13 @@
       "tpo_wood_versashield": 135,
       "tpo_wood_densdeck_iso": 120,
       "plywood_replace": null,
-      "_pending_plywood_replace": "Tim \u2014 generic plywood deck replacement adder per sq (OI-5 \u2014 partial; specific deck adders now filled above)"
+      "_note_plywood_replace": "RESOLVED 2026-07-27 (OI-5): stays null ON PURPOSE. This key priced plywood per SQUARE, but Tim's Lumber Schedule prices it per SHEET and it applies to any roof type, not just low-slope. The real adder is the top-level plywood_replacement key; low_slope_deck_cost() now raises a message pointing here instead of a bare null error."
     },
+    "not_hvhz_deck_types": {
+      "bur_wood_wb3000": "1 story only",
+      "bur_wood_sav_flashing": "plywood only"
+    },
+    "_note_not_hvhz_deck_types": "OI-11: Tim's sheet labels these two deck systems 'not HVHZ' explicitly (BUR Wood WB-3000 Primer / BUR Wood SA V Flashing Strips). Data, not prose, so core/estimator.py can warn (never block) when one is selected on an HVHZ job.",
     "tear_off_per_layer_per_sq": 20,
     "_note_tear_off": "Additional hauling $20/sq, labor $20/sq, OH $35/sq per layer (+$75/sq per extra layer per sheet note). Engine v1 uses $20/layer/sq for base labor; OH and hauling encoded in tear_off_extras for line-item reporting in v2.",
     "tear_off_extras": {
@@ -538,6 +541,15 @@
     "stockmeier_under_min_material_per_sq": 390,
     "_note_stockmeier_floor": "Live low-slope sheet M29: 'STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is $390 M per SQ and T&M)'. Now enforced as a warning rather than kept as prose."
   },
+  "plywood_replacement": {
+    "per_sheet": {
+      "5_8in": 120,
+      "1_2in": 110,
+      "3_4in": 145
+    },
+    "sheets_included": 2
+  },
+  "_note_plywood_replacement": "OI-5, resolved 2026-07-27 from Tim's Lumber Schedule (~/perkins-corpus/pricing/Lumber Schedule.pdf), which his proposals attach as a contract exhibit. Prices are installed, un-primed, per SHEET — not low_slope-scoped: the quote it comes from is a TILE re-roof. '2-Story: Add $5.00 per LF or $85.00/sheet for any carpentry (with the exception of roof decking wood)' — roof decking is EXEMPT from the 2-story surcharge, so no story adder is modeled here. sheets_included=2 matches his proposal scope language: 'An allotment of 100 linear feet of decking wood (total) OR 2 sheets of plywood is included at no additional charge.'",
   "enforce_profit_floor": true,
   "profit_floor_basis": "weekly",
   "profit_floor_days_per_week": 5.0,
@@ -619,6 +631,7 @@
     "permit_commercial_add": "mixed",
     "permit_processing": "mixed",
     "pitch_7_12_add": "branch",
+    "plywood_replacement": "mixed",
     "pm_incentive": "shared",
     "profit_floor_basis": "shared",
     "profit_floor_days_per_week": "shared",

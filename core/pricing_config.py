@@ -575,11 +575,50 @@ class PricingConfig:
     def low_slope_deck_cost(self, deck_type: str) -> float:
         val = self.raw["low_slope"]["deck_types"].get(deck_type)
         if val is None and deck_type != "existing_concrete":
+            if deck_type == "plywood_replace":
+                raise ConfigError(
+                    "low_slope.deck_types.plywood_replace is null ON PURPOSE — that key priced "
+                    "plywood per SQUARE, but Tim's Lumber Schedule prices it per SHEET, and it "
+                    "applies to any roof type, not just low-slope (OI-5). Use "
+                    "QuoteInput.plywood_sheets / plywood_thickness (PricingConfig."
+                    "plywood_sheet_rate / plywood_sheets_included) instead."
+                )
             raise ConfigError(
                 f"low_slope.deck_types[{deck_type}] is null. "
                 "Tim must supply the deck replacement cost."
             )
         return float(val or 0)
+
+    def plywood_sheet_rate(self, thickness: str) -> float:
+        """Per-sheet installed price for plywood deck replacement, by thickness.
+
+        Tim's Lumber Schedule (~/perkins-corpus/pricing/Lumber Schedule.pdf) prices this per
+        SHEET, not per square, and it applies to ANY roof type — his golden proposal that
+        attaches it is a TILE re-roof. That is why this lives at config top level rather than
+        under low_slope.deck_types (OI-5, resolved 2026-07-27).
+        """
+        rates = (self.raw.get("plywood_replacement") or {}).get("per_sheet") or {}
+        val = rates.get(thickness)
+        return float(self.get_or_raise(val, f"plywood_replacement.per_sheet[{thickness}]"))
+
+    def plywood_sheets_included(self) -> float:
+        """Sheets included at no charge before the per-sheet adder starts billing.
+
+        Tim's proposal scope language: "An allotment of 100 linear feet of decking wood
+        (total) OR 2 sheets of plywood is included at no additional charge." Default 0 for
+        configs that predate this key.
+        """
+        return float((self.raw.get("plywood_replacement") or {}).get("sheets_included") or 0)
+
+    def low_slope_not_hvhz_deck_types(self) -> dict[str, str]:
+        """Deck-type keys -> restriction text, for low-slope deck systems Tim's sheet marks as
+        not legal in HVHZ (e.g. "BUR Wood (WB-3000 Primer) - not HVHZ (1 story only)").
+
+        Data, not prose, so the engine can warn (never raise — Tim overrides his own sheet
+        sometimes) when a not-HVHZ deck type is selected on an HVHZ job (OI-11). Empty dict
+        when unconfigured.
+        """
+        return dict(self.raw["low_slope"].get("not_hvhz_deck_types") or {})
 
 
 # ---------------------------------------------------------------------------

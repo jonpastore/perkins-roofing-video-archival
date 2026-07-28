@@ -171,6 +171,9 @@ class QuoteRequest(BaseModel):
     include_insulation: bool = False
     insulation_thickness: Literal["1in", "1_5in", "2in"] = "1in"
     include_tapered: bool = False
+    # Plywood deck replacement — per SHEET (Tim's Lumber Schedule), any roof type, first N free.
+    plywood_sheets: float = Field(default=0, ge=0)
+    plywood_thickness: Literal["5_8in", "1_2in", "3_4in"] = "5_8in"
     measurement_id: Optional[int] = None
     config_id: Optional[int] = None      # null = use active config; explicit = pin to version
     override_base_cost: Optional[float] = None
@@ -333,6 +336,8 @@ def quote(
         include_insulation=body.include_insulation,
         insulation_thickness=body.insulation_thickness,
         include_tapered=body.include_tapered,
+        plywood_sheets=body.plywood_sheets,
+        plywood_thickness=body.plywood_thickness,
         override_base_cost=body.override_base_cost,
         override_overhead=body.override_overhead,
         override_profit_per_sq=body.override_profit_per_sq,
