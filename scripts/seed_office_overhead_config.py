@@ -46,9 +46,22 @@ ZONED_ADDS: dict = {}
 OH_BASIS_REFERENCE = 200
 
 # Per-branch office burn. men = the crew-size column that branch prices from.
+#
+# Miami was 4140, read off his OH Basis rows (9x$460, 12x$345, 15x$275 all land near $4,140/day).
+# Tim gave the real figure on the 2026-07-27 call, by his own arithmetic: "my branch is like 28
+# grand, their branch is like 85 grand, and we just divide that by 20 work days." $85,000/20 =
+# $4,250. Jupiter's $28,000/20 = $1,400 confirms the method — it reproduces the existing value
+# exactly. So 4140 is stale and 4250 is his number.
+#
+# ⚠️ `men` is the open half and it moves more money than the burn does. His three Miami rows pair a
+# crew size with a $/man-day, and picking between them swings a 30 SQ HVHZ tile job from $41,318
+# (15 men) to $46,964 (9 men) — 13%, against $274 (0.6%) for 4140-vs-4250. 12 is kept because it is
+# his middle row and closest to his published $345/man-day ($4,250/12 = $354, +2.7%). It is a
+# choice, not a fact. Naples is deliberately absent: Tim has never stated it, and an absent key
+# leaves rates unscaled rather than guessing.
 OFFICE = {
     "jupiter": {"office_daily_overhead": 1400, "office_men": 7},    # 7 x $200  -> factor 1.000
-    "miami": {"office_daily_overhead": 4140, "office_men": 12},     # 12 x $345 -> factor 1.725
+    "miami": {"office_daily_overhead": 4250, "office_men": 12},     # 12 x $354 -> factor 1.7708
 }
 
 

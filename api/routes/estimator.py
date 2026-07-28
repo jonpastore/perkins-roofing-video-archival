@@ -57,6 +57,10 @@ class RepairQuoteRequest(BaseModel):
     days: float = Field(..., gt=0)
     crew_size: Literal[1, 2] = 1
     material_cost: float = Field(default=0, ge=0)
+    # Same mechanism/naming as QuoteRequest's percent_profit_pct (Jarvis #432/#434) — a
+    # fraction, 0.20 = 20%. Omitted = 0.0; the min_profit_dollars/min_service_call_dollars
+    # floors in core.estimator.estimate_repair still apply regardless.
+    percent_profit_pct: Optional[float] = Field(default=None, ge=0)
     config_id: Optional[int] = None      # null = use active config; explicit = pin to version
 
 
@@ -563,6 +567,7 @@ def repair_quote(
             days=body.days,
             crew_size=body.crew_size,
             material_cost=body.material_cost,
+            percent_profit_pct=body.percent_profit_pct,
         )
         result = E.estimate_repair(config, r)
     except (ValueError, ConfigError) as exc:

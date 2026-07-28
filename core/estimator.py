@@ -254,16 +254,27 @@ def compute_profit_guidance(
 
 @dataclass
 class RepairInput:
-    """Inputs for a time-based repair quote — an alternative to a full replacement estimate.
+    """Inputs for a time-based repair/maintenance quote — an alternative to a full
+    replacement estimate. "Repair" and "Maintenance" are the SAME calculation, one path
+    (Tim/Jon, 2026-07-27: overruled a proposed 3-way split) — this is a label only.
 
-    Simple calculation (Tim, Zoom 2026-07-20 [37:04]/[38:05]/[45:31]):
-        labor_cost = days * daily_labor_rate(crew_size)
-        project_total = labor_cost + material_cost
+    Simple calculation (Tim, Zoom 2026-07-20 [37:04]/[38:05]/[45:31]), now with profit
+    added on top (Jarvis #434 — Tim, 2026-07-27 call: "That's the cost, though. That's
+    without profit, right? ... we'll add a profit slider into that"):
+        cost = labor_cost + material_cost, where labor_cost = days * daily_labor_rate(crew_size)
+        profit = max(percent_profit_pct * cost, repair.min_profit_dollars)
+        project_total = max(cost + profit, repair.min_service_call_dollars)
     """
     roof_type: str          # "shingle" | "tile" | "metal" | "flat" — validated against config.repair_roof_types()
     days: float
     crew_size: int = 1      # 1 (one-man rate) or 2 (two-man rate)
     material_cost: float = 0.0
+    # Same mechanism and fraction convention as QuoteInput.percent_profit_pct (Jarvis #432,
+    # commit 78f3557) — "let's not have duplicate mechanisms" (Tim, 2026-07-27). 0.20 = 20%.
+    # None/omitted is treated as 0.0: the pct term drops out but the min_profit_dollars and
+    # min_service_call_dollars floors below still apply — Tim wants those on every repair,
+    # not opt-in ("what is the minimum profit ... we have a minimum of a $500 charge").
+    percent_profit_pct: Optional[float] = None
 
     def __post_init__(self) -> None:
         if self.days <= 0:
@@ -272,10 +283,23 @@ class RepairInput:
             raise ValueError(f"RepairInput.crew_size must be 1 or 2; got {self.crew_size!r}")
         if self.material_cost < 0:
             raise ValueError(f"RepairInput.material_cost must be >= 0; got {self.material_cost!r}")
+        if self.percent_profit_pct is not None and self.percent_profit_pct < 0:
+            raise ValueError(
+                f"RepairInput.percent_profit_pct must be >= 0; got {self.percent_profit_pct!r}"
+            )
 
 
 def estimate_repair(config: PricingConfig, r: RepairInput) -> dict[str, Any]:
-    """Compute a time-based repair quote: days x daily labor rate + material cost.
+    """Compute a time-based repair/maintenance quote: cost + profit, both floored.
+
+    cost = days x daily labor rate + material cost
+    profit = max(percent_profit_pct x cost, repair.min_profit_dollars)
+    project_total = max(cost + profit, repair.min_service_call_dollars)
+
+    NOTE this is a behavior change (Jarvis #434): every repair quote now carries at least
+    repair.min_profit_dollars of profit and a repair.min_service_call_dollars floor on the
+    total, even when percent_profit_pct is omitted — the engine previously returned pure
+    cost with zero profit, which is the defect Tim caught live on the 2026-07-27 call.
 
     Raises ConfigError when roof_type isn't a configured repair category, or when the
     daily labor rate for the requested crew size is missing from the config.
@@ -288,7 +312,29 @@ def estimate_repair(config: PricingConfig, r: RepairInput) -> dict[str, Any]:
         )
     rate = config.repair_daily_labor_rate(r.crew_size)
     labor_cost = r.days * rate
-    project_total = labor_cost + r.material_cost
+    cost = labor_cost + r.material_cost
+
+    pct = r.percent_profit_pct or 0.0
+    pct_profit = pct * cost
+    min_profit = config.repair_min_profit_dollars()
+    profit = max(pct_profit, min_profit)
+
+    pre_floor_total = cost + profit
+    min_service_call = config.repair_min_service_call_dollars()
+    project_total = max(pre_floor_total, min_service_call)
+
+    warnings: list[str] = []
+    if pct_profit < min_profit:
+        warnings.append(
+            f"repair_min_profit_applied: profit raised from ${pct_profit:,.2f} to "
+            f"${min_profit:,.2f} (repair minimum profit)"
+        )
+    if pre_floor_total < min_service_call:
+        warnings.append(
+            f"repair_min_service_call_applied: total raised from ${pre_floor_total:,.2f} to "
+            f"${min_service_call:,.2f} (minimum service call)"
+        )
+
     return {
         "roof_type": r.roof_type,
         "days": r.days,
@@ -296,7 +342,11 @@ def estimate_repair(config: PricingConfig, r: RepairInput) -> dict[str, Any]:
         "daily_labor_rate": rate,
         "labor_cost": round(labor_cost, 2),
         "material_cost": round(r.material_cost, 2),
+        "repair_cost": round(cost, 2),
+        "percent_profit_pct": pct,
+        "profit_dollars": round(profit, 2),
         "project_total": round(project_total, 2),
+        "warnings": warnings,
     }
 
 

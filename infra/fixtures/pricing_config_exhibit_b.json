@@ -4,13 +4,15 @@
     "source": "Exhibit B (Ez-Bids legal package)",
     "exhibit_version": "B-2026-07-10-r2",
     "date": "2026-07-10",
-    "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit \u2014 engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. Remaining open items: OI-7, OI-8, OI-9, OI-10 (sloped HVHZ commission, pm_incentive matrix, boundary rules, dumpster boundary).",
+    "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit \u2014 engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. tim_verify_open_items is regenerated from this config by scripts/prune_stale_open_items.py \u2014 do not hand-edit it.",
     "tim_verify_open_items": [
-      "OI-7: commission_pct.sloped_hvhz \u2014 null; Tim must confirm whether sloped HVHZ jobs use 10% (sloped) or 15% (low_slope) rate (PC-1)",
-      "OI-8: pm_incentive \u2014 full matrix needs Tim verification before activation (PC matrix per PRD F2-11; current values from plan \u00a710.5)",
-      "OI-9: boundary_inclusive_lower / boundary_exclusive_upper \u2014 presumed lower-inclusive/upper-exclusive per Exhibit B wording (PC-2); config flag means answer is a data change only",
-      "OI-10: tile_dumpster_boundary_inclusive \u2014 default true; Tim to confirm (Adv-1 per PRD)",
-      "OI-11: low_slope zones \u2014 Zoom 2026-07-20 confirmed Exhibit B \u00a74 is a single table for both zones (FBC = HVHZ); confirm with Tim if his live calculator implies a delta"
+      "OI-3: low_slope.insulation_tiers \u2014 per-sq costs are filled (255/275/310) but the tier BREAKPOINTS are all null; Tim must supply the thickness cut-offs",
+      "OI-5: low_slope.deck_types.plywood_replace \u2014 null; Tim must supply the plywood deck replacement adder per sq. BLOCKS a flat-roof quote",
+      "OI-7: commission_pct.sloped_hvhz \u2014 null; engine defaults to sloped (0.10). NOTE the key SHAPE is wrong regardless: commission is per salesperson, not per zone (PC-1)",
+      "OI-9: boundary_inclusive_lower / boundary_exclusive_upper \u2014 PRESUMED lower-inclusive / upper-exclusive per Exhibit B wording, never confirmed (PC-2). Answering it is a data change only",
+      "OI-10: tile_dumpster_boundary_inclusive \u2014 PRESUMED true (the threshold SQ itself triggers the next dumpster), never confirmed (Adv-1)",
+      "OI-11: low_slope zones \u2014 Zoom 2026-07-20 confirmed Exhibit B \u00a74 is a single table for both zones (FBC = HVHZ); confirm with Tim if his live calculator implies a delta",
+      "OI-12: office_daily_overhead / office_men \u2014 unset, so daily_overhead_rates pass through UNSCALED (i.e. this branch prices at Jupiter's rates). Tim stated Jupiter $28k/20 = $1,400 and Miami $85k/20 = $4,250 on 2026-07-27; Naples is still unstated"
     ]
   },
   "schema_version": 1,

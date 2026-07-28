@@ -179,7 +179,11 @@ interface RepairQuoteResult {
   daily_labor_rate: number;
   labor_cost: number;
   material_cost: number;
+  repair_cost: number;
+  percent_profit_pct: number;
+  profit_dollars: number;
   project_total: number;
+  warnings?: string[];
   pricing_config_hash?: string;
   floors?: { min_profit_pct: number; min_profit_plus_oh_pct: number };
 }
@@ -725,6 +729,10 @@ export function Quoting() {
   const [repairDays, setRepairDays] = useState("");
   const [repairCrewSize, setRepairCrewSize] = useState<1 | 2>(1);
   const [repairMaterialCost, setRepairMaterialCost] = useState("");
+  // Profit percentage on repairs (Jarvis #434) — same mechanism/naming as the replacement
+  // path's percent_profit_pct; a $250 minimum profit and $500 minimum service call still
+  // apply server-side even at 0%.
+  const [repairProfitPct, setRepairProfitPct] = useState("");
   const [repairResult, setRepairResult] = useState<RepairQuoteResult | null>(null);
   const [repairQuoting, setRepairQuoting] = useState(false);
   const [repairError, setRepairError] = useState<string | null>(null);
@@ -1199,12 +1207,13 @@ export function Quoting() {
     return runQuote();
   }
 
-  async function runRepairQuote() {
+  async function runRepairQuote(pctOverride?: number) {
     const days = Number(repairDays || 0);
     if (!days || days <= 0) {
       setRepairError("Enter the number of days for this repair.");
       return;
     }
+    const pct = pctOverride ?? Number(repairProfitPct || 0);
     setRepairQuoting(true);
     setRepairError(null);
     setRepairResult(null);
@@ -1217,6 +1226,7 @@ export function Quoting() {
           days,
           crew_size: repairCrewSize,
           material_cost: Number(repairMaterialCost || 0),
+          percent_profit_pct: pct / 100,
         }),
       });
       if (!r.ok) throw new Error(await errText(r));
@@ -1381,6 +1391,7 @@ export function Quoting() {
       days: Number(repairDays || 0),
       crew_size: repairCrewSize,
       material_cost: Number(repairMaterialCost || 0),
+      percent_profit_pct: Number(repairProfitPct || 0) / 100,
     };
     const snapshot = {
       estimate_input: estimateInput,
@@ -1389,7 +1400,7 @@ export function Quoting() {
       job_type: "repair",
       roof_type: repairRoofType,
       tiers: {
-        good: { label: "Repair", description: "Time-based repair", total: repairResult.project_total },
+        good: { label: "Repair / Maintenance", description: "Time-based repair/maintenance", total: repairResult.project_total },
       },
       recommended_tier: "good",
       selected_tier_default: "good",
@@ -1406,7 +1417,7 @@ export function Quoting() {
         body: JSON.stringify({
           customer_id: selectedCustomer.id,
           property_id: selectedPropertyId,
-          title: `Repair Proposal — ${selectedCustomer.display_name}`,
+          title: `Repair / Maintenance Proposal — ${selectedCustomer.display_name}`,
           quote_snapshot: snapshot,
         }),
       });
@@ -1715,7 +1726,7 @@ export function Quoting() {
                   color: jobMode === m ? "#fff" : BRAND.sub,
                 }}
               >
-                {m === "reroof" ? "Re-roof" : "Repair"}
+                {m === "reroof" ? "Re-roof" : "Repair / Maintenance"}
               </button>
             ))}
           </div>
@@ -2524,15 +2535,17 @@ export function Quoting() {
         </div>
         )}
 
-        {/* Repair estimate — time-based alternative to full replacement (Zoom 2026-07-20 [37:04]/[45:31]) */}
+        {/* Repair / Maintenance estimate — time-based alternative to full replacement
+            (Zoom 2026-07-20 [37:04]/[45:31]). Maintenance prices identically to repair —
+            Tim/Jon overruled a proposed 3-way split, so this is ONE path, label only. */}
         {jobMode === "repair" && (
         <Card>
           <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 4 }}>
-            Repair estimate (time-based)
+            Repair / Maintenance estimate (time-based)
           </div>
           <p style={{ margin: "0 0 14px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
-            For repair work (not a full replacement): days &times; the configured daily labor
-            rate, plus material cost. Simple calculation, per Tim.
+            For repair or maintenance work (not a full replacement): days &times; the configured
+            daily labor rate, plus material cost, plus profit.
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
             <div>
@@ -2577,7 +2590,24 @@ export function Quoting() {
               />
             </div>
           </div>
-          <Button onClick={runRepairQuote} disabled={repairQuoting} style={{ fontSize: 13 }}>
+          <SectionLabel>Profit % (drives price on top of cost)</SectionLabel>
+          <div style={{ marginBottom: 14, maxWidth: 380 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+              <span style={{ color: BRAND.sub }}>Profit</span>
+              <strong>{repairProfitPct || 0}%</strong>
+            </div>
+            <input
+              type="range" min="0" max="40" step="0.5" value={repairProfitPct || 0}
+              onChange={(e) => setRepairProfitPct(e.target.value)}
+              onPointerUp={(e) => void runRepairQuote(Number((e.target as HTMLInputElement).value))}
+              disabled={repairQuoting}
+              style={{ width: "100%", accentColor: BRAND.red }}
+            />
+            <div style={{ fontSize: 11, color: BRAND.sub }}>
+              Release to reprice. A minimum profit and minimum service-call charge still apply even at 0%.
+            </div>
+          </div>
+          <Button onClick={() => void runRepairQuote()} disabled={repairQuoting} style={{ fontSize: 13 }}>
             {repairQuoting ? "Calculating…" : "Calculate repair"}
           </Button>
           {repairError && <div style={{ marginTop: 10 }}><ErrorMsg>Error: {repairError}</ErrorMsg></div>}
@@ -2585,7 +2615,14 @@ export function Quoting() {
             <div style={{ marginTop: 14, maxWidth: 380 }}>
               <ResultRow label={`Labor (${repairResult.days}d @ ${usd(repairResult.daily_labor_rate)}/day)`} value={usd(repairResult.labor_cost)} />
               <ResultRow label="Material cost" value={usd(repairResult.material_cost)} />
-              <ResultRow label="Repair total" value={usd(repairResult.project_total)} bold />
+              <ResultRow label="Cost (labor + material)" value={usd(repairResult.repair_cost)} />
+              <ResultRow label={`Profit (${(repairResult.percent_profit_pct * 100).toFixed(1)}%)`} value={usd(repairResult.profit_dollars)} />
+              <ResultRow label="Repair / Maintenance total" value={usd(repairResult.project_total)} bold />
+              {repairResult.warnings && repairResult.warnings.length > 0 && (
+                <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412", fontSize: 12, lineHeight: 1.5 }}>
+                  {repairResult.warnings.map((w, i) => <div key={i}>{w}</div>)}
+                </div>
+              )}
 
               {props.length > 1 && (
                 <div style={{ marginTop: 14, marginBottom: 12 }}>

@@ -55,7 +55,11 @@ class TestRepairQuote:
         assert body["daily_labor_rate"] == 1185.00
         assert body["labor_cost"] == pytest.approx(2370.00)
         assert body["material_cost"] == 150.0
-        assert body["project_total"] == pytest.approx(2520.00)
+        assert body["repair_cost"] == pytest.approx(2520.00)
+        # No percent_profit_pct given -> the (fixture-default) $250 minimum profit fires
+        # (Jarvis #434: repair quotes always carry at least this much profit).
+        assert body["profit_dollars"] == pytest.approx(250.00)
+        assert body["project_total"] == pytest.approx(2770.00)
         assert body["pricing_config_id"] == created["id"]
         assert body["pricing_config_hash"] == created["config_hash"]
         assert body["floors"] == {
@@ -75,6 +79,24 @@ class TestRepairQuote:
         )
         assert r.status_code == 200, r.text
         assert r.json()["daily_labor_rate"] == 1435.00
+
+    def test_repair_quote_percent_profit_pct_applies_above_floor(self, admin_client):
+        branch = _unique_branch()
+        created = _create_config(admin_client, branch=branch, config=REPAIR_CONFIG)
+        _activate_config(admin_client, created["id"])
+
+        r = admin_client.post(
+            "/estimator/repair-quote",
+            json={"branch": branch, "roof_type": "shingle", "days": 2, "crew_size": 1,
+                  "material_cost": 0, "percent_profit_pct": 0.20},
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["repair_cost"] == pytest.approx(2370.00)
+        assert body["profit_dollars"] == pytest.approx(474.00)  # 0.20 * 2370, clears the $250 floor
+        assert body["project_total"] == pytest.approx(2844.00)
+        assert body["warnings"] == []
 
     def test_repair_quote_unknown_roof_type_422(self, admin_client):
         branch = _unique_branch()

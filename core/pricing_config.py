@@ -557,6 +557,21 @@ class PricingConfig:
         val = rates.get(key)
         return self.get_or_raise(val, f"repair.daily_labor_rate.{key}")
 
+    def repair_min_profit_dollars(self) -> float:
+        """Minimum profit on any repair/maintenance quote, regardless of percent_profit_pct.
+
+        Tim, 2026-07-27 call: the repair engine returned pure cost with zero profit —
+        "That's the cost, though." $250 default mirrors the fixture's confirmed value.
+        """
+        return float((self.raw.get("repair") or {}).get("min_profit_dollars") or 250.0)
+
+    def repair_min_service_call_dollars(self) -> float:
+        """Minimum total charge for any repair/maintenance quote.
+
+        Tim, 2026-07-27 call: "we have a minimum of a $500 charge" for a service call to go out.
+        """
+        return float((self.raw.get("repair") or {}).get("min_service_call_dollars") or 500.0)
+
     def low_slope_deck_cost(self, deck_type: str) -> float:
         val = self.raw["low_slope"]["deck_types"].get(deck_type)
         if val is None and deck_type != "existing_concrete":
