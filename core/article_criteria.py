@@ -34,7 +34,10 @@ _DEAD_HOST_RE = re.compile(r'(?:href|src)="https?://[^"]*(?:myftpupload\.com|jhk
 # left those live and would have let Wendy raise it a second time.
 _TOC_BLOCK_RE = re.compile(
     r'<div class="toc">.*?</div>'
-    r'|<h2[^>]*>\s*Table of Contents\s*</h2>\s*<ul>.*?</ul>',
+    # The heading may be followed by a descriptive <p> before the list, so allow any content
+    # between them EXCEPT another heading — matching only "</h2>\s*<ul>" missed that third shape
+    # and left a TOC live after two passes. Bounded by (?!<h2) so it can never span sections.
+    r'|<h2[^>]*>\s*Table of Contents\s*</h2>(?:(?!<h2)(?!<ul).)*<ul>.*?</ul>',
     re.IGNORECASE | re.DOTALL)
 # TWO forms again, and this one bit on the LIVE site: content_md stores most "Learn more:"
 # pointers as a BARE MARKDOWN LINE, and _markdown_to_html wraps it in <p> only at publish. Gating
@@ -54,7 +57,10 @@ _DEAD_ANCHOR_RE = re.compile(
     # id=/name= anchors are excluded because `<a id="section"></a>` is an anchor TARGET, not a
     # broken link — deleting those breaks every existing deep link into the page.
     r'<a(?![a-z])(?![^>]*\b(?:href|id|name)\s*=)[^>]*>'
-    r'|<a\s[^>]*href\s*=\s*"(?!/|https?://|#|mailto:|tel:)[^"]*"',
+    r'|<a\s[^>]*href\s*=\s*"(?!/|https?://|#|mailto:|tel:)[^"]*"'
+    # tel: survives ONLY as bare digits on this site — WordPress strips the "+" E.164 form the
+    # generator emits, and a lettered "tel:305-MIA-ROOF" is not dialable at all.
+    r'|<a\s[^>]*href\s*=\s*"tel:(?![0-9]{10}")[^"]*"',
     re.IGNORECASE)
 
 

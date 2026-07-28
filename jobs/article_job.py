@@ -154,6 +154,7 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     # ensure_toc still runs — it is what stamps <h2 id="..."> anchors, which their sidebar TOC
     # needs to link to. _strip_toc then removes the VISIBLE block, which duplicated theirs.
     c = _strip_toc(ensure_toc(c))
+    c = _ensure_tel_links(c)
     c = _ensure_learn_more_links(c)
     c = _ensure_table_borders(c)
     c = _ensure_internal_links(c, keyword, ctx)
@@ -359,7 +360,12 @@ _BLEACH_ALLOWED_ATTRS: dict = {
                "width", "height", "title"],
 }
 
-_SAFE_URI_RE = re.compile(r"^(https?:|/|#|mailto:)", re.IGNORECASE)
+# `tel:` belongs here with `mailto:` — both hand off to an external handler and neither can
+# execute script. Its absence was not a policy decision, it was an omission, and it silently
+# dropped the href off every click-to-call link: the sanitizer runs inside _markdown_to_html, so
+# `<a href="tel:5615597663">561-559-ROOF</a>` was PUBLISHED as a bare `<a>` with nothing to click.
+# That is Wendy's "not linking anywhere" for the phone numbers, and it was ours, not WordPress's.
+_SAFE_URI_RE = re.compile(r"^(https?:|/|#|mailto:|tel:)", re.IGNORECASE)
 
 # An <iframe> is a full embedding of another page — a scheme check is not enough
 # (any https host would be embeddable → clickjacking/phishing frame on the public
@@ -1622,7 +1628,7 @@ def _ensure_faq_headings(content_md: str) -> str:
 # Contents" H2 + list. 59 pillar articles carry the second form.
 _TOC_BLOCK_RE = re.compile(
     r'<div class="toc">.*?</div>\s*'
-    r'|<h2[^>]*>\s*Table of Contents\s*</h2>\s*<ul>.*?</ul>\s*',
+    r'|<h2[^>]*>\s*Table of Contents\s*</h2>(?:(?!<h2)(?!<ul).)*<ul>.*?</ul>\s*',
     re.IGNORECASE | re.DOTALL)
 # Must match core.article_criteria._LEARN_MORE_P_RE. The BARE-markdown form is the common one —
 # _markdown_to_html only wraps it in <p> at publish, so stripping just the <p> form left the
@@ -1666,6 +1672,13 @@ def _strip_toc(content_md: str) -> str:
     nothing. Only the visible block goes.
     """
     return _TOC_BLOCK_RE.sub("", content_md or "")
+
+
+def _ensure_tel_links(content_md: str) -> str:
+    """Bare-digit tel: hrefs. WordPress strips the "+" E.164 form, so `tel:+15615597663` reaches
+    the reader as a dead <a> around a phone number (Wendy's "not linking anywhere", again)."""
+    from core.article_repair import _repair_tel_hrefs  # noqa: PLC0415
+    return _repair_tel_hrefs(content_md or "")[0]
 
 
 def _ensure_learn_more_links(content_md: str) -> str:

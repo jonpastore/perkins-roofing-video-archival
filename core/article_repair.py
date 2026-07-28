@@ -48,6 +48,36 @@ _REL_A_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# WordPress keeps tel: links (the theme's own render fine) but STRIPS the "+"-prefixed E.164 form
+# our generator emits, so `<a href="tel:+15615597663">561-559-ROOF</a>` reached readers as a dead
+# <a>. Letters are keypad-mapped: "tel:305-MIA-ROOF" is not dialable as written.
+_TEL_HREF_RE = re.compile(r'(<a\s[^>]*href\s*=\s*")tel:([^"]*)(")', re.IGNORECASE)
+_KEYPAD = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "22233344455566677778889999")
+
+
+def _normalize_tel(value: str) -> str:
+    """tel: target reduced to bare digits, or "" when it cannot be made dialable."""
+    digits = re.sub(r"[^0-9]", "", (value or "").upper().translate(_KEYPAD))
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    return digits if len(digits) == 10 else ""
+
+
+def _repair_tel_hrefs(content: str) -> tuple[str, list[str]]:
+    fixes: list[str] = []
+
+    def _sub(m: re.Match) -> str:
+        digits = _normalize_tel(m.group(2))
+        if not digits:
+            return m.group(0)          # left for the dead-anchor pass to unwrap
+        if digits == m.group(2):
+            return m.group(0)
+        fixes.append(f"normalised tel:{m.group(2)} -> tel:{digits}")
+        return f"{m.group(1)}tel:{digits}{m.group(3)}"
+
+    return _TEL_HREF_RE.sub(_sub, content or ""), fixes
+
+
 # An anchor carrying no href at all — already dead in the stored content.
 # (?![a-z]) is load-bearing: "<a" without it also matches "<aside class=...>", and these articles
 # use <aside> callouts everywhere. With DOTALL the ".*?</a>" would then swallow everything up to

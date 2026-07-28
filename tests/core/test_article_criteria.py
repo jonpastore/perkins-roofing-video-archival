@@ -136,6 +136,14 @@ def test_in_content_toc_block_is_rejected():
         '<h2>Table of Contents</h2><ul><li><a href="#a">Cost factors</a></li></ul><h2 id="a">', 1)
     assert "no_toc_block" in _keys_failing(content=h2_toc)
 
+    # THIRD shape: a descriptive <p> between the heading and the list. Two passes went out
+    # before this one was found still live on /perkins-roofing/.
+    h2_p_toc = _GOOD.replace(
+        '<h2 id="a">',
+        '<h2>Table of Contents</h2><p>A navigable list of topics.</p>'
+        '<ul><li><a href="#a">Cost factors</a></li></ul><h2 id="a">', 1)
+    assert "no_toc_block" in _keys_failing(content=h2_p_toc)
+
 
 def test_unlinked_learn_more_is_rejected_but_a_real_link_passes():
     """"The Learn More content at the bottom of each section is not linking anywhere."
@@ -199,6 +207,34 @@ def test_dead_anchors_are_rejected_but_aside_callouts_are_not():
     assert "no_dead_anchors" not in _keys_failing(
         content=_GOOD + '<h2><a id="section-one"></a>Section One</h2>')
     assert "no_dead_anchors" not in _keys_failing()
+
+
+def test_tel_links_must_be_bare_digits():
+    """WordPress keeps tel: (the theme's own render fine) but STRIPS the "+" E.164 form, so
+    <a href="tel:+15615597663"> reached readers as a dead <a> around a phone number. A lettered
+    "tel:305-MIA-ROOF" is not dialable at all."""
+    from core.article_repair import _repair_tel_hrefs
+    assert "no_dead_anchors" in _keys_failing(
+        content=_GOOD + '<p>Call <a href="tel:+15615597663">561-559-ROOF</a>.</p>')
+    assert "no_dead_anchors" in _keys_failing(
+        content=_GOOD + '<p>Call <a href="tel:305-MIA-ROOF">305-MIA-ROOF</a>.</p>')
+    assert "no_dead_anchors" not in _keys_failing(
+        content=_GOOD + '<p>Call <a href="tel:5615597663">561-559-ROOF</a>.</p>')
+    # and the repair produces exactly the form the gate accepts
+    fixed, _ = _repair_tel_hrefs('<a href="tel:+15615597663">x</a><a href="tel:305-MIA-ROOF">y</a>')
+    assert 'tel:5615597663' in fixed and 'tel:3056427663' in fixed
+    assert "no_dead_anchors" not in _keys_failing(content=_GOOD + fixed)
+
+
+def test_sanitizer_keeps_tel_but_still_blocks_script_schemes():
+    """The sanitizer runs inside _markdown_to_html, and tel: was missing from its allow-list — so
+    every click-to-call link was PUBLISHED as a bare <a>. That was ours, not WordPress's.
+    tel: is safe for the same reason mailto: is: it hands off to an external handler."""
+    from jobs.article_job import _markdown_to_html, sanitize_html
+    assert 'href="tel:5615597663"' in _markdown_to_html(
+        '<p><a href="tel:5615597663">561-559-ROOF</a></p>')
+    assert "javascript:" not in sanitize_html('<a href="javascript:alert(1)">x</a>')
+    assert "data:" not in sanitize_html('<a href="data:text/html,x">x</a>')
 
 
 def test_bare_table_without_a_border_is_rejected():

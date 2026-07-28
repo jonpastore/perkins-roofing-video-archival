@@ -36,14 +36,19 @@ _EMBED_RE = re.compile(r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.
 
 def _fix_content(content: str, valid_slugs=frozenset(), pillar_map=None) -> str:
     """Every deterministic ensure Wendy's review added, in the generator's own order."""
-    from core.article_repair import _repair_relative_links, _tidy_related_links
+    from core.article_repair import (
+        _repair_relative_links,
+        _repair_tel_hrefs,
+        _tidy_related_links,
+    )
     from core.brand_identity import YOUTUBE_CHANNEL_URL, YOUTUBE_CHANNEL_URL_LEGACY
     from jobs.article_job import _ensure_learn_more_links, _ensure_table_borders, _strip_toc
 
     # Anchors FIRST: a slashless href is stripped by WordPress, so the anchor arrives dead. Rooting
     # or unwrapping it before the "Learn more" pass means a pointer that CAN be saved is kept
     # rather than dropped for looking unlinked.
-    c, _ = _repair_relative_links(content or "", set(valid_slugs), dict(pillar_map or {}))
+    c, _ = _repair_tel_hrefs(content or "")
+    c, _ = _repair_relative_links(c, set(valid_slugs), dict(pillar_map or {}))
     c = _ensure_table_borders(_ensure_learn_more_links(_strip_toc(c)))
     c = _tidy_related_links(c)
     # The channel moved to the @handle; the old channel-ID URL is retired, not merely alternative.
