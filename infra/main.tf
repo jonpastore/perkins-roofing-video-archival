@@ -87,6 +87,19 @@ resource "google_identity_platform_default_supported_idp_config" "google" {
   client_secret = data.google_secret_manager_secret_version.google_idp_client_secret[0].secret_data
   enabled       = true
   depends_on    = [google_identity_platform_config.auth]
+
+  lifecycle {
+    # client_secret is WRITE-ONLY: the Identity Platform API never returns it (verified — a GET
+    # on defaultSupportedIdpConfigs/google.com responds 200 with only name/enabled/clientId). So
+    # terraform cannot confirm the applied value and, depending on which identity refreshes,
+    # plans a perpetual "update in-place" that no apply ever settles. That made the CI drift gate
+    # unpassable while real infra matched git exactly.
+    #
+    # ⚠️ TRADE-OFF: rotating google-idp-client-secret in Secret Manager will NOT be pushed by a
+    # normal apply any more. After a rotation, force it explicitly:
+    #   terraform apply -replace='google_identity_platform_default_supported_idp_config.google[0]'
+    ignore_changes = [client_secret]
+  }
 }
 
 resource "google_project_service" "apis" {

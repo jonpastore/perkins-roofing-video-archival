@@ -78,6 +78,11 @@ resource "google_project_iam_member" "deployer_roles" {
     # second CI deploy run). Consumer, not admin: it can consume enabled services, not enable
     # or disable them.
     "roles/serviceusage.serviceUsageConsumer",
+    # roles/viewer does NOT cover Identity Platform. Without this the deployer cannot refresh
+    # google_identity_platform_default_supported_idp_config, so terraform sees its write-only
+    # client_secret as unset and plans an update-in-place FOREVER — the drift gate could never
+    # go green even with zero real drift. Viewer, not admin: read-only.
+    "roles/identityplatform.viewer",
   ])
   project = var.project_id
   role    = each.value
@@ -119,6 +124,19 @@ resource "google_secret_manager_secret_iam_member" "deployer_idp_secret" {
   secret_id = google_secret_manager_secret.secrets["google-idp-client-secret"].id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# Let the human/admin service account impersonate the deployer, so its permissions can be
+# exercised LOCALLY instead of discovered one failed CI run at a time:
+#
+#   gcloud ... --impersonate-service-account=ci-deployer@...
+#
+# Every missing permission so far (secret payload access, then serviceusage) cost a full
+# push→CI→deploy cycle to find. Impersonation turns that into a local plan.
+resource "google_service_account_iam_member" "deployer_impersonation" {
+  service_account_id = google_service_account.deployer.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:perkins-deploy-sa@${var.project_id}.iam.gserviceaccount.com"
 }
 
 output "ci_workload_identity_provider" {
