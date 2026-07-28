@@ -55,3 +55,9 @@ docs/perkins-analysis/
 # Cloudflare resource plans as DESTROY — all DNS/MX/SPF/DKIM/DMARC/WAF for perkinsroofing.net.
 # The Cloudflare API TOKEN stays out of git (Secret Manager -> TF_VAR_cloudflare_api_token).
 !infra/perkins.auto.tfvars
+
+# google-github-actions/auth@v2 writes its short-lived WIF credential into the WORKSPACE as
+# gha-creds-<hash>.json. Untracked, it makes `git status --porcelain` non-empty, and deploy.sh's
+# R3-ENFORCE guard then refuses to deploy a "dirty tree". Ignoring it keeps that guard meaningful
+# AND guarantees a credential file can never be committed.
+gha-creds-*.json
