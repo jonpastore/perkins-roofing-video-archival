@@ -11,6 +11,7 @@ from core.article_repair import (
     RepairResult,
     _append_service_links,
     _embedded_known_ids,
+    _referenced_known_ids,
     _fuzzy_match_id,
     _image_allowed,
     _iso_duration,
@@ -139,13 +140,25 @@ def test_repair_video_ids_strip_when_no_fuzzy_match():
     assert issues[0]["name"] == "unknown_video_id"
 
 
-def test_embedded_known_ids_dedup_order():
+def test_referenced_known_ids_dedup_order():
     content = (
         '<a href="https://youtu.be/gtbkLgg_G9o">a</a>'
         '<a href="https://youtu.be/E_X65i3xQO0">b</a>'
         '<a href="https://youtu.be/gtbkLgg_G9o">c</a>'
     )
-    assert _embedded_known_ids(content, KNOWN) == ["gtbkLgg_G9o", "E_X65i3xQO0"]
+    assert _referenced_known_ids(content, KNOWN) == ["gtbkLgg_G9o", "E_X65i3xQO0"]
+
+
+def test_embedded_means_iframe_only_not_links():
+    """Wendy, 2026-07-28: "Google says we can only have video object schema for embedded videos,
+    not links to videos." Plain links and i.ytimg thumbnails are NOT embeds — treating them as
+    such is what put 6 VideoObject nodes on the live 26-gauge post against 1 real player."""
+    links_only = ('<a href="https://youtu.be/gtbkLgg_G9o">a</a>'
+                  '<img src="https://i.ytimg.com/vi/E_X65i3xQO0/maxres2.jpg" />')
+    assert _embedded_known_ids(links_only, KNOWN) == []
+    assert _referenced_known_ids(links_only, KNOWN) == ["gtbkLgg_G9o", "E_X65i3xQO0"]
+    embedded = links_only + '<iframe src="https://www.youtube.com/embed/gtbkLgg_G9o"></iframe>'
+    assert _embedded_known_ids(embedded, KNOWN) == ["gtbkLgg_G9o"]
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +305,7 @@ VIDEO_META = {
 
 
 def test_sync_video_jsonld_keeps_faq_builds_video():
-    content = '<a href="https://youtu.be/gtbkLgg_G9o">watch</a>'
+    content = '<iframe src="https://www.youtube.com/embed/gtbkLgg_G9o"></iframe>'
     faq_node = {"@type": "FAQPage", "mainEntity": []}
     jsonld, fixes, issues = _sync_video_jsonld(content, [faq_node], KNOWN, VIDEO_META, "meta desc")
     assert faq_node in jsonld
@@ -320,14 +333,14 @@ def test_sync_video_jsonld_unchanged_when_ids_match():
         "@type": "VideoObject",
         "contentUrl": "https://www.youtube.com/watch?v=gtbkLgg_G9o",
     }
-    content = '<a href="https://youtu.be/gtbkLgg_G9o">watch</a>'
+    content = '<iframe src="https://www.youtube.com/embed/gtbkLgg_G9o"></iframe>'
     jsonld, fixes, issues = _sync_video_jsonld(content, [existing], KNOWN, VIDEO_META, "d")
     assert fixes == []  # old id set == new id set
     assert len(jsonld) == 1
 
 
 def test_sync_video_jsonld_missing_meta_reports_issue():
-    content = '<a href="https://youtu.be/E_X65i3xQO0">watch</a>'
+    content = '<iframe src="https://www.youtube.com/embed/E_X65i3xQO0"></iframe>'
     jsonld, fixes, issues = _sync_video_jsonld(content, [], KNOWN, VIDEO_META, "d")
     assert jsonld == []
     assert len(issues) == 1
@@ -513,12 +526,13 @@ def test_repair_article_combined_end_to_end_fixture():
     assert "myftpupload.com" not in result.content_md
     assert 'href="/roof-repair-services/"' in result.content_md
 
-    # VideoObject rebuilt for the corrected id; FAQPage untouched
+    # The typo'd video id is still repaired IN THE BODY (asserted above), but this fixture only
+    # LINKS the video — it never embeds a player — so it earns NO VideoObject. Google grants the
+    # schema to video playable on the page; Wendy flagged 6 nodes against 1 player on the live
+    # 26-gauge post, 2026-07-28. FAQPage untouched.
     types = [n["@type"] for n in result.jsonld]
     assert types.count("FAQPage") == 1
-    assert types.count("VideoObject") == 1
-    video = next(n for n in result.jsonld if n["@type"] == "VideoObject")
-    assert "gtbkLgg_G9o" in video["contentUrl"]
+    assert types.count("VideoObject") == 0
 
     # service link appended (article mentions "roof repair")
     assert "perkinsroofing.net/roof-repair-services/" in result.content_md

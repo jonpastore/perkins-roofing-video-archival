@@ -12,6 +12,7 @@ Pure: regex + reuse of core.seo / core.internal_links. No I/O, no LLM.
 import re
 from dataclasses import dataclass
 
+from core.brand_identity import YOUTUBE_CHANNEL_URL, YOUTUBE_CHANNEL_URL_LEGACY
 from core.internal_links import BASE_URL, matching_service_links
 from core.seo import aio_signals, check_tier, rank_math_checks
 
@@ -19,15 +20,23 @@ _YT_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/|img\.youtube\.com/vi/|i\.ytimg\.com/vi/)"
     r"([A-Za-z0-9_-]{11})", re.IGNORECASE)
 _HREF_RE = re.compile(r'href="([^"]*)"', re.IGNORECASE)
-_H2_RE = re.compile(r"<h2\b", re.IGNORECASE)
-_ANCHOR_LINK_RE = re.compile(r'href="#', re.IGNORECASE)
 _IMG_SRC_RE = re.compile(r'<img\b[^>]*\bsrc="([^"]+)"', re.IGNORECASE)
 _TITLE_CARD_RE = re.compile(r"/(?:hqdefault|maxresdefault|mqdefault|sddefault|default)\.jpg", re.IGNORECASE)
 _VIDEO_EMBED_RE = re.compile(
     r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)", re.IGNORECASE)
 _DEAD_HOST_RE = re.compile(r'(?:href|src)="https?://[^"]*(?:myftpupload\.com|jhk\.14f)', re.IGNORECASE)
-_SUBSCRIBE_RE = re.compile(r"youtube\.com/@perkinsroofingcorp|UChJZpBYXOuR0j1EHJugv5hg|subscribe",
-                           re.IGNORECASE)
+# Wendy's 2026-07-28 review. These MUST stay in lockstep with the deterministic ensures in
+# jobs.article_job (_strip_toc / _ensure_learn_more_links / _ensure_table_borders) — the gate and
+# the fix have to agree on the same shape or the loop can never converge.
+_TOC_BLOCK_RE = re.compile(r'<div class="toc">.*?</div>', re.IGNORECASE | re.DOTALL)
+_LEARN_MORE_P_RE = re.compile(r"<p>\s*Learn more:.*?</p>", re.IGNORECASE | re.DOTALL)
+_BARE_TABLE_RE = re.compile(r"<table(?![^>]*\bclass=)[^>]*>", re.IGNORECASE)
+_RELATED_BLOCK_RE = re.compile(r'<p class="related-links">.*?</p>', re.IGNORECASE | re.DOTALL)
+# Derived from the canonical constant so the two can't drift; www. is optional because both
+# forms resolve to the same channel and the LLM writes it either way.
+_HANDLE_RE = re.compile(
+    re.escape(YOUTUBE_CHANNEL_URL).replace(r"https://www\.", r"https://(?:www\.)?"),
+    re.IGNORECASE)
 
 
 @dataclass
@@ -58,7 +67,6 @@ def check_compliance(
     types = _types(jsonld)
     vids = [v for v in _YT_ID_RE.findall(c)]
     has_known_video = any(v in known_video_ids for v in vids)
-    h2_count = len(_H2_RE.findall(c))
     img_srcs = _IMG_SRC_RE.findall(c)
     role = (ctx or {}).get("role")
 
@@ -72,6 +80,15 @@ def check_compliance(
     add("videoobject_schema", "VideoObject JSON-LD for the source video",
         ("VideoObject" in types) if has_known_video else True, True,
         "" if has_known_video else "no grounded video embedded — N/A")
+    # Google grants VideoObject only to video that is PLAYABLE on the page. Wendy, 2026-07-28:
+    # "Google says we can only have video object schema for embedded videos, not links to
+    # videos." The 26-gauge post shipped 6 VideoObject nodes against 1 iframe, because the
+    # schema builder counted every watch-link and every i.ytimg thumbnail as an "embed".
+    n_vo = sum(1 for j in (jsonld or []) if j.get("@type") == "VideoObject")
+    n_embeds = len(_VIDEO_EMBED_RE.findall(c))
+    add("videoobject_only_embedded", "One VideoObject per EMBEDDED video (never for links)",
+        n_vo <= n_embeds, True,
+        f"{n_vo} VideoObject vs {n_embeds} embedded player(s)" if n_vo > n_embeds else "")
     stray = types - {"FAQPage", "VideoObject"}
     add("schema_scoped", "Only FAQPage+VideoObject (no Rank Math dup)", not stray, True,
         f"stray schema types: {stray}" if stray else "")
@@ -107,17 +124,46 @@ def check_compliance(
     add("no_dead_hosts", "No dead staging/host links",
         not _DEAD_HOST_RE.search(c), False,
         "staging host link present" if _DEAD_HOST_RE.search(c) else "")
+    # Wendy, 2026-07-28: "There is duplication on the related links." Two different keywords can
+    # match the SAME service page, and the builder only checked the existing body, so both were
+    # appended — /metal-roofing-company/ and /tile-roofing-company/ each shipped twice.
+    rl = _RELATED_BLOCK_RE.search(c)
+    rl_hrefs = [h.rstrip("/").lower() for h in _HREF_RE.findall(rl.group(0))] if rl else []
+    rl_dupes = {h for h in rl_hrefs if rl_hrefs.count(h) > 1}
+    add("related_links_unique", "No duplicate links in the related-links block",
+        not rl_dupes, True, f"duplicated: {sorted(rl_dupes)}" if rl_dupes else "")
 
     # ── Structure ─────────────────────────────────────────────────────────
-    toc_ok = True if h2_count < 3 else bool(_ANCHOR_LINK_RE.search(c))
-    add("toc", "Anchor TOC when ≥3 sections (H2-only)", toc_ok, True,
-        "≥3 H2 sections but no anchor TOC" if not toc_ok else "")
+    # REVERSED 2026-07-28. This used to REQUIRE an anchor TOC in the body. Wendy: "The Table of
+    # Contents should not be added to the content area, as we have it automated in the side bar.
+    # We will only pick up the H2s for the sidebar." Ours duplicated theirs. The <h2 id> anchors
+    # stay (their sidebar links to them); only the visible block is banned.
+    add("no_toc_block", "No in-content TOC block (the theme sidebar builds it)",
+        not _TOC_BLOCK_RE.search(c), True,
+        "in-content TOC block found" if _TOC_BLOCK_RE.search(c) else "")
+
+    unlinked_lm = [s for s in _LEARN_MORE_P_RE.findall(c) if "<a " not in s.lower()]
+    add("learn_more_linked", "Every 'Learn more:' pointer is an actual link",
+        not unlinked_lm, True,
+        f"{len(unlinked_lm)} unlinked 'Learn more:' paragraph(s)" if unlinked_lm else "")
+
+    bare_tables = _BARE_TABLE_RE.findall(c)
+    add("table_bordered", "Tables carry a visible border", not bare_tables, True,
+        f"{len(bare_tables)} table(s) with no class/border" if bare_tables else "")
     add("answer_first", "Answer-first lede (direct declarative sentence in the intro)",
         _has_answer_first_lede(c), True)
     add("meta_len", "Meta description 120–160 chars", 120 <= len(meta or "") <= 160, True,
         f"meta is {len(meta or '')} chars")
-    add("subscribe_cta", "YouTube subscribe CTA + channel link",
-        bool(_SUBSCRIBE_RE.search(c)), True)
+    # Must be the @handle, and must NOT still carry the retired channel-ID URL. Wendy,
+    # 2026-07-28: "We've updated on live the URL for their YouTube channel. It is now
+    # https://www.youtube.com/@perkinsroofingcorp". The old regex also accepted the bare word
+    # "subscribe", so an article with no channel link at all passed.
+    has_handle = bool(_HANDLE_RE.search(c))          # www. optional — same channel either way
+    has_legacy = YOUTUBE_CHANNEL_URL_LEGACY in c or "UChJZpBYXOuR0j1EHJugv5hg" in c
+    add("subscribe_cta", "YouTube subscribe CTA links the @perkinsroofingcorp handle",
+        has_handle and not has_legacy, True,
+        "retired channel/UC... URL present" if has_legacy
+        else ("" if has_handle else "no @perkinsroofingcorp channel link"))
 
     # ── AIO: one gated signal ─────────────────────────────────────────────
     # `aio_question_headings` is the ONE aio_* signal promoted from advisory to gated, because

@@ -67,5 +67,14 @@ AUTHOR: dict = {
 }
 
 # Footer CTA link appended to every generated article (jobs/article_job._ensure_footer_link).
-# Canonical channel-ID form — stable even if the @handle above ever changes.
-YOUTUBE_CHANNEL_URL = "https://www.youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg"
+#
+# The @handle, NOT the channel-ID form. Wendy, 2026-07-28: "We've updated on live the URL for
+# their YouTube channel. It is now https://www.youtube.com/@perkinsroofingcorp". The old
+# channel/UChJZpBYXOuR0j1EHJugv5hg URL was chosen here for being "stable even if the @handle
+# changes" — but the site now publishes the handle, and two different URLs for one channel on the
+# same page is what she flagged. The handle is the canonical public form; keep them in sync.
+YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@perkinsroofingcorp"
+
+# Retired form. Still recognised so the compliance gate can REJECT it rather than silently pass
+# an article that hard-codes the old URL (core.article_criteria.subscribe_cta).
+YOUTUBE_CHANNEL_URL_LEGACY = "https://www.youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg"

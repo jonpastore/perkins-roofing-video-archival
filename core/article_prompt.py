@@ -230,9 +230,13 @@ def template_prompt(ctx: dict) -> str:
             f"- Aim for {target_words} words — moderately longer than a cluster article, but "
             f"still answer-first and dense: no padding, no filler transitions, every sentence "
             f"earns its place\n"
-            f'- Include a "Table of Contents" H2 near the top linking to each major section\n'
+            f"- Do NOT write a Table of Contents — the site theme builds one in the sidebar from "
+            f"your H2s, so one in the body renders twice\n"
             f"- 8-12 H2 sections, each covering a distinct sub-topic\n"
-            f'- Each H2 section ends with an "Learn more:" link pointing to a related cluster article\n'
+            f'- A section MAY end with a "Learn more:" pointer, but ONLY as a real markdown link '
+            f'to a page you were given — [Anchor text](/slug/). Never write "Learn more:" as plain '
+            f"prose: an unlinked pointer is a dead end for the reader and is stripped before "
+            f"publish. If you have no URL for it, leave it out\n"
             f'- Final section: "Ready to start? Here\'s your next step" CTA\n'
             f"- This page will be linked-TO by 5-10 cluster articles, so write it as the canonical reference"
         )

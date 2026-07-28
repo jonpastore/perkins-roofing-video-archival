@@ -151,7 +151,11 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     c = _ensure_faq_headings(c)
     c = _ensure_answer_first(c, keyword, fields.get("faq_json") or [])
     c = _ensure_keyword_in_intro(c, keyword)
-    c = ensure_toc(c)
+    # ensure_toc still runs — it is what stamps <h2 id="..."> anchors, which their sidebar TOC
+    # needs to link to. _strip_toc then removes the VISIBLE block, which duplicated theirs.
+    c = _strip_toc(ensure_toc(c))
+    c = _ensure_learn_more_links(c)
+    c = _ensure_table_borders(c)
     c = _ensure_internal_links(c, keyword, ctx)
     c = _ensure_footer_link(c)
     c = _relativize_internal_links(c)
@@ -1613,6 +1617,78 @@ def _ensure_faq_headings(content_md: str) -> str:
     return out
 
 
+_TOC_BLOCK_RE = re.compile(
+    r'<div class="toc">.*?</div>\s*', re.IGNORECASE | re.DOTALL)
+_LEARN_MORE_P_RE = re.compile(
+    r"<p>\s*Learn more:.*?</p>\s*", re.IGNORECASE | re.DOTALL)
+_BARE_TABLE_RE = re.compile(r"<table(?![^>]*\bclass=)([^>]*)>", re.IGNORECASE)
+
+
+def split_featured_image(content_md: str) -> tuple[str, str | None]:
+    """Split the leading article image out of the body: returns (body_without_it, its src).
+
+    The WordPress featured image is uploaded FROM this first content image, so leaving it in the
+    body renders it twice. Wendy, 2026-07-28: *"Now that we are using the featured image, there is
+    no need to add the image in the content area. That's why it shows twice."* Confirmed on the
+    live 26-gauge post — og:image and an in-content <img> were the same -featured.webp file.
+
+    Returns the content unchanged with src=None when there is no image, so the caller can skip
+    setting a featured image rather than publishing a body it silently mutated.
+    """
+    m = re.search(r"<img\b[^>]*>", content_md or "")
+    if not m:
+        return content_md or "", None
+    src = re.search(r'\bsrc="([^"]+)"', m.group(0))
+    if not src:
+        return content_md or "", None
+    return (content_md.replace(m.group(0), "", 1).lstrip(), src.group(1))
+
+
+def _strip_toc(content_md: str) -> str:
+    """Remove any in-content table of contents.
+
+    Wendy, 2026-07-28: *"The Table of Contents should not be added to the content area, as we
+    have it automated in the side bar. We will only pick up the H2s for the sidebar."*
+
+    This REVERSES what `core.seo.ensure_toc` was added to do. Their theme builds the TOC from the
+    H2s itself, so ours was a duplicate sitting above theirs. The <h2 id="..."> anchors that
+    ensure_toc also added are LEFT IN PLACE — the sidebar needs them to link to, and they cost
+    nothing. Only the visible block goes.
+    """
+    return _TOC_BLOCK_RE.sub("", content_md or "")
+
+
+def _ensure_learn_more_links(content_md: str) -> str:
+    """Drop any "Learn more:" paragraph that isn't actually a link.
+
+    Wendy, 2026-07-28: *"The Learn More content at the bottom of each section is not linking
+    anywhere. Shouldn't they be links?"* — correct: the prompt asks each H2 to end with a
+    "Learn more:" link to a related cluster article, and the model routinely emits the sentence
+    as plain text, so the reader gets a dead-end pointer to an article they can't reach.
+
+    We DROP rather than invent. Linkifying would mean guessing a slug from prose, and a
+    confidently wrong internal link is worse than no link — the related-links block already
+    carries the real internal linking. If the model DID emit a proper <a>, the paragraph is kept
+    untouched.
+    """
+    def _sub(m: "re.Match") -> str:
+        return m.group(0) if "<a " in m.group(0).lower() else ""
+    return _LEARN_MORE_P_RE.sub(_sub, content_md or "")
+
+
+def _ensure_table_borders(content_md: str) -> str:
+    """Give every table a visible border. Wendy, 2026-07-28: *"Suggest putting a border around
+    the tables that are in posts."* The generator emits a bare <table>, and the theme styles it
+    borderless, so comparison tables read as floating text.
+
+    Idempotent: a <table> that already carries a class is left alone.
+    """
+    return _BARE_TABLE_RE.sub(
+        r'<table class="perkins-table" '
+        r'style="border-collapse:collapse;width:100%;border:1px solid #2A3C73"\1>',
+        content_md or "")
+
+
 def _ensure_footer_link(content_md: str) -> str:
     """Append the YouTube subscribe CTA to every article body.
 
@@ -1674,10 +1750,18 @@ def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
     body_for_matching = re.sub(r'<p class="related-links">.*?</p>', "", content_md,
                                flags=re.IGNORECASE | re.DOTALL)
     haystack = f"{keyword} {_strip_html(body_for_matching)}"
+    # Dedupe by href, not just against content_md: two different keywords routinely match the
+    # SAME service page, and the old guard only checked the existing body — so both matches were
+    # appended and the block shipped the page twice. Wendy flagged exactly this 2026-07-28.
+    seen_hrefs = {m.group(1).rstrip("/").lower()
+                  for m in re.finditer(r'href="([^"]+)"', " ".join(links))}
     for entry in matching_service_links(haystack):
         rel = entry["url"].replace(BASE_URL, "") or "/"   # absolute -> relative path
-        if f'href="{rel}"' not in content_md:
-            links.append(f'<a href="{rel}">{entry["anchor"]}</a>')
+        key = rel.rstrip("/").lower()
+        if key in seen_hrefs or f'href="{rel}"' in content_md:
+            continue
+        seen_hrefs.add(key)
+        links.append(f'<a href="{rel}">{entry["anchor"]}</a>')
 
     # Guarantee ≥1 internal relative link (rm_internal_link). If nothing topically
     # matched and there's no pillar to link, fall back to the roofing-services hub —
@@ -2480,11 +2564,13 @@ def generate_scored_article(
     #     depends on the stochastic LLM re-refine landing the keyword early.
     fields["content_md"] = _ensure_keyword_in_intro(fields.get("content_md", ""), keyword)
 
-    # 7. Table of contents (REQUIRED): anchor-linked TOC + <h2> ids. Inserted after the intro so
-    #    it doesn't displace the answer-first lede. AI answer engines and Rank Math both credit it;
-    #    the live site had none. Idempotent and a no-op below 3 sections.
+    # 7. <h2 id="..."> anchors, then STRIP the visible TOC block. Wendy, 2026-07-28: the theme
+    #    builds the TOC in the sidebar from the H2s, so ours duplicated it in the content area.
+    #    ensure_toc still runs because it is what stamps the ids their sidebar links to.
     from core.seo import ensure_toc  # noqa: PLC0415
-    fields["content_md"] = ensure_toc(fields.get("content_md", ""))
+    fields["content_md"] = _strip_toc(ensure_toc(fields.get("content_md", "")))
+    fields["content_md"] = _ensure_learn_more_links(fields.get("content_md", ""))
+    fields["content_md"] = _ensure_table_borders(fields.get("content_md", ""))
 
     # 7. Wordcount > 300: if still short after all fixes, attempt one more refine
     if _word_count_str(fields.get("content_md", "")) <= 300:

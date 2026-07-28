@@ -5,12 +5,11 @@ from core.article_criteria import check_compliance, failing, is_compliant
 VID = "BnsaVtCb0GU"  # a real 11-char id we mark as known/grounded
 KNOWN = {VID}
 
-# A fully-compliant cluster article: 3 sections + anchor TOC, curated (non-title-card)
-# image, embedded known video, service link, subscribe CTA, pillar link, FAQ handled below.
+# A fully-compliant cluster article: 3 sections with <h2 id> anchors but NO in-content TOC block
+# (Wendy 2026-07-28 — the theme sidebar builds it), curated (non-title-card) image, embedded
+# known video, service link, subscribe CTA on the @handle, pillar link, FAQ handled below.
 _GOOD = (
     '<p>Metal roof cost in South Florida runs $12,000–$30,000 installed.</p>'
-    '<div class="toc"><p><strong>In This Article</strong></p><ul>'
-    '<li><a href="#a">A</a></li><li><a href="#b">B</a></li><li><a href="#c">C</a></li></ul></div>'
     '<h2 id="a">Cost factors</h2><p>Metal roof cost depends on square footage.</p>'
     '<h2 id="b">Materials</h2><p>Aluminum and steel differ in metal roof cost.</p>'
     '<h2 id="c">What Does the Warranty Cover?</h2><p>Metal roof cost includes warranty coverage.</p>'
@@ -20,7 +19,7 @@ _GOOD = (
     '<a href="https://perkinsroofing.net/metal-roofing-guide">Metal Roofing Guide</a> | '
     '<a href="https://perkinsroofing.net/metal-roofing-company/">metal roofing services</a></p>'
     '<p>Subscribe to our YouTube channel for more! '
-    '<a href="https://youtube.com/@perkinsroofingcorp">@perkinsroofingcorp</a></p>'
+    '<a href="https://www.youtube.com/@perkinsroofingcorp">@perkinsroofingcorp</a></p>'
 )
 _META = ("Metal roof cost in South Florida: what homeowners pay, the factors that "
          "drive price, and how Perkins Roofing estimates your project accurately.")  # 120–160
@@ -78,7 +77,7 @@ def test_short_meta_is_caught():
 
 def test_missing_subscribe_cta_is_caught():
     bad = _GOOD.replace("Subscribe to our YouTube channel for more! ", "").replace(
-        '<a href="https://youtube.com/@perkinsroofingcorp">@perkinsroofingcorp</a>', "")
+        '<a href="https://www.youtube.com/@perkinsroofingcorp">@perkinsroofingcorp</a>', "")
     assert "subscribe_cta" in _keys_failing(content=bad)
 
 
@@ -111,3 +110,80 @@ def test_answer_first_lede_passes_on_a_long_opening_sentence():
 def test_answer_first_caught_when_lede_is_only_fragments():
     bad = "<h2>Heading</h2><ul><li>a</li><li>b</li></ul>" + ("<p>word word word</p>" * 20)
     assert "answer_first" in _keys_failing(content=bad)
+
+
+# ---------------------------------------------------------------------------
+# Wendy's 2026-07-28 review. Each of these reproduces a defect she found on the LIVE
+# 26-gauge-metal-panels post, so the gate now fails what she had to point out by hand.
+# Validated against the published page before writing: every claim was correct.
+# ---------------------------------------------------------------------------
+
+def test_in_content_toc_block_is_rejected():
+    """"The Table of Contents should not be added to the content area, as we have it automated
+    in the side bar." This REVERSES the old `toc` criterion, which required one."""
+    with_toc = _GOOD.replace(
+        '<h2 id="a">',
+        '<div class="toc"><p><strong>In This Article</strong></p>'
+        '<ul><li><a href="#a">A</a></li></ul></div><h2 id="a">', 1)
+    assert "no_toc_block" in _keys_failing(content=with_toc)
+    assert "no_toc_block" not in _keys_failing()      # the good article has none
+
+
+def test_unlinked_learn_more_is_rejected_but_a_real_link_passes():
+    """"The Learn More content at the bottom of each section is not linking anywhere."
+    The live post shipped `<p>Learn more: Understanding Metal Roof Gauge and ...</p>` as prose."""
+    unlinked = _GOOD + "<p>Learn more: Understanding Metal Roof Gauge and go deeper.</p>"
+    assert "learn_more_linked" in _keys_failing(content=unlinked)
+    linked = _GOOD + '<p>Learn more: <a href="/metal-roof-gauge/">Metal Roof Gauge</a></p>'
+    assert "learn_more_linked" not in _keys_failing(content=linked)
+
+
+def test_videoobject_may_not_outnumber_embedded_players():
+    """"Google says we can only have video object schema for embedded videos, not links to
+    videos." The live post had 6 VideoObject nodes against 1 iframe."""
+    six = [{"@type": "FAQPage"}] + [{"@type": "VideoObject"}] * 6
+    assert "videoobject_only_embedded" in _keys_failing(jsonld=six)
+    assert "videoobject_only_embedded" not in _keys_failing()   # 1 VideoObject, 1 iframe
+
+
+def test_duplicate_related_links_are_rejected():
+    """"There is duplication on the related inks" — /metal-roofing-company/ shipped twice."""
+    dupe = _GOOD.replace(
+        '<a href="https://perkinsroofing.net/metal-roofing-company/">metal roofing services</a>',
+        '<a href="https://perkinsroofing.net/metal-roofing-company/">metal roofing services</a> | '
+        '<a href="https://perkinsroofing.net/metal-roofing-company/">metal roofers</a>', 1)
+    assert "related_links_unique" in _keys_failing(content=dupe)
+    assert "related_links_unique" not in _keys_failing()
+
+
+def test_retired_youtube_channel_url_is_rejected():
+    """"We've updated on live the URL for their YouTube channel. It is now
+    .../@perkinsroofingcorp". The live post carried BOTH that and the old channel/UC... URL,
+    and the old regex also accepted the bare word "subscribe" with no link at all."""
+    legacy = _GOOD.replace(
+        "https://www.youtube.com/@perkinsroofingcorp",
+        "https://www.youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg")
+    assert "subscribe_cta" in _keys_failing(content=legacy)
+    assert "subscribe_cta" in _keys_failing(content="<p>subscribe</p>")
+    assert "subscribe_cta" not in _keys_failing()
+
+
+def test_bare_table_without_a_border_is_rejected():
+    """"Suggest putting a border around the tables that are in posts." """
+    assert "table_bordered" in _keys_failing(content=_GOOD + "<table><tr><td>x</td></tr></table>")
+    ok = _GOOD + '<table class="perkins-table" style="border:1px solid #2A3C73"><tr><td>x</td></tr></table>'
+    assert "table_bordered" not in _keys_failing(content=ok)
+
+
+def test_featured_image_is_split_out_of_the_published_body():
+    """Wendy, 2026-07-28: "Now that we are using the featured image, there is no need to add the
+    image in the content area. That's why it shows twice." The WP featured image is uploaded FROM
+    the first content <img>, so the published body must not also carry it."""
+    from jobs.article_job import split_featured_image
+    body, src = split_featured_image(
+        '<img src="https://i.ytimg.com/vi/BnsaVtCb0GU/maxres2.jpg" alt="x" />\n<p>Body.</p>')
+    assert src == "https://i.ytimg.com/vi/BnsaVtCb0GU/maxres2.jpg"
+    assert "<img" not in body and body == "<p>Body.</p>"
+    # No image -> unchanged content and no featured image set (never publish a mutated body).
+    same, none_src = split_featured_image("<p>No image here.</p>")
+    assert none_src is None and same == "<p>No image here.</p>"

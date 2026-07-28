@@ -132,7 +132,10 @@ def _criteria(fields: dict) -> dict:
         "faq_ge4": len(fields.get("faq_json") or []) >= 4,
         "has_videoobject": "VideoObject" in kinds,
         "has_faqpage": "FAQPage" in kinds,
-        "has_toc": 'class="toc"' in content,
+        # Inverted 2026-07-28: an in-content TOC is now a DEFECT, not a feature — the theme
+        # sidebar builds one from the H2s and ours duplicated it (Wendy). Reported as the
+        # criterion name so a green report means the same thing as a green gate.
+        "no_toc_block": 'class="toc"' not in content,
         "curated_img": bool(img) and "default.jpg" not in img.group(1),
         "has_embed": "youtube.com/embed" in content or "youtu.be" in content,
     }
@@ -142,23 +145,25 @@ def _publish_fields(fields: dict, ctx: dict, keyword: str, status: str) -> dict:
     """Publish an already-generated COMPLIANT article to WordPress + persist its
     Article row (with role/pillar_slug so hub placement is recorded). Only ever
     called for compliant articles — the gate is upstream. Returns {wp_post_id}."""
-    import re
-
     from adapters.wordpress import category_id_for_name, featured_media_from_url, publish
     from api.routes.articles import _slugify
     from app.models import Article, SessionLocal
     from core.wp_category import pick_category_name
-    from jobs.article_job import _markdown_to_html
+    from jobs.article_job import _markdown_to_html, split_featured_image
 
     slug = fields.get("slug") or _slugify(fields.get("title") or keyword)
     content = fields.get("content_md") or ""
     # Category (Wendy: never the default bucket) + featured image (the curated frame).
     cat_id = category_id_for_name(pick_category_name(keyword, content))
-    m = re.search(r'<img[^>]*\bsrc="([^"]+)"', content)
-    featured = featured_media_from_url(m.group(1), f"{slug}-featured.jpg") if m else None
+    # The featured image IS the first content image, uploaded — so it must come OUT of the body
+    # or it renders twice (Wendy, 2026-07-28). content_md keeps it as the source a re-publish
+    # derives the featured image from; only the published html drops it.
+    body_wo_img, img_src = split_featured_image(content)
+    featured = featured_media_from_url(img_src, f"{slug}-featured.jpg") if img_src else None
+    body = body_wo_img if featured else content
     post_id = publish(
         title=fields.get("title") or keyword,
-        html=_markdown_to_html(content),
+        html=_markdown_to_html(body),
         meta_description=fields.get("meta") or "",
         jsonld=fields.get("jsonld_json") or [],
         status=status,
@@ -341,7 +346,7 @@ def _aggregate(records: list[dict]) -> dict:
         },
         "structural_pass": {
             k: sum(1 for r in ok if r.get(k)) for k in
-            ("faq_ge4", "has_videoobject", "has_faqpage", "has_toc",
+            ("faq_ge4", "has_videoobject", "has_faqpage", "no_toc_block",
              "curated_img", "has_embed")
         },
     }

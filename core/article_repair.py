@@ -46,6 +46,9 @@ _REL_A_RE = re.compile(
 _MYFTP_RE = re.compile(r'(href|src)="https?://[^/"]*\.myftpupload\.com(/[^"]*)?"', re.IGNORECASE)
 
 _VIDEO_URL_ID_RE = re.compile(r"v=([A-Za-z0-9_-]{11})")
+# Only an <iframe> is a playable embed. Google grants VideoObject schema to embedded video, not
+# to links — see _embedded_known_ids.
+_IFRAME_SRC_RE = re.compile(r'<iframe\b[^>]*\bsrc="([^"]+)"', re.IGNORECASE)
 
 # TOC shape built by core.seo.ensure_toc: <li><a href="#slug">text</a></li> per <h2 id="slug">.
 _TOC_LI_RE = re.compile(r'<li><a href="#([^"]+)">.*?</a></li>', re.IGNORECASE | re.DOTALL)
@@ -138,12 +141,37 @@ def _repair_video_ids(content: str, known_ids: set[str]) -> tuple[str, list[str]
     return content, fixes, issues
 
 
-def _embedded_known_ids(content: str, known_ids: set[str]) -> list[str]:
-    """Distinct known video ids still referenced in content, in first-seen order."""
+def _referenced_known_ids(content: str, known_ids: set[str]) -> list[str]:
+    """Distinct known video ids REFERENCED anywhere in content, in first-seen order.
+
+    "Referenced" is broad on purpose: a plain watch link, an /embed/ iframe, or an i.ytimg
+    thumbnail URL all count. Use this to answer "does this article relate to a video at all"
+    — NOT to decide what gets VideoObject schema.
+    """
     out: list[str] = []
     for vid in _YT_ID_RE.findall(content or ""):
         if vid in known_ids and vid not in out:
             out.append(vid)
+    return out
+
+
+def _embedded_known_ids(content: str, known_ids: set[str]) -> list[str]:
+    """Distinct known video ids actually EMBEDDED as a playable iframe, in first-seen order.
+
+    Wendy, 2026-07-28: *"The post has 6 video objects as shown below however Google says we can
+    only have video object schema for embedded videos, not links to videos."* She is right, and
+    this function was the bug: it matched `_YT_ID_RE` against the whole body, so every plain
+    "watch this" link and every i.ytimg thumbnail minted its own VideoObject. The 26-gauge post
+    shipped 6 VideoObject nodes against 1 real iframe.
+
+    Google's structured-data policy requires the video be playable on the page, so schema follows
+    the IFRAME and nothing else.
+    """
+    out: list[str] = []
+    for src in _IFRAME_SRC_RE.findall(content or ""):
+        for vid in _YT_ID_RE.findall(src):
+            if vid in known_ids and vid not in out:
+                out.append(vid)
     return out
 
 
@@ -179,18 +207,38 @@ def _repair_images(content: str, known_ids: set[str], keyword: str) -> tuple[str
 
     out = _IMG_RE.sub(_sub, content)
     if fixes and not _IMG_RE.search(out):
-        embedded = _embedded_known_ids(out, known_ids)
-        if embedded:
-            out = f"{_thumb_img_tag(embedded[0], keyword)}\n{out}"
-            fixes.append(f"re-added real thumbnail for video {embedded[0]!r}")
+        # REFERENCED, not embedded: this is picking a thumbnail image, and a video that is only
+        # linked still has a legitimate thumbnail. Only schema is restricted to real embeds.
+        referenced = _referenced_known_ids(out, known_ids)
+        if referenced:
+            out = f"{_thumb_img_tag(referenced[0], keyword)}\n{out}"
+            fixes.append(f"re-added real thumbnail for video {referenced[0]!r}")
     return out, fixes
+
+
+def _dedupe_link_segments(segments: list[str]) -> list[str]:
+    """Keep the first segment per href. Wendy, 2026-07-28: "There is duplication on the related
+    links" — the 26-gauge post shipped /metal-roofing-company/ and /tile-roofing-company/ twice
+    each in one block, because two different keywords can match the SAME service page."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for seg in segments:
+        if "<a " not in seg:
+            continue
+        m = re.search(r'href="([^"]+)"', seg)
+        key = (m.group(1).rstrip("/").lower() if m else seg.strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(seg)
+    return out
 
 
 def _tidy_related_links(content: str) -> str:
     content = re.sub(
         r'(<p class="related-links">Related: )(.*?)(</p>)',
         lambda m: m.group(1) + " | ".join(
-            seg for seg in (s.strip() for s in m.group(2).split("|")) if "<a " in seg
+            _dedupe_link_segments([s.strip() for s in m.group(2).split("|")])
         ) + m.group(3),
         content, flags=re.DOTALL)
     return re.sub(r'<p class="related-links">Related: ?</p>\n?', "", content)
