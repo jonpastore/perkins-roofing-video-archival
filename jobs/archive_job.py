@@ -125,3 +125,20 @@ if __name__ == "__main__":
     _limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
     result = run(limit=_limit)
     print(result)
+
+    # Per-video try/except keeps one bad video from stopping the batch — but on its own it also
+    # meant a run where EVERY video failed still exited 0. That is what execution archive-52md7
+    # did on 2026-07-28: {'archived': 0, 'skipped': 0, 'errored': 15, 'total': 15} and
+    # "Container called exit(0)". Cloud Run reported success, the scheduler would have reported
+    # success every night, and archive_uri would have stayed NULL forever — silently blocking
+    # STT, because adapters/stt_gcp.py refuses to transcribe a video without it.
+    #
+    # Fail the run when there was work to do and NOTHING succeeded. A partial failure still
+    # exits 0 (one unavailable video must not page anyone), but a total failure is a real
+    # outage and Cloud Run should show it as one.
+    if result["errored"] and not result["archived"] and not result["skipped"]:
+        logging.error(
+            "archive_job: %d/%d videos failed and none succeeded — failing the run",
+            result["errored"], result["total"],
+        )
+        sys.exit(1)

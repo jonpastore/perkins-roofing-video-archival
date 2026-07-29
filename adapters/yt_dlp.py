@@ -69,7 +69,7 @@ def pull_video(video_id: str, dst: str) -> str:
         Absolute path to the downloaded MP4 file.
 
     Raises:
-        subprocess.CalledProcessError: if yt-dlp exits non-zero.
+        RuntimeError: if yt-dlp exits non-zero — the message carries yt-dlp's stderr.
         subprocess.TimeoutExpired: if the download takes longer than 900s.
         FileNotFoundError: if no MP4 file is found in *dst* after the download.
     """
@@ -107,7 +107,20 @@ def pull_video(video_id: str, dst: str) -> str:
             ffmpeg_bin = None
     if ffmpeg_bin:
         cmd += ["--ffmpeg-location", ffmpeg_bin]
-    subprocess.run(cmd, check=True, capture_output=True, timeout=900)
+    # capture_output swallows yt-dlp's stderr, and CalledProcessError's str() prints only the
+    # command — so a failure logged as "returned non-zero exit status 1" with no reason. That
+    # cost a full diagnosis round on 2026-07-28 when 15/15 archives failed in-image (missing
+    # deno for the n-challenge solver) and the logs could not say why. Re-raise with stderr.
+    proc = subprocess.run(cmd, capture_output=True, timeout=900)  # noqa: S603
+    if proc.returncode != 0:
+        # RuntimeError, not CalledProcessError: the latter's str() prints only the command, so
+        # callers that log "%s" (jobs/archive_job.py) emitted the whole argv and no reason. The
+        # message must carry the cause. Nothing catches CalledProcessError from here.
+        err = (proc.stderr or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError(
+            f"yt-dlp failed for {video_id} (exit {proc.returncode}): "
+            f"{err[-1500:] or '(no stderr)'}"
+        )
 
     # Locate the downloaded file (ext may vary on fallback formats)
     for fname in os.listdir(dst):
