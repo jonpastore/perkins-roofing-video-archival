@@ -176,3 +176,62 @@ def test_normalize_video_maps_the_live_payload_shape():
     assert out["url"] == "https://cdn.example/v.m3u8"
     assert out["thumbnail_url"] == "https://cdn.example/l.jpg"   # prefers large
     assert out["internal"] is True
+
+
+# --- the postgres branch ---------------------------------------------------
+# Prod runs Postgres and takes ON CONFLICT DO UPDATE; the sqlite tests above never reach it,
+# so the hash gate that saves a write on every unchanged row was untested on the path that
+# actually runs. A stub session exercises it without needing a live Postgres.
+
+class _FakePgSession:
+    """Minimal stand-in: reports the postgres dialect and records executed statements."""
+
+    def __init__(self, existing_hash=None):
+        self._existing_hash = existing_hash
+        self.executed = []
+        self.info = {"tenant_id": 1}
+        self.bind = type("B", (), {"dialect": type("D", (), {"name": "postgresql"})()})()
+
+    def execute(self, stmt):
+        self.executed.append(stmt)
+        outer = self
+
+        class _Result:
+            def scalar_one_or_none(self):
+                return outer._existing_hash
+        return _Result()
+
+
+def test_postgres_upsert_writes_when_the_hash_is_new():
+    from core.companycam.mirror import content_hash as ch
+
+    session = _FakePgSession(existing_hash=None)
+    assert upsert_video(session, _video()) is True
+    # One SELECT for the hash, one INSERT ... ON CONFLICT DO UPDATE.
+    assert len(session.executed) == 2
+    compiled = str(session.executed[1]).lower()
+    assert "on conflict" in compiled and "companycam_videos" in compiled
+    assert ch(_video())  # hash is computable for the payload under test
+
+
+def test_postgres_upsert_skips_the_write_when_the_hash_is_unchanged():
+    """The whole point of the hash gate: an unchanged row costs one SELECT, zero writes."""
+    from core.companycam.mirror import content_hash as ch
+
+    payload = _video()
+    session = _FakePgSession(existing_hash=ch(payload))
+    assert upsert_video(session, payload) is False
+    assert len(session.executed) == 1, "unchanged row must not emit an INSERT"
+
+
+def test_postgres_photo_upsert_is_hash_gated_too():
+    from core.companycam.mirror import content_hash as ch
+
+    payload = _photo()
+    unchanged = _FakePgSession(existing_hash=ch(payload))
+    assert upsert_photo(unchanged, payload) is False
+    assert len(unchanged.executed) == 1
+
+    changed = _FakePgSession(existing_hash="stale")
+    assert upsert_photo(changed, payload) is True
+    assert "on conflict" in str(changed.executed[1]).lower()

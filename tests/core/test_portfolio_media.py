@@ -184,3 +184,9 @@ def test_score_carries_the_advisory_aio_signals_without_gating():
     assert all("key" in s and "pass" in s for s in result["aio"])
     # AIO failures never appear in blocking — that list is permissions only.
     assert all("aio" not in b for b in result["blocking"])
+
+
+def test_selection_without_an_id_is_rejected():
+    """A UI bug that drops the id must surface as an error, not a silent no-op item."""
+    problems = validate_selection([{"kind": "photo", "alt": "x"}], _available())
+    assert any("missing id" in p for p in problems)
