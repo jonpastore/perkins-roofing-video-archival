@@ -69,14 +69,19 @@ class CurationIn(BaseModel):
 
 
 class ProjectIn(BaseModel):
-    """Editable project fields. Everything else about a project is derived or curated."""
-    name: str
-    city: str = ""
-    section: str = "commercial"
-    companycam_url: str = ""
-    youtube_url: str = ""
-    date_start: str = ""
-    date_end: str = ""
+    """Editable project fields. Everything else about a project is derived or curated.
+
+    max_length MIRRORS the DB columns (migration 0050). Without it an oversized field reaches
+    Postgres and 500s — SQLite silently accepts any length, so tests cannot catch it and the
+    repo has a schema-bounds guard that does (tests/api/test_negative_maxlength.py).
+    """
+    name: str = Field(max_length=300)
+    city: str = Field(default="", max_length=120)
+    section: str = Field(default="commercial", max_length=40)
+    companycam_url: str = Field(default="", max_length=500)
+    youtube_url: str = Field(default="", max_length=500)
+    date_start: str = Field(default="", max_length=60)
+    date_end: str = Field(default="", max_length=60)
     notes: str = ""
     search_terms: list[str] = Field(default_factory=list)
 

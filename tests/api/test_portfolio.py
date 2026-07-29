@@ -9,7 +9,14 @@ from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
 from api.routes.portfolio import router
-from app.models import Base, PortfolioCuration, SessionLocal, engine
+from app.models import (
+    Base,
+    CompanyCamPhoto,
+    KnowifyRawRecord,
+    PortfolioCuration,
+    SessionLocal,
+    engine,
+)
 from scripts.portfolio_prefill import CANDIDATES
 
 # The routes read portfolio_curation (migration 0048) for permissions/curated media, so the
@@ -41,6 +48,45 @@ FIRST_SLUG = "fisher-island-7900-flat-roofs"
 def _clear_permissions(slug=FIRST_SLUG):
     with SessionLocal() as db:
         db.query(PortfolioCuration).filter(PortfolioCuration.slug == slug).delete()
+        db.commit()
+
+
+CC_PROJECT = "60249175"
+
+
+def _publishable(slug=FIRST_SLUG):
+    """Cleared permissions + a real gallery + contract scope: everything the gate requires.
+
+    The gate grades the PAGE, not just the permissions, so a bare permission grant no longer
+    reaches WordPress — which is the point of it.
+    """
+    with SessionLocal() as db:
+        db.query(CompanyCamPhoto).delete()
+        db.query(KnowifyRawRecord).delete()
+        for i in range(4):
+            db.add(CompanyCamPhoto(tenant_id=1, companycam_photo_id=f"gp{i}",
+                                   project_id=CC_PROJECT, url=f"http://cdn/gp{i}.jpg",
+                                   tags=[], raw={}, content_hash=f"gh{i}"))
+        db.add(KnowifyRawRecord(tenant_id=1, entity="projects", knowify_id="GP1",
+                                is_present=True, content_hash="ga",
+                                payload={"Id": "GP1", "ClientId": "GC1",
+                                         "ProjectName": "7900 Flat Roofs"}))
+        db.add(KnowifyRawRecord(tenant_id=1, entity="contracts", knowify_id="GK1",
+                                is_present=True, content_hash="gb",
+                                payload={"Id": "GK1", "ProjectId": "GP1"}))
+        for i, desc in enumerate(["Polyglass 2-Ply Built-Up Roofing System",
+                                  "Stockmeier Polyurethane Coating System",
+                                  "Stainless Steel Scupper Drains"]):
+            db.add(KnowifyRawRecord(tenant_id=1, entity="deliverables", knowify_id=f"GD{i}",
+                                    is_present=True, content_hash=f"gc{i}",
+                                    payload={"ContractId": "GK1", "Description": desc}))
+        db.query(PortfolioCuration).filter(PortfolioCuration.slug == slug).delete()
+        db.add(PortfolioCuration(
+            tenant_id=1, slug=slug, companycam_project_id=CC_PROJECT,
+            permission_property=True, permission_photos=True, permission_video=True,
+            selections=[{"kind": "photo", "id": f"gp{i}", "alt": f"Fisher Island roof view {i}"}
+                        for i in range(4)],
+        ))
         db.commit()
 
 
@@ -118,17 +164,16 @@ def test_publish_unknown_slug_404():
 def test_publish_blocked_by_permission_gate():
     """A project with no recorded permissions must 422, naming what is missing.
 
-    Video permission is deliberately NOT demanded here: nothing is curated in, so a
-    photo-only write-up must not wait on a permission no media needs. The
-    video-selected case is covered below."""
+    Naming the property is ALWAYS required. Photo and video permission are demanded only when
+    that medium is actually curated in — nothing is selected here, so a page that would ship no
+    media must not wait on permissions no media needs. Both are covered below.
+    """
     _clear_permissions()
     c = _admin_client()
     r = c.post(f"/portfolio/{FIRST_SLUG}/publish", headers=AUTH)
     assert r.status_code == 422, r.text
-    detail = r.json()["detail"]
-    assert "Permission to name property" in detail
-    assert "Permission to use photos" in detail
-    assert "Permission to use video" not in detail
+    keys = [b["key"] for b in r.json()["detail"]["blockers"]]
+    assert keys == ["permission_property"], keys
 
 
 def test_publish_demands_video_permission_once_a_video_is_curated_in():
@@ -144,7 +189,7 @@ def test_publish_demands_video_permission_once_a_video_is_curated_in():
 
     r = _admin_client().post(f"/portfolio/{FIRST_SLUG}/publish", headers=AUTH)
     assert r.status_code == 422, r.text
-    assert "Permission to use video" in r.json()["detail"]
+    assert "permission_video" in [b["key"] for b in r.json()["detail"]["blockers"]]
     _clear_permissions()
 
 
@@ -161,10 +206,10 @@ def test_publish_never_calls_wp_when_gate_fails(monkeypatch):
 
 
 def test_publish_succeeds_once_gate_is_open(monkeypatch):
-    """A project whose client permissions are recorded in portfolio_curation publishes."""
+    """A project that passes the whole gate — permissions, gallery and scope — publishes."""
     import adapters.wordpress as wp
 
-    _grant_permissions()
+    _publishable()
     monkeypatch.setattr(wp, "find_portfolio_post", lambda title: None)
     monkeypatch.setattr(
         wp, "publish_portfolio_post",
@@ -184,7 +229,7 @@ def test_publish_wp_error_returns_502(monkeypatch):
 
     import adapters.wordpress as wp
 
-    _grant_permissions()
+    _publishable()
 
     def _boom(post, **kw):
         raise requests.HTTPError("500 server error")
