@@ -28,6 +28,7 @@ def _fresh_db(monkeypatch):
     "no such table: comment_drafts". Row deletes are order-independent.
     """
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    init_db()  # create_all: idempotent, and heals if another module's drop_all ran first
     with SessionLocal() as db:
         db.query(Video).delete()
         db.commit()

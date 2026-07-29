@@ -8,15 +8,37 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 import jobs.search_indexing_job as J
-from app.models import Article, Base, SessionLocal, engine
+from app.models import Article, SessionLocal, init_db
+
+# Ensure tables exist — same pattern as tests/jobs/test_crawl_comments_rotation.py.
+init_db()
 
 
 @pytest.fixture(autouse=True)
 def _fresh_db():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    """Ensure tables exist, then wipe only the rows this file touches. Never drop.
+
+    The shared sqlite DB makes this suite order-sensitive in BOTH directions:
+
+    - Dropping at teardown breaks others. Modules like test_crawl_comments_rotation.py call
+      init_db() at import (pytest imports every module during collection, before any test) and
+      then only DELETE rows; a drop_all teardown tears their tables out. A new file doing that
+      caused 8 "no such table: comment_drafts" errors on 2026-07-28.
+    - Not creating at setup breaks you. Several suites still drop_all at teardown, so a file
+      that only deletes rows can find its tables already gone — converting this fixture to
+      pure row-deletes produced "no such table: articles" here.
+
+    init_db() is create_all, which is idempotent and self-healing, so create-but-never-drop is
+    safe against both. Row deletes then give the isolation the drop was being used for.
+    """
+    init_db()
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
     yield
-    Base.metadata.drop_all(engine)
+    with SessionLocal() as db:
+        db.query(Article).delete()
+        db.commit()
 
 
 def _seed_article(s, slug, status, updated_at):
