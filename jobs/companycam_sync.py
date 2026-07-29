@@ -1,10 +1,14 @@
-"""Cloud Run Job / cron target: CompanyCam photo backfill + sync (ahead-of-account scaffold).
+"""Cloud Run Job / cron target: CompanyCam photo + video backfill and sync.
 
-Ahead of the account: COMPANYCAM_PAT is not issued yet. When unconfigured this job
-logs and exits cleanly (exit_code=0) rather than crashing the scheduler — see
-adapters.companycam.configured(). Once a PAT is bootstrapped, this pulls every
-project and its photos per-tenant and upserts them into companycam_photos
-(core/companycam/mirror.py).
+Pulls every project and BOTH its photos and its videos per-tenant, upserting into
+companycam_photos / companycam_videos (core/companycam/mirror.py). Videos are a separate
+v2 resource with a different payload shape — not photos with a type flag.
+
+The application key is live (2026-07-28). When unconfigured this job logs and exits cleanly
+(exit_code=0) rather than crashing the scheduler — see adapters.companycam.configured().
+
+⚠️ Mirrored media carries CompanyCam's ``internal`` flag. Internal media must never reach a
+proposal or a public project page; every consumer filters on it.
 
 Single-flight: pg_try_advisory_lock key 8274126 (distinct from Knowify's ingest
 8274123 / sync 8274124 / token 8274125).
@@ -20,7 +24,7 @@ from sqlalchemy import text
 
 import adapters.companycam as companycam
 from app.models import SessionLocal
-from core.companycam.mirror import upsert_photo
+from core.companycam.mirror import upsert_photo, upsert_video
 
 log = logging.getLogger(__name__)
 
@@ -55,11 +59,13 @@ def _single_flight():
 
 
 def _sync_tenant(db, tenant_id: int) -> dict:
-    """Pull every project's photos and upsert them for one tenant.
+    """Pull every project's photos AND videos and upsert them for one tenant.
 
-    Per-project fetch errors are isolated so one bad project doesn't abort the rest.
+    Per-project, per-resource fetch errors are isolated so one bad project — or one failing
+    endpoint — doesn't abort the rest.
     """
-    counts = {"projects": 0, "photos_seen": 0, "photos_written": 0, "errors": 0}
+    counts = {"projects": 0, "photos_seen": 0, "photos_written": 0,
+              "videos_seen": 0, "videos_written": 0, "errors": 0}
     try:
         projects = companycam.list_projects()
     except Exception as exc:  # noqa: BLE001
@@ -67,27 +73,36 @@ def _sync_tenant(db, tenant_id: int) -> dict:
         counts["errors"] += 1
         return counts
 
+    # Photos and videos are SEPARATE v2 resources — a project with photos may still have video
+    # (measured 2026-07-29: 234 videos across 20 of 25 sampled projects). They are fetched in
+    # independent try blocks so a video-endpoint failure still mirrors that project's photos.
     for project in projects:
         project_id = str(project["id"])
         counts["projects"] += 1
-        try:
-            photos = companycam.list_photos(project_id)
-        except Exception as exc:  # noqa: BLE001
-            log.error(
-                "companycam sync: list_photos project=%s tenant=%d error=%s",
-                project_id, tenant_id, type(exc).__name__,
-            )
-            counts["errors"] += 1
-            continue
+        for kind, fetch, seen_key, written_key, upsert in (
+            ("list_photos", companycam.list_photos, "photos_seen", "photos_written", upsert_photo),
+            ("list_videos", companycam.list_videos, "videos_seen", "videos_written", upsert_video),
+        ):
+            try:
+                items = fetch(project_id)
+            except Exception as exc:  # noqa: BLE001
+                log.error(
+                    "companycam sync: %s project=%s tenant=%d error=%s",
+                    kind, project_id, tenant_id, type(exc).__name__,
+                )
+                counts["errors"] += 1
+                continue
 
-        for photo in photos:
-            counts["photos_seen"] += 1
-            if upsert_photo(db, photo):
-                counts["photos_written"] += 1
+            for item in items:
+                counts[seen_key] += 1
+                if upsert(db, item):
+                    counts[written_key] += 1
 
     log.info(
-        "companycam sync: tenant=%d projects=%d photos_seen=%d photos_written=%d errors=%d",
-        tenant_id, counts["projects"], counts["photos_seen"], counts["photos_written"], counts["errors"],
+        "companycam sync: tenant=%d projects=%d photos_seen=%d photos_written=%d "
+        "videos_seen=%d videos_written=%d errors=%d",
+        tenant_id, counts["projects"], counts["photos_seen"], counts["photos_written"],
+        counts["videos_seen"], counts["videos_written"], counts["errors"],
     )
     return counts
 

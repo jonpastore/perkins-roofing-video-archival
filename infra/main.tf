@@ -513,7 +513,7 @@ resource "google_cloud_run_v2_service" "api" {
 
 locals {
   job_names = toset(["ingest", "render", "article", "social", "knowify-sync", "knowify-keepwarm",
-  "enumerate-channel", "archive"])
+  "enumerate-channel", "archive", "companycam-sync"])
   # ingest (STT audio demux) and render both download full source MP4s to a memory-backed /tmp;
   # the largest Perkins video is ~2 GB, so they need real headroom or the container OOM-kills
   # (SIGKILL) mid-batch. article/social are lightweight (LLM/HTTP only).
@@ -532,6 +532,10 @@ locals {
     # archive downloads full source MP4s to a memory-backed /tmp, same as ingest/render —
     # the largest Perkins video is ~2 GB, so it needs the same headroom or it OOM-kills.
     archive = "8Gi"
+    # companycam-sync mirrors METADATA only (urls, coordinates, the internal flag) — the media
+    # itself stays on CompanyCam's CDN and is never downloaded here, so this stays light even
+    # though the account holds thousands of photos.
+    companycam-sync = "1Gi"
   }
   # ingest may run a long-form batch STT (a caption-less 97-min podcast's batch takes ~40 min);
   # give it (and render) 2h so a legit long job finishes instead of being killed mid-transcript.
@@ -545,6 +549,9 @@ locals {
     # Three channel tabs, ~900 entries, flat-playlist only — minutes, not hours.
     enumerate-channel = "1800s"
     archive           = "7200s"
+    # 50 projects x 2 paginated endpoints. The first (backfill) run is the slow one:
+    # ~2,500 photos + ~230 videos measured over the live account 2026-07-29.
+    companycam-sync = "1800s"
   }
 }
 
@@ -830,6 +837,36 @@ resource "google_cloud_scheduler_job" "archive" {
 
   http_target {
     uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/archive:run"
+    http_method = "POST"
+
+    oauth_token {
+      service_account_email = google_service_account.scheduler_sa.email
+    }
+  }
+
+  depends_on = [google_project_service.apis, google_cloud_run_v2_job.jobs]
+}
+
+# Mirror CompanyCam photos AND videos (jobs/companycam_sync.py).
+#
+# The same failure as enumerate-channel/archive above: the job was written, the application key
+# went live 2026-07-28, and nothing ever ran it — companycam_photos sat at 0 rows while
+# adapters.companycam.list_videos existed and was called by nothing. Meanwhile the account holds
+# real project media (measured 2026-07-29 over 25 of 50 projects: 2,554 photos, 234 videos, 20 of
+# the 25 with video), which is the source for project-page galleries. YouTube is NOT: the channel
+# is topic content, so there is no key that joins a channel video to a property.
+#
+# 06:00 ET — before the content chain (enumerate 07:00 / archive 07:30) so a gallery built later
+# in the day sees the morning's uploads. Metadata only; media stays on CompanyCam's CDN.
+resource "google_cloud_scheduler_job" "companycam_sync" {
+  name      = "companycam-sync"
+  region    = var.region
+  schedule  = "0 6 * * *"
+  time_zone = "America/New_York"
+  paused    = false
+
+  http_target {
+    uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/companycam-sync:run"
     http_method = "POST"
 
     oauth_token {

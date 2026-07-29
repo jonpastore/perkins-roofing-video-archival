@@ -9,7 +9,13 @@ from fastapi.testclient import TestClient
 
 from api.auth import set_verifier
 from api.routes.portfolio import router
+from app.models import Base, PortfolioCuration, SessionLocal, engine
 from scripts.portfolio_prefill import CANDIDATES
+
+# The routes read portfolio_curation (migration 0048) for permissions/curated media, so the
+# table has to exist. create-but-never-drop: a drop_all teardown here would pull tables out
+# from under modules that only DELETE rows (see the suite's isolation note).
+Base.metadata.create_all(engine)
 
 
 def _make_app():
@@ -30,6 +36,27 @@ def _sales_client():
 
 AUTH = {"Authorization": "Bearer tok"}
 FIRST_SLUG = "fisher-island-7900-flat-roofs"
+
+
+def _clear_permissions(slug=FIRST_SLUG):
+    with SessionLocal() as db:
+        db.query(PortfolioCuration).filter(PortfolioCuration.slug == slug).delete()
+        db.commit()
+
+
+def _grant_permissions(slug=FIRST_SLUG, **flags):
+    """Record real client permissions — they persist in portfolio_curation (migration 0048)
+    now, instead of the module-level constant these tests used to monkeypatch."""
+    with SessionLocal() as db:
+        db.query(PortfolioCuration).filter(PortfolioCuration.slug == slug).delete()
+        db.add(PortfolioCuration(
+            tenant_id=1, slug=slug,
+            permission_property=flags.get("property", True),
+            permission_photos=flags.get("photos", True),
+            permission_video=flags.get("video", True),
+            selections=[],
+        ))
+        db.commit()
 
 
 def test_list_requires_auth_role(monkeypatch):
@@ -89,15 +116,36 @@ def test_publish_unknown_slug_404():
 
 
 def test_publish_blocked_by_permission_gate():
-    """No candidate has confirmed client permissions yet — publish must 422, and the
-    detail must name the missing permissions."""
+    """A project with no recorded permissions must 422, naming what is missing.
+
+    Video permission is deliberately NOT demanded here: nothing is curated in, so a
+    photo-only write-up must not wait on a permission no media needs. The
+    video-selected case is covered below."""
+    _clear_permissions()
     c = _admin_client()
     r = c.post(f"/portfolio/{FIRST_SLUG}/publish", headers=AUTH)
     assert r.status_code == 422, r.text
     detail = r.json()["detail"]
     assert "Permission to name property" in detail
     assert "Permission to use photos" in detail
-    assert "Permission to use video" in detail
+    assert "Permission to use video" not in detail
+
+
+def test_publish_demands_video_permission_once_a_video_is_curated_in():
+    """The moment a video is selected, its permission becomes a real gate."""
+    with SessionLocal() as db:
+        db.query(PortfolioCuration).filter(PortfolioCuration.slug == FIRST_SLUG).delete()
+        db.add(PortfolioCuration(
+            tenant_id=1, slug=FIRST_SLUG,
+            permission_property=True, permission_photos=True, permission_video=False,
+            selections=[{"kind": "video", "id": "v1"}],
+        ))
+        db.commit()
+
+    r = _admin_client().post(f"/portfolio/{FIRST_SLUG}/publish", headers=AUTH)
+    assert r.status_code == 422, r.text
+    assert "Permission to use video" in r.json()["detail"]
+    _clear_permissions()
 
 
 def test_publish_never_calls_wp_when_gate_fails(monkeypatch):
@@ -105,6 +153,7 @@ def test_publish_never_calls_wp_when_gate_fails(monkeypatch):
     import adapters.wordpress as wp
     called = []
     monkeypatch.setattr(wp, "publish_portfolio_post", lambda post, **kw: called.append(post))
+    _clear_permissions()
 
     c = _admin_client()
     c.post(f"/portfolio/{FIRST_SLUG}/publish", headers=AUTH)
@@ -112,14 +161,10 @@ def test_publish_never_calls_wp_when_gate_fails(monkeypatch):
 
 
 def test_publish_succeeds_once_gate_is_open(monkeypatch):
-    """Simulates a confirmed-permissions project by patching the module-level gate
-    dict directly (there is no persistence for these yet — see route module docstring)."""
+    """A project whose client permissions are recorded in portfolio_curation publishes."""
     import adapters.wordpress as wp
-    import api.routes.portfolio as portfolio_routes
 
-    monkeypatch.setitem(portfolio_routes._PERMISSION_GATE, "Permission to name property", True)
-    monkeypatch.setitem(portfolio_routes._PERMISSION_GATE, "Permission to use photos", True)
-    monkeypatch.setitem(portfolio_routes._PERMISSION_GATE, "Permission to use video", True)
+    _grant_permissions()
     monkeypatch.setattr(wp, "find_portfolio_post", lambda title: None)
     monkeypatch.setattr(
         wp, "publish_portfolio_post",
@@ -138,11 +183,8 @@ def test_publish_wp_error_returns_502(monkeypatch):
     import requests
 
     import adapters.wordpress as wp
-    import api.routes.portfolio as portfolio_routes
 
-    monkeypatch.setitem(portfolio_routes._PERMISSION_GATE, "Permission to name property", True)
-    monkeypatch.setitem(portfolio_routes._PERMISSION_GATE, "Permission to use photos", True)
-    monkeypatch.setitem(portfolio_routes._PERMISSION_GATE, "Permission to use video", True)
+    _grant_permissions()
 
     def _boom(post, **kw):
         raise requests.HTTPError("500 server error")

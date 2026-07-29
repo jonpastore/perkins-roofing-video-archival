@@ -1325,6 +1325,63 @@ class CompanyCamPhoto(Base, TenantMixin):
     )
 
 
+class CompanyCamVideo(Base, TenantMixin):
+    """Mirror of one CompanyCam video (migration 0047).
+
+    A separate v2 resource from photos — different payload shape, epoch timestamps — so it
+    gets its own table rather than a `kind` column on companycam_photos.
+
+    ``internal`` defaults to True: CompanyCam lets a crew mark media internal-only, and the
+    safe default for anything we failed to classify is "do not publish".
+    """
+    __tablename__ = "companycam_videos"
+
+    id                  = Column(Integer, primary_key=True, autoincrement=True)
+    companycam_video_id = Column(String(100), nullable=False, index=True)
+    project_id          = Column(String(100), nullable=True)
+    url                 = Column(String(1000), nullable=True)
+    thumbnail_url       = Column(String(1000), nullable=True)
+    captured_at         = Column(DateTime, nullable=True)
+    lat                 = Column(Float, nullable=True)
+    lon                 = Column(Float, nullable=True)
+    status              = Column(String(50), nullable=True)
+    internal            = Column(Boolean, nullable=False, default=True)
+    raw                 = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    content_hash        = Column(String(64), nullable=False)
+    created_at          = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "companycam_video_id", name="uq_companycam_videos_tenant_video"),
+    )
+
+
+class PortfolioCuration(Base, TenantMixin):
+    """Curated media selection + client permissions for one portfolio project (migration 0048).
+
+    Keyed by candidate slug — the project list is code
+    (scripts/portfolio_prefill.CANDIDATES) and WordPress owns publish status, so this row holds
+    only human decisions: which media, in what order, with what alt text, and whether the client
+    has cleared naming/photos/video.
+    """
+    __tablename__ = "portfolio_curation"
+
+    id                    = Column(Integer, primary_key=True, autoincrement=True)
+    slug                  = Column(String(200), nullable=False, index=True)
+    companycam_project_id = Column(String(100), nullable=True)
+    youtube_url           = Column(String(500), nullable=True)
+    permission_property   = Column(Boolean, nullable=False, default=False)
+    permission_photos     = Column(Boolean, nullable=False, default=False)
+    permission_video      = Column(Boolean, nullable=False, default=False)
+    selections            = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
+    updated_by            = Column(String(320), nullable=True)
+    updated_at            = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+    created_at            = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_portfolio_curation_tenant_slug"),
+    )
+
+
 class BranchAccounting(Base, TenantMixin):
     """Per-branch QuickBooks/Knowify mapping (B9 scaffold, migration 0044).
 

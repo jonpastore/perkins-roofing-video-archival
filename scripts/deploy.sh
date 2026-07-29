@@ -107,7 +107,7 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --allow-unauthenticated --set-secrets "$SECRETS"
 
 # Point each job at the same image with its module entrypoint.
-# Terraform defines these 8 jobs (main.tf job_names). --args uses the = form because the
+# Terraform defines these 9 jobs (main.tf job_names). --args uses the = form because the
 # value begins with '-m' (gcloud would otherwise parse it as a flag).
 declare -A JOBS=(
   [ingest]="jobs.ingest_worker" [render]="jobs.render_job"
@@ -130,6 +130,10 @@ declare -A JOBS=(
   # a newly discovered video is stuck: enumerated, dated, and permanently un-transcribable.
   # Bounded per run (see ARCHIVE_BATCH below) rather than draining the whole backlog at once.
   [archive]="jobs.archive_job"
+  # companycam-sync: mirrors project photos AND videos into companycam_photos/_videos. The
+  # source for project-page galleries — the YouTube channel is topic content and cannot be
+  # joined to a property. Metadata only; the media stays on CompanyCam's CDN.
+  [companycam-sync]="jobs.companycam_sync"
 )
 
 # How many videos one scheduled archive run may pull. Downloads go through a WireGuard tunnel
