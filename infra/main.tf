@@ -1151,6 +1151,18 @@ locals {
     "companycam-client-id",      # OAuth app credentials for the same application. Not needed for the
     "companycam-client-secret",  # bearer-token calls we make today; required if/when we move to the
     # authorization-code flow (the app is a confidential client).
+    "youtube-cookies", # Netscape cookie jar for jobs/archive_job.py. YouTube bot-blocks datacenter
+    # egress ("Sign in to confirm you're not a bot"), so downloads from Cloud Run
+    # fail without an authenticated jar; a laptop works only because it is a
+    # residential IP. Mounted as a FILE — --cookies-from-browser needs a browser
+    # profile a container does not have. Produced by
+    # scripts/extract_youtube_cookies.py, which filters the browser's jar down to
+    # google/youtube domains; a raw yt-dlp export is EVERY domain you have visited
+    # (measured: 1803 cookies / 439 domains, incl. 1password.com).
+    # ⚠️ This IS a full Google session — SID/SAPISID are .google.com-scoped, so it
+    # authenticates Gmail/Drive/Cloud Console too. It is jon@perkinsroofing.net,
+    # the channel owner, never a personal account. Session cookies expire; archive_job
+    # exits non-zero when every download fails, so expiry shows as a red job.
     "squares-api-key", # SquareQuote API key. Was a PLAIN env var sourced from a laptop's
     # untracked .env, so a deploy from anywhere else silently shipped it
     # blank — and CI has no .env at all. Moved here 2026-07-28 so the

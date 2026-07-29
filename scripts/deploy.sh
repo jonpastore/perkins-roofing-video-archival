@@ -143,13 +143,22 @@ for job in "${!JOBS[@]}"; do
   if [[ "$job" == knowify-* ]]; then
     JOB_ENV="${JOB_ENV}|KNOWIFY_PULL_MODE=mcp"
   fi
+  # archive/render call adapters.yt_dlp.pull_video, which YouTube bot-blocks from datacenter
+  # IPs. Mount the cookie jar as a FILE (--set-secrets with a PATH target, not a var name) and
+  # point yt-dlp at it. Scoped to the two jobs that download — nothing else should carry a
+  # Google session. Absent/empty file = no --cookies flag, so this degrades rather than breaks.
+  JOB_SECRETS="$SECRETS"
+  if [[ "$job" == "archive" || "$job" == "render" ]]; then
+    JOB_SECRETS="${JOB_SECRETS},/secrets/youtube/cookies.txt=youtube-cookies:latest"
+    JOB_ENV="${JOB_ENV}|YTDLP_COOKIES_FILE=/secrets/youtube/cookies.txt"
+  fi
   echo "== Deploy job: $job =="
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
     --service-account "jobs-sa@${PROJECT}.iam.gserviceaccount.com" \
     --set-cloudsql-instances "$CONN" \
     --command=python --args="$ARGS" \
     --set-env-vars "$JOB_ENV" \
-    --set-secrets "$SECRETS"
+    --set-secrets "$JOB_SECRETS"
 done
 
 echo "== Done. API + jobs on image: $IMAGE =="
