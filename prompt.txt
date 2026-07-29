@@ -1,76 +1,81 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-28-pm.md, then docs/knowify-price-diff-2026-07-28.md and
-.claude/skills/verify-reproducible-from-git/SKILL.md.
+READ FIRST: CONTINUATION-2026-07-29.md, then core/wireproxy.py and
+docs/2026-07-28-companycam-credentials.md.
 
-HEAD ecf4deb, pushed. DEPLOYED platform:7688ce6 — everything after it is NOT deployed, because
-the CI deploy is still red on its last step. Prod configs jupiter v27 / miami v29 / naples v27.
-Terraform state is REMOTE now (gs://video-archival-and-content-gen-tfstate).
+HEAD 3665020, pushed, CI + deploy green. DEPLOYED platform:3665020.
+Prod configs jupiter v27 / miami v29 / naples v27. Terraform applied, drift gate exit 0.
 
 Confirm:
-  git log --oneline origin/main..HEAD                       # expect empty
+  git log --oneline origin/main..HEAD          # expect empty
   gcloud run services describe api --region us-central1 \
     --format='value(spec.template.spec.containers[0].image)'
-  bash scripts/plan_as_ci.sh                                # expect "plan exit code: 0"
+  bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
+  gcloud run jobs executions list --job=archive --region=us-central1 --limit=2
 
 WHAT IS SETTLED — do not re-derive
-  - Overhead = ONE daily number per branch x days, LIVE on all three: jupiter $1,400,
-    miami $4,250 (+50%, Jon's call), naples $1,400 CARRIED FORWARD not measured.
-  - Wendy's 7 items are all fixed and verified against what WORDPRESS STORED (context=edit),
-    112/112 published posts clean. Two of them were things our own gate REQUIRED.
-  - Knowify is bound to TIM's tenant (Company 30586 / Tenant 28403). tile/PREFERRED $165 is ours
-    and correct. 219 scope templates seeded.
-  - #430 project dimension is ON HOLD. Proposals stay 1:1.
-  - Cost does not scale with worker count. 8 workers did NOT wedge, despite the old memory.
+  - The video pipeline runs END TO END from Cloud Run: enumerate (07:00 ET, newest 60/tab) ->
+    backfill (only rows missing dates) -> archive (07:30 ET, shortest-first, batch 5) -> ingest.
+    Catalog 841 -> 856. archive_uri is filling with real gs:// objects.
+  - Archive downloads MUST go through the userspace WireGuard tunnel. YouTube bot-blocks
+    datacenter egress 15/15; cookies do NOT help (measured with the jar verified loaded).
+    A blocked exit is STICKY per config, so rotation across configs is the strategy, not retry.
+  - CompanyCam is LIVE — an APPLICATION KEY (app 16351, Read & Write, no expiry), not a PAT.
+  - Articles: 474/474 compliant. The 4 pillar_link clusters are fixed.
+  - Miami overhead $4,250/day is Jon's call, live and verified. Closed.
+  - No VM is needed. compute.googleapis.com is still disabled; the stack stays serverless.
 
 THE WORK, ranked
 
-1. MAKE THE CI DEPLOY GREEN. Every step passes except "Deploy (build image, roll service +
-   jobs)". Five attempts, each further than the last: auth -> state -> permissions ->
-   dirty-tree -> Cloud Build actAs (granted, first run with it may already have happened —
-   CHECK `gh run list --workflow=deploy.yml --limit 3` and match the SHA).
-   ⚠️ DO NOT push to find the next missing permission. Run `bash scripts/plan_as_ci.sh`, which
-   impersonates ci-deployer. Each push->CI->deploy cycle is ~10 min; impersonation is one pass.
-   Once green, prod moves 7688ce6 -> HEAD, which carries the Wendy fixes and the Knowify work.
+1. ⚠️ CUTOVER TO PRODUCTION WORDPRESS. Everything the platform publishes goes to STAGING
+   (PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com, read from the prod DB — it is
+   the single source of truth, there is no .env fallback). Prod perkinsroofing.net has had no
+   platform content since 2026-07-02; staging's newest is 7/24. The vaulted app password is a
+   STAGING administrator and 401s on prod. Needs: a prod WP application password vaulted, then
+   one PlatformConfig.WP_URL change, then verify ONE article round-trips (context=edit, product
+   UA — GoDaddy's WAF strips Authorization from default library UAs).
+   Until this happens every content improvement is invisible to Perkins' customers.
 
-2. THE 99-ARTICLE RUN. Detached at 8 workers, ~30/99 when this was written.
-   Log ~/perkins-corpus/gen99-w8-20260728-1608.log, report ~/perkins-corpus/gen99_report.json.
-   Check `pgrep -cf batch_article_job` and whether the log is still moving — a WEDGE looks like
-   a live process with a stale log, so "is it running" is the wrong signal.
-   When it finishes: verify compliance_rate == 1.0, then confirm the 2 missing pillars got made
-   (metal-roof-maintenance, roof-inspection-before-buying-a-house) so the 4 clusters failing
-   pillar_link resolve.
+2. WATCH THE ARCHIVE BACKLOG DRAIN. 13 of 856 still have archive_uri NULL. At ARCHIVE_BATCH=5
+   nightly it clears in ~3 days, then the channel's 1-2 uploads/day keep pace easily.
+   If it fails with "all N egress config(s) exhausted", Proton ranges have been blocked —
+   refresh the wireguard-configs secret with new server configs. That is maintenance.
+   Then DELETE the youtube-cookies secret: it is retained but unused, and it is a full Google
+   session (SID/SAPISID are .google.com-scoped, so Gmail/Drive/Cloud Console too).
 
-3. TELL MIAMI. Their quotes are +46-54% as of today and nobody there has been told.
+3. WENDY. A draft is sitting UNSENT in Jon's DeGenito Outlook (wendy@webpowermarketing.com, cc
+   tim@perkinsroofing.net) asking where project pages should live and whether she has a schema.
+   The portfolio work is blocked on her answer: 9 public projects are PAGES under /portfolio/
+   (parent 2358) while our 13 generated drafts are avada_portfolio CPT — different URL spaces.
+   Audit of the 9: 0/9 JSON-LD, 0/9 video, 0/9 service/location links, 4 images sharing one alt.
 
-4. SEND THE TIM DRAFT (unsent, Jon's DeGenito Outlook). Fold in the 4 open price questions from
-   docs/knowify-price-diff-2026-07-28.md so it is one email: ridge vent $9.79 vs his $12.50 ·
-   tile upgrade bundles disagree 3 ways within $5 · West Lake is tier-dependent so a flat adder
-   is the wrong SHAPE · HVHZ accent prices carried from FBC · Naples' daily burn.
-
-5. Smaller: accent items are priced but NOT selectable in the SPA (extra_line_items is API-only)
-   · plan-on-PR needs a separate read-only SA · cerberus gmail-enhanced still needs a git pull.
+4. Smaller: accent items priced but NOT selectable in the SPA (extra_line_items is API-only) ·
+   o365 MCP refresh token EXPIRED (use gmail-enhanced for that same mailbox) ·
+   proposal-reminders-daily scheduler PAUSED with no recorded reason ·
+   4 test files still drop_all at teardown — see GOTCHAS, converting them is NOT mechanical.
 
 GOTCHAS
-- `pkill -f <pattern>` MATCHES YOUR OWN SHELL and kills it mid-command. Put the pattern in a FILE.
-  (Documented already. Walked into it anyway.)
-- VERIFY THE ARTIFACT, NOT THE SOURCE. Every article defect that escaped lived in the gap between
-  content_md and published HTML. Read back what WordPress STORED (context=edit) — the CDN cache
-  made one pass look clean when it wasn't.
-- A regex that matches more than it means: `<a` also matches `<aside`, and with DOTALL `.*?</a>`
-  swallows whole callout bodies. `(?![a-z])` is load-bearing. `<a id="x">` is an anchor TARGET.
-- `terraform plan` RESOLVES DATA SOURCES, so it needs read access to any secret read that way;
-  secretmanager.viewer is not enough. A write-only attribute (Identity Platform client_secret)
-  can never be verified and plans forever — ignore_changes.
-- gcloud `--impersonate-service-account` prints a WARNING to stderr; `2>&1` turned a 53-char
-  token into 219 chars of prose. Use 2>/dev/null.
-- `gh run list --limit 1` may return a PREVIOUS run. Match the SHA before believing the status.
-- Anything the deploy needs must be IN GIT. Four things weren't today (.env config,
-  terraform.tfvars, terraform state, an API key) and the skill file itself was a fifth.
-- Python buffers stdout when not a TTY — use `-u`. Whisper transcribes "Knowify" as "notify".
-- A config change is FOUR places: fixture, prod, tests, any seeder that could replay it.
-- Cloud SQL proxy 127.0.0.1:5432, db `perkins`, user `app`; every query needs
-  set app.tenant_id='1'. PW=$(gcloud secrets versions access latest --secret=db-password).
+- "WORKS ON MY LAPTOP" FAILED FOUR TIMES TODAY. Docker on the workstation uses the HOST network,
+  so a container test proves NOTHING about Cloud Run egress. yt-dlp and deno were both missing
+  from the image while working locally.
+- A job with per-item try/except MUST NOT exit 0 when every item failed. archive_job reported
+  {'archived': 0, 'errored': 15} and exit(0) — Cloud Run showed green and would have nightly.
+- CalledProcessError.__str__ prints ONLY the command. Carry stderr in the message, and prefer
+  the ERROR lines — the tail alone surfaces a trailing WARNING instead of the actual cause.
+- pytest imports EVERY test module before running any test, so a drop_all teardown tears tables
+  out from under modules that init_db() at import and only DELETE rows. Create-but-never-drop.
+  Converting the remaining 4 caused 50 failures (for_each_tenant reads the tenants table;
+  drop-vs-truncate differ) and was REVERTED. Isolation bugs only exist in combination — run the
+  FULL suite, and capture pytest's own exit code (piping to `tail` masks it).
+- yt-dlp --cookies exports the ENTIRE browser jar: 1803 cookies / 439 domains incl. 1password.com.
+- Never leave a secret in scratch. Write to Secret Manager, then shred -u.
+- terraform apply BEFORE a deploy that adds a job — deploy.sh runs `gcloud run jobs update`,
+  which fails if the job does not exist yet.
+- gcloud --impersonate-service-account prints a WARNING to stderr; use 2>/dev/null.
+- `gh run list --limit 1` may return a PREVIOUS run. Match the SHA before believing it.
+- Cloud SQL proxy 127.0.0.1:5432 (NOT a local container — there is no local postgres), db
+  perkins, user app; every query needs set app.tenant_id='1'.
+  PW=$(gcloud secrets versions access latest --secret=db-password).
 - CI gates on `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97.
-  scripts/ and tests/ are NOT ruff-gated. Full suite ~20 min. SPA: cd web && npx tsc -b.
+  scripts/ and tests/ are NOT ruff-gated. Full suite ~6 min local. SPA: cd web && npx tsc -b.
 - bash scripts/deploy.sh refuses a dirty tree (R3-ENFORCE) — that is deliberate.
