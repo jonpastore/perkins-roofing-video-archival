@@ -512,7 +512,8 @@ resource "google_cloud_run_v2_service" "api" {
 # ---------------------------------------------------------------------------
 
 locals {
-  job_names = toset(["ingest", "render", "article", "social", "knowify-sync", "knowify-keepwarm"])
+  job_names = toset(["ingest", "render", "article", "social", "knowify-sync", "knowify-keepwarm",
+  "enumerate-channel"])
   # ingest (STT audio demux) and render both download full source MP4s to a memory-backed /tmp;
   # the largest Perkins video is ~2 GB, so they need real headroom or the container OOM-kills
   # (SIGKILL) mid-batch. article/social are lightweight (LLM/HTTP only).
@@ -525,6 +526,9 @@ locals {
     social           = "2Gi"
     knowify-sync     = "1Gi"
     knowify-keepwarm = "512Mi"
+    # enumerate-channel: yt-dlp flat-playlist over the channel tabs + Video upserts. No media
+    # download (that is ingest's job), so it stays light.
+    enumerate-channel = "1Gi"
   }
   # ingest may run a long-form batch STT (a caption-less 97-min podcast's batch takes ~40 min);
   # give it (and render) 2h so a legit long job finishes instead of being killed mid-transcript.
@@ -535,6 +539,8 @@ locals {
     social           = "3600s"
     knowify-sync     = "1800s"
     knowify-keepwarm = "300s"
+    # Three channel tabs, ~900 entries, flat-playlist only — minutes, not hours.
+    enumerate-channel = "1800s"
   }
 }
 
@@ -749,7 +755,11 @@ resource "google_cloud_scheduler_job" "search_indexing_daily" {
 # does NOT belong in the user-facing API request. The job is single-flight (Postgres advisory
 # lock), so executions can never overlap — a second execution grabs no lock and exits.
 # History: per-minute during the initial backlog drain, then paused out-of-band 2026-07-06 once
-# the queue emptied; hourly keeps new channel uploads flowing without 1,440 no-op runs/day.
+# the queue emptied; hourly drains the pending queue without 1,440 no-op runs/day.
+# NOTE: this job does NOT discover new uploads — it only advances videos already in the table
+# (jobs/ingest_worker.py selects rows whose stages aren't all done). An earlier version of this
+# comment claimed it "keeps new channel uploads flowing", which was wrong and cost 25 days of
+# missed videos: enumerate-channel below is what actually adds rows.
 # scheduler_sa already holds project-wide roles/run.invoker (see scheduler_run_invoker).
 resource "google_cloud_scheduler_job" "run_ingest" {
   name      = "run-ingest"
@@ -760,6 +770,32 @@ resource "google_cloud_scheduler_job" "run_ingest" {
 
   http_target {
     uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/ingest:run"
+    http_method = "POST"
+
+    oauth_token {
+      service_account_email = google_service_account.scheduler_sa.email
+    }
+  }
+
+  depends_on = [google_project_service.apis, google_cloud_run_v2_job.jobs]
+}
+
+# Discover NEW channel uploads and upsert Video rows (jobs/enumerate_channel.py).
+# This is the only thing that adds rows; run-ingest above merely advances rows that exist.
+# The enumerator was written and committed but never given a Cloud Run Job or a schedule, so
+# the catalog froze at its seed date: by 2026-07-28 the channel had 863 videos and the DB 841,
+# with the newest row dated 2026-07-03 — 15 uploads missed, including two that day.
+# 07:00 ET, i.e. BEFORE the 09:00-18:00 ingest window, so a video found in the morning is
+# transcribed the same day rather than waiting for the next one.
+resource "google_cloud_scheduler_job" "enumerate_channel" {
+  name      = "enumerate-channel"
+  region    = var.region
+  schedule  = "0 7 * * *"
+  time_zone = "America/New_York"
+  paused    = false
+
+  http_target {
+    uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/enumerate-channel:run"
     http_method = "POST"
 
     oauth_token {
@@ -1069,10 +1105,19 @@ locals {
     # never in git/tfvars.
     "oauth-state-hmac",      # OAuth capture-flow state HMAC key (core/oauth_state.py): value out-of-band.
     "perkins-deploy-sa-key", # perkins-deploy-sa JSON key backup (bootstrapped 2026-07-17): value out-of-band.
-    "companycam-pat",            # CompanyCam PAT (adapters/companycam.py): no account yet — same
-    # ahead-of-account pattern as pexels-api-key above; value added out-of-band once issued.
+    "companycam-pat",        # CompanyCam bearer token used by adapters/companycam.py. NOTE: despite
+    # the container name this now holds an APPLICATION KEY, not a Personal
+    # Access Token. CompanyCam offers both; the app key is tied to a
+    # registered OAuth application ("Perkins Platform (DeGenito)", app 16351,
+    # Read & Write, no expiry) rather than to Charles Mejia's user, so it
+    # survives that person leaving. Issued 2026-07-28. The container name is
+    # kept because GCP secrets cannot be renamed and the value is referenced
+    # as COMPANYCAM_PAT in deploy.sh.
     "companycam-webhook-secret", # CompanyCam webhook signature secret: value out-of-band once issued.
-    "squares-api-key",           # SquareQuote API key. Was a PLAIN env var sourced from a laptop's
+    "companycam-client-id",      # OAuth app credentials for the same application. Not needed for the
+    "companycam-client-secret",  # bearer-token calls we make today; required if/when we move to the
+    # authorization-code flow (the app is a confidential client).
+    "squares-api-key", # SquareQuote API key. Was a PLAIN env var sourced from a laptop's
     # untracked .env, so a deploy from anywhere else silently shipped it
     # blank — and CI has no .env at all. Moved here 2026-07-28 so the
     # value is injected via --set-secrets like every other credential.

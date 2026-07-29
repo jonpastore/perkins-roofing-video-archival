@@ -83,12 +83,17 @@ SECRETS="${SECRETS},PEXELS_API_KEY=pexels-api-key:latest"
 # SquareQuote API key. Was a plain env var read from an untracked .env, so any deploy from a
 # machine without that file shipped it blank. Injected like every other credential now.
 SECRETS="${SECRETS},SQUARES_API_KEY=squares-api-key:latest"
-# CompanyCam (adapters/companycam.py): NOT wired into --set-secrets yet — the connector is
-# inert without these env vars (configured()==False, webhook 503s), and injecting versionless
-# secrets would fail EVERY deploy (incl. unrelated changes). When Jon is on the account and the
-# PAT exists, add the versions (gcloud secrets versions add companycam-pat / -webhook-secret)
-# and re-add: SECRETS="${SECRETS},COMPANYCAM_PAT=companycam-pat:latest,COMPANYCAM_WEBHOOK_SECRET=companycam-webhook-secret:latest"
-# The secret containers are already declared in infra/main.tf local.secret_ids.
+# CompanyCam (adapters/companycam.py). The bearer token is live as of 2026-07-28 — an
+# APPLICATION KEY (tied to the registered OAuth app "Perkins Platform (DeGenito)", Read &
+# Write, no expiry), NOT a Personal Access Token, so it does not die with an individual's
+# user account. Verified against the live API: /v2/projects, /projects/{id}/photos and
+# /projects/{id}/videos all 200.
+SECRETS="${SECRETS},COMPANYCAM_PAT=companycam-pat:latest"
+# COMPANYCAM_WEBHOOK_SECRET is deliberately still NOT wired: that container has no version,
+# and a versionless secret in --set-secrets fails EVERY deploy, including unrelated ones.
+# Add it here only once `gcloud secrets versions add companycam-webhook-secret` has run.
+# companycam-client-id / -client-secret are stored but not injected either — nothing uses the
+# authorization-code flow yet; they exist so the app can be moved onto it without re-issuing.
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .
@@ -102,7 +107,7 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --allow-unauthenticated --set-secrets "$SECRETS"
 
 # Point each job at the same image with its module entrypoint.
-# Terraform defines these 6 jobs (main.tf job_names). --args uses the = form because the
+# Terraform defines these 7 jobs (main.tf job_names). --args uses the = form because the
 # value begins with '-m' (gcloud would otherwise parse it as a flag).
 declare -A JOBS=(
   [ingest]="jobs.ingest_worker" [render]="jobs.render_job"
@@ -116,6 +121,9 @@ declare -A JOBS=(
   # so parallel refresh+rotate+write is race-free. Deploy conditional on Wave-9 idle-TTL
   # measurement (if TTL > 14h, disable the knowify-keepwarm Cloud Scheduler instead).
   [knowify-keepwarm]="jobs.knowify_sync"
+  # enumerate-channel: the ONLY thing that adds new Video rows. ingest advances existing rows
+  # only, so without this the catalog silently freezes at whatever was last seeded.
+  [enumerate-channel]="jobs.enumerate_channel"
 )
 for job in "${!JOBS[@]}"; do
   # knowify-keepwarm passes an extra --refresh-only flag to skip data sync.
