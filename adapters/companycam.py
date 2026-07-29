@@ -1,9 +1,14 @@
-"""CompanyCam photo-pull adapter.
+"""CompanyCam photo/video-pull adapter.
 
-Ahead-of-account scaffold: PAT not issued yet. ``configured()`` lets callers (the
-sync job, health probes) degrade gracefully instead of crashing when the PAT is
-unset. Every network call still raises RuntimeError on a missing PAT or a non-2xx
-response, matching adapters/resend.py.
+LIVE since 2026-07-28. ``COMPANYCAM_PAT`` holds an **Application Key** (bearer token tied to
+the registered OAuth app "Perkins Platform (DeGenito)", Read & Write, no expiry) — not a
+Personal Access Token, despite the env var and secret names, which are kept because GCP
+secrets cannot be renamed. An app key is preferred over a PAT because a PAT dies with the
+individual user account it belongs to.
+
+``configured()`` lets callers (the sync job, health probes) degrade gracefully rather than
+crash when the token is unset. Every network call still raises RuntimeError on a missing
+token or a non-2xx response, matching adapters/resend.py.
 """
 from __future__ import annotations
 
@@ -14,7 +19,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from core.companycam.rest import UA, photos_url, projects_url
+from core.companycam.rest import UA, photos_url, projects_url, videos_url
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +73,38 @@ def normalize_photo(raw: dict[str, Any]) -> dict[str, Any]:
         "tags": raw.get("tags") or [],
         "raw": raw,
     }
+
+
+def normalize_video(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a raw CompanyCam video into the same stable shape as normalize_photo.
+
+    Videos are NOT photos with a different type: the payload has ``playback_url`` +
+    ``thumbnail_urls`` (a dict of large/medium/small) where a photo has ``uris`` (a list of
+    {type, uri}), and its timestamps are unix epoch ints. Shape verified against a live
+    payload 2026-07-28.
+
+    ``internal`` is carried through deliberately — CompanyCam lets a crew mark media
+    internal-only, and anything internal must never reach a proposal or a public project
+    page. Callers are expected to filter on it.
+    """
+    coordinates = raw.get("coordinates") or {}
+    thumbs = raw.get("thumbnail_urls") or {}
+    return {
+        "companycam_video_id": str(raw["id"]),
+        "project_id": str(raw.get("project_id")) if raw.get("project_id") is not None else None,
+        "url": raw.get("playback_url"),
+        "thumbnail_url": thumbs.get("large") or thumbs.get("medium") or thumbs.get("small"),
+        "captured_at": raw.get("captured_at"),
+        "lat": coordinates.get("lat"),
+        "lon": coordinates.get("lon"),
+        "status": raw.get("status"),
+        "internal": bool(raw.get("internal")),
+        "raw": raw,
+    }
+
+
+def list_videos(project_id: str) -> list[dict[str, Any]]:
+    return [normalize_video(v) for v in _get_all(videos_url(project_id))]
 
 
 def ping(per_page: int = 1) -> None:

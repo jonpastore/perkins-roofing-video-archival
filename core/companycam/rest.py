@@ -19,3 +19,9 @@ def photos_url(project_id: str) -> str:
 
 def photo_url(photo_id: str) -> str:
     return f"{API}/photos/{photo_id}"
+
+
+def videos_url(project_id: str) -> str:
+    """Videos are a SEPARATE v2 resource from photos — a project's clips do not come back
+    from /photos. Verified live 2026-07-28: /projects/{id}/videos returns 200."""
+    return f"{API}/projects/{project_id}/videos"
