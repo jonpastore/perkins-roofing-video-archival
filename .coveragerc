@@ -9,6 +9,11 @@ omit =
 [report]
 fail_under = 100
 show_missing = true
+# ⚠️ precision is NOT cosmetic — it is what fail_under compares against. At the default
+# precision (0) coverage.py rounds before the check, so a "97%" gate really means ">= 96.5%":
+# 96.56% rounded to 97 and PASSED on 6dcfde9, 96.47% rounded to 96 and FAILED on 0f27ab1,
+# silently skipping that deploy. With precision = 2 the gate is the number it claims to be.
+precision = 2
 exclude_lines =
     pragma: no cover
     \.\.\.

@@ -24,16 +24,14 @@ Run:
 import logging
 import os
 import sys
-from contextlib import contextmanager
 from typing import Any
-
-from sqlalchemy import text
 
 import core.knowify.tokens as tokens
 from app.models import SessionLocal
 from core.knowify import mcp_client
 from core.knowify.mirror import tombstone_absent, upsert_raw, write_state
 from core.knowify.promote import promote_run
+from core.single_flight import single_flight
 from core.tenant_loop import for_each_tenant
 
 log = logging.getLogger(__name__)
@@ -60,30 +58,9 @@ _OBJECT_STATE_FILTER = {"where[ObjectState][$in]": "Active,Cancelled,Deleted"}
 # Advisory lock — single-flight
 # ---------------------------------------------------------------------------
 
-@contextmanager
 def _single_flight():
-    """Yield True if this process holds the sync advisory lock, False to skip.
-
-    Session-scoped: process death auto-releases. No-op on SQLite (always True).
-    Key 8274124 is distinct from ingest (8274123) and token refresh (8274125).
-    """
-    s = SessionLocal()
-    s.info["platform_scope"] = True  # platform-level; no tenant GUC needed
-    is_pg = s.bind.dialect.name == "postgresql"
-    held = True
-    try:
-        if is_pg:
-            held = bool(
-                s.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _LOCK_KEY}).scalar()
-            )
-        yield held
-    finally:
-        try:
-            if held and is_pg:
-                s.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
-                s.commit()
-        finally:
-            s.close()
+    """Advisory-lock guard — see core.single_flight for why it commits on acquire."""
+    return single_flight(SessionLocal, _LOCK_KEY)
 
 
 # ---------------------------------------------------------------------------

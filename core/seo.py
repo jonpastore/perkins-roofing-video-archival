@@ -55,10 +55,23 @@ _VIDEO_BARE_URL_RE = re.compile(
 )
 
 
+_HTML5_VIDEO_RE = re.compile(r"<video\b[^>]*\bsrc=[\"'][^\"']+", re.IGNORECASE)
+
+
 def _has_video_embed(content: str) -> bool:
-    """True when content contains a real video embed (iframe or bare oEmbed URL)."""
+    """True when content contains a real video embed.
+
+    Three shapes, all of which PLAY on the page — which is the distinction Google draws when
+    granting VideoObject: a YouTube iframe, a bare oEmbed URL, and a self-hosted <video>
+    element (project pages embed CompanyCam site video that way; there is no iframe involved).
+    A link to a video is still not an embed.
+    """
     text = content or ""
-    return bool(_VIDEO_IFRAME_RE.search(text) or _VIDEO_BARE_URL_RE.search(text))
+    return bool(
+        _VIDEO_IFRAME_RE.search(text)
+        or _VIDEO_BARE_URL_RE.search(text)
+        or _HTML5_VIDEO_RE.search(text)
+    )
 
 
 # Answer-first: first 200 chars of body text contain a sentence-ending period or

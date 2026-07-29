@@ -17,6 +17,7 @@ Approved modules (may use text() for legitimate infrastructure reasons):
   - api/auth.py             — GCIP/platform_admin claim resolution (TRD §4.2, §4.4)
   - api/routes/config.py    — health-check SELECT 1 probe
   - app/models.py           — seed helper uses raw insert constructs
+  - core/single_flight.py   — pg_try_advisory_lock/unlock (extracted from the three job copies)
   - jobs/ingest_worker.py   — pg_try_advisory_lock() requires raw SQL
   - scripts/                — migration runner
   - infra/migrations/       — SQL files (not Python, but for documentation)
@@ -38,6 +39,7 @@ _APPROVED_PREFIXES = (
     "api/app.py",               # /internal/tenants platform-admin endpoint via PlatformSessionLocal (RLS-exempt)
     "api/routes/config.py",     # health-check SELECT 1 probe
     "app/models.py",            # seed helper (_seed_perkins_tenant) uses raw helpers
+    "core/single_flight.py",    # pg_try_advisory_lock/unlock — parameterized :k, no tenant data
     "jobs/ingest_worker.py",    # pg_try_advisory_lock requires raw SQL
     "core/knowify/tokens.py",   # JB-knowify: pg_advisory_lock (shared token-writer lock 8274125) — parameterized :k, safe
     "core/tenant_loop.py",      # F5: active-tenant enumeration on the platform tenants table

@@ -16,38 +16,21 @@ Run: .venv/bin/python -m jobs.ingest_worker [limit]   (limit omitted -> INGEST_C
 """
 import os
 import sys
-from contextlib import contextmanager
 
-from sqlalchemy import func, text
+from sqlalchemy import func
 
 from app import ingest
 from app.config import settings
 from app.models import IngestionRun, SessionLocal, Video
+from core.single_flight import single_flight
 
 STAGES = ("transcript", "graph", "embed")
 _LOCK_KEY = 8274123  # app-wide constant id for the ingest single-flight advisory lock
 
 
-@contextmanager
 def _single_flight():
-    """Yield True if this process holds the ingest advisory lock (should run), False if another
-    execution already holds it (skip). Session-scoped: if the process dies the connection drops
-    and the lock auto-releases. No-op lock on sqlite (dev) — always yields True."""
-    s = SessionLocal()
-    s.info["platform_scope"] = True  # advisory lock is platform-level; no tenant GUC needed
-    is_pg = s.bind.dialect.name == "postgresql"
-    held = True
-    try:
-        if is_pg:
-            held = bool(s.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _LOCK_KEY}).scalar())
-        yield held
-    finally:
-        try:
-            if held and is_pg:
-                s.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
-                s.commit()
-        finally:
-            s.close()
+    """Advisory-lock guard — see core.single_flight for why it commits on acquire."""
+    return single_flight(SessionLocal, _LOCK_KEY)
 
 
 def _pending_video_ids(s, limit=None):

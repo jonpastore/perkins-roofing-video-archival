@@ -32,6 +32,12 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from core.portfolio import map_to_post, needs_human
+from core.portfolio_content import (
+    build_faq,
+    build_meta,
+    build_project_jsonld,
+    build_write_up,
+)
 from core.portfolio_media import (
     companycam_project_id,
     gallery_html,
@@ -165,6 +171,42 @@ def _candidate_summary(candidate: dict, wp_by_title: dict | None = None,
     }
 
 
+def _media_by_id(available: dict) -> dict:
+    return {
+        **{f"photo:{p['companycam_photo_id']}": p for p in available.get("photos", [])},
+        **{f"video:{v['companycam_video_id']}": v for v in available.get("videos", [])},
+    }
+
+
+def _location_slugs() -> list[str]:
+    """Slugs of the location pages that actually exist, so an internal link never 404s.
+
+    Best-effort: WordPress being unreachable costs the location link, not the page."""
+    from adapters.wordpress import list_location_page_slugs  # noqa: PLC0415
+    try:
+        return list_location_page_slugs()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("wp location page lookup failed: %s", exc)
+        return []
+
+
+def _render_project(candidate: dict, selections: list, available: dict) -> tuple[str, list]:
+    """(body_html, jsonld) for a project — the SAME render the score is taken of and the one
+    publish ships, so a score can never describe a page that was never built."""
+    media = _media_by_id(available)
+    photos = sum(1 for s in selections if s.get("kind") == "photo")
+    videos = sum(1 for s in selections if s.get("kind") == "video")
+    body = build_write_up(
+        candidate,
+        gallery_html=gallery_html(selections, media),
+        known_location_slugs=_location_slugs(),
+        photo_count=photos,
+        video_count=videos,
+    )
+    faq = build_faq(candidate, photo_count=photos, video_count=videos)
+    return body, build_project_jsonld(candidate, selections, media, faq=faq)
+
+
 def _placeholder_content(candidate: dict) -> str:
     """Minimal draft body when no LLM-grounded write-up exists yet (see
     scripts/portfolio_prefill.py for the full grounded-generation pipeline — out of scope
@@ -219,10 +261,16 @@ def get_portfolio_media(
         {"name": candidate["name"], "city": candidate["city"], "section": candidate["section"]},
         content_html="",
     )
+    body_html, jsonld = _render_project(candidate, selections, available)
     score = score_project(
-        title=preview["title"], meta=candidate.get("notes") or "",
-        content_html=_placeholder_content(candidate), selections=selections,
-        has_jsonld=False, permissions=perms,
+        title=preview["title"], meta=build_meta(candidate),
+        content_html=body_html, selections=selections,
+        has_jsonld=bool(jsonld), permissions=perms,
+        faq=build_faq(
+            candidate,
+            photo_count=sum(1 for s in selections if s.get("kind") == "photo"),
+            video_count=sum(1 for s in selections if s.get("kind") == "video"),
+        ),
     )
     return {
         "slug": slug,
@@ -315,11 +363,17 @@ def publish_portfolio_project(
     cc_id = (row.companycam_project_id if row and row.companycam_project_id
              else companycam_project_id(candidate.get("companycam_url")))
     available = _available_media(db, cc_id, perms)
-    media_by_id = {
-        **{f"photo:{p['companycam_photo_id']}": p for p in available["photos"]},
-        **{f"video:{v['companycam_video_id']}": v for v in available["videos"]},
-    }
-    body_html = _placeholder_content(candidate) + gallery_html(selections, media_by_id)
+    body_html, jsonld = _render_project(candidate, selections, available)
+
+    # JSON-LD ships INSIDE the post body: WordPress owns the <head>, and Rank Math strips
+    # unknown head injections. A script block in the content survives and validates.
+    if jsonld:
+        import json as _json  # noqa: PLC0415
+        body_html += (
+            '<script type="application/ld+json">'
+            + _json.dumps(jsonld, separators=(",", ":"))
+            + "</script>"
+        )
 
     post = map_to_post(
         {"name": candidate["name"], "city": candidate["city"], "section": candidate["section"]},

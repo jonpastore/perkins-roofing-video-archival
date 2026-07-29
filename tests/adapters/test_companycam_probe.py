@@ -120,3 +120,25 @@ def test_get_all_raises_rather_than_truncating_at_the_page_cap(monkeypatch):
                         lambda url, params: [{"id": f"p{params['page']}-{i}"} for i in range(50)])
     with pytest.raises(RuntimeError, match="exceeded 3 pages"):
         companycam._get_all("http://x")
+
+
+def test_a_404_on_a_project_sub_resource_is_empty_not_an_error(monkeypatch):
+    """4 of 3,684 real projects 404 on /videos while appearing in the project list. Counting
+    that as an error made the job exit 1, retry to the cap, and never stamp those projects —
+    so they re-failed on every run, forever."""
+    def not_found(url, params=None):
+        raise companycam.CompanyCamNotFound("CompanyCam API error 404: not found")
+
+    monkeypatch.setattr(companycam, "_get", not_found)
+    assert companycam.list_videos("38534163") == []
+    assert companycam.list_photos("38534163") == []
+
+
+def test_other_http_errors_still_raise(monkeypatch):
+    """A 500 is a real failure — swallowing it would silently shrink the mirror."""
+    def boom(url, params=None):
+        raise RuntimeError("CompanyCam API error 500: server error")
+
+    monkeypatch.setattr(companycam, "_get", boom)
+    with pytest.raises(RuntimeError, match="500"):
+        companycam.list_videos("1")

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from functools import lru_cache
 from urllib.parse import urljoin, urlparse
 
@@ -451,6 +452,39 @@ def list_portfolio_posts() -> list[dict]:
     resp.raise_for_status()
     return [{"id": p["id"], "status": p["status"],
              "title": p["title"]["rendered"].strip()} for p in resp.json()]
+
+
+def list_location_page_slugs() -> list[str]:
+    """Slugs of the published location pages, e.g.
+    "south-florida-service-areas/miami-dade/sunny-isles-beach".
+
+    Project pages link to the matching location page, and the ONLY way to know a page exists
+    is to ask — the nine live project pages link to nothing, and guessing a URL from the city
+    name would replace "no link" with "a 404". Uses the `link` WordPress returns rather than
+    reconstructing a path from the slug, since the tree is nested under counties.
+    """
+    url = _wp_api_url("/wp-json/wp/v2/pages")
+    slugs: list[str] = []
+    page = 1
+    while True:
+        resp = _session.get(url, auth=_auth(), params={
+            "status": "publish", "per_page": 100, "page": page,
+            "search": "service-areas", "_fields": "link",
+        }, timeout=20)
+        if resp.status_code == 400:  # past the last page
+            break
+        resp.raise_for_status()
+        batch = resp.json()
+        if not batch:
+            break
+        for item in batch:
+            path = re.sub(r"^https?://[^/]+/", "", item.get("link", "")).strip("/")
+            if path:
+                slugs.append(path)
+        if len(batch) < 100:
+            break
+        page += 1
+    return slugs
 
 
 def find_portfolio_post(title: str) -> dict | None:

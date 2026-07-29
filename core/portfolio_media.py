@@ -149,6 +149,7 @@ def score_project(
     selections: Iterable[dict],
     has_jsonld: bool,
     permissions: dict[str, bool],
+    faq: Optional[list] = None,
     keyword: str = "",
     date_modified_days: Optional[int] = None,
 ) -> dict[str, Any]:
@@ -161,7 +162,7 @@ def score_project(
     legal gate, not a score.
     """
     sels = list(selections)
-    base = score_article(title, meta, content_html, faq_json=None,
+    base = score_article(title, meta, content_html, faq_json=list(faq or []),
                          has_jsonld=has_jsonld, keyword=keyword)
 
     photos = [s for s in sels if s.get("kind") == "photo"]

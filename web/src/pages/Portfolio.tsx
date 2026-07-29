@@ -206,6 +206,18 @@ function CurationPanel({ slug, onSaved }: { slug: string; onSaved: () => void })
     setSel((prev) => prev.map((s) => (s.kind === "photo" && s.id === id ? { ...s, alt } : s)));
   }
 
+  // Drag to reorder. Selection order IS publish order: it drives the gallery, and the first
+  // image is the one marked representativeOfPage in the JSON-LD.
+  function move(from: number, to: number) {
+    if (from === to || to < 0 || to >= sel.length) return;
+    setSel((prev) => {
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+  }
+
   async function save() {
     setSaving(true);
     setErr(null);
@@ -239,6 +251,10 @@ function CurationPanel({ slug, onSaved }: { slug: string; onSaved: () => void })
     sel.some((s) => s.kind === kind && s.id === id);
   const altOf = (id: string) => sel.find((s) => s.kind === "photo" && s.id === id)?.alt ?? "";
   const noMedia = view.available.photos.length === 0 && view.available.videos.length === 0;
+  const thumbFor = (s: Selection) =>
+    s.kind === "photo"
+      ? view.available.photos.find((p) => p.companycam_photo_id === s.id)?.url
+      : view.available.videos.find((v) => v.companycam_video_id === s.id)?.thumbnail_url;
 
   return (
     <div style={{ display: "flex", gap: 24, padding: "12px 14px", background: BRAND.bg }}>
@@ -340,6 +356,57 @@ function CurationPanel({ slug, onSaved }: { slug: string; onSaved: () => void })
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {sel.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 4 }}>
+              Publish order — drag to reorder. The first image is the one search engines and AI
+              treat as representing the page.
+            </div>
+            <ol
+              style={{ display: "flex", flexWrap: "wrap", gap: 6, listStyle: "none", padding: 0, margin: 0 }}
+              onDragOver={(e) => e.preventDefault()}
+            >
+              {sel.map((item, i) => (
+                <li
+                  key={`${item.kind}:${item.id}`}
+                  draggable
+                  onDragStart={(e) => e.dataTransfer.setData("text/plain", String(i))}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    move(Number(e.dataTransfer.getData("text/plain")), i);
+                  }}
+                  title={item.alt || item.kind}
+                  style={{
+                    width: 74, cursor: "grab", border: `1px solid ${BRAND.border}`,
+                    borderRadius: 4, padding: 2, background: "#fff", position: "relative",
+                  }}
+                >
+                  <img
+                    src={thumbFor(item) ?? ""}
+                    alt=""
+                    style={{ width: "100%", height: 48, objectFit: "cover", display: "block" }}
+                  />
+                  <span style={{ position: "absolute", top: 2, left: 4, fontSize: 10, color: "#fff",
+                                 textShadow: "0 0 3px #000" }}>
+                    {i + 1}
+                    {item.kind === "video" ? " ▶" : ""}
+                  </span>
+                  <span style={{ display: "flex", justifyContent: "space-between", padding: "0 2px" }}>
+                    <button type="button" onClick={() => move(i, i - 1)} disabled={i === 0}
+                            style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11 }}>
+                      ←
+                    </button>
+                    <button type="button" onClick={() => move(i, i + 1)} disabled={i === sel.length - 1}
+                            style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11 }}>
+                      →
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ol>
           </div>
         )}
 

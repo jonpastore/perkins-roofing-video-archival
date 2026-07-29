@@ -18,9 +18,6 @@ Run:
 """
 import logging
 import sys
-from contextlib import contextmanager
-
-from sqlalchemy import text
 
 import adapters.companycam as companycam
 from app.models import SessionLocal
@@ -30,6 +27,7 @@ from core.companycam.mirror import (
     upsert_project,
     upsert_video,
 )
+from core.single_flight import single_flight
 
 log = logging.getLogger(__name__)
 
@@ -38,29 +36,9 @@ _LOCK_KEY = 8274126  # distinct from knowify ingest (8274123), sync (8274124), t
 _COMPANYCAM_TENANT_ID = 1
 
 
-@contextmanager
 def _single_flight():
-    """Yield True if this process holds the sync advisory lock, False to skip.
-
-    Session-scoped: process death auto-releases. No-op on SQLite (always True).
-    """
-    s = SessionLocal()
-    s.info["platform_scope"] = True  # platform-level; no tenant GUC needed
-    is_pg = s.bind.dialect.name == "postgresql"
-    held = True
-    try:
-        if is_pg:
-            held = bool(
-                s.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _LOCK_KEY}).scalar()
-            )
-        yield held
-    finally:
-        try:
-            if held and is_pg:
-                s.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _LOCK_KEY})
-                s.commit()
-        finally:
-            s.close()
+    """Advisory-lock guard — see core.single_flight for why it commits on acquire."""
+    return single_flight(SessionLocal, _LOCK_KEY)
 
 
 def _sync_tenant(db, tenant_id: int) -> dict:
@@ -90,6 +68,12 @@ def _sync_tenant(db, tenant_id: int) -> dict:
         project_id = str(project["id"])
         counts["projects"] += 1
         row, needs_media = upsert_project(db, project)
+        # Commit BEFORE any network call. Otherwise the transaction opened by upsert_project
+        # stays open — and idle — for the whole media fetch, which is what pins locks and the
+        # vacuum horizon behind slow HTTP. (Prod runs with
+        # idle_in_transaction_session_timeout=5min for exactly this class of bug, so holding one
+        # across a large project's pagination would also get this session killed.)
+        db.commit()
         if not needs_media:
             counts["projects_skipped"] += 1
             continue
@@ -102,9 +86,11 @@ def _sync_tenant(db, tenant_id: int) -> dict:
             try:
                 items = fetch(project_id)
             except Exception as exc:  # noqa: BLE001
+                # The MESSAGE, not just the class: "error=RuntimeError" cost a diagnosis
+                # round on 2026-07-29 when the real cause was a 404 on the sub-resource.
                 log.error(
-                    "companycam sync: %s project=%s tenant=%d error=%s",
-                    kind, project_id, tenant_id, type(exc).__name__,
+                    "companycam sync: %s project=%s tenant=%d error=%s: %s",
+                    kind, project_id, tenant_id, type(exc).__name__, str(exc)[:300],
                 )
                 counts["errors"] += 1
                 ok = False

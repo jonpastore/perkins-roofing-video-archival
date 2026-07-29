@@ -24,6 +24,17 @@ from core.companycam.rest import UA, photos_url, projects_url, videos_url
 log = logging.getLogger(__name__)
 
 
+class CompanyCamNotFound(RuntimeError):
+    """404 from CompanyCam.
+
+    On a project's media sub-resource this means "this project has none" — NOT a failure.
+    Measured 2026-07-29: 4 of 3,684 projects 404 on /videos while appearing in the project
+    list. Counting that as an error made the sync exit 1, Cloud Run retry it to the cap, and
+    those projects never get stamped media-synced — so they were re-fetched, re-failed and
+    re-retried on every run, forever, with a red job each time.
+    """
+
+
 def configured() -> bool:
     return bool(os.getenv("COMPANYCAM_PAT"))
 
@@ -52,6 +63,8 @@ def _get(url: str, params: dict[str, Any] | None = None) -> Any:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode()
+        if exc.code == 404:
+            raise CompanyCamNotFound(f"CompanyCam API error 404: {raw}") from exc
         raise RuntimeError(f"CompanyCam API error {exc.code}: {raw}") from exc
 
 
@@ -109,7 +122,13 @@ def normalize_video(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_videos(project_id: str) -> list[dict[str, Any]]:
-    return [normalize_video(v) for v in _get_all(videos_url(project_id))]
+    """Every video on a project. A 404 means the project has no video resource — empty, not an
+    error (see CompanyCamNotFound). Any other HTTP failure still raises."""
+    try:
+        return [normalize_video(v) for v in _get_all(videos_url(project_id))]
+    except CompanyCamNotFound:
+        log.info("companycam: project %s has no videos resource (404)", project_id)
+        return []
 
 
 def ping(per_page: int = 1) -> None:
@@ -167,4 +186,10 @@ def list_projects() -> list[dict[str, Any]]:
 
 
 def list_photos(project_id: str) -> list[dict[str, Any]]:
-    return [normalize_photo(p) for p in _get_all(photos_url(project_id))]
+    """Every photo on a project. A 404 means the project has no photo resource — empty, not an
+    error (see CompanyCamNotFound). Any other HTTP failure still raises."""
+    try:
+        return [normalize_photo(p) for p in _get_all(photos_url(project_id))]
+    except CompanyCamNotFound:
+        log.info("companycam: project %s has no photos resource (404)", project_id)
+        return []

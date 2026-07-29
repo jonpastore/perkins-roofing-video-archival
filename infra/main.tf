@@ -333,6 +333,18 @@ resource "google_sql_database_instance" "pg" {
     tier    = "db-custom-1-3840" # 1 vCPU / 3.75GB
     edition = "ENTERPRISE"       # ENTERPRISE_PLUS only accepts db-perf-optimized-* tiers
 
+    # A session that BEGINs and then goes idle holds its locks and pins the vacuum horizon for
+    # as long as it lives. On 2026-07-29 three such sessions sat idle-in-transaction for over an
+    # hour holding locks on `videos`; a routine `ALTER TABLE videos` then queued behind them,
+    # and every subsequent reader queued behind the ALTER — a self-inflicted outage from a job
+    # that had already finished. Postgres kills them for us: 5 minutes is far longer than any
+    # legitimate transaction here (jobs commit per item; the long work is network I/O that must
+    # happen OUTSIDE a transaction), so anything hitting this is a leak worth failing.
+    database_flags {
+      name  = "idle_in_transaction_session_timeout"
+      value = "300000" # ms
+    }
+
     backup_configuration {
       enabled                        = true
       start_time                     = "03:00"
