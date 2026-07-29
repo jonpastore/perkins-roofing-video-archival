@@ -49,6 +49,8 @@ log = logging.getLogger(__name__)
 _BLOCK_MARKER = "[Interface]"
 _BIND_HOST = "127.0.0.1"
 _STARTUP_TIMEOUT_S = 25
+# How long to wait for a polite SIGTERM before escalating to SIGKILL.
+_TERM_TIMEOUT_S = 10
 
 
 def load_configs(path: str | None = None) -> list[str]:
@@ -128,7 +130,7 @@ class Tunnel:
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             try:
-                self._proc.wait(timeout=10)
+                self._proc.wait(timeout=_TERM_TIMEOUT_S)
             except subprocess.TimeoutExpired:
                 self._proc.kill()
                 self._proc.wait(timeout=5)
