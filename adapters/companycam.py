@@ -55,6 +55,11 @@ def _get(url: str, params: dict[str, Any] | None = None) -> Any:
         raise RuntimeError(f"CompanyCam API error {exc.code}: {raw}") from exc
 
 
+# 200 pages x 50/page = 10,000 items per endpoint. Perkins' account is ~150 projects and the
+# biggest project ~330 photos, so this is a runaway guard, not a real ceiling.
+_MAX_PAGES = 200
+
+
 def normalize_photo(raw: dict[str, Any]) -> dict[str, Any]:
     """Normalize a raw CompanyCam photo dict into a stable shape for the mirror layer."""
     url = None
@@ -119,20 +124,42 @@ def ping(per_page: int = 1) -> None:
 def _get_all(url: str, per_page: int = 100) -> list[dict[str, Any]]:
     """Fetch every page of a CompanyCam list endpoint (paginated via page/per_page).
 
-    Stops on the first short page. Without this, a project with >per_page photos silently
-    drops the overflow — roofing projects routinely exceed 100 photos.
+    Stops on the first EMPTY page, never on a short one. ⚠️ A short page does NOT mean the
+    last page: /v2/projects silently caps per_page at 50, so asking for 100 returns 50 — and
+    the previous "stop when len(batch) < per_page" rule read that as the end and mirrored only
+    the first 50 projects of the account. Measured 2026-07-29: pages 1, 2 and 3 each returned
+    50 more projects, and 11 of 13 portfolio candidates were missing entirely as a result.
+    That failure is invisible — every request succeeds, the job exits 0, and the mirror just
+    stops early — which is why the rule is now "empty page ends it".
+
+    _MAX_PAGES bounds the loop, and a repeated first id detects an endpoint that ignores the
+    page param (which would otherwise spin forever). Both RAISE rather than returning a
+    quietly-truncated list.
     """
     out: list[dict[str, Any]] = []
     page = 1
+    seen_first: set[str] = set()
     while True:
         batch = _get(url, {"page": page, "per_page": per_page})
         if not isinstance(batch, list) or not batch:
-            break
+            return out
+
+        first_id = str(batch[0].get("id", ""))
+        if first_id and first_id in seen_first:
+            raise RuntimeError(
+                f"companycam: {url} returned the same first id ({first_id}) on page {page} — "
+                "the endpoint is ignoring the page param; refusing to loop or truncate."
+            )
+        seen_first.add(first_id)
+
         out.extend(batch)
-        if len(batch) < per_page:
-            break
         page += 1
-    return out
+        if page > _MAX_PAGES:
+            raise RuntimeError(
+                f"companycam: {url} exceeded {_MAX_PAGES} pages ({len(out)} items). Raising "
+                "rather than returning a partial mirror — raise _MAX_PAGES if the account "
+                "really is this large."
+            )
 
 
 def list_projects() -> list[dict[str, Any]]:

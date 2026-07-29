@@ -24,7 +24,12 @@ from sqlalchemy import text
 
 import adapters.companycam as companycam
 from app.models import SessionLocal
-from core.companycam.mirror import upsert_photo, upsert_video
+from core.companycam.mirror import (
+    mark_media_synced,
+    upsert_photo,
+    upsert_project,
+    upsert_video,
+)
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +69,7 @@ def _sync_tenant(db, tenant_id: int) -> dict:
     Per-project, per-resource fetch errors are isolated so one bad project — or one failing
     endpoint — doesn't abort the rest.
     """
-    counts = {"projects": 0, "photos_seen": 0, "photos_written": 0,
+    counts = {"projects": 0, "projects_skipped": 0, "photos_seen": 0, "photos_written": 0,
               "videos_seen": 0, "videos_written": 0, "errors": 0}
     try:
         projects = companycam.list_projects()
@@ -74,11 +79,22 @@ def _sync_tenant(db, tenant_id: int) -> dict:
         return counts
 
     # Photos and videos are SEPARATE v2 resources — a project with photos may still have video
-    # (measured 2026-07-29: 234 videos across 20 of 25 sampled projects). They are fetched in
-    # independent try blocks so a video-endpoint failure still mirrors that project's photos.
+    # (measured 2026-07-29: 420 videos across 38 projects). They are fetched in independent try
+    # blocks so a video-endpoint failure still mirrors that project's photos.
+    #
+    # INCREMENTAL: the account holds 3,684 projects, so pulling both endpoints for all of them
+    # is ~7,400 paginated requests. upsert_project compares CompanyCam's updated_at against
+    # what we stored and only returns needs_media when it moved (or we have never pulled it),
+    # which makes a quiet night one project listing instead of a full crawl.
     for project in projects:
         project_id = str(project["id"])
         counts["projects"] += 1
+        row, needs_media = upsert_project(db, project)
+        if not needs_media:
+            counts["projects_skipped"] += 1
+            continue
+
+        ok = True
         for kind, fetch, seen_key, written_key, upsert in (
             ("list_photos", companycam.list_photos, "photos_seen", "photos_written", upsert_photo),
             ("list_videos", companycam.list_videos, "videos_seen", "videos_written", upsert_video),
@@ -91,6 +107,7 @@ def _sync_tenant(db, tenant_id: int) -> dict:
                     kind, project_id, tenant_id, type(exc).__name__,
                 )
                 counts["errors"] += 1
+                ok = False
                 continue
 
             for item in items:
@@ -98,11 +115,20 @@ def _sync_tenant(db, tenant_id: int) -> dict:
                 if upsert(db, item):
                     counts[written_key] += 1
 
+        # Only stamp a project complete when BOTH endpoints succeeded, so a partial pull is
+        # retried next run instead of being remembered as done.
+        if ok:
+            mark_media_synced(db, row)
+        # Commit per project: a 3,684-project backfill must not lose everything to one late
+        # failure, and the next run resumes from what landed.
+        db.commit()
+
     log.info(
-        "companycam sync: tenant=%d projects=%d photos_seen=%d photos_written=%d "
-        "videos_seen=%d videos_written=%d errors=%d",
-        tenant_id, counts["projects"], counts["photos_seen"], counts["photos_written"],
-        counts["videos_seen"], counts["videos_written"], counts["errors"],
+        "companycam sync: tenant=%d projects=%d skipped_unchanged=%d photos_seen=%d "
+        "photos_written=%d videos_seen=%d videos_written=%d errors=%d",
+        tenant_id, counts["projects"], counts["projects_skipped"], counts["photos_seen"],
+        counts["photos_written"], counts["videos_seen"], counts["videos_written"],
+        counts["errors"],
     )
     return counts
 

@@ -198,3 +198,60 @@ def upsert_video(session: Session, video: dict[str, Any]) -> bool:
     session.flush()
     log.debug("companycam mirror: video=%s status=updated", video_id)
     return True
+
+
+def _epoch_to_dt(value: Any) -> datetime | None:
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, tz=timezone.utc).replace(tzinfo=None)
+    return value if isinstance(value, datetime) else None
+
+
+def upsert_project(session: Session, project: dict[str, Any]) -> tuple[Any, bool]:
+    """Upsert one raw CompanyCam project row and say whether its media needs re-fetching.
+
+    Returns (row, needs_media). ``needs_media`` is True when we have never pulled this
+    project's media, or when CompanyCam's ``updated_at`` has moved since we last did — that
+    check is what turns a ~7,400-request full crawl into a nightly no-op.
+
+    Deliberately NOT hash-gated like the photo/video upserts: the row is small, and the
+    interesting comparison is one timestamp, not the whole payload.
+    """
+    from app.models import CompanyCamProject
+
+    tenant_id: int = session.info.get("tenant_id", 1)
+    project_id = str(project["id"])
+    remote_updated = _epoch_to_dt(project.get("updated_at"))
+
+    row = session.execute(
+        select(CompanyCamProject).where(
+            CompanyCamProject.tenant_id == tenant_id,
+            CompanyCamProject.companycam_project_id == project_id,
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        row = CompanyCamProject(tenant_id=tenant_id, companycam_project_id=project_id)
+        session.add(row)
+        needs_media = True
+    else:
+        needs_media = row.media_synced_at is None or (
+            remote_updated is not None and (
+                row.remote_updated_at is None or remote_updated > row.remote_updated_at
+            )
+        )
+
+    row.name = project.get("name")
+    row.address = project.get("address") or {}
+    row.status = project.get("status")
+    row.archived = bool(project.get("archived"))
+    row.photo_count = project.get("photo_count")
+    row.remote_updated_at = remote_updated
+    session.flush()
+    return row, needs_media
+
+
+def mark_media_synced(session: Session, row: Any) -> None:
+    """Stamp a project as media-synced. Only called after BOTH endpoints succeeded — a
+    partial pull must re-run next time rather than being remembered as complete."""
+    row.media_synced_at = _utcnow()
+    session.flush()

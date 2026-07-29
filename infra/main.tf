@@ -549,9 +549,12 @@ locals {
     # Three channel tabs, ~900 entries, flat-playlist only — minutes, not hours.
     enumerate-channel = "1800s"
     archive           = "7200s"
-    # 50 projects x 2 paginated endpoints. The first (backfill) run is the slow one:
-    # ~2,500 photos + ~230 videos measured over the live account 2026-07-29.
-    companycam-sync = "1800s"
+    # The FIRST run is a full backfill of 3,684 projects x 2 paginated endpoints (~7,400
+    # requests) — the 50-project figure this was originally sized for was the pagination bug
+    # in adapters/companycam._get_all, not the real account. Later runs skip every project
+    # whose CompanyCam updated_at has not moved (migration 0049), so steady state is one
+    # project listing. 2h covers the backfill; a run that needs longer should fail loudly.
+    companycam-sync = "7200s"
   }
 }
 

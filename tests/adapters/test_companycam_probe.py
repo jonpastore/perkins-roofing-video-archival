@@ -5,6 +5,8 @@ list_projects() was changed to take no args (pagination refactor) — a TypeErro
 instant the CompanyCam PAT is issued. These exercise the REAL ping() path (only _get is mocked), so a
 signature drift between the probe and the adapter fails here instead of at activation.
 """
+import pytest
+
 import adapters.companycam as companycam
 from adapters.integration_probes import probe_companycam
 
@@ -76,3 +78,45 @@ def test_videos_url_is_a_separate_resource_from_photos():
     from core.companycam.rest import photos_url, videos_url
     assert videos_url("123").endswith("/projects/123/videos")
     assert videos_url("123") != photos_url("123")
+
+
+# --- pagination ------------------------------------------------------------
+# /v2/projects silently caps per_page at 50. Asking for 100 and treating the 50 that come
+# back as "the last page" mirrored only the first 50 projects of the account and looked
+# entirely successful — 11 of 13 portfolio candidates were missing because of it.
+
+def test_get_all_does_not_stop_on_a_short_page(monkeypatch):
+    """The server may cap per_page below what we asked for. Only an EMPTY page ends it."""
+    pages = {1: [{"id": f"a{i}"} for i in range(50)],
+             2: [{"id": f"b{i}"} for i in range(50)],
+             3: [{"id": "c0"}],
+             4: []}
+    monkeypatch.setattr(companycam, "_get", lambda url, params: pages[params["page"]])
+    assert len(companycam._get_all("http://x", per_page=100)) == 101
+
+
+def test_get_all_stops_on_the_first_empty_page(monkeypatch):
+    calls = []
+
+    def fake_get(url, params):
+        calls.append(params["page"])
+        return [{"id": "only"}] if params["page"] == 1 else []
+
+    monkeypatch.setattr(companycam, "_get", fake_get)
+    assert len(companycam._get_all("http://x")) == 1
+    assert calls == [1, 2], "one extra request confirms the end; it must not keep going"
+
+
+def test_get_all_raises_when_the_endpoint_ignores_the_page_param(monkeypatch):
+    """Returning page 1 forever would otherwise loop until _MAX_PAGES, duplicating rows."""
+    monkeypatch.setattr(companycam, "_get", lambda url, params: [{"id": "same"}])
+    with pytest.raises(RuntimeError, match="ignoring the page param"):
+        companycam._get_all("http://x")
+
+
+def test_get_all_raises_rather_than_truncating_at_the_page_cap(monkeypatch):
+    monkeypatch.setattr(companycam, "_MAX_PAGES", 3)
+    monkeypatch.setattr(companycam, "_get",
+                        lambda url, params: [{"id": f"p{params['page']}-{i}"} for i in range(50)])
+    with pytest.raises(RuntimeError, match="exceeded 3 pages"):
+        companycam._get_all("http://x")

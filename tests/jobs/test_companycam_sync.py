@@ -89,3 +89,88 @@ def test_unconfigured_is_a_clean_skip_not_a_crash(monkeypatch):
     result = sync.run()
     assert result["exit_code"] == 0
     assert "skipped" in result
+
+
+# --- incremental sync (migration 0049) -------------------------------------
+# 3,684 projects x 2 endpoints is ~7,400 paginated requests. The whole point of the project
+# mirror is that a night with nothing new costs one project listing.
+
+def _project(pid="p1", updated_at=1_700_000_000):
+    return {"id": pid, "name": "Butterworth", "updated_at": updated_at,
+            "status": "active", "archived": False, "photo_count": 2}
+
+
+def _wire(monkeypatch, projects, photos=(), videos=(), calls=None):
+    monkeypatch.setattr(sync.companycam, "list_projects", lambda: list(projects))
+
+    def _photos(pid):
+        if calls is not None:
+            calls.append(("photos", pid))
+        return list(photos)
+
+    def _videos(pid):
+        if calls is not None:
+            calls.append(("videos", pid))
+        return list(videos)
+
+    monkeypatch.setattr(sync.companycam, "list_photos", _photos)
+    monkeypatch.setattr(sync.companycam, "list_videos", _videos)
+
+
+def test_unchanged_project_is_skipped_on_the_second_run(db, monkeypatch):
+    calls = []
+    _wire(monkeypatch, [_project()], photos=[_photo("ph1")], videos=[_video("v1")], calls=calls)
+
+    first = sync._sync_tenant(db, 1)
+    assert first["projects_skipped"] == 0
+    assert first["photos_written"] == 1
+    assert len(calls) == 2, "first run must fetch both endpoints"
+
+    calls.clear()
+    second = sync._sync_tenant(db, 1)
+    assert second["projects_skipped"] == 1
+    assert calls == [], "an unchanged project must cost ZERO media requests"
+
+
+def test_a_touched_project_is_refetched(db, monkeypatch):
+    calls = []
+    _wire(monkeypatch, [_project()], photos=[_photo("ph1")], calls=calls)
+    sync._sync_tenant(db, 1)
+
+    calls.clear()
+    _wire(monkeypatch, [_project(updated_at=1_800_000_000)], photos=[_photo("ph1"), _photo("ph2")],
+          calls=calls)
+    result = sync._sync_tenant(db, 1)
+    assert result["projects_skipped"] == 0
+    assert ("photos", "p1") in calls, "a moved updated_at must re-fetch"
+    assert result["photos_written"] == 1, "only the new photo is written; ph1 is unchanged"
+
+
+def test_a_partial_pull_is_retried_rather_than_remembered_as_complete(db, monkeypatch):
+    """If videos failed, the project must NOT be stamped synced — otherwise the missing half
+    is invisible forever, since updated_at will not move just because our fetch failed."""
+    def boom(_pid):
+        raise RuntimeError("companycam 500")
+
+    monkeypatch.setattr(sync.companycam, "list_projects", lambda: [_project()])
+    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid: [_photo("ph1")])
+    monkeypatch.setattr(sync.companycam, "list_videos", boom)
+    first = sync._sync_tenant(db, 1)
+    assert first["errors"] == 1
+
+    calls = []
+    _wire(monkeypatch, [_project()], photos=[_photo("ph1")], videos=[_video("v1")], calls=calls)
+    second = sync._sync_tenant(db, 1)
+    assert second["projects_skipped"] == 0, "a failed half must force a retry"
+    assert second["videos_written"] == 1
+
+
+def test_project_row_carries_the_name_used_to_match_a_candidate(db, monkeypatch):
+    from app.models import CompanyCamProject
+
+    _wire(monkeypatch, [_project()])
+    sync._sync_tenant(db, 1)
+    row = db.query(CompanyCamProject).one()
+    assert row.name == "Butterworth"
+    assert row.remote_updated_at is not None
+    assert row.media_synced_at is not None

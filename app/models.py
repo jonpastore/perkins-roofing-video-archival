@@ -1355,6 +1355,31 @@ class CompanyCamVideo(Base, TenantMixin):
     )
 
 
+class CompanyCamProject(Base, TenantMixin):
+    """Project-level CompanyCam mirror (migration 0049) — the incremental-sync key.
+
+    ``remote_updated_at`` is CompanyCam's own updated_at; media is re-fetched only when it
+    moves. ``media_synced_at`` NULL means never pulled, so a new project always fetches once.
+    """
+    __tablename__ = "companycam_projects"
+
+    id                    = Column(Integer, primary_key=True, autoincrement=True)
+    companycam_project_id = Column(String(100), nullable=False, index=True)
+    name                  = Column(String(500), nullable=True)
+    address               = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    status                = Column(String(50), nullable=True)
+    archived              = Column(Boolean, nullable=False, default=False)
+    photo_count           = Column(Integer, nullable=True)
+    remote_updated_at     = Column(DateTime, nullable=True)
+    media_synced_at       = Column(DateTime, nullable=True)
+    created_at            = Column(DateTime, nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "companycam_project_id",
+                         name="uq_companycam_projects_tenant_project"),
+    )
+
+
 class PortfolioCuration(Base, TenantMixin):
     """Curated media selection + client permissions for one portfolio project (migration 0048).
 
