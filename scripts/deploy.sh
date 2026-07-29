@@ -167,7 +167,8 @@ for job in "${!JOBS[@]}"; do
     JOB_ENV="${JOB_ENV}|WIREGUARD_CONFIGS_FILE=/secrets/wireguard/configs.conf"
     # Cookies are NOT mounted: measured ineffective (15/15 blocked with the jar verified
     # loaded), and a YouTube jar is a full Google session — not worth carrying for nothing.
-    # The youtube-cookies secret is retained but unused; delete it once this is proven.
+    # The youtube-cookies secret was deleted 2026-07-29; scripts/extract_youtube_cookies.py
+    # recreates it if it is ever needed again.
   fi
   echo "== Deploy job: $job =="
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \

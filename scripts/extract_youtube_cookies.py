@@ -18,6 +18,9 @@ it found so you can check before storing.
 
 Usage:
     .venv/bin/python scripts/extract_youtube_cookies.py --browser "chrome:Profile 1" -o jar.txt
+    # The youtube-cookies secret was deleted 2026-07-29 (cookies never fixed the bot-block —
+    # the block is on the egress IP). Re-add it to local.secret_ids in infra/main.tf and apply
+    # BEFORE storing a value, or `versions add` fails and a hand-created secret shows as drift.
     gcloud secrets versions add youtube-cookies --data-file=jar.txt
     shred -u jar.txt
 """
@@ -104,7 +107,8 @@ def main() -> int:
               "check. Load youtube.com in that profile and confirm the avatar shows the "
               "channel account.", file=sys.stderr)
         return 1
-    print("\nCheck the account above IS the channel owner before storing. Then:\n"
+    print("\nCheck the account above IS the channel owner before storing. Then (re-add\n"
+          "youtube-cookies to infra/main.tf and apply first — the secret was deleted):\n"
           f"  gcloud secrets versions add youtube-cookies --data-file={out}\n"
           f"  shred -u {out}")
     return 0
