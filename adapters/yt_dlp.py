@@ -117,9 +117,14 @@ def pull_video(video_id: str, dst: str) -> str:
         # callers that log "%s" (jobs/archive_job.py) emitted the whole argv and no reason. The
         # message must carry the cause. Nothing catches CalledProcessError from here.
         err = (proc.stderr or b"").decode("utf-8", "replace").strip()
+        # Prefer the ERROR lines. Taking the tail alone reported a trailing WARNING ("No title
+        # found in player responses") while the actual cause — "Sign in to confirm you're not a
+        # bot" — sat earlier in the stream and was cut off.
+        fatal = [ln for ln in err.splitlines() if ln.lstrip().startswith("ERROR")]
+        detail = " | ".join(fatal) if fatal else err
         raise RuntimeError(
             f"yt-dlp failed for {video_id} (exit {proc.returncode}): "
-            f"{err[-1500:] or '(no stderr)'}"
+            f"{detail[-1500:] or '(no stderr)'}"
         )
 
     # Locate the downloaded file (ext may vary on fallback formats)
