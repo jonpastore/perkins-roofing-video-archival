@@ -45,6 +45,16 @@ the article/content platform from staging (`https://1228404.us6.myftpupload.com`
       in `wordpress-app-password`). (Owner: Jon)
 - [ ] **`perkins-jsonld` mu-plugin installed + active on PRODUCTION** (installed on staging; prod
       needs it or JSON-LD postmeta is silently dropped).
+- [ ] **RE-INSTALL the updated `perkins-jsonld` mu-plugin on STAGING *and* prod** (Owner: Jon).
+      The version live on staging registers `_perkins_jsonld` for post type `post` ONLY, so
+      project pages can neither store nor render schema. Measured 2026-07-29: publishing a
+      curated project returned 200 with `jsonld_stored: false` and the meta absent on read-back.
+      `wp-mu-plugin/perkins-jsonld.php` in git now covers `post`, `avada_portfolio` and `page`
+      (the nine public projects are pages under `/portfolio/`, so both types must work until
+      Wendy settles the URL question). Until the file is re-uploaded, project pages publish
+      correctly but carry NO JSON-LD — `publish` reports this per call rather than assuming it
+      worked, and an inline `<script>` is not a workaround: WordPress strips it from post
+      content on an application-password write (verified by read-back, no error raised).
 - [ ] **Rank Math on prod**: confirm its FAQ/schema output does NOT duplicate our FAQ+Video nodes.
       (Owner: Wendy)
 - [ ] **Permalinks = "Post name" on prod** (top-level no-`/blog/` URLs + REST routes).

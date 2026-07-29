@@ -501,12 +501,21 @@ def find_portfolio_post(title: str) -> dict | None:
 
 
 def publish_portfolio_post(post: dict, *, dry_run: bool = False,
-                           update_existing: bool = False) -> dict:
+                           update_existing: bool = False,
+                           jsonld: list[dict] | None = None) -> dict:
     """Create an Avada Portfolio draft from a post payload
     ({title, content, status, category, tags[], skills[]}), or UPDATE the existing post when
     ``update_existing`` is set. Never creates a duplicate title either way.
     Creates the 3 taxonomy terms (portfolio_category/portfolio_tags/portfolio_skills) on
     first use if missing.
+
+    ``jsonld`` is stored as post-meta ``_perkins_jsonld`` and rendered in <head> by the
+    perkins-jsonld mu-plugin — NEVER inlined into the content. WordPress strips <script> from
+    post content for application-password writes: verified 2026-07-29 by publishing a project
+    with an inline ld+json block and reading it back, where the entire block was gone with no
+    error. The returned ``jsonld_stored`` says whether the meta actually persisted, because the
+    mu-plugin has to register the key for THIS post type first — an unregistered key is
+    silently dropped, which would otherwise look like a page carrying schema that has none.
 
     ⚠️ ``update_existing`` is what makes curation reach WordPress at all. All 13 candidates
     already had drafts (created 2026-07-22), so the old skip-if-exists behaviour meant an
@@ -534,6 +543,8 @@ def publish_portfolio_post(post: dict, *, dry_run: bool = False,
         ]
 
     payload = {"title": post["title"], "content": post["content"], "status": post["status"], **term_ids}
+    if jsonld:
+        payload["meta"] = {"_perkins_jsonld": json.dumps(jsonld)}
     base = _wp_api_url("/wp-json/wp/v2/avada_portfolio")
     if existing:
         # Content-only update: leave the post's own status alone so re-publishing a curated
@@ -541,10 +552,28 @@ def publish_portfolio_post(post: dict, *, dry_run: bool = False,
         payload.pop("status", None)
         resp = _session.post(f"{base}/{existing['id']}", json=payload, auth=_auth(), timeout=30)
         resp.raise_for_status()
-        return {"title": post["title"], "status": "updated", "post_id": existing["id"]}
+        return {"title": post["title"], "status": "updated", "post_id": existing["id"],
+                "jsonld_stored": _jsonld_stored(resp, jsonld)}
     resp = _session.post(base, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
-    return {"title": post["title"], "status": "created", "post_id": resp.json()["id"]}
+    return {"title": post["title"], "status": "created", "post_id": resp.json()["id"],
+            "jsonld_stored": _jsonld_stored(resp, jsonld)}
+
+
+def _jsonld_stored(resp, jsonld: list[dict] | None) -> bool:
+    """Did the _perkins_jsonld meta actually persist?
+
+    WordPress accepts the write and returns 200 even when the meta key is not registered for
+    this post type, so the response body is the only evidence. False here means the
+    perkins-jsonld mu-plugin on the site predates avada_portfolio/page support and needs
+    updating — the page will otherwise carry no schema at all while looking fine.
+    """
+    if not jsonld:
+        return False
+    try:
+        return bool((resp.json().get("meta") or {}).get("_perkins_jsonld"))
+    except Exception:  # noqa: BLE001 — absence of evidence is a False, not a crash
+        return False
 
 
 @lru_cache(maxsize=1)

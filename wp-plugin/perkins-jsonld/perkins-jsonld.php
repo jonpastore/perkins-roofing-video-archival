@@ -28,11 +28,12 @@ add_action( 'init', function () {
             'show_in_rest'  => true,
             'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
         ] );
+      }
     }
 } );
 
 add_action( 'wp_head', function () {
-    if ( ! is_singular( 'post' ) ) {
+    if ( ! is_singular( PERKINS_JSONLD_POST_TYPES ) ) {
         return;
     }
     $raw = get_post_meta( get_the_ID(), '_perkins_jsonld', true );

@@ -1,81 +1,93 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-29.md, then core/wireproxy.py and
-docs/2026-07-28-companycam-credentials.md.
+READ FIRST: CONTINUATION-2026-07-29-pm.md, then CONTINUATION-2026-07-29.md (the morning
+session), then core/pii.py and core/portfolio_criteria.py.
 
-HEAD 3665020, pushed, CI + deploy green. DEPLOYED platform:3665020.
-Prod configs jupiter v27 / miami v29 / naples v27. Terraform applied, drift gate exit 0.
-
-Confirm:
+Confirm before trusting anything below:
+  git log --oneline -1 && git status --short
   git log --oneline origin/main..HEAD          # expect empty
   gcloud run services describe api --region us-central1 \
     --format='value(spec.template.spec.containers[0].image)'
   bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
-  gcloud run jobs executions list --job=archive --region=us-central1 --limit=2
+  gh run list --limit 4                        # MATCH THE SHA; "deploy skipped" == nothing shipped
 
 WHAT IS SETTLED — do not re-derive
-  - The video pipeline runs END TO END from Cloud Run: enumerate (07:00 ET, newest 60/tab) ->
-    backfill (only rows missing dates) -> archive (07:30 ET, shortest-first, batch 5) -> ingest.
-    Catalog 841 -> 856. archive_uri is filling with real gs:// objects.
-  - Archive downloads MUST go through the userspace WireGuard tunnel. YouTube bot-blocks
-    datacenter egress 15/15; cookies do NOT help (measured with the jar verified loaded).
-    A blocked exit is STICKY per config, so rotation across configs is the strategy, not retry.
-  - CompanyCam is LIVE — an APPLICATION KEY (app 16351, Read & Write, no expiry), not a PAT.
-  - Articles: 474/474 compliant. The 4 pillar_link clusters are fixed.
-  - Miami overhead $4,250/day is Jon's call, live and verified. Closed.
-  - No VM is needed. compute.googleapis.com is still disabled; the stack stays serverless.
+  - CompanyCam is fully mirrored: 3,684 projects / 155,975 photos / 11,635 videos in
+    companycam_projects|_photos|_videos (prod Cloud SQL, metadata only — media stays on their
+    CDN). Sync is INCREMENTAL: a run with nothing new skips ~3,679 projects in ~2 min.
+  - PII is a HARD GATE. core/pii.py + core/portfolio_criteria.py refuse a publish on any
+    address / unit / ZIP / phone / email / GPS in ANY surface (body, meta, title, image ALT,
+    JSON-LD captions, scope lines) and on a title that reads as a person. Calibrated over all
+    26,063 real scope lines: 42 flags, 0 false positives. Do not "simplify" these regexes
+    without re-running that corpus check — the first version had 499 false positives from
+    "ste" matching inside "STEEL".
+  - Policy: city and neighbourhood ARE allowed. Anything narrowing to a property or person is
+    not. "Jim Malooly Delray Beach Roof" blocks even with all permissions granted.
+  - Write-ups are DETERMINISTIC and grounded in Knowify contract deliverables. No LLM writes
+    project prose: the record holds ~6 facts. No quantities are ever published (units are
+    provably wrong: "7550 Squares" = 755,000 sq ft) and no prices.
+  - Portfolio UI is finished: 3 tabs (Project / Media / SEO+AIO) + full CRUD. Projects are rows
+    (portfolio_projects, migration 0050), seeded once from the old hardcoded CANDIDATES.
+  - The coverage gate is honest now (.coveragerc precision = 2). CI reports 97.43%.
+  - single_flight commits on acquire; Cloud SQL enforces
+    idle_in_transaction_session_timeout=5min. Do not revert either — together they fix the
+    lock pile-up that blocked an ALTER TABLE.
 
 THE WORK, ranked
 
-1. ⚠️ CUTOVER TO PRODUCTION WORDPRESS. Everything the platform publishes goes to STAGING
-   (PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com, read from the prod DB — it is
-   the single source of truth, there is no .env fallback). Prod perkinsroofing.net has had no
-   platform content since 2026-07-02; staging's newest is 7/24. The vaulted app password is a
-   STAGING administrator and 401s on prod. Needs: a prod WP application password vaulted, then
-   one PlatformConfig.WP_URL change, then verify ONE article round-trips (context=edit, product
-   UA — GoDaddy's WAF strips Authorization from default library UAs).
-   Until this happens every content improvement is invisible to Perkins' customers.
+1. ⚠️ CUTOVER TO PRODUCTION WORDPRESS. Unchanged and still #1. PlatformConfig.WP_URL =
+   https://1228404.us6.myftpupload.com, read from the prod DB (single source of truth, no .env
+   fallback). Prod perkinsroofing.net has had no platform content since 2026-07-02. Needs: a
+   PROD WP application password vaulted, then one PlatformConfig.WP_URL change, then verify ONE
+   article round-trips (context=edit, product UA — GoDaddy's WAF strips Authorization from
+   default library UAs). Until then every "verified live" claim in every doc means STAGING.
 
-2. WATCH THE ARCHIVE BACKLOG DRAIN. 13 of 856 still have archive_uri NULL. At ARCHIVE_BATCH=5
-   nightly it clears in ~3 days, then the channel's 1-2 uploads/day keep pace easily.
-   If it fails with "all N egress config(s) exhausted", Proton ranges have been blocked —
-   refresh the wireguard-configs secret with new server configs. That is maintenance.
-   Then DELETE the youtube-cookies secret: it is retained but unused, and it is a full Google
-   session (SID/SAPISID are .google.com-scoped, so Gmail/Drive/Cloud Console too).
+2. ⚠️ RE-UPLOAD wp-mu-plugin/perkins-jsonld.php to STAGING AND PROD (Jon — it is a file upload
+   to WP hosting, not something deploy.sh does). The live version registers _perkins_jsonld for
+   post type `post` ONLY, so project pages store and render NO schema: measured, publish
+   returned jsonld_stored:false and the meta was absent on read-back. git now covers post +
+   avada_portfolio + page. An inline <script> is NOT a workaround — WordPress strips it from
+   post content on an application-password write, silently, 200 OK.
 
-3. WENDY. A draft is sitting UNSENT in Jon's DeGenito Outlook (wendy@webpowermarketing.com, cc
-   tim@perkinsroofing.net) asking where project pages should live and whether she has a schema.
-   The portfolio work is blocked on her answer: 9 public projects are PAGES under /portfolio/
-   (parent 2358) while our 13 generated drafts are avada_portfolio CPT — different URL spaces.
-   Audit of the 9: 0/9 JSON-LD, 0/9 video, 0/9 service/location links, 4 images sharing one alt.
+3. SEND THE TWO DRAFTS (Jon's DeGenito Outlook, both updated and unsent):
+   - Tim/Marco/Josh "One question about the $1,400/day before I set it" — the ONLY question is
+     whether $1,400/day is charged per job-day or split across concurrent jobs. $1,400 x 250
+     working days = $350k vs the $336k annual burn, i.e. right for ONE job at a time; measured
+     concurrency was ~1-1.7 jobs/working day in 2025 and 1.5-4.3 in 2024. His answer gates
+     flipping overhead_basis. Evidence: scripts/margin_check.py (rebuild says +4.2% median
+     margin, NOT the -0.4% the unsent 7/28 draft claimed).
+   - Wendy (cc Tim) "Project pages — where should they live" — URL space (/portfolio/ pages vs
+     the avada_portfolio CPT our publisher targets) + whether she has a schema. Her answer
+     unblocks which post type to publish to.
 
-4. Smaller: accent items priced but NOT selectable in the SPA (extra_line_items is API-only) ·
-   o365 MCP refresh token EXPIRED (use gmail-enhanced for that same mailbox) ·
-   proposal-reminders-daily scheduler PAUSED with no recorded reason ·
-   4 test files still drop_all at teardown — see GOTCHAS, converting them is NOT mechanical.
+4. FINISH THE PROJECT PAGES once #2 lands: verify JSON-LD renders in <head> on a published
+   project, then set featured_media (needs the image uploaded to WP as an attachment — ours are
+   CompanyCam-CDN URLs today), and get CompanyCam URLs for the 2 candidates that have none
+   (now editable in the UI).
+
+5. Smaller: accent items priced but NOT selectable in the SPA (extra_line_items is API-only) ·
+   o365 MCP refresh token EXPIRED (use gmail-enhanced for that mailbox) ·
+   proposal-reminders-daily scheduler PAUSED with no recorded reason · 4 test files still
+   drop_all at teardown (converting them caused 50 failures once and was reverted).
 
 GOTCHAS
-- "WORKS ON MY LAPTOP" FAILED FOUR TIMES TODAY. Docker on the workstation uses the HOST network,
-  so a container test proves NOTHING about Cloud Run egress. yt-dlp and deno were both missing
-  from the image while working locally.
-- A job with per-item try/except MUST NOT exit 0 when every item failed. archive_job reported
-  {'archived': 0, 'errored': 15} and exit(0) — Cloud Run showed green and would have nightly.
-- CalledProcessError.__str__ prints ONLY the command. Carry stderr in the message, and prefer
-  the ERROR lines — the tail alone surfaces a trailing WARNING instead of the actual cause.
-- pytest imports EVERY test module before running any test, so a drop_all teardown tears tables
-  out from under modules that init_db() at import and only DELETE rows. Create-but-never-drop.
-  Converting the remaining 4 caused 50 failures (for_each_tenant reads the tenants table;
-  drop-vs-truncate differ) and was REVERTED. Isolation bugs only exist in combination — run the
-  FULL suite, and capture pytest's own exit code (piping to `tail` masks it).
-- yt-dlp --cookies exports the ENTIRE browser jar: 1803 cookies / 439 domains incl. 1password.com.
-- Never leave a secret in scratch. Write to Secret Manager, then shred -u.
-- terraform apply BEFORE a deploy that adds a job — deploy.sh runs `gcloud run jobs update`,
-  which fails if the job does not exist yet.
-- gcloud --impersonate-service-account prints a WARNING to stderr; use 2>/dev/null.
-- `gh run list --limit 1` may return a PREVIOUS run. Match the SHA before believing it.
-- Cloud SQL proxy 127.0.0.1:5432 (NOT a local container — there is no local postgres), db
-  perkins, user app; every query needs set app.tenant_id='1'.
-  PW=$(gcloud secrets versions access latest --secret=db-password).
-- CI gates on `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97.
-  scripts/ and tests/ are NOT ruff-gated. Full suite ~6 min local. SPA: cd web && npx tsc -b.
-- bash scripts/deploy.sh refuses a dirty tree (R3-ENFORCE) — that is deliberate.
+- AFTER ANY WRITE, READ IT BACK AND COUNT. Four things reported success today while doing
+  nothing: the sync mirrored 50 of 3,684 projects (pagination stopped on a short page and
+  /v2/projects caps per_page at 50); publish returned 200 as "skipped-exists" so curation
+  changed nothing; an inline JSON-LD <script> was stripped entirely; and the coverage gate
+  passed on rounding. None of them raised.
+- CORPUS-VALIDATE EVERY HEURISTIC. Unit tests were green while the PII detector had a 98%
+  false-positive rate on real data.
+- Terraform: APPLY BEFORE PUSH. The deploy workflow has a drift gate and will refuse if git
+  carries an unapplied change. (I committed the Cloud SQL flag first and it correctly refused.)
+- `pkill -f "<pattern>"` matches its own shell — a waiter killed itself twice. Use a PID.
+- A short page from a paginated API does NOT mean the last page.
+- app/models.py is NOT ruff-gated (CI lints core adapters api jobs); its E702s are pre-existing.
+- tests/core/test_avatar_script.py fails if tests/core runs ALONE (needs another module to
+  create `tenants`). Pre-existing, passes in the full suite.
+- Cloud SQL proxy 127.0.0.1:5432 (no local postgres), db perkins, user app; every query needs
+  set app.tenant_id='1'. PW=$(gcloud secrets versions access latest --secret=db-password).
+- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97. Full
+  suite ~6 min on CI, much slower on this box. SPA: cd web && npx tsc -b.
+- bash scripts/deploy.sh refuses a dirty tree (R3-ENFORCE) — deliberate.
+- Never leave a secret in scratch: write to Secret Manager, then shred -u.

@@ -1380,6 +1380,47 @@ class CompanyCamProject(Base, TenantMixin):
     )
 
 
+class PortfolioProject(Base, TenantMixin):
+    """A portfolio project record (migration 0050) — editable, was a hardcoded Python list.
+
+    Separate from PortfolioCuration on purpose: this is what the job WAS, that is an editor's
+    choices about it. Re-seeding or editing a project must never clear recorded client
+    permissions.
+    """
+    __tablename__ = "portfolio_projects"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    slug           = Column(String(200), nullable=False, index=True)
+    name           = Column(String(300), nullable=False)
+    city           = Column(String(120), nullable=True)
+    section        = Column(String(40), nullable=False, default="commercial")
+    companycam_url = Column(String(500), nullable=True)
+    youtube_url    = Column(String(500), nullable=True)
+    date_start     = Column(String(60), nullable=True)
+    date_end       = Column(String(60), nullable=True)
+    notes          = Column(Text, nullable=True)
+    search_terms   = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
+    archived_at    = Column(DateTime, nullable=True)
+    created_at     = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at     = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
+    updated_by     = Column(String(320), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_portfolio_projects_tenant_slug"),
+    )
+
+    def as_record(self) -> dict:
+        """The dict shape the pure core modules expect (same keys the old CANDIDATES had)."""
+        return {
+            "slug": self.slug, "name": self.name, "city": self.city or "",
+            "section": self.section or "commercial",
+            "companycam_url": self.companycam_url or "",
+            "youtube_url": self.youtube_url or "",
+            "date_start": self.date_start or "", "date_end": self.date_end or "",
+            "notes": self.notes or "", "search_terms": list(self.search_terms or []),
+        }
+
+
 class PortfolioCuration(Base, TenantMixin):
     """Curated media selection + client permissions for one portfolio project (migration 0048).
 

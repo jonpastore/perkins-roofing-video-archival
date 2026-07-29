@@ -143,3 +143,31 @@ def test_shouting_lines_are_title_cased_and_brand_spellings_are_not():
 
 def test_cost_increase_lines_are_dropped():
     assert clean_scope_lines([{"description": "Hoist Increase Since Award"}]) == []
+
+
+# --- PII ------------------------------------------------------------------
+
+def test_scope_lines_carrying_pii_are_dropped_whole():
+    """Real lines from the corpus. 10 of 26,063 carry a street address, 31 a condo unit
+    number, 1 a staff email — and scope lines publish verbatim."""
+    lines = clean_scope_lines([
+        {"description": "Polyglass 2-Ply Built-Up Roofing System"},
+        {"description": "Tile Roof Repair   401 80TH ST"},
+        {"description": "Flat Roof Maintenance (1460 Palm Ave)"},
+        {"description": "Tile Roof Repair (Job Location: 10747 SW 104th St Miami, FL 33176)"},
+        {"description": "Fascia Board Replacement - UNIT 114"},
+        {"description": "josh@perkinsroofing.net"},
+    ])
+    assert lines == ["Polyglass 2-Ply Built-Up Roofing System"]
+
+
+def test_material_specs_that_look_like_unit_numbers_survive():
+    """"Double #30" is 30-lb felt, not apartment 30 — 499 lines were wrongly flagged before
+    the unit detector required a keyword."""
+    lines = clean_scope_lines([
+        {"description": "FBC - Gulf Coast .032 Aluminum Versaloc Standing Seam Metal Re-Roof (Double #30)"},
+        {"description": "Stainless Steel Scupper Drain (Inc. Wall Chip Out)"},
+        {"description": "Seal Under and Inside Scuppers #1 and #2"},
+    ])
+    assert len(lines) == 3, lines
+    assert any("Double #30" in line for line in lines), "30-lb felt is a material, not a unit"

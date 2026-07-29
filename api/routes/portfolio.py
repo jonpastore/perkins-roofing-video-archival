@@ -8,7 +8,8 @@ Role requirements (from core.authz, same grants as api/routes/articles.py):
   - article_read      → sales, web_admin, admin (GET)
   - manage_articles   → web_admin, admin (POST publish)
 
-The 13 candidate projects live in scripts.portfolio_prefill.CANDIDATES (transcribed from
+Projects are ROWS (portfolio_projects, migration 0050) — full CRUD. They began as
+scripts.portfolio_prefill.CANDIDATES (transcribed from
 Wendy's projects doc — see that module's docstring for provenance). There is no DB table for
 portfolio projects; WordPress itself is the status source of truth (checked live via
 adapters.wordpress.find_portfolio_post).
@@ -38,6 +39,8 @@ from core.portfolio_content import (
     build_project_jsonld,
     build_write_up,
 )
+from core.portfolio_criteria import check_project, publishable
+from core.portfolio_criteria import summary as criteria_summary
 from core.portfolio_facts import scope_for_dominant_client
 from core.portfolio_media import (
     companycam_project_id,
@@ -46,6 +49,7 @@ from core.portfolio_media import (
     score_project,
     validate_selection,
 )
+from core.portfolio_projects import seed_records, unique_slug, validate_record
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +68,58 @@ class CurationIn(BaseModel):
     selections: list[SelectionItem] = Field(default_factory=list)
 
 
-def _candidate_or_404(slug: str) -> dict:
-    from scripts.portfolio_prefill import CANDIDATES  # noqa: PLC0415
-    candidate = next((c for c in CANDIDATES if _slugify(c["name"]) == slug), None)
-    if candidate is None:
+class ProjectIn(BaseModel):
+    """Editable project fields. Everything else about a project is derived or curated."""
+    name: str
+    city: str = ""
+    section: str = "commercial"
+    companycam_url: str = ""
+    youtube_url: str = ""
+    date_start: str = ""
+    date_end: str = ""
+    notes: str = ""
+    search_terms: list[str] = Field(default_factory=list)
+
+
+def _ensure_seeded(db: Session) -> None:
+    """First call migrates the 13 hardcoded candidates into the table, once.
+
+    Idempotent and keyed by slug, so it can never duplicate a project or overwrite an edit an
+    editor has already made to one.
+    """
+    from app.models import PortfolioProject  # noqa: PLC0415
+
+    if db.query(PortfolioProject.id).first() is not None:
+        return
+    for record in seed_records():
+        db.add(PortfolioProject(tenant_id=1, **record))
+    db.commit()
+    logger.info("portfolio: seeded %d project records from the candidate list",
+                len(seed_records()))
+
+
+def _projects(db: Session, *, include_archived: bool = False):
+    from app.models import PortfolioProject  # noqa: PLC0415
+
+    _ensure_seeded(db)
+    q = db.query(PortfolioProject)
+    if not include_archived:
+        q = q.filter(PortfolioProject.archived_at.is_(None))
+    return q.order_by(PortfolioProject.name).all()
+
+
+def _project_or_404(db: Session, slug: str):
+    from app.models import PortfolioProject  # noqa: PLC0415
+
+    _ensure_seeded(db)
+    row = db.query(PortfolioProject).filter(PortfolioProject.slug == slug).one_or_none()
+    if row is None:
         raise HTTPException(status_code=404, detail="portfolio project not found")
-    return candidate
+    return row
+
+
+def _candidate_or_404(db: Session, slug: str) -> dict:
+    return _project_or_404(db, slug).as_record()
 
 
 def _curation_row(db: Session, slug: str):
@@ -144,7 +194,7 @@ def _candidate_summary(candidate: dict, wp_by_title: dict | None = None,
         except Exception as exc:  # noqa: BLE001 — WP unreachable must not break the list
             logger.warning("wp lookup failed for portfolio candidate %s: %s", candidate["name"], exc)
 
-    slug = _slugify(candidate["name"])
+    slug = candidate.get("slug") or _slugify(candidate["name"])
     row = (curation_by_slug or {}).get(slug)
     perms = _permissions(row)
     gate = {
@@ -289,16 +339,110 @@ def list_portfolio(
 ):
     from adapters.wordpress import list_portfolio_posts  # noqa: PLC0415
     from app.models import PortfolioCuration  # noqa: PLC0415
-    from scripts.portfolio_prefill import CANDIDATES  # noqa: PLC0415
 
     curation_by_slug = {r.slug: r for r in db.query(PortfolioCuration).all()}
+    projects = [p.as_record() for p in _projects(db)]
     # One WP fetch, matched locally — 13 sequential authed searches crawled on slow WP.
     try:
         wp_by_title = {p["title"].lower(): p for p in list_portfolio_posts()}
     except Exception as exc:  # noqa: BLE001 — WP unreachable must not break the list
         logger.warning("wp portfolio list fetch failed: %s", exc)
         wp_by_title = {}
-    return [_candidate_summary(c, wp_by_title, curation_by_slug) for c in CANDIDATES]
+    return [_candidate_summary(c, wp_by_title, curation_by_slug) for c in projects]
+
+
+def _gate(db: Session, candidate: dict, selections: list, available: dict,
+          perms: dict[str, bool]) -> tuple[list, str, list]:
+    """(criteria, body_html, jsonld) for a project — the gate applied to the REAL page.
+
+    Publish and the review view call this same function: a gate that evaluates anything other
+    than the exact html being shipped is worse than no gate, because it reassures without
+    checking.
+    """
+    body_html, jsonld = _render_project(candidate, selections, available, db)
+    scope = _scope_lines(db, candidate)
+    criteria = check_project(
+        title=candidate.get("name", ""), city=candidate.get("city"),
+        meta=build_meta(candidate), content_html=body_html, selections=selections,
+        scope_lines=scope, jsonld=jsonld, permissions=perms,
+    )
+    return criteria, body_html, jsonld
+
+
+@router.post("", status_code=201)
+def create_portfolio_project(
+    body: ProjectIn,
+    db: Session = Depends(get_db_session),
+    claims=Depends(require_role("manage_articles")),
+):
+    """Create a project. Refuses PII at the door — see core.portfolio_projects.validate_record."""
+    from app.models import PortfolioProject  # noqa: PLC0415
+
+    record = body.model_dump()
+    problems = validate_record(record)
+    if problems:
+        raise HTTPException(status_code=422, detail={"problems": problems})
+
+    taken = [p.slug for p in _projects(db, include_archived=True)]
+    row = PortfolioProject(
+        tenant_id=1, slug=unique_slug(record["name"], taken),
+        updated_by=(claims or {}).get("email"), **record,
+    )
+    db.add(row)
+    db.commit()
+    return _candidate_summary(row.as_record())
+
+
+@router.put("/{slug}")
+def update_portfolio_project(
+    slug: str,
+    body: ProjectIn,
+    db: Session = Depends(get_db_session),
+    claims=Depends(require_role("manage_articles")),
+):
+    """Edit a project. The SLUG never changes: it is the join key for curation and the
+    WordPress lookup, so renaming the slug would orphan an editor's media selection."""
+    row = _project_or_404(db, slug)
+    record = body.model_dump()
+    problems = validate_record(record)
+    if problems:
+        raise HTTPException(status_code=422, detail={"problems": problems})
+
+    for field, value in record.items():
+        setattr(row, field, value)
+    row.updated_by = (claims or {}).get("email")
+    db.commit()
+    return _candidate_summary(row.as_record())
+
+
+@router.delete("/{slug}")
+def archive_portfolio_project(
+    slug: str,
+    db: Session = Depends(get_db_session),
+    claims=Depends(require_role("manage_articles")),
+):
+    """Archive (soft delete). A published project must stay findable, or nobody can locate the
+    WordPress page to take it down."""
+    from core.companycam.mirror import _utcnow  # noqa: PLC0415
+
+    row = _project_or_404(db, slug)
+    row.archived_at = _utcnow()
+    row.updated_by = (claims or {}).get("email")
+    db.commit()
+    return {"slug": slug, "archived": True}
+
+
+@router.post("/{slug}/restore")
+def restore_portfolio_project(
+    slug: str,
+    db: Session = Depends(get_db_session),
+    claims=Depends(require_role("manage_articles")),
+):
+    row = _project_or_404(db, slug)
+    row.archived_at = None
+    row.updated_by = (claims or {}).get("email")
+    db.commit()
+    return _candidate_summary(row.as_record())
 
 
 @router.get("/{slug}/media")
@@ -313,7 +457,7 @@ def get_portfolio_media(
     permissions recorded for this project — so an uncleared project shows an empty gallery
     rather than photos an editor could accidentally publish.
     """
-    candidate = _candidate_or_404(slug)
+    candidate = _candidate_or_404(db, slug)
     row = _curation_row(db, slug)
     perms = _permissions(row)
     cc_id = (row.companycam_project_id if row and row.companycam_project_id
@@ -325,7 +469,7 @@ def get_portfolio_media(
         {"name": candidate["name"], "city": candidate["city"], "section": candidate["section"]},
         content_html="",
     )
-    body_html, jsonld = _render_project(candidate, selections, available, db)
+    criteria, body_html, jsonld = _gate(db, candidate, selections, available, perms)
     score = score_project(
         title=preview["title"], meta=build_meta(candidate),
         content_html=body_html, selections=selections,
@@ -352,6 +496,9 @@ def get_portfolio_media(
         # a number. Same render, same call — see _render_project.
         "preview_html": body_html,
         "scope_lines": _scope_lines(db, candidate),
+        # The publish gate, evaluated on the html above. `publishable` false means the POST
+        # /publish will refuse — the UI must not offer a button that cannot work.
+        "gate": criteria_summary(criteria),
     }
 
 
@@ -370,7 +517,7 @@ def put_portfolio_curation(
     """
     from app.models import PortfolioCuration  # noqa: PLC0415
 
-    candidate = _candidate_or_404(slug)
+    candidate = _candidate_or_404(db, slug)
     row = _curation_row(db, slug)
     cc_id = (row.companycam_project_id if row and row.companycam_project_id
              else companycam_project_id(candidate.get("companycam_url")))
@@ -400,30 +547,83 @@ def put_portfolio_curation(
     return get_portfolio_media(slug, db=db, claims=claims)
 
 
+@router.post("/{slug}/review")
+def review_portfolio_project(
+    slug: str,
+    db: Session = Depends(get_db_session),
+    claims=Depends(require_role("manage_articles")),
+):
+    """Run the three adversarial critics over the page that WOULD publish.
+
+    The deterministic gate (returned as ``gate``) is what refuses a publish; these critics read
+    the page the way a person would and catch what a regex cannot — an indirect identifier like
+    "the corner unit above the tennis courts", a claim with no basis in the contract scope, a
+    page that says nothing. Findings are ADVISORY: an LLM verdict is not reproducible enough to
+    block on, but a blocker here should stop a human from pressing publish, and the UI shows it
+    that way.
+
+    Stateless: nothing is persisted, so a review always reflects the current curation rather
+    than a stale verdict from before someone changed the gallery.
+    """
+    import re as _re  # noqa: PLC0415
+
+    from adapters import llm as llm_mod  # noqa: PLC0415
+    from core.portfolio_critique import (  # noqa: PLC0415
+        CRITICS,
+        CRITIQUE_SCHEMA,
+        critique_prompt,
+        merge,
+        parse_findings,
+    )
+
+    candidate = _candidate_or_404(db, slug)
+    row = _curation_row(db, slug)
+    perms = _permissions(row)
+    selections = list(row.selections or []) if row else []
+    cc_id = (row.companycam_project_id if row and row.companycam_project_id
+             else companycam_project_id(candidate.get("companycam_url")))
+    available = _available_media(db, cc_id, perms)
+    criteria, body_html, _jsonld = _gate(db, candidate, selections, available, perms)
+
+    page = {
+        "title": candidate.get("name", ""), "city": candidate.get("city", ""),
+        "meta": build_meta(candidate), "content_html": body_html,
+        "scope_lines": _scope_lines(db, candidate),
+        # Alt text is pulled out separately: it publishes, a reader never sees it, and it is
+        # where an identifier hides from everyone but a crawler.
+        "alt_texts": _re.findall(r'<img[^>]*\balt="([^"]*)"', body_html),
+    }
+
+    findings: dict[str, list[dict]] = {}
+    llm = llm_mod.get_default()
+    for lens in CRITICS:
+        try:
+            parsed = llm.chat(critique_prompt(lens, page), want_json=True,
+                              response_schema=CRITIQUE_SCHEMA)
+            findings[lens] = parse_findings(parsed)
+        except Exception as exc:  # noqa: BLE001 — one dead critic must not lose the others
+            logger.warning("portfolio review: lens %s failed: %s", lens, exc)
+            findings[lens] = []
+
+    merged = merge(findings)
+    return {
+        "slug": slug,
+        "gate": criteria_summary(criteria),
+        "critique": merged,
+        "critique_blockers": [f for f in merged if f.get("severity") in ("blocker", "major")],
+        "lenses_run": sorted(findings),
+    }
+
+
 @router.post("/{slug}/publish")
 def publish_portfolio_project(
     slug: str,
     db: Session = Depends(get_db_session),
     claims=Depends(require_role("manage_articles")),
 ):
-    candidate = _candidate_or_404(slug)
-
+    candidate = _candidate_or_404(db, slug)
     row = _curation_row(db, slug)
     perms = _permissions(row)
-    gate = {
-        "Permission to name property": perms["permission_property"],
-        "Permission to use photos": perms["permission_photos"],
-        # Video permission is only required when a video is actually curated in.
-        "Permission to use video": perms["permission_video"] or not any(
-            s.get("kind") == "video" for s in (row.selections or [] if row else [])
-        ),
-    }
-    missing = needs_human(gate)
-    if missing:
-        raise HTTPException(
-            status_code=422,
-            detail=f"missing client permission(s): {', '.join(missing)}",
-        )
 
     # Publish the curated gallery with the write-up. Built from the SAME permission-filtered
     # media list the curation view showed, so a permission revoked after selection drops the
@@ -432,18 +632,19 @@ def publish_portfolio_project(
     cc_id = (row.companycam_project_id if row and row.companycam_project_id
              else companycam_project_id(candidate.get("companycam_url")))
     available = _available_media(db, cc_id, perms)
-    body_html, jsonld = _render_project(candidate, selections, available, db)
 
-    # JSON-LD ships INSIDE the post body: WordPress owns the <head>, and Rank Math strips
-    # unknown head injections. A script block in the content survives and validates.
-    if jsonld:
-        import json as _json  # noqa: PLC0415
-        body_html += (
-            '<script type="application/ld+json">'
-            + _json.dumps(jsonld, separators=(",", ":"))
-            + "</script>"
-        )
+    # THE GATE. Blockers are privacy and client permission; majors are quality problems that
+    # make a page not worth having. Both refuse, and the response names every one so the editor
+    # can fix them — this replaces the old permission-only check, which could not see an address
+    # in an image alt or a customer name in the title.
+    criteria, body_html, jsonld = _gate(db, candidate, selections, available, perms)
+    if not publishable(criteria):
+        raise HTTPException(status_code=422, detail=criteria_summary(criteria))
 
+    # JSON-LD goes to post-meta, NOT into the body: WordPress strips <script> from content on
+    # an application-password write (verified by reading a published post back — the whole
+    # block was gone, with no error). adapters.wordpress stores it and reports whether the
+    # meta actually persisted.
     post = map_to_post(
         {"name": candidate["name"], "city": candidate["city"], "section": candidate["section"]},
         content_html=body_html,
@@ -454,10 +655,10 @@ def publish_portfolio_project(
     try:
         # update_existing: every candidate already has a draft, so without this a curated
         # gallery would return 200 and change nothing on the page.
-        result = publish_portfolio_post(post, update_existing=True)
+        result = publish_portfolio_post(post, update_existing=True, jsonld=jsonld)
     except requests.RequestException as exc:
         logger.warning("wp portfolio publish failed for %s: %s", candidate["name"], exc)
         raise HTTPException(status_code=502, detail=f"WordPress publish failed: {exc}") from exc
 
     return {**_candidate_summary(candidate, None, {slug: row} if row else None),
-            "publish_result": result}
+            "publish_result": result, "gate": criteria_summary(criteria)}

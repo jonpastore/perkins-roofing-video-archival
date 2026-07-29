@@ -28,6 +28,8 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
+from core.pii import has_pii
+
 # Knowify's placeholder line on every contract — carries no information.
 _NOISE_RE = re.compile(r"^\s*default_deliverable\s*$", re.I)
 
@@ -122,7 +124,7 @@ def clean_scope_lines(rows: Iterable[dict]) -> list[str]:
     for row in rows:
         desc = (row.get("description") or "").strip()
         if (not desc or _NOISE_RE.match(desc) or _OPTIONAL_RE.search(desc)
-                or _COMMERCIAL_RE.search(desc)):
+                or _COMMERCIAL_RE.search(desc) or has_pii(desc)):
             continue
         desc = _PREFIX_RE.sub("", desc).strip()
         desc = _detitle(desc)

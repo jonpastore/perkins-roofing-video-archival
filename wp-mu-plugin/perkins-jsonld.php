@@ -13,13 +13,24 @@
  *      post content, so this mu-plugin is the only safe injection point.
  */
 
+/**
+ * Post types that may carry JSON-LD. 'post' = articles. 'avada_portfolio' + 'page' = project
+ * write-ups: the generated portfolio uses the CPT while the nine PUBLIC projects are pages
+ * under /portfolio/, and until that URL question is settled both have to work. Registering
+ * for one type only is why a project page could store no schema at all — WP rejects meta on
+ * an unregistered key, and wp_head skipped anything that was not a singular 'post'.
+ */
+define( 'PERKINS_JSONLD_POST_TYPES', [ 'post', 'avada_portfolio', 'page' ] );
+
 add_action( 'init', function () {
-    register_post_meta( 'post', '_perkins_jsonld', [
-        'single'        => true,
-        'type'          => 'string',
-        'show_in_rest'  => true,
-        'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
-    ] );
+    foreach ( PERKINS_JSONLD_POST_TYPES as $type ) {
+        register_post_meta( $type, '_perkins_jsonld', [
+            'single'        => true,
+            'type'          => 'string',
+            'show_in_rest'  => true,
+            'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
+        ] );
+    }
 } );
 
 /**
@@ -32,17 +43,19 @@ add_action( 'init', function () {
 add_action( 'init', function () {
     $rank_math_keys = [ 'rank_math_focus_keyword', 'rank_math_title', 'rank_math_description' ];
     foreach ( $rank_math_keys as $key ) {
-        register_post_meta( 'post', $key, [
+      foreach ( PERKINS_JSONLD_POST_TYPES as $type ) {
+        register_post_meta( $type, $key, [
             'single'        => true,
             'type'          => 'string',
             'show_in_rest'  => true,
             'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
         ] );
+      }
     }
 } );
 
 add_action( 'wp_head', function () {
-    if ( ! is_singular( 'post' ) ) {
+    if ( ! is_singular( PERKINS_JSONLD_POST_TYPES ) ) {
         return;
     }
     $raw = get_post_meta( get_the_ID(), '_perkins_jsonld', true );
