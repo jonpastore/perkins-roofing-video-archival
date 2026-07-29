@@ -3,9 +3,12 @@
 
 Also provides pull_video() for downloading the best available MP4 for render jobs."""
 import json
+import logging
 import os
 import subprocess
 import sys
+
+log = logging.getLogger(__name__)
 
 _TABS = ("videos", "shorts", "streams")
 
@@ -102,9 +105,26 @@ def pull_video(video_id: str, dst: str) -> str:
     # ⚠️ A YouTube cookie jar IS a full Google session: the SID/SAPISID cookies are scoped to
     # .google.com, so they authenticate Gmail/Drive/Cloud Console too. It must come from an
     # account that owns the channel and nothing else — never a personal account.
+    # Log which branch was taken. Without this a bot-block is ambiguous: "no cookies were sent"
+    # and "cookies were sent and YouTube rejected them anyway" produce the IDENTICAL yt-dlp
+    # error, and the container runs as a non-root user (appuser), so an unreadable secret mount
+    # would silently skip the flag and look exactly like a rejected jar.
     cookies_file = os.getenv("YTDLP_COOKIES_FILE")
-    if cookies_file and os.path.isfile(cookies_file) and os.path.getsize(cookies_file) > 0:
-        cmd += ["--cookies", cookies_file]
+    if cookies_file:
+        try:
+            size = os.path.getsize(cookies_file)
+            with open(cookies_file, "rb") as fh:  # readability, not just existence
+                fh.read(1)
+        except OSError as exc:
+            log.warning("yt-dlp: YTDLP_COOKIES_FILE=%s is set but UNREADABLE (%s) — "
+                        "proceeding WITHOUT cookies", cookies_file, exc)
+        else:
+            if size > 0:
+                cmd += ["--cookies", cookies_file]
+                log.info("yt-dlp: using cookie jar %s (%d bytes)", cookies_file, size)
+            else:
+                log.warning("yt-dlp: cookie jar %s is EMPTY — proceeding without cookies",
+                            cookies_file)
 
     cookies_browser = os.getenv("COOKIES_FROM_BROWSER")
     if cookies_browser:
