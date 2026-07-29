@@ -1,9 +1,19 @@
 """Backfill video metadata (upload_date, duration, views/likes/comments) from the YouTube
-Data API. The channel enumerator uses yt-dlp flat-playlist which omits these, so ~all rows
-were missing upload_date and most were missing duration. Idempotent: re-run any time; only
-fills what the API returns. Requires YOUTUBE_API_KEY.
+Data API. The channel enumerator uses yt-dlp flat-playlist which omits these, so a freshly
+enumerated row has upload_date NULL and usually duration NULL. Requires YOUTUBE_API_KEY.
 
-Run: python -m jobs.backfill_metadata
+INCREMENTAL BY DEFAULT — it selects only rows actually missing what it uniquely provides
+(upload_date / duration). It used to pull EVERY row on every run: as jobs.enumerate_channel's
+nightly chain that was ~18 YouTube API calls and ~855 pointless row rewrites a night, to
+re-set values that had not changed.
+
+Refreshing views/likes here was also a duplicate pull: jobs.poll_archive_kpis owns those for
+archived videos and keeps its own `kpis_polled_at` watermark. A row picked up here still gets
+its stats on that one pass, which is what covers a video before it is archived (poll_archive_kpis
+filters on archive_uri IS NOT NULL, so it never sees a brand-new one).
+
+Run: python -m jobs.backfill_metadata          # only rows missing upload_date/duration
+     python -m jobs.backfill_metadata --all    # force a full refresh of every row
 """
 import json
 import logging
@@ -46,12 +56,24 @@ def _fetch_batch(ids: list[str], key: str) -> dict:
     return out
 
 
-def _run_for_tenant(db, tenant_id: int) -> dict:
-    """Per-tenant metadata backfill body. Called by for_each_tenant via run()."""
+def _run_for_tenant(db, tenant_id: int, *, refresh_all: bool = False) -> dict:
+    """Per-tenant metadata backfill body. Called by for_each_tenant via run().
+
+    refresh_all=False (the default) restricts the pull to rows missing upload_date or
+    duration — the watermark. Without it this re-fetched the entire catalogue nightly.
+    """
     key = os.getenv("YOUTUBE_API_KEY", "")
     if not key:
         raise RuntimeError("YOUTUBE_API_KEY not set")
-    ids = [v.id for v in db.query(Video.id).all()]
+    from sqlalchemy import or_  # noqa: PLC0415
+
+    q = db.query(Video.id)
+    if not refresh_all:
+        q = q.filter(or_(Video.upload_date.is_(None), Video.duration.is_(None)))
+    ids = [v.id for v in q.all()]
+    if not ids:
+        logger.info("nothing to backfill — every row already has upload_date and duration")
+        return {"total": 0, "updated": 0}
     updated = 0
     for i in range(0, len(ids), 50):
         batch = ids[i : i + 50]
@@ -79,14 +101,14 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
     return {"total": len(ids), "updated": updated}
 
 
-def run() -> dict:
+def run(*, refresh_all: bool = False) -> dict:
     """Iterate active tenants and backfill video metadata for each."""
     from core.tenant_loop import for_each_tenant  # noqa: PLC0415
 
     totals: dict = {"total": 0, "updated": 0}
 
     def _fn(db, tenant_id: int) -> None:
-        r = _run_for_tenant(db, tenant_id)
+        r = _run_for_tenant(db, tenant_id, refresh_all=refresh_all)
         totals["total"] += r.get("total", 0)
         totals["updated"] += r.get("updated", 0)
 
@@ -95,5 +117,7 @@ def run() -> dict:
 
 
 if __name__ == "__main__":
+    import sys  # noqa: PLC0415
+
     logging.basicConfig(level=logging.INFO)
-    print(json.dumps(run(), indent=2))
+    print(json.dumps(run(refresh_all="--all" in sys.argv), indent=2))

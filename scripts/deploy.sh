@@ -107,7 +107,7 @@ gcloud run deploy api --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
   --allow-unauthenticated --set-secrets "$SECRETS"
 
 # Point each job at the same image with its module entrypoint.
-# Terraform defines these 7 jobs (main.tf job_names). --args uses the = form because the
+# Terraform defines these 8 jobs (main.tf job_names). --args uses the = form because the
 # value begins with '-m' (gcloud would otherwise parse it as a flag).
 declare -A JOBS=(
   [ingest]="jobs.ingest_worker" [render]="jobs.render_job"
@@ -122,8 +122,13 @@ declare -A JOBS=(
   # measurement (if TTL > 14h, disable the knowify-keepwarm Cloud Scheduler instead).
   [knowify-keepwarm]="jobs.knowify_sync"
   # enumerate-channel: the ONLY thing that adds new Video rows. ingest advances existing rows
-  # only, so without this the catalog silently freezes at whatever was last seeded.
+  # only, so without this the catalog silently freezes at whatever was last seeded. It chains
+  # jobs.backfill_metadata itself (flat-playlist returns no upload_date).
   [enumerate-channel]="jobs.enumerate_channel"
+  # archive: pulls each source MP4 into the media bucket and sets Video.archive_uri. Required
+  # before STT — adapters/stt_gcp.py refuses to transcribe a video without it — so without this
+  # a newly discovered video is stuck: enumerated, dated, and permanently un-transcribable.
+  [archive]="jobs.archive_job"
 )
 for job in "${!JOBS[@]}"; do
   # knowify-keepwarm passes an extra --refresh-only flag to skip data sync.

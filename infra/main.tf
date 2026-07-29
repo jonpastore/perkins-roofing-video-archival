@@ -513,7 +513,7 @@ resource "google_cloud_run_v2_service" "api" {
 
 locals {
   job_names = toset(["ingest", "render", "article", "social", "knowify-sync", "knowify-keepwarm",
-  "enumerate-channel"])
+  "enumerate-channel", "archive"])
   # ingest (STT audio demux) and render both download full source MP4s to a memory-backed /tmp;
   # the largest Perkins video is ~2 GB, so they need real headroom or the container OOM-kills
   # (SIGKILL) mid-batch. article/social are lightweight (LLM/HTTP only).
@@ -529,6 +529,9 @@ locals {
     # enumerate-channel: yt-dlp flat-playlist over the channel tabs + Video upserts. No media
     # download (that is ingest's job), so it stays light.
     enumerate-channel = "1Gi"
+    # archive downloads full source MP4s to a memory-backed /tmp, same as ingest/render —
+    # the largest Perkins video is ~2 GB, so it needs the same headroom or it OOM-kills.
+    archive = "8Gi"
   }
   # ingest may run a long-form batch STT (a caption-less 97-min podcast's batch takes ~40 min);
   # give it (and render) 2h so a legit long job finishes instead of being killed mid-transcript.
@@ -541,6 +544,7 @@ locals {
     knowify-keepwarm = "300s"
     # Three channel tabs, ~900 entries, flat-playlist only — minutes, not hours.
     enumerate-channel = "1800s"
+    archive           = "7200s"
   }
 }
 
@@ -796,6 +800,36 @@ resource "google_cloud_scheduler_job" "enumerate_channel" {
 
   http_target {
     uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/enumerate-channel:run"
+    http_method = "POST"
+
+    oauth_token {
+      service_account_email = google_service_account.scheduler_sa.email
+    }
+  }
+
+  depends_on = [google_project_service.apis, google_cloud_run_v2_job.jobs]
+}
+
+# Archive newly-discovered videos to the media bucket (jobs/archive_job.py).
+#
+# This is the third link in the catalogue chain and, like the other two, existed as a script
+# that nothing ever ran: enumerate-channel finds a video, backfill_metadata dates it, and then
+# it STOPS — adapters/stt_gcp.py raises "no archive_uri for {id}; run archive_job before STT",
+# so an un-archived video can never be transcribed and never reaches article grounding. All 15
+# videos discovered on 2026-07-28 were in exactly that state.
+#
+# Inherently incremental: the job filters Video.archive_uri IS NULL, so a run with nothing new
+# does nothing. 07:30 ET, i.e. after enumerate-channel at 07:00, so the morning's finds are
+# archived the same day and ingest (09:00-18:00) can transcribe them.
+resource "google_cloud_scheduler_job" "archive" {
+  name      = "archive"
+  region    = var.region
+  schedule  = "30 7 * * *"
+  time_zone = "America/New_York"
+  paused    = false
+
+  http_target {
+    uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/archive:run"
     http_method = "POST"
 
     oauth_token {

@@ -1,7 +1,16 @@
-"""Cloud Run Job: enumerate the full Perkins channel (videos + shorts + streams) and
-upsert Video rows. Idempotent — re-running refreshes titles/urls, adds new videos.
+"""Cloud Run Job: enumerate the Perkins channel (videos + shorts + streams) and upsert Video
+rows. Idempotent — re-running refreshes titles/urls and adds new videos.
 
-Run: .venv/bin/python -m jobs.enumerate_channel [limit_per_tab]
+BOUNDED BY DEFAULT. YouTube channel tabs are newest-first and `limit` maps to yt-dlp's
+--playlist-end, so DEFAULT_LIMIT pulls only the newest N per tab instead of re-scraping the
+entire ~860-video back catalogue every night to re-discover videos we already have. At roughly
+1-2 uploads a day, 60 is weeks of headroom.
+
+The bound only affects DISCOVERY of old videos, never correctness of what we hold: the upsert
+is keyed on video id. Pass 0 for an unbounded sweep — do that if the job has been off for a
+long stretch, or to reconcile against the channel's own video count.
+
+Run: .venv/bin/python -m jobs.enumerate_channel [limit_per_tab]   # 0 = full sweep
 """
 import sys
 
@@ -10,6 +19,10 @@ from app.models import SessionLocal, Video, init_db
 from core.enumerate import to_video_rows
 
 CHANNEL_ID = "UChJZpBYXOuR0j1EHJugv5hg"  # Perkins Roofing Corp (tenant-1 fallback)
+
+# Newest N per tab on a scheduled run. See the module docstring: tabs are newest-first, so this
+# is a high-water mark, not a sample. 0/None means unbounded.
+DEFAULT_LIMIT = 60
 
 
 def _channel_ids_for_tenant(db, tenant_id: int) -> list[str]:
@@ -101,7 +114,10 @@ def run(channel_id=CHANNEL_ID, limit=None):
 
 
 if __name__ == "__main__":
-    _limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    # No arg -> the bounded default. An explicit 0 -> unbounded full sweep.
+    _limit = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_LIMIT
+    _limit = _limit or None
+    print(f"enumerating {'ALL' if _limit is None else f'newest {_limit}'} per tab")
     result = run(limit=_limit)
     print(result)
 
