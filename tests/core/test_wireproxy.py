@@ -117,6 +117,7 @@ def test_non_bot_error_does_not_rotate(monkeypatch):
 
 
 def test_exhausting_every_config_raises_and_names_the_remedy(monkeypatch):
+    monkeypatch.setenv("EGRESS_PASSES", "1")
     _patch_configs(monkeypatch, [_CFG_A, _CFG_B])
     _patch_runs(monkeypatch, [_Proc(1, _BOT), _Proc(1, _BOT)])
     with pytest.raises(RuntimeError, match="egress config\\(s\\) exhausted") as e:
@@ -125,9 +126,20 @@ def test_exhausting_every_config_raises_and_names_the_remedy(monkeypatch):
     assert _FakeTunnel.tried == [_CFG_A, _CFG_B]
 
 
+def test_a_blocked_config_is_retried_on_the_next_pass(monkeypatch):
+    """A blocked exit is not permanently blocked (archive-trl5x: both configs succeeded minutes
+    after being blocked), so one pass throws away downloads a second pass gets."""
+    monkeypatch.setenv("EGRESS_PASSES", "2")
+    _patch_configs(monkeypatch, [_CFG_A, _CFG_B])
+    _patch_runs(monkeypatch, [_Proc(1, _BOT), _Proc(1, _BOT), _Proc(0)])
+    Y._run_ytdlp(["yt-dlp", "url"], "vid")
+    assert _FakeTunnel.tried == [_CFG_A, _CFG_B, _CFG_A]
+
+
 def test_never_silently_falls_back_to_direct(monkeypatch):
     """Exhaustion must RAISE. Falling back to a direct connection would look like it worked
     on a dev box and be permanently bot-blocked in prod."""
+    monkeypatch.setenv("EGRESS_PASSES", "1")
     _patch_configs(monkeypatch, [_CFG_A])
     calls = _patch_runs(monkeypatch, [_Proc(1, _BOT)])
     with pytest.raises(RuntimeError):

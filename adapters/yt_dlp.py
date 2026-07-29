@@ -184,6 +184,11 @@ def _run_ytdlp(cmd: list[str], video_id: str) -> None:
 
     Only a bot-block triggers rotation. A private/removed video fails identically on every exit,
     so rotating for it would burn the job's timeout for nothing.
+
+    The bundle is walked EGRESS_PASSES times. A blocked exit is not permanently blocked: in
+    execution archive-trl5x (2026-07-29) both configs downloaded successfully minutes after being
+    bot-blocked, at an overall 3/26 attempt success rate. One pass therefore gives up on downloads
+    a second pass gets, and a blocked attempt only costs ~90s.
     """
     from core.wireproxy import Tunnel, load_configs  # noqa: PLC0415
 
@@ -194,12 +199,15 @@ def _run_ytdlp(cmd: list[str], video_id: str) -> None:
             raise _ytdlp_error(proc, video_id)
         return
 
+    passes = max(1, int(os.getenv("EGRESS_PASSES", "2")))
+    attempts = [c for _ in range(passes) for c in configs]
+
     last: RuntimeError | None = None
-    for i, config in enumerate(configs, 1):
+    for i, config in enumerate(attempts, 1):
         try:
             with Tunnel(config) as tunnel:
                 log.info("yt-dlp: %s via egress %d/%d (%s)",
-                         video_id, i, len(configs), tunnel.proxy_url)
+                         video_id, i, len(attempts), tunnel.proxy_url)
                 proc = subprocess.run(  # noqa: S603
                     [*cmd, "--proxy", tunnel.proxy_url], capture_output=True, timeout=900,
                 )
@@ -207,16 +215,17 @@ def _run_ytdlp(cmd: list[str], video_id: str) -> None:
                     return
                 last = _ytdlp_error(proc, video_id)
         except RuntimeError as exc:  # tunnel failed to start — try the next config
-            log.warning("yt-dlp: egress %d/%d unusable: %s", i, len(configs), exc)
+            log.warning("yt-dlp: egress %d/%d unusable: %s", i, len(attempts), exc)
             last = exc
             continue
 
         if not _BOT_BLOCK_RE.search(str(last)):
             raise last  # not an egress problem; another exit will not help
-        log.warning("yt-dlp: egress %d/%d bot-blocked for %s — rotating", i, len(configs), video_id)
+        log.warning("yt-dlp: egress %d/%d bot-blocked for %s — rotating", i, len(attempts), video_id)
 
     raise RuntimeError(
-        f"yt-dlp: all {len(configs)} egress config(s) exhausted for {video_id}. "
+        f"yt-dlp: all {len(configs)} egress config(s) exhausted for {video_id} "
+        f"over {len(attempts)} attempts. "
         f"VPN ranges get blocked over time — refresh the wireguard-configs secret. "
         f"Last error: {last}"
     )

@@ -21,8 +21,15 @@ and blocking is per-range. Measured 2026-07-29:
     185.159.158.153 -> 79.127.160.162   ok 3/3
     185.159.158.81  -> 79.127.136.197   ok 3/3
 
-So retrying one config is useless and rotating configs is the entire strategy. Ranges get blocked
-over time, so the config bundle is expected to need refreshing — that is maintenance, not a bug,
+So rotating configs is the strategy, not retrying one config back-to-back.
+
+BUT A BLOCK IS NOT PERMANENT — corrected 2026-07-29 from execution archive-trl5x, where BOTH
+configs downloaded successfully minutes after being bot-blocked (3 successes in 26 attempts).
+The block behaves like per-IP rate limiting that decays, not a fixed range ban, so
+adapters/yt_dlp walks the bundle EGRESS_PASSES (default 2) times instead of once.
+
+Two configs at that hit rate is still thin. Ranges do get blocked over time, so the bundle is
+expected to need refreshing with more/newer Proton servers — that is maintenance, not a bug,
 which is why exhaustion raises loudly instead of degrading to a direct connection.
 """
 from __future__ import annotations
