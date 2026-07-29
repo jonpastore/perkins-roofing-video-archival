@@ -28,9 +28,11 @@ configs downloaded successfully minutes after being bot-blocked (3 successes in 
 The block behaves like per-IP rate limiting that decays, not a fixed range ban, so
 adapters/yt_dlp walks the bundle EGRESS_PASSES (default 2) times instead of once.
 
-Two configs at that hit rate is still thin. Ranges do get blocked over time, so the bundle is
-expected to need refreshing with more/newer Proton servers — that is maintenance, not a bug,
-which is why exhaustion raises loudly instead of degrading to a direct connection.
+The bundle was widened to 7 configs on 2026-07-29 (version 2 of the secret). Probed the same
+day through this code path: 5 of the 7 exits passed YouTube's check, and 2 of the 5 NEW Proton
+servers were already blocked — which is the point. Ranges get blocked over time, so the bundle
+is expected to need refreshing, that is maintenance, not a bug, and it is why exhaustion raises
+loudly instead of degrading to a direct connection.
 """
 from __future__ import annotations
 
