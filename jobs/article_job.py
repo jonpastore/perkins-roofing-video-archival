@@ -103,6 +103,7 @@ def _apply_repair(content_md: str, jsonld: list[dict], keyword: str, meta_descri
         keyword=keyword,
         meta_description=meta_description,
         extra_valid_slugs={pillar_slug} if pillar_slug else None,
+        pillar_slug=pillar_slug,
     )
     if result.fixes:
         logger.info("article_repair on %r: %s", keyword, result.fixes)

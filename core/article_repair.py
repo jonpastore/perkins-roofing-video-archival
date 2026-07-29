@@ -406,6 +406,47 @@ def _repair_toc_h2_only(content: str) -> tuple[str, list[str]]:
     return out, fixes
 
 
+def _append_pillar_link(
+    content: str, pillar_slug: str | None, pillar_map: dict[str, str],
+) -> tuple[str, list[str], list[dict]]:
+    """Ensure a cluster article links UP to its pillar (criterion ``pillar_link``).
+
+    That criterion has always been declared ``fixable=True``, but until 2026-07-28 nothing
+    implemented the fix: ``_repair_relative_links`` only REWRITES an href that already exists
+    and happens to be dead, so a cluster carrying NO pillar link at all was unrepairable and
+    just failed the gate forever. Four clusters sat in exactly that state.
+
+    ``pillar_slug`` is a topic KEY, not the pillar article's slug (``metal-roof-maintenance``
+    vs ``8-proven-tips-metal-roof-maintenance-south-florida``); ``pillar_map`` resolves key ->
+    real slug. check_compliance matches by substring, so linking the real slug satisfies it
+    whenever the key is contained in it — but we link the resolved slug regardless, because a
+    link to a key that is not a real article would be a dead link.
+    """
+    fixes: list[str] = []
+    issues: list[dict] = []
+    if not pillar_slug:
+        return content, fixes, issues
+
+    target = pillar_map.get(pillar_slug, pillar_slug)
+    href = f"/{target}"
+    # Idempotent: already linked (with or without a trailing slash) -> no-op.
+    if re.search(rf'href="[^"]*{re.escape(target)}', content or ""):
+        return content, fixes, issues
+    if target == pillar_slug and pillar_slug not in pillar_map:
+        # No pillar row owns this topic key, so we cannot resolve it to a real article.
+        # Emit rather than fabricate a link to a slug that may not exist.
+        issues.append({
+            "name": "pillar_unresolved", "severity": "warn",
+            "details": f"no pillar article is keyed to topic {pillar_slug!r} — cannot link up",
+        })
+        return content, fixes, issues
+
+    anchor = pillar_slug.replace("-", " ")
+    link = f'<a href="{href}">Read our complete guide to {anchor}</a>'
+    fixes.append(f"appended pillar link -> {href}")
+    return f"{content}\n<p>{link}</p>", fixes, issues
+
+
 def _append_service_links(content: str, keyword: str) -> tuple[str, list[str], list[dict]]:
     fixes: list[str] = []
     issues: list[dict] = []
@@ -458,6 +499,7 @@ def repair_article(
     category_id: int | None = None,
     has_featured_image: bool | None = None,
     extra_valid_slugs: set[str] | None = None,
+    pillar_slug: str | None = None,
 ) -> RepairResult:
     """Run every repair pass, in order, over one article's content + jsonld.
 
@@ -473,7 +515,11 @@ def repair_article(
     # though they aren't article rows — without this, _repair_relative_links unwraps
     # the legitimate /roof-repair-services/ and /pillar-slug links as "dead".
     from core.internal_links import SERVICE_SLUGS  # noqa: PLC0415
-    valid_slugs = set(valid_slugs) | set(SERVICE_SLUGS) | set(extra_valid_slugs or set())
+    # pillar_map VALUES are real pillar article slugs by construction (jobs.article_job builds
+    # it from ArticleModel rows). Without them here, _repair_relative_links unwraps as "dead"
+    # the very links it — and _append_pillar_link — just wrote, so repair was not idempotent.
+    valid_slugs = (set(valid_slugs) | set(SERVICE_SLUGS) | set(extra_valid_slugs or set())
+                   | set(pillar_map.values()))
 
     content, f1, i1 = _repair_video_ids(content, known_video_ids)
     fixes += f1
@@ -492,6 +538,15 @@ def repair_article(
         content, jsonld_list, known_video_ids, video_meta, meta_description)
     fixes += f5
     issues += i5
+
+    # BEFORE _append_service_links, and that order is load-bearing for idempotency: the pillar
+    # anchor text ("...guide to metal roof maintenance") is part of the plain text that
+    # _append_service_links keyword-matches on. Appending it afterwards means a second repair
+    # pass sees text the first pass did not, and adds a service block that run one skipped.
+    # Its link is relative (/slug), so it never trips that pass's absolute-BASE_URL guard.
+    content, f6a, i6a = _append_pillar_link(content, pillar_slug, pillar_map)
+    fixes += f6a
+    issues += i6a
 
     content, f6, i6 = _append_service_links(content, keyword)
     fixes += f6

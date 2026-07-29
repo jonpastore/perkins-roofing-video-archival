@@ -539,3 +539,56 @@ def test_repair_article_combined_end_to_end_fixture():
 
     assert isinstance(result, RepairResult)
     assert result.fixes  # something was recorded
+
+
+# --- pillar link (the 2026-07-28 gap: criterion said fixable, nothing implemented it) ---
+
+def test_append_pillar_link_adds_missing_uplink_resolved_via_pillar_map():
+    """A cluster with NO pillar link at all gets one, pointing at the pillar's REAL slug."""
+    out = _repair(
+        "<p>Metal roof coatings extend service life.</p>",
+        pillar_map={"metal-roof-maintenance": "8-proven-tips-metal-roof-maintenance-south-florida"},
+        pillar_slug="metal-roof-maintenance",
+    )
+    assert 'href="/8-proven-tips-metal-roof-maintenance-south-florida"' in out.content_md
+    assert any("appended pillar link" in f for f in out.fixes)
+
+
+def test_append_pillar_link_satisfies_the_compliance_criterion():
+    """The repair must actually clear check_compliance's pillar_link — the topic KEY is a
+    substring of the real slug, which is why linking the resolved slug is enough."""
+    from core.article_criteria import check_compliance
+    out = _repair(
+        "<p>Fastener corrosion is the usual failure point.</p>",
+        pillar_map={"metal-roof-maintenance": "8-proven-tips-metal-roof-maintenance-south-florida"},
+        pillar_slug="metal-roof-maintenance",
+    )
+    crits = check_compliance(
+        out.content_md, "meta", [], [], {"role": "cluster", "pillar_slug": "metal-roof-maintenance"},
+        "metal roof fasteners", set(),
+    )
+    pillar = next(c for c in crits if c.key == "pillar_link")
+    assert pillar.ok, "repair ran but pillar_link still fails"
+
+
+def test_append_pillar_link_is_idempotent():
+    kw = {"pillar_map": {"metal-roof-maintenance": "8-proven-tips-metal-roof-maintenance-south-florida"},
+          "pillar_slug": "metal-roof-maintenance"}
+    once = _repair("<p>Coatings.</p>", **kw)
+    twice = _repair(once.content_md, **kw)
+    assert twice.content_md == once.content_md
+    assert not any("appended pillar link" in f for f in twice.fixes)
+
+
+def test_append_pillar_link_warns_instead_of_fabricating_when_unresolvable():
+    """No pillar row owns the topic key -> emit an issue, never link a slug that may not exist.
+    This is the exact state roof-inspection-after-hurricane was in."""
+    out = _repair("<p>Post-storm checks.</p>", pillar_map={},
+                  pillar_slug="roof-inspection-before-buying-a-house")
+    assert "roof-inspection-before-buying-a-house" not in out.content_md
+    assert any(i["name"] == "pillar_unresolved" for i in out.issues)
+
+
+def test_append_pillar_link_noop_for_non_cluster():
+    out = _repair("<p>Standalone.</p>", pillar_slug=None)
+    assert not any("appended pillar link" in f for f in out.fixes)
