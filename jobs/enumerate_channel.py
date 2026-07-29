@@ -104,4 +104,22 @@ if __name__ == "__main__":
     _limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
     result = run(limit=_limit)
     print(result)
+
+    # Enumeration alone leaves a half-populated row. list_channel uses yt-dlp's
+    # --flat-playlist, which does NOT return upload_date (and usually not duration), so a
+    # freshly discovered video lands with upload_date NULL — unusable for "newest video"
+    # ordering, for VideoObject's uploadDate, and for anything that slices by date.
+    # Observed on this job's first real run (2026-07-28): 15 videos discovered, all 15 with
+    # NULL upload_date until jobs.backfill_metadata was run by hand.
+    #
+    # So the scheduled job means "refresh the catalog", not "half-refresh it". Chained here in
+    # __main__ rather than inside run() so both library functions stay independently testable.
+    # A backfill failure exits non-zero on purpose: enumeration is already committed and is
+    # idempotent, so Cloud Run's retry is safe, and a visible failure beats silently
+    # accumulating date-less rows.
+    from jobs import backfill_metadata  # noqa: PLC0415
+
+    backfilled = backfill_metadata.run()
+    print(backfilled)
+
     sys.exit(1 if result["incomplete"] else 0)  # non-zero exit on partial enumeration
