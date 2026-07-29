@@ -39,7 +39,20 @@ def _run_for_tenant(db, tenant_id: int, limit: int | None = None) -> dict:
 
     bucket = _media_bucket()
 
-    query = db.query(Video).filter(Video.archive_uri.is_(None))
+    # SHORTEST FIRST. Downloads go through a WireGuard tunnel (~465 KiB/s measured), and the
+    # backlog is wildly skewed: of the 15 unarchived on 2026-07-29, twelve were Shorts of
+    # 13-80s and three were 20/49/117 minutes — the last ~1.36 GB, roughly 50 minutes on its
+    # own. Unordered, one long video at the head of the batch can eat the whole 2h job timeout
+    # and leave twelve trivial ones undone.
+    #
+    # Ordering by duration means a timeout truncates the TAIL, and since the job is idempotent
+    # (it only selects archive_uri IS NULL) the next run resumes with the big ones. NULLS LAST
+    # so an un-backfilled row never jumps the queue.
+    query = (
+        db.query(Video)
+        .filter(Video.archive_uri.is_(None))
+        .order_by(Video.duration.asc().nullslast())
+    )
     if limit is not None:
         query = query.limit(limit)
     videos = query.all()

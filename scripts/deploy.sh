@@ -128,12 +128,23 @@ declare -A JOBS=(
   # archive: pulls each source MP4 into the media bucket and sets Video.archive_uri. Required
   # before STT — adapters/stt_gcp.py refuses to transcribe a video without it — so without this
   # a newly discovered video is stuck: enumerated, dated, and permanently un-transcribable.
+  # Bounded per run (see ARCHIVE_BATCH below) rather than draining the whole backlog at once.
   [archive]="jobs.archive_job"
 )
+
+# How many videos one scheduled archive run may pull. Downloads go through a WireGuard tunnel
+# (~465 KiB/s), so a 2h job cannot drain a large backlog in one pass — and it does not need to.
+# The job is idempotent (archive_uri IS NULL) and now takes the SHORTEST first, so a bounded
+# nightly run drains a backlog over a few days and then trivially keeps up: the channel adds
+# 1-2 videos/day, well under this. Raise it for a one-off catch-up, don't raise it permanently.
+ARCHIVE_BATCH="${ARCHIVE_BATCH:-5}"
 for job in "${!JOBS[@]}"; do
   # knowify-keepwarm passes an extra --refresh-only flag to skip data sync.
   if [[ "$job" == "knowify-keepwarm" ]]; then
     ARGS="-m,jobs.knowify_sync,--refresh-only"
+  elif [[ "$job" == "archive" ]]; then
+    # jobs/archive_job.py reads sys.argv[1] as its limit.
+    ARGS="-m,${JOBS[$job]},${ARCHIVE_BATCH}"
   else
     ARGS="-m,${JOBS[$job]}"
   fi
