@@ -3,8 +3,9 @@
 **Read `CONTINUATION-2026-07-29.md` first** (the morning session: the video pipeline, the
 WireGuard tunnel, and §1 — we publish to STAGING). Everything below is the afternoon.
 
-**HEAD at write time:** see `git log --oneline -1`. **Deployed:** `platform:b3de398`
-(everything after it is committed but NOT deployed — check before assuming).
+**HEAD `023d59d`**, pushed, CI green. **Deployed:** `platform:023d59d` — confirm with
+`gcloud run services describe api --region us-central1 --format='value(spec.template.spec.containers[0].image)'`
+before trusting it, and remember a `deploy` shown as *skipped* means nothing shipped.
 
 ---
 
@@ -178,6 +179,18 @@ archive download depends on had its start, failure and teardown paths untested).
   three-letter substring. The unit test suite was green the whole time.
 - **`app/models.py` is NOT ruff-gated** (CI lints `core adapters api jobs`), so running ruff on
   it surfaces pre-existing E702s that are not yours.
+- **A repo guard caught a defect in my own new schema.**
+  `tests/api/test_negative_maxlength.py` compares Pydantic `max_length` against the DB columns,
+  because SQLite accepts any length and Postgres 500s — my `ProjectIn` had no bounds while
+  `portfolio_projects` bounds name/city/section at 300/120/40. If you add a request model backed
+  by a bounded column, mirror the bounds or that test will (correctly) fail.
+- **I enforced the gate in `publish` and re-ran only the NEW test file.** The older test covering
+  the same route still asserted the pre-gate error shape and CI failed. When you change a
+  route's contract, grep for every test that posts to it — `tests/api/test_portfolio.py` and
+  `tests/api/test_portfolio_crud.py` both do.
+- **The full local suite takes 40-60 min on this box but ~6 min on CI**, and the root-level tests
+  alone are 32 seconds for 1,079 tests. Run `tests/api tests/core tests/adapters tests/jobs
+  tests/tenancy` (7m40s, 4,063 tests) for a real pre-push check rather than the whole tree.
 - **Two tests here are ORDER-DEPENDENT:** `tests/core/test_avatar_script.py` fails when
   `tests/core` runs alone (it needs another module to have created `tenants`). Pre-existing —
   verified by stashing. It passes in the full suite CI runs.

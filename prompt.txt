@@ -3,6 +3,10 @@ Resume perkins-roofing/video-archival.
 READ FIRST: CONTINUATION-2026-07-29-pm.md, then CONTINUATION-2026-07-29.md (the morning
 session), then core/pii.py and core/portfolio_criteria.py.
 
+HEAD 023d59d, pushed, CI green, DEPLOYED platform:023d59d (api service verified).
+Prod migrations applied through 0050. Cloud SQL now enforces
+idle_in_transaction_session_timeout=5min.
+
 Confirm before trusting anything below:
   git log --oneline -1 && git status --short
   git log --oneline origin/main..HEAD          # expect empty
