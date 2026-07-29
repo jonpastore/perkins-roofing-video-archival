@@ -84,7 +84,11 @@ def _run_for_tenant(
                             html=_markdown_to_html(article.content_md or ""),
                             meta_description=article.meta or "",
                             jsonld=list(article.jsonld_json) if article.jsonld_json else [],
-                            status=article.status or "draft",
+                            # Content-only edit: leave the post's status alone. Passing
+                            # article.status sent our vocabulary ("published"/"scheduled") to
+                            # WP, which 400s on both — every sync over a non-draft article
+                            # failed, swallowed by the except below as a warning.
+                            status=None,
                             focus_keyword=article.focus_keyword,
                         )
                         wp_synced += 1

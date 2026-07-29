@@ -96,6 +96,28 @@ def _author_id() -> int:
         return 3
 
 
+# Our Article.status vocabulary is NOT WordPress's. WP accepts only
+# publish/future/draft/pending/private and 400s on anything else
+# (rest_invalid_param: "status is not one of ..."). jobs/reprocess_articles.py passed
+# `article.status` straight through, so every run over a published or scheduled article
+# failed with a 400 that its except-branch swallowed as a warning. Normalising here rather
+# than at the call site means no future caller can reintroduce it; already-valid WP values
+# pass through unchanged.
+_WP_STATUS = {"published": "publish", "scheduled": "future"}
+_WP_VALID_STATUS = {"publish", "future", "draft", "pending", "private"}
+
+
+def _wp_status(status: str | None) -> str:
+    s = (status or "draft").strip()
+    s = _WP_STATUS.get(s, s)
+    if s not in _WP_VALID_STATUS:
+        raise ValueError(
+            f"{status!r} is not a WordPress post status "
+            f"(valid: {', '.join(sorted(_WP_VALID_STATUS))})"
+        )
+    return s
+
+
 def _rank_math_meta(*, title: str, meta_description: str, focus_keyword: str | None = None) -> dict[str, str]:
     """Rank Math post-meta values written via wp/v2 once registered by our plugin."""
     focus = (focus_keyword or os.getenv("WP_FOCUS_KEYWORD", "")).strip()
@@ -181,7 +203,7 @@ def update(
     html: str,
     meta_description: str,
     jsonld: list[dict],
-    status: str = "draft",
+    status: str | None = "draft",
     focus_keyword: str | None = None,
     category_ids: list[int] | None = None,
     featured_media: int | None = None,
@@ -194,22 +216,28 @@ def update(
         html:             New post body HTML.
         meta_description: New meta description / excerpt.
         jsonld:           Updated JSON-LD list for post-meta.
-        status:           New WP post status.
+        status:           New WP post status. Our internal vocabulary is accepted and
+                          normalised (see _wp_status). Pass **None** to leave the post's
+                          current status untouched — what a content-only edit wants, and the
+                          only safe option for a scheduled post: WP's "future" needs a future
+                          `date`, and sending it without one publishes the post immediately.
         category_ids:     Category term ids (omit to leave the post's categories untouched).
         featured_media:   Featured image media id (omit to leave the existing featured image).
 
     Raises:
         requests.HTTPError: if the WP REST API returns a non-2xx response.
+        ValueError:         if status is not a WordPress status and cannot be mapped to one.
     """
     url = _wp_api_url(f"/wp-json/wp/v2/posts/{post_id}")
     payload = {
         "title": title,
         "content": html,
-        "status": status,
         "excerpt": meta_description,
         "author": _author_id(),  # policy: always Tim Kanak
         "meta": _post_meta(title=title, meta_description=meta_description, jsonld=jsonld, focus_keyword=focus_keyword),
     }
+    if status is not None:
+        payload["status"] = _wp_status(status)
     if category_ids:
         payload["categories"] = category_ids
     if featured_media:
