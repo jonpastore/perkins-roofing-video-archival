@@ -1163,6 +1163,16 @@ locals {
     # authenticates Gmail/Drive/Cloud Console too. It is jon@perkinsroofing.net,
     # the channel owner, never a personal account. Session cookies expire; archive_job
     # exits non-zero when every download fails, so expiry shows as a red job.
+    "wireguard-configs", # Bundle of WireGuard client configs for yt-dlp egress (archive/render).
+    # YouTube bot-blocks datacenter IPs: 15/15 downloads failed from Cloud Run
+    # with cookies verified loaded, so it is the IP, not the identity. Downloads
+    # go out through a USERSPACE tunnel (core/wireproxy.py) — kernel WireGuard
+    # needs TUN + NET_ADMIN, which Cloud Run does not grant.
+    # Several configs in one file because a blocked exit is STICKY per config:
+    # reconnecting one config gave the same blocked IP 5/5, while other configs
+    # landed in a different range and worked 3/3. adapters.yt_dlp rotates.
+    # ⚠️ Contains WireGuard PRIVATE KEYS. Expect to refresh it — VPN ranges get
+    # blocked over time, and exhaustion fails the job loudly by design.
     "squares-api-key", # SquareQuote API key. Was a PLAIN env var sourced from a laptop's
     # untracked .env, so a deploy from anywhere else silently shipped it
     # blank — and CI has no .env at all. Moved here 2026-07-28 so the

@@ -149,8 +149,14 @@ for job in "${!JOBS[@]}"; do
   # Google session. Absent/empty file = no --cookies flag, so this degrades rather than breaks.
   JOB_SECRETS="$SECRETS"
   if [[ "$job" == "archive" || "$job" == "render" ]]; then
-    JOB_SECRETS="${JOB_SECRETS},/secrets/youtube/cookies.txt=youtube-cookies:latest"
-    JOB_ENV="${JOB_ENV}|YTDLP_COOKIES_FILE=/secrets/youtube/cookies.txt"
+    # WireGuard egress bundle. YouTube bot-blocks datacenter IPs, so yt-dlp downloads from
+    # Cloud Run go through a userspace tunnel (core/wireproxy.py). One file, several configs;
+    # adapters.yt_dlp rotates through them because a blocked exit is sticky per config.
+    JOB_SECRETS="${JOB_SECRETS},/secrets/wireguard/configs.conf=wireguard-configs:latest"
+    JOB_ENV="${JOB_ENV}|WIREGUARD_CONFIGS_FILE=/secrets/wireguard/configs.conf"
+    # Cookies are NOT mounted: measured ineffective (15/15 blocked with the jar verified
+    # loaded), and a YouTube jar is a full Google session — not worth carrying for nothing.
+    # The youtube-cookies secret is retained but unused; delete it once this is proven.
   fi
   echo "== Deploy job: $job =="
   gcloud run jobs update "$job" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \

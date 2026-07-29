@@ -3,8 +3,11 @@
 #   Jobs override CMD:  python -m jobs.<name>         (ingest_worker, embed_job, render_job, article_job, social_job, archive_job, propose_series_job, promote_job)
 FROM python:3.12-slim
 
-# ffmpeg for the render/archive pipelines (yt-dlp merge + fuse)
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+# ffmpeg for the render/archive pipelines (yt-dlp merge + fuse).
+# curl + ca-certificates are build-time only, for the wireproxy release fetch below — the slim
+# base has neither, and the RUN that needs them fails without this.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # deno — REQUIRED by yt-dlp, not optional tooling. YouTube gates media URLs behind a JS
 # "n-challenge"; yt-dlp solves it with `--remote-components ejs:github` (see
@@ -15,6 +18,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 # requirements.txt.
 # Copied from the official binary-only image rather than piping an install script through sh.
 COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
+
+# wireproxy — userspace WireGuard exposing SOCKS5. Required because YouTube bot-blocks
+# datacenter egress (15/15 downloads from Cloud Run, cookies verified loaded and irrelevant),
+# and a kernel WireGuard tunnel needs a TUN device + NET_ADMIN that Cloud Run does not grant.
+# Userspace needs no privileges at all — verified in a container with neither.
+# See core/wireproxy.py for the measured exit-IP evidence.
+# Version-pinned: the upstream repo has changed owner (pufferffish -> windtf), so an unpinned
+# pull would track a moved namespace.
+ARG WIREPROXY_VERSION=v1.1.3
+RUN curl -fsSL "https://github.com/windtf/wireproxy/releases/download/${WIREPROXY_VERSION}/wireproxy_linux_amd64.tar.gz" \
+      -o /tmp/wireproxy.tgz \
+ && tar -xzf /tmp/wireproxy.tgz -C /usr/local/bin wireproxy \
+ && chmod +x /usr/local/bin/wireproxy \
+ && rm /tmp/wireproxy.tgz
 
 WORKDIR /srv
 COPY app/requirements.txt .

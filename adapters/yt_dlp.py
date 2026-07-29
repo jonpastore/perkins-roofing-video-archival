@@ -5,10 +5,15 @@ Also provides pull_video() for downloading the best available MP4 for render job
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 
 log = logging.getLogger(__name__)
+
+# The one error that rotating egress can fix. Anything else (private video, removed, 404) will
+# fail identically on every exit, so retrying across tunnels would just waste the timeout.
+_BOT_BLOCK_RE = re.compile(r"Sign in to confirm you.{1,3}re not a bot", re.IGNORECASE)
 
 _TABS = ("videos", "shorts", "streams")
 
@@ -95,20 +100,19 @@ def pull_video(video_id: str, dst: str) -> str:
         "--user-agent", os.getenv("YTDLP_USER_AGENT", _CHROME_UA),
         url,
     ]
-    # YouTube bot-blocks datacenter egress: from Cloud Run every download fails with "Sign in to
-    # confirm you're not a bot" (archive-qkh5d, 2026-07-28 — 15/15). A laptop works only because
-    # it is a residential IP. The fix is an authenticated cookie jar, which in a container has to
-    # be a FILE — --cookies-from-browser needs a browser profile that does not exist there.
-    # Mounted by Cloud Run from Secret Manager; see docs/2026-07-28-companycam-credentials.md's
-    # sibling note on rotation. Missing/empty file = no flag, so nothing breaks when it is unset.
+    # Cookies are OPTIONAL and are NOT the fix for the bot-block. Measured 2026-07-29: with the
+    # channel-owner jar verified loaded ("using cookie jar ... 6791 bytes") Cloud Run still got
+    # 15/15 "Sign in to confirm you're not a bot". The block is on the egress IP, not the
+    # identity — see core/wireproxy for the actual fix. Every successful download in testing was
+    # UNAUTHENTICATED, so this can be left unset; it is kept only as an escape hatch.
     #
-    # ⚠️ A YouTube cookie jar IS a full Google session: the SID/SAPISID cookies are scoped to
-    # .google.com, so they authenticate Gmail/Drive/Cloud Console too. It must come from an
-    # account that owns the channel and nothing else — never a personal account.
-    # Log which branch was taken. Without this a bot-block is ambiguous: "no cookies were sent"
-    # and "cookies were sent and YouTube rejected them anyway" produce the IDENTICAL yt-dlp
-    # error, and the container runs as a non-root user (appuser), so an unreadable secret mount
-    # would silently skip the flag and look exactly like a rejected jar.
+    # ⚠️ If it IS set: a YouTube cookie jar is a full Google session. SID/SAPISID are scoped to
+    # .google.com, so it also authenticates Gmail/Drive/Cloud Console. Channel-owning account
+    # only, never a personal one.
+    #
+    # The branch is logged because a bot-block is otherwise ambiguous: "no cookies sent" and
+    # "cookies sent and rejected" produce an IDENTICAL yt-dlp error, and the container runs as
+    # non-root (appuser), so an unreadable mount would silently skip the flag and look the same.
     cookies_file = os.getenv("YTDLP_COOKIES_FILE")
     if cookies_file:
         try:
@@ -141,25 +145,7 @@ def pull_video(video_id: str, dst: str) -> str:
             ffmpeg_bin = None
     if ffmpeg_bin:
         cmd += ["--ffmpeg-location", ffmpeg_bin]
-    # capture_output swallows yt-dlp's stderr, and CalledProcessError's str() prints only the
-    # command — so a failure logged as "returned non-zero exit status 1" with no reason. That
-    # cost a full diagnosis round on 2026-07-28 when 15/15 archives failed in-image (missing
-    # deno for the n-challenge solver) and the logs could not say why. Re-raise with stderr.
-    proc = subprocess.run(cmd, capture_output=True, timeout=900)  # noqa: S603
-    if proc.returncode != 0:
-        # RuntimeError, not CalledProcessError: the latter's str() prints only the command, so
-        # callers that log "%s" (jobs/archive_job.py) emitted the whole argv and no reason. The
-        # message must carry the cause. Nothing catches CalledProcessError from here.
-        err = (proc.stderr or b"").decode("utf-8", "replace").strip()
-        # Prefer the ERROR lines. Taking the tail alone reported a trailing WARNING ("No title
-        # found in player responses") while the actual cause — "Sign in to confirm you're not a
-        # bot" — sat earlier in the stream and was cut off.
-        fatal = [ln for ln in err.splitlines() if ln.lstrip().startswith("ERROR")]
-        detail = " | ".join(fatal) if fatal else err
-        raise RuntimeError(
-            f"yt-dlp failed for {video_id} (exit {proc.returncode}): "
-            f"{detail[-1500:] or '(no stderr)'}"
-        )
+    _run_ytdlp(cmd, video_id)
 
     # Locate the downloaded file (ext may vary on fallback formats)
     for fname in os.listdir(dst):
@@ -168,4 +154,69 @@ def pull_video(video_id: str, dst: str) -> str:
 
     raise FileNotFoundError(
         f"pull_video: no MP4 found in {dst!r} after downloading {video_id!r}"
+    )
+
+
+def _ytdlp_error(proc, video_id: str) -> RuntimeError:
+    """Build the exception for a failed yt-dlp run, carrying the real reason.
+
+    capture_output swallows stderr and CalledProcessError's str() prints only the command, so a
+    failure used to surface as "returned non-zero exit status 1" with no cause — that cost a
+    full diagnosis round on 2026-07-28. RuntimeError, because nothing catches
+    CalledProcessError from here and callers log "%s".
+    """
+    err = (proc.stderr or b"").decode("utf-8", "replace").strip()
+    # Prefer the ERROR lines. Taking the tail alone reported a trailing WARNING ("No title found
+    # in player responses") while the real cause sat earlier in the stream and was cut off.
+    fatal = [ln for ln in err.splitlines() if ln.lstrip().startswith("ERROR")]
+    detail = " | ".join(fatal) if fatal else err
+    return RuntimeError(
+        f"yt-dlp failed for {video_id} (exit {proc.returncode}): "
+        f"{detail[-1500:] or '(no stderr)'}"
+    )
+
+
+def _run_ytdlp(cmd: list[str], video_id: str) -> None:
+    """Run yt-dlp, rotating egress across WireGuard configs on a bot-block.
+
+    With no configs mounted this is a single direct attempt — unchanged behaviour for dev boxes,
+    which are residential and need no tunnel.
+
+    Only a bot-block triggers rotation. A private/removed video fails identically on every exit,
+    so rotating for it would burn the job's timeout for nothing.
+    """
+    from core.wireproxy import Tunnel, load_configs  # noqa: PLC0415
+
+    configs = load_configs()
+    if not configs:
+        proc = subprocess.run(cmd, capture_output=True, timeout=900)  # noqa: S603
+        if proc.returncode != 0:
+            raise _ytdlp_error(proc, video_id)
+        return
+
+    last: RuntimeError | None = None
+    for i, config in enumerate(configs, 1):
+        try:
+            with Tunnel(config) as tunnel:
+                log.info("yt-dlp: %s via egress %d/%d (%s)",
+                         video_id, i, len(configs), tunnel.proxy_url)
+                proc = subprocess.run(  # noqa: S603
+                    [*cmd, "--proxy", tunnel.proxy_url], capture_output=True, timeout=900,
+                )
+                if proc.returncode == 0:
+                    return
+                last = _ytdlp_error(proc, video_id)
+        except RuntimeError as exc:  # tunnel failed to start — try the next config
+            log.warning("yt-dlp: egress %d/%d unusable: %s", i, len(configs), exc)
+            last = exc
+            continue
+
+        if not _BOT_BLOCK_RE.search(str(last)):
+            raise last  # not an egress problem; another exit will not help
+        log.warning("yt-dlp: egress %d/%d bot-blocked for %s — rotating", i, len(configs), video_id)
+
+    raise RuntimeError(
+        f"yt-dlp: all {len(configs)} egress config(s) exhausted for {video_id}. "
+        f"VPN ranges get blocked over time — refresh the wireguard-configs secret. "
+        f"Last error: {last}"
     )
