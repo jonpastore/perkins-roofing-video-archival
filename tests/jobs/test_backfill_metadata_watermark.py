@@ -11,16 +11,30 @@ from datetime import date
 import pytest
 
 import jobs.backfill_metadata as B
-from app.models import Base, SessionLocal, Video, engine
+from app.models import SessionLocal, Video, init_db
+
+# Ensure tables exist — same pattern as tests/jobs/test_crawl_comments_rotation.py.
+init_db()
 
 
 @pytest.fixture(autouse=True)
 def _fresh_db(monkeypatch):
+    """Wipe only the rows we touch.
+
+    Deliberately NOT Base.metadata.drop_all(): pytest imports every test module before
+    running any test, and modules like test_crawl_comments_rotation.py call init_db() at
+    import time and then only DELETE rows. A drop_all here tears their tables out from under
+    them — this file sorts first alphabetically, so it broke them with
+    "no such table: comment_drafts". Row deletes are order-independent.
+    """
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    with SessionLocal() as db:
+        db.query(Video).delete()
+        db.commit()
     yield
-    Base.metadata.drop_all(engine)
+    with SessionLocal() as db:
+        db.query(Video).delete()
+        db.commit()
 
 
 def _seed(s, vid, upload_date=None, duration=None):
