@@ -24,3 +24,9 @@ jcs==0.2.1
 jinja2>=3.1
 markupsafe>=2.1
 google-cloud-bigquery>=3.0
+# adapters/yt_dlp.py shells out to `sys.executable -m yt_dlp`, so this must be an installed
+# PACKAGE in the image, not a binary on PATH. It was missing here entirely: enumerate_channel
+# had only ever been run from a laptop venv, so scheduling it as a Cloud Run Job (2026-07-28)
+# would have failed every night with ModuleNotFoundError. Unpinned deliberately — yt-dlp breaks
+# whenever YouTube changes its player and only the newest release keeps working.
+yt-dlp>=2026.7
