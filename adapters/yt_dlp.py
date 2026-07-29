@@ -92,6 +92,20 @@ def pull_video(video_id: str, dst: str) -> str:
         "--user-agent", os.getenv("YTDLP_USER_AGENT", _CHROME_UA),
         url,
     ]
+    # YouTube bot-blocks datacenter egress: from Cloud Run every download fails with "Sign in to
+    # confirm you're not a bot" (archive-qkh5d, 2026-07-28 — 15/15). A laptop works only because
+    # it is a residential IP. The fix is an authenticated cookie jar, which in a container has to
+    # be a FILE — --cookies-from-browser needs a browser profile that does not exist there.
+    # Mounted by Cloud Run from Secret Manager; see docs/2026-07-28-companycam-credentials.md's
+    # sibling note on rotation. Missing/empty file = no flag, so nothing breaks when it is unset.
+    #
+    # ⚠️ A YouTube cookie jar IS a full Google session: the SID/SAPISID cookies are scoped to
+    # .google.com, so they authenticate Gmail/Drive/Cloud Console too. It must come from an
+    # account that owns the channel and nothing else — never a personal account.
+    cookies_file = os.getenv("YTDLP_COOKIES_FILE")
+    if cookies_file and os.path.isfile(cookies_file) and os.path.getsize(cookies_file) > 0:
+        cmd += ["--cookies", cookies_file]
+
     cookies_browser = os.getenv("COOKIES_FROM_BROWSER")
     if cookies_browser:
         cmd += ["--cookies-from-browser", cookies_browser]
