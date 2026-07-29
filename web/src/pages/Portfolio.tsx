@@ -77,6 +77,8 @@ interface CurationView {
   available: { photos: MediaPhoto[]; videos: MediaVideo[] };
   selections: Selection[];
   score: ProjectScore;
+  preview_html: string;
+  scope_lines: string[];
 }
 
 function gateBadge(item: PortfolioItem) {
@@ -422,7 +424,25 @@ function CurationPanel({ slug, onSaved }: { slug: string; onSaved: () => void })
         {err && <ErrorMsg>{err}</ErrorMsg>}
       </div>
 
-      <ScorePanel score={view.score} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <ScorePanel score={view.score} />
+        <details style={{ minWidth: 280, maxWidth: 420 }}>
+          <summary style={{ cursor: "pointer", fontSize: 12, color: BRAND.navyText }}>
+            Preview the page that will publish
+            {view.scope_lines.length > 0 && ` · ${view.scope_lines.length} scope lines from the contract`}
+          </summary>
+          <div
+            style={{
+              border: `1px solid ${BRAND.border}`, borderRadius: 4, padding: 8, marginTop: 6,
+              maxHeight: 320, overflowY: "auto", background: "#fff", fontSize: 12,
+            }}
+            // The body is built server-side from our own record fields and CompanyCam URLs —
+            // no user-authored html reaches this, and an editor must see the real markup to
+            // judge it. Preview only; WordPress is what renders it for the public.
+            dangerouslySetInnerHTML={{ __html: view.preview_html }}
+          />
+        </details>
+      </div>
     </div>
   );
 }

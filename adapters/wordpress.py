@@ -500,15 +500,21 @@ def find_portfolio_post(title: str) -> dict | None:
     return None
 
 
-def publish_portfolio_post(post: dict, *, dry_run: bool = False) -> dict:
+def publish_portfolio_post(post: dict, *, dry_run: bool = False,
+                           update_existing: bool = False) -> dict:
     """Create an Avada Portfolio draft from a post payload
-    ({title, content, status, category, tags[], skills[]}), or report the existing post if
-    one with the same title already exists (idempotent — never creates a duplicate).
+    ({title, content, status, category, tags[], skills[]}), or UPDATE the existing post when
+    ``update_existing`` is set. Never creates a duplicate title either way.
     Creates the 3 taxonomy terms (portfolio_category/portfolio_tags/portfolio_skills) on
     first use if missing.
+
+    ⚠️ ``update_existing`` is what makes curation reach WordPress at all. All 13 candidates
+    already had drafts (created 2026-07-22), so the old skip-if-exists behaviour meant an
+    editor could curate a gallery, press Publish, get a 200 back — and the page would never
+    change. Anything that re-publishes a curated project must pass it.
     """
     existing = find_portfolio_post(post["title"])
-    if existing:
+    if existing and not update_existing:
         return {"title": post["title"], "status": "skipped-exists", "post_id": existing["id"]}
 
     if dry_run:
@@ -528,8 +534,15 @@ def publish_portfolio_post(post: dict, *, dry_run: bool = False) -> dict:
         ]
 
     payload = {"title": post["title"], "content": post["content"], "status": post["status"], **term_ids}
-    url = _wp_api_url("/wp-json/wp/v2/avada_portfolio")
-    resp = _session.post(url, json=payload, auth=_auth(), timeout=30)
+    base = _wp_api_url("/wp-json/wp/v2/avada_portfolio")
+    if existing:
+        # Content-only update: leave the post's own status alone so re-publishing a curated
+        # gallery cannot silently revert a page an editor has already published to draft.
+        payload.pop("status", None)
+        resp = _session.post(f"{base}/{existing['id']}", json=payload, auth=_auth(), timeout=30)
+        resp.raise_for_status()
+        return {"title": post["title"], "status": "updated", "post_id": existing["id"]}
+    resp = _session.post(base, json=payload, auth=_auth(), timeout=30)
     resp.raise_for_status()
     return {"title": post["title"], "status": "created", "post_id": resp.json()["id"]}
 

@@ -38,6 +38,7 @@ from core.portfolio_content import (
     build_project_jsonld,
     build_write_up,
 )
+from core.portfolio_facts import scope_for_dominant_client
 from core.portfolio_media import (
     companycam_project_id,
     gallery_html,
@@ -178,6 +179,66 @@ def _media_by_id(available: dict) -> dict:
     }
 
 
+def _scope_lines(db: Session, candidate: dict) -> list[str]:
+    """Scope descriptions Perkins actually sold on this project, from the Knowify mirror.
+
+    Three ORM steps (projects -> contracts -> deliverables) rather than raw SQL: it keeps RLS
+    obviously in force and stays inside the tenancy gate's rules.
+
+    Matches on ProjectName ONLY. The pre-existing matcher ILIKEs the whole JSON payload, which
+    is how the search term "7900" matched a generic "Tile Re-Roof" whose dollar amount happened
+    to contain those digits — attaching another customer's scope to a public page is worse than
+    having no scope at all.
+
+    Change-order projects are excluded: they are extras negotiated later, and letting them in
+    meant "Isola" returned hoist/railing lines and never reached the main re-roof contract.
+    """
+    from app.models import KnowifyRawRecord  # noqa: PLC0415
+
+    K = KnowifyRawRecord
+    name = K.payload["ProjectName"].as_string()
+    rows: list[dict] = []
+
+    for term in candidate.get("search_terms") or []:
+        try:
+            projects = db.query(
+                K.payload["Id"].as_string(), K.payload["ClientId"].as_string(), name,
+            ).filter(
+                K.entity == "projects", K.is_present.is_(True),
+                name.ilike(f"%{term}%"), ~name.ilike("%change order%"),
+            ).limit(50).all()
+            if not projects:
+                continue
+            by_pid = {pid: (client, pname) for pid, client, pname in projects}
+
+            contracts = db.query(
+                K.payload["Id"].as_string(), K.payload["ProjectId"].as_string(),
+            ).filter(
+                K.entity == "contracts", K.is_present.is_(True),
+                K.payload["ProjectId"].as_string().in_(list(by_pid)),
+            ).limit(200).all()
+            if not contracts:
+                continue
+            by_cid = {cid: by_pid[pid] for cid, pid in contracts if pid in by_pid}
+
+            deliverables = db.query(
+                K.payload["ContractId"].as_string(), K.payload["Description"].as_string(),
+            ).filter(
+                K.entity == "deliverables", K.is_present.is_(True),
+                K.payload["ContractId"].as_string().in_(list(by_cid)),
+            ).limit(400).all()
+
+            for cid, description in deliverables:
+                client, pname = by_cid[cid]
+                rows.append({"client_id": client, "project_name": pname,
+                             "description": description})
+        except Exception as exc:  # noqa: BLE001 — no scope is a degraded page, not an error
+            logger.warning("knowify scope lookup failed for %r: %s", term, exc)
+            continue
+
+    return scope_for_dominant_client(rows)
+
+
 def _location_slugs() -> list[str]:
     """Slugs of the location pages that actually exist, so an internal link never 404s.
 
@@ -190,20 +251,23 @@ def _location_slugs() -> list[str]:
         return []
 
 
-def _render_project(candidate: dict, selections: list, available: dict) -> tuple[str, list]:
+def _render_project(candidate: dict, selections: list, available: dict,
+                    db: Session | None = None) -> tuple[str, list]:
     """(body_html, jsonld) for a project — the SAME render the score is taken of and the one
     publish ships, so a score can never describe a page that was never built."""
     media = _media_by_id(available)
     photos = sum(1 for s in selections if s.get("kind") == "photo")
     videos = sum(1 for s in selections if s.get("kind") == "video")
+    scope = _scope_lines(db, candidate) if db is not None else []
     body = build_write_up(
         candidate,
         gallery_html=gallery_html(selections, media),
         known_location_slugs=_location_slugs(),
         photo_count=photos,
         video_count=videos,
+        scope_lines=scope,
     )
-    faq = build_faq(candidate, photo_count=photos, video_count=videos)
+    faq = build_faq(candidate, photo_count=photos, video_count=videos, scope_lines=scope)
     return body, build_project_jsonld(candidate, selections, media, faq=faq)
 
 
@@ -261,7 +325,7 @@ def get_portfolio_media(
         {"name": candidate["name"], "city": candidate["city"], "section": candidate["section"]},
         content_html="",
     )
-    body_html, jsonld = _render_project(candidate, selections, available)
+    body_html, jsonld = _render_project(candidate, selections, available, db)
     score = score_project(
         title=preview["title"], meta=build_meta(candidate),
         content_html=body_html, selections=selections,
@@ -270,6 +334,7 @@ def get_portfolio_media(
             candidate,
             photo_count=sum(1 for s in selections if s.get("kind") == "photo"),
             video_count=sum(1 for s in selections if s.get("kind") == "video"),
+            scope_lines=_scope_lines(db, candidate),
         ),
     )
     return {
@@ -283,6 +348,10 @@ def get_portfolio_media(
         "available": available,
         "selections": selections,
         "score": score,
+        # The EXACT html publish will ship, so an editor reviews the page rather than trusting
+        # a number. Same render, same call — see _render_project.
+        "preview_html": body_html,
+        "scope_lines": _scope_lines(db, candidate),
     }
 
 
@@ -363,7 +432,7 @@ def publish_portfolio_project(
     cc_id = (row.companycam_project_id if row and row.companycam_project_id
              else companycam_project_id(candidate.get("companycam_url")))
     available = _available_media(db, cc_id, perms)
-    body_html, jsonld = _render_project(candidate, selections, available)
+    body_html, jsonld = _render_project(candidate, selections, available, db)
 
     # JSON-LD ships INSIDE the post body: WordPress owns the <head>, and Rank Math strips
     # unknown head injections. A script block in the content survives and validates.
@@ -383,7 +452,9 @@ def publish_portfolio_project(
 
     from adapters.wordpress import publish_portfolio_post  # noqa: PLC0415
     try:
-        result = publish_portfolio_post(post)
+        # update_existing: every candidate already has a draft, so without this a curated
+        # gallery would return 200 and change nothing on the page.
+        result = publish_portfolio_post(post, update_existing=True)
     except requests.RequestException as exc:
         logger.warning("wp portfolio publish failed for %s: %s", candidate["name"], exc)
         raise HTTPException(status_code=502, detail=f"WordPress publish failed: {exc}") from exc

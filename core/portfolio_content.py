@@ -31,6 +31,7 @@ import re
 from typing import Any, Iterable
 
 from core.portfolio import infer_roof_type
+from core.portfolio_facts import scope_sentence
 from core.seo import ensure_toc
 
 # Location pages live under this tree — e.g.
@@ -60,9 +61,17 @@ def city_slug(city: str | None) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (city or "").lower()).strip("-")
 
 
-def service_page_for(record: dict, content: str = "") -> tuple[str | None, str | None]:
-    """(url, label) of the service page matching this project's roof type, or (None, None)."""
-    roof_type = record.get("new_roof_type") or infer_roof_type(record.get("name"), content)
+def service_page_for(record: dict, content: str = "",
+                     scope_lines: Iterable[str] | None = None) -> tuple[str | None, str | None]:
+    """(url, label) of the service page matching this project's roof type, or (None, None).
+
+    The contract scope is a better source than the project NAME: "Miami Beach Olsen Condo"
+    names no system, but its scope lines say "13\" Concrete Tile Re-Roof". Without this, such a
+    project links to no service page at all.
+    """
+    scope_text = " ".join(scope_lines or [])
+    roof_type = record.get("new_roof_type") or infer_roof_type(
+        record.get("name"), content, scope_text)
     if not roof_type:
         return None, None
     return _SERVICE_PAGES.get(roof_type), roof_type
@@ -106,7 +115,8 @@ def build_meta(record: dict) -> str:
     return meta[:160]
 
 
-def build_faq(record: dict, *, photo_count: int = 0, video_count: int = 0) -> list[dict]:
+def build_faq(record: dict, *, photo_count: int = 0, video_count: int = 0,
+              scope_lines: Iterable[str] | None = None) -> list[dict]:
     """Q&A built ONLY from fields the record holds — never a generated answer.
 
     A question whose answer we do not have is omitted, so a thin record yields a short FAQ
@@ -116,7 +126,7 @@ def build_faq(record: dict, *, photo_count: int = 0, video_count: int = 0) -> li
     """
     name = (record.get("name") or "this project").strip()
     city = (record.get("city") or "").strip()
-    _, roof_type = service_page_for(record)
+    _, roof_type = service_page_for(record, scope_lines=scope_lines)
     start, end = (record.get("date_start") or "").strip(), (record.get("date_end") or "").strip()
 
     faq: list[dict] = []
@@ -145,6 +155,12 @@ def build_faq(record: dict, *, photo_count: int = 0, video_count: int = 0) -> li
             "q": f"Is there photographic documentation of {name}?",
             "a": f"Yes — {documented} were captured on site by the crew and are shown above.",
         })
+    scope = list(scope_lines or [])
+    if scope:
+        faq.append({
+            "q": f"What work was included at {name}?",
+            "a": f"The contracted scope covered {scope_sentence(scope)}.",
+        })
     if (record.get("notes") or "").strip():
         faq.append({
             "q": f"What was the scope of work at {name}?",
@@ -171,6 +187,7 @@ def build_write_up(
     known_location_slugs: Iterable[str] | None = None,
     photo_count: int = 0,
     video_count: int = 0,
+    scope_lines: Iterable[str] | None = None,
 ) -> str:
     """Assemble the project page body from known fields.
 
@@ -182,7 +199,8 @@ def build_write_up(
     city = (record.get("city") or "").strip()
     where = f"{city}, Florida" if city else "South Florida"
     kind = (record.get("section") or "commercial").lower()
-    service_url, roof_type = service_page_for(record)
+    scope = list(scope_lines or [])
+    service_url, roof_type = service_page_for(record, scope_lines=scope)
     location_url = location_page_for(record, known_location_slugs)
 
     system = f"{roof_type.lower()} roof" if roof_type else "roof"
@@ -212,9 +230,17 @@ def build_write_up(
         parts.extend(f"<li><strong>{_esc(k)}:</strong> {_esc(v)}</li>" for k, v in facts)
         parts.append("</ul>")
 
+    # Scope from the contract record — the only source of real project detail we have, and
+    # already filtered to installed (non-optional) work by core.portfolio_facts.
     notes = (record.get("notes") or "").strip()
-    if notes:
-        parts.append(f"<h2>Scope</h2><p>{_esc(notes)}</p>")
+    if scope or notes:
+        parts.append("<h2>Scope of work</h2>")
+        if notes:
+            parts.append(f"<p>{_esc(notes)}</p>")
+        if scope:
+            parts.append("<p>The contracted scope included:</p><ul>")
+            parts.extend(f"<li>{_esc(line)}</li>" for line in scope)
+            parts.append("</ul>")
 
     links = []
     if service_url and roof_type:
