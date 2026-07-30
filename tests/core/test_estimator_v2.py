@@ -1445,6 +1445,36 @@ def test_branch_basis_ignores_office_men_entirely():
     assert _oh_quote(plain)["amount"] == _oh_quote(scaled)["amount"] == pytest.approx(8 * 1400)
 
 
+def test_concurrent_crews_splits_the_branch_day_across_the_jobs_sharing_it():
+    """The burn is per CALENDAR day. Two crews out means two jobs share one office day, so
+    charging each a full day collects the office twice (Jon, 2026-07-30)."""
+    one = _oh_cfg(overhead_basis="branch", office_daily_overhead=1400)
+    two = _oh_cfg(overhead_basis="branch", office_daily_overhead=1400, concurrent_crews=2)
+    assert _oh_quote(one)["amount"] == pytest.approx(8 * 1400)
+    assert _oh_quote(two)["amount"] == pytest.approx(8 * 700)
+    # the printed build-up must multiply out to what is charged, or the breakdown lies
+    oh = _oh_quote(two)
+    assert oh["explain"]["inputs"]["tile_rate"] == pytest.approx(700)
+    assert oh["explain"]["inputs"]["concurrent_crews"] == 2.0
+    assert "concurrent_crews" in oh["explain"]["formula"]
+
+
+def test_concurrent_crews_defaults_to_one_and_is_inert_under_the_series_basis():
+    """An unset key must price exactly as it did before the key existed."""
+    assert _oh_cfg(overhead_basis="branch", office_daily_overhead=1400).concurrent_crews() == 1.0
+    # series rates are already Tim's per-crew-day numbers — dividing them again double-discounts
+    rates = _cfg_v2().daily_overhead_rates()
+    oh = _oh_quote(_oh_cfg(concurrent_crews=4))
+    assert oh["amount"] == pytest.approx(5 * rates["tile"] + 3 * rates["demo_dry_in_flat"])
+
+
+@pytest.mark.parametrize("bad", [0, -2, "0"])
+def test_concurrent_crews_rejects_a_non_positive_divisor(bad):
+    with pytest.raises(ConfigError, match="concurrent_crews"):
+        _oh_cfg(overhead_basis="branch", office_daily_overhead=1400,
+                concurrent_crews=bad).concurrent_crews()
+
+
 def test_branch_basis_raises_when_the_branch_number_is_missing():
     """Falling back to Jupiter's rates is how Miami came to be priced on a Palm Beach office."""
     cfg = _oh_cfg(overhead_basis="branch")          # no office_daily_overhead

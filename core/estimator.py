@@ -83,7 +83,11 @@ def compute_daily_overhead(
                 "Set it to the monthly fixed overhead divided by the working days in a month "
                 "(Tim, 2026-07-27: Jupiter $28,000/20 = $1,400; Miami $85,000/20 = $4,250)."
             )
-        oh_total = sum(s.days for s in series) * float(daily)
+        # The branch burn is per CALENDAR day, not per job-day. When two crews are out, both jobs
+        # charging a full day collects the office twice. `concurrent_crews` divides the burn across
+        # the jobs that share the day. Default 1.0 = every job owns the day (the conservative
+        # floor, and what shipped before this key existed), so an unset config prices identically.
+        oh_total = sum(s.days for s in series) * float(daily) / config.concurrent_crews()
         return oh_total, oh_total / num_squares
 
     rates = config.daily_overhead_rates()
@@ -857,11 +861,15 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
         # Under the branch basis every series bills the SAME number — the office costs what it
         # costs regardless of what the crew is doing that day — so the per-series lookup collapses
         # to one rate and the build-up still reads "5 days tile x $1,400 + 3 days demo x $1,400".
-        rates = ({s.series: config.office_daily_overhead() for s in q.daily_series} if branch_basis
-                 else config.daily_overhead_rates())
+        # Under the branch basis the rate shown per series is the burn AFTER the concurrency
+        # split, so the printed build-up multiplies out to the overhead actually charged.
+        crews = config.concurrent_crews() if branch_basis else 1.0
+        rates = ({s.series: (config.office_daily_overhead() or 0) / crews for s in q.daily_series}
+                 if branch_basis else config.daily_overhead_rates())
         items.append(LineItem("overhead", "Overhead", oh_total, tags["overhead"], oh_per_sq, explain={
             "formula": ("total days x the branch's daily overhead (monthly fixed overhead / working "
-                        "days), then / squares" if branch_basis else
+                        "days)" + (" / concurrent_crews" if crews != 1.0 else "") + ", then / squares"
+                        if branch_basis else
                         "sum(days x daily_rate) per series, then / squares. Daily rate is the "
                         "office's burn share: crew x (office_daily_overhead / office_men)."),
             "inputs": {
@@ -870,8 +878,10 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
                 "overhead_basis": config.overhead_basis(),
                 "total_days": sum(s.days for s in q.daily_series),
                 "office_daily_overhead": config.raw.get("office_daily_overhead"),
-                # office_men only means something under the legacy series basis.
-                **({} if branch_basis else {"office_men": config.raw.get("office_men")}),
+                # concurrent_crews splits the branch burn across the jobs sharing a day; it is
+                # inert under the series basis, where the rates are already per-crew-day.
+                **({"concurrent_crews": crews} if branch_basis else
+                   {"office_men": config.raw.get("office_men")}),
                 "squares": sq,
             }}))
     else:

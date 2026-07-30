@@ -66,7 +66,13 @@ def main() -> None:
                         help="revert to the per-series basis")
     parser.add_argument("--apply", action="store_true",
                         help="write a new config version (otherwise print and exit)")
+    parser.add_argument("--branches", default="",
+                        help="comma-separated branches to touch; default all. Miami is normally "
+                             "excluded from a --off flip: putting Jupiter's four per-day rates on "
+                             "a $4,257/day office has no Miami evidence behind it (both 2026-07-30 "
+                             "adversarial reviews flag it explicitly)")
     args = parser.parse_args()
+    only = {b.strip() for b in args.branches.split(",") if b.strip()}
 
     from sqlalchemy import select
 
@@ -78,6 +84,9 @@ def main() -> None:
     s.info["tenant_id"] = 1
     branches = [r[0] for r in s.execute(select(PricingConfig.branch).distinct()).all()]
     for branch in sorted(branches, key=lambda b: (BRANCH_ORDER + (b,)).index(b)):
+        if only and branch not in only:
+            print(f"{branch}: not in --branches — untouched")
+            continue
         active = s.execute(select(PricingConfig).where(
             PricingConfig.branch == branch, PricingConfig.is_active == True  # noqa: E712
         )).scalar_one_or_none()

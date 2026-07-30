@@ -478,6 +478,37 @@ class PricingConfig:
         val = self.raw.get("office_daily_overhead")
         return float(val) if val else None
 
+    def concurrent_crews(self) -> float:
+        """Jobs sharing one branch day, used to split the burn under ``overhead_basis="branch"``.
+
+        Jon, 2026-07-30: *"can we include a crew size and divide OH / #crews * days to get a more
+        accurate price?"* — and Tim, on the same thread: *"my assumption is to have 1.5 crews on
+        any given day"*, *"Miami needs to have 4 crews on any given day"*.
+
+        The office burn is incurred once per CALENDAR day. A single-job calculator silently
+        assumes the job owns the day, so at N crews the estimator collects N times the office.
+        This divides it back down: ``overhead = days x office_daily_overhead / concurrent_crews``.
+
+        Defaults to 1.0 — every job carries a full office day, which is the conservative floor and
+        exactly what shipped before this key existed, so an unset config prices identically. Set it
+        per branch only from a measured concurrency (see ``scripts/recovery_identity_jupiter.py``,
+        which computes charged job-days per working day), never from a capacity target.
+
+        Applies to the branch basis ONLY. The per-series rates are already Tim's own per-crew-day
+        numbers, so dividing those again would discount the same crew split twice.
+        """
+        val = self.raw.get("concurrent_crews")
+        if val is None:
+            return 1.0
+        crews = float(val)
+        if crews <= 0:
+            raise ConfigError(
+                f"concurrent_crews must be greater than 0; got {val!r}. It divides the branch "
+                "daily overhead across the jobs sharing a day — 1.0 means each job carries a "
+                "full office day."
+            )
+        return crews
+
     def overhead_basis(self) -> str:
         """How a day of overhead is priced. ``"series"`` (legacy) or ``"branch"``.
 
