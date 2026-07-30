@@ -117,3 +117,73 @@ table matter.
 Still true and unchanged: cost and materials reproduce all four sheet quadrants at 0.0%; the four
 emailed rates under-recover Tim's own $1,470 under his own 1.5-crew assumption; sheet productivity
 (metal 5.5 sq/day vs an actual 8.0) is a larger error than any rate choice.
+
+---
+
+# 5. Per-square vs per-day, scored against the prices Tim actually charged
+
+`scripts/compare_oh_models_vs_tim_prices.py`. 35 priced observations across 27 of Tim's 30 homes
+(a home he quoted in two materials is two observations). Days are HIS, never derived, so a day
+model cannot be blamed on our geometry fit. Everything except the overhead line is identical.
+
+| model | within 5% | within 10% | median error | median abs |
+|---|---|---|---|---|
+| A per-square (his published $/sq table) | 13/35 | 24/35 | −2.4% | 6.4% |
+| B day × flat branch $1,400 — **the live basis** | 10/35 | 16/35 | +10.3% | 10.3% |
+| C day × his four per-roof-type rates | **15/35** | **29/35** | +2.2% | 6.5% |
+| D day × flat branch $1,470 | 8/35 | 14/35 | +12.3% | 12.3% |
+
+**The configuration running in production today is the worst of the four**, over-quoting by a
+median 10%. Tim's four emailed rates are the best. That is a direct answer to "reproduce his
+quotes," and it is independent of the sold-median benchmark that had to be withdrawn.
+
+## Why one model is right on one job and wrong on the next
+
+They are the same formula. Per-square is `OH = oh_per_sq × SQ`; per-day is
+`OH = blended_rate × SQ / sq_per_day`. They cross at one productivity:
+
+| roof | his $/sq OH | blended day rate | break-even | his actual median |
+|---|---|---|---|---|
+| tile | $185 | $861 | 4.7 sq/day | 4.3 sq/day |
+| shingle | $105 | $910 | 8.7 sq/day | 7.7 sq/day |
+| metal | $205 | $936 | 4.6 sq/day | 4.7 sq/day |
+
+Below the break-even the roof is slow — cut up, steep, bad access — and the day model charges
+more. Above it the roof is simple and the day model charges less. **The per-square table is the
+day model evaluated at one fixed productivity**, which is exactly why it is right on ordinary
+roofs and wrong on hard ones. Measured on his own jobs:
+
+- slow, under 4 sq/day (n=7): per-square is **−16.8%** — it under-charges the hard jobs badly.
+  Day-series −5.2%.
+- access issue (n=7): per-square −12.6%, day-series −0.8%.
+- mixed flat + sloped (n=10): per-square −9.8%, day-series +7.5%.
+- 4/12 pitch (n=9): per-square **+0.1%**, and it beats the day model on 7 of 9. Day-series +7.7%.
+
+## The switch input is PITCH, and it is the only one that beats both pure models
+
+| rule | within 5% | within 10% | median abs |
+|---|---|---|---|
+| pure per-square | 13/35 | 24/35 | 6.4% |
+| pure day-series | 15/35 | 29/35 | 6.5% |
+| **per-square when pitch ≤ 4/12, day-series otherwise** | **18/35** | **31/35** | **4.8%** |
+| per-square when no access issue | 15/35 | 28/35 | 6.0% |
+| per-square when no flat section | 12/35 | 25/35 | 6.4% |
+
+A sweep on productivity (`day-series when sq/day < T`) never beats pure day-series at any T, so
+productivity is the *explanation* of the divergence but not a usable switch. Pitch is, and it is
+physically sensible: **his $/sq table carries no pitch term at all**, so it can only be right
+where pitch is neutral.
+
+⚠️ n=35 across 27 homes, and pitch takes three values (4, 5, 6). The rule is fitted to this set.
+The direction is the finding; the threshold needs re-checking on jobs quoted after it is chosen.
+
+## What to ship
+
+One model with one knob, not two models:
+
+    OH = rate_by_roof_type(series) × days        days = SQ / sq_per_day
+
+Set `sq_per_day` to the break-even constant above and it reproduces Tim's published $/sq table
+exactly; let it move with measured complexity (geometry, pitch, access) and it becomes his time
+model. Per-square stops being a second model and becomes the default productivity — one place to
+adjust, which is what a seasonal or per-branch adjustment needs to hang off.
