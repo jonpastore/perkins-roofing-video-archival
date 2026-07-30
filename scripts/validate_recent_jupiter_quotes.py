@@ -53,11 +53,21 @@ def main() -> None:
         raw = c.execute(text(
             "select config from pricing_configs where is_active and branch='jupiter'")).scalar()
     cfg = load_config(raw)
+    # crew-share = the model Tim's OWN Jupiter tab uses: (office / men) x crew size, with his
+    # tab's crew sizes (3 on every install, 5 on demo/dry-in). $200 = 1,400/7 is the basis printed
+    # on that tab; $210 = 1,470/7 is his current stated burn over the same 7 men.
+    def _crew(per_man: float) -> dict:
+        return {"tile": 3 * per_man, "shingle": 3 * per_man, "metal": 3 * per_man,
+                "demo_dry_in_flat": 5 * per_man}
     variants = {
         "per_sq": (cfg, "per_sq"),
         "day-branch": (load_config({**raw, "overhead_basis": "branch",
                                     "office_daily_overhead": 1400}), "daily"),
         "day-series": (load_config({**raw, "overhead_basis": "series"}), "daily"),
+        "crew@200": (load_config({**raw, "overhead_basis": "series",
+                                  "daily_overhead_rates": _crew(200.0)}), "daily"),
+        "crew@210": (load_config({**raw, "overhead_basis": "series",
+                                  "daily_overhead_rates": _crew(210.0)}), "daily"),
     }
 
     print(f"{len(JOBS)} accepted Jupiter jobs, 2026-05-01 .. 2026-07-30, days DERIVED\n")

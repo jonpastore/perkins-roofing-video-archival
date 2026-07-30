@@ -104,12 +104,27 @@ def main() -> None:
             total_days = sum(v for v in days.values())
 
             quotes = {"A per_sq": estimate(cfg, replace(base, overhead_mode="per_sq"))}
-            # B/D: flat branch burn. C: his four per-day-by-roof-type rates. The engine reads the
-            # basis off the config, so swap it per model rather than hand-rolling the arithmetic.
+            # B/D: flat branch burn. C: his four per-day-by-roof-type rates. E/F/G: the model his
+            # OWN Jupiter tab uses — (office / men) x crew size — with his tab's crew sizes (3 on
+            # every install, 5 on demo/dry-in) and three readings of the per-man-day number:
+            #   $200 = 1,400/7, the basis printed on his tab
+            #   $210 = 1,470/7, his current stated burn over the same 7 men
+            #   $238 = 1,470/6.17, his current burn over his LOGGED average headcount
+            # The engine reads the basis off the config, so swap it per model rather than
+            # hand-rolling the arithmetic.
+            def _crew_rates(per_man: float) -> dict:
+                return {"tile": 3 * per_man, "shingle": 3 * per_man, "metal": 3 * per_man,
+                        "demo_dry_in_flat": 5 * per_man}
             for label, patch in (
                 ("B day-branch", {"overhead_basis": "branch", "office_daily_overhead": 1400}),
                 ("C day-series", {"overhead_basis": "series"}),
                 ("D day-1470", {"overhead_basis": "branch", "office_daily_overhead": 1470}),
+                ("E crew@200", {"overhead_basis": "series",
+                                "daily_overhead_rates": _crew_rates(200.0)}),
+                ("F crew@210", {"overhead_basis": "series",
+                                "daily_overhead_rates": _crew_rates(210.0)}),
+                ("G crew@238", {"overhead_basis": "series",
+                                "daily_overhead_rates": _crew_rates(238.25)}),
             ):
                 cfg_v = load_config({**cfg.raw, **patch})
                 quotes[label] = estimate(cfg_v, replace(base, overhead_mode="daily", daily_series=ds))
@@ -125,7 +140,8 @@ def main() -> None:
                        for k, v in quotes.items()},
             })
 
-    models = ["A per_sq", "B day-branch", "C day-series", "D day-1470"]
+    models = ["A per_sq", "B day-branch", "C day-series", "D day-1470",
+              "E crew@200", "F crew@210", "G crew@238"]
     print(f"{len(rows)} priced observations across {len({r['address'] for r in rows})} homes"
           f"   (his four rates: {series_rates})\n")
 
