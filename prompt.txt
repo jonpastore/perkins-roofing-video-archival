@@ -1,13 +1,12 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-29-pm.md, then CONTINUATION-2026-07-29.md (the morning
-session), then core/pii.py and core/portfolio_criteria.py.
+READ FIRST: CONTINUATION-2026-07-29-pm.md (§0 and §1 are the two things that matter most), then
+CONTINUATION-2026-07-29.md (the morning), then core/pii.py and core/portfolio_criteria.py.
 
-HEAD 023d59d, pushed, CI green, DEPLOYED platform:023d59d (api service verified).
-Prod migrations applied through 0050. Cloud SQL now enforces
-idle_in_transaction_session_timeout=5min.
+HEAD 5c9f0ca, pushed, CI green. Deployed platform:b44ef28 (5c9f0ca is docs-only).
+Prod migrations applied through 0050.
 
-Confirm before trusting anything below:
+Confirm before trusting any of this:
   git log --oneline -1 && git status --short
   git log --oneline origin/main..HEAD          # expect empty
   gcloud run services describe api --region us-central1 \
@@ -15,94 +14,126 @@ Confirm before trusting anything below:
   bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
   gh run list --limit 4                        # MATCH THE SHA; "deploy skipped" == nothing shipped
 
+⛔ STAY ON STAGING. Jon, 2026-07-29: "stay on staging till we clear client approval."
+  PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is the CORRECT, intended target.
+  Do NOT change it. Do NOT vault a prod WP application password. Do NOT publish anything to
+  perkinsroofing.net. The prod cutover is a parked BUSINESS gate, not missing work — so
+  "verified live == staging" throughout the docs is right, not a defect. Mechanics stay in
+  docs/PRODUCTION_CUTOVER_PLAN.md until approval lands.
+
+▶ START HERE — FIX THE JSON-LD PLUGIN ON STAGING (what Jon said we would do next)
+
+  Symptom: a project publishes fine but carries NO JSON-LD. Measured: publish returned
+  jsonld_stored:false and the _perkins_jsonld meta was absent on read-back.
+  Cause: the plugin live on staging registers _perkins_jsonld for post type `post` ONLY and its
+  wp_head hook fires only on is_singular('post'); project pages are avada_portfolio (the nine
+  public ones are `page`). WordPress returns 200 for a write to an unregistered meta key, which
+  is why nothing errored.
+  ⚠️ Do NOT "fix" it by inlining <script type="application/ld+json"> in the post body — that was
+  tried and WordPress STRIPS it silently on an application-password write (verified by read-back).
+  Schema belongs in post-meta, rendered in <head> by the plugin.
+
+  The code fix is ALREADY IN GIT: wp-mu-plugin/perkins-jsonld.php defines
+  PERKINS_JSONLD_POST_TYPES = ['post','avada_portfolio','page'] and loops it for both
+  register_post_meta and the wp_head echo. It has to reach the WP host; deploy.sh cannot do that.
+  Two routes — install ONLY ONE or the hooks fire twice and pages get duplicate schema:
+    1. mu-plugin (matches what is installed now): upload wp-mu-plugin/perkins-jsonld.php to
+       wp-content/mu-plugins/perkins-jsonld.php on STAGING (SFTP / GoDaddy file manager).
+    2. regular plugin (no SFTP): zip wp-plugin/perkins-jsonld/ and use
+       wp-admin -> Plugins -> Add New -> Upload.
+
+  VERIFY, do not assume (post 8296 = "Miami Beach Olsen Condo" on staging, already published with
+  a 4-image gallery + contract scope, so it is the test subject):
+    - read the post back and check meta._perkins_jsonld is non-empty (snippet in §1 of the
+      continuation doc)
+    - re-publish it from the SPA (SEO / AIO tab) and confirm jsonld_stored:true
+    - fetch the public staging URL and grep <head> for application/ld+json
+    - expect FAQPage + ImageObject (x4) + VideoObject ONLY — anything else duplicates Rank Math
+      and breaks the schema_scoped rule
+
 WHAT IS SETTLED — do not re-derive
-  - CompanyCam is fully mirrored: 3,684 projects / 155,975 photos / 11,635 videos in
-    companycam_projects|_photos|_videos (prod Cloud SQL, metadata only — media stays on their
-    CDN). Sync is INCREMENTAL: a run with nothing new skips ~3,679 projects in ~2 min.
-  - PII is a HARD GATE. core/pii.py + core/portfolio_criteria.py refuse a publish on any
+  - PII IS A HARD GATE. core/pii.py + core/portfolio_criteria.py refuse a publish on any street
     address / unit / ZIP / phone / email / GPS in ANY surface (body, meta, title, image ALT,
-    JSON-LD captions, scope lines) and on a title that reads as a person. Calibrated over all
-    26,063 real scope lines: 42 flags, 0 false positives. Do not "simplify" these regexes
-    without re-running that corpus check — the first version had 499 false positives from
-    "ste" matching inside "STEEL".
-  - Policy: city and neighbourhood ARE allowed. Anything narrowing to a property or person is
-    not. "Jim Malooly Delray Beach Roof" blocks even with all permissions granted.
+    JSON-LD captions, scope lines) and on a title that reads as an individual. Policy: city and
+    neighbourhood ARE allowed; anything narrowing to a property or person is not.
+    ⚠️ Calibrated over all 26,063 real scope lines: 42 flags, 0 false positives, and exactly 1 of
+    our 13 titles blocking ("Jim Malooly Delray Beach Roof" — it still refuses with all three
+    permissions granted, because privacy outranks consent). Do NOT loosen or "simplify" those
+    patterns without re-running that corpus check: the first version had 499 false positives from
+    "ste" matching inside "STEEL" while the unit tests were green.
+  - TWO critics exist, deliberately different. portfolio_criteria = deterministic, REFUSES (422
+    with evidence, UI disables the button). portfolio_critique = 3 adversarial LLM lenses
+    (privacy / grounding / reader) via POST /{slug}/review, ADVISORY.
   - Write-ups are DETERMINISTIC and grounded in Knowify contract deliverables. No LLM writes
-    project prose: the record holds ~6 facts. No quantities are ever published (units are
-    provably wrong: "7550 Squares" = 755,000 sq ft) and no prices.
-  - Portfolio UI is finished: 3 tabs (Project / Media / SEO+AIO) + full CRUD. Projects are rows
-    (portfolio_projects, migration 0050), seeded once from the old hardcoded CANDIDATES.
-  - The coverage gate is honest now (.coveragerc precision = 2). CI reports 97.43%.
-  - single_flight commits on acquire; Cloud SQL enforces
-    idle_in_transaction_session_timeout=5min. Do not revert either — together they fix the
-    lock pile-up that blocked an ALTER TABLE.
+    project prose (the record holds ~6 facts; the ~90%-invented articles are the precedent).
+    No quantities are ever published (units are provably wrong: "7550 Squares" = 755,000 sq ft)
+    and no prices. 6 of 13 projects carry real scope; a fully curated one scores 86%.
+  - Portfolio UI is FINISHED: 3 tabs (Project / Media / SEO+AIO) + full CRUD. Projects are rows
+    (portfolio_projects, migration 0050), seeded once and idempotently from the old CANDIDATES.
+  - CompanyCam fully mirrored: 3,684 projects / 155,997 photos / 11,635 videos, metadata only
+    (media stays on their CDN). Incremental — a quiet run skips ~3,679 projects in ~2 min.
+  - Coverage gate is honest (.coveragerc precision = 2). CI reports 97.43%.
+  - single_flight commits on acquire AND Cloud SQL enforces
+    idle_in_transaction_session_timeout=5min. Do not revert either — together they fix the lock
+    pile-up that blocked an ALTER TABLE videos.
 
-THE WORK, ranked
-
-0. ⛔ STAY ON STAGING. Jon, 2026-07-29: *"stay on staging till we clear client approval."*
-   Do NOT change PlatformConfig.WP_URL, do NOT vault a prod WP app password, do NOT publish
-   anything to perkinsroofing.net. STAGING (https://1228404.us6.myftpupload.com) is the correct
-   and intended target until Perkins approves. This is a business gate, not a missing task —
-   the cutover mechanics are understood and parked:
-     - one PlatformConfig.WP_URL change + a prod WP application password, then verify ONE
-       article round-trips (context=edit, product UA — GoDaddy's WAF strips Authorization from
-       default library UAs). docs/PRODUCTION_CUTOVER_PLAN.md has the ordered checklist.
-   Keep reading every "verified live" claim in the docs as STAGING, because it is.
-
-2. ⚠️ RE-UPLOAD wp-mu-plugin/perkins-jsonld.php to STAGING (Jon — a file upload to WP hosting,
-   not something deploy.sh does). Staging is the only one that matters while we stay on staging;
-   prod gets it at cutover, and it is already on the cutover checklist. The live version registers _perkins_jsonld for
-   post type `post` ONLY, so project pages store and render NO schema: measured, publish
-   returned jsonld_stored:false and the meta was absent on read-back. git now covers post +
-   avada_portfolio + page. An inline <script> is NOT a workaround — WordPress strips it from
-   post content on an application-password write, silently, 200 OK.
-
-3. BOTH EMAILS ARE SENT — Jon sent them himself 2026-07-29 21:21/21:23 UTC, with his own
-   edits. Do not re-send or re-draft. WATCH FOR THE REPLIES; each unblocks something:
-   - Tim/Marco/Josh, "One question about the $1,400/day before I set it". The question: is
-     $1,400/day charged per job-day, or split across the jobs running that day? ($1,400 x 250
-     working days = $350k vs the $336k annual burn — right for ONE job at a time; measured
-     concurrency ~1-1.7 jobs/working day in 2025, 1.5-4.3 in 2024.) His answer gates flipping
-     overhead_basis. Evidence: scripts/margin_check.py — the rebuild says +4.2% median margin,
-     NOT the -0.4% the superseded 7/28 draft claimed.
-     ⚠️ Jon ADDED an ask: "Can you try some quotes and tell me if it's working like you expect
-     and if the numbers make sense?" — so expect feedback on the live Quoting UI, not just a
-     yes/no on the overhead question.
-   - Wendy (cc Tim), "Project pages — where should they live". URL space (/portfolio/ pages vs
-     the avada_portfolio CPT our publisher targets) + whether she has a schema.
-     ⚠️ Jon DECIDED the interim in the email: "I'm going to use the article standards for now
-     until I hear from you." That is exactly what core/portfolio_criteria.py implements
-     (FAQPage + ImageObject + VideoObject, nothing Rank Math owns, unique alts, in-content TOC),
-     so no change is needed unless she answers differently.
-
-4. FINISH THE PROJECT PAGES once #2 lands: verify JSON-LD renders in <head> on a published
-   project, then set featured_media (needs the image uploaded to WP as an attachment — ours are
-   CompanyCam-CDN URLs today), and get CompanyCam URLs for the 2 candidates that have none
-   (now editable in the UI).
-
-5. Smaller: accent items priced but NOT selectable in the SPA (extra_line_items is API-only) ·
-   o365 MCP refresh token EXPIRED (use gmail-enhanced for that mailbox) ·
-   proposal-reminders-daily scheduler PAUSED with no recorded reason · 4 test files still
-   drop_all at teardown (converting them caused 50 failures once and was reverted).
+THEN, in order
+  1. Verify the schema end to end on staging (above), then set featured_media — WP needs the image
+     as an ATTACHMENT and ours are CompanyCam-CDN URLs, so this means uploading the first curated
+     image to the WP media library and setting it on the post.
+  2. Curate a second and third project end to end through the UI, to shake out what the gate or
+     the write-up gets wrong on projects that are not Olsen. portfolio_curation is still EMPTY
+     (0 rows) — nobody has curated through the UI yet, so this is its first real exercise.
+  3. Get CompanyCam URLs for the 2 projects that have none (now editable on the Project tab).
+  4. WATCH FOR TWO REPLIES. Both emails were SENT BY JON HIMSELF 2026-07-29 21:21/21:23 UTC with
+     his own edits — do NOT re-send or re-draft.
+     - Wendy (cc Tim), "Project pages — where should they live": URL space (/portfolio/ pages vs
+       the avada_portfolio CPT our publisher targets) + whether she has a schema. Jon already
+       decided the interim IN the email: "I'm going to use the article standards for now until I
+       hear from you" — exactly what core/portfolio_criteria.py implements, so change nothing
+       unless she answers differently.
+     - Tim/Marco/Josh, "One question about the $1,400/day before I set it": is $1,400/day charged
+       per job-day, or split across the jobs running that day? ($1,400 x 250 working days = $350k
+       vs the $336k annual burn — right for ONE job at a time; measured concurrency ~1-1.7
+       jobs/working day in 2025, 1.5-4.3 in 2024.) His answer gates flipping overhead_basis.
+       Evidence: scripts/margin_check.py — the rebuild says +4.2% median margin, NOT the -0.4%
+       the superseded 7/28 draft claimed.
+       ⚠️ Jon ADDED: "Can you try some quotes and tell me if it's working like you expect and if
+       the numbers make sense?" — so expect Quoting UI feedback, not just a yes/no.
+  5. Smaller: accent items priced but NOT selectable in the SPA (extra_line_items is API-only) ·
+     o365 MCP refresh token EXPIRED (use gmail-enhanced for that mailbox) ·
+     proposal-reminders-daily scheduler PAUSED with no recorded reason · 4 test files still
+     drop_all at teardown (converting them caused 50 failures once and was reverted).
 
 GOTCHAS
-- AFTER ANY WRITE, READ IT BACK AND COUNT. Four things reported success today while doing
-  nothing: the sync mirrored 50 of 3,684 projects (pagination stopped on a short page and
-  /v2/projects caps per_page at 50); publish returned 200 as "skipped-exists" so curation
-  changed nothing; an inline JSON-LD <script> was stripped entirely; and the coverage gate
-  passed on rounding. None of them raised.
-- CORPUS-VALIDATE EVERY HEURISTIC. Unit tests were green while the PII detector had a 98%
-  false-positive rate on real data.
-- Terraform: APPLY BEFORE PUSH. The deploy workflow has a drift gate and will refuse if git
-  carries an unapplied change. (I committed the Cloud SQL flag first and it correctly refused.)
-- `pkill -f "<pattern>"` matches its own shell — a waiter killed itself twice. Use a PID.
-- A short page from a paginated API does NOT mean the last page.
+- AFTER ANY WRITE, READ IT BACK AND COUNT. Five things reported success today while doing nothing
+  or the wrong thing: the sync mirrored 50 of 3,684 projects (a short page is NOT the last page;
+  /v2/projects caps per_page at 50); publish returned 200 as "skipped-exists" so curation changed
+  nothing; an inline JSON-LD <script> was stripped entirely; the coverage gate passed on rounding;
+  and the PII detector's unit tests were green at a 98% false-positive rate on real data. None of
+  them raised.
+- CORPUS-VALIDATE EVERY HEURISTIC before trusting it.
+- TERRAFORM: APPLY BEFORE PUSH. The deploy workflow has a drift gate and refuses if git carries
+  an unapplied change (committing the Cloud SQL flag first correctly blocked a deploy).
+- `gh run list` right after a push shows the PREVIOUS run — match the SHA. "deploy skipped" means
+  nothing shipped (it skips when ci fails).
+- `pkill -f "<pattern>"` matches its own shell — two waiters killed themselves. Use a PID.
+- Any new request model backed by a bounded column needs max_length mirroring the DB:
+  tests/api/test_negative_maxlength.py enforces it because SQLite accepts any length and Postgres
+  500s. It caught exactly this in ProjectIn.
+- Changing a route's contract? grep for EVERY test that posts to it — the gate change broke an
+  older test file that was not re-run.
+- Pre-push test command (the full tree takes 40-60 min on this box, ~6 min on CI):
+    .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs tests/tenancy
+  = 4,063 tests in ~7m40s. Root-level tests alone are 1,079 in 32s.
+- tests/core/test_avatar_script.py fails if tests/core runs ALONE (needs another module to create
+  `tenants`). Pre-existing; passes in the full suite.
 - app/models.py is NOT ruff-gated (CI lints core adapters api jobs); its E702s are pre-existing.
-- tests/core/test_avatar_script.py fails if tests/core runs ALONE (needs another module to
-  create `tenants`). Pre-existing, passes in the full suite.
-- Cloud SQL proxy 127.0.0.1:5432 (no local postgres), db perkins, user app; every query needs
-  set app.tenant_id='1'. PW=$(gcloud secrets versions access latest --secret=db-password).
-- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97. Full
-  suite ~6 min on CI, much slower on this box. SPA: cd web && npx tsc -b.
+- Cloud SQL proxy 127.0.0.1:5432 (there is no local postgres), db perkins, user app; every query
+  needs set app.tenant_id='1'. PW=$(gcloud secrets versions access latest --secret=db-password).
+- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97.
+  SPA: cd web && npx tsc -b.
 - bash scripts/deploy.sh refuses a dirty tree (R3-ENFORCE) — deliberate.
 - Never leave a secret in scratch: write to Secret Manager, then shred -u.
+- EMAIL_SEND_MODE=test in prod; only jpastore79@gmail.com + @degenito.ai + @perkinsroofing.net
+  receive mail. Do not flip to live without Jon.
