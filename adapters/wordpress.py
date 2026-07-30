@@ -412,6 +412,35 @@ def upload_media(filename: str, data: bytes, mime: str = "image/jpeg") -> dict:
     return resp.json()
 
 
+def sanitize_photo_to_media(src_url: str, kind: str, media_id: str) -> dict:
+    """Fetch a CompanyCam photo, cut the burned-in GPS/time stamp, and upload it to WP.
+
+    Returns the WP attachment ({id, source_url}). Re-publishing reuses the existing attachment
+    rather than uploading a second copy — the filename from stamp_free_filename is the key.
+
+    This exists because CompanyCam renders the capture coordinates INTO the pixels, where no
+    text-based PII check can reach them (core/photo_privacy has the measurements). Publishing
+    a CDN URL directly ships the property's location.
+    """
+    from core.photo_privacy import stamp_free_filename, strip_stamp  # noqa: PLC0415
+
+    filename = stamp_free_filename(kind, media_id)
+    # Match on the attachment SLUG, not source_url. The managed host rewrites uploads —
+    # perkins-photo-<id>-b20.jpg comes back as .../perkins-photo-<id>-b20-scaled.webp (Smush
+    # WebP + WP's big-image scaling) — so an endswith() on the original filename never matched
+    # and every save uploaded a fresh copy, WP appending -1, -2, ... Verified live 2026-07-30:
+    # two calls produced media 10466 and 10467. The slug is the stem verbatim, and an exact
+    # compare also avoids adopting a "-1" duplicate left by that bug.
+    stem = filename.rsplit(".", 1)[0]
+    for existing in search_media(stem):
+        if existing.get("slug") == stem:
+            return existing
+
+    resp = _session.get(src_url, timeout=60)
+    resp.raise_for_status()
+    return upload_media(filename, strip_stamp(resp.content))
+
+
 def search_media(term: str, per_page: int = 20) -> list[dict]:
     """Search the media library by filename/title (public REST read, no auth)."""
     url = _wp_api_url("/wp-json/wp/v2/media")
@@ -502,7 +531,8 @@ def find_portfolio_post(title: str) -> dict | None:
 
 def publish_portfolio_post(post: dict, *, dry_run: bool = False,
                            update_existing: bool = False,
-                           jsonld: list[dict] | None = None) -> dict:
+                           jsonld: list[dict] | None = None,
+                           featured_media: int | None = None) -> dict:
     """Create an Avada Portfolio draft from a post payload
     ({title, content, status, category, tags[], skills[]}), or UPDATE the existing post when
     ``update_existing`` is set. Never creates a duplicate title either way.
@@ -543,6 +573,8 @@ def publish_portfolio_post(post: dict, *, dry_run: bool = False,
         ]
 
     payload = {"title": post["title"], "content": post["content"], "status": post["status"], **term_ids}
+    if featured_media:
+        payload["featured_media"] = featured_media
     if jsonld:
         payload["meta"] = {"_perkins_jsonld": json.dumps(jsonld)}
     base = _wp_api_url("/wp-json/wp/v2/avada_portfolio")

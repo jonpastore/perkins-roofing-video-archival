@@ -205,11 +205,20 @@ def test_publish_never_calls_wp_when_gate_fails(monkeypatch):
     assert called == []
 
 
+def _mock_sanitize(monkeypatch):
+    """Stand in for the CompanyCam-stamp crop + WP upload (network). Returns a WP-hosted url,
+    which is what the images_sanitized blocker requires — see core/photo_privacy."""
+    import adapters.wordpress as wp
+    monkeypatch.setattr(wp, "sanitize_photo_to_media", lambda url, kind, mid: {
+        "id": 4242, "source_url": f"https://wp.test/wp-content/uploads/perkins-{kind}-{mid}.jpg"})
+
+
 def test_publish_succeeds_once_gate_is_open(monkeypatch):
     """A project that passes the whole gate — permissions, gallery and scope — publishes."""
     import adapters.wordpress as wp
 
     _publishable()
+    _mock_sanitize(monkeypatch)
     monkeypatch.setattr(wp, "find_portfolio_post", lambda title: None)
     monkeypatch.setattr(
         wp, "publish_portfolio_post",
@@ -230,6 +239,7 @@ def test_publish_wp_error_returns_502(monkeypatch):
     import adapters.wordpress as wp
 
     _publishable()
+    _mock_sanitize(monkeypatch)
 
     def _boom(post, **kw):
         raise requests.HTTPError("500 server error")

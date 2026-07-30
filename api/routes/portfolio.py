@@ -311,6 +311,7 @@ def _render_project(candidate: dict, selections: list, available: dict,
     """(body_html, jsonld) for a project — the SAME render the score is taken of and the one
     publish ships, so a score can never describe a page that was never built."""
     media = _media_by_id(available)
+    _apply_sanitized_urls(selections, media)
     photos = sum(1 for s in selections if s.get("kind") == "photo")
     videos = sum(1 for s in selections if s.get("kind") == "video")
     scope = _scope_lines(db, candidate) if db is not None else []
@@ -354,6 +355,60 @@ def list_portfolio(
         logger.warning("wp portfolio list fetch failed: %s", exc)
         wp_by_title = {}
     return [_candidate_summary(c, wp_by_title, curation_by_slug) for c in projects]
+
+
+def _sanitize_selected_photos(selections: list, available: dict) -> int | None:
+    """Sanitize selected photos to WP-hosted copies, recording the result ON each selection.
+
+    Writes ``wp_url``/``wp_media_id`` into the selection dicts and points ``available`` at the
+    sanitized url, so the caller may persist the selections and every later render — preview,
+    review and publish alike — resolves to the same WP copy without re-uploading.
+
+    Returns the WP media id of the first selected photo, for the featured image (WP wants an
+    attachment and the sanitized upload already is one, so it is the same round trip).
+
+    A photo that fails to sanitize keeps its CDN url, which the ``media_sanitized`` blocker then
+    refuses. That is deliberate: a failure here must not be able to publish the original.
+    """
+    from adapters.wordpress import sanitize_photo_to_media  # noqa: PLC0415
+
+    by_id = {str(p.get("companycam_photo_id")): p for p in available.get("photos", [])}
+    featured: int | None = None
+    for sel in selections:
+        if sel.get("kind") != "photo":
+            continue
+        row = by_id.get(str(sel.get("id")))
+        if not row or not row.get("url"):
+            continue
+        if sel.get("wp_url") and sel.get("wp_media_id"):  # already sanitized on a previous save
+            row["url"] = sel["wp_url"]
+            featured = featured if featured is not None else sel["wp_media_id"]
+            continue
+        try:
+            attachment = sanitize_photo_to_media(row["url"], "photo", str(sel["id"]))
+        except Exception as exc:  # noqa: BLE001 — any failure must fall through to the gate
+            logger.warning("photo sanitize failed for %s: %s", sel.get("id"), exc)
+            continue
+        sel["wp_url"] = row["url"] = attachment.get("source_url", row["url"])
+        sel["wp_media_id"] = attachment.get("id")
+        if featured is None:
+            featured = attachment.get("id")
+    return featured
+
+
+def _apply_sanitized_urls(selections: list, media: dict) -> None:
+    """Point the media map at the sanitized WP copy recorded when the selection was saved.
+
+    Without this the curation PREVIEW would render CompanyCam urls while publish rendered WP
+    ones, so ``media_sanitized`` would sit permanently red in the UI and
+    web/src/pages/Portfolio.tsx would keep the publish button disabled forever — a gate nobody
+    can satisfy is the same as no feature. _gate promises it evaluates the html that ships; this
+    is what makes that true for every caller rather than for publish alone.
+    """
+    for sel in selections:
+        row = media.get(f"{sel.get('kind')}:{sel.get('id')}")
+        if row and sel.get("wp_url"):
+            row["url"] = sel["wp_url"]
 
 
 def _gate(db: Session, candidate: dict, selections: list, available: dict,
@@ -538,6 +593,14 @@ def put_portfolio_curation(
     if problems:
         raise HTTPException(status_code=422, detail={"problems": problems})
 
+    # Crop CompanyCam's burned-in GPS stamp off each selected photo and upload the clean copy to
+    # WordPress NOW, recording wp_url/wp_media_id on the selection. Doing it on save rather than
+    # at publish is what lets the curation preview show the same urls publish will ship, so the
+    # media_sanitized blocker can actually go green. Only selected photos are fetched — the
+    # mirror holds 155,997 and all but a handful are never published. Costs one download + crop +
+    # upload per newly-selected photo; re-saving an unchanged selection re-uses the attachment.
+    _sanitize_selected_photos(selections, available)
+
     if row is None:
         row = PortfolioCuration(slug=slug, companycam_project_id=cc_id)
         db.add(row)
@@ -638,6 +701,13 @@ def publish_portfolio_project(
              else companycam_project_id(candidate.get("companycam_url")))
     available = _available_media(db, cc_id, perms)
 
+    # Swap every SELECTED photo's CompanyCam CDN url for a WP-hosted copy with the burned-in
+    # GPS stamp cut off. Done here, before the render, because available[] is the one map both
+    # the gallery html and the JSON-LD ImageObject read their urls from — sanitizing anywhere
+    # downstream would clean one and leave the other. Only selected media is fetched: the
+    # mirror holds 155,997 photos and all but a handful are never published.
+    featured_media = _sanitize_selected_photos(selections, available)
+
     # THE GATE. Blockers are privacy and client permission; majors are quality problems that
     # make a page not worth having. Both refuse, and the response names every one so the editor
     # can fix them — this replaces the old permission-only check, which could not see an address
@@ -660,7 +730,8 @@ def publish_portfolio_project(
     try:
         # update_existing: every candidate already has a draft, so without this a curated
         # gallery would return 200 and change nothing on the page.
-        result = publish_portfolio_post(post, update_existing=True, jsonld=jsonld)
+        result = publish_portfolio_post(post, update_existing=True, jsonld=jsonld,
+                                        featured_media=featured_media)
     except requests.RequestException as exc:
         logger.warning("wp portfolio publish failed for %s: %s", candidate["name"], exc)
         raise HTTPException(status_code=502, detail=f"WordPress publish failed: {exc}") from exc

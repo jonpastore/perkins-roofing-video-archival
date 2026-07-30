@@ -23,8 +23,10 @@ def _good(**over):
         "Florida.</p><h2>Scope of work</h2><ul><li>13\" Concrete Tile Re-Roof</li></ul>"
         + " ".join(f"<p>Detail sentence number {i} about the roofing work performed.</p>"
                    for i in range(20))
-        + "".join(f'<img src="http://cdn/p{i}.jpg" alt="Olsen Condo roof view {i}" />'
-                  for i in range(4))
+        # WP-hosted urls: a passing page is one whose images came through the sanitizer, so the
+        # "everything passes" baseline has to reflect that (see core/photo_privacy).
+        + "".join(f'<img src="https://wp.test/wp-content/uploads/perkins-photo-p{i}.jpg" '
+                  f'alt="Olsen Condo roof view {i}" />' for i in range(4))
     )
     kwargs = dict(
         title="Miami Beach Olsen Condo", city="Miami Beach",

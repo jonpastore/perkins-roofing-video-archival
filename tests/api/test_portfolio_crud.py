@@ -238,8 +238,17 @@ def test_the_contract_scope_reaches_the_page():
     assert "Sika RoofPro System" in body["preview_html"]
 
 
+def _mock_sanitize(monkeypatch):
+    """Stand in for the CompanyCam-stamp crop + WP upload (network). Returns a WP-hosted url,
+    which is what the images_sanitized blocker requires — see core/photo_privacy."""
+    import adapters.wordpress as wp
+    monkeypatch.setattr(wp, "sanitize_photo_to_media", lambda url, kind, mid: {
+        "id": 4242, "source_url": f"https://wp.test/wp-content/uploads/perkins-{kind}-{mid}.jpg"})
+
+
 def test_publish_succeeds_and_reports_the_gate(monkeypatch):
     import adapters.wordpress as wp
+    _mock_sanitize(monkeypatch)
     monkeypatch.setattr(wp, "publish_portfolio_post",
                         lambda post, **kw: {"title": post["title"], "status": "updated",
                                             "post_id": 8296, "jsonld_stored": True})
@@ -252,3 +261,58 @@ def test_publish_succeeds_and_reports_the_gate(monkeypatch):
     assert r.status_code == 200, r.text
     assert r.json()["publish_result"]["status"] == "updated"
     assert r.json()["gate"]["publishable"] is True
+
+
+# --- the sanitizer must not deadlock the UI -------------------------------
+
+def test_saving_a_selection_records_the_sanitized_url_so_the_preview_can_go_green(monkeypatch):
+    """web/src/pages/Portfolio.tsx disables Publish on !gate.publishable. The gate runs on the
+    curation PREVIEW too, so if sanitizing happened only at publish time, media_sanitized would
+    be permanently red and Publish permanently disabled — the feature unreachable."""
+    _mock_sanitize(monkeypatch)
+    c = _client()
+    c.get("/portfolio", headers=AUTH)
+    slug = "miami-beach-olsen-condo"
+    _curate(slug)  # seeds the CompanyCam photos this selection refers to
+
+    r = c.put(f"/portfolio/{slug}/curation", headers=AUTH, json={
+        "permission_property": True, "permission_photos": True, "permission_video": False,
+        "selections": [{"kind": "photo", "id": f"ph{i}", "alt": f"roof view {i}"}
+                       for i in range(4)],
+    })
+    assert r.status_code == 200, r.text
+
+    with SessionLocal() as db:
+        saved = db.query(PortfolioCuration).filter(PortfolioCuration.slug == slug).one().selections
+    assert all(s.get("wp_url", "").find("/wp-content/uploads/") > 0 for s in saved), saved
+
+    gate = c.get(f"/portfolio/{slug}/media", headers=AUTH).json()["gate"]
+    keys = [b["key"] for b in gate["blockers"]]
+    assert "media_sanitized" not in keys, gate["blockers"]
+
+
+def test_an_unsanitized_saved_selection_still_blocks_the_preview():
+    """The mirror image of the test above: _curate writes raw CDN urls with no wp_url, which is
+    what a selection saved before the sanitizer existed looks like. It must stay refused."""
+    c = _client()
+    c.get("/portfolio", headers=AUTH)
+    slug = "miami-beach-olsen-condo"
+    _curate(slug)
+    gate = c.get(f"/portfolio/{slug}/media", headers=AUTH).json()["gate"]
+    assert "media_sanitized" in [b["key"] for b in gate["blockers"]]
+
+
+def test_a_saved_wp_url_cannot_resurrect_media_whose_permission_was_revoked():
+    """_apply_sanitized_urls overlays the saved WP copy onto the media map. That map is built by
+    _available_media, which is permission-filtered — so the overlay can only ever touch media
+    that is still permitted. A stale selection cannot drag a revoked photo back onto the page."""
+    from api.routes.portfolio import _apply_sanitized_urls
+
+    media = {"photo:1": {"url": "https://img.companycam.com/a"}}  # only permitted media present
+    selections = [
+        {"kind": "photo", "id": "1", "wp_url": "https://wp/wp-content/uploads/ok.jpg"},
+        {"kind": "photo", "id": "99", "wp_url": "https://wp/wp-content/uploads/revoked.jpg"},
+    ]
+    _apply_sanitized_urls(selections, media)
+    assert media["photo:1"]["url"] == "https://wp/wp-content/uploads/ok.jpg"
+    assert "photo:99" not in media

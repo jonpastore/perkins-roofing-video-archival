@@ -103,3 +103,46 @@ def test_a_new_post_is_still_created(calls, monkeypatch):
     assert result["status"] == "created"
     assert calls[0]["url"].endswith("/avada_portfolio")
     assert calls[0]["json"]["status"] == "draft"
+
+
+# --- sanitized-photo reuse ------------------------------------------------
+
+def test_sanitize_reuses_the_attachment_despite_the_host_rewriting_the_filename(monkeypatch):
+    """The managed host rewrites uploads: perkins-photo-<id>-b20.jpg is served back as
+    .../perkins-photo-<id>-b20-scaled.webp (Smush WebP + WP big-image scaling). Matching on
+    source_url.endswith(filename) therefore never matched, and every curation save uploaded a
+    fresh copy with WP appending -1, -2, ... Verified live 2026-07-30: two calls produced media
+    10466 and 10467. The attachment SLUG is the filename stem verbatim, so match on that.
+    """
+    uploaded = []
+    monkeypatch.setattr(wp, "search_media", lambda term, per_page=20: [{
+        "id": 10466,
+        "slug": "perkins-photo-1217776352-b20",
+        "source_url": "https://wp.test/wp-content/uploads/2026/07/"
+                      "perkins-photo-1217776352-b20-scaled.webp",
+    }])
+    monkeypatch.setattr(wp, "upload_media", lambda *a, **k: uploaded.append(a) or {"id": 999})
+
+    got = wp.sanitize_photo_to_media("https://img.companycam.com/x", "photo", "1217776352")
+    assert got["id"] == 10466
+    assert uploaded == [], "must reuse the existing attachment, not upload a duplicate"
+
+
+def test_sanitize_does_not_adopt_a_numbered_duplicate(monkeypatch):
+    """A '-1' attachment is the residue of the bug above. An exact slug compare must ignore it
+    and upload a correctly-named copy rather than silently adopting the stray."""
+    monkeypatch.setattr(wp, "search_media", lambda term, per_page=20: [{
+        "id": 10467, "slug": "perkins-photo-1217776352-b20-1",
+        "source_url": "https://wp.test/wp-content/uploads/x-b20-1-scaled.webp",
+    }])
+    class _Bytes(_Resp):
+        content = b"original-jpeg-bytes"
+
+    monkeypatch.setattr(wp, "_session", type("S", (), {
+        "get": staticmethod(lambda *a, **k: _Bytes()),
+    })())
+    monkeypatch.setattr(wp, "upload_media", lambda name, data, **k: {"id": 555, "name": name})
+    monkeypatch.setattr("core.photo_privacy.strip_stamp", lambda b: b"cropped")
+
+    got = wp.sanitize_photo_to_media("https://img.companycam.com/x", "photo", "1217776352")
+    assert got["id"] == 555

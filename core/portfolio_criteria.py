@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from core.photo_privacy import unsanitized_media
 from core.pii import find_pii, person_name_risk
 
 BLOCKING = ("blocker", "major")
@@ -97,6 +98,17 @@ def check_project(
     add("title_not_a_person", "Title is a property or organisation, not a customer's name",
         not person_name_risk(title, city), "blocker",
         "rename the project — it reads as an individual" if person_name_risk(title, city) else "")
+
+    # CompanyCam burns the capture GPS into the pixels, which no text check can see (see
+    # core/photo_privacy). Requiring every file to be WP-hosted means requiring it to have come
+    # through the sanitizer — a question with a reliable answer, unlike "is there a stamp in it".
+    # Covers <video> and its poster as well: those frames carry the same stamp, and there is no
+    # video sanitizer yet, so this blocks video until one exists rather than shipping it stamped.
+    unsanitized = unsanitized_media(content_html)
+    add("media_sanitized", "Every image and video is WP-hosted, so the capture stamp was stripped",
+        not unsanitized, "blocker",
+        f"{len(unsanitized)} file(s) still on a third-party CDN" if unsanitized else "",
+        unsanitized[:8])
 
     # ── Client permission — blockers ──────────────────────────────────────
     add("permission_property", "Client cleared naming the property",
