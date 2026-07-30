@@ -159,6 +159,8 @@ interface EstimatorRates {
   cut_calc_available?: boolean;
   tile_brands?: Record<string, string>;
   specialty_tile?: Record<string, number>;
+  // config["line_items"][zone] — the accent items the engine will price for this zone.
+  line_items?: Record<string, number>;
   default_tile_brand?: string | null;
   low_slope?: {
     deck_types?: Record<string, number | null>;
@@ -667,6 +669,10 @@ export function Quoting() {
   const [quoteProjectKind, setQuoteProjectKind] = useState<"residential" | "commercial">("residential");
   const [quoteTilePointing, setQuoteTilePointing] = useState<"no" | "yes">("no");
   const [quoteSpecialtyTile, setQuoteSpecialtyTile] = useState<string>("");
+  // Accent items (solar/turbine vents, blown-in insulation). Priced by the engine from
+  // config["line_items"][zone] and already returned by /estimator/rates, but there was no way
+  // to pick them outside a hand-rolled API call — so they were never quoted from the UI.
+  const [quoteExtraLineItems, setQuoteExtraLineItems] = useState<string[]>([]);
   // The 7/12+ adder is $305/sq — on a 35-square roof that is +$10,675, a ~25% swing — and NONE of
   // the 29 homes Tim calibrated us on are 7/12 or steeper. It also overlaps the day model, which
   // already adds half a labour day at 6/12, while Tim's own $305 build-up contains $90/sq of
@@ -1166,6 +1172,9 @@ export function Quoting() {
       leaf_guard: quoteLeafGuard,
       leaderheads_res: Number(quoteLeaderheadsRes || 0),
       leaderheads_comm: Number(quoteLeaderheadsComm || 0),
+      // Only keys the active config actually prices for this zone — the engine ignores unknown
+      // keys silently, so sending a stale one would drop the item with no warning.
+      extra_line_items: quoteExtraLineItems.filter((k) => k in (rates?.line_items ?? {})),
       overhead_mode: quoteOverheadMode,
       daily_series: quoteOverheadMode === "daily" ? dailySeries : [],
       profit_mode: "scale",
@@ -1995,6 +2004,28 @@ export function Quoting() {
                       <option key={k} value={k}>{k.replace(/_/g, " ")}</option>
                     ))}
                   </select>
+                </div>
+              )}
+              {rates?.line_items && Object.keys(rates.line_items).length > 0 && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <FieldLabel>Accent items</FieldLabel>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+                    {Object.entries(rates.line_items).map(([key, price]) => (
+                      <label key={key} style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={quoteExtraLineItems.includes(key)}
+                          onChange={(e) => setQuoteExtraLineItems((prev) => (
+                            e.target.checked ? [...prev, key] : prev.filter((k) => k !== key)
+                          ))}
+                        />
+                        <span>
+                          {key.replace(/_/g, " ")}
+                          {` — $${Number(price).toLocaleString()}`}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
               {rates?.cut_calc_available
