@@ -171,3 +171,34 @@ def test_material_specs_that_look_like_unit_numbers_survive():
     ])
     assert len(lines) == 3, lines
     assert any("Double #30" in line for line in lines), "30-lb felt is a material, not a unit"
+
+
+# --- building numbers in scope lines --------------------------------------
+
+def test_a_building_number_prefix_is_stripped():
+    """find_pii cannot fire on a bare number — there is no street name to match — so "1751 - "
+    reached the page, and city + building number + four photos narrows to one property."""
+    assert clean_scope_lines([{"description": "1751 - Polyglass 70 Acrylic Roofing System"}]) == [
+        "Polyglass 70 Acrylic Roofing System"]
+
+
+def test_a_building_number_before_the_word_building_is_stripped():
+    """The number goes, "Building" stays — it reads as scope, not as an address."""
+    assert clean_scope_lines([{"description": "2401 Building Canopy Polyglass 3-Ply System"}]) == [
+        "Building Canopy Polyglass 3-Ply System"]
+
+
+def test_a_measurement_keeps_its_number():
+    """Refusing every leading number would drop real scope: 135 is feet, not an address."""
+    assert clean_scope_lines([{"description": "135 ft. Boom Rental"}]) == ["135 ft. Boom Rental"]
+
+
+def test_a_year_range_is_not_mangled_into_a_wrong_label():
+    """The first pass at this turned "2022 -2026 Annual Maintenance" into "2026 Annual
+    Maintenance" — a confident, wrong label. Refuse rather than guess."""
+    assert clean_scope_lines([{"description": "2022 -2026 Annual Maintenance"}]) == []
+
+
+def test_two_numbers_in_one_line_are_refused_not_half_stripped():
+    """Stripping the first number leaves the second on the page: "and 4944 Front Cupola Repair"."""
+    assert clean_scope_lines([{"description": "4952 and 4944 Front Cupola Repair"}]) == []

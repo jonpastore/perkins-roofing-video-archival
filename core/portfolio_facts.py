@@ -64,7 +64,40 @@ _ROOFING_RE = re.compile(
 # an artifact of how it was quoted.
 _PREFIX_RE = re.compile(r"^(?:fbc|hvhz)\s*[-–]\s*|^line item pricing\s*:\s*", re.I)
 
+# Building / street numbers Knowify carries at the head of a deliverable — "1751 - Polyglass 70
+# Acrylic Roofing System", "2401 Building Canopy ...". find_pii does not fire on a bare number
+# (there is no street name to match), so without this the number reaches the page, and city +
+# building number + four photos of the roof narrows to one property. Two shapes only, both
+# checked against all 26,063 deliverables: 17 lines strip, and no year range or measurement is
+# touched. Anything else that still opens with a number is REFUSED below rather than guessed at.
+_BUILDING_PREFIX_RE = re.compile(
+    r"^\d{2,6}\s*[-–—]\s+(?=\D)"      # "1751 - Polyglass ..."  (a digit after the dash = a year range)
+    r"|^\d{2,6}\s+(?=Building\b)",    # "2401 Building Canopy ..." — drop the number, keep "Building"
+    re.I,
+)
+_LEADING_NUMBER_RE = re.compile(r"^(\d{3,6})\b\s*(\S*)")
+# A leading number followed by one of these is a measurement, not an address ("135 ft. Boom").
+_MEASUREMENT_UNITS = frozenset(
+    "ft feet foot sq square lf in inch inches mil mils yard yards yr year years gal lb lbs ply "
+    "tab tabs pc pcs ea".split()
+)
+
 MAX_SCOPE_LINES = 8
+
+
+def _address_number_risk(desc: str) -> bool:
+    """True when a line still opens with a bare number that could be a building or street number.
+
+    Refusing beats guess-stripping: on this corpus the ambiguous cases include "4952 and 4944
+    Front Cupola Repair" and "409 Valley Metal Roof Repair and 401 Gutter Repair", where removing
+    the first number leaves the second one on the page and mangles the sentence. Dropping the
+    line loses some scope detail; publishing it loses the client's address.
+    """
+    match = _LEADING_NUMBER_RE.match(desc)
+    if not match:
+        return False
+    unit = match.group(2).strip(".,:;").lower()
+    return unit not in _MEASUREMENT_UNITS
 
 
 def _detitle(desc: str) -> str:
@@ -126,7 +159,10 @@ def clean_scope_lines(rows: Iterable[dict]) -> list[str]:
         if (not desc or _NOISE_RE.match(desc) or _OPTIONAL_RE.search(desc)
                 or _COMMERCIAL_RE.search(desc) or has_pii(desc)):
             continue
+        desc = _BUILDING_PREFIX_RE.sub("", desc).strip()
         desc = _PREFIX_RE.sub("", desc).strip()
+        if _address_number_risk(desc):
+            continue
         desc = _detitle(desc)
         key = desc.lower()
         if key in seen:
