@@ -47,14 +47,25 @@ in `<head>` by the plugin.
 **The fix is already in git** — `wp-mu-plugin/perkins-jsonld.php` now defines
 `PERKINS_JSONLD_POST_TYPES = ['post','avada_portfolio','page']` and loops it for both
 `register_post_meta` and the `wp_head` echo. It has to reach the WP host, which `deploy.sh`
-cannot do. Two routes:
+cannot do.
 
-1. **mu-plugin (matches what is installed now):** upload `wp-mu-plugin/perkins-jsonld.php` to
-   `wp-content/mu-plugins/perkins-jsonld.php` on staging (SFTP / GoDaddy file manager).
-2. **regular plugin (no SFTP needed):** `wp-plugin/perkins-jsonld/` is the same code packaged as
-   an installable plugin — zip that folder and use wp-admin → Plugins → Add New → Upload.
+**Use the ZIP route.** Measured 2026-07-29 against staging's `/wp-json/wp/v2/plugins` as admin
+`jon`: what is live is the REGULAR plugin, `perkins-jsonld/perkins-jsonld` v1.2.0, **active**.
+There is no mu-plugin — a published article renders exactly 2 `application/ld+json` blocks
+(Rank Math's `@graph`, then our `FAQPage` + `VideoObject`), so only one emitter exists. An
+earlier draft of this doc claimed the mu-plugin "matches what is installed now"; it does not,
+and dropping the mu-plugin in alongside the active plugin is precisely what would duplicate
+schema on all ~60 articles.
 
-⚠️ Install **only one** of the two, or both hooks fire and every page gets duplicate schema.
+- **DO:** zip `wp-plugin/perkins-jsonld/` → wp-admin → Plugins → Add New → Upload → *Replace
+  current with uploaded*. Same slug, so it upgrades in place: no deactivation, no SFTP, no
+  second emitter. `perkins-jsonld/` is GENERATED from the mu-plugin (identical below the
+  header) — `tests/test_wp_plugin_parity.py` fails if they drift.
+- **DO NOT** install the mu-plugin on staging while `perkins-jsonld` is active. mu-plugins
+  cannot be deactivated from wp-admin, so undoing that mistake needs the filesystem access the
+  mu-plugin route was chosen to avoid.
+
+⚠️ Never both. The version bump to **1.3.0** is the wp-admin-visible signal the upload landed.
 
 **Verify after upload — do not assume:**
 

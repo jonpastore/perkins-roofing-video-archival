@@ -15,7 +15,11 @@ Current staging = `https://jhk.14f.myftpupload.com` (GoDaddy temp domain). Produ
    (author/editor role) → that's `WP_APP_PWD` (24 chars; store WITHOUT the display spaces).
 2. **Pretty permalinks.** Settings → Permalinks → **Post name** (anything but "Plain"), or `/wp-json/`
    REST routes 404. (Staging fix confirmed this was the issue.)
-3. **Install the JSON-LD plugin — BEFORE publishing any articles.** Two forms:
+3. **Install the JSON-LD plugin — BEFORE publishing any articles.** Two forms, **install exactly
+   one** — both register the same hooks, so two copies emit duplicate schema on every page, and a
+   mu-plugin cannot be deactivated from wp-admin to undo it. (STAGING runs the plugin form:
+   `perkins-jsonld/perkins-jsonld` active, no mu-plugin — verified 2026-07-29. Upgrade it by
+   re-uploading the zip over the same slug, never by adding the mu-plugin.)
    - **Prod (preferred):** drop `wp-mu-plugin/perkins-jsonld.php` into `wp-content/mu-plugins/`
      (filesystem/SFTP — mu-plugins can't be installed over REST).
    - **No filesystem access:** upload `wp-plugin/perkins-jsonld/` (zip it) via **Plugins → Add New →

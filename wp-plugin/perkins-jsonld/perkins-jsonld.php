@@ -1,28 +1,48 @@
 <?php
 /**
  * Plugin Name: Perkins Roofing JSON-LD Injector
- * Description: Registers the _perkins_jsonld post-meta (so the REST API accepts it) and echoes the
- *              stored JSON-LD inside a <script type="application/ld+json"> tag in wp_head for singular
- *              posts. WordPress strips <script> from post content, so this is the safe injection point.
- *              Also serves /llms.txt via a custom endpoint and provides a REST route to manage it.
- * Version:     1.2.0
+ * Description: Registers _perkins_jsonld + the Rank Math SEO meta keys for the REST API and echoes
+ *              the stored JSON-LD in wp_head. Also serves /llms.txt and the AI-crawler robots rules.
+ * Version:     1.3.0
  * Author:      DeGenito
  *
- * NOTE: This is the uploadable-plugin form of wp-mu-plugin/perkins-jsonld.php. Prefer the mu-plugin
- * (drop into wp-content/mu-plugins/) in production; this plugin exists so it can be installed via the
- * WordPress admin UI (Plugins -> Add New -> Upload) where filesystem access isn't available.
+ * GENERATED — do not edit. The source of truth is wp-mu-plugin/perkins-jsonld.php; everything below
+ * this header is a verbatim copy of it. tests/test_wp_plugin_parity.py fails if they drift.
+ * Install ONE form only: this plugin (wp-admin upload) OR the mu-plugin. Both = duplicate schema.
  */
 
-add_action( 'init', function () {
-    $keys = [
-        '_perkins_jsonld',
-        'rank_math_focus_keyword',
-        'rank_math_title',
-        'rank_math_description',
-    ];
+/**
+ * Post types that may carry JSON-LD. 'post' = articles. 'avada_portfolio' + 'page' = project
+ * write-ups: the generated portfolio uses the CPT while the nine PUBLIC projects are pages
+ * under /portfolio/, and until that URL question is settled both have to work. Registering
+ * for one type only is why a project page could store no schema at all — WP rejects meta on
+ * an unregistered key, and wp_head skipped anything that was not a singular 'post'.
+ */
+define( 'PERKINS_JSONLD_POST_TYPES', [ 'post', 'avada_portfolio', 'page' ] );
 
-    foreach ( $keys as $key ) {
-        register_post_meta( 'post', $key, [
+add_action( 'init', function () {
+    foreach ( PERKINS_JSONLD_POST_TYPES as $type ) {
+        register_post_meta( $type, '_perkins_jsonld', [
+            'single'        => true,
+            'type'          => 'string',
+            'show_in_rest'  => true,
+            'auth_callback' => function () { return current_user_can( 'edit_posts' ); },
+        ] );
+    }
+} );
+
+/**
+ * Register Rank Math's SEO meta keys for the REST API so Application-Password
+ * publishing can set the focus keyword + SEO title/description. Rank Math stores
+ * these as normal post-meta but does not expose them over REST, and its own
+ * admin REST route (rankmath/v1/updateMeta) is blocked by the managed-hosting
+ * WAF for non-browser calls — so we register them here and write via wp/v2.
+ */
+add_action( 'init', function () {
+    $rank_math_keys = [ 'rank_math_focus_keyword', 'rank_math_title', 'rank_math_description' ];
+    foreach ( $rank_math_keys as $key ) {
+      foreach ( PERKINS_JSONLD_POST_TYPES as $type ) {
+        register_post_meta( $type, $key, [
             'single'        => true,
             'type'          => 'string',
             'show_in_rest'  => true,
@@ -40,10 +60,10 @@ add_action( 'wp_head', function () {
     if ( empty( $raw ) ) {
         return;
     }
+    // Escape </script> sequences to prevent early tag close.
     $safe = str_replace( '</', '<\/', $raw );
     echo '<script type="application/ld+json">' . $safe . '</script>' . "\n";
 } );
-
 // Fallback route: only reached when no physical llms.txt exists at the webroot —
 // a static file is served by the web server before WordPress ever parses the request.
 add_action( 'parse_request', function () {
