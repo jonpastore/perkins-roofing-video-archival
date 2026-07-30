@@ -177,13 +177,48 @@ where pitch is neutral.
 ⚠️ n=35 across 27 homes, and pitch takes three values (4, 5, 6). The rule is fitted to this set.
 The direction is the finding; the threshold needs re-checking on jobs quoted after it is chosen.
 
-## What to ship
+## What to ship — the "one model, one knob" idea was tested and it FAILS
 
-One model with one knob, not two models:
+`scripts/prove_persq_day_equivalence.py`. The claim was: set `sq_per_day` to the break-even
+constant and the day model reproduces Tim's published $/sq table exactly, so per-square stops
+being a second model. Three checks:
 
-    OH = rate_by_roof_type(series) × days        days = SQ / sq_per_day
+**1. The algebra is exact — but only for a day model nobody has.** If `days = SQ / p` with no
+intercept, then `OH = SQ × (1050/p_demo + rate/p_install)`, a constant $/sq. Solving for the
+install productivity that hits his table gives tile 7.90, shingle 17.33, metal 6.73 sq/day, and
+across every priced job the worst deviation is **0.0000%**. So far so good.
 
-Set `sq_per_day` to the break-even constant above and it reproduces Tim's published $/sq table
-exactly; let it move with measured complexity (geometry, pitch, access) and it becomes his time
-model. Per-square stops being a second model and becomes the default productivity — one place to
-adjust, which is what a seasonal or per-branch adjustment needs to hang off.
+**2. The day model that actually ships is not proportional — it has an intercept.** The fit is
+`days = setup + rate × SQ` (tile `0.45 + 0.129×SQ`), so the implied $/sq is a curve:
+
+| roof | 10 SQ | 20 SQ | 30 SQ | 45 SQ | 60 SQ | 80 SQ | his table | spread |
+|---|---|---|---|---|---|---|---|---|
+| tile | $322 | $217 | $199 | $189 | $169 | $168 | $185 | 91% |
+| shingle | $315 | $158 | $134 | $113 | $99 | $92 | $105 | 243% |
+| metal | $338 | $211 | $201 | $186 | $169 | $161 | $205 | 109% |
+
+A single constant can match a curve at one size, not at all of them. Dropping the intercepts to
+force the match means throwing away the setup day that is the best-fitting part of the day model.
+
+**3. Days are quantised to the half day.** `DailyOverheadSeries` rejects anything that is not a
+multiple of 0.5, so `SQ / p` usually cannot even be expressed. Rounding it re-breaks the collapse
+by −6.3% to +6.2% at ordinary job sizes (tile at 25 SQ: −6.3%; metal at 17 SQ: +6.2%).
+
+**And it buys nothing.** Scored on the 35 priced jobs, the unified constant-productivity model
+tracks per-square, not the time model — because a constant productivity *is* the per-square
+assumption:
+
+| | all 35 | the 6 slow jobs (<4 sq/day) |
+|---|---|---|
+| per-square | 13/35 within 5%, median −2.4% | 1/6, median **−15.8%** |
+| "one model" at constant sq/day | 11/35, median +1.1% | 1/6, median **−10.6%** |
+| day model on his days | 15/35, median +2.2% | 2/6, median **−1.6%** |
+
+**Conclusion: there is no one-model solution. Ship both in parallel**, which is what the engine
+already does — `overhead_mode` is a first-class input, the SPA has the toggle
+(`Quoting.tsx:2220`), and the mode is persisted per estimate (`estimates.input_json`, currently
+66 daily / 35 per_sq). The only thing missing is the **default**: it is unconditionally `"daily"`
+(`api/routes/estimator.py:192`, `Quoting.tsx:713`), where the evidence says the better default is
+per-square at ≤4/12 pitch and day-series above it, with the operator free to flip either way.
+A seasonal or per-branch adjustment hangs off the day RATES and the $/sq table separately —
+there is no single knob that moves both, and pretending otherwise hides which model is running.
