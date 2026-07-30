@@ -150,17 +150,27 @@ archive download depends on had its start, failure and teardown paths untested).
 
 ## What is NOT done
 
-1. ⚠️ **PROD WORDPRESS CUTOVER — still #1, still untouched.** `PlatformConfig.WP_URL` points at
-   staging. Needs a prod app password vaulted + one config change. Everything "verified live"
-   this session means staging.
-2. ⚠️ **The `perkins-jsonld` mu-plugin must be re-uploaded** to staging AND prod. The version
+0. ⛔ **STAY ON STAGING — Jon, 2026-07-29: *"stay on staging till we clear client approval."***
+   The prod cutover is **parked on a business gate, not missing work.** Do not change
+   `PlatformConfig.WP_URL`, do not vault a prod WP app password, do not publish to
+   perkinsroofing.net. Staging IS the intended target until Perkins approves, so "verified live"
+   meaning staging is correct for now rather than a defect. Mechanics stay in
+   `docs/PRODUCTION_CUTOVER_PLAN.md`.
+2. ⚠️ **The `perkins-jsonld` mu-plugin must be re-uploaded to STAGING** (prod gets it at
+   cutover, and it is on that checklist already). The version
    live on staging registers `_perkins_jsonld` for post type `post` only, so project pages can
    neither store nor render schema — measured: publish returned `jsonld_stored: false` and the
    meta was absent on read-back. `wp-mu-plugin/perkins-jsonld.php` in git now covers `post`,
    `avada_portfolio` and `page`. Until it is uploaded, project pages publish fine but carry NO
    JSON-LD, and both the API and UI say so. **This is a file upload to WP hosting — Jon.**
-3. **Two emails drafted and UNSENT** in Jon's DeGenito Outlook: Tim (the $1,400/day allocation
-   question) and Wendy (URL space + schema). Tim's answer gates flipping `overhead_basis`.
+3. **Both emails were SENT by Jon himself** at 21:21 / 21:23 UTC, with his own edits — I only
+   updated the drafts. Do not re-send. Two of his edits are decisions:
+   - to Wendy: *"I'm going to use the article standards for now until I hear from you"* — which
+     is exactly what `core/portfolio_criteria.py` implements, so nothing to change unless she
+     answers differently;
+   - to Tim: *"Can you try some quotes and tell me if it's working like you expect and if the
+     numbers make sense?"* — so expect feedback on the live Quoting UI, not just an answer to
+     the overhead question. That answer still gates flipping `overhead_basis`.
 4. **`featured_media` is still 0** — WP needs an attachment, our images are CDN-hosted.
 5. **2 of 13 candidates have no CompanyCam URL** — now fixable in the UI, needs the URL.
 6. From the morning list: accent items priced but not selectable in the SPA · o365 refresh token

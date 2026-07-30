@@ -39,30 +39,41 @@ WHAT IS SETTLED — do not re-derive
 
 THE WORK, ranked
 
-1. ⚠️ CUTOVER TO PRODUCTION WORDPRESS. Unchanged and still #1. PlatformConfig.WP_URL =
-   https://1228404.us6.myftpupload.com, read from the prod DB (single source of truth, no .env
-   fallback). Prod perkinsroofing.net has had no platform content since 2026-07-02. Needs: a
-   PROD WP application password vaulted, then one PlatformConfig.WP_URL change, then verify ONE
-   article round-trips (context=edit, product UA — GoDaddy's WAF strips Authorization from
-   default library UAs). Until then every "verified live" claim in every doc means STAGING.
+0. ⛔ STAY ON STAGING. Jon, 2026-07-29: *"stay on staging till we clear client approval."*
+   Do NOT change PlatformConfig.WP_URL, do NOT vault a prod WP app password, do NOT publish
+   anything to perkinsroofing.net. STAGING (https://1228404.us6.myftpupload.com) is the correct
+   and intended target until Perkins approves. This is a business gate, not a missing task —
+   the cutover mechanics are understood and parked:
+     - one PlatformConfig.WP_URL change + a prod WP application password, then verify ONE
+       article round-trips (context=edit, product UA — GoDaddy's WAF strips Authorization from
+       default library UAs). docs/PRODUCTION_CUTOVER_PLAN.md has the ordered checklist.
+   Keep reading every "verified live" claim in the docs as STAGING, because it is.
 
-2. ⚠️ RE-UPLOAD wp-mu-plugin/perkins-jsonld.php to STAGING AND PROD (Jon — it is a file upload
-   to WP hosting, not something deploy.sh does). The live version registers _perkins_jsonld for
+2. ⚠️ RE-UPLOAD wp-mu-plugin/perkins-jsonld.php to STAGING (Jon — a file upload to WP hosting,
+   not something deploy.sh does). Staging is the only one that matters while we stay on staging;
+   prod gets it at cutover, and it is already on the cutover checklist. The live version registers _perkins_jsonld for
    post type `post` ONLY, so project pages store and render NO schema: measured, publish
    returned jsonld_stored:false and the meta was absent on read-back. git now covers post +
    avada_portfolio + page. An inline <script> is NOT a workaround — WordPress strips it from
    post content on an application-password write, silently, 200 OK.
 
-3. SEND THE TWO DRAFTS (Jon's DeGenito Outlook, both updated and unsent):
-   - Tim/Marco/Josh "One question about the $1,400/day before I set it" — the ONLY question is
-     whether $1,400/day is charged per job-day or split across concurrent jobs. $1,400 x 250
-     working days = $350k vs the $336k annual burn, i.e. right for ONE job at a time; measured
-     concurrency was ~1-1.7 jobs/working day in 2025 and 1.5-4.3 in 2024. His answer gates
-     flipping overhead_basis. Evidence: scripts/margin_check.py (rebuild says +4.2% median
-     margin, NOT the -0.4% the unsent 7/28 draft claimed).
-   - Wendy (cc Tim) "Project pages — where should they live" — URL space (/portfolio/ pages vs
-     the avada_portfolio CPT our publisher targets) + whether she has a schema. Her answer
-     unblocks which post type to publish to.
+3. BOTH EMAILS ARE SENT — Jon sent them himself 2026-07-29 21:21/21:23 UTC, with his own
+   edits. Do not re-send or re-draft. WATCH FOR THE REPLIES; each unblocks something:
+   - Tim/Marco/Josh, "One question about the $1,400/day before I set it". The question: is
+     $1,400/day charged per job-day, or split across the jobs running that day? ($1,400 x 250
+     working days = $350k vs the $336k annual burn — right for ONE job at a time; measured
+     concurrency ~1-1.7 jobs/working day in 2025, 1.5-4.3 in 2024.) His answer gates flipping
+     overhead_basis. Evidence: scripts/margin_check.py — the rebuild says +4.2% median margin,
+     NOT the -0.4% the superseded 7/28 draft claimed.
+     ⚠️ Jon ADDED an ask: "Can you try some quotes and tell me if it's working like you expect
+     and if the numbers make sense?" — so expect feedback on the live Quoting UI, not just a
+     yes/no on the overhead question.
+   - Wendy (cc Tim), "Project pages — where should they live". URL space (/portfolio/ pages vs
+     the avada_portfolio CPT our publisher targets) + whether she has a schema.
+     ⚠️ Jon DECIDED the interim in the email: "I'm going to use the article standards for now
+     until I hear from you." That is exactly what core/portfolio_criteria.py implements
+     (FAQPage + ImageObject + VideoObject, nothing Rank Math owns, unique alts, in-content TOC),
+     so no change is needed unless she answers differently.
 
 4. FINISH THE PROJECT PAGES once #2 lands: verify JSON-LD renders in <head> on a published
    project, then set featured_media (needs the image uploaded to WP as an attachment — ours are
