@@ -66,12 +66,67 @@ every change must satisfy these. CI enforces what it can; the rest is a manual p
      history (those live in the repo).
 - This is a gate, not a suggestion: a commit without docs+drift+jarvis+memory is incomplete.
 
+## R7 — Never edit the tree while a long gate is running (owner directive 2026-07-30)
+
+The coverage gate is 40–60 min on a dev box. Editing `core/` or `tests/` while it runs
+invalidates it: pytest imported the modules at collection, but coverage maps line numbers from
+the file **on disk at report time**, so the result describes code that no longer exists. On
+2026-07-30 this burned three consecutive full runs — roughly two hours — for one usable number.
+
+- Finish **all** edits, then run the expensive gate **once**, then do not touch the tree until
+  it returns. Batch fixes; do not trickle them in.
+- For a small follow-up fix after a green full run, re-run only the affected test files. The
+  full sweep runs in CI anyway — a second local full sweep buys nothing.
+- Never `pkill -f "<pattern>"` to stop a run: the pattern matches the killing shell itself.
+  Capture the PID and `kill "$PID"` (this is written down because it has been hit twice).
+- Do not wrap a long run in `... | tail -n`: the pipeline's exit code is `tail`'s, so a failing
+  suite reports success. Redirect to a file, echo `$?`, then read the file.
+
+## R8 — Verify before asserting, especially when it sounds like a discovery
+
+Every wrong claim in the 2026-07-30 session came from asserting before checking, and each took
+exactly one command to disprove: "the CDN URL expired" (the URL had been copied from console
+output truncated at 70 chars), "8 files use drop_all" (5), "extra_line_items has no test"
+(`tests/core/test_estimator.py:86`). None were invented — all were stated one command too early.
+
+- A count, a filename, a URL or an "X is broken" claim gets the command **before** the sentence.
+- Console output is truncated by default. Never copy an identifier out of a printed table —
+  re-read it from the source.
+- An image tag is not proof a deploy is serving: check behaviour. `spec.template` is desired
+  state, and traffic can still be on the old revision mid-roll.
+- State the measurement, not the impression: "17 of 26,063 lines" beats "a few lines".
+
+## R9 — Delegation is best-effort; the work is not
+
+Review subagents can return idle with no output. That is a tool failure, not a reason to stop.
+
+- One retry, then do the review inline yourself and **label it as self-review** in the report.
+- Never let a failed delegation silently downgrade R2: say plainly whether an independent
+  architect/critic pass happened or did not.
+- Do not spawn a second wave of agents to chase a first wave that produced nothing.
+
+## R10 — Heuristics touching published text are corpus-validated, and refusing beats guessing
+
+Extends the `core/pii.py` lesson (a detector whose unit tests were green at a 98% false-positive
+rate on real data).
+
+- Run any new pattern over the **whole** corpus (`knowify_raw_records` deliverables = 26,063
+  lines) and read a sample of what it changes, before it ships. Unit tests cannot see this class
+  of error.
+- On an ambiguous input, DROP the line rather than transform it. The 2026-07-30 building-number
+  rule first rewrote "2022 -2026 Annual Maintenance" into "2026 Annual Maintenance" — a
+  confident, wrong label. Losing a scope line costs detail; a mangled or leaked one costs trust.
+- Report both directions: what the rule changed AND what it deliberately left alone.
+
 ## Per-wave Definition of Done (checklist)
 - [ ] All wave tasks implemented — no unwired/dead code (architect-verified).
 - [ ] `pytest --cov=core --cov-fail-under=97` green (R1) + a behavioral validation for new I/O.
 - [ ] `ruff check core adapters api jobs` clean.
 - [ ] architect review: no unaddressed HIGH gaps (R2).
-- [ ] critic review: no unaddressed HIGH/critical issues (R2).
+- [ ] critic review: no unaddressed HIGH/critical issues (R2) — or an explicit
+      statement that delegation failed and the review was done inline (R9).
+- [ ] Expensive gates run ONCE on a settled tree (R7); any new published-text
+      heuristic corpus-validated (R10).
 - [ ] All infra/config changes in Terraform/Ansible, applied from git (R3).
 - [ ] `scripts/drift_check.sh` shows no drift (R4).
 - [ ] Committed on `feat/platform-v2` with a descriptive message.
