@@ -214,6 +214,18 @@ assumption:
 | "one model" at constant sq/day | 11/35, median +1.1% | 1/6, median **−10.6%** |
 | day model on his days | 15/35, median +2.2% | 2/6, median **−1.6%** |
 
+## What actually shipped (2026-07-30, Jon's call)
+
+- **`jupiter` and `naples` flipped to `overhead_basis="series"`** (config v28 each) — Tim's four
+  per-day-by-roof-type rates instead of the flat $1,400/day. Reprices those branches −7.6% to
+  −9.4%. `miami` deliberately untouched at `branch` $4,250/day; `seed_overhead_basis.py --branches`
+  now exists so a flip can exclude it.
+- **`concurrent_crews`** (new config key, default 1.0 = today's behavior) divides the branch burn
+  across the jobs sharing a calendar day: `overhead = days × office_daily_overhead / crews`. Inert
+  under the series basis, where the four rates are already per-crew-day. Not set on any branch.
+  At Tim's stated 4 Miami crews a 30 SQ HVHZ tile roof goes $2,087/sq → **$1,343/sq** against a
+  $1,113/sq accepted Miami median; 4 is his capacity target, not a measurement, so it waits on him.
+
 **Conclusion: there is no one-model solution. Ship both in parallel**, which is what the engine
 already does — `overhead_mode` is a first-class input, the SPA has the toggle
 (`Quoting.tsx:2220`), and the mode is persisted per estimate (`estimates.input_json`, currently
