@@ -11,9 +11,24 @@ from app.models import Base, Chunk, Segment, SessionLocal, Video, engine
 
 @pytest.fixture(autouse=True)
 def _fresh_db():
-    Base.metadata.drop_all(engine); Base.metadata.create_all(engine)
+    """Wipe only the rows we touch.
+
+    Deliberately NOT Base.metadata.drop_all(): pytest imports every test module before
+    running any test, so modules that create_all at import time and then only DELETE rows
+    have their tables torn out from under them by a drop_all here, failing with
+    "no such table". Row deletes are order-independent. Same reasoning as
+    tests/jobs/test_backfill_metadata_watermark.py and tests/api/test_portfolio.py.
+    """
+    Base.metadata.create_all(engine)  # idempotent; heals if another module dropped
+    def _wipe():
+        with SessionLocal() as db:
+            db.query(Chunk).delete()
+            db.query(Segment).delete()
+            db.query(Video).delete()
+            db.commit()
+    _wipe()
     yield
-    Base.metadata.drop_all(engine)
+    _wipe()
 
 
 def _seed(vid, chunk_model=None):
