@@ -242,6 +242,10 @@ class Article(Base):
     priority = Column(Integer, nullable=True)
     scheduled_at = Column(DateTime, nullable=True)
     generated_at = Column(DateTime, default=_utcnow)
+    # Why this article was last refused (migration 0051). core.article_criteria already computes
+    # it; before this it survived only as a log line.
+    gate_failures = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    gate_checked_at = Column(DateTime, nullable=True)
     # Last write, on EVERY path. `onupdate` is SQLAlchemy's, so it fires for any UPDATE from
     # any caller — seven modules write content_md, and a stamp each one has to remember is a
     # stamp six of them will miss. Matches the convention already on six other tables here.
@@ -1401,6 +1405,11 @@ class PortfolioProject(Base, TenantMixin):
     notes          = Column(Text, nullable=True)
     search_terms   = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
     archived_at    = Column(DateTime, nullable=True)
+    # Why this project was last refused (migration 0051) — the gate's own failing criteria,
+    # not a rendered sentence, so a correction loop can act on the keys. NULL = never gated,
+    # which is not the same as [] = gated and clean.
+    gate_failures   = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    gate_checked_at = Column(DateTime, nullable=True)
     created_at     = Column(DateTime, nullable=False, default=_utcnow)
     updated_at     = Column(DateTime, nullable=False, default=_utcnow, onupdate=_utcnow)
     updated_by     = Column(String(320), nullable=True)
@@ -1418,6 +1427,11 @@ class PortfolioProject(Base, TenantMixin):
             "youtube_url": self.youtube_url or "",
             "date_start": self.date_start or "", "date_end": self.date_end or "",
             "notes": self.notes or "", "search_terms": list(self.search_terms or []),
+            # Last gate verdict (0051). None and [] mean different things — never gated vs
+            # gated and clean — so neither is coerced to the other here.
+            "gate_failures": self.gate_failures,
+            "gate_checked_at": (self.gate_checked_at.isoformat()
+                                if self.gate_checked_at else None),
         }
 
 

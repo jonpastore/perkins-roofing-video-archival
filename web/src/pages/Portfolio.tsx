@@ -55,6 +55,10 @@ interface PortfolioItem {
   wp_admin_url: string | null;
   publish_result?: PublishResult;
   gate?: Gate;
+  // Persisted verdict from the last gate run on a write (migration 0051). null = never gated,
+  // [] = gated and clean — the list must not render those the same way.
+  gate_failures?: GateCriterion[] | null;
+  gate_checked_at?: string | null;
 }
 
 interface MediaPhoto {
@@ -160,8 +164,32 @@ function gateBadge(item: PortfolioItem) {
       </Badge>
     );
   }
+  // Fall back to the LAST RECORDED verdict, so the list answers "why is this stuck?" without
+  // re-running the gate for all 13 projects on every render.
+  if (item.gate_failures && item.gate_failures.length > 0) {
+    const blockers = item.gate_failures.filter((f) => f.severity === "blocker").length;
+    return (
+      <Badge tone={blockers > 0 ? "red" : "amber"}>
+        {blockers > 0 ? `${blockers} blocker(s)` : `${item.gate_failures.length} to fix`}
+      </Badge>
+    );
+  }
+  if (item.gate_failures && item.gate_failures.length === 0) {
+    return <Badge tone="green">gate passed</Badge>;
+  }
   if (item.missing_permissions.length === 0) return <Badge tone="green">permissions confirmed</Badge>;
   return <Badge tone="amber">{item.missing_permissions.length} permission(s) missing</Badge>;
+}
+
+function gateReasonLine(item: PortfolioItem) {
+  const failures = item.gate_failures;
+  if (!failures || failures.length === 0) return null;
+  return (
+    <div style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: "0.2rem" }}>
+      {failures.slice(0, 3).map((f) => f.label + (f.detail ? ` (${f.detail})` : "")).join(" · ")}
+      {failures.length > 3 ? ` · +${failures.length - 3} more` : ""}
+    </div>
+  );
 }
 
 function wpBadge(item: PortfolioItem) {
@@ -887,7 +915,7 @@ export function Portfolio() {
                       <Badge tone="gray">none curated</Badge>
                     )}
                   </td>
-                  <td style={{ padding: "10px 14px" }}>{gateBadge(item)}</td>
+                  <td style={{ padding: "10px 14px" }}>{gateBadge(item)}{gateReasonLine(item)}</td>
                   <td style={{ padding: "10px 14px" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       {wpBadge(item)}

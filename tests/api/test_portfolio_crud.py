@@ -343,3 +343,41 @@ def test_a_partial_sanitize_failure_blocks_the_whole_page(monkeypatch):
     gate = c.get(f"/portfolio/{slug}/media", headers=AUTH).json()["gate"]
     assert "media_sanitized" in [b["key"] for b in gate["blockers"]]
     assert gate["publishable"] is False
+
+
+# --- gate failures are persisted, not just returned -----------------------
+
+def test_publish_records_why_it_was_refused(monkeypatch):
+    """Before 0051 the verdict existed only in the 422 body. Once that response was gone,
+    neither a human nor a correction loop could answer "why is this one not published?"."""
+    c = _client()
+    c.get("/portfolio", headers=AUTH)
+    slug = "miami-beach-olsen-condo"
+    assert c.post(f"/portfolio/{slug}/publish", headers=AUTH).status_code == 422
+
+    with SessionLocal() as db:
+        row = db.query(PortfolioProject).filter(PortfolioProject.slug == slug).one()
+        keys = [f["key"] for f in (row.gate_failures or [])]
+    assert "permission_property" in keys
+    assert all("severity" in f and "label" in f for f in row.gate_failures), row.gate_failures
+
+
+def test_never_gated_is_distinguishable_from_gated_and_clean():
+    """NULL means nobody has checked; [] means checked and nothing failed. Code that conflates
+    them reports unchecked projects as passing."""
+    c = _client()
+    projects = c.get("/portfolio", headers=AUTH).json()
+    fresh = next(p for p in projects if p["slug"] == "miami-isola-roof")
+    assert fresh["gate_failures"] is None
+    assert fresh["gate_checked_at"] is None
+
+
+def test_the_recorded_reason_is_exposed_to_the_list_view(monkeypatch):
+    """The editor's list has to show it — that is the "a human can see and correct it" half."""
+    c = _client()
+    c.get("/portfolio", headers=AUTH)
+    slug = "miami-beach-olsen-condo"
+    c.post(f"/portfolio/{slug}/publish", headers=AUTH)
+    listed = {p["slug"]: p for p in c.get("/portfolio", headers=AUTH).json()}[slug]
+    assert listed["gate_checked_at"] is not None
+    assert "permission_property" in [f["key"] for f in listed["gate_failures"]]

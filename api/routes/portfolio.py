@@ -39,7 +39,7 @@ from core.portfolio_content import (
     build_project_jsonld,
     build_write_up,
 )
-from core.portfolio_criteria import check_project, publishable
+from core.portfolio_criteria import check_project, failing, publishable
 from core.portfolio_criteria import summary as criteria_summary
 from core.portfolio_facts import scope_for_dominant_client
 from core.portfolio_media import (
@@ -224,6 +224,10 @@ def _candidate_summary(candidate: dict, wp_by_title: dict | None = None,
         "wp_post_id": wp_post["id"] if wp_post else None,
         "wp_status": wp_post["status"] if wp_post else None,
         "wp_admin_url": _wp_admin_url_for(wp_post["id"] if wp_post else None),
+        # Why this project is refused, from the last time the gate ran on a write (0051).
+        # None = never gated, [] = gated and clean — the list view must not show those alike.
+        "gate_failures": candidate.get("gate_failures"),
+        "gate_checked_at": candidate.get("gate_checked_at"),
     }
 
 
@@ -409,6 +413,30 @@ def _apply_sanitized_urls(selections: list, media: dict) -> None:
         row = media.get(f"{sel.get('kind')}:{sel.get('id')}")
         if row and sel.get("wp_url"):
             row["url"] = sel["wp_url"]
+
+
+def _record_gate_failures(db: Session, slug: str, failures: list[dict]) -> None:
+    """Persist WHY this project is refused, so the reason outlives the response.
+
+    Without this the verdict exists only in a 422 body: nobody can later ask "why is this one
+    not published?" without re-running the gate, and no correction loop can pick up the work.
+    Stores the gate's own failing criteria (keys included) rather than a sentence, because a
+    rendered summary is not machine-correctable and would drift from the checklist that decides.
+
+    Takes the failures as dicts so a caller that has ALREADY run the gate can hand its result
+    straight over — re-running it would mean a second full render plus scope lookup per save.
+    """
+    from app.models import PortfolioProject  # noqa: PLC0415
+    from core.companycam.mirror import _utcnow  # noqa: PLC0415
+
+    row = (db.query(PortfolioProject)
+           .filter(PortfolioProject.slug == slug, PortfolioProject.archived_at.is_(None))
+           .one_or_none())
+    if row is None:
+        return
+    row.gate_failures = list(failures)
+    row.gate_checked_at = _utcnow()
+    db.commit()
 
 
 def _gate(db: Session, candidate: dict, selections: list, available: dict,
@@ -612,7 +640,12 @@ def put_portfolio_curation(
     row.updated_by = (claims or {}).get("email")
     db.commit()
 
-    return get_portfolio_media(slug, db=db, claims=claims)
+    # Record why this project is (still) refused, on the write the editor just made.
+    # get_portfolio_media already runs the gate, so record from ITS result: computing it a
+    # second time here would mean another full render plus Knowify scope lookup per save.
+    response = get_portfolio_media(slug, db=db, claims=claims)
+    _record_gate_failures(db, slug, (response.get("gate") or {}).get("failing", []))
+    return response
 
 
 @router.post("/{slug}/review")
@@ -713,6 +746,7 @@ def publish_portfolio_project(
     # can fix them — this replaces the old permission-only check, which could not see an address
     # in an image alt or a customer name in the title.
     criteria, body_html, jsonld = _gate(db, candidate, selections, available, perms)
+    _record_gate_failures(db, slug, [c.to_dict() for c in failing(criteria)])
     if not publishable(criteria):
         raise HTTPException(status_code=422, detail=criteria_summary(criteria))
 

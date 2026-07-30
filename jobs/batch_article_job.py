@@ -141,6 +141,45 @@ def _criteria(fields: dict) -> dict:
     }
 
 
+def _record_gate(fields: dict, ctx: dict, keyword: str, compliance: list) -> None:
+    """Persist the draft and WHY the gate refused it (migration 0051).
+
+    A non-compliant article was previously written NOWHERE — _publish_fields only runs when
+    compliant — so the reasons survived as one log line and the draft itself was discarded.
+    That makes the failure unactionable: nobody can see what to fix, and the generation loop
+    cannot pick the article back up and correct the specific criterion.
+
+    Saved as a DRAFT with gate_failures set, so a refused article is a work item rather than a
+    dead run. Compliant articles get gate_failures = [] — empty means "checked and clean",
+    which is deliberately different from NULL, meaning "never gated".
+    """
+    from api.routes.articles import _slugify
+    from app.models import Article, SessionLocal, _utcnow
+
+    failing = [c for c in compliance if not c.get("ok")]
+    slug = fields.get("slug") or _slugify(fields.get("title") or keyword)
+    db = SessionLocal()
+    db.info["tenant_id"] = 1
+    try:
+        row = db.get(Article, slug) or Article(slug=slug, tenant_id=1, status="draft")
+        # Keep the body: the point is that someone (or something) can fix THIS draft.
+        row.title = fields.get("title") or keyword
+        row.meta = fields.get("meta") or ""
+        row.content_md = fields.get("content_md") or ""
+        row.faq_json = fields.get("faq_json")
+        row.jsonld_json = fields.get("jsonld_json")
+        row.focus_keyword = keyword
+        row.role = ctx.get("role")
+        row.pillar_slug = ctx.get("pillar_slug")
+        row.status = row.status or "draft"
+        row.gate_failures = failing
+        row.gate_checked_at = _utcnow()
+        db.add(row)
+        db.commit()
+    finally:
+        db.close()
+
+
 def _publish_fields(fields: dict, ctx: dict, keyword: str, status: str) -> dict:
     """Publish an already-generated COMPLIANT article to WordPress + persist its
     Article row (with role/pillar_slug so hub placement is recorded). Only ever
@@ -240,6 +279,10 @@ def _gen_one(keyword: str, role: str, pillar_slug: str | None, critique: bool,
             else:
                 logger.error("NOT PUBLISHED (non-compliant) %r: %s", keyword,
                              [c["key"] for c in compliance if not c["ok"]])
+        # Record the verdict either way — a refused article has to be findable and fixable,
+        # and a passing one has to be able to CLEAR a stale failure from a previous run.
+        if compliance:
+            _record_gate(fields, ctx, keyword, compliance)
     except Exception as exc:  # noqa: BLE001 — a failed article is data, not a crash
         ok, err = False, f"{type(exc).__name__}: {exc}"
         logger.warning("batch gen failed keyword=%r: %s", keyword, err)
