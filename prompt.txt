@@ -1,10 +1,13 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-29-pm.md (§0 and §1 are the two things that matter most), then
-CONTINUATION-2026-07-29.md (the morning), then core/pii.py and core/portfolio_criteria.py.
+READ FIRST: CONTINUATION-2026-07-30.md — §0 is the whole session. Then read BOTH adversarial
+reviews in full before touching overhead:
+    ~/perkins-corpus/ai-reviews/grok_review.txt   (the sharper one)
+    ~/perkins-corpus/ai-reviews/gpt_review.txt
+    ~/perkins-corpus/ai-reviews/brief.md          (exactly what they were asked)
 
-HEAD 5c9f0ca, pushed, CI green. Deployed platform:b44ef28 (5c9f0ca is docs-only).
-Prod migrations applied through 0050.
+HEAD e97686b, pushed, CI green. Deployed platform:60a06a9 (e97686b is docs-only).
+Prod migrations applied through 0051.
 
 Confirm before trusting any of this:
   git log --oneline -1 && git status --short
@@ -14,126 +17,113 @@ Confirm before trusting any of this:
   bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
   gh run list --limit 4                        # MATCH THE SHA; "deploy skipped" == nothing shipped
 
-⛔ STAY ON STAGING. Jon, 2026-07-29: "stay on staging till we clear client approval."
-  PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is the CORRECT, intended target.
-  Do NOT change it. Do NOT vault a prod WP application password. Do NOT publish anything to
-  perkinsroofing.net. The prod cutover is a parked BUSINESS gate, not missing work — so
-  "verified live == staging" throughout the docs is right, not a defect. Mechanics stay in
-  docs/PRODUCTION_CUTOVER_PLAN.md until approval lands.
+⛔ STAY ON STAGING. PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is CORRECT and
+intended. Do not vault a prod WP app password, do not publish to perkinsroofing.net. The prod
+cutover is a parked BUSINESS gate — "verified live == staging" throughout the docs is right.
 
-▶ START HERE — FIX THE JSON-LD PLUGIN ON STAGING (what Jon said we would do next)
+⛔ DO NOT CHANGE PRICING. overhead_basis is 'branch' on all three branches with a flat $1,400/day.
+Nothing about the overhead model is settled. Two independent reviews say the analysis that
+looked settled was circular. Read them first.
 
-  Symptom: a project publishes fine but carries NO JSON-LD. Measured: publish returned
-  jsonld_stored:false and the _perkins_jsonld meta was absent on read-back.
-  Cause: the plugin live on staging registers _perkins_jsonld for post type `post` ONLY and its
-  wp_head hook fires only on is_singular('post'); project pages are avada_portfolio (the nine
-  public ones are `page`). WordPress returns 200 for a write to an unregistered meta key, which
-  is why nothing errored.
-  ⚠️ Do NOT "fix" it by inlining <script type="application/ld+json"> in the post body — that was
-  tried and WordPress STRIPS it silently on an application-password write (verified by read-back).
-  Schema belongs in post-meta, rendered in <head> by the plugin.
+▶ START HERE — THE OVERHEAD MODEL, WITH THE REVIEWS' FINDINGS ALREADY APPLIED
 
-  The code fix is ALREADY IN GIT: wp-mu-plugin/perkins-jsonld.php defines
-  PERKINS_JSONLD_POST_TYPES = ['post','avada_portfolio','page'] and loops it for both
-  register_post_meta and the wp_head echo. It has to reach the WP host; deploy.sh cannot do that.
-  Two routes — install ONLY ONE or the hooks fire twice and pages get duplicate schema:
-    1. mu-plugin (matches what is installed now): upload wp-mu-plugin/perkins-jsonld.php to
-       wp-content/mu-plugins/perkins-jsonld.php on STAGING (SFTP / GoDaddy file manager).
-    2. regular plugin (no SFTP): zip wp-plugin/perkins-jsonld/ and use
-       wp-admin -> Plugins -> Add New -> Upload.
+  Jon's direction: "the sheets have his old formula for per sq by roof type but he uses PER DAY
+  BY ROOF TYPE and that's what we need to achieve." Tim confirms the sheets are legacy.
+  ⚠️ This contradicts two earlier instructions in the same conversation ("go with uniform
+  pricing", and earlier "not make it uniform"). Re-confirm with Jon before implementing.
 
-  VERIFY, do not assume (post 8296 = "Miami Beach Olsen Condo" on staging, already published with
-  a 4-image gallery + contract scope, so it is the test subject):
-    - read the post back and check meta._perkins_jsonld is non-empty (snippet in §1 of the
-      continuation doc)
-    - re-publish it from the SPA (SEO / AIO tab) and confirm jsonld_stored:true
-    - fetch the public staging URL and grep <head> for application/ld+json
-    - expect FAQPage + ImageObject (x4) + VideoObject ONLY — anything else duplicates Rank Math
-      and breaks the schema_scoped rule
+  FOUR THINGS THE REVIEWS ESTABLISHED — all re-verified numerically, do not re-derive:
+
+  1. "The four rates = crew size x per-man-day" is FALSE for installs. If it were true the
+     demo/install ratio would be 5/3 = 1.667. Actual: demo/tile 1.409, demo/shingle 1.500,
+     demo/metal 1.235. It holds for demo alone, coincidentally.
+     ⚠️ The DRAFT EMAIL TO TIM STILL CONTAINS THIS REFUTED CLAIM. Fix before sending.
+
+  2. Tim's own rates UNDER-RECOVER his own burn. Under his stated 1.5 crews:
+        tile    0.5x1050 + 745 = $1,270 vs $1,470  -> -$200/day (-13.6%)
+        shingle 0.5x1050 + 700 = $1,225            -> -$245/day (-16.7%)
+        metal   0.5x1050 + 850 = $1,375            ->  -$95/day  (-6.5%)
+     His four numbers and his $1,470 cannot both be right. Ask him to DERIVE $745.
+
+  3. PARALLEL-JOB DOUBLE COUNT — the largest conceptual hole, missed entirely. Branch burn is
+     per CALENDAR-day, not per job-day. At his 1.5 concurrent jobs, charging each job a full day
+     collects 1.5 x $1,470 = $2,205 against a $1,470 office: +50% over-recovery. The estimator
+     has no rule for this. Define it before choosing any rate model.
+
+  4. Productivity error dwarfs the rate debate. Metal sheet 5.5 sq/day vs actual 8.0 = 45% error
+     in days and therefore in overhead. The whole rate argument moves metal ~3%.
+
+  THE ONLY NON-CIRCULAR TEST, NEVER RUN:
+     recovery identity = SUM(OH charged over a month) / (1,470 x working days) ~= 1.0
+  Uses accounting burn + estimator-charged days, independent of sold prices. Run this first.
+
+  ⚠️ STOP VALIDATING AGAINST SOLD MEDIANS. Sold prices embed Tim's own overhead, so a match
+  proves only "our OH + our profit ~= his OH + his profit" — passable with wrong OH and
+  compensating profit. The "+0.8% metal" figure is n=3 homes at 2024 prices vs a 2026 benchmark;
+  both reviewers say withdraw it. Grok flagged motivated reasoning: the table makes $210/man look
+  best and $210 is the config's pre-existing assumption.
+
+▶ THEN — MIAMI. BOTH REVIEWERS SAY THIS SHOULD HAVE LED.
+
+  Miami burns $4,257/day (2.9x Jupiter) and is priced at a flat $1,400/day with JUPITER'S
+  IDENTICAL four roof-type rates. It recovers ~1/2.9 of its office. Tim: Miami "has literally
+  lost money or broken even every quarter since Q2 2024."
+  ⚠️ Do NOT fix by scaling Jupiter's four rates by 2.9 — that preserves the folklore ratios and
+  multiplies them. Interim: flat $4,257 x days. Tim will not share the Miami OH sheet (salaries).
 
 WHAT IS SETTLED — do not re-derive
-  - PII IS A HARD GATE. core/pii.py + core/portfolio_criteria.py refuse a publish on any street
-    address / unit / ZIP / phone / email / GPS in ANY surface (body, meta, title, image ALT,
-    JSON-LD captions, scope lines) and on a title that reads as an individual. Policy: city and
-    neighbourhood ARE allowed; anything narrowing to a property or person is not.
-    ⚠️ Calibrated over all 26,063 real scope lines: 42 flags, 0 false positives, and exactly 1 of
-    our 13 titles blocking ("Jim Malooly Delray Beach Roof" — it still refuses with all three
-    permissions granted, because privacy outranks consent). Do NOT loosen or "simplify" those
-    patterns without re-running that corpus check: the first version had 499 false positives from
-    "ste" matching inside "STEEL" while the unit tests were green.
-  - TWO critics exist, deliberately different. portfolio_criteria = deterministic, REFUSES (422
-    with evidence, UI disables the button). portfolio_critique = 3 adversarial LLM lenses
-    (privacy / grounding / reader) via POST /{slug}/review, ADVISORY.
-  - Write-ups are DETERMINISTIC and grounded in Knowify contract deliverables. No LLM writes
-    project prose (the record holds ~6 facts; the ~90%-invented articles are the precedent).
-    No quantities are ever published (units are provably wrong: "7550 Squares" = 755,000 sq ft)
-    and no prices. 6 of 13 projects carry real scope; a fully curated one scores 86%.
-  - Portfolio UI is FINISHED: 3 tabs (Project / Media / SEO+AIO) + full CRUD. Projects are rows
-    (portfolio_projects, migration 0050), seeded once and idempotently from the old CANDIDATES.
-  - CompanyCam fully mirrored: 3,684 projects / 155,997 photos / 11,635 videos, metadata only
-    (media stays on their CDN). Incremental — a quiet run skips ~3,679 projects in ~2 min.
-  - Coverage gate is honest (.coveragerc precision = 2). CI reports 97.43%.
-  - single_flight commits on acquire AND Cloud SQL enforces
-    idle_in_transaction_session_timeout=5min. Do not revert either — together they fix the lock
-    pile-up that blocked an ALTER TABLE videos.
+  - COST AND MATERIALS ARE EXACT. All four sheet quadrants verified line by line at 25 SQ:
+    FBC sloped (5 types) 0.0%, HVHZ sloped (5 types) 0.0%, low-slope (8 systems) 0.0%, on BOTH
+    base cost and overhead. His own worked example: his sheet $18,625, ours $18,475 (-0.8%),
+    and the -0.8% decomposes fully (his sheet contradicts itself on shingle OH: the worked
+    example says $125/sq, his own OH table on the same tab says $105).
+  - PII IS A HARD GATE and now covers PIXELS. CompanyCam burns capture GPS into the image
+    (25.858694 N 80.120019 W). core/pii.py is text-only and returned no_pii:true on a gallery
+    that would have published a client's building. core/photo_privacy.py cuts the bottom 20%
+    and media_sanitized requires every published img/video to be WP-hosted. Nothing was ever
+    exposed. Do NOT loosen without re-running the 26,063-line corpus check.
+  - gate_failures (migration 0051, APPLIED) persists WHY a project or article was refused.
+    NULL = never gated, [] = gated and clean. They are different; code that conflates them
+    reports unchecked items as passing.
+  - The JSON-LD plugin is FIXED and UPLOADED. Staging runs the REGULAR plugin (v1.3.0 active),
+    NOT a mu-plugin — installing the mu-plugin alongside it duplicates schema on ~60 articles.
+  - Tim's Jupiter headcount is LOGGED, not assumed: 157 days, mean 6.17, median 6
+    ("2026 OH Average" sheet, Jupiter tab). Exclude the 968 totals row.
 
-THEN, in order
-  1. Verify the schema end to end on staging (above), then set featured_media — WP needs the image
-     as an ATTACHMENT and ours are CompanyCam-CDN URLs, so this means uploading the first curated
-     image to the WP media library and setting it on the post.
-  2. Curate a second and third project end to end through the UI, to shake out what the gate or
-     the write-up gets wrong on projects that are not Olsen. portfolio_curation is still EMPTY
-     (0 rows) — nobody has curated through the UI yet, so this is its first real exercise.
-  3. Get CompanyCam URLs for the 2 projects that have none (now editable on the Project tab).
-  4. WATCH FOR TWO REPLIES. Both emails were SENT BY JON HIMSELF 2026-07-29 21:21/21:23 UTC with
-     his own edits — do NOT re-send or re-draft.
-     - Wendy (cc Tim), "Project pages — where should they live": URL space (/portfolio/ pages vs
-       the avada_portfolio CPT our publisher targets) + whether she has a schema. Jon already
-       decided the interim IN the email: "I'm going to use the article standards for now until I
-       hear from you" — exactly what core/portfolio_criteria.py implements, so change nothing
-       unless she answers differently.
-     - Tim/Marco/Josh, "One question about the $1,400/day before I set it": is $1,400/day charged
-       per job-day, or split across the jobs running that day? ($1,400 x 250 working days = $350k
-       vs the $336k annual burn — right for ONE job at a time; measured concurrency ~1-1.7
-       jobs/working day in 2025, 1.5-4.3 in 2024.) His answer gates flipping overhead_basis.
-       Evidence: scripts/margin_check.py — the rebuild says +4.2% median margin, NOT the -0.4%
-       the superseded 7/28 draft claimed.
-       ⚠️ Jon ADDED: "Can you try some quotes and tell me if it's working like you expect and if
-       the numbers make sense?" — so expect Quoting UI feedback, not just a yes/no.
-  5. Smaller: accent items priced but NOT selectable in the SPA (extra_line_items is API-only) ·
-     o365 MCP refresh token EXPIRED (use gmail-enhanced for that mailbox) ·
-     proposal-reminders-daily scheduler PAUSED with no recorded reason · 4 test files still
-     drop_all at teardown (converting them caused 50 failures once and was reverted).
+STILL OPEN
+  - overhead_basis unchanged; office_daily_overhead stale (config 1400/4250 vs Tim's 1470/4257);
+    naples carries Jupiter's 1400 and office_men = None.
+  - Tile prices +10-12% under EVERY overhead model. Not an overhead problem. Unexplained.
+  - Email to Tim DRAFTED NOT SENT in jon@degenito.ai (subject "The estimator now reproduces your
+    sheets to the dollar..."). Must be corrected per §0.1 before sending.
+  - Portfolio blocked on permission_property (Tim never answered). 8 of 13 projects also have
+    ZERO Knowify scope; only 5 are curatable.
+  - TPO sold history unusable — work-type contamination (maintenance at $65/sq mixed with a real
+    re-roof at $1,796/sq), NOT a unit bug. Tile/shingle/metal are clean.
+  - o365 MCP refresh token expired (AADSTS700082, verified) — use gmail-enhanced for that mailbox.
+  - The wp-admin login password sat world-readable in /tmp for a week; shredded, NOT rotated.
 
 GOTCHAS
-- AFTER ANY WRITE, READ IT BACK AND COUNT. Five things reported success today while doing nothing
-  or the wrong thing: the sync mirrored 50 of 3,684 projects (a short page is NOT the last page;
-  /v2/projects caps per_page at 50); publish returned 200 as "skipped-exists" so curation changed
-  nothing; an inline JSON-LD <script> was stripped entirely; the coverage gate passed on rounding;
-  and the PII detector's unit tests were green at a 98% false-positive rate on real data. None of
-  them raised.
-- CORPUS-VALIDATE EVERY HEURISTIC before trusting it.
-- TERRAFORM: APPLY BEFORE PUSH. The deploy workflow has a drift gate and refuses if git carries
-  an unapplied change (committing the Cloud SQL flag first correctly blocked a deploy).
-- `gh run list` right after a push shows the PREVIOUS run — match the SHA. "deploy skipped" means
-  nothing shipped (it skips when ci fails).
-- `pkill -f "<pattern>"` matches its own shell — two waiters killed themselves. Use a PID.
-- Any new request model backed by a bounded column needs max_length mirroring the DB:
-  tests/api/test_negative_maxlength.py enforces it because SQLite accepts any length and Postgres
-  500s. It caught exactly this in ProjectIn.
-- Changing a route's contract? grep for EVERY test that posts to it — the gate change broke an
-  older test file that was not re-run.
-- Pre-push test command (the full tree takes 40-60 min on this box, ~6 min on CI):
-    .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs tests/tenancy
-  = 4,063 tests in ~7m40s. Root-level tests alone are 1,079 in 32s.
-- tests/core/test_avatar_script.py fails if tests/core runs ALONE (needs another module to create
-  `tenants`). Pre-existing; passes in the full suite.
-- app/models.py is NOT ruff-gated (CI lints core adapters api jobs); its E702s are pre-existing.
-- Cloud SQL proxy 127.0.0.1:5432 (there is no local postgres), db perkins, user app; every query
-  needs set app.tenant_id='1'. PW=$(gcloud secrets versions access latest --secret=db-password).
-- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97.
+- ⚠️ pgrep -f "<pattern>" MATCHES THE POLLING SHELL'S OWN COMMAND LINE. Six waiters deadlocked
+  this way in one session. Poll a status FILE or use kill -0 $PID. Same family as pkill -f.
+- ⚠️ The session scratchpad is WIPED ON RESTART. Two long AI reviews and every analysis script
+  were lost mid-flight. Durable work -> ~/perkins-corpus/. Long external jobs -> setsid nohup.
+- ⚠️ NEVER edit the tree while a long gate runs (R7): coverage maps line numbers from the file on
+  disk at report time. Three 40-60 min runs were invalidated this way in one session.
+- ⚠️ `cmd | tail -n` returns TAIL's exit code — a failing suite reports success.
+- ⚠️ Console output is truncated. Never copy an identifier out of a printed table.
+- Migrations are MANUAL: MIN_MIGRATION=0051 .venv/bin/python scripts/apply_migrations_connector.py
+  (it strips comments before splitting on ';' — do not hand-roll that).
+- Pre-push tests: .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs
+  tests/tenancy  = ~4,099 tests in ~8m. Full tests/ with coverage is 40-60 min on this box.
+- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97 (97.86%).
   SPA: cd web && npx tsc -b.
-- bash scripts/deploy.sh refuses a dirty tree (R3-ENFORCE) — deliberate.
-- Never leave a secret in scratch: write to Secret Manager, then shred -u.
+- Cloud SQL proxy 127.0.0.1:5432, db perkins, user app; every query needs set app.tenant_id='1'.
+  PW=$(gcloud secrets versions access latest --secret=db-password).
+- Tim's sheets read via perkins-deploy SA + DWD impersonating tim@perkinsroofing.net.
+  sloped 1qxfKRRvmQS_NYu3AE2KQgek421Wzftu3xVmGECFH-ig (OH Metrics tab = MIAMI)
+  low-slope 1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ
+  Jupiter OH 1V3uGnb57oo5Kh8IZk7fJSsjjakAmdVeejPisAIouJGc
 - EMAIL_SEND_MODE=test in prod; only jpastore79@gmail.com + @degenito.ai + @perkinsroofing.net
   receive mail. Do not flip to live without Jon.
+- R7-R10 are new in docs/ENGINEERING_RULES.md and are binding.
