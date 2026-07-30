@@ -316,3 +316,30 @@ def test_a_saved_wp_url_cannot_resurrect_media_whose_permission_was_revoked():
     _apply_sanitized_urls(selections, media)
     assert media["photo:1"]["url"] == "https://wp/wp-content/uploads/ok.jpg"
     assert "photo:99" not in media
+
+
+def test_a_partial_sanitize_failure_blocks_the_whole_page(monkeypatch):
+    """If one photo sanitizes and another does not, the page must still refuse. The failing
+    photo keeps its CompanyCam url, which media_sanitized then catches — a partial success must
+    never publish a gallery where one image still carries the capture stamp."""
+    import adapters.wordpress as wp
+
+    def flaky(url, kind, mid):
+        if mid == "ph2":
+            raise RuntimeError("CDN 500")
+        return {"id": 1, "source_url": f"https://wp.test/wp-content/uploads/{mid}.jpg"}
+
+    monkeypatch.setattr(wp, "sanitize_photo_to_media", flaky)
+    c = _client()
+    c.get("/portfolio", headers=AUTH)
+    slug = "miami-beach-olsen-condo"
+    _curate(slug)
+    r = c.put(f"/portfolio/{slug}/curation", headers=AUTH, json={
+        "permission_property": True, "permission_photos": True, "permission_video": False,
+        "selections": [{"kind": "photo", "id": f"ph{i}", "alt": f"roof view {i}"}
+                       for i in range(4)],
+    })
+    assert r.status_code == 200, r.text
+    gate = c.get(f"/portfolio/{slug}/media", headers=AUTH).json()["gate"]
+    assert "media_sanitized" in [b["key"] for b in gate["blockers"]]
+    assert gate["publishable"] is False
