@@ -38,6 +38,16 @@ CASES = [
     ("18989 SE Federal Hwy, Tequesta, FL 33469", "Loxahatchee River, Jupiter branch's own back yard"),
 ]
 
+# Regression pins. The first build labelled any reach that merely touched the coastline "tagged"
+# for its whole length, so a 24-mile canal carried "confirmed salt water" 20 miles inland and told
+# Golden Gate Estates its warranty was void from fresh water. Nothing may be TAGGED this far
+# inland — inferred is fine there, it only raises a caveat.
+NEVER_TAGGED_NEAR = [
+    ((26.1876, -81.6431), "Golden Gate Estates, Naples — miles behind the weirs on C-4/Golden Gate"),
+    ((25.9490, -80.2800), "inland reach of Snake Creek Canal (C-9), behind structure S-29"),
+    ((26.1224, -80.2960), "Plantation, inland Broward behind the water-management structures"),
+]
+
 
 def geocode(addr: str) -> tuple[float, float]:
     url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
@@ -98,6 +108,26 @@ def main() -> None:
         print(f"   tidal     {dt * f:>9,.0f} ft ({dt * f / 5280:.2f} mi)   confidence={conf or '—'}")
         print()
         time.sleep(1.1)                             # Nominatim asks for <=1 req/sec
+
+    # --- assertions: this script must be able to FAIL a build, not just print for eyeballing ---
+    failures = []
+    for (lat, lon), why in NEVER_TAGGED_NEAR:
+        dt, conf = nearest(lat, lon, tidal)
+        ft = dt * 3.28084
+        verdict = "ok" if (conf != "tagged" or ft > 5280) else "FAIL"
+        print(f"[{verdict}] never-tagged pin: {why}\n"
+              f"        nearest tidal {ft:,.0f} ft, confidence={conf or '—'}")
+        if verdict == "FAIL":
+            failures.append(f"{why}: TAGGED water {ft:,.0f} ft away would move a verdict")
+
+    dc_far, _ = nearest(26.1876, -81.6431, coast)
+    print(f"\n(Golden Gate Estates is {dc_far * 3.28084 / 5280:.1f} mi from open salt water)")
+    if failures:
+        print("\nFAILURES:")
+        for f_ in failures:
+            print("  -", f_)
+        raise SystemExit(1)
+    print("\nall pins pass")
 
 
 if __name__ == "__main__":

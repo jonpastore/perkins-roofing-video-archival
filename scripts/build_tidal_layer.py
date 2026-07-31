@@ -13,14 +13,24 @@ makes no runtime API call.
 
     seeds       ways tagged tidal=yes / salt=yes, plus any waterway whose geometry touches the
                 coastline (within COAST_SNAP_M of a coastline vertex)
+    split       every way is CUT at its barrier nodes first — a canal with a weir in the middle is
+                fresh on one side, and a way is not an atomic unit
     spread      breadth-first through shared OSM node ids across waterway=canal|river|stream|drain
-    barriers    stop at lock_gate / weir / dam / floodgate / sluice_gate / tidal_gate, whether
-                tagged on a node in the way or as a crossing way
+                |ditch
+    barriers    stop at lock_gate / weir / dam / floodgate / sluice_gate / tidal_gate / check_dam,
+                whether tagged on a node in the way, drawn as a crossing way, or merely sitting
+                within BARRIER_SNAP_M of the channel (most are drawn offset and share no node)
 
-Output `assets/tidal.geojson` — a GeometryCollection of LineStrings, each carrying a `confidence`
-of "tagged" (OSM says so outright) or "inferred" (connectivity). The UI must show the two
-differently: OSM barrier coverage is incomplete, and a false "void" tells a homeowner their
-warranty is dead when it is not.
+Output `assets/tidal.geojson` — a GeometryCollection of LineStrings, each carrying a `confidence`:
+
+    tagged      OSM tags THIS reach tidal=yes / salt=yes. Authoritative; may move a verdict.
+    inferred    everything else the fill reached, INCLUDING reaches that merely open onto the
+                coastline. Touching salt water at one end says nothing about the other end.
+
+That distinction is load-bearing. The first build labelled any coastline-touching way "tagged" for
+its whole length, so a 43-mile canal carried "confirmed salt water" 20 miles inland and told Golden
+Gate Estates, Naples that its warranty was void — from fresh water. A false "void" tells a
+homeowner their warranty is dead when it is not, so only an explicit OSM tag earns that weight.
 
 Only geometry within REACH_MI of the coastline is kept: the strictest provision in zones.json is
 1 mile, so water further inland than that plus a margin cannot change any verdict.
@@ -53,6 +63,7 @@ WATERWAY_KINDS = "canal|river|stream|drain|ditch"
 BARRIER_KINDS = "lock_gate|weir|dam|floodgate|sluice_gate|tidal_gate|check_dam"
 
 COAST_SNAP_M = 60.0      # a waterway mouth this close to the coastline counts as touching it
+BARRIER_SNAP_M = 25.0    # structures are often drawn offset from the canal, sharing no node
 REACH_MI = 3.0           # keep tidal geometry within this of the coast (max provision is 1 mi)
 SIMPLIFY_M = 8.0         # vertex thinning; 1-mile thresholds do not need metre precision
 
@@ -142,30 +153,85 @@ def _simplify(coords: list, tol_m: float) -> list:
     return out
 
 
+def _reach_cells(grid: dict, reach_m: float, cell: float = 0.01) -> set:
+    """Coarse raster of cells within reach_m of the coast, so clipping is an O(1) lookup.
+
+    Dilating the coastline's own cells is ~100x cheaper than testing every waterway vertex
+    against every nearby coastline point, and cell granularity (~1 km) is far finer than the
+    3-mile clip needs.
+    """
+    span = int(reach_m / (cell * 92000.0)) + 1
+    out = set()
+    for cx, cy in grid:
+        for dx in range(-span, span + 1):
+            for dy in range(-span, span + 1):
+                out.add((cx + dx, cy + dy))
+    return out
+
+
 def build() -> None:
     if not CACHE.exists():
         sys.exit(f"no cache at {CACHE} — run with --fetch first")
     data = json.loads(CACHE.read_text())
     elements = data["elements"]
+    barrier_kinds = set(BARRIER_KINDS.split("|"))
 
     nodes = {e["id"]: (e["lon"], e["lat"]) for e in elements if e["type"] == "node" and "lat" in e}
     barrier_nodes = {e["id"] for e in elements
                      if e["type"] == "node" and (e.get("tags") or {}).get("waterway") in
-                     set(BARRIER_KINDS.split("|"))}
-    ways = []
+                     barrier_kinds}
+    raw_ways = []
     barrier_way_nodes: set[int] = set()
+    barrier_pts: list[tuple[float, float]] = []
     for e in elements:
         if e["type"] != "way":
             continue
         tags = e.get("tags") or {}
-        wtype = tags.get("waterway")
-        if wtype in set(BARRIER_KINDS.split("|")):
+        if tags.get("waterway") in barrier_kinds:
             barrier_way_nodes.update(e.get("nodes") or ())
+            barrier_pts.extend(nodes[n] for n in (e.get("nodes") or ()) if n in nodes)
             continue
-        ways.append({"id": e["id"], "nodes": e.get("nodes") or [], "tags": tags})
+        raw_ways.append({"id": e["id"], "nodes": e.get("nodes") or [], "tags": tags})
     barriers = barrier_nodes | barrier_way_nodes
+    barrier_pts.extend(nodes[n] for n in barrier_nodes if n in nodes)
 
-    print(f"{len(ways)} waterways, {len(nodes)} nodes, {len(barriers)} barrier nodes", flush=True)
+    # Most structures are drawn as a dam way or an unsnapped node OFFSET from the canal, sharing no
+    # node with it, so a node-id-only cut sails straight past them. Snap every barrier position to
+    # waterway vertices within BARRIER_SNAP_M and cut there too.
+    vgrid: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for w in raw_ways:
+        for nid in w["nodes"]:
+            p = nodes.get(nid)
+            if p:
+                vgrid[(int(p[0] / 0.002), int(p[1] / 0.002))].append(nid)
+    snapped = 0
+    for bx, by in barrier_pts:
+        cx, cy = int(bx / 0.002), int(by / 0.002)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for nid in vgrid.get((cx + dx, cy + dy), ()):
+                    p = nodes[nid]
+                    if nid not in barriers and _haversine_m(by, bx, p[1], p[0]) <= BARRIER_SNAP_M:
+                        barriers.add(nid)
+                        snapped += 1
+    print(f"{len(raw_ways)} waterways, {len(nodes)} nodes, {len(barriers)} barrier nodes "
+          f"({snapped} snapped geometrically)", flush=True)
+
+    # A way is not atomic: a canal with a weir in the middle is fresh on one side. Split every way
+    # AT its barrier nodes so the fill cannot cross a structure inside a single way.
+    ways = []
+    for w in raw_ways:
+        run: list[int] = []
+        for nid in w["nodes"]:
+            if nid in barriers:
+                if len(run) >= 2:
+                    ways.append({"id": f"{w['id']}:{len(ways)}", "nodes": run, "tags": w["tags"]})
+                run = []
+            else:
+                run.append(nid)
+        if len(run) >= 2:
+            ways.append({"id": f"{w['id']}:{len(ways)}", "nodes": run, "tags": w["tags"]})
+    print(f"split into {len(ways)} reaches at barriers", flush=True)
 
     # --- seeds -------------------------------------------------------------------------------
     grid, coast_pts = _coast_index()
@@ -175,7 +241,7 @@ def build() -> None:
         if t.get("tidal") == "yes" or t.get("salt") == "yes":
             tagged.add(w["id"])
             continue
-        for nid in (w["nodes"][0], w["nodes"][-1]) if w["nodes"] else ():
+        for nid in (w["nodes"][0], w["nodes"][-1]):
             p = nodes.get(nid)
             if p and _near_coast(p[0], p[1], grid, coast_pts, COAST_SNAP_M):
                 touching.add(w["id"])
@@ -184,17 +250,23 @@ def build() -> None:
           flush=True)
 
     # --- spread through shared nodes, stopping at barriers ------------------------------------
-    by_node: dict[int, list[int]] = defaultdict(list)
+    by_node: dict[int, list] = defaultdict(list)
     by_id = {w["id"]: w for w in ways}
     for w in ways:
         for nid in w["nodes"]:
             if nid not in barriers:
                 by_node[nid].append(w["id"])
 
+    # ONLY an explicit OSM tidal/salt tag is authoritative. A reach that merely opens onto the
+    # coastline seeds the fill but is itself INFERRED: touching the water at one end says nothing
+    # about the other end, and labelling a 43-mile canal "confirmed" from one coastal node is
+    # exactly how Golden Gate Estates got told its warranty was void by fresh water.
     confidence = {wid: "tagged" for wid in tagged}
-    for wid in touching:
-        confidence.setdefault(wid, "tagged")     # a mouth on the coastline is not an inference
     queue = deque(confidence)
+    for wid in touching:
+        if wid not in confidence:
+            confidence[wid] = "inferred"
+            queue.append(wid)
     while queue:
         wid = queue.popleft()
         for nid in by_id[wid]["nodes"]:
@@ -204,35 +276,46 @@ def build() -> None:
                 if nxt not in confidence:
                     confidence[nxt] = "inferred"
                     queue.append(nxt)
-    print(f"salt-carrying: {len(confidence)} ways "
+    print(f"salt-carrying: {len(confidence)} reaches "
           f"({sum(v == 'tagged' for v in confidence.values())} tagged, "
           f"{sum(v == 'inferred' for v in confidence.values())} inferred)", flush=True)
 
-    # --- emit, clipped to the coastal reach and thinned ----------------------------------------
+    # --- emit: CLIP geometry to the coastal reach, don't just filter whole ways ----------------
     reach_m = REACH_MI * 1609.34
-    geoms, kept, dropped = [], 0, 0
+    in_reach = _reach_cells(grid, reach_m)
+    geoms, kept, clipped = [], 0, 0
     for wid, conf in confidence.items():
         coords = [nodes[n] for n in by_id[wid]["nodes"] if n in nodes]
-        if len(coords) < 2:
-            continue
-        if not any(_near_coast(x, y, grid, coast_pts, reach_m, cell=0.01) for x, y in
-                   coords[:: max(1, len(coords) // 4)]):
-            dropped += 1
-            continue
-        geoms.append({"type": "LineString", "confidence": conf,
-                      "coordinates": [[round(x, 5), round(y, 5)]
-                                      for x, y in _simplify(coords, SIMPLIFY_M)]})
-        kept += 1
+        run: list[tuple[float, float]] = []
+        parts = []
+        for x, y in coords:
+            if (int(x / 0.01), int(y / 0.01)) in in_reach:
+                run.append((x, y))
+            else:
+                if len(run) >= 2:
+                    parts.append(run)
+                run = []
+        if len(run) >= 2:
+            parts.append(run)
+        if len(parts) != 1 or len(parts[0]) != len(coords):
+            clipped += 1
+        for part in parts:
+            geoms.append({"type": "LineString", "confidence": conf,
+                          "coordinates": [[round(x, 5), round(y, 5)]
+                                          for x, y in _simplify(part, SIMPLIFY_M)]})
+            kept += 1
     out = {"type": "GeometryCollection", "geometries": geoms,
            "_note": ("Salt-carrying inland water for the warranty checker. confidence=tagged: OSM "
-                     "says tidal/salt outright, or the reach opens onto the mapped coastline. "
-                     "confidence=inferred: connected to tidewater through shared nodes without "
-                     "crossing a mapped control structure — OSM barrier coverage is incomplete, so "
-                     "the UI must not turn an inferred reach into a hard 'void' verdict."),
+                     "tags the reach tidal=yes or salt=yes — authoritative, may move a verdict. "
+                     "confidence=inferred: reached from tidewater through shared nodes without "
+                     "crossing a mapped control structure, INCLUDING reaches that merely open onto "
+                     "the coastline. OSM barrier coverage is incomplete, so the UI must never turn "
+                     "an inferred reach into a hard 'void' verdict."),
+           "_coverage_bbox": BBOX,
            "_built_by": "scripts/build_tidal_layer.py", "_source": "OpenStreetMap via Overpass"}
     path = ASSETS / "tidal.geojson"
     path.write_text(json.dumps(out, separators=(",", ":")))
-    print(f"kept {kept} reaches ({dropped} dropped beyond {REACH_MI} mi of coast) -> "
+    print(f"emitted {kept} geometries ({clipped} reaches clipped at {REACH_MI} mi) -> "
           f"{path.name}, {path.stat().st_size / 1e6:.2f} MB", flush=True)
 
 

@@ -5,10 +5,11 @@
  *              South Florida address, measures straight-line distance to mapped salt water, and shows
  *              which metal roofing materials keep their manufacturer warranty valid at that location
  *              (per-manufacturer void / conditional / covered provisions). Ported from the standalone
- *              perkins-setback.web.app tool; the coastline + warranty-provision data ship as plugin
- *              assets. Tidal/brackish canals are handled by an on-tool advisory (manufacturers treat
- *              them as salt water regardless of the mapped distance).
- * Version:     1.1.0
+ *              perkins-setback.web.app tool; the coastline, tidal-water and warranty-provision data
+ *              ship as plugin assets. Tidal/brackish reaches count toward the distance when OSM
+ *              confirms them; a merely inferred reach raises a caveat and never moves a verdict
+ *              (see docs/WARRANTY_TOOL_TIDAL_LAYER.md).
+ * Version:     1.1.1
  * Author:      DeGenito
  *
  * SETUP (one manual step): the geocoder uses the Google Maps JavaScript API. Its browser key is
@@ -21,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PERKINS_MWC_VERSION', '1.1.0' );
+define( 'PERKINS_MWC_VERSION', '1.1.1' );
 define( 'PERKINS_MWC_URL', plugin_dir_url( __FILE__ ) );
 
 // Default browser key (referrer-restricted). Overridable in Settings so a per-site key can be used
@@ -74,6 +75,7 @@ function perkins_mwc_shortcode() {
 		'PerkinsMWC',
 		[
 			'assetsUrl'  => PERKINS_MWC_URL . 'assets/',
+			'version'    => PERKINS_MWC_VERSION,
 			'gmapsKey'   => perkins_mwc_gmaps_key(),
 			'contactUrl' => perkins_mwc_contact_url(),
 		]
@@ -96,8 +98,11 @@ function perkins_mwc_shortcode() {
 		<div id="perkins-mwc-map"></div>
 		<div class="perkins-mwc-result" id="perkins-mwc-result"></div>
 		<p class="perkins-mwc-foot">
-			This tool estimates straight-line distance to mapped open salt water (Atlantic, Gulf, bays,
-			and the Intracoastal) and summarizes published manufacturer warranty setback provisions. It
+			This tool estimates straight-line distance to salt water — mapped open water (Atlantic,
+			Gulf, bays and the Intracoastal) plus tidal and brackish rivers and canals, which
+			manufacturers treat the same way — and summarizes published manufacturer warranty setback
+			provisions. Tidal waterways are mapped for South Florida only. Where map data suggests a
+			nearby canal may be tidal but does not confirm it, we say so rather than assume it. This
 			is a guide, not a warranty determination — final material eligibility is governed by each
 			manufacturer's current written warranty for your specific product and site. Map data ©
 			OpenStreetMap contributors.

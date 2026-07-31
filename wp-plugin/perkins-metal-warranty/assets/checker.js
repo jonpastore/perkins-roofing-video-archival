@@ -12,20 +12,30 @@
 	var FT_PER_M = 3.28084;
 	// SEGS   open salt water — ocean, gulf, bays, ICW (natural=coastline)
 	// TIDAL_SEGS  inland reaches that carry salt, built by scripts/build_tidal_layer.py.
-	//        "tagged" = OSM says tidal/salt outright, or the reach opens onto the coastline.
-	//        "inferred" = connected to tidewater without crossing a mapped control structure.
-	//        Only tagged water moves a verdict; OSM barrier coverage is incomplete and a false
-	//        "void" tells a homeowner their warranty is dead when it is not.
-	var SEGS = null, TIDAL_SEGS = null, TIDAL_INF = null, ZONES = null, map, marker, line, line2;
+	//        "tagged"   = OSM tags THAT reach tidal=yes/salt=yes. Moves a verdict.
+	//        "inferred" = reached from tidewater without crossing a mapped structure, including
+	//                     reaches that merely open onto the coastline. NEVER moves a verdict —
+	//                     OSM barrier coverage is incomplete and a false "void" tells a homeowner
+	//                     their warranty is dead when it is not.
+	var SEGS = null, TIDAL_SEGS = null, TIDAL_INF = null, ZONES = null, COVERAGE = null;
+	var map, marker, line, line2;
+	var VER = CFG.version ? ('?ver=' + encodeURIComponent(CFG.version)) : '';
 
-	function flatten(doc) {
+	function flatten(doc, defaultBucket) {
 		var geoms = doc.type === 'GeometryCollection'
 			? doc.geometries
-			: doc.features.map(function (f) { return f.geometry; });
+			: (doc.features || []).map(function (f) { return f.geometry; });
 		var out = { tagged: [], inferred: [] };
 		for (var gi = 0; gi < geoms.length; gi++) {
-			var g = geoms[gi], c = g.coordinates;
-			var bucket = g.confidence === 'inferred' ? out.inferred : out.tagged;
+			var g = geoms[gi], c = g && g.coordinates;
+			if (!c || !c.length) continue;
+			// FAIL SAFE: only an explicit "tagged" earns the verdict-moving bucket. `confidence` is
+			// a foreign member on a GeoJSON geometry and gets stripped by mapshaper/turf/minifiers;
+			// if that happens every reach must degrade to a caveat, never silently become
+			// authoritative salt water.
+			var bucket = g.confidence === 'tagged' ? out.tagged
+				: g.confidence === 'inferred' ? out.inferred
+					: (defaultBucket === 'tagged' ? out.tagged : out.inferred);
 			for (var i = 0; i + 1 < c.length; i++) {
 				bucket.push(c[i][0], c[i][1], c[i + 1][0], c[i + 1][1]);
 			}
@@ -33,20 +43,51 @@
 		return out;
 	}
 
-	var dataReady = Promise.all([
-		fetch(CFG.assetsUrl + 'coastline.geojson').then(function (r) { return r.json(); }),
-		fetch(CFG.assetsUrl + 'zones.json').then(function (r) { return r.json(); }),
-		// The tidal layer is additive: if it fails to load the tool still answers on open water.
-		fetch(CFG.assetsUrl + 'tidal.geojson')
-			.then(function (r) { return r.ok ? r.json() : null; })
-			.catch(function () { return null; }),
-	]).then(function (res) {
-		ZONES = res[1];
-		SEGS = flatten(res[0]).tagged;
-		var tidal = res[2] ? flatten(res[2]) : { tagged: [], inferred: [] };
-		TIDAL_SEGS = tidal.tagged;
-		TIDAL_INF = tidal.inferred;
-	});
+	/* Is this address inside the area the tidal layer actually covers? Outside it we know nothing,
+	 * and must not imply "no tidal water near you" — coastline.geojson is statewide, tidal.geojson
+	 * is South Florida only. */
+	function inTidalCoverage(lat, lon) {
+		if (!COVERAGE) return false;
+		return lat >= COVERAGE[0] && lon >= COVERAGE[1] && lat <= COVERAGE[2] && lon <= COVERAGE[3];
+	}
+
+	// Three megabytes of geometry: fetched on the first check, not on page load, so simply landing
+	// on the page costs nothing. `?ver=` follows the plugin version so a corrected layer is not
+	// served from a stale browser or CDN cache.
+	var dataReady = null;
+	function loadData() {
+		if (dataReady) return dataReady;
+		dataReady = Promise.all([
+			fetch(CFG.assetsUrl + 'coastline.geojson' + VER).then(function (r) { return r.json(); }),
+			fetch(CFG.assetsUrl + 'zones.json' + VER).then(function (r) { return r.json(); }),
+			// The tidal layer is additive: if it fails to load the tool still answers on open water.
+			fetch(CFG.assetsUrl + 'tidal.geojson' + VER)
+				.then(function (r) { return r.ok ? r.json() : null; })
+				.catch(function () { return null; }),
+		]).then(function (res) {
+			ZONES = res[1];
+			SEGS = flatten(res[0], 'tagged').tagged;
+			var tidal = { tagged: [], inferred: [] };
+			// A 200 carrying valid JSON of the WRONG shape (a WP error body, a half-written
+			// rebuild) must not take the open-water answer down with it.
+			try {
+				if (res[2]) {
+					tidal = flatten(res[2], 'inferred');
+					var bb = res[2]._coverage_bbox;
+					if (bb) {
+						COVERAGE = bb.split(',').map(parseFloat);
+						if (COVERAGE.length !== 4 || COVERAGE.some(isNaN)) COVERAGE = null;
+					}
+				}
+			} catch (e) {
+				tidal = { tagged: [], inferred: [] };
+				COVERAGE = null;
+			}
+			TIDAL_SEGS = tidal.tagged;
+			TIDAL_INF = tidal.inferred;
+		});
+		return dataReady;
+	}
 
 	function nearestIn(segs, lat, lon) {
 		var kx = 111320 * Math.cos((lat * Math.PI) / 180), ky = 110540;
@@ -174,7 +215,7 @@
 		go.disabled = true;
 		status.innerHTML = '<p class="spin">Locating and measuring…</p>';
 		result.innerHTML = '';
-		dataReady
+		loadData()
 			.then(loadGmaps)
 			.then(function () { return geocode(addr); })
 			.then(function (g) {
@@ -191,13 +232,19 @@
 				if (line) map.removeLayer(line);
 				if (line2) { map.removeLayer(line2); line2 = null; }
 				marker = L.marker([lat, lon]).addTo(map).bindPopup(g.formatted_address);
-				line = L.polyline([[lat, lon], nearest], { color: '#ef3c1a', dashArray: '6 6' })
-					.addTo(map).bindPopup(ns.kind === 'tidal' ? 'Nearest tidal water' : 'Nearest open salt water');
-				var bounds = L.latLngBounds([[lat, lon], nearest]);
+				// `nearest` is null when no water is in range at all (an out-of-state address).
+				// Leaflet throws on a null latlng, and the raw TypeError used to land in the
+				// status box in front of the homeowner.
+				var bounds = L.latLngBounds([[lat, lon], [lat, lon]]);
+				if (nearest) {
+					line = L.polyline([[lat, lon], nearest], { color: '#ef3c1a', dashArray: '6 6' })
+						.addTo(map).bindPopup(ns.kind === 'tidal' ? 'Nearest tidal water' : 'Nearest open salt water');
+					bounds = L.latLngBounds([[lat, lon], nearest]);
+				}
 				// A possible tidal reach gets its own, visibly different line — it is a question,
 				// not a finding, so it must not look like the measured answer.
 				var inf = ns.inferred;
-				var showInf = inf.nearest && inf.meters < meters;
+				var showInf = inf.nearest && inf.meters < meters && inTidalCoverage(lat, lon);
 				if (showInf) {
 					line2 = L.polyline([[lat, lon], inf.nearest],
 						{ color: '#41B1E5', dashArray: '3 8', weight: 2 })
@@ -238,14 +285,18 @@
 
 				// What the measurement rests on, in plain words, plus the second reading when the
 				// two layers disagree — a homeowner should see WHICH water we measured to.
+				var covered = inTidalCoverage(lat, lon);
 				var distLine = ns.kind === 'tidal'
 					? 'Distance to salt water: <strong>' + fmtDist(meters) +
 					  '</strong> <span class="note">(a tidal waterway — open ocean/ICW is ' +
 					  fmtDist(ns.coast.meters) + ')</span>'
 					: 'Distance to open salt water: <strong>' + fmtDist(meters) + '</strong>' +
-					  (ns.tidal.nearest && ns.tidal.meters < Infinity
+					  (covered && ns.tidal.nearest
 						? ' <span class="note">(nearest confirmed tidal waterway ' +
-						  fmtDist(ns.tidal.meters) + ')</span>' : '');
+						  fmtDist(ns.tidal.meters) + ')</span>'
+						: !covered
+							? ' <span class="note">(tidal canals and rivers are mapped for South ' +
+							  'Florida only — we cannot check them at this address)</span>' : '');
 
 				var infBlock = '';
 				if (showInf) {
