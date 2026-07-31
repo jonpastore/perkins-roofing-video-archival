@@ -41,9 +41,13 @@ def creds_for(platform: str, tenant_id: int) -> dict:
 
 def _from_store(platform: str, tenant_id: int) -> dict | None:
     try:
-        from adapters.distribution.oauth_store import SecretManagerOAuthStore  # noqa: PLC0415
-        # account_id is unused by the store's secret path (tenant+platform keyed).
-        return SecretManagerOAuthStore(tenant_id=tenant_id).get(platform, "")
+        from adapters.distribution.oauth_store import (  # noqa: PLC0415
+            SINGLE_ACCOUNT,
+            SecretManagerOAuthStore,
+        )
+        # The store's secret path IS account-scoped as of 2026-07-31 (it used to discard this
+        # argument, which is why "" worked). Must match what the OAuth callback writes.
+        return SecretManagerOAuthStore(tenant_id=tenant_id).get(platform, SINGLE_ACCOUNT)
     except Exception as exc:  # noqa: BLE001 — resilient: fall back to env, don't leak values
         logger.warning("social_creds: store lookup failed for %s (%s); trying env", platform, type(exc).__name__)
         return None

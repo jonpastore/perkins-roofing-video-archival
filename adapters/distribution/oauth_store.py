@@ -7,10 +7,16 @@ Classes:
   MockOAuthStore           — in-memory; used in tests (renamed from OAuthStore).
   OAuthStore               — alias for MockOAuthStore for backward-compat import.
 
-Secret naming convention (TRD-F5 §4.1):
-  GCP secret name: tenants-{tenant_id}-{platform}-{key}
+Secret naming convention (TRD-F5 §4.1, account-scoped since 2026-07-31):
+  GCP secret name: tenants-{tenant_id}-{platform}-{account_id}-{key}
   (Hyphens replace slashes because GCP Secret Manager secret IDs cannot contain
-  slashes. The logical path is tenants/{id}/{platform}/{key}.)
+  slashes. The logical path is tenants/{id}/{platform}/{account}/{key}.)
+
+  ⚠️ The {account_id} segment is NEW. Before it, the parameter was accepted by every method and
+  silently thrown away, so all accounts on a platform shared one secret. That was invisible while
+  each platform had a single account and would have been a real incident for QuickBooks, where
+  four branch companies collapsed onto one token. Legacy unscoped ids are still READ (never
+  written) so live credentials survive until each platform next re-authenticates.
 
 IAM note (TRD-F5 §4.3):
   The existing project-level roles/secretmanager.secretAccessor and
@@ -23,9 +29,19 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 
 log = logging.getLogger(__name__)
+
+#: GCP secret ids accept only [A-Za-z0-9_-]; anything else in an account id folds to '-'.
+_SAFE_SECRET_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+
+#: The account id for a platform that has exactly one account. The OAuth callback, the credential
+#: reader and the token-rotation writer MUST agree on this string — they previously used
+#: "default", "" and the TikTok open_id respectively and only interoperated because the store
+#: discarded the value entirely.
+SINGLE_ACCOUNT = "default"
 
 
 # ---------------------------------------------------------------------------
@@ -116,24 +132,44 @@ class SecretManagerOAuthStore:
             self._client = secretmanager.SecretManagerServiceClient()
         return self._client
 
-    def _secret_name(self, platform: str, key: str) -> str:
+    def _secret_id(self, platform: str, account_id: str, key: str) -> str:
+        """Secret id for ONE account on a platform.
+
+        ⚠️ `account_id` used to be accepted and silently discarded, so every account on a platform
+        resolved to the same secret. Harmless while each platform had exactly one account, and a
+        real defect for QuickBooks, where all four branch companies collapsed onto
+        `tenants-1-quickbooks-access_token` — branch A would have transacted with branch B's books.
+
+        GCP secret ids allow only [A-Za-z0-9_-], so anything else in an account id is folded to '-'.
+        An empty account id normalises to 'default' rather than producing a '--' path.
+        """
+        acct = _SAFE_SECRET_CHARS.sub("-", account_id or "default")
+        return f"tenants-{self._tenant_id}-{platform}-{acct}-{key}"
+
+    def _legacy_secret_id(self, platform: str, key: str) -> str:
+        """The pre-2026-07-31 unscoped id, still READ so live tokens survive the change.
+
+        Never written. Once a platform re-authenticates, its scoped secret wins and this path is
+        simply never consulted again.
+        """
+        return f"tenants-{self._tenant_id}-{platform}-{key}"
+
+    def _secret_name(self, platform: str, account_id: str, key: str) -> str:
         """Return the fully-qualified GCP secret version resource name."""
-        secret_id = f"tenants-{self._tenant_id}-{platform}-{key}"
-        return (
-            f"projects/{self._project}/secrets/{secret_id}/versions/latest"
-        )
+        return (f"projects/{self._project}/secrets/"
+                f"{self._secret_id(platform, account_id, key)}/versions/latest")
 
     def _secret_parent(self) -> str:
         return f"projects/{self._project}"
 
-    def _secret_resource(self, platform: str, key: str) -> str:
-        secret_id = f"tenants-{self._tenant_id}-{platform}-{key}"
-        return f"projects/{self._project}/secrets/{secret_id}"
+    def _secret_resource(self, platform: str, account_id: str, key: str) -> str:
+        return (f"projects/{self._project}/secrets/"
+                f"{self._secret_id(platform, account_id, key)}")
 
     def get(self, platform: str, account_id: str) -> dict | None:
         """Return token record dict or None if the secret does not exist."""
         try:
-            raw = self._access_secret(platform, "access_token")
+            raw = self._access_secret(platform, account_id, "access_token")
         except KeyError:
             return None
         # Stored as JSON: {"access_token": ..., "refresh_token": ..., "expires_at": ...}
@@ -152,7 +188,7 @@ class SecretManagerOAuthStore:
         Raises:
             KeyError: if the secret is absent (mirrors MockOAuthStore interface).
         """
-        return self._access_secret(platform, "access_token")
+        return self._access_secret(platform, account_id, "access_token")
 
     def put(
         self,
@@ -167,8 +203,8 @@ class SecretManagerOAuthStore:
         Creates the secret if it does not already exist.
         """
         client = self._get_client()
-        secret_resource = self._secret_resource(platform, "access_token")
-        secret_id = f"tenants-{self._tenant_id}-{platform}-access_token"
+        secret_resource = self._secret_resource(platform, account_id, "access_token")
+        secret_id = self._secret_id(platform, account_id, "access_token")
 
         payload = json.dumps({
             "access_token": access_token,
@@ -204,25 +240,33 @@ class SecretManagerOAuthStore:
         Real platform-specific token refresh is implemented per-adapter when
         app-review credentials are available.
         """
-        return self._access_secret(platform, "access_token")
+        return self._access_secret(platform, account_id, "access_token")
 
-    def _access_secret(self, platform: str, key: str) -> str:
-        """Read a secret version value from Secret Manager.
+    def _access_secret(self, platform: str, account_id: str, key: str) -> str:
+        """Read a secret version, preferring the account-scoped path.
+
+        Falls back to the legacy unscoped id so credentials stored before the paths were scoped
+        keep working until that platform next re-authenticates. Only NotFound falls through —
+        a permission or network error still raises, because silently treating "I could not read
+        it" as "it is not there" is how a live integration reports itself unconfigured.
 
         Raises:
-            KeyError: if the secret does not exist (NotFound).
+            KeyError: if neither the scoped nor the legacy secret exists.
         """
         client = self._get_client()
-        name = self._secret_name(platform, key)
-        try:
-            version = client.access_secret_version(name=name)
-            return version.payload.data.decode()
-        except Exception as exc:
-            if _is_not_found(exc):
-                raise KeyError(
-                    f"No secret for tenant={self._tenant_id} platform={platform!r} key={key!r}"
-                ) from exc
-            raise
+        for name in (self._secret_name(platform, account_id, key),
+                     f"projects/{self._project}/secrets/"
+                     f"{self._legacy_secret_id(platform, key)}/versions/latest"):
+            try:
+                version = client.access_secret_version(name=name)
+                return version.payload.data.decode()
+            except Exception as exc:
+                if not _is_not_found(exc):
+                    raise
+        raise KeyError(
+            f"No secret for tenant={self._tenant_id} platform={platform!r} "
+            f"account={account_id!r} key={key!r}"
+        )
 
 
 # ---------------------------------------------------------------------------

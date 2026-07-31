@@ -373,12 +373,15 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
     if not access_token:
         raise HTTPException(status_code=502, detail="token exchange failed")
 
-    from adapters.distribution.oauth_store import SecretManagerOAuthStore  # noqa: PLC0415
+    from adapters.distribution.oauth_store import (  # noqa: PLC0415
+        SINGLE_ACCOUNT,
+        SecretManagerOAuthStore,
+    )
     try:
         store = SecretManagerOAuthStore(tenant_id=parsed["tenant_id"])
         store.put(
             platform,
-            "default",
+            SINGLE_ACCOUNT,
             access_token=access_token,
             refresh_token=tokens.get("refresh_token") or "",
             ttl=int(tokens.get("expires_in") or 3600),

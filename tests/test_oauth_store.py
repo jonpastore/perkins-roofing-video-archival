@@ -5,6 +5,7 @@ The original in-memory OAuthStore is retained as MockOAuthStore and tested here 
 """
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock
 
 import pytest
@@ -82,9 +83,10 @@ def test_sm_store_access_token_calls_correct_secret_path():
     token = store.access_token("youtube", "acc1")
 
     assert token == "my_access_token"
-    # Verify the secret name passed to access_secret_version contains the correct components
+    # Verify the secret name passed to access_secret_version contains the correct components,
+    # INCLUDING the account segment — it used to be discarded.
     call_str = str(sm.access_secret_version.call_args)
-    assert "tenants-1-youtube-access_token" in call_str
+    assert "tenants-1-youtube-acc1-access_token" in call_str
 
 
 def test_sm_store_secret_name_format():
@@ -94,9 +96,9 @@ def test_sm_store_secret_name_format():
     sm = MagicMock()
     store = SecretManagerOAuthStore(tenant_id=2, sm_client=sm, project="proj-123")
 
-    name = store._secret_name("instagram", "refresh_token")
+    name = store._secret_name("instagram", "acct7", "refresh_token")
     assert "proj-123" in name
-    assert "tenants-2-instagram-refresh_token" in name
+    assert "tenants-2-instagram-acct7-refresh_token" in name
     assert "versions/latest" in name
 
 
@@ -169,9 +171,108 @@ def test_sm_store_tenant_id_isolation():
     store1 = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
     store2 = SecretManagerOAuthStore(tenant_id=2, sm_client=sm, project="proj")
 
-    name1 = store1._secret_name("youtube", "access_token")
-    name2 = store2._secret_name("youtube", "access_token")
+    name1 = store1._secret_name("youtube", "acc1", "access_token")
+    name2 = store2._secret_name("youtube", "acc1", "access_token")
 
     assert "tenants-1-" in name1
     assert "tenants-2-" in name2
     assert name1 != name2
+
+
+# ---------------------------------------------------------------------------
+# Account scoping (2026-07-31) — the QuickBooks four-branch collision
+# ---------------------------------------------------------------------------
+
+def test_two_accounts_on_one_platform_do_not_share_a_secret():
+    """The defect: account_id was accepted and discarded, so all 4 QB branches shared a token."""
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    jupiter = store._secret_name("quickbooks", "jupiter", "access_token")
+    miami = store._secret_name("quickbooks", "miami", "access_token")
+
+    assert jupiter != miami, "branch companies must not resolve to the same QuickBooks secret"
+    assert "quickbooks-jupiter-access_token" in jupiter
+    assert "quickbooks-miami-access_token" in miami
+
+
+def test_put_writes_the_account_scoped_path():
+    """A rotated token must land where the reader looks."""
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    sm.get_secret.return_value = MagicMock()
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+    store.put("quickbooks", "naples", access_token="t")
+
+    assert "tenants-1-quickbooks-naples-access_token" in str(sm.add_secret_version.call_args)
+
+
+def test_legacy_unscoped_secret_is_still_readable():
+    """Credentials stored before scoping must survive until that platform re-authenticates."""
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    legacy_value = MagicMock()
+    legacy_value.payload.data = b"legacy_tok"
+
+    def only_legacy_exists(name):
+        if name.endswith("tenants-1-youtube-access_token/versions/latest"):
+            return legacy_value
+        raise _FakeNotFound("scoped secret not created yet")
+
+    sm.access_secret_version.side_effect = lambda name: only_legacy_exists(name)
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    assert store.access_token("youtube", "default") == "legacy_tok"
+    # The scoped path is tried FIRST, then the legacy one.
+    assert sm.access_secret_version.call_count == 2
+
+
+def test_missing_in_both_paths_raises_key_error():
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    sm.access_secret_version.side_effect = _FakeNotFound("nothing anywhere")
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    with pytest.raises(KeyError):
+        store.access_token("youtube", "default")
+
+
+def test_a_permission_error_is_not_reported_as_absent():
+    """'I could not read it' must never be flattened into 'it is not configured'."""
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    class _Denied(Exception):
+        pass
+
+    sm = MagicMock()
+    sm.access_secret_version.side_effect = _Denied("permission denied")
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    with pytest.raises(_Denied):
+        store.access_token("youtube", "default")
+
+
+def test_account_id_is_sanitised_for_gcp_secret_charset():
+    """GCP secret ids allow only [A-Za-z0-9_-]; an email-ish account id must not produce one."""
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    name = store._secret_name("quickbooks", "books@perkins.net", "access_token")
+    secret_id = name.split("/secrets/")[1].split("/versions")[0]
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", secret_id), secret_id
+
+
+def test_empty_account_id_normalises_rather_than_double_hyphen():
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    assert "tenants-1-youtube-default-access_token" in store._secret_name("youtube", "", "access_token")

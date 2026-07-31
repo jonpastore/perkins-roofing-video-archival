@@ -61,9 +61,16 @@ def _publisher(platform: str, creds: dict, tenant_id: int):
                 # Persist the rotated tokens so the next run reads the fresh refresh_token,
                 # not the now-stale one. Non-fatal — a failed write must not block the post.
                 try:
-                    from adapters.distribution.oauth_store import SecretManagerOAuthStore  # noqa: PLC0415
+                    from adapters.distribution.oauth_store import (  # noqa: PLC0415
+                        SINGLE_ACCOUNT,
+                        SecretManagerOAuthStore,
+                    )
+                    # SINGLE_ACCOUNT, not the open_id: the store's path is account-scoped now, and
+                    # core.social_creds reads it under SINGLE_ACCOUNT. Writing the open_id here
+                    # would rotate a token into a secret nothing ever reads, and the next run
+                    # would keep using the stale refresh_token.
                     SecretManagerOAuthStore(tenant_id=tenant_id).put(
-                        "tiktok", creds.get("open_id", ""),
+                        "tiktok", SINGLE_ACCOUNT,
                         refreshed["access_token"], refreshed.get("refresh_token") or _rt,
                     )
                 except Exception as store_exc:  # noqa: BLE001

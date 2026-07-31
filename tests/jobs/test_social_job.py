@@ -104,5 +104,9 @@ def test_tiktok_refresh_persists_rotated_token(monkeypatch):
     pub = SJ._publisher("tiktok", {"access_token": "old-at", "open_id": "oid", "refresh_token": "old-rt"}, tenant_id=7)
 
     assert pub["access_token"] == "new-at"                      # publisher uses the fresh token
-    assert captured["put"] == ("tiktok", "oid", "new-at", "new-rt")  # rotated pair persisted
+    # SINGLE_ACCOUNT, not the open_id ("oid"). The store's secret path is account-scoped as of
+    # 2026-07-31; it previously discarded this argument, which is the only reason writing the
+    # open_id here while core.social_creds read "" ever worked. Writing "oid" now would rotate
+    # the token into a secret nothing reads, and the next run would reuse a stale refresh_token.
+    assert captured["put"] == ("tiktok", "default", "new-at", "new-rt")
     assert captured["tenant_id"] == 7
