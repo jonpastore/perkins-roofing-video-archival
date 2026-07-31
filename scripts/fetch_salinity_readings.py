@@ -146,9 +146,40 @@ def main() -> None:
         except json.JSONDecodeError:
             out = {}
 
+    def _banked(sid: str, latest_at: str, value: float) -> list[list]:
+        """Roll a WINDOW_DAYS history of spot readings for a gauge USGS has no series for.
+
+        106 of the gauges publish a full 30-day series, so their median is a real baseline the
+        moment we read it. The other 65 publish only a current value — and a single reading on
+        tidal water is close to meaningless, because it swings with the tide (Manatee at Rye:
+        326 uS/cm on one sample against a 3,210 median). Those used to be overwritten every
+        sweep, so they could never improve. Banking one sample per distinct USGS observation
+        time builds the same 30-day picture ourselves, at ~1/day from the hourly slice.
+
+        Keyed on the OBSERVATION time, not on when we fetched: a gauge that has not reported
+        since yesterday must not have its stale value counted again and drag the median toward
+        whatever the tide was doing when it stopped.
+        """
+        prev = (out.get(sid) or {}).get("history") or []
+        history = [list(h) for h in prev]
+        if not history or history[-1][0] != latest_at:
+            history.append([latest_at, round(value, 1)])
+        cutoff = end - timedelta(days=WINDOW_DAYS)
+        keep = []
+        for at, v in history:
+            try:
+                ts = datetime.fromisoformat(at)
+            except (TypeError, ValueError):
+                continue                      # unparseable stamp: drop rather than mis-window it
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts >= cutoff:
+                keep.append([at, v])
+        return keep
+
     def record(sid: str, vals: list[float], latest_at: str, windowed: bool) -> None:
         m = meta.get(sid, {})
-        out[sid] = {
+        rec = {
             "id": sid, "name": m.get("name", sid),
             "lat": m.get("lat"), "lon": m.get("lon"),
             "median_us_cm": round(st.median(vals), 1),
@@ -159,6 +190,25 @@ def main() -> None:
             "latest_at": latest_at,
             "refreshed_at": end.isoformat(timespec="seconds"),
         }
+        if not windowed:
+            history = _banked(sid, latest_at, vals[-1])
+            banked = [v for _, v in history]
+            # A gauge whose ONLY observation predates the window prunes to nothing, and
+            # st.median([]) raises — which would abort the whole sweep over one stale station.
+            # Keep the raw reading and bank nothing: staleness is already visible via latest_at,
+            # and the build degrades an out-of-window reading from 'measured' to 'mapped'.
+            if not banked:
+                rec["stale"] = True
+                out[sid] = rec
+                return
+            rec["history"] = history
+            rec["samples"] = len(banked)
+            # Classification follows the banked median as soon as there is more than one
+            # observation; one sample is still one sample, however it is dressed up.
+            rec["median_us_cm"] = round(st.median(banked), 1)
+            rec["max_us_cm"] = round(max(banked), 1)
+            rec["banked"] = len(banked) > 1
+        out[sid] = rec
 
     def series_from(url: str) -> dict[str, tuple[list[float], str]]:
         d = json.loads(_get(url))
@@ -212,14 +262,21 @@ def main() -> None:
         "window_days": WINDOW_DAYS, "bbox": BBOX,
         "parameter": "00095 specific conductance uS/cm at 25C",
         "source": "USGS NWIS instantaneous values",
-        "_note": ("median classifies; max is the cautious read; windowed=false means a single "
-                  "latest value, which the build must treat as lower confidence. A reading older "
-                  "than the window degrades from 'measured' to 'mapped'."),
+        "_note": ("median classifies; max is the cautious read. windowed=true means USGS served a "
+                  "full 30-day series (~2,800 samples), so the median is a real baseline "
+                  "immediately. windowed=false means USGS publishes only a current value; we bank "
+                  "one sample per distinct observation time in `history` and the median follows "
+                  "the banked set, so those gauges DO improve over the window instead of being "
+                  "overwritten each sweep. banked=true means more than one observation is in hand "
+                  "— a single sample is still a single sample and stays lower confidence. "
+                  "A reading older than the window degrades from 'measured' to 'mapped'."),
         "gauges": out,
     }, indent=1))
     fresh = sum(1 for x in out.values() if classify(x["median_us_cm"]) == "fresh")
     win = sum(1 for x in out.values() if x.get("windowed"))
-    print(f"cache now holds {len(out)} gauges ({win} windowed, {len(out) - win} latest-only) -> "
+    banked = sum(1 for x in out.values() if x.get("banked"))
+    print(f"cache now holds {len(out)} gauges ({win} windowed, {len(out) - win} latest-only, "
+          f"{banked} of those with a banked history) -> "
           f"{CACHE}  ({fresh} fresh, {len(out) - fresh} salt/brackish)")
 
 

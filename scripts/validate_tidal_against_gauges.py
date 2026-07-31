@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import json
 import math
+import statistics
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ASSETS = Path(__file__).resolve().parent.parent / "wp-plugin/perkins-metal-warranty/assets"
@@ -40,8 +42,16 @@ ON_WATER_M = 250.0                              # a gauge this close counts as "
 
 SITES_URL = ("https://waterservices.usgs.gov/nwis/site/?format=rdb&stateCd=fl"
              "&parameterCd=00095&siteType=ST,ES,SP&hasDataTypeCd=iv&siteStatus=active")
+# ⚠️ This URL MUST carry a date range. Without one NWIS returns the single latest value, and
+# scoring an INSTANTANEOUS reading against a build that classifies on a 30-DAY MEDIAN compares two
+# different quantities. On tidal water they differ by an order of magnitude — Manatee River at Rye
+# read 326 uS/cm at one moment against a 3,210 median, Aucilla near the mouth 919 against 7,420 —
+# so both showed up as "we say salt, the gauge says fresh" when the layer was right and the
+# validator had simply sampled a tide. That made every held-out score PESSIMISTIC, and worst
+# exactly on the estuarine gauges the tool exists to get right.
+WINDOW_DAYS = 30
 IV_URL = ("https://waterservices.usgs.gov/nwis/iv/?format=json&sites={sites}"
-          "&parameterCd=00095&siteStatus=active")
+          "&parameterCd=00095&startDT={start}&endDT={end}")
 
 
 def _get(url: str) -> bytes:
@@ -67,17 +77,28 @@ def gauges() -> list[dict]:
 
 
 def readings(ids: list[str]) -> dict[str, float]:
+    """Median specific conductance per station over the SAME window the build classifies on.
+
+    Returns the median, not the latest point — see the note on IV_URL. A station with no series in
+    the window is omitted entirely rather than falling back to its last-known value: that value can
+    be years old (65 of 171 stations, one of them 5,415 days), and scoring the layer against a
+    reading from 2011 measures nothing.
+    """
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=WINDOW_DAYS)
     vals: dict[str, float] = {}
     for i in range(0, len(ids), 25):               # NWIS caps the site list per request
         chunk = ",".join(ids[i:i + 25])
-        d = json.loads(_get(IV_URL.format(sites=chunk)))
+        d = json.loads(_get(IV_URL.format(
+            sites=chunk,
+            start=start.strftime("%Y-%m-%dT%H:%MZ"),
+            end=end.strftime("%Y-%m-%dT%H:%MZ"))))
         for s in d["value"]["timeSeries"]:
             pts = s["values"][0]["value"]
-            if not pts:
-                continue
-            v = float(pts[-1]["value"])
-            if v > 0:
-                vals[s["sourceInfo"]["siteCode"][0]["value"]] = v
+            series = [float(p["value"]) for p in pts
+                      if p.get("value") not in (None, "") and float(p["value"]) > 0]
+            if series:
+                vals[s["sourceInfo"]["siteCode"][0]["value"]] = statistics.median(series)
     return vals
 
 

@@ -52,6 +52,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict, deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -69,6 +70,7 @@ BARRIER_KINDS = "lock_gate|weir|dam|floodgate|sluice_gate|tidal_gate|check_dam"
 
 SALINITY_CACHE = Path.home() / "perkins-corpus/osm/salinity-readings.json"
 GAUGE_SNAP_M = 250.0     # a gauge further than this from mapped water is not on a reach we know
+MAX_READING_AGE_DAYS = 30.0  # older than this is history, not a measurement — see _reading_expired
 PROPAGATE_MI = 2.0       # how far a reading is evidence ALONG the channel, barriers aside
 FRESH_MAX_US_CM = 1500.0 # ~250 mg/L chloride — the same line SFWMD's isochlor draws
 
@@ -114,6 +116,25 @@ def fetch() -> None:
             time.sleep(wait)
     CACHE.write_bytes(raw)
     print(f"cached {len(raw) / 1e6:.1f} MB -> {CACHE}", flush=True)
+
+
+def _reading_expired(latest_at: str | None, now: datetime | None = None) -> bool:
+    """True if a gauge reading is too old to be evidence about the water today.
+
+    An UNPARSEABLE or missing timestamp counts as expired. That is the safe direction: the cost of
+    dropping a good reading is a reach labelled `inferred` (a caveat), while the cost of keeping a
+    bad one is a homeowner told their warranty is VOID on a measurement nobody can date.
+    """
+    if not latest_at:
+        return True
+    try:
+        ts = datetime.fromisoformat(latest_at)
+    except (TypeError, ValueError):
+        return True
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    ref = now or datetime.now(timezone.utc)
+    return (ref - ts).total_seconds() > MAX_READING_AGE_DAYS * 86400
 
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -226,9 +247,25 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
 
     cap_m = PROPAGATE_MI * 1609.34
     best: dict[str, dict] = {}
-    snapped = offshore = 0
+    snapped = offshore = expired = 0
     for g in gauges.values():
         if g.get("lat") is None:
+            continue
+        # A reading is evidence about water TODAY, not about water in 2011.
+        #
+        # USGS `siteStatus=active` returns stations that are nominally active but whose last
+        # instantaneous value can be years old, and the latest-value endpoint serves it without
+        # complaint. Measured 2026-07-31: 65 of 171 gauges had not reported in over 30 days and
+        # 33 of those were classified salt/brackish — including MCCORMICK CREEK AT MOUTH NEAR KEY
+        # LARGO at 42,300 uS/cm from a reading 5,415 DAYS old. Every one of them was moving
+        # verdicts while the UI cited "measured at ... uS/cm", which reads as current.
+        #
+        # The cache `_note` has always claimed a reading older than the window "degrades from
+        # 'measured' to 'mapped'". Nothing implemented it. This does: an expired gauge simply is
+        # not a measurement, so its reaches revert to whatever we would have believed without it
+        # (`tagged` or `inferred`) instead of carrying a false citation.
+        if _reading_expired(g.get("latest_at")):
+            expired += 1
             continue
         glat, glon = float(g["lat"]), float(g["lon"])
         cx, cy = int(glon / 0.01), int(glat / 0.01)
@@ -271,6 +308,9 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
                         seen[nxt] = onward
                         queue.append((nxt, onward))
     salt_n = sum(1 for v in best.values() if v["salt"])
+    if expired:
+        print(f"gauges: {expired} IGNORED — last reading older than {MAX_READING_AGE_DAYS:.0f}d "
+              f"(a stale reading is history, not evidence about the water today)", flush=True)
     print(f"gauges: {snapped} snapped to a reach, {offshore} not on mapped water; "
           f"{len(best)} reaches carry a measurement ({salt_n} salt, {len(best) - salt_n} fresh)",
           flush=True)
