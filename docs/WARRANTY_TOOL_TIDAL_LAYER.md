@@ -29,13 +29,21 @@ build time, from OpenStreetMap:
 | stop | `lock_gate`, `weir`, `dam`, `floodgate`, `sluice_gate`, `tidal_gate`, `check_dam` — on a node, as a crossing way, **or within 25 m of the channel** (most structures are drawn offset and share no node) |
 | clip | **clip the coordinates** to within 3 mi of the coast, emitting each surviving run separately (strictest provision is 1 mi) |
 
-Input scale: 21,914 waterways, 136,068 nodes, **2,936 barrier nodes** (1,307 recovered by
-geometric snapping), split into 20,726 reaches, over `24.40,-82.60,27.70,-79.90`. Output:
-`assets/tidal.geojson`, **0.93 MB**, 3,639 geometries.
+Input scale (statewide since 2026-07-31): 55,749 waterways, 674,049 nodes, **12,292 barrier nodes**
+(1,810 recovered by geometric snapping), split into 54,509 reaches, over `24.30,-87.80,31.10,-79.80`.
+Output: `assets/tidal.geojson`, **1.96 MB**, 6,482 geometries, of which 388 `tagged`, 86 `measured`
+salt and 54 `measured` fresh. Was South Florida only (`24.40,-82.60,27.70,-79.90`): 21,914 waterways,
+0.93 MB, 3,639 geometries.
+
+⚠️ **The clip is measured from the coastline, not from the customer.** 21 salt/brackish gauges sit
+further than `REACH_MI` (3 mi) inland and are dropped, so an address 500 ft from the tidal St. Johns
+at Jacksonville — or from the Faka Union Canal at 52,700 µS/cm, 3.1 mi in, which South Florida was
+already missing — gets no tidal answer. The 1-mile provision bounds address-to-water distance, which
+is a different quantity. Widening the bbox did not create this; it made it reachable in more places.
 
 ## The honesty rule — read this before changing the UI
 
-**159 reaches are `tagged`; 4,855 are `inferred`.** `tagged` means OSM tags *that reach*
+**388 reaches are `tagged`; 9,282 are `inferred`.** `tagged` means OSM tags *that reach*
 `tidal=yes`/`salt=yes`. Everything else the fill reaches — including a canal that plainly opens
 onto the Intracoastal — is `inferred`, because touching salt water at one end says nothing about
 the other end. OSM barrier coverage is incomplete, so an inferred reach can be wrong, and a false

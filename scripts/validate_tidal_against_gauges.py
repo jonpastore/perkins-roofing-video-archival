@@ -33,7 +33,7 @@ import urllib.request
 from pathlib import Path
 
 ASSETS = Path(__file__).resolve().parent.parent / "wp-plugin/perkins-metal-warranty/assets"
-BBOX = (24.40, -82.60, 27.70, -79.90)          # south, west, north, east
+BBOX = (24.30, -87.80, 31.10, -79.80)          # south, west, north, east — matches the tidal layer
 FRESH_MAX = 1500.0                              # uS/cm
 SALINE_MIN = 30000.0
 ON_WATER_M = 250.0                              # a gauge this close counts as "on" that reach

@@ -52,8 +52,10 @@
 	}
 
 	/* Is this address inside the area the tidal layer actually covers? Outside it we know nothing,
-	 * and must not imply "no tidal water near you" — coastline.geojson is statewide, tidal.geojson
-	 * is South Florida only. */
+	 * and must not imply "no tidal water near you". Both layers are statewide as of 2026-07-31;
+	 * this stays because the bbox is read from the asset, so a narrower rebuild re-arms the caveat.
+	 * NOTE: inside the bbox the layer is still clipped to 3 mi of coastline, which this test does
+	 * not model — see REACH_MI in scripts/build_tidal_layer.py. */
 	function inTidalCoverage(lat, lon) {
 		if (!COVERAGE) return false;
 		return lat >= COVERAGE[0] && lon >= COVERAGE[1] && lat <= COVERAGE[2] && lon <= COVERAGE[3];
@@ -330,8 +332,8 @@
 						? ' <span class="note">(nearest confirmed tidal waterway ' +
 						  fmtDist(ns.tidal.meters) + ')</span>'
 						: !covered
-							? ' <span class="note">(tidal canals and rivers are mapped for South ' +
-							  'Florida only — we cannot check them at this address)</span>' : '');
+							? ' <span class="note">(tidal canals and rivers are not mapped at ' +
+							  'this address — we cannot check them here)</span>' : '');
 
 				var infBlock = '';
 				if (showInf) {

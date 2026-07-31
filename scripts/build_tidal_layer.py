@@ -56,11 +56,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "wp-plugin/perkins-metal-warranty/assets"
-CACHE = Path.home() / "perkins-corpus/osm/south-florida-waterways.json"
+CACHE = Path.home() / "perkins-corpus/osm/florida-waterways.json"
 OVERPASS = "https://overpass-api.de/api/interpreter"
 
-# South Florida, both coasts: Keys up through Martin / St. Lucie and across to Lee / Collier.
-BBOX = "24.40,-82.60,27.70,-79.90"
+# All of Florida: Keys to the Georgia line, Perdido Bay to the Atlantic. Was South Florida only
+# (24.40,-82.60,27.70,-79.90); statewide adds Tampa, Jacksonville and the Panhandle — 55,671
+# waterways against 21,914 and 174 salinity gauges against 64. Keep this in step with the same
+# constant in fetch_salinity_readings.py and validate_tidal_against_gauges.py.
+BBOX = "24.30,-87.80,31.10,-79.80"
 WATERWAY_KINDS = "canal|river|stream|drain|ditch"
 BARRIER_KINDS = "lock_gate|weir|dam|floodgate|sluice_gate|tidal_gate|check_dam"
 

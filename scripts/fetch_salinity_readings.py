@@ -39,7 +39,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 CACHE = Path.home() / "perkins-corpus/osm/salinity-readings.json"
-BBOX = (24.40, -82.60, 27.70, -79.90)          # south, west, north, east — matches the tidal layer
+BBOX = (24.30, -87.80, 31.10, -79.80)          # south, west, north, east — matches the tidal layer
 WINDOW_DAYS = 30
 CHUNK = 25                                      # NWIS caps the site list per request
 PAUSE_S = 1.0

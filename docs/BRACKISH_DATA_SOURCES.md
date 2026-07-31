@@ -71,6 +71,33 @@ Agreement: 51/64 = 80%
   29,500. Control structures **are** the salt line, exactly as assumed — the problem was never the
   model, it was that OSM's structure and tidal tagging is incomplete.
 
+### 2b. Statewide, 2026-07-31
+
+Widening the bbox to all of Florida (`24.30,-87.80,31.10,-79.80`) took the gauge set from 64 to
+**171** and the waterway set from 21,914 to 55,749.
+
+```
+171 gauges, all reporting live
+
+HELD-OUT AGREEMENT: 128/171 = 75%        (each gauge scored without its own reading)
+IN-SAMPLE:          147/171 = 86%        (inflated — shown for contrast only)
+
+same asset, scored over the OLD South Florida bbox: 51/64 = 80% held out
+```
+
+**75% is not a regression — it is a bigger, harder denominator.** Scoring the statewide asset over
+the old South Florida bbox gives 80% held out, against 81% before, and that single gauge is inside
+the noise of live USGS readings between runs. Existing territory is unchanged; the new 107 gauges
+are simply in harder country — long inland estuaries the 3-mile coastal clip discards.
+
+⚠️ **`validate_tidal_against_gauges.py` compares the wrong statistic.** Its `IV_URL` carries no date
+range, so it scores against a single *instantaneous* reading, while the build classifies on a
+**30-day median**. On tidal water those differ by an order of magnitude: Manatee River at Rye reads
+326 µS/cm instantaneously and 3,210 as a median; Aucilla near the mouth 919 against 7,420. Both show
+up in the disagreement list as "we call it salt, the gauge says fresh" — the layer is right and the
+validator is sampling a tide. The reported held-out rate is therefore **pessimistic**, and most so
+for the estuarine gauges that matter most.
+
 ## 3. Yes, we can publish a confidence rate — and it can be evidence, not a hedge
 
 Today the tool says *"this water may be tidal"*. With gauge anchoring it can say:
