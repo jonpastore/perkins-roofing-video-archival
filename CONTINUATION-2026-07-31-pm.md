@@ -1,8 +1,12 @@
 # CONTINUATION — 2026-07-31 (late)
 
-**HEAD `2115187`, pushed, tree clean. CI + deploy green on that sha. Terraform drift clean (plan
-exit 0). Full suite green (`PYTEST_EXIT=0`).** Warranty plugin **1.3.1** live on staging. Prod
-migrations through 0051.
+**HEAD `ccfa484`, pushed, tree clean. Terraform drift clean (plan exit 0). Full suite green
+(`PYTEST_EXIT=0`).** Warranty plugin **1.3.4** live on staging. Prod migrations through 0051.
+
+⚠️ The §0 numbers below are the FIRST statewide build. Three later fixes moved them — stale
+readings excluded, evidence unclipped, then `tagged` re-clipped after review. The shipped asset is
+**6,451 geometries / 1.98 MB — 297 tagged, 61 measured salt, 42 fresh**. Read §4c before quoting
+any figure from §0.
 
 Read `CONTINUATION-2026-07-31.md` for the measured-salinity build this continues, and
 `CONTINUATION-2026-07-30-pm.md` for the overhead work (Tim's sheet, the unsent email).
