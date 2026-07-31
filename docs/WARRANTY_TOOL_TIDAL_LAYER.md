@@ -35,11 +35,22 @@ Output: `assets/tidal.geojson`, **1.96 MB**, 6,482 geometries, of which 388 `tag
 salt and 54 `measured` fresh. Was South Florida only (`24.40,-82.60,27.70,-79.90`): 21,914 waterways,
 0.93 MB, 3,639 geometries.
 
-⚠️ **The clip is measured from the coastline, not from the customer.** 21 salt/brackish gauges sit
-further than `REACH_MI` (3 mi) inland and are dropped, so an address 500 ft from the tidal St. Johns
-at Jacksonville — or from the Faka Union Canal at 52,700 µS/cm, 3.1 mi in, which South Florida was
-already missing — gets no tidal answer. The 1-mile provision bounds address-to-water distance, which
-is a different quantity. Widening the bbox did not create this; it made it reachable in more places.
+✅ **FIXED 2026-07-31 — the clip now applies to `inferred` only.** It measures distance to the
+COASTLINE while the 1-mile provision bounds ADDRESS-to-water distance, so clipping evidence by it
+hid brackish water people live beside: a house 500 ft from the tidal St. Johns got no answer because
+the river is 14 mi from the ocean. Anything carrying evidence — a gauge reading or an explicit OSM
+tidal tag — is kept wherever it is; only `inferred` reaches are clipped at `REACH_MI`. Cost
+**+0.09 MB**, because evidence is rare. Widening `REACH_MI` for everything was rejected: it would
+have multiplied the asset with inland ditches, the reaches most likely to be wrong.
+
+⚠️ **Two limits remain, and they are not the same limit.** 8 of the 18 far live gauges are still
+absent because they never snap to mapped water within `GAUGE_SNAP_M` (250 m) — OSM maps those wide
+rivers as `natural=water` polygons rather than `waterway` lines, so there is no line to snap to.
+
+⚠️ **A reading is evidence about the water TODAY.** `siteStatus=active` does not mean "reporting":
+65 of 171 gauges had last reported over 30 days ago, 33 of them classified salt/brackish, the worst
+5,415 days old carrying 42,300 µS/cm into live verdicts. `_reading_expired` drops them, and an
+undateable timestamp expires closed.
 
 ## The honesty rule — read this before changing the UI
 

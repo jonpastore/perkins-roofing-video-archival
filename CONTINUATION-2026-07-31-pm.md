@@ -164,6 +164,45 @@ history, so those 65 do not improve over time. Banking a daily sample for them w
 
 ---
 
+## §4c — AUTOPILOT RUN, 2026-07-31 (5 commits, all pushed and green)
+
+Jon stepped away with "complete as much as possible, fix forward, do not let blockers stop you."
+
+**`5ccb9f5` — the OAuth store accepted `account_id` and threw it away.** Every method took it and
+ignored it, so all accounts on a platform resolved to one secret. Invisible with one account per
+platform; for QuickBooks it meant four branch COMPANIES sharing a token. #358 called it a
+collision — the parameter was decorative. Now `tenants-{t}-{platform}-{account}-{key}`, with the
+legacy id still READ so live tokens survive. ⚠️ Three callers disagreed on the account id and only
+interoperated BECAUSE it was discarded (callback wrote `"default"`, reader read `""`, social_job
+wrote the TikTok open_id); scoping without reconciling them would have rotated TikTok's token into
+a secret nothing reads. All three now use `SINGLE_ACCOUNT`.
+
+**`42c1ead` — a 2011 reading was voiding warranties in 2026.** See §2c in
+`docs/BRACKISH_DATA_SOURCES.md`. Found while building the banked-history feature I had just
+described to a client, which is the only reason it surfaced at all.
+
+**`9320c90` — the clip measured distance to the coastline, the provision measures distance to the
+address.** Now clips `inferred` only. +0.09 MB.
+
+**`e30ca68` — two skips that reported green**, plus the `calc_audience` default finally pinned.
+
+**`6b3cb68` — two warnings so an extrapolated number stops looking measured.** The day model is
+fitted on 29 Palm Beach / Treasure Coast homes and shipped to Miami; commercial is priced on the
+residential profit scale.
+
+⚠️ **#424's leave-one-cluster-out could not be run: its premise is wrong.** All 29 homes are
+distinct single-family addresses. Evergrene is the separate 9-building commercial bid in #430, not
+in this dataset. The other two falsification tests DID run —
+`scripts/honest_day_model_cv.py` gives honest LOO **83% within a day against a 34% constant-mean
+baseline**, and the shipped ≥6/12 steep rule is re-selected in **27/29** folds. The fit is real
+where it was fitted.
+
+**Blocked, not skipped:** #444 (GCP budget) — the Cloud Billing API is disabled and
+`perkins-deploy-sa` cannot enable it or list billing accounts. The Terraform resource is written
+and waits only on `var.billing_account`. Needs console access with billing rights.
+
+---
+
 ## §5 — GOTCHAS EARNED TODAY
 
 - **`.dockerignore` has an ALLOWLIST for `scripts/`.** Adding a job that imports a new script

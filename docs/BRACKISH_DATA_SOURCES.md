@@ -98,6 +98,50 @@ up in the disagreement list as "we call it salt, the gauge says fresh" — the l
 validator is sampling a tide. The reported held-out rate is therefore **pessimistic**, and most so
 for the estuarine gauges that matter most.
 
+### 2c. A 2011 reading was voiding warranties in 2026 (fixed 2026-07-31)
+
+⚠️ **`siteStatus=active` does not mean "reporting".** USGS returns stations that are nominally
+active but whose last instantaneous value can be years old, and the latest-value endpoint serves it
+without complaint.
+
+Measured against the live cache: **65 of 171 gauges had not reported in over 30 days, and 33 of
+those were classified salt/brackish.** They were moving verdicts while the UI cited "measured at
+… µS/cm", which a homeowner reads as current.
+
+```
+5,415 d old   42,300 uS/cm  MCCORMICK CREEK AT MOUTH NEAR KEY LARGO
+5,413 d old   45,400 uS/cm  MANATEE BAY CREEK NEAR HOMESTEAD
+3,590 d old   47,800 uS/cm  HAULOVER CANAL NEAR MIMS
+```
+
+The `_note` in this very cache had always claimed a reading older than the window "degrades from
+'measured' to 'mapped'". **Nothing implemented it** — documentation of a rule that did not exist,
+the same shape as the PRICING_RULES HVHZ adder no config carries. Now implemented in
+`_reading_expired`: an expired gauge is not a measurement, so its reaches revert to what we would
+have believed without it. Undateable timestamps expire **closed**.
+
+Effect: reaches promoted to `measured` salt **86 → 63**. Tequesta and Tampa are unchanged, because
+their gauges actually report.
+
+**The latest-only set and the stale set are the same 65 gauges.** They are not "stations that
+publish only a current value" — they are stations that stopped. Any that resume now bank one sample
+per distinct observation time (`history`), so they build a real 30-day baseline instead of being
+overwritten each sweep.
+
+### 2d. The clip measured the wrong distance (fixed 2026-07-31)
+
+`REACH_MI` clipped at 3 mi from the **coastline**; the provision is 1 mi from the **address**.
+With stale gauges already excluded, 18 live salt/brackish gauges sat beyond the line — St Lucie at
+Speedy Point 30,700 µS/cm (3.1 mi), Alafia at Riverview 21,600 (4.3 mi), Hillsborough at I-275
+14,000 (4.6 mi). A house 500 ft from the tidal St Johns got no tidal answer because the river is
+14 mi from the ocean.
+
+The clip now applies to `inferred` only; anything carrying evidence (a gauge reading or an OSM
+tidal tag) is kept wherever it is. Cost **+0.09 MB**, because evidence is rare. 10 of the 18 are now
+represented; the other 8 fail a *different* limit — they never snap to mapped water within
+`GAUGE_SNAP_M`, because OSM maps those wide rivers as `natural=water` polygons, not `waterway`
+lines.
+
 ## 3. Yes, we can publish a confidence rate — and it can be evidence, not a hedge
 
 Today the tool says *"this water may be tidal"*. With gauge anchoring it can say:
