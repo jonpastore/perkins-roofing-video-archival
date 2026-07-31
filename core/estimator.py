@@ -773,6 +773,7 @@ def _label(key: str) -> str:
 def _apply_min_margin(
     config: PricingConfig, items: list[LineItem], sq: float, explicit_profit: bool = False,
     effective_floor: float = 0.0, on_site_weeks: Optional[int] = None,
+    slope_type: Optional[str] = None, zone: Optional[str] = None,
 ) -> Optional[str]:
     """Raise the profit line to the week-based floor. Returns a warning code if it fired.
 
@@ -828,8 +829,29 @@ def _apply_min_margin(
                    "days_per_week": config.profit_floor_days_per_week(),
                    "squares": sq, "floored": True},
     }
+    # #422 — the floor moves the PROFIT line, and commission is a percentage OF that line
+    # (commission = margin.profit_dollars x rate). So protecting a small job also raises the
+    # salesperson's commission on it: a 10 sq HVHZ tile job floored from $1,400 to $2,500 takes
+    # commission from $140 to $250 at 10%. Tim has never said whether his $2,500 is what he keeps
+    # BEFORE or AFTER commission. If after, the floor should be 2500/(1-rate), not 2500.
+    #
+    # We cannot answer that for him, and quietly picking one reading would bury a real question
+    # inside a number he is asked to sign. So the quote says it.
+    extra = ""
+    try:
+        rate = config.commission_rate(slope_type, zone) if slope_type and zone else None
+        if rate:
+            net = float(floor) * (1.0 - float(rate))
+            extra = (f" Commission rises with it (${was * float(rate):,.0f} -> "
+                     f"${float(floor) * float(rate):,.0f} at {float(rate) * 100:.3g}%), so Tim "
+                     f"nets ${net:,.0f} of the ${float(floor):,.0f} floor. If the floor is meant "
+                     f"to be what he KEEPS, it should be ${float(floor) / (1 - float(rate)):,.0f} "
+                     f"— pending Tim.")
+    except Exception:  # noqa: BLE001 — the note is advisory; never break a quote over it
+        extra = ""
     return (f"min_margin_applied: profit raised from ${was:,.2f} to ${float(floor):,.2f} "
-            + (f"({weeks}-week minimum)" if basis == "weekly" else "(minimum per job)"))
+            + (f"({weeks}-week minimum)" if basis == "weekly" else "(minimum per job)")
+            + extra)
 
 
 def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
@@ -1537,7 +1559,8 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     effective_floor = max(guidance["effective_floor"], q.min_profit_dollars or 0.0)
     floored = _apply_min_margin(
         config, all_items, total_sq, explicit_profit,
-        effective_floor=effective_floor, on_site_weeks=guidance["on_site_weeks"])
+        effective_floor=effective_floor, on_site_weeks=guidance["on_site_weeks"],
+        slope_type=q.slope_type, zone=zone)
     if floored:
         warnings.append(floored)
 

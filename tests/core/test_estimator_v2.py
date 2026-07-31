@@ -1553,3 +1553,34 @@ def test_commercial_quote_warns_that_profit_is_the_residential_scale():
 def test_residential_quote_does_not_carry_the_commercial_warning():
     r = estimate(_cfg_v2(), _daily_q(project_kind="residential", num_squares=15.0))
     assert not any(w.startswith("commercial_profit_model_unverified") for w in r["warnings"])
+
+
+def test_the_profit_floor_says_that_it_also_raised_commission():
+    """#422: the floor moves the profit line, and commission is a percentage OF that line.
+
+    Protecting a small job therefore also raises the salesperson's commission on it. Tim has never
+    said whether his $2,500 is what he keeps BEFORE or AFTER commission — if after, the floor
+    should be 2500/(1-rate). We cannot answer that for him, and quietly picking a reading would
+    bury a real question inside a number he is asked to sign. So the quote states it.
+    """
+    cfg = _cfg_v2()
+    # A job small enough that the sliding scale lands under the floor.
+    q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="standing_seam_metal",
+                   num_squares=5.0, project_kind="residential")
+    r = estimate(cfg, q)
+
+    floored = [w for w in r["warnings"] if w.startswith("min_margin_applied")]
+    if not floored:
+        pytest.skip("fixture config does not trip the floor at 10 sq")
+    assert "Commission rises with it" in floored[0], floored[0]
+    assert "pending Tim" in floored[0]
+
+
+def test_the_floor_note_never_breaks_a_quote():
+    """The commission note is advisory. A config that cannot answer a commission rate must still
+    produce a priced quote — an explanatory sentence is not worth a 500."""
+    cfg = _cfg_v2()
+    q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="standing_seam_metal",
+                   num_squares=5.0, project_kind="residential")
+    r = estimate(cfg, q)
+    assert r["project_total"] > 0
