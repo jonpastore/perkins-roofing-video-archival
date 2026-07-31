@@ -188,8 +188,15 @@ history, so those 65 do not improve over time. Banking a daily sample for them w
 
 ## §6 — OPEN, IN PRIORITY ORDER
 
-1. **The Tim email is DRAFTED, NOT SENT** — `jon@degenito.ai`, "Your sheet answers the crew
-   question — plus 7 things I need". Copy at `~/perkins-corpus/tim_email_2026-07-30.txt`.
+1. **The Tim email was SENT 2026-07-31** — copy at `~/perkins-corpus/tim_email_2026-07-31.txt`.
+   It was rewritten first to cover the measured-salinity work: why we abandoned map tags and
+   SFWMD's groundwater isochlor for instruments, the 30-day median and why tidal water needs one,
+   the 1/24-per-hour statewide cycle, the never-blank fallback ladder, and an explicit admission
+   of the 65-gauge gap. Its ask narrowed from "which rivers are tidal" to three named rivers that
+   genuinely have no USGS instrument (New River nearest gauge 15.4 mi; Miami River's nearest is on
+   the Miami CANAL, fresh at 460; Caloosahatchee's is 12 mi up at the S-79 lock).
+   ⚠️ Several open Jarvis tasks wait on those same answers (#414 #426 #428 #441 #446 #448) —
+   check for his reply and reconcile rather than re-asking.
 2. **`REACH_MI` and the validator statistic** — §4, both one constant, both Jon's call.
 3. **Miami still charges its whole office day per job** → ~$2,087/sq HVHZ tile against a $1,113/sq
    accepted median. `concurrent_crews: 4` → $1,343/sq, but 4 is a capacity target, not a

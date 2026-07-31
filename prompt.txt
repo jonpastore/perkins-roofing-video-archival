@@ -31,9 +31,9 @@ Confirm before trusting any of this:
 
 ▶ START HERE — ONE OF THESE, ASK JON WHICH
 
-  1. SEND THE TIM EMAIL (drafted, not sent — copy at ~/perkins-corpus/tim_email_2026-07-30.txt,
-     jon@degenito.ai, "Your sheet answers the crew question — plus 7 things I need"). This is the
-     only open item with a person waiting on the other end.
+  1. TIM EMAIL: SENT 2026-07-31 (copy at ~/perkins-corpus/tim_email_2026-07-31.txt). It asks him
+     7 things; several open Jarvis tasks are waiting on those same answers (#414 #426 #428 #441
+     #446 #448). Do NOT re-ask him — check for his reply first, then reconcile those tasks.
 
   2. FIX REACH_MI. It clips tidal geometry to 3 mi of the COASTLINE, but the strictest warranty
      provision (1 mi) bounds ADDRESS-to-water distance — different quantities. 21 salt/brackish
