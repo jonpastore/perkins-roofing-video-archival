@@ -1,7 +1,7 @@
 # Metal-roof warranty tool — the tidal/brackish layer
 
 **Shipped 2026-07-30.** Tool: `wp-plugin/perkins-metal-warranty/`, live on staging at
-<https://1228404.us6.myftpupload.com/metal-roofing-warranty/> (plugin **1.1.0**).
+<https://1228404.us6.myftpupload.com/metal-roofing-warranty/> (plugin **1.1.1**).
 
 ## Why it exists
 
@@ -65,8 +65,8 @@ review, not by the tool's own checks, which is why those checks now assert.
 
 | address | before | after |
 |---|---|---|
-| 1701 NW N River Dr, Miami (Miami River) | 2.1 mi → everything safe | **488 ft to salt water (tidal)** → ZAM steel VOID for some brands |
-| 1350 SW 21st Ter, Fort Lauderdale (New River) | 2,341 ft | **1,404 ft tidal** — crosses the 1,500 ft line |
+| 1701 NW N River Dr, Miami (Miami River) | 2.1 mi, no mention of the river | 2.1 mi headline + **"water 488 ft away may be tidal"** and an "if tidal: VOID for some brands" column |
+| 1350 SW 21st Ter, Fort Lauderdale (New River) | 2,341 ft, no mention | 2,341 ft + the river at 1,404 ft raised as a caveat |
 | 10307 Utopia Cir N, Boynton Beach | 5.6 mi | 5.6 mi open, **possible** tidal flagged, verdicts unchanged |
 | 100 Worth Ave, Palm Beach | 361 ft | 361 ft — open salt water still dominates |
 | Golden Gate Blvd W, Naples | — | 9.7 mi open, possible tidal 9.2 mi, **all materials warranty-safe** (was VOID on two) |
