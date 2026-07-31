@@ -54,11 +54,27 @@
 	function loadGmaps() {
 		return new Promise(function (resolve, reject) {
 			if (window.google && window.google.maps && window.google.maps.Geocoder) return resolve();
+			var settled = false;
+			function fail(msg) {
+				if (settled) { return; }
+				settled = true;
+				reject(new Error(msg));
+			}
+			// A rejected referrer / bad key downloads the script with HTTP 200 and then reports
+			// through gm_authFailure — onerror never fires and the callback is never invoked, so
+			// without these two guards the tool spins on "Locating and measuring..." forever with
+			// nothing shown to the user. Observed live on staging as RefererNotAllowedMapError.
+			window.gm_authFailure = function () {
+				fail('The map service rejected this site (the address key is not authorised for ' +
+					'this domain). Call us and we will check the address for you.');
+			};
 			var s = document.createElement('script');
 			s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(CFG.gmapsKey) +
 				'&loading=async&callback=__perkinsMwcGm';
-			window.__perkinsMwcGm = function () { resolve(); };
-			s.onerror = function () { reject(new Error('Could not load the map service.')); };
+			window.__perkinsMwcGm = function () { if (!settled) { settled = true; resolve(); } };
+			s.onerror = function () { fail('Could not load the map service.'); };
+			// Backstop for any other silent failure mode.
+			setTimeout(function () { fail('The map service did not respond. Please try again.'); }, 12000);
 			document.head.appendChild(s);
 		});
 	}
