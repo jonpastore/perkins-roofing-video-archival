@@ -17,7 +17,8 @@
 	//                     reaches that merely open onto the coastline. NEVER moves a verdict —
 	//                     OSM barrier coverage is incomplete and a false "void" tells a homeowner
 	//                     their warranty is dead when it is not.
-	var SEGS = null, TIDAL_SEGS = null, TIDAL_INF = null, ZONES = null, COVERAGE = null;
+	var SEGS = null, TIDAL_SEGS = null, TIDAL_META = null, TIDAL_INF = null;
+	var ZONES = null, COVERAGE = null;
 	var map, marker, line, line2;
 	var VER = CFG.version ? ('?ver=' + encodeURIComponent(CFG.version)) : '';
 
@@ -25,7 +26,9 @@
 		var geoms = doc.type === 'GeometryCollection'
 			? doc.geometries
 			: (doc.features || []).map(function (f) { return f.geometry; });
-		var out = { tagged: [], inferred: [] };
+		// `meta` runs parallel to `tagged`, one entry per segment, so when a measured segment wins
+		// we can quote the actual reading rather than say "confirmed" and leave them wondering.
+		var out = { tagged: [], meta: [], inferred: [] };
 		for (var gi = 0; gi < geoms.length; gi++) {
 			var g = geoms[gi], c = g && g.coordinates;
 			if (!c || !c.length) continue;
@@ -33,11 +36,13 @@
 			// a foreign member on a GeoJSON geometry and gets stripped by mapshaper/turf/minifiers;
 			// if that happens every reach must degrade to a caveat, never silently become
 			// authoritative salt water.
-			var bucket = g.confidence === 'tagged' ? out.tagged
-				: g.confidence === 'inferred' ? out.inferred
-					: (defaultBucket === 'tagged' ? out.tagged : out.inferred);
+			// A gauge reading and an OSM tag both move a verdict; connectivity never does.
+			var verdictMoving = g.confidence === 'measured' || g.confidence === 'tagged'
+				|| (!g.confidence && defaultBucket === 'tagged');
+			var bucket = verdictMoving ? out.tagged : out.inferred;
 			for (var i = 0; i + 1 < c.length; i++) {
 				bucket.push(c[i][0], c[i][1], c[i + 1][0], c[i + 1][1]);
+				if (verdictMoving) out.meta.push(g.measurement || null);
 			}
 		}
 		return out;
@@ -84,6 +89,7 @@
 				COVERAGE = null;
 			}
 			TIDAL_SEGS = tidal.tagged;
+			TIDAL_META = tidal.meta;
 			TIDAL_INF = tidal.inferred;
 		}).catch(function (e) {
 			// Do not latch a rejection: one flaky fetch would otherwise break the tool for the
@@ -96,8 +102,8 @@
 
 	function nearestIn(segs, lat, lon) {
 		var kx = 111320 * Math.cos((lat * Math.PI) / 180), ky = 110540;
-		var best = Infinity, bx = 0, by = 0;
-		if (!segs || !segs.length) return { meters: Infinity, nearest: null };
+		var best = Infinity, bx = 0, by = 0, bi = -1;
+		if (!segs || !segs.length) return { meters: Infinity, nearest: null, index: -1 };
 		for (var win = 0.6; win <= 6; win *= 2) {
 			for (var i = 0; i < segs.length; i += 4) {
 				var ax = segs[i], ay = segs[i + 1], cx = segs[i + 2], cy = segs[i + 3];
@@ -108,11 +114,11 @@
 				var t = L2 ? Math.max(0, Math.min(1, (px * vx + py * vy) / L2)) : 0;
 				var dx = px - t * vx, dy = py - t * vy;
 				var d = dx * dx + dy * dy;
-				if (d < best) { best = d; bx = ax + (t * vx) / kx; by = ay + (t * vy) / ky; }
+				if (d < best) { best = d; bx = ax + (t * vx) / kx; by = ay + (t * vy) / ky; bi = i / 4; }
 			}
 			if (best < Infinity) break;
 		}
-		return { meters: Math.sqrt(best), nearest: best < Infinity ? [by, bx] : null };
+		return { meters: Math.sqrt(best), nearest: best < Infinity ? [by, bx] : null, index: bi };
 	}
 
 	/* Open salt water and CONFIRMED tidal water both count toward the verdict. An INFERRED reach
@@ -123,10 +129,13 @@
 		var inferred = nearestIn(TIDAL_INF, lat, lon);
 		var useTidal = tidal.meters < coast.meters;
 		var eff = useTidal ? tidal : coast;
+		var reading = (useTidal && TIDAL_META && tidal.index >= 0)
+			? TIDAL_META[tidal.index] : null;
 		return {
 			meters: eff.meters,
 			nearest: eff.nearest,
 			kind: useTidal ? 'tidal' : 'open',
+			reading: reading,
 			coast: coast,
 			tidal: tidal,
 			inferred: inferred
@@ -152,7 +161,7 @@
 			};
 			var s = document.createElement('script');
 			s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(CFG.gmapsKey) +
-				'&loading=async&callback=__perkinsMwcGm';
+				'&libraries=places&loading=async&callback=__perkinsMwcGm';
 			window.__perkinsMwcGm = function () { if (!settled) { settled = true; resolve(); } };
 			s.onerror = function () { fail('Could not load the map service.'); };
 			// Backstop for any other silent failure mode.
@@ -218,14 +227,26 @@
 		var addr = (input.value || '').trim();
 		if (!addr) { status.innerHTML = '<p class="err">Enter an address first.</p>'; return; }
 		go.disabled = true;
-		status.innerHTML = '<p class="spin">Locating and measuring…</p>';
 		result.innerHTML = '';
+		// Every phase reports. The silent spinner is what made a 40-minute outage invisible, so
+		// each step gets a terminal state and a failure names the step it died in.
+		var steps = [], phase = '';
+		function step(label) {
+			if (phase) steps.push('✓ ' + phase);
+			phase = label;
+			status.innerHTML = '<p class="spin">' +
+				(steps.length ? steps.join('<br>') + '<br>' : '') + '→ ' + label + '…</p>';
+		}
+		step('Loading coastline and tidal water');
 		loadData()
-			.then(loadGmaps)
+			.then(function () { step('Finding the address'); return loadGmaps(); })
 			.then(function () { return geocode(addr); })
 			.then(function (g) {
+				step('Measuring to the nearest salt water');
 				var lat = g.geometry.location.lat(), lon = g.geometry.location.lng();
 				var ns = nearestSaltwater(lat, lon);
+				step(ns.reading ? 'Checking salinity readings for this waterway'
+					: 'Building your warranty summary');
 				var meters = ns.meters, nearest = ns.nearest;
 
 				if (!map) {
@@ -291,10 +312,16 @@
 				// What the measurement rests on, in plain words, plus the second reading when the
 				// two layers disagree — a homeowner should see WHICH water we measured to.
 				var covered = inTidalCoverage(lat, lon);
+				var r = ns.reading;
+				// Say WHY we call it salt water. A measured reading beats any adjective.
+				var basis = r
+					? ' <span class="note">(measured at ' + Math.round(r.us_cm).toLocaleString() +
+					  ' µS/cm — ' + esc(r.station_name) + ', USGS ' + esc(r.station) + ', ' +
+					  fmtDist(r.distance_m) + ' along the waterway)</span>'
+					: ' <span class="note">(a tidal waterway — open ocean/ICW is ' +
+					  fmtDist(ns.coast.meters) + ')</span>';
 				var distLine = ns.kind === 'tidal'
-					? 'Distance to salt water: <strong>' + fmtDist(meters) +
-					  '</strong> <span class="note">(a tidal waterway — open ocean/ICW is ' +
-					  fmtDist(ns.coast.meters) + ')</span>'
+					? 'Distance to salt water: <strong>' + fmtDist(meters) + '</strong>' + basis
 					: 'Distance to open salt water: <strong>' + fmtDist(meters) + '</strong>' +
 					  (covered && ns.tidal.nearest
 						? ' <span class="note">(nearest confirmed tidal waterway ' +
@@ -329,14 +356,49 @@
 					'Get a free quote with the right material for your home →</a>';
 				status.innerHTML = '';
 			})
-			.catch(function (e) { status.innerHTML = '<p class="err">' + esc(e.message || e) + '</p>'; })
+			.catch(function (e) {
+				status.innerHTML = '<p class="err">' + esc(e.message || e) +
+					(phase ? ' <span class="note">(while ' + esc(phase.toLowerCase()) + ')</span>' : '') +
+					'</p>';
+			})
 			.then(function () { go.disabled = false; });
+	}
+
+	/* Typeahead on the address box. Google Places is the only real option: USPS validates a
+	 * COMPLETE address rather than a prefix, and its terms restrict use to shipping/mailing —
+	 * while Nominatim could not even find the Boynton address Google resolves. Session tokens bill
+	 * a whole typing session as one, and this sits inside the free monthly Essentials allowance at
+	 * Perkins' volume. Attached only after the Maps script loads, so the page still costs nothing
+	 * until someone actually uses the tool. */
+	function attachAutocomplete(input) {
+		if (!window.google || !google.maps.places || input._mwcAuto) return;
+		input._mwcAuto = true;
+		var ac = new google.maps.places.Autocomplete(input, {
+			componentRestrictions: { country: 'us' },
+			fields: ['formatted_address', 'geometry'],
+			types: ['address'],
+			bounds: new google.maps.LatLngBounds({ lat: 24.3, lng: -87.7 }, { lat: 31.2, lng: -79.7 })
+		});
+		ac.addListener('place_changed', function () {
+			var pl = ac.getPlace();
+			if (pl && pl.geometry) check();
+		});
 	}
 
 	document.addEventListener('DOMContentLoaded', function () {
 		var go = document.getElementById('perkins-mwc-go');
 		var input = document.getElementById('perkins-mwc-addr');
 		if (go) go.addEventListener('click', check);
-		if (input) input.addEventListener('keydown', function (e) { if (e.key === 'Enter') check(); });
+		if (input) {
+			// Enter still works for anyone who types the whole address and ignores the dropdown.
+			input.addEventListener('keydown', function (e) { if (e.key === 'Enter') check(); });
+			// Load the geocoder on first focus so suggestions are ready by the time they finish
+			// typing, and the page costs nothing for a visitor who never touches the box.
+			input.addEventListener('focus', function () {
+				loadGmaps().then(function () { attachAutocomplete(input); }).catch(function () {
+					/* typing the address in full still works — check() reports any real failure */
+				});
+			}, { once: true });
+		}
 	});
 })();

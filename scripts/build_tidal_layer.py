@@ -62,6 +62,11 @@ BBOX = "24.40,-82.60,27.70,-79.90"
 WATERWAY_KINDS = "canal|river|stream|drain|ditch"
 BARRIER_KINDS = "lock_gate|weir|dam|floodgate|sluice_gate|tidal_gate|check_dam"
 
+SALINITY_CACHE = Path.home() / "perkins-corpus/osm/salinity-readings.json"
+GAUGE_SNAP_M = 250.0     # a gauge further than this from mapped water is not on a reach we know
+PROPAGATE_MI = 2.0       # how far a reading is evidence ALONG the channel, barriers aside
+FRESH_MAX_US_CM = 1500.0 # ~250 mg/L chloride — the same line SFWMD's isochlor draws
+
 COAST_SNAP_M = 60.0      # a waterway mouth this close to the coastline counts as touching it
 BARRIER_SNAP_M = 25.0    # structures are often drawn offset from the canal, sharing no node
 REACH_MI = 3.0           # keep tidal geometry within this of the coast (max provision is 1 mi)
@@ -167,6 +172,81 @@ def _reach_cells(grid: dict, reach_m: float, cell: float = 0.01) -> set:
             for dy in range(-span, span + 1):
                 out.add((cx + dx, cy + dy))
     return out
+
+
+def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
+    """Attach each salinity reading to the reaches it is actually evidence about.
+
+    A gauge measures the water it stands in. That is strong evidence for its own reach and the
+    connected water either side of it, and progressively weaker further away — the two Loxahatchee
+    gauges read 52,500 uS/cm at the US-1 mouth and 709 uS/cm at mile 9.1, on the same river. So a
+    reading spreads along CHANNEL distance, stops dead at a control structure, and gives up at
+    PROPAGATE_MI. Where two gauges reach the same water, the nearer one wins.
+    """
+    if not SALINITY_CACHE.exists():
+        print(f"no salinity cache at {SALINITY_CACHE} — skipping gauge anchoring", flush=True)
+        return {}
+    gauges = json.loads(SALINITY_CACHE.read_text())["gauges"]
+
+    # index reach vertices so snapping is local
+    vgrid: dict[tuple[int, int], list[tuple[str, int]]] = defaultdict(list)
+    for w in ways:
+        for nid in w["nodes"]:
+            p_ = nodes.get(nid)
+            if p_:
+                vgrid[(int(p_[0] / 0.01), int(p_[1] / 0.01))].append((w["id"], nid))
+
+    cap_m = PROPAGATE_MI * 1609.34
+    best: dict[str, dict] = {}
+    snapped = offshore = 0
+    for g in gauges.values():
+        if g.get("lat") is None:
+            continue
+        glat, glon = float(g["lat"]), float(g["lon"])
+        cx, cy = int(glon / 0.01), int(glat / 0.01)
+        near = None
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for wid, nid in vgrid.get((cx + dx, cy + dy), ()):
+                    px, py = nodes[nid]
+                    d = _haversine_m(glat, glon, py, px)
+                    if d <= GAUGE_SNAP_M and (near is None or d < near[0]):
+                        near = (d, wid, nid)
+        if near is None:
+            offshore += 1
+            continue
+        snapped += 1
+        seed_d, seed_way, seed_node = near
+        salt = float(g["median_us_cm"]) >= FRESH_MAX_US_CM
+        # BFS over reaches, carrying channel distance from the gauge
+        queue = deque([(seed_way, seed_d)])
+        seen = {seed_way: seed_d}
+        while queue:
+            wid, dist = queue.popleft()
+            cur = best.get(wid)
+            if cur is None or dist < cur["distance_m"]:
+                best[wid] = {"salt": salt, "us_cm": g["median_us_cm"], "station": g["id"],
+                             "station_name": g["name"], "measured_at": g.get("latest_at"),
+                             "windowed": bool(g.get("windowed")), "distance_m": round(dist)}
+            w = by_id[wid]
+            coords = [nodes[n] for n in w["nodes"] if n in nodes]
+            span = sum(_haversine_m(coords[i][1], coords[i][0], coords[i + 1][1], coords[i + 1][0])
+                       for i in range(len(coords) - 1))
+            onward = dist + span
+            if onward > cap_m:
+                continue
+            for nid in w["nodes"]:
+                if nid in barriers:
+                    continue
+                for nxt in by_node.get(nid, ()):
+                    if nxt not in seen or onward < seen[nxt]:
+                        seen[nxt] = onward
+                        queue.append((nxt, onward))
+    salt_n = sum(1 for v in best.values() if v["salt"])
+    print(f"gauges: {snapped} snapped to a reach, {offshore} not on mapped water; "
+          f"{len(best)} reaches carry a measurement ({salt_n} salt, {len(best) - salt_n} fresh)",
+          flush=True)
+    return best
 
 
 def build() -> None:
@@ -276,6 +356,8 @@ def build() -> None:
                 if nxt not in confidence:
                     confidence[nxt] = "inferred"
                     queue.append(nxt)
+    measured = _propagate_gauges(ways, by_id, by_node, nodes, barriers)
+
     print(f"salt-carrying: {len(confidence)} reaches "
           f"({sum(v == 'tagged' for v in confidence.values())} tagged, "
           f"{sum(v == 'inferred' for v in confidence.values())} inferred)", flush=True)
@@ -283,7 +365,27 @@ def build() -> None:
     # --- emit: CLIP geometry to the coastal reach, don't just filter whole ways ----------------
     reach_m = REACH_MI * 1609.34
     in_reach = _reach_cells(grid, reach_m)
-    geoms, kept, clipped = [], 0, 0
+    geoms, kept, clipped, promoted, suppressed = [], 0, 0, 0, 0
+    # A reading outranks the OSM tag AND connectivity, in BOTH directions. Upstream Broad River is
+    # tagged tidal and measures 460 uS/cm; keeping it would be preserving a known false VOID to
+    # look conservative. Water measured fresh leaves the layer entirely.
+    for wid in list(measured):
+        if wid not in confidence and measured[wid]["salt"]:
+            confidence[wid] = "inferred"          # measured salt water we had not reached at all
+    for wid, conf in list(confidence.items()):
+        m = measured.get(wid)
+        if not m:
+            continue
+        if m["salt"]:
+            if conf != "measured":
+                promoted += 1
+            confidence[wid] = "measured"
+        else:
+            del confidence[wid]
+            suppressed += 1
+    print(f"measurement: {promoted} reaches promoted to measured, {suppressed} dropped as "
+          f"measured fresh", flush=True)
+
     for wid, conf in confidence.items():
         coords = [nodes[n] for n in by_id[wid]["nodes"] if n in nodes]
         run: list[tuple[float, float]] = []
@@ -299,13 +401,23 @@ def build() -> None:
             parts.append(run)
         if len(parts) != 1 or len(parts[0]) != len(coords):
             clipped += 1
+        m = measured.get(wid)
         for part in parts:
-            geoms.append({"type": "LineString", "confidence": conf,
-                          "coordinates": [[round(x, 5), round(y, 5)]
-                                          for x, y in _simplify(part, SIMPLIFY_M)]})
+            g = {"type": "LineString", "confidence": conf,
+                 "coordinates": [[round(x, 5), round(y, 5)]
+                                 for x, y in _simplify(part, SIMPLIFY_M)]}
+            if conf == "measured" and m:
+                g["measurement"] = {
+                    "us_cm": m["us_cm"], "station": m["station"],
+                    "station_name": m["station_name"], "measured_at": m["measured_at"],
+                    "distance_m": m["distance_m"], "windowed": m["windowed"]}
+            geoms.append(g)
             kept += 1
     out = {"type": "GeometryCollection", "geometries": geoms,
-           "_note": ("Salt-carrying inland water for the warranty checker. confidence=tagged: OSM "
+           "_note": ("Salt-carrying inland water for the warranty checker. confidence=measured: a "
+                     "USGS salinity gauge on this reach reads brackish or saline — authoritative, "
+                     "carries its reading. Water MEASURED FRESH is removed from this file "
+                     "entirely. confidence=tagged: OSM "
                      "tags the reach tidal=yes or salt=yes — authoritative, may move a verdict. "
                      "confidence=inferred: reached from tidewater through shared nodes without "
                      "crossing a mapped control structure, INCLUDING reaches that merely open onto "
