@@ -63,8 +63,12 @@ DO NOT RE-DERIVE (all measured this session)
     key is NOT in IaC today).
   - Precedence: measured salt moves a verdict WITH a citation; measured fresh REMOVES a warning;
     tagged moves a verdict; inferred is a caveat only.
-  - Structures ARE the salt line, confirmed by instruments (C-8 across S-28: 473 vs 29,900 uS/cm;
-    Loxahatchee 52,500 at the mouth vs 709 at mile 9.1) — which is WHY propagation caps at 2 mi.
+  - Structures ARE the salt line, confirmed by instruments (C-8 across S-28: 465 vs 20,450 uS/cm on
+    2026-07-31; Loxahatchee 52,500 at the mouth vs 709 at mile 9.1) — WHY propagation caps at 2 mi.
+    ⚠️ THOSE GAUGE VALUES ARE POINT-IN-TIME, NOT CONSTANTS. They are 30-day medians over a sliding
+    window, so they move: the same C-8 pair was recorded as 473 / 29,900 a day earlier. The
+    ORDERING (fresh landward, salt seaward of the structure) is the durable fact. Re-read the cache
+    before quoting a number to anyone.
 
 STILL OPEN
   - Miami charges its whole office day per job -> ~$2,087/sq HVHZ tile vs $1,113/sq accepted.

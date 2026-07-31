@@ -147,6 +147,23 @@ so for the estuarine gauges that matter most. Fixing it changes a tracked number
 
 ---
 
+## §4b — QUOTED GAUGE VALUES ARE POINT-IN-TIME
+
+Every µS/cm figure in these docs is a **30-day median over a sliding window**, so it moves. The C-8
+pair across S-28 was recorded as `473 / 29,900` on 07-30 and reads `465 / 20,450` on 07-31 — same
+gauges, same structure, same conclusion. It was caught by fact-checking a client email against the
+live cache before sending.
+
+**The ordering is the durable fact** (fresh landward of the structure, salt seaward), not the
+number. Re-read `~/perkins-corpus/osm/salinity-readings.json` before quoting a value to anyone.
+
+Also note: 106 of 171 gauges carry a real USGS series (~2,800 samples); the other **65 publish only
+a current value**, get `samples=1`, and are overwritten each sweep. We do **not** accumulate our own
+history, so those 65 do not improve over time. Banking a daily sample for them would give a genuine
+30-day baseline after a month — not built, and it is the honest gap in the "30-day average" story.
+
+---
+
 ## §5 — GOTCHAS EARNED TODAY
 
 - **`.dockerignore` has an ALLOWLIST for `scripts/`.** Adding a job that imports a new script
