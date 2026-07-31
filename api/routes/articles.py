@@ -347,7 +347,11 @@ def image_candidates(
     """
     from adapters.frame_pick import resolve_candidates  # noqa: PLC0415
     from app.models import Video  # noqa: PLC0415
-    from core.article_images import current_image_src, embedded_video_ids  # noqa: PLC0415
+    from core.article_images import (  # noqa: PLC0415
+        current_image_src,
+        drone_timecodes,
+        embedded_video_ids,
+    )
 
     a = db.get(Article, slug)
     if a is None:
@@ -378,8 +382,27 @@ def image_candidates(
                 })
         except Exception as exc:  # noqa: BLE001 — gallery must not break on a WP hiccup
             logger.warning("media search failed for %s: %s", vid, exc)
+    # Timecodes worth EXTRACTING that YouTube does not host. Its auto-frames sit at 25/50/75%, so
+    # the gallery structurally cannot contain a drone shot — which is why the picks kept coming
+    # back as near-identical garage stills (Tim, 2026-07-28: every video opens and closes with
+    # ~30s of drone footage). Additive field: existing clients ignore it, and the UI can offer
+    # "extract the aerial" by POSTing each one to /{slug}/extract-frame.
+    suggested = []
+    for vid in embedded_video_ids(a.content_md or ""):
+        v = db.get(Video, vid)
+        already = {c["timecode"] for c in candidates
+                   if c.get("video_id") == vid and c.get("timecode") is not None}
+        for tc in drone_timecodes(v.duration if v else None):
+            if tc not in already:
+                suggested.append({
+                    "video_id": vid, "timecode": tc,
+                    "reason": "opening/closing aerial — not hosted by YouTube, needs extraction",
+                    "watch_url": f"https://www.youtube.com/watch?v={vid}&t={tc}s",
+                    "extractable": bool(v and v.archive_uri),
+                })
     return {"slug": slug, "current": current_image_src(a.content_md or ""),
             "candidates": candidates,
+            "suggested_extractions": suggested,
             "video_durations": {vid: db.get(Video, vid).duration
                                 for vid in embedded_video_ids(a.content_md or "")
                                 if db.get(Video, vid)}}

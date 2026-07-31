@@ -89,6 +89,32 @@ def valid_candidate_url(url: str, allowed_video_ids: set[str]) -> bool:
     return bool(f and f.group(1) in allowed_video_ids)
 
 
+#: Tim, 2026-07-28: "every video opens and closes with ~30s of drone footage."
+#: YouTube's auto-frames sit at 25/50/75% of the run time, so the gallery STRUCTURALLY cannot
+#: contain a drone shot — every candidate is mid-video, which is why the picks kept coming back
+#: as near-identical garage stills. These are the timecodes worth extracting instead.
+DRONE_HEAD_S = (8, 16, 24)      # inside the opening aerial, past any title card
+DRONE_TAIL_BACK_S = (30, 20)    # measured BACK from the end, inside the closing aerial
+MIN_DURATION_FOR_TAIL_S = 90    # below this, head and tail windows overlap and duplicate
+
+
+def drone_timecodes(duration: float | None) -> list[int]:
+    """Timecodes likely to sit in the opening/closing aerial footage.
+
+    Returns [] when duration is unknown — guessing a tail offset without knowing the end would
+    ask ffmpeg to seek past it. Deduplicated and sorted so a caller can extract them directly.
+
+    These are SUGGESTIONS for the extract-frame route, not URLs: YouTube hosts only its own three
+    frames, so a drone shot has to be pulled from the archived source.
+    """
+    if not duration or duration <= 0:
+        return []
+    out = {t for t in DRONE_HEAD_S if t < duration}
+    if duration >= MIN_DURATION_FOR_TAIL_S:
+        out |= {int(duration) - b for b in DRONE_TAIL_BACK_S if int(duration) - b > max(DRONE_HEAD_S)}
+    return sorted(out)
+
+
 def frame_filename(video_id: str, timecode: int) -> str:
     """Canonical extracted-frame filename — _WP_FRAME_RE ties it back to its video."""
     return f"frame-{video_id}-{int(timecode)}s.jpg"

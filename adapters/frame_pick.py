@@ -50,13 +50,23 @@ def _vision_pick(images: list[bytes], keyword: str) -> int:
         raise RuntimeError("GOOGLE_CLOUD_PROJECT unset")
     vertexai.init(project=project, location=os.getenv("GCP_REGION", "us-central1"))
     model = GenerativeModel(os.getenv("LLM_MODEL", "gemini-2.5-flash"))
+    # Tim, 2026-07-28: the picks "look identical" — near-duplicate garage stills. The old prompt
+    # invited exactly that by listing "the speaker mid-demonstration" as a subject on equal footing
+    # with the roof. A hero image for a roofing article should show a ROOF. Ranked preference, so
+    # the model still has somewhere to go when a video has no exterior frame at all.
     parts = [
         f"These are {len(images)} frames from a roofing video about "
-        f"{keyword or 'roofing'}. Pick the single best one to use as the article's "
-        "hero image: sharp, well-composed, shows the subject (roof work, materials, "
-        "or the speaker mid-demonstration), no motion blur, no mid-blink faces, no "
-        "text overlays. Reply with JSON: "
-        '{"index": <0-based index of the best frame>, "reason": "<one sentence>"}',
+        f"{keyword or 'roofing'}. Pick the single best one for the article's hero image.\n\n"
+        "Prefer, in this order:\n"
+        "1. Aerial or drone shots of a full roof\n"
+        "2. Exterior shots showing the roof or the whole house\n"
+        "3. Close-ups of roofing material or work in progress on a roof\n"
+        "4. Only if none of the above appear: a person working, or the speaker\n\n"
+        "Actively AVOID: interior shots, garages, driveways, parked vehicles, "
+        "a talking head against a wall or backdrop, and anything that could be a frame from "
+        "any other video. Also reject motion blur, mid-blink faces and text overlays.\n\n"
+        'Reply with JSON: {"index": <0-based index of the best frame>, '
+        '"reason": "<one sentence naming which preference tier it met>"}',
     ]
     for img in images:
         parts.append(Part.from_data(img, mime_type="image/jpeg"))
