@@ -134,6 +134,10 @@ declare -A JOBS=(
   # source for project-page galleries — the YouTube channel is topic content and cannot be
   # joined to a property. Metadata only; the media stays on CompanyCam's CDN.
   [companycam-sync]="jobs.companycam_sync"
+  # salinity-sweep is DELIBERATELY NOT LISTED YET. This loop runs `gcloud run jobs update` for
+  # every entry under `set -e`, so naming a job Terraform has not created yet would abort the
+  # whole deploy. Add the line below the moment `terraform apply` has created it:
+  #   [salinity-sweep]="jobs.salinity_sweep"
 )
 
 # How many videos one scheduled archive run may pull. Downloads go through a WireGuard tunnel

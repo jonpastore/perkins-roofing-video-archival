@@ -44,7 +44,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -183,10 +185,29 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
     reading spreads along CHANNEL distance, stops dead at a control structure, and gives up at
     PROPAGATE_MI. Where two gauges reach the same water, the nearer one wins.
     """
-    if not SALINITY_CACHE.exists():
-        print(f"no salinity cache at {SALINITY_CACHE} — skipping gauge anchoring", flush=True)
-        return {}
-    gauges = json.loads(SALINITY_CACHE.read_text())["gauges"]
+    # Prefer the cache the hourly sweep publishes (jobs/salinity_sweep.py) so a rebuild uses
+    # current readings without anyone remembering to refresh first; fall back to the local file
+    # when GCS is unreachable or unconfigured, which is the normal case on a laptop.
+    raw = None
+    project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    if project:
+        try:
+            from adapters.storage import download_file, object_exists
+            key = "warranty-tool/salinity-readings.json"
+            if object_exists(f"{project}-media", key):
+                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+                    download_file(f"{project}-media", key, tmp.name)
+                raw = Path(tmp.name).read_text()
+                os.unlink(tmp.name)
+                print("salinity readings: using the published GCS cache", flush=True)
+        except Exception as e:                       # noqa: BLE001 — local build must still work
+            print(f"salinity readings: GCS unavailable ({e}); using the local cache", flush=True)
+    if raw is None:
+        if not SALINITY_CACHE.exists():
+            print(f"no salinity cache at {SALINITY_CACHE} — skipping gauge anchoring", flush=True)
+            return {}
+        raw = SALINITY_CACHE.read_text()
+    gauges = json.loads(raw)["gauges"]
 
     # index reach vertices so snapping is local
     vgrid: dict[tuple[int, int], list[tuple[str, int]]] = defaultdict(list)
@@ -372,19 +393,23 @@ def build() -> None:
     for wid in list(measured):
         if wid not in confidence and measured[wid]["salt"]:
             confidence[wid] = "inferred"          # measured salt water we had not reached at all
+    prior: dict[str, str] = {}
     for wid, conf in list(confidence.items()):
         m = measured.get(wid)
         if not m:
             continue
+        prior[wid] = conf                     # what we would have said without the reading
         if m["salt"]:
-            if conf != "measured":
-                promoted += 1
+            promoted += 1
             confidence[wid] = "measured"
         else:
-            del confidence[wid]
+            # Known-fresh water is KEPT and labelled, not deleted. Absence cannot be told apart
+            # from "never mapped", and the hold-one-out check needs to know what we would have
+            # believed here without the gauge. The UI ignores this class entirely.
+            confidence[wid] = "fresh"
             suppressed += 1
-    print(f"measurement: {promoted} reaches promoted to measured, {suppressed} dropped as "
-          f"measured fresh", flush=True)
+    print(f"measurement: {promoted} reaches promoted to measured, {suppressed} labelled "
+          f"measured FRESH (kept in the file, ignored by the UI)", flush=True)
 
     for wid, conf in confidence.items():
         coords = [nodes[n] for n in by_id[wid]["nodes"] if n in nodes]
@@ -406,11 +431,12 @@ def build() -> None:
             g = {"type": "LineString", "confidence": conf,
                  "coordinates": [[round(x, 5), round(y, 5)]
                                  for x, y in _simplify(part, SIMPLIFY_M)]}
-            if conf == "measured" and m:
+            if conf in ("measured", "fresh") and m:
                 g["measurement"] = {
                     "us_cm": m["us_cm"], "station": m["station"],
                     "station_name": m["station_name"], "measured_at": m["measured_at"],
-                    "distance_m": m["distance_m"], "windowed": m["windowed"]}
+                    "distance_m": m["distance_m"], "windowed": m["windowed"],
+                    "prior": prior.get(wid, "inferred")}
             geoms.append(g)
             kept += 1
     out = {"type": "GeometryCollection", "geometries": geoms,

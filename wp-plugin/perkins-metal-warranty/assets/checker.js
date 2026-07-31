@@ -36,6 +36,9 @@
 			// a foreign member on a GeoJSON geometry and gets stripped by mapshaper/turf/minifiers;
 			// if that happens every reach must degrade to a caveat, never silently become
 			// authoritative salt water.
+			// Water a gauge MEASURED as fresh belongs in neither bucket: it is not salt water, and
+			// raising it as "may be tidal" would warn about water we know is fine.
+			if (g.confidence === 'fresh') continue;
 			// A gauge reading and an OSM tag both move a verdict; connectivity never does.
 			var verdictMoving = g.confidence === 'measured' || g.confidence === 'tagged'
 				|| (!g.confidence && defaultBucket === 'tagged');

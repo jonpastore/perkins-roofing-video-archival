@@ -525,13 +525,15 @@ resource "google_cloud_run_v2_service" "api" {
 
 locals {
   job_names = toset(["ingest", "render", "article", "social", "knowify-sync", "knowify-keepwarm",
-  "enumerate-channel", "archive", "companycam-sync"])
+  "enumerate-channel", "archive", "companycam-sync", "salinity-sweep"])
   # ingest (STT audio demux) and render both download full source MP4s to a memory-backed /tmp;
   # the largest Perkins video is ~2 GB, so they need real headroom or the container OOM-kills
   # (SIGKILL) mid-batch. article/social are lightweight (LLM/HTTP only).
   # knowify-sync: full-pull of all Knowify entities per run + DB upserts; 1Gi/30min is ample
   #   at single-tenant volume. knowify-keepwarm: token-only refresh, no data; minimal resources.
   job_memory = {
+    # salinity-sweep: a slice of USGS gauge readings per run, JSON only, no media.
+    salinity-sweep   = "512Mi"
     ingest           = "8Gi"
     render           = "8Gi"
     article          = "2Gi"
@@ -552,6 +554,9 @@ locals {
   # ingest may run a long-form batch STT (a caption-less 97-min podcast's batch takes ~40 min);
   # give it (and render) 2h so a legit long job finishes instead of being killed mid-transcript.
   job_timeout = {
+    # salinity-sweep: 1/24th of ~64 gauges with a 1s courtesy pause between chunks. Seconds of
+    # work; the timeout only has to survive a slow upstream.
+    salinity-sweep   = "900s"
     ingest           = "7200s"
     render           = "7200s"
     article          = "3600s"
@@ -612,6 +617,44 @@ resource "google_cloud_run_v2_job" "jobs" {
       template[0].template[0].volumes,
     ]
   }
+}
+
+# ---------------------------------------------------------------------------
+# 9c. Cloud Scheduler — salinity sweep, hourly
+#
+#     Jon, 2026-07-31: "poll all of the data from all sensors every day ... spread out the requests
+#     over the day and hit them all as a background service on continuous run." One schedule, not
+#     24: the job reads the UTC hour and takes slice (hour % 24) itself, so every gauge is
+#     refreshed once a day at a few requests an hour instead of one daily burst.
+#
+#     Readings feed the BUILD of the warranty tool's tidal layer, never a runtime lookup, so no
+#     browser ever calls USGS and nothing about a person is recorded.
+# ---------------------------------------------------------------------------
+
+resource "google_cloud_scheduler_job" "salinity_sweep" {
+  name        = "salinity-sweep"
+  region      = var.region
+  description = "Refresh 1/24 of the USGS salinity gauges (warranty tool tidal layer)"
+  schedule    = "17 * * * *" # :17 to stay clear of the other jobs' top-of-hour bunching
+  time_zone   = "Etc/UTC"
+
+  retry_config {
+    retry_count = 2
+  }
+
+  http_target {
+    http_method = "POST"
+    uri = format(
+      "https://%s-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/%s/jobs/%s:run",
+      var.region, var.project_id, google_cloud_run_v2_job.jobs["salinity-sweep"].name
+    )
+
+    oauth_token {
+      service_account_email = google_service_account.scheduler_sa.email
+    }
+  }
+
+  depends_on = [google_project_service.apis]
 }
 
 # ---------------------------------------------------------------------------

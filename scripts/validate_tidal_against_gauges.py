@@ -82,22 +82,26 @@ def readings(ids: list[str]) -> dict[str, float]:
 
 
 def _segments(path: Path, default_conf: str) -> list[tuple]:
+    """Segments as (ax, ay, cx, cy, confidence, station) — station is the gauge a `measured`
+    reach got its reading from, which is what makes hold-one-out possible without a rebuild."""
     d = json.loads(path.read_text())
     geoms = d["geometries"] if d.get("type") == "GeometryCollection" else [
         f["geometry"] for f in d["features"]]
     segs = []
     for g in geoms:
         conf = g.get("confidence", default_conf)
+        m_ = g.get("measurement") or {}
+        station, prior = m_.get("station"), m_.get("prior", "inferred")
         c = g["coordinates"]
         for i in range(len(c) - 1):
-            segs.append((c[i][0], c[i][1], c[i + 1][0], c[i + 1][1], conf))
+            segs.append((c[i][0], c[i][1], c[i + 1][0], c[i + 1][1], conf, station, prior))
     return segs
 
 
 def nearest(lat: float, lon: float, segs: list[tuple]) -> tuple[float, str]:
     kx, ky = 111320.0 * math.cos(math.radians(lat)), 110540.0
     best, conf = float("inf"), ""
-    for ax, ay, cx, cy, c in segs:
+    for ax, ay, cx, cy, c, _st, _pr in segs:
         if abs(ax - lon) > 0.05 or abs(ay - lat) > 0.05:
             continue
         px, py = (lon - ax) * kx, (lat - ay) * ky
@@ -113,13 +117,55 @@ def nearest(lat: float, lon: float, segs: list[tuple]) -> tuple[float, str]:
 def main() -> None:
     coast = _segments(ASSETS / "coastline.geojson", "coast")
     tidal = _segments(ASSETS / "tidal.geojson", "inferred")
-    tagged = [s for s in tidal if s[4] == "tagged"]
-    inferred = [s for s in tidal if s[4] == "inferred"]
+    tagged = [s for s in tidal if s[4] in ("measured", "tagged")]
+    inferred = [s for s in tidal if s[4] == "inferred"]   # "fresh" is deliberately in neither
 
     gs = gauges()
     vals = readings([g["id"] for g in gs])
     print(f"{len(gs)} USGS conductance gauges in the bbox, {len(vals)} reporting a live value\n")
 
+    # ---- HOLD-ONE-OUT ---------------------------------------------------------------------
+    # The layer is now BUILT from these gauges, so scoring it against them in-sample grades the
+    # model on its own training data — the same circularity the overhead analysis fell into. For
+    # each gauge we therefore ask: with THIS gauge's own reading removed, what would we have said?
+    print("HOLD-ONE-OUT — each gauge scored with its own reading excluded\n")
+    ho = {"right": 0, "wrong": 0, "by": {}}
+    ho_misses = []
+    for g in gs:
+        v = vals.get(g["id"])
+        if v is None:
+            continue
+        measured_salt = v >= FRESH_MAX
+        # Excluding a gauge must REVERT its reaches to what we would have believed without it —
+        # deleting them understates our knowledge and makes the score look worse than it is.
+        others = [(s[0], s[1], s[2], s[3], (s[6] if s[5] == g["id"] else s[4]), s[5], s[6])
+                  for s in tidal]
+        oth_tag = [s for s in others if s[4] in ("measured", "tagged")]
+        oth_inf = [s for s in others if s[4] == "inferred"]
+        dc, _ = nearest(g["lat"], g["lon"], coast)
+        dtag, _ = nearest(g["lat"], g["lon"], oth_tag)
+        dinf, _ = nearest(g["lat"], g["lon"], oth_inf)
+        says_salt = dc <= ON_WATER_M or dtag <= ON_WATER_M
+        bucket = ("coast" if dc <= ON_WATER_M else "measured/tagged" if dtag <= ON_WATER_M
+                  else "inferred" if dinf <= ON_WATER_M else "none")
+        ho["by"].setdefault(bucket, [0, 0])[0 if measured_salt else 1] += 1
+        if says_salt == measured_salt:
+            ho["right"] += 1
+        else:
+            ho["wrong"] += 1
+            ho_misses.append((g, v, bucket))
+    tot_ho = ho["right"] + ho["wrong"]
+    print(f"{'without its own gauge':<22}{'reads SALT':>12}{'reads FRESH':>13}")
+    for k, (s_, f_) in sorted(ho["by"].items()):
+        print(f"{k:<22}{s_:>12}{f_:>13}")
+    print(f"\nHELD-OUT AGREEMENT: {ho['right']}/{tot_ho} = {100 * ho['right'] / tot_ho:.0f}%")
+    if ho_misses:
+        print("  still wrong without their own reading:")
+        for g, v, b in sorted(ho_misses, key=lambda m: -m[1])[:8]:
+            print(f"    {g['name'][:46]:<48}{v:>9,.0f} uS/cm   we would say: {b}")
+
+    print("\n" + "=" * 78)
+    print("IN-SAMPLE (every gauge's own reading available — inflated, shown for contrast)\n")
     stats = {"tagged": [0, 0], "inferred": [0, 0], "coast": [0, 0], "none": [0, 0]}
     misses = []
     for g in gs:
