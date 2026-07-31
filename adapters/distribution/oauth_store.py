@@ -27,6 +27,7 @@ IAM note (TRD-F5 §4.3):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -36,6 +37,26 @@ log = logging.getLogger(__name__)
 
 #: GCP secret ids accept only [A-Za-z0-9_-]; anything else in an account id folds to '-'.
 _SAFE_SECRET_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _safe_account(account_id: str) -> str:
+    """Map an account id into the GCP secret charset WITHOUT letting two accounts collide.
+
+    Plain character folding is lossy: `a/b` and `a-b` both become `a-b`, and
+    `books@perkins.net`, `books.perkins.net` and `books-perkins-net` all become the same string.
+    Two distinct accounts sharing one secret is the entire defect this scoping exists to remove,
+    so re-introducing it in the sanitiser would be a quiet joke at our own expense. Anything that
+    actually needed folding therefore carries a short digest of the ORIGINAL id, which makes the
+    mapping injective. Ids that are already safe — `jupiter`, `miami`, `default` — pass through
+    untouched and keep their readable secret names.
+
+    Raised independently by the architect review and by gpt-oss-120b, 2026-07-31.
+    """
+    acct = account_id or SINGLE_ACCOUNT
+    safe = _SAFE_SECRET_CHARS.sub("-", acct)
+    if safe != acct:
+        safe = f"{safe[:64]}-{hashlib.sha256(acct.encode('utf-8')).hexdigest()[:12]}"
+    return safe
 
 #: The account id for a platform that has exactly one account. The OAuth callback, the credential
 #: reader and the token-rotation writer MUST agree on this string — they previously used
@@ -106,10 +127,14 @@ OAuthStore = MockOAuthStore
 class SecretManagerOAuthStore:
     """Production OAuth token store backed by GCP Secret Manager.
 
-    Secret paths (TRD-F5 §4.1):
-      GCP secret name: tenants-{tenant_id}-{platform}-{key}
-      e.g. tenants-1-youtube-access_token
-           tenants-2-instagram-refresh_token
+    Secret paths (TRD-F5 §4.1, account-scoped since 2026-07-31):
+      GCP secret name: tenants-{tenant_id}-{platform}-{account_id}-{key}
+      e.g. tenants-1-youtube-default-access_token
+           tenants-1-quickbooks-jupiter-access_token
+           tenants-1-quickbooks-miami-access_token     <- a DIFFERENT secret, which is the point
+
+    The pre-2026-07-31 unscoped id is still read for single-account platforms only; see
+    _access_secret. TRD-F5 §4.1 in docs/ still shows the old shape.
 
     Thread-safe: Secret Manager is the source of truth; no shared in-process state.
 
@@ -143,8 +168,7 @@ class SecretManagerOAuthStore:
         GCP secret ids allow only [A-Za-z0-9_-], so anything else in an account id is folded to '-'.
         An empty account id normalises to 'default' rather than producing a '--' path.
         """
-        acct = _SAFE_SECRET_CHARS.sub("-", account_id or "default")
-        return f"tenants-{self._tenant_id}-{platform}-{acct}-{key}"
+        return f"tenants-{self._tenant_id}-{platform}-{_safe_account(account_id)}-{key}"
 
     def _legacy_secret_id(self, platform: str, key: str) -> str:
         """The pre-2026-07-31 unscoped id, still READ so live tokens survive the change.
@@ -250,13 +274,27 @@ class SecretManagerOAuthStore:
         a permission or network error still raises, because silently treating "I could not read
         it" as "it is not there" is how a live integration reports itself unconfigured.
 
+        ⚠️ THE FALLBACK IS GATED ON SINGLE_ACCOUNT, and that gate is the whole point.
+
+        An unscoped legacy secret can only ever have belonged to a platform with ONE account —
+        that is the only situation the old path could represent. Letting a real account id fall
+        back to it re-opens the exact defect this scoping was written to close: ask for the
+        `naples` QuickBooks token, miss (no scoped secret written yet), and inherit
+        `tenants-1-quickbooks-access_token` — which `jupiter`, `miami` and the fourth branch would
+        also inherit. Four companies, one token, branch A transacting against branch B's books.
+        Caught in review, and it is worse than the original bug because it looks fixed.
+
+        For a real account id, absent means absent.
+
         Raises:
-            KeyError: if neither the scoped nor the legacy secret exists.
+            KeyError: if neither the scoped nor (where permitted) the legacy secret exists.
         """
         client = self._get_client()
-        for name in (self._secret_name(platform, account_id, key),
-                     f"projects/{self._project}/secrets/"
-                     f"{self._legacy_secret_id(platform, key)}/versions/latest"):
+        names = [self._secret_name(platform, account_id, key)]
+        if (account_id or SINGLE_ACCOUNT) == SINGLE_ACCOUNT:
+            names.append(f"projects/{self._project}/secrets/"
+                         f"{self._legacy_secret_id(platform, key)}/versions/latest")
+        for name in names:
             try:
                 version = client.access_secret_version(name=name)
                 return version.payload.data.decode()

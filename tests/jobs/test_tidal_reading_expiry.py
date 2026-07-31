@@ -60,3 +60,41 @@ def test_missing_or_unparseable_timestamps_expire_closed():
     """
     for bad in (None, "", "not-a-date", "2026-13-45T99:99:99"):
         assert _reading_expired(bad, now=NOW) is True, bad
+
+
+def test_the_builder_and_the_fetcher_agree_on_the_window():
+    """Two files, two constants, one fact — and the gap between them is a false VOID.
+
+    The fetcher marks a gauge `stale` when its only observation prunes out of WINDOW_DAYS. The
+    builder independently re-derives expiry from `latest_at` against MAX_READING_AGE_DAYS and
+    never reads `stale`. That is safe only while the two numbers match.
+
+    Raise MAX_READING_AGE_DAYS to 60 and every stale record — undated, ancient, carrying a single
+    spot reading — becomes a verdict-moving `measured` citation again. That is the 5,415-day
+    McCormick Creek failure returning through a different door, and it would reach a homeowner as
+    "measured at 42,300 uS/cm". Flagged by the architect review, 2026-07-31.
+    """
+    from scripts.fetch_salinity_readings import WINDOW_DAYS
+
+    assert float(MAX_READING_AGE_DAYS) == float(WINDOW_DAYS), (
+        f"build_tidal_layer.MAX_READING_AGE_DAYS={MAX_READING_AGE_DAYS} but "
+        f"fetch_salinity_readings.WINDOW_DAYS={WINDOW_DAYS}. If the builder's window is the LONGER "
+        "of the two, gauges the fetcher gave up on are resurrected as measured evidence."
+    )
+
+
+def test_a_record_the_fetcher_marked_stale_is_ignored_by_the_builder():
+    """Cross the boundary the other two test files each stop at."""
+    from datetime import datetime as _dt
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
+
+    from scripts.fetch_salinity_readings import WINDOW_DAYS
+
+    ancient = (_dt.now(_tz.utc) - _td(days=WINDOW_DAYS + 10)).isoformat()
+    stale_record = {"id": "0230", "name": "DEAD GAUGE", "lat": 27.5, "lon": -82.3,
+                    "median_us_cm": 42300.0, "latest_at": ancient, "stale": True}
+
+    assert _reading_expired(stale_record["latest_at"]) is True, (
+        "the builder must reject exactly what the fetcher gave up on"
+    )

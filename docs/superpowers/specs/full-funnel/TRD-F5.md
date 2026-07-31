@@ -273,12 +273,17 @@ class SecretManagerOAuthStore:
         self._client = sm_client or secretmanager.SecretManagerServiceClient()
         self._project = settings.GCP_PROJECT
 
-    def _secret_name(self, platform: str, key: str) -> str:
+    # ⚠️ SUPERSEDED 2026-07-31 — this sketch drops account_id, and the shipped code did too.
+    # Every account on a platform therefore resolved to ONE secret, which for QuickBooks meant
+    # four branch companies sharing a token. The live shape is account-scoped:
+    #     tenants-{tenant_id}-{platform}-{account_id}-{key}
+    # See adapters/distribution/oauth_store.py — that file is the source of truth, not this.
+    def _secret_name(self, platform: str, account_id: str, key: str) -> str:
         return (f"projects/{self._project}/secrets/"
-                f"tenants-{self._tenant_id}-{platform}-{key}/versions/latest")
+                f"tenants-{self._tenant_id}-{platform}-{account_id}-{key}/versions/latest")
 
     def access_token(self, platform: str, account_id: str) -> str:
-        return self._access_secret(platform, "access_token")
+        return self._access_secret(platform, account_id, "access_token")
 
     # ... put() creates/updates secret versions; get() reads + checks expires_at
 ```

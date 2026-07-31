@@ -114,16 +114,24 @@ def main() -> None:
     # Measure the TAGGED layer specifically. Asking for the globally nearest segment is vacuous:
     # inferred reaches outnumber tagged 3,480 to 159, so the nearest is almost always inferred and
     # the pin passes while verdict-moving tagged water sits just behind it.
-    tagged_only = [s for s in tidal if s[4] == "tagged"]
-    print(f"\n{len(tagged_only):,} tagged segments of {len(tidal):,} — pins measure tagged ONLY\n")
+    # VERDICT-MOVING classes, not just `tagged`. checker.js treats `measured` and `tagged` alike,
+    # and since 2026-07-31 neither is clipped by REACH_MI — evidenced reaches are kept however far
+    # inland they run. A gate that watched `tagged` alone would have let an unclipped `measured`
+    # reach produce exactly the inland false VOID these pins exist to catch. Flagged by the
+    # architect review the same day the unclipping shipped.
+    tagged_only = [s for s in tidal if s[4] in ("tagged", "measured")]
+    n_tag = sum(1 for s in tidal if s[4] == "tagged")
+    n_meas = sum(1 for s in tidal if s[4] == "measured")
+    print(f"\n{len(tagged_only):,} verdict-moving segments of {len(tidal):,} "
+          f"({n_tag:,} tagged + {n_meas:,} measured) — pins measure THESE only\n")
     for (lat, lon), why in NEVER_TAGGED_NEAR:
         dt, _ = nearest(lat, lon, tagged_only)
         ft = dt * 3.28084
         verdict = "ok" if ft > 5280 else "FAIL"
         print(f"[{verdict}] never-tagged pin: {why}\n"
-              f"        nearest TAGGED water {ft:,.0f} ft")
+              f"        nearest VERDICT-MOVING water {ft:,.0f} ft")
         if verdict == "FAIL":
-            failures.append(f"{why}: TAGGED water {ft:,.0f} ft away would move a verdict")
+            failures.append(f"{why}: verdict-moving water {ft:,.0f} ft away would move a verdict")
 
     dc_far, _ = nearest(26.1876, -81.6431, coast)
     print(f"\n(Golden Gate Estates is {dc_far * 3.28084 / 5280:.1f} mi from open salt water)")

@@ -32,10 +32,16 @@ its whole length, so a 43-mile canal carried "confirmed salt water" 20 miles inl
 Gate Estates, Naples that its warranty was void — from fresh water. A false "void" tells a
 homeowner their warranty is dead when it is not, so only an explicit OSM tag earns that weight.
 
-INFERRED geometry within REACH_MI of the coastline is kept; evidenced reaches (a gauge reading or
-an explicit OSM tidal tag) are kept wherever they are. The clip measures distance to the COASTLINE
-while the 1-mile provision measures ADDRESS-to-water — different quantities — so clipping evidence
-by it hid brackish water that homeowners live beside, notably the tidal St Johns 14 mi inland.
+Geometry within REACH_MI of the coastline is kept. ONLY `measured` reaches — those anchored to a
+real gauge reading, and bounded by PROPAGATE_MI along the channel — are exempt from that clip,
+because the clip measures distance to the COASTLINE while the 1-mile provision measures
+ADDRESS-to-water. Different quantities, and conflating them hid brackish water homeowners live
+beside: the tidal St Johns at Shands Bridge reads 4,300 uS/cm 24 mi from the ocean.
+
+⚠️ `tagged` is NOT exempt, and that is deliberate. OSM `tidal=yes` describes WATER LEVEL, not
+salinity — the St Johns' tidal signal runs ~160 mi inland — so exempting it emitted freshwater
+Dunns Creek, which drains Crescent Lake, as verdict-moving geometry 25 mi inland. Only a gauge
+distinguishes tidal-level from salt.
 
 Usage:
     .venv/bin/python scripts/build_tidal_layer.py --fetch     # pull from Overpass into a cache
@@ -75,6 +81,9 @@ GAUGE_SNAP_M = 250.0     # a gauge further than this from mapped water is not on
 MAX_READING_AGE_DAYS = 30.0  # older than this is history, not a measurement — see _reading_expired
 PROPAGATE_MI = 2.0       # how far a reading is evidence ALONG the channel, barriers aside
 FRESH_MAX_US_CM = 1500.0 # ~250 mg/L chloride — the same line SFWMD's isochlor draws
+#: Beyond the coastal band, conductance below this is treated as mineral content rather than
+#: marine intrusion, so it raises a caveat instead of voiding a warranty. 2x the fresh line.
+INLAND_SALT_MIN_US_CM = 3000.0
 
 COAST_SNAP_M = 60.0      # a waterway mouth this close to the coastline counts as touching it
 BARRIER_SNAP_M = 25.0    # structures are often drawn offset from the canal, sharing no node
@@ -249,7 +258,11 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
 
     cap_m = PROPAGATE_MI * 1609.34
     best: dict[str, dict] = {}
-    snapped = offshore = expired = 0
+    snapped = offshore = expired = marginal_inland = 0
+    # Which cells sit inside the coastal band — used to decide whether a MARGINAL reading is
+    # plausibly marine or is just an inland mineral spring. See the note at the salt test.
+    _coast_grid, _ = _coast_index()
+    in_reach_coast = _reach_cells(_coast_grid, REACH_MI * 1609.34)
     for g in gauges.values():
         if g.get("lat") is None:
             continue
@@ -284,7 +297,28 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
             continue
         snapped += 1
         seed_d, seed_way, seed_node = near
-        salt = float(g["median_us_cm"]) >= FRESH_MAX_US_CM
+        # Specific conductance measures DISSOLVED MINERALS, not chloride. The 1,500 uS/cm line is
+        # borrowed from SFWMD's 250 mg/L isochlor, which is a South Florida COASTAL AQUIFER
+        # standard. Far inland the same number stops meaning "marine intrusion": Blue Spring at
+        # Orange City is a first-magnitude FRESHWATER artesian spring — the manatee refuge — and
+        # reads 1,620, clearing the threshold by 8% on aquifer mineral content 35 mi from the sea.
+        # Warm Mineral Springs reads 28,600 and is named for the reason it does.
+        #
+        # So beyond the coastal band a MARGINAL reading is not allowed to void a warranty; it
+        # falls back to `inferred`, which still raises the caveat. A decisive reading (Alafia
+        # 21,600, Spring Creek 47,300, St Johns at Shands 4,300) still counts, because those are
+        # genuinely brackish and the tool exists to catch them.
+        #
+        # ponytail: crude proxy — inland margin, not ion chemistry. The real fix is a
+        # chloride-specific parameter (USGS 00940) instead of conductance; do that if a spring
+        # ever produces a wrong answer a customer notices.
+        us_cm = float(g["median_us_cm"])
+        salt = us_cm >= FRESH_MAX_US_CM
+        if salt and us_cm < INLAND_SALT_MIN_US_CM:
+            gx, gy = int(glon / 0.01), int(glat / 0.01)
+            if (gx, gy) not in in_reach_coast:
+                salt = False
+                marginal_inland += 1
         # BFS over reaches, carrying channel distance from the gauge
         queue = deque([(seed_way, seed_d)])
         seen = {seed_way: seed_d}
@@ -313,6 +347,10 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
     if expired:
         print(f"gauges: {expired} IGNORED — last reading older than {MAX_READING_AGE_DAYS:.0f}d "
               f"(a stale reading is history, not evidence about the water today)", flush=True)
+    if marginal_inland:
+        print(f"gauges: {marginal_inland} marginal inland readings held to a CAVEAT "
+              f"(<{INLAND_SALT_MIN_US_CM:.0f} uS/cm beyond the coastal band — mineral springs read "
+              f"salt on conductance)", flush=True)
     print(f"gauges: {snapped} snapped to a reach, {offshore} not on mapped water; "
           f"{len(best)} reaches carry a measurement ({salt_n} salt, {len(best) - salt_n} fresh)",
           flush=True)
@@ -386,9 +424,18 @@ def build() -> None:
     # --- seeds -------------------------------------------------------------------------------
     grid, coast_pts = _coast_index()
     tagged, touching = set(), set()
+    rings = 0
     for w in ways:
         t = w["tags"]
         if t.get("tidal") == "yes" or t.get("salt") == "yes":
+            # A CLOSED ring is a water POLYGON (a lake or pond outline), not a channel. Splitting
+            # it at barriers and flooding it through the channel BFS is meaningless — a lake has
+            # no upstream — and its whole outline would be emitted as verdict-moving geometry.
+            # 78 of the tagged ways are rings, Dunns Creek's freshwater Crescent Lake among them.
+            # Treating them as channels is how a lake ends up voiding a warranty.
+            if len(w["nodes"]) > 2 and w["nodes"][0] == w["nodes"][-1]:
+                rings += 1
+                continue
             tagged.add(w["id"])
             continue
         for nid in (w["nodes"][0], w["nodes"][-1]):
@@ -396,8 +443,8 @@ def build() -> None:
             if p and _near_coast(p[0], p[1], grid, coast_pts, COAST_SNAP_M):
                 touching.add(w["id"])
                 break
-    print(f"seeds: {len(tagged)} tagged tidal/salt, {len(touching)} touching the coastline",
-          flush=True)
+    print(f"seeds: {len(tagged)} tagged tidal/salt, {len(touching)} touching the coastline, "
+          f"{rings} closed rings (water polygons) excluded", flush=True)
 
     # --- spread through shared nodes, stopping at barriers ------------------------------------
     by_node: dict[int, list] = defaultdict(list)
@@ -471,12 +518,25 @@ def build() -> None:
         # beyond the 3-mile line, including St Lucie at Speedy Point (30,700 uS/cm, 3.1 mi), the
         # Alafia at Riverview (21,600, 4.3 mi) and the Hillsborough at I-275 (14,000, 4.6 mi).
         #
-        # Widening REACH_MI for everything would multiply the asset by carrying thousands more
-        # INFERRED inland ditches, which are the reaches most likely to be wrong. So the clip now
-        # applies only to `inferred`: anything we have real evidence for — a gauge reading or an
-        # explicit OSM tidal tag — is kept wherever it is. That is a few hundred reaches, and they
-        # are exactly the ones allowed to move a verdict.
-        evidenced = conf in ("measured", "tagged", "fresh")
+        # ⚠️ ONLY a gauge reading earns the exemption. `tagged` MUST STILL BE CLIPPED.
+        #
+        # The first version of this exempted `tagged` too, and that shipped a false VOID. OSM
+        # `tidal=yes` is a statement about WATER LEVEL, not about salinity: the St Johns' tidal
+        # signal propagates ~160 miles inland, so Dunns Creek — which drains FRESHWATER Crescent
+        # Lake near Welaka — carries `tidal=yes` and was emitted as verdict-moving geometry 25 mi
+        # inland. A homeowner there would have been told their metal roof warranty is void, from
+        # fresh water. That is the Golden Gate Estates failure in this module's own docstring,
+        # recreated by the fix for a different problem. Caught by review the same day.
+        #
+        # This repo already held the disproof: the header note records Upstream Broad River as
+        # OSM-tagged tidal and MEASURING 460 uS/cm — fresh. And the gauge override cannot save a
+        # tagged reach, because by construction every reach with a gauge is promoted out of
+        # `tagged` into `measured`/`fresh` first. So nothing bounds a tagged reach but this clip.
+        #
+        # `measured` is different in kind: it is anchored to a real reading and propagates at most
+        # PROPAGATE_MI along the channel, so it cannot run away inland. `fresh` only ever REMOVES
+        # a warning, so keeping it far inland is the safe direction.
+        evidenced = conf in ("measured", "fresh")
         if evidenced:
             parts = [coords] if len(coords) >= 2 else []
         else:

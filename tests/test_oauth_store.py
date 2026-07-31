@@ -276,3 +276,85 @@ def test_empty_account_id_normalises_rather_than_double_hyphen():
     store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
 
     assert "tenants-1-youtube-default-access_token" in store._secret_name("youtube", "", "access_token")
+
+
+def test_a_real_account_must_not_inherit_the_legacy_shared_secret():
+    """Review catch: the legacy fallback re-opened the very collision scoping closed.
+
+    An unscoped secret can only ever have belonged to a single-account platform. Letting a real
+    account id fall back to it means asking for the `naples` QuickBooks token, missing, and
+    inheriting the one `jupiter` and `miami` would also inherit — four companies, one token.
+    Worse than the original bug, because it looks fixed.
+    """
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    legacy = MagicMock()
+    legacy.payload.data = b"the_shared_quickbooks_token"
+
+    def only_legacy(name):
+        if "quickbooks-access_token" in name and "naples" not in name:
+            return legacy
+        raise _FakeNotFound("no scoped secret for this branch yet")
+
+    sm = MagicMock()
+    sm.access_secret_version.side_effect = only_legacy
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    assert store.get("quickbooks", "naples") is None, (
+        "a branch with no scoped secret must read as UNCONFIGURED, never inherit a shared token"
+    )
+    # and it never even asked for the legacy path
+    asked = [str(c) for c in sm.access_secret_version.call_args_list]
+    assert all("naples" in a for a in asked), asked
+
+
+def test_the_single_account_default_still_reaches_the_legacy_secret():
+    """The migration shim must keep working for the platforms it was written for."""
+    from adapters.distribution.oauth_store import SINGLE_ACCOUNT, SecretManagerOAuthStore
+
+    legacy = MagicMock()
+    legacy.payload.data = b"legacy_tok"
+
+    def only_legacy(name):
+        if name.endswith("tenants-1-youtube-access_token/versions/latest"):
+            return legacy
+        raise _FakeNotFound("not scoped yet")
+
+    sm = MagicMock()
+    sm.access_secret_version.side_effect = only_legacy
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+
+    assert store.access_token("youtube", SINGLE_ACCOUNT) == "legacy_tok"
+    assert store.access_token("youtube", "") == "legacy_tok", "empty normalises to SINGLE_ACCOUNT"
+
+
+def test_account_id_sanitisation_is_injective():
+    """Folding to the GCP charset must not re-create the collision scoping removed.
+
+    `a/b` and `a-b` both fold to `a-b`; so do books@perkins.net / books.perkins.net /
+    books-perkins-net. Two accounts sharing a secret is the whole defect. Raised independently by
+    the architect review and gpt-oss-120b.
+    """
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+    colliding = ["a/b", "a-b", "a.b", "a b",
+                 "books@perkins.net", "books.perkins.net", "books-perkins-net"]
+
+    ids = [store._secret_name("quickbooks", a, "access_token") for a in colliding]
+    assert len(set(ids)) == len(colliding), f"two accounts share a secret: {ids}"
+    for name in ids:
+        secret_id = name.split("/secrets/")[1].split("/versions")[0]
+        assert re.fullmatch(r"[A-Za-z0-9_-]+", secret_id), secret_id
+
+
+def test_already_safe_account_ids_keep_readable_secret_names():
+    """The branch names we actually use must not turn into hashes."""
+    from adapters.distribution.oauth_store import SecretManagerOAuthStore
+
+    sm = MagicMock()
+    store = SecretManagerOAuthStore(tenant_id=1, sm_client=sm, project="proj")
+    for branch in ("jupiter", "miami", "naples", "default"):
+        assert f"quickbooks-{branch}-access_token" in store._secret_name(
+            "quickbooks", branch, "access_token")
