@@ -221,6 +221,13 @@ character-folding account ids was not injective (`a/b` and `a-b` collide); now d
 safely gated, and called the `fresh` branch dead code when `build_tidal_layer` sets exactly that
 value. Local review is a second opinion, never a gate.
 
+**After the review, two more shipped:** `3821701` — the article image gallery could not contain a
+drone shot. YouTube auto-extracts three frames at 25/50/75% of run time, so the opening and closing
+aerials Tim described were never candidates; `drone_timecodes()` names them for the extract-frame
+route and the vision prompt no longer lists "the speaker" as an equal subject to the roof.
+`f04d27b` — the profit floor now states that it also raised commission, with the arithmetic for
+both readings of Tim's $2,500 (#422).
+
 ### Two things the review surfaced that are NOT fixed
 
 1. **`api-run-sa` cannot create a secret.** It holds `secretAccessor`, `secretVersionAdder`,
