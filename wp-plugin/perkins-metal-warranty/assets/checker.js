@@ -85,6 +85,11 @@
 			}
 			TIDAL_SEGS = tidal.tagged;
 			TIDAL_INF = tidal.inferred;
+		}).catch(function (e) {
+			// Do not latch a rejection: one flaky fetch would otherwise break the tool for the
+			// rest of the page view, with every later click replaying the same error.
+			dataReady = null;
+			throw e;
 		});
 		return dataReady;
 	}

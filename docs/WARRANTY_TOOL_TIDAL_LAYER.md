@@ -1,7 +1,7 @@
 # Metal-roof warranty tool — the tidal/brackish layer
 
 **Shipped 2026-07-30.** Tool: `wp-plugin/perkins-metal-warranty/`, live on staging at
-<https://1228404.us6.myftpupload.com/metal-roofing-warranty/> (plugin **1.1.1**).
+<https://1228404.us6.myftpupload.com/metal-roofing-warranty/> (plugin **1.1.2**).
 
 ## Why it exists
 
@@ -103,6 +103,39 @@ PYTHONPATH=. .venv/bin/python scripts/wp_install_plugin.py /path/to/perkins-meta
   forever. `checker.js` now handles that and has a 12 s backstop.
 - **Nominatim does not know every address** (the Boynton one fails); Google's geocoder does. The
   offline checker uses Nominatim, so a miss there is a geocoder gap, not a layer gap.
+
+## ⚠️ The capability gap this currently has — read before telling Tim it's done
+
+**OSM does not tag South Florida's tidal rivers.** Measured across the named rivers:
+
+| river | OSM ways | tagged `tidal`/`salt` |
+|---|---|---|
+| Miami River | 4 | **0** |
+| New River | 33 | **0** |
+| Caloosahatchee | 19 | **0** |
+| Hillsboro | 13 | **0** |
+| Loxahatchee | 17 | 1 |
+
+The 159 tagged reaches are Everglades backcountry creeks, Keys development canals, and 108
+unnamed. Checked across 30 populated places in all three branches' territory, **the `tagged` layer
+is decisive in 0 of them** — every populated address behaves as the pre-feature tool did, plus a
+caveat. New River downtown still reads VOID, but from `coastline.geojson`, which already contained
+the river mouth.
+
+So the CRITICAL above was closed by *narrowing the capability*, not by fixing the label, and Tim's
+2026-07-19 complaint is **deferred, not done** for the Miami River class of address. That is the
+right safety trade — a false VOID is far worse than a missed one, and the caveat plus the "if
+tidal" column is honest — but it must not be reported as finished.
+
+Two ways to close it properly, cheapest first:
+
+1. **A curated allowlist** of genuinely tidal named reaches with their upstream limit — Miami River
+   to the S-25B salinity dam, New River to the forks, Loxahatchee to Lainhart Dam, Caloosahatchee
+   to the Franklin Lock, Hillsboro to the ICW. ~10 rows, verifiable by Tim, and it matches how the
+   manufacturer provisions are actually written.
+2. **Bound the tagged label by distance along the channel** from the coastal contact node — tagged
+   for the first N miles, inferred beyond. Generalises past the named rivers; needs the BFS to
+   carry cumulative channel distance.
 
 ## Not done
 

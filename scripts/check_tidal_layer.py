@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sanity-check the tidal layer against known addresses before it ships.
 
-The connectivity inference is doing most of the work (9,933 inferred reaches against 813 tagged),
+The connectivity inference does most of the work (3,480 inferred segments against 159 tagged),
 and a FALSE positive here tells a homeowner their warranty is void when it is not. So the layer
 gets checked against addresses whose answer we can reason about independently, not just eyeballed.
 
@@ -111,12 +111,17 @@ def main() -> None:
 
     # --- assertions: this script must be able to FAIL a build, not just print for eyeballing ---
     failures = []
+    # Measure the TAGGED layer specifically. Asking for the globally nearest segment is vacuous:
+    # inferred reaches outnumber tagged 3,480 to 159, so the nearest is almost always inferred and
+    # the pin passes while verdict-moving tagged water sits just behind it.
+    tagged_only = [s for s in tidal if s[4] == "tagged"]
+    print(f"\n{len(tagged_only):,} tagged segments of {len(tidal):,} — pins measure tagged ONLY\n")
     for (lat, lon), why in NEVER_TAGGED_NEAR:
-        dt, conf = nearest(lat, lon, tidal)
+        dt, _ = nearest(lat, lon, tagged_only)
         ft = dt * 3.28084
-        verdict = "ok" if (conf != "tagged" or ft > 5280) else "FAIL"
+        verdict = "ok" if ft > 5280 else "FAIL"
         print(f"[{verdict}] never-tagged pin: {why}\n"
-              f"        nearest tidal {ft:,.0f} ft, confidence={conf or '—'}")
+              f"        nearest TAGGED water {ft:,.0f} ft")
         if verdict == "FAIL":
             failures.append(f"{why}: TAGGED water {ft:,.0f} ft away would move a verdict")
 

@@ -261,9 +261,9 @@ def build() -> None:
     # coastline seeds the fill but is itself INFERRED: touching the water at one end says nothing
     # about the other end, and labelling a 43-mile canal "confirmed" from one coastal node is
     # exactly how Golden Gate Estates got told its warranty was void by fresh water.
-    confidence = {wid: "tagged" for wid in tagged}
+    confidence = {wid: "tagged" for wid in sorted(tagged)}
     queue = deque(confidence)
-    for wid in touching:
+    for wid in sorted(touching):
         if wid not in confidence:
             confidence[wid] = "inferred"
             queue.append(wid)
@@ -313,6 +313,9 @@ def build() -> None:
                      "an inferred reach into a hard 'void' verdict."),
            "_coverage_bbox": BBOX,
            "_built_by": "scripts/build_tidal_layer.py", "_source": "OpenStreetMap via Overpass"}
+    # Sorted so a rebuild is byte-identical: without it the asset reshuffles every run and a
+    # 0.93 MB diff hides whether anything actually changed.
+    geoms.sort(key=lambda g: (g["confidence"], g["coordinates"]))
     path = ASSETS / "tidal.geojson"
     path.write_text(json.dumps(out, separators=(",", ":")))
     print(f"emitted {kept} geometries ({clipped} reaches clipped at {REACH_MI} mi) -> "
