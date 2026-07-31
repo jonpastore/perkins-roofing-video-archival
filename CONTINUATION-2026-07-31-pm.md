@@ -201,6 +201,41 @@ where it was fitted.
 `perkins-deploy-sa` cannot enable it or list billing accounts. The Terraform resource is written
 and waits only on `var.billing_account`. Needs console access with billing rights.
 
+### The review caught a false VOID I had just shipped — `b73e7ee`
+
+`critic` + `architect` (opus) and gpt-oss-120b + qwen3.6 reviewed the run. **The critic found a
+live customer-facing defect in my own fix.** Exempting `tagged` from the clip put freshwater Dunns
+Creek into the verdict-moving set 25 mi inland, because **OSM `tidal=yes` means water LEVEL, not
+salinity** — the St Johns' tidal signal runs ~160 mi inland. That is the Golden Gate Estates
+failure recreated one paragraph after diagnosing the same category error on a different axis. Now
+only `measured` is exempt. Also excluded 78 closed rings (lake polygons flooded through a channel
+BFS) and held marginal far-inland readings to a caveat (Blue Spring is a *freshwater* artesian
+spring reading 1,620).
+
+The architect independently found that my legacy secret fallback **re-opened the QuickBooks
+collision the commit existed to close** — it fired for every platform, so a branch missing its
+scoped secret inherited the shared one. Gated on `SINGLE_ACCOUNT`. gpt-oss separately caught that
+character-folding account ids was not injective (`a/b` and `a-b` collide); now digest-suffixed.
+
+⚠️ **qwen3.6 passed all three areas as "Correct" and was wrong twice** — it called the fallback
+safely gated, and called the `fresh` branch dead code when `build_tidal_layer` sets exactly that
+value. Local review is a second opinion, never a gate.
+
+### Two things the review surfaced that are NOT fixed
+
+1. **`api-run-sa` cannot create a secret.** It holds `secretAccessor`, `secretVersionAdder`,
+   `viewer` — nothing granting `secretmanager.secrets.create`. `put()` calls `create_secret` for
+   any absent secret, so the OAuth connect flow 502s and the "platforms migrate as they
+   re-authenticate" story cannot complete. Pre-existing (no `tenants-*` secret has ever existed;
+   live social tokens are flat project secrets read by `_from_env`). Fixing means an IAM grant in
+   Terraform — a security-scope decision, deliberately left for Jon rather than self-approved.
+
+2. **Banking is correct and currently inert.** Verified against the 13:18 production run: `stale=2`
+   proves the new image is live, `history=0` because every latest-only gauge takes the stale
+   early-return — and the latest-only set and the stale set are *byte-identical*. All 65 are
+   dormant stations, so there is nothing to bank until one resumes. The feature is tested and
+   right; it has no input. The email to Tim says we do NOT bank yet, so nothing false went out.
+
 ---
 
 ## §5 — GOTCHAS EARNED TODAY
