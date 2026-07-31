@@ -192,6 +192,10 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
     project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
     if project:
         try:
+            # Running a script inside scripts/ puts THAT directory on sys.path, not the repo root,
+            # so the package needs adding before it can be imported.
+            if str(ROOT) not in sys.path:
+                sys.path.insert(0, str(ROOT))
             from adapters.storage import download_file, object_exists
             key = "warranty-tool/salinity-readings.json"
             if object_exists(f"{project}-media", key):

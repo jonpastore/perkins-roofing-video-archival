@@ -61,7 +61,7 @@ def run(slices: int = 24) -> dict:
     sys.argv = ["fetch_salinity_readings", "--slice", f"{index}/{slices}"]
     fsr.main()
 
-    upload_file(bucket, GCS_KEY, str(fsr.CACHE), content_type="application/json")
+    upload_file(str(fsr.CACHE), bucket, GCS_KEY, content_type="application/json")
     cached = json.loads(fsr.CACHE.read_text()).get("gauges", {})
     salt = sum(1 for g in cached.values()
                if float(g["median_us_cm"]) >= fsr.FRESH_MAX) if cached else 0
