@@ -8,7 +8,7 @@
  *              perkins-setback.web.app tool; the coastline + warranty-provision data ship as plugin
  *              assets. Tidal/brackish canals are handled by an on-tool advisory (manufacturers treat
  *              them as salt water regardless of the mapped distance).
- * Version:     1.0.0
+ * Version:     1.1.0
  * Author:      DeGenito
  *
  * SETUP (one manual step): the geocoder uses the Google Maps JavaScript API. Its browser key is
@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PERKINS_MWC_VERSION', '1.0.0' );
+define( 'PERKINS_MWC_VERSION', '1.1.0' );
 define( 'PERKINS_MWC_URL', plugin_dir_url( __FILE__ ) );
 
 // Default browser key (referrer-restricted). Overridable in Settings so a per-site key can be used
