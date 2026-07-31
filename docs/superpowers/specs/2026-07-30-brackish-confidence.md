@@ -53,32 +53,34 @@ Prefer a median of recent readings over a single instantaneous value.
 gauges (fit on n−1, score the held-out one) is the honest version — otherwise we are scoring the
 model on its own training data, which is the same circularity trap the overhead analysis fell into.
 
-## Part 2 — Low-confidence triggers research, and the answer is kept
+## Part 2 — Sweep every sensor daily, on our own clock
 
-**The loop.** When a check resolves to `inferred` or `none` *and* the water is within the mile that
-can change a verdict, that is a question we could not answer — so record it and go find out.
+**Jon, 2026-07-31:** *"we should just poll all of the data from all sensors every day and build the
+cache to hit and not do this per query. spread out the requests over the day and hit them all as a
+background service on continuous run."*
 
-```
-1. tool records a research request   (reach id + coarse cell, NOT the address)
-2. scheduled job picks up pending requests
-3. it queries: USGS IV gauges near that reach · SFWMD DBHYDRO stations ·
-   SFWMD 250 mg/L isochlor containment · a targeted Overpass re-query for
-   unmapped structures in that area
-4. it writes a determination with provenance, confidence and an expiry
-5. the nightly rebuild folds determinations into tidal.geojson
-```
+This replaces the demand-driven design (a low-confidence check enqueuing a research request), and
+it is better on every axis that mattered:
 
-**The plugin stays static.** Determinations feed the *build*, not a runtime call — so there is
-still no API dependency and no new secret in the browser, and an improvement lands within a day.
-A runtime lookup is possible later; it is a product decision, not a technical one.
+| concern | demand-driven | daily sweep |
+|---|---|---|
+| plugin stays static | needed a beacon call on low confidence | **no runtime call at all** |
+| consumer privacy | needed a rule about what not to store | **nothing about a person is ever recorded** |
+| upstream protection | needed Cloud Tasks rate limiting | **we set the pace; load is constant and known** |
+| coverage | fills in only where people happen to look | **complete, every day** |
 
-**Privacy is a hard constraint.** Store the **reach id and a coarse grid cell (~1 km)** — never the
-address, never the exact coordinate. Today's CompanyCam finding was that we published a client's
-building to 0.1 m without noticing; a table of "addresses people checked" is the same mistake with
-a database instead of a photo. `core/pii.py` and the gate apply.
+**Shape.** A background sweep walks every station on a fixed cadence, a slice at a time, so the
+daily load is flat instead of bursty: 64 USGS gauges plus SFWMD stations, spread across 24 hourly
+slices, is a handful of requests an hour. Each slice merges into the cache; a slice that fails
+leaves the previous day's value in place rather than blanking the reach.
 
-**Why this is worth building.** It is demand-driven: the map fills in where Perkins actually sells,
-not uniformly across Florida, and every unanswered question becomes an answer exactly once.
+**Cadence over a long-running container.** An hourly slice job achieves "spread over the day,
+all of them daily" without paying for an always-on instance, and it matches the scheduled-job
+pattern the repo already uses. Same effect, lower cost, one less thing to keep alive.
+
+**What the cache holds.** Station id, coordinates, a 30-day median / max / latest, sample count,
+and the timestamp. Nothing else. No addresses, no queries, no per-user anything — the question
+"who looked at what" is never asked, so it cannot leak.
 
 ## Part 3 — Say what you are doing
 

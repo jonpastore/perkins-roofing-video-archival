@@ -16,9 +16,16 @@ max is what a cautious estimator may want to see, and the count is how much to t
 UPSTREAM MANNERS. One request per 25-site chunk with a pause between, a descriptive User-Agent, and
 a cache on disk so a rebuild does not re-hit the service. USGS asks for exactly this.
 
+SWEEP, NOT PER-QUERY. Jon, 2026-07-31: "poll all of the data from all sensors every day and build
+the cache to hit and not do this per query. spread out the requests over the day." So `--slice i/n`
+walks a fraction of the stations and MERGES into the cache; run hourly with n=24 and every station
+is refreshed daily at a flat few-requests-an-hour load. A slice that fails leaves yesterday's value
+in place rather than blanking the reach.
+
 Usage:
-    .venv/bin/python scripts/fetch_salinity_readings.py            # refresh the cache
-    .venv/bin/python scripts/fetch_salinity_readings.py --summary  # print what is cached
+    .venv/bin/python scripts/fetch_salinity_readings.py              # every station, one pass
+    .venv/bin/python scripts/fetch_salinity_readings.py --slice 3/24 # the scheduled hourly slice
+    .venv/bin/python scripts/fetch_salinity_readings.py --summary    # print what is cached
 """
 from __future__ import annotations
 
@@ -42,6 +49,11 @@ SITES_URL = ("https://waterservices.usgs.gov/nwis/site/?format=rdb&stateCd=fl"
              "&parameterCd=00095&siteType=ST,ES,SP&hasDataTypeCd=iv&siteStatus=active")
 IV_URL = ("https://waterservices.usgs.gov/nwis/iv/?format=json&sites={sites}"
           "&parameterCd=00095&startDT={start}&endDT={end}")
+# Same service, latest-value mode. About half the gauges carry a current reading but no series for
+# the window; they are disproportionately the ones we need (Loxahatchee among them), so they get
+# recorded with samples=1 and are marked lower confidence rather than dropped.
+IV_LATEST_URL = ("https://waterservices.usgs.gov/nwis/iv/?format=json&sites={sites}"
+                 "&parameterCd=00095&siteStatus=active")
 
 FRESH_MAX = 1500.0        # uS/cm — ~250 mg/L chloride, the same line SFWMD's isochlor draws
 SALINE_MIN = 30000.0      # seawater is ~50,000
@@ -88,6 +100,7 @@ def sites() -> list[dict]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--summary", action="store_true", help="print the cache instead of refreshing")
+    ap.add_argument("--slice", help="i/n — refresh only the i-th of n slices and merge (0-indexed)")
     args = ap.parse_args()
 
     if args.summary:
@@ -108,36 +121,90 @@ def main() -> None:
     end = datetime.now(timezone.utc)
     start = end - timedelta(days=WINDOW_DAYS)
     gs = sites()
-    print(f"{len(gs)} active conductance gauges in the bbox; pulling {WINDOW_DAYS}d of readings",
-          flush=True)
-
-    out: dict[str, dict] = {}
-    ids = [g["id"] for g in gs]
     meta = {g["id"]: g for g in gs}
-    for i in range(0, len(ids), CHUNK):
-        chunk = ids[i:i + CHUNK]
-        url = IV_URL.format(sites=",".join(chunk),
-                            start=start.strftime("%Y-%m-%dT%H:%MZ"),
-                            end=end.strftime("%Y-%m-%dT%H:%MZ"))
+    ids = [g["id"] for g in gs]
+
+    # --slice i/n takes a deterministic fraction (sorted, strided) so consecutive runs cover
+    # different stations and the whole set is refreshed once per n runs.
+    slice_label = "all"
+    if args.slice:
+        i_s, n_s = args.slice.split("/")
+        i_s, n_s = int(i_s), int(n_s)
+        if not 0 <= i_s < n_s:
+            raise SystemExit(f"--slice {args.slice}: need 0 <= i < n")
+        ids = sorted(ids)[i_s::n_s]
+        slice_label = f"slice {i_s}/{n_s}"
+    print(f"{len(gs)} gauges in the bbox; refreshing {len(ids)} ({slice_label}), "
+          f"{WINDOW_DAYS}d window", flush=True)
+
+    # Merge, never blank: a station not in this slice, or one whose request failed, keeps the
+    # reading it already had.
+    out: dict[str, dict] = {}
+    if CACHE.exists():
+        try:
+            out = json.loads(CACHE.read_text()).get("gauges", {})
+        except json.JSONDecodeError:
+            out = {}
+
+    def record(sid: str, vals: list[float], latest_at: str, windowed: bool) -> None:
+        m = meta.get(sid, {})
+        out[sid] = {
+            "id": sid, "name": m.get("name", sid),
+            "lat": m.get("lat"), "lon": m.get("lon"),
+            "median_us_cm": round(st.median(vals), 1),
+            "max_us_cm": round(max(vals), 1),
+            "latest_us_cm": round(vals[-1], 1),
+            "samples": len(vals),
+            "windowed": windowed,
+            "latest_at": latest_at,
+            "refreshed_at": end.isoformat(timespec="seconds"),
+        }
+
+    def series_from(url: str) -> dict[str, tuple[list[float], str]]:
         d = json.loads(_get(url))
+        got: dict[str, tuple[list[float], str]] = {}
         for s in d["value"]["timeSeries"]:
             sid = s["sourceInfo"]["siteCode"][0]["value"]
-            vals = [float(p["value"]) for p in s["values"][0]["value"]
-                    if p.get("value") not in (None, "") and float(p["value"]) > 0]
-            if not vals:
-                continue
-            m = meta.get(sid, {})
-            out[sid] = {
-                "id": sid, "name": m.get("name", sid),
-                "lat": m.get("lat"), "lon": m.get("lon"),
-                "median_us_cm": round(st.median(vals), 1),
-                "max_us_cm": round(max(vals), 1),
-                "latest_us_cm": round(vals[-1], 1),
-                "samples": len(vals),
-                "latest_at": s["values"][0]["value"][-1]["dateTime"],
-            }
+            pts = s["values"][0]["value"]
+            vals = [float(pt["value"]) for pt in pts
+                    if pt.get("value") not in (None, "") and float(pt["value"]) > 0]
+            if vals:
+                got[sid] = (vals, pts[-1]["dateTime"])
+        return got
+
+    missing: list[str] = []
+    for i in range(0, len(ids), CHUNK):
+        chunk = ids[i:i + CHUNK]
+        try:
+            got = series_from(IV_URL.format(
+                sites=",".join(chunk),
+                start=start.strftime("%Y-%m-%dT%H:%MZ"),
+                end=end.strftime("%Y-%m-%dT%H:%MZ")))
+        except Exception as e:                       # noqa: BLE001 — keep yesterday's values
+            print(f"    chunk failed, leaving previous values: {e}", flush=True)
+            time.sleep(PAUSE_S)
+            continue
+        for sid, (vals, at) in got.items():
+            record(sid, vals, at, windowed=True)
+        missing.extend(s for s in chunk if s not in got)
         print(f"  {min(i + CHUNK, len(ids))}/{len(ids)} sites", flush=True)
         time.sleep(PAUSE_S)
+
+    # Second pass for stations with a current reading but no series in the window. Dropping them
+    # would silently measure only the easy half — Loxahatchee at Jupiter is one of these.
+    if missing:
+        print(f"  {len(missing)} with no windowed series; asking for their latest value", flush=True)
+        for i in range(0, len(missing), CHUNK):
+            chunk = missing[i:i + CHUNK]
+            try:
+                got = series_from(IV_LATEST_URL.format(sites=",".join(chunk)))
+            except Exception as e:                   # noqa: BLE001
+                print(f"    latest-value chunk failed: {e}", flush=True)
+                time.sleep(PAUSE_S)
+                continue
+            for sid, (vals, at) in got.items():
+                record(sid, vals, at, windowed=False)
+            time.sleep(PAUSE_S)
 
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     CACHE.write_text(json.dumps({
@@ -145,12 +212,16 @@ def main() -> None:
         "window_days": WINDOW_DAYS, "bbox": BBOX,
         "parameter": "00095 specific conductance uS/cm at 25C",
         "source": "USGS NWIS instantaneous values",
-        "_note": ("median classifies; max is the cautious read; a reading older than the window "
-                  "must degrade from 'measured' to 'mapped' in the build."),
+        "_note": ("median classifies; max is the cautious read; windowed=false means a single "
+                  "latest value, which the build must treat as lower confidence. A reading older "
+                  "than the window degrades from 'measured' to 'mapped'."),
         "gauges": out,
     }, indent=1))
     fresh = sum(1 for x in out.values() if classify(x["median_us_cm"]) == "fresh")
-    print(f"cached {len(out)} gauges -> {CACHE}  ({fresh} fresh, {len(out) - fresh} salt/brackish)")
+    win = sum(1 for x in out.values() if x.get("windowed"))
+    print(f"cache now holds {len(out)} gauges ({win} windowed, {len(out) - win} latest-only) -> "
+          f"{CACHE}  ({fresh} fresh, {len(out) - fresh} salt/brackish)")
+
 
 
 if __name__ == "__main__":
