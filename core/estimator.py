@@ -1359,6 +1359,32 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
                 "no 7/12+ job exists in the calibration set. Review before sending — pending Tim."
             )
 
+    # The day model was fitted on 29 homes that are ALL Palm Beach County / Treasure Coast —
+    # zero Miami-Dade, zero Broward, zero Collier, therefore zero HVHZ. It is nonetheless shipped
+    # to every branch. Cross-validation says the fit is real where it was fitted (honest LOO 83%
+    # within a day against 34% for a constant-mean baseline, scripts/honest_day_model_cv.py), and
+    # says nothing at all about a market it never saw. HVHZ roofs carry different detail, crews
+    # and inspection load, so extrapolating a labour-day count there is an assumption, not a
+    # measurement. Say so on the quote instead of letting the number look equally earned.
+    if q.overhead_mode == "daily" and zone == "HVHZ" and (config.daily_overhead_day_model() or {}):
+        warnings.append(
+            "day_model_outside_calibration: labour days come from a geometry model fitted only on "
+            "Palm Beach County / Treasure Coast roofs — no HVHZ job is in the calibration set. "
+            "The day count here is an extrapolation, not a measurement. Review before sending."
+        )
+
+    # Commercial is REACHABLE now that project_kind is sent, but it is priced as residential end
+    # to end: it differs by a permit adder and a PM band step, while profit still comes off the
+    # residential per-square scale. Tim's own Miramar file prices commercial at 14-15% of COST, a
+    # different basis entirely. Until profit carries a basis discriminator, a commercial quote is
+    # a residential quote wearing a label — and it must not leave the building silently.
+    if q.project_kind == "commercial":
+        warnings.append(
+            "commercial_profit_model_unverified: profit is taken from the RESIDENTIAL per-square "
+            "scale. Tim's Miramar commercial file prices profit at 14-15% of cost, which is a "
+            "different basis, so this total is unvalidated for commercial work — pending Tim."
+        )
+
     # Low-slope tear-off: the repo holds $20 / $35 / $75 for what is arguably the same thing, and
     # the extras block's own note says "beyond first". Surface it rather than silently pick.
     if q.slope_type == "low_slope" and q.layers_to_remove:

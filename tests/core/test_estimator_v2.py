@@ -1505,3 +1505,51 @@ def test_branch_basis_reaches_the_low_slope_path_too():
         daily_series=[DailyOverheadSeries(series="demo_dry_in_flat", days=4.0)]))
     oh = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
     assert oh["amount"] == pytest.approx(4 * 1400)
+
+
+# ---------------------------------------------------------------------------
+# Domain warnings — a number that was extrapolated must not look measured
+# ---------------------------------------------------------------------------
+
+def _daily_q(**over):
+    kw = dict(
+        code_zone="FBC", slope_type="sloped", roof_type="standing_seam_metal",
+        num_squares=40.0, project_kind="commercial", overhead_mode="daily",
+        daily_series=[DailyOverheadSeries(series="demo_dry_in_flat", days=2.0),
+                      DailyOverheadSeries(series="metal", days=5.0)],
+    )
+    kw.update(over)
+    return QuoteInput(**kw)
+
+
+def test_hvhz_quote_warns_that_the_day_model_never_saw_hvhz():
+    """#424: the day model is fitted on 29 Palm Beach / Treasure Coast homes and shipped to Miami.
+
+    Cross-validation says the fit is real where it was fitted (honest LOO 83% within a day against
+    34% for a constant-mean baseline) and says nothing about a market it never saw. Extrapolating
+    a labour-day count into HVHZ is an assumption, and the quote has to say so.
+    """
+    r = estimate(_cfg_v2(), _daily_q(code_zone="HVHZ"))
+    assert any(w.startswith("day_model_outside_calibration") for w in r["warnings"]), r["warnings"]
+
+
+def test_fbc_quote_does_not_carry_the_calibration_warning():
+    """The warning must mark the extrapolation, not decorate every daily-mode quote."""
+    r = estimate(_cfg_v2(), _daily_q(code_zone="FBC"))
+    assert not any(w.startswith("day_model_outside_calibration") for w in r["warnings"])
+
+
+def test_commercial_quote_warns_that_profit_is_the_residential_scale():
+    """#427: commercial is reachable but priced as residential end to end.
+
+    Tim's Miramar file prices commercial profit at 14-15% of COST — a different basis. Until
+    profit carries a basis discriminator this total is unvalidated, and it must not leave the
+    building silently.
+    """
+    r = estimate(_cfg_v2(), _daily_q(project_kind="commercial"))
+    assert any(w.startswith("commercial_profit_model_unverified") for w in r["warnings"])
+
+
+def test_residential_quote_does_not_carry_the_commercial_warning():
+    r = estimate(_cfg_v2(), _daily_q(project_kind="residential", num_squares=15.0))
+    assert not any(w.startswith("commercial_profit_model_unverified") for w in r["warnings"])
