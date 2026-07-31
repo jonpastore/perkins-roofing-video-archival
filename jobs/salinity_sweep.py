@@ -49,6 +49,12 @@ def run(slices: int = 24) -> dict:
     hour = datetime.now(timezone.utc).hour
     index = hour % slices
 
+    # The fetcher defaults CACHE under Path.home(), which is right on a laptop and wrong here:
+    # this container runs as a non-root user with no home directory, so touching it raises
+    # PermissionError: '/home/appuser'. In the job the local file is pure scratch anyway — the
+    # durable cache is the GCS object, seeded below and re-uploaded after.
+    fsr.CACHE = Path(tempfile.gettempdir()) / "salinity-readings.json"
+
     # Seed the local cache from GCS so this slice merges into the published set instead of
     # starting from whatever this container happens to have (nothing).
     fsr.CACHE.parent.mkdir(parents=True, exist_ok=True)
