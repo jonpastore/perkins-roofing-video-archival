@@ -165,8 +165,10 @@
 					'this domain). Call us and we will check the address for you.');
 			};
 			var s = document.createElement('script');
+			// No `libraries=places`: only the Geocoder is used now. See the note where the
+			// typeahead used to live.
 			s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(CFG.gmapsKey) +
-				'&libraries=places&loading=async&callback=__perkinsMwcGm';
+				'&loading=async&callback=__perkinsMwcGm';
 			window.__perkinsMwcGm = function () { if (!settled) { settled = true; resolve(); } };
 			s.onerror = function () { fail('Could not load the map service.'); };
 			// Backstop for any other silent failure mode.
@@ -369,39 +371,28 @@
 			.then(function () { go.disabled = false; });
 	}
 
-	/* Typeahead on the address box. Google Places is the only real option: USPS validates a
-	 * COMPLETE address rather than a prefix, and its terms restrict use to shipping/mailing —
-	 * while Nominatim could not even find the Boynton address Google resolves. Session tokens bill
-	 * a whole typing session as one, and this sits inside the free monthly Essentials allowance at
-	 * Perkins' volume. Attached only after the Maps script loads, so the page still costs nothing
-	 * until someone actually uses the tool. */
-	function attachAutocomplete(input) {
-		if (!window.google || !google.maps.places || input._mwcAuto) return;
-		input._mwcAuto = true;
-		var ac = new google.maps.places.Autocomplete(input, {
-			componentRestrictions: { country: 'us' },
-			fields: ['formatted_address', 'geometry'],
-			types: ['address'],
-			bounds: new google.maps.LatLngBounds({ lat: 24.3, lng: -87.7 }, { lat: 31.2, lng: -79.7 })
-		});
-		ac.addListener('place_changed', function () {
-			var pl = ac.getPlace();
-			if (pl && pl.geometry) check();
-		});
-	}
+	/* NO TYPEAHEAD ON THE ADDRESS BOX, deliberately. It used to use
+	 * `google.maps.places.Autocomplete`, which Google closed to new customers on 2025-03-01 — this
+	 * project is one, so every keystroke got REQUEST_DENIED ("you're calling a legacy API, which is
+	 * not enabled for your project") and Google painted "This page can't load Google Maps
+	 * correctly" over the address field. It never once produced a suggestion; it only ever produced
+	 * that dialog, sitting on top of a verdict that was computed correctly underneath it.
+	 * Restoring it means Places API (New) + `PlaceAutocompleteElement` + adding
+	 * places-backend.googleapis.com to the perkins-setback-widget key's API targets in Terraform.
+	 * Until someone decides that is worth the per-session billing, typing the address in full and
+	 * pressing the button is the whole interaction, and it works. */
 
 	document.addEventListener('DOMContentLoaded', function () {
 		var go = document.getElementById('perkins-mwc-go');
 		var input = document.getElementById('perkins-mwc-addr');
 		if (go) go.addEventListener('click', check);
 		if (input) {
-			// Enter still works for anyone who types the whole address and ignores the dropdown.
 			input.addEventListener('keydown', function (e) { if (e.key === 'Enter') check(); });
-			// Load the geocoder on first focus so suggestions are ready by the time they finish
-			// typing, and the page costs nothing for a visitor who never touches the box.
+			// Warm the geocoder on first focus so it is ready by the time they finish typing, and
+			// the page costs nothing for a visitor who never touches the box.
 			input.addEventListener('focus', function () {
-				loadGmaps().then(function () { attachAutocomplete(input); }).catch(function () {
-					/* typing the address in full still works — check() reports any real failure */
+				loadGmaps().catch(function () {
+					/* check() reports any real failure when they actually submit */
 				});
 			}, { once: true });
 		}
