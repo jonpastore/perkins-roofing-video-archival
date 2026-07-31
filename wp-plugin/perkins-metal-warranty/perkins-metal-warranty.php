@@ -9,7 +9,7 @@
  *              ship as plugin assets. Tidal/brackish reaches count toward the distance when OSM
  *              confirms them; a merely inferred reach raises a caveat and never moves a verdict
  *              (see docs/WARRANTY_TOOL_TIDAL_LAYER.md).
- * Version:     1.3.2
+ * Version:     1.3.3
  * Author:      DeGenito
  *
  * SETUP (one manual step): the geocoder uses the Google Maps JavaScript API. Its browser key is
@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PERKINS_MWC_VERSION', '1.3.2' );
+define( 'PERKINS_MWC_VERSION', '1.3.3' );
 define( 'PERKINS_MWC_URL', plugin_dir_url( __FILE__ ) );
 
 // Default browser key (referrer-restricted). Overridable in Settings so a per-site key can be used

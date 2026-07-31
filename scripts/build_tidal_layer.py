@@ -32,8 +32,10 @@ its whole length, so a 43-mile canal carried "confirmed salt water" 20 miles inl
 Gate Estates, Naples that its warranty was void — from fresh water. A false "void" tells a
 homeowner their warranty is dead when it is not, so only an explicit OSM tag earns that weight.
 
-Only geometry within REACH_MI of the coastline is kept: the strictest provision in zones.json is
-1 mile, so water further inland than that plus a margin cannot change any verdict.
+INFERRED geometry within REACH_MI of the coastline is kept; evidenced reaches (a gauge reading or
+an explicit OSM tidal tag) are kept wherever they are. The clip measures distance to the COASTLINE
+while the 1-mile provision measures ADDRESS-to-water — different quantities — so clipping evidence
+by it hid brackish water that homeowners live beside, notably the tidal St Johns 14 mi inland.
 
 Usage:
     .venv/bin/python scripts/build_tidal_layer.py --fetch     # pull from Overpass into a cache
@@ -76,7 +78,7 @@ FRESH_MAX_US_CM = 1500.0 # ~250 mg/L chloride — the same line SFWMD's isochlor
 
 COAST_SNAP_M = 60.0      # a waterway mouth this close to the coastline counts as touching it
 BARRIER_SNAP_M = 25.0    # structures are often drawn offset from the canal, sharing no node
-REACH_MI = 3.0           # keep tidal geometry within this of the coast (max provision is 1 mi)
+REACH_MI = 3.0           # clips INFERRED reaches only; evidenced water is never clipped
 SIMPLIFY_M = 8.0         # vertex thinning; 1-mile thresholds do not need metre precision
 
 QUERY = f"""
@@ -460,19 +462,37 @@ def build() -> None:
 
     for wid, conf in confidence.items():
         coords = [nodes[n] for n in by_id[wid]["nodes"] if n in nodes]
-        run: list[tuple[float, float]] = []
-        parts = []
-        for x, y in coords:
-            if (int(x / 0.01), int(y / 0.01)) in in_reach:
-                run.append((x, y))
-            else:
-                if len(run) >= 2:
-                    parts.append(run)
-                run = []
-        if len(run) >= 2:
-            parts.append(run)
-        if len(parts) != 1 or len(parts[0]) != len(coords):
-            clipped += 1
+        # ⚠️ The clip measures distance to the COASTLINE. The 1-mile provision measures
+        # ADDRESS-to-water. Those are different quantities, and conflating them is why a house
+        # 500 ft from the tidal St Johns got no tidal answer at all: the river is 14 mi from the
+        # ocean, so it was clipped, even though the homeowner is 500 ft from brackish water.
+        #
+        # Measured 2026-07-31 with stale gauges already excluded: 18 LIVE salt/brackish gauges sit
+        # beyond the 3-mile line, including St Lucie at Speedy Point (30,700 uS/cm, 3.1 mi), the
+        # Alafia at Riverview (21,600, 4.3 mi) and the Hillsborough at I-275 (14,000, 4.6 mi).
+        #
+        # Widening REACH_MI for everything would multiply the asset by carrying thousands more
+        # INFERRED inland ditches, which are the reaches most likely to be wrong. So the clip now
+        # applies only to `inferred`: anything we have real evidence for — a gauge reading or an
+        # explicit OSM tidal tag — is kept wherever it is. That is a few hundred reaches, and they
+        # are exactly the ones allowed to move a verdict.
+        evidenced = conf in ("measured", "tagged", "fresh")
+        if evidenced:
+            parts = [coords] if len(coords) >= 2 else []
+        else:
+            run: list[tuple[float, float]] = []
+            parts = []
+            for x, y in coords:
+                if (int(x / 0.01), int(y / 0.01)) in in_reach:
+                    run.append((x, y))
+                else:
+                    if len(run) >= 2:
+                        parts.append(run)
+                    run = []
+            if len(run) >= 2:
+                parts.append(run)
+            if len(parts) != 1 or len(parts[0]) != len(coords):
+                clipped += 1
         m = measured.get(wid)
         for part in parts:
             g = {"type": "LineString", "confidence": conf,
