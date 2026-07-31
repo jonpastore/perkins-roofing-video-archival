@@ -1,6 +1,6 @@
 # CONTINUATION 2026-07-29 pm — the portfolio pipeline got a privacy gate, and a lot of "success" was silent failure
 
-**Read `CONTINUATION-2026-07-29.md` first** (the morning: video pipeline, WireGuard tunnel, and
+**Read `docs/continuations/CONTINUATION-2026-07-29.md` first** (the morning: video pipeline, WireGuard tunnel, and
 the discovery that we publish to STAGING). Everything here is the afternoon.
 
 **HEAD `5c9f0ca`**, pushed, CI green. **Deployed `platform:b44ef28`** (the `5c9f0ca` deploy was

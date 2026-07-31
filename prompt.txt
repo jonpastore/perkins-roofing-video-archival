@@ -1,13 +1,15 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-30.md — §0 is the whole session. Then read BOTH adversarial
-reviews in full before touching overhead:
-    ~/perkins-corpus/ai-reviews/grok_review.txt   (the sharper one)
-    ~/perkins-corpus/ai-reviews/gpt_review.txt
-    ~/perkins-corpus/ai-reviews/brief.md          (exactly what they were asked)
+READ FIRST: CONTINUATION-2026-07-30-pm.md — §0 lists what the MORNING doc (CONTINUATION-2026-07-30.md)
+got wrong, so read the pm one and treat the am one as superseded. Then, before touching the
+warranty tool:
+    docs/superpowers/specs/2026-07-30-brackish-confidence.md    (what to build)
+    docs/superpowers/plans/2026-07-30-brackish-confidence-plan.md (W1/W2/W3, gates)
+    docs/BRACKISH_DATA_SOURCES.md                               (the measured evidence)
+    docs/WARRANTY_TOOL_TIDAL_LAYER.md                           (what already shipped + why)
 
-HEAD e97686b, pushed, CI green. Deployed platform:60a06a9 (e97686b is docs-only).
-Prod migrations applied through 0051.
+HEAD 5afb0d2, pushed, tree clean. Deployed platform:a86d941 (later commits are docs/scripts/plugin
+only). Warranty plugin 1.1.2 live on staging. Prod migrations through 0051.
 
 Confirm before trusting any of this:
   git log --oneline -1 && git status --short
@@ -18,112 +20,98 @@ Confirm before trusting any of this:
   gh run list --limit 4                        # MATCH THE SHA; "deploy skipped" == nothing shipped
 
 ⛔ STAY ON STAGING. PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is CORRECT and
-intended. Do not vault a prod WP app password, do not publish to perkinsroofing.net. The prod
-cutover is a parked BUSINESS gate — "verified live == staging" throughout the docs is right.
+intended. Do not vault a prod WP app password, do not publish to perkinsroofing.net.
 
-⛔ DO NOT CHANGE PRICING. overhead_basis is 'branch' on all three branches with a flat $1,400/day.
-Nothing about the overhead model is settled. Two independent reviews say the analysis that
-looked settled was circular. Read them first.
+⛔ DO NOT CHANGE PRICING without Jon. Live: jupiter + naples on overhead_basis="series" (flipped
+today, Jon's call); miami on "branch" at $4,250/day; concurrent_crews deployed but UNSET everywhere.
 
-▶ START HERE — THE OVERHEAD MODEL, WITH THE REVIEWS' FINDINGS ALREADY APPLIED
+▶ START HERE — W1 GAUGE ANCHORING (spec + plan already written, nothing built)
 
-  Jon's direction: "the sheets have his old formula for per sq by roof type but he uses PER DAY
-  BY ROOF TYPE and that's what we need to achieve." Tim confirms the sheets are legacy.
-  ⚠️ This contradicts two earlier instructions in the same conversation ("go with uniform
-  pricing", and earlier "not make it uniform"). Re-confirm with Jon before implementing.
+  Snap the 64 USGS salinity gauges to reaches, propagate each reading along channel distance
+  stopping at control structures (cap ~2 mi), and let MEASUREMENT override both the OSM tag and
+  connectivity IN BOTH DIRECTIONS. It must be able to REMOVE a warning, not only add one.
 
-  FOUR THINGS THE REVIEWS ESTABLISHED — all re-verified numerically, do not re-derive:
+  The two cases that prove it:
+    Loxahatchee at US-1, Jupiter   55,100 uS/cm (seawater) — we currently call it a guess
+    Upstream Broad River            460 uS/cm (fresh) but OSM-TAGGED — a measured false positive
+                                    sitting in the only bucket that moves a verdict
 
-  1. "The four rates = crew size x per-man-day" is FALSE for installs. If it were true the
-     demo/install ratio would be 5/3 = 1.667. Actual: demo/tile 1.409, demo/shingle 1.500,
-     demo/metal 1.235. It holds for demo alone, coincidentally.
-     ⚠️ The DRAFT EMAIL TO TIM STILL CONTAINS THIS REFUTED CLAIM. Fix before sending.
+  Gate: scripts/validate_tidal_against_gauges.py agreement rises from 80%, scored HOLD-ONE-OUT
+  (fit on n-1, score the held-out gauge) — in-sample scoring is the same circularity trap the
+  overhead analysis fell into. The three never-tagged pins in check_tidal_layer.py must still pass.
 
-  2. Tim's own rates UNDER-RECOVER his own burn. Under his stated 1.5 crews:
-        tile    0.5x1050 + 745 = $1,270 vs $1,470  -> -$200/day (-13.6%)
-        shingle 0.5x1050 + 700 = $1,225            -> -$245/day (-16.7%)
-        metal   0.5x1050 + 850 = $1,375            ->  -$95/day  (-6.5%)
-     His four numbers and his $1,470 cannot both be right. Ask him to DERIVE $745.
+  DO NOT re-derive these — all queried live 2026-07-30:
+    - USGS NWIS param 00095, waterservices.usgs.gov, free + keyless, 64 gauges in bbox, 64 live.
+    - SFWMD publishes Saltwater_Interface (250 mg/L isochlor, 2024, 7 polylines, 130 KB),
+      ChlorideConcentrationControlPoints, and DBHYDRO (1,673 active WQ stations).
+      ⚠️ the isochlor is GROUNDWATER, not surface canals — corroborating, not a substitute.
+    - Structures ARE the salt line, confirmed by instruments: two gauges on the SAME C-8 canal read
+      473 and 29,900 uS/cm across structure S-28.
 
-  3. PARALLEL-JOB DOUBLE COUNT — the largest conceptual hole, missed entirely. Branch burn is
-     per CALENDAR-day, not per job-day. At his 1.5 concurrent jobs, charging each job a full day
-     collects 1.5 x $1,470 = $2,205 against a $1,470 office: +50% over-recovery. The estimator
-     has no rule for this. Define it before choosing any rate model.
+▶ THEN W2 — THE LEARNING CACHE (Jon's idea, and the reason this scales)
 
-  4. Productivity error dwarfs the rate debate. Metal sheet 5.5 sq/day vs actual 8.0 = 45% error
-     in days and therefore in overhead. The whole rate argument moves metal ~3%.
+  A check that lands "inferred"/"none" within the mile that matters records a research request; a
+  scheduled job resolves it (USGS + DBHYDRO + isochlor + targeted Overpass re-query for unmapped
+  structures) and stores a determination with provenance + expiry; the nightly rebuild folds it in.
+  ⚠️ The plugin STAYS STATIC — determinations feed the BUILD, not a runtime call.
+  ⚠️ PRIVACY IS A HARD GATE: store reach id + a coarse ~1 km cell. NEVER the address, never the
+     exact coordinate. Today's CompanyCam finding was publishing a client's building at 0.1 m.
 
-  THE ONLY NON-CIRCULAR TEST, NEVER RUN:
-     recovery identity = SUM(OH charged over a month) / (1,470 x working days) ~= 1.0
-  Uses accounting burn + estimator-charged days, independent of sold prices. Run this first.
-
-  ⚠️ STOP VALIDATING AGAINST SOLD MEDIANS. Sold prices embed Tim's own overhead, so a match
-  proves only "our OH + our profit ~= his OH + his profit" — passable with wrong OH and
-  compensating profit. The "+0.8% metal" figure is n=3 homes at 2024 prices vs a 2026 benchmark;
-  both reviewers say withdraw it. Grok flagged motivated reasoning: the table makes $210/man look
-  best and $210 is the config's pre-existing assumption.
-
-▶ THEN — MIAMI. BOTH REVIEWERS SAY THIS SHOULD HAVE LED.
-
-  Miami burns $4,257/day (2.9x Jupiter) and is priced at a flat $1,400/day with JUPITER'S
-  IDENTICAL four roof-type rates. It recovers ~1/2.9 of its office. Tim: Miami "has literally
-  lost money or broken even every quarter since Q2 2024."
-  ⚠️ Do NOT fix by scaling Jupiter's four rates by 2.9 — that preserves the folklore ratios and
-  multiplies them. Interim: flat $4,257 x days. Tim will not share the Miami OH sheet (salaries).
+▶ W3 — PER-PHASE STATUS. The tool prints one spinner and, until this week, hung silently forever.
+  ⚠️ ASK JON FIRST: does "each of the rendering actions" also mean the SPA's long-running
+  proposal-render / publish / batch-article actions? Currently scoped to the warranty tool only.
 
 WHAT IS SETTLED — do not re-derive
-  - COST AND MATERIALS ARE EXACT. All four sheet quadrants verified line by line at 25 SQ:
-    FBC sloped (5 types) 0.0%, HVHZ sloped (5 types) 0.0%, low-slope (8 systems) 0.0%, on BOTH
-    base cost and overhead. His own worked example: his sheet $18,625, ours $18,475 (-0.8%),
-    and the -0.8% decomposes fully (his sheet contradicts itself on shingle OH: the worked
-    example says $125/sq, his own OH table on the same tab says $105).
-  - PII IS A HARD GATE and now covers PIXELS. CompanyCam burns capture GPS into the image
-    (25.858694 N 80.120019 W). core/pii.py is text-only and returned no_pii:true on a gallery
-    that would have published a client's building. core/photo_privacy.py cuts the bottom 20%
-    and media_sanitized requires every published img/video to be WP-hosted. Nothing was ever
-    exposed. Do NOT loosen without re-running the 26,063-line corpus check.
-  - gate_failures (migration 0051, APPLIED) persists WHY a project or article was refused.
-    NULL = never gated, [] = gated and clean. They are different; code that conflates them
-    reports unchecked items as passing.
-  - The JSON-LD plugin is FIXED and UPLOADED. Staging runs the REGULAR plugin (v1.3.0 active),
-    NOT a mu-plugin — installing the mu-plugin alongside it duplicates schema on ~60 articles.
-  - Tim's Jupiter headcount is LOGGED, not assumed: 157 days, mean 6.17, median 6
-    ("2026 OH Average" sheet, Jupiter tab). Exclude the 968 totals row.
+  - TIM'S OWN SHEET ANSWERS THE CREW QUESTION. His Jupiter tab = (office/day / men) x crew /
+    squares-per-day at $200/man-day; its "Re-Roof OH (7 men)" line is $185.72 / $105 / $204.75 =
+    his published FBC table to the dollar. So his per-square table ALREADY splits the office by
+    crew: a 3-man crew carries 3/7 = $600, not $1,400. His 7/24 rates sit 5-42% ABOVE that share
+    and that gap is the ONE number not derivable from anything he has sent.
+  - Cost and materials match his live sheets EXACTLY — re-verified cell by cell 7/30 via
+    scripts/verify_config_against_tim_sheets.py (all 20 sloped numbers, all 8 low-slope systems).
+    FBC Polyglass $450 is his own "-$25 FBC (no FR)" note, NOT a discrepancy.
+  - "One model with one knob" FAILS (scripts/prove_persq_day_equivalence.py). Ship both modes.
+  - Recovery identity: Jupiter 465.5 charged job-days / 392 working days = 1.19 (a floor).
+  - The Knowify mirror is the MIAMI tenant; Jupiter is a separate tenant reachable only via the
+    Knowify MCP. BusinessState="Open" is the acceptance marker, NOT IsSigned (5% of contracts).
 
 STILL OPEN
-  - overhead_basis unchanged; office_daily_overhead stale (config 1400/4250 vs Tim's 1470/4257);
-    naples carries Jupiter's 1400 and office_men = None.
-  - Tile prices +10-12% under EVERY overhead model. Not an overhead problem. Unexplained.
-  - Email to Tim DRAFTED NOT SENT in jon@degenito.ai (subject "The estimator now reproduces your
-    sheets to the dollar..."). Must be corrected per §0.1 before sending.
-  - Portfolio blocked on permission_property (Tim never answered). 8 of 13 projects also have
-    ZERO Knowify scope; only 5 are curatable.
-  - TPO sold history unusable — work-type contamination (maintenance at $65/sq mixed with a real
-    re-roof at $1,796/sq), NOT a unit bug. Tile/shingle/metal are clean.
-  - o365 MCP refresh token expired (AADSTS700082, verified) — use gmail-enhanced for that mailbox.
-  - The wp-admin login password sat world-readable in /tmp for a week; shredded, NOT rotated.
+  - Tim email DRAFTED NOT SENT (jon@degenito.ai, "Your sheet answers the crew question — plus 7
+    things I need"); copy at ~/perkins-corpus/tim_email_2026-07-30.txt.
+  - Miami charges its whole office day per job -> ~$2,087/sq HVHZ tile vs $1,113/sq accepted.
+    concurrent_crews:4 -> $1,343/sq, but 4 is Tim's capacity target, not a measurement.
+  - Crew share (-0.3%) vs his four rates (+2.2%): one config write once he answers.
+  - naples carries Jupiter's 1400 + office_men=None; office_daily_overhead stale vs 1470/4257.
+  - Tile +10-12% over sold under EVERY overhead model. Unexplained, predates today.
+  - The Maps browser key (perkins-setback-widget) is NOT Terraform-managed — console state.
 
 GOTCHAS
-- ⚠️ pgrep -f "<pattern>" MATCHES THE POLLING SHELL'S OWN COMMAND LINE. Six waiters deadlocked
-  this way in one session. Poll a status FILE or use kill -0 $PID. Same family as pkill -f.
-- ⚠️ The session scratchpad is WIPED ON RESTART. Two long AI reviews and every analysis script
-  were lost mid-flight. Durable work -> ~/perkins-corpus/. Long external jobs -> setsid nohup.
-- ⚠️ NEVER edit the tree while a long gate runs (R7): coverage maps line numbers from the file on
-  disk at report time. Three 40-60 min runs were invalidated this way in one session.
+- ⚠️ Overpass answers HTTP 406 to a bare POST body — form-encode the query as data=.
+- ⚠️ SFWMD's ArcGIS host 403s a default curl UA. Send a browser UA.
+- ⚠️ A referrer-rejected Google Maps key returns HTTP 200 and reports via gm_authFailure; onerror
+  never fires, so a promise waiting on the callback hangs forever with no error shown.
+- ⚠️ String ids + PYTHONHASHSEED = a non-reproducible build. Sort seeds AND output.
+- ⚠️ A regression pin that measures the wrong thing passes forever — ours read the globally nearest
+  segment when inferred outnumbers tagged 22:1. Assert on the bucket that actually moves verdicts.
+- ⚠️ `sleep N` chained after another command is blocked; use an until-loop or run_in_background.
+- ⚠️ pgrep -f "<pattern>" MATCHES THE POLLING SHELL'S OWN COMMAND LINE. Poll a status FILE.
+- ⚠️ The session scratchpad is WIPED ON RESTART. Durable work -> ~/perkins-corpus/.
+- ⚠️ NEVER edit the tree while a long gate runs (R7).
 - ⚠️ `cmd | tail -n` returns TAIL's exit code — a failing suite reports success.
-- ⚠️ Console output is truncated. Never copy an identifier out of a printed table.
-- Migrations are MANUAL: MIN_MIGRATION=0051 .venv/bin/python scripts/apply_migrations_connector.py
-  (it strips comments before splitting on ';' — do not hand-roll that).
 - Pre-push tests: .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs
-  tests/tenancy  = ~4,099 tests in ~8m. Full tests/ with coverage is 40-60 min on this box.
-- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97 (97.86%).
-  SPA: cd web && npx tsc -b.
-- Cloud SQL proxy 127.0.0.1:5432, db perkins, user app; every query needs set app.tenant_id='1'.
-  PW=$(gcloud secrets versions access latest --secret=db-password).
-- Tim's sheets read via perkins-deploy SA + DWD impersonating tim@perkinsroofing.net.
-  sloped 1qxfKRRvmQS_NYu3AE2KQgek421Wzftu3xVmGECFH-ig (OH Metrics tab = MIAMI)
+  tests/tenancy  = ~4,099 tests in ~8m. The summary line may not flush to a redirected log; the
+  EXIT CODE is the evidence.
+- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97.
+- Cloud SQL proxy: ~/bin/cloud-sql-proxy (fetched 7/30; /tmp copies get wiped). Start with
+  `setsid nohup ~/bin/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &`
+  PW=$(gcloud secrets versions access latest --secret=db-password); every query needs
+  set app.tenant_id='1'.
+- WP plugin upload: bump PERKINS_MWC_VERSION, zip the folder, then
+  `set -a; source .env; set +a; export WP_LOGIN_PW="$WP_PWD";
+   PYTHONPATH=. .venv/bin/python scripts/wp_install_plugin.py <zip>`  (WEB login, not the REST app pw)
+- Tim's sheets via perkins-deploy SA + DWD impersonating tim@perkinsroofing.net.
+  sloped 1qxfKRRvmQS_NYu3AE2KQgek421Wzftu3xVmGECFH-ig (tabs incl. OH Metrics = MIAMI, Jupiter)
   low-slope 1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ
-  Jupiter OH 1V3uGnb57oo5Kh8IZk7fJSsjjakAmdVeejPisAIouJGc
-- EMAIL_SEND_MODE=test in prod; only jpastore79@gmail.com + @degenito.ai + @perkinsroofing.net
-  receive mail. Do not flip to live without Jon.
-- R7-R10 are new in docs/ENGINEERING_RULES.md and are binding.
+  ⚠️ Cell COMMENTS carry values the visible cells do not (FBC TPO OH $125; the busy-season tiers).
+  Comments are a DRIVE resource, invisible to Sheets values().get.
+- EMAIL_SEND_MODE=test in prod. R7-R10 in docs/ENGINEERING_RULES.md are binding.
