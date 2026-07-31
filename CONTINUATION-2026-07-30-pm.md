@@ -4,7 +4,7 @@
 scripts + the WP plugin, none of which the platform image carries). Warranty plugin **1.1.2** live
 on staging. Prod migrations still through **0051**.
 
-Supersedes `CONTINUATION-2026-07-30.md` (this morning). Two of its headline claims are now
+Supersedes `docs/continuations/CONTINUATION-2026-07-30.md` (this morning, since archived). Two of its headline claims are now
 **disproven** — see §0.
 
 ---
