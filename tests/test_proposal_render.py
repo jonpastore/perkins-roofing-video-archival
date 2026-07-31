@@ -752,3 +752,36 @@ def test_freeze_rejects_an_unknown_audience():
     from api.routes.proposals import _freeze_calc_breakdown
     with pytest.raises(HTTPException):
         _freeze_calc_breakdown(_snap(calc_audience="homeowner"))
+
+
+def test_an_absent_audience_defaults_to_internal_and_that_default_shows_profit():
+    """#447(2): the default path had no test, and it is where #433's class of bug reopens.
+
+    `calc_audience` is optional; omitting it yields "internal", and internal INCLUDES the profit
+    row. So a caller that simply forgets the field gets a snapshot carrying margin. That is the
+    correct default — staff are the ones who tick this box — but it must be a decision somebody
+    made on purpose, not an accident nobody has pinned.
+
+    If the default ever flips, or internal quietly stops carrying profit, this fails and whoever
+    changed it has to say so.
+    """
+    from api.routes.proposals import _freeze_calc_breakdown
+
+    snap = _snap()
+    del snap["calc_audience"]
+    frozen = _freeze_calc_breakdown(snap)
+
+    assert frozen["calc_audience"] == "internal", "omitting the field must not silently vary"
+    assert any(ln["key"] == "profit" for ln in frozen["calc_lines"]), (
+        "internal is the profit-bearing view; if this stops being true the customer/internal "
+        "split has moved and the default needs re-deciding"
+    )
+
+
+def test_an_explicitly_null_audience_also_defaults_rather_than_erroring():
+    """`snap.get(...) or "internal"` treats None and "" as absent — pin that, it is load-bearing."""
+    from api.routes.proposals import _freeze_calc_breakdown
+
+    for empty in (None, ""):
+        frozen = _freeze_calc_breakdown(_snap(calc_audience=empty))
+        assert frozen["calc_audience"] == "internal", empty

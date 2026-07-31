@@ -393,8 +393,11 @@ def test_faqs_offset_pagination(seeded):
     client = _make_client("admin")
     all_data = client.get("/suggestions?limit=200", headers=ADMIN_HDR).json()
     total_faqs = len(all_data["faqs"])
-    if total_faqs < 1:
-        pytest.skip("no faqs to paginate")
+    # ASSERT, do not skip. `seeded` deterministically creates an objection on vid_c with no
+    # covering article, so this bucket is never legitimately empty. The old `pytest.skip` could
+    # only fire when /suggestions had broken — reporting green at precisely the moment the
+    # endpoint stopped returning faqs, which is the one thing this test exists to catch.
+    assert total_faqs >= 1, "seeded fixture guarantees a faq; an empty bucket is the bug"
     # offset=total should return empty list but preserve total
     data = client.get(f"/suggestions?offset={total_faqs}&limit=50", headers=ADMIN_HDR).json()
     assert data["faqs"] == []
@@ -406,8 +409,9 @@ def test_unused_offset_pagination(seeded):
     client = _make_client("admin")
     all_data = client.get("/suggestions?limit=200", headers=ADMIN_HDR).json()
     total_unused = len(all_data["unused_videos"])
-    if total_unused < 1:
-        pytest.skip("no unused videos to paginate")
+    # ASSERT, do not skip — see the note in test_faqs_offset_pagination. `seeded` creates videos
+    # with no published content, so this bucket is never legitimately empty either.
+    assert total_unused >= 1, "seeded fixture guarantees an unused video; empty is the bug"
     data = client.get(f"/suggestions?offset={total_unused}&limit=50", headers=ADMIN_HDR).json()
     assert data["unused_videos"] == []
     assert data["unused_videos_total"] == total_unused
