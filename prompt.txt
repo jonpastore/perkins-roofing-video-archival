@@ -1,117 +1,113 @@
 Resume perkins-roofing/video-archival.
 
-READ FIRST: CONTINUATION-2026-07-30-pm.md — §0 lists what the MORNING doc (CONTINUATION-2026-07-30.md)
-got wrong, so read the pm one and treat the am one as superseded. Then, before touching the
-warranty tool:
-    docs/superpowers/specs/2026-07-30-brackish-confidence.md    (what to build)
-    docs/superpowers/plans/2026-07-30-brackish-confidence-plan.md (W1/W2/W3, gates)
-    docs/BRACKISH_DATA_SOURCES.md                               (the measured evidence)
-    docs/WARRANTY_TOOL_TIDAL_LAYER.md                           (what already shipped + why)
+READ FIRST:
+    CONTINUATION-2026-07-31.md        the warranty tool's measured-salinity build (this work)
+    CONTINUATION-2026-07-30-pm.md     the overhead model, Tim's sheet, the unsent email
+⚠️ CONTINUATION-2026-07-30.md (the morning doc) is SUPERSEDED — two of its headline claims are
+disproven in the pm doc's §0. Do not act on it.
 
-HEAD 5afb0d2, pushed, tree clean. Deployed platform:a86d941 (later commits are docs/scripts/plugin
-only). Warranty plugin 1.1.2 live on staging. Prod migrations through 0051.
+Before touching the warranty tool:
+    docs/superpowers/specs/2026-07-30-brackish-confidence.md      (what to build)
+    docs/superpowers/plans/2026-07-30-brackish-confidence-plan.md (W1/W2/W3 + gates)
+    docs/BRACKISH_DATA_SOURCES.md                                 (measured evidence, sources)
+    docs/WARRANTY_TOOL_TIDAL_LAYER.md                             (how the layer is built)
+
+HEAD 8895af3, pushed, tree clean, terraform drift clean. Warranty plugin 1.2.1 live on staging.
+Deployed platform:a86d941. Prod migrations through 0051.
 
 Confirm before trusting any of this:
   git log --oneline -1 && git status --short
   git log --oneline origin/main..HEAD          # expect empty
-  gcloud run services describe api --region us-central1 \
-    --format='value(spec.template.spec.containers[0].image)'
   bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
   gh run list --limit 4                        # MATCH THE SHA; "deploy skipped" == nothing shipped
+  gcloud run jobs executions list --job salinity-sweep --region us-central1 --limit 3
 
-⛔ STAY ON STAGING. PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is CORRECT and
-intended. Do not vault a prod WP app password, do not publish to perkinsroofing.net.
+⛔ STAY ON STAGING. PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is CORRECT.
+⛔ DO NOT CHANGE PRICING without Jon. Live: jupiter+naples overhead_basis="series"; miami "branch"
+   at $4,250/day; concurrent_crews deployed but UNSET everywhere.
 
-⛔ DO NOT CHANGE PRICING without Jon. Live: jupiter + naples on overhead_basis="series" (flipped
-today, Jon's call); miami on "branch" at $4,250/day; concurrent_crews deployed but UNSET everywhere.
+▶ START HERE — ONE OF THESE, ASK JON WHICH
 
-▶ START HERE — W1 GAUGE ANCHORING (spec + plan already written, nothing built)
+  1. VERIFY THE SCHEDULED SWEEP ACTUALLY RAN. The chain is proven by a LOCAL invocation against
+     GCS, not yet by a Cloud Scheduler trigger. Check for a job execution after the next :17. If it
+     failed, the likely causes are the jobs-sa lacking storage write on the media bucket, or the
+     image lacking the scripts/ directory (the job imports scripts.fetch_salinity_readings).
 
-  Snap the 64 USGS salinity gauges to reaches, propagate each reading along channel distance
-  stopping at control structures (cap ~2 mi), and let MEASUREMENT override both the OSM tag and
-  connectivity IN BOTH DIRECTIONS. It must be able to REMOVE a warning, not only add one.
+  2. STATEWIDE COVERAGE — the biggest accuracy lever left. Change BBOX in
+     scripts/build_tidal_layer.py + fetch_salinity_readings.py to 24.30,-87.80,31.10,-79.80.
+     Measured: 55,671 waterways (vs 21,914) and 174 gauges (vs 64); asset ~2-3 MB vs 0.94 MB.
+     A bigger pull and a longer build, NOT a design change. Gains Tampa, Jacksonville, Panhandle.
 
-  The two cases that prove it:
-    Loxahatchee at US-1, Jupiter   55,100 uS/cm (seawater) — we currently call it a guess
-    Upstream Broad River            460 uS/cm (fresh) but OSM-TAGGED — a measured false positive
-                                    sitting in the only bucket that moves a verdict
+  3. SEND THE TIM EMAIL (drafted, not sent — see below).
 
-  Gate: scripts/validate_tidal_against_gauges.py agreement rises from 80%, scored HOLD-ONE-OUT
-  (fit on n-1, score the held-out gauge) — in-sample scoring is the same circularity trap the
-  overhead analysis fell into. The three never-tagged pins in check_tidal_layer.py must still pass.
-
-  DO NOT re-derive these — all queried live 2026-07-30:
-    - USGS NWIS param 00095, waterservices.usgs.gov, free + keyless, 64 gauges in bbox, 64 live.
-    - SFWMD publishes Saltwater_Interface (250 mg/L isochlor, 2024, 7 polylines, 130 KB),
-      ChlorideConcentrationControlPoints, and DBHYDRO (1,673 active WQ stations).
-      ⚠️ the isochlor is GROUNDWATER, not surface canals — corroborating, not a substitute.
-    - Structures ARE the salt line, confirmed by instruments: two gauges on the SAME C-8 canal read
-      473 and 29,900 uS/cm across structure S-28.
-
-▶ THEN W2 — THE LEARNING CACHE (Jon's idea, and the reason this scales)
-
-  A check that lands "inferred"/"none" within the mile that matters records a research request; a
-  scheduled job resolves it (USGS + DBHYDRO + isochlor + targeted Overpass re-query for unmapped
-  structures) and stores a determination with provenance + expiry; the nightly rebuild folds it in.
-  ⚠️ The plugin STAYS STATIC — determinations feed the BUILD, not a runtime call.
-  ⚠️ PRIVACY IS A HARD GATE: store reach id + a coarse ~1 km cell. NEVER the address, never the
-     exact coordinate. Today's CompanyCam finding was publishing a client's building at 0.1 m.
-
-▶ W3 — PER-PHASE STATUS. The tool prints one spinner and, until this week, hung silently forever.
-  ⚠️ ASK JON FIRST: does "each of the rendering actions" also mean the SPA's long-running
-  proposal-render / publish / batch-article actions? Currently scoped to the warranty tool only.
-
-WHAT IS SETTLED — do not re-derive
-  - TIM'S OWN SHEET ANSWERS THE CREW QUESTION. His Jupiter tab = (office/day / men) x crew /
-    squares-per-day at $200/man-day; its "Re-Roof OH (7 men)" line is $185.72 / $105 / $204.75 =
-    his published FBC table to the dollar. So his per-square table ALREADY splits the office by
-    crew: a 3-man crew carries 3/7 = $600, not $1,400. His 7/24 rates sit 5-42% ABOVE that share
-    and that gap is the ONE number not derivable from anything he has sent.
-  - Cost and materials match his live sheets EXACTLY — re-verified cell by cell 7/30 via
-    scripts/verify_config_against_tim_sheets.py (all 20 sloped numbers, all 8 low-slope systems).
-    FBC Polyglass $450 is his own "-$25 FBC (no FR)" note, NOT a discrepancy.
-  - "One model with one knob" FAILS (scripts/prove_persq_day_equivalence.py). Ship both modes.
-  - Recovery identity: Jupiter 465.5 charged job-days / 392 working days = 1.19 (a floor).
-  - The Knowify mirror is the MIAMI tenant; Jupiter is a separate tenant reachable only via the
-    Knowify MCP. BusinessState="Open" is the acceptance marker, NOT IsSigned (5% of contracts).
+DO NOT RE-DERIVE (all measured this session)
+  - Hold-one-out agreement 81% (52/64) vs 80% before anchoring. In-sample is inflated; it grades
+    the model on its own training data. scripts/validate_tidal_against_gauges.py prints both.
+  - Anchoring fixes water we can MEASURE and teaches us nothing about ungauged water. Most of the
+    12 held-out misses are genuinely saline water we would only call "inferred".
+  - Precedence: measured salt moves a verdict WITH a citation; measured fresh REMOVES a warning
+    (class "fresh", UI skips it); tagged moves a verdict; inferred is a caveat only.
+  - Structures ARE the salt line, confirmed by instruments: two gauges on the same C-8 canal read
+    473 and 29,900 uS/cm across S-28; the two Loxahatchee gauges read 52,500 at the mouth and 709
+    at mile 9.1 — which is WHY propagation is capped at 2 mi along the channel.
+  - USGS NWIS param 00095 is free and keyless. SFWMD publishes the 250 mg/L isochlor (GROUNDWATER,
+    corroborating only) + 1,673 active WQ stations; their host 403s a default curl UA.
+  - Tim's own Jupiter tab answers the crew question: (office/day / men) x crew / squares-per-day at
+    $200/man-day, and its "Re-Roof OH (7 men)" line IS his published FBC table. A 3-man crew
+    carries 3/7 = $600, not $1,400. His 7/24 rates sit 5-42% above that and that gap is the one
+    number not derivable from anything he has sent.
 
 STILL OPEN
   - Tim email DRAFTED NOT SENT (jon@degenito.ai, "Your sheet answers the crew question — plus 7
     things I need"); copy at ~/perkins-corpus/tim_email_2026-07-30.txt.
   - Miami charges its whole office day per job -> ~$2,087/sq HVHZ tile vs $1,113/sq accepted.
-    concurrent_crews:4 -> $1,343/sq, but 4 is Tim's capacity target, not a measurement.
+    concurrent_crews:4 -> $1,343/sq. 4 is Tim's capacity TARGET, not a measurement.
   - Crew share (-0.3%) vs his four rates (+2.2%): one config write once he answers.
-  - naples carries Jupiter's 1400 + office_men=None; office_daily_overhead stale vs 1470/4257.
-  - Tile +10-12% over sold under EVERY overhead model. Unexplained, predates today.
-  - The Maps browser key (perkins-setback-widget) is NOT Terraform-managed — console state.
+  - W3 per-phase status is done for the warranty tool. The SPA's long-running actions (proposal
+    render, publish, batch articles) were never scoped — ASK JON.
+  - naples carries Jupiter's 1400 + office_men=None; tile +10-12% over sold under every model.
 
 GOTCHAS
-- ⚠️ Overpass answers HTTP 406 to a bare POST body — form-encode the query as data=.
+- ⚠️ WE HAVE A SERVICE ACCOUNT. ~/.config/gcloud/perkins-deploy-sa.json reads the tfstate bucket,
+  so `terraform apply` works without the user reauth that `invalid_rapt` demands:
+    cd infra && unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
+    export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/perkins-deploy-sa.json
+    export USER_PROJECT_OVERRIDE=true GOOGLE_CLOUD_QUOTA_PROJECT=video-archival-and-content-gen
+    export TF_VAR_cloudflare_api_token="$(gcloud secrets versions access latest --secret=cloudflare-api-token 2>/dev/null)"
+  ⚠️ Do NOT `source .env` first — it sets a RELATIVE GOOGLE_APPLICATION_CREDENTIALS that breaks
+  from infra/.
+- ⚠️ scripts/deploy.sh iterates its JOBS map under `set -e`, so naming a job Terraform has not
+  created yet ABORTS THE WHOLE CI DEPLOY. terraform apply first, then add the line.
+- ⚠️ adapters.storage.upload_file is (local_path, bucket, key) — not (bucket, key, path).
+- ⚠️ A script inside scripts/ puts THAT dir on sys.path, not the repo root, so `import adapters`
+  fails and a GCS read silently falls back to local while printing a reassuring line.
+- ⚠️ Overpass answers HTTP 406 to a bare POST body — form-encode as data=.
 - ⚠️ SFWMD's ArcGIS host 403s a default curl UA. Send a browser UA.
 - ⚠️ A referrer-rejected Google Maps key returns HTTP 200 and reports via gm_authFailure; onerror
-  never fires, so a promise waiting on the callback hangs forever with no error shown.
+  never fires, so a promise waiting on the callback hangs forever.
 - ⚠️ String ids + PYTHONHASHSEED = a non-reproducible build. Sort seeds AND output.
-- ⚠️ A regression pin that measures the wrong thing passes forever — ours read the globally nearest
-  segment when inferred outnumbers tagged 22:1. Assert on the bucket that actually moves verdicts.
-- ⚠️ `sleep N` chained after another command is blocked; use an until-loop or run_in_background.
+- ⚠️ A validator that measures the wrong thing passes forever. Hold-one-out must REVERT a reach to
+  its `prior` class, not delete it (deleting read 77%, reverting reads 81%).
+- ⚠️ `sleep N` chained after a command is blocked; use an until-loop or run_in_background.
 - ⚠️ pgrep -f "<pattern>" MATCHES THE POLLING SHELL'S OWN COMMAND LINE. Poll a status FILE.
 - ⚠️ The session scratchpad is WIPED ON RESTART. Durable work -> ~/perkins-corpus/.
-- ⚠️ NEVER edit the tree while a long gate runs (R7).
-- ⚠️ `cmd | tail -n` returns TAIL's exit code — a failing suite reports success.
+- ⚠️ NEVER edit the tree while a long gate runs (R7). `cmd | tail -n` returns TAIL's exit code.
 - Pre-push tests: .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs
-  tests/tenancy  = ~4,099 tests in ~8m. The summary line may not flush to a redirected log; the
+  tests/tenancy  (~4,099 tests, ~8m). The summary line may not flush to a redirected log — the
   EXIT CODE is the evidence.
 - CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97.
-- Cloud SQL proxy: ~/bin/cloud-sql-proxy (fetched 7/30; /tmp copies get wiped). Start with
-  `setsid nohup ~/bin/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &`
-  PW=$(gcloud secrets versions access latest --secret=db-password); every query needs
-  set app.tenant_id='1'.
-- WP plugin upload: bump PERKINS_MWC_VERSION, zip the folder, then
-  `set -a; source .env; set +a; export WP_LOGIN_PW="$WP_PWD";
-   PYTHONPATH=. .venv/bin/python scripts/wp_install_plugin.py <zip>`  (WEB login, not the REST app pw)
+- Cloud SQL proxy: ~/bin/cloud-sql-proxy (fetched 7/30; /tmp copies get wiped):
+  setsid nohup ~/bin/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
+  PW=$(gcloud secrets versions access latest --secret=db-password); queries need set app.tenant_id='1'.
+- Rebuild + ship the warranty tool:
+  .venv/bin/python scripts/fetch_salinity_readings.py       # or let the hourly sweep do it
+  GOOGLE_CLOUD_PROJECT=video-archival-and-content-gen .venv/bin/python scripts/build_tidal_layer.py
+  .venv/bin/python scripts/check_tidal_layer.py             # asserts; exits non-zero on regression
+  .venv/bin/python scripts/validate_tidal_against_gauges.py # hold-one-out score
+  bump PERKINS_MWC_VERSION, zip wp-plugin/perkins-metal-warranty, then
+  set -a; source .env; set +a; export WP_LOGIN_PW="$WP_PWD"
+  PYTHONPATH=. .venv/bin/python scripts/wp_install_plugin.py <zip>   (WEB login, not the app pw)
 - Tim's sheets via perkins-deploy SA + DWD impersonating tim@perkinsroofing.net.
-  sloped 1qxfKRRvmQS_NYu3AE2KQgek421Wzftu3xVmGECFH-ig (tabs incl. OH Metrics = MIAMI, Jupiter)
-  low-slope 1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ
-  ⚠️ Cell COMMENTS carry values the visible cells do not (FBC TPO OH $125; the busy-season tiers).
+  ⚠️ Cell COMMENTS carry values the visible cells do not (FBC TPO OH $125; busy-season tiers).
   Comments are a DRIVE resource, invisible to Sheets values().get.
 - EMAIL_SEND_MODE=test in prod. R7-R10 in docs/ENGINEERING_RULES.md are binding.
