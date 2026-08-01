@@ -377,6 +377,23 @@ are a local gate — worth wiring into CI.
 ⚠️ **`npx tsc --noEmit` is NOT the build gate.** It passed twice on code `npm run build`
 (`tsc -b`) rejected — a missing `Badge tone` prop and an unexported type. Use the build.
 
+### ⚠️ CI DOES NOT DEPLOY THE SPA. A merged UI change is NOT live.
+
+`.github/workflows/deploy.yml` builds the API image and points Cloud Run at it. It does **not**
+touch `web/`. The SPA ships only by a hand-run
+
+    cd web && npm run build && npx --no-install firebase deploy --only hosting:app \
+      --project video-archival-and-content-gen
+
+so slice 4's entire UI was merged, CI-green and **invisible to users** until that was run by hand.
+The API half deployed itself; the half a human actually looks at did not. Anyone reading
+"deployed" in a commit or a CI badge is reading a claim about the API only.
+
+Done for slice 4 and VERIFIED by fetching the served bundle rather than trusting the CLI's
+"Deploy complete!" — `/assets/index-DSRtfOBu.js` contains `Multi-building bid`, `Add this roof`,
+`Price & save`, `SAME property` and `own block`. Worth wiring into the deploy workflow so the two
+halves cannot drift again.
+
 ### Still not exposed from the SPA (owner call)
 
 `floor_basis` is hard-locked to `"project"`, so #449's per-week basis is unreachable from the UI —
