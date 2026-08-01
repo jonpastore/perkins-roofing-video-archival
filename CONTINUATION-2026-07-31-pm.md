@@ -8,7 +8,7 @@ readings excluded, evidence unclipped, then `tagged` re-clipped after review. Th
 **6,451 geometries / 1.98 MB — 297 tagged, 61 measured salt, 42 fresh**. Read §4c before quoting
 any figure from §0.
 
-Read `CONTINUATION-2026-07-31.md` for the measured-salinity build this continues, and
+Read `docs/continuations/CONTINUATION-2026-07-31.md` for the measured-salinity build this continues, and
 `docs/continuations/CONTINUATION-2026-07-30-pm.md` for the overhead work (Tim's sheet, the
 unsent email).
 
