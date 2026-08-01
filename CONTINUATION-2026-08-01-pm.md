@@ -299,9 +299,31 @@ so a project can only be created by API today.
 
 ---
 
-## §3.95 — SLICE 4: THE SPA SURFACE (built, PR pending)
+## §3.95 — SLICE 4: THE SPA SURFACE (MERGED — main 8b3f5cd)
 
-Branch `feat/430-slice4-project-quoting`. Slices 1-3 merged and deployed.
+**#430/#449 IS COMPLETE END TO END** — pricing (slice 1), persistence (slice 2), the proposal
+surface (slice 3) and the SPA that builds a bid (slice 4). Slices 1-3 were verified running in
+prod (`platform:af8bc01` matched `main`, both new routes 401-gated rather than 404).
+
+### Two things this slice proved about the gates themselves
+
+**`npx tsc --noEmit` is NOT the build gate.** It passed twice on code `npm run build` (`tsc -b`)
+rejected — a missing `Badge tone` prop and an unexported type. Project references make them
+different checks. Use the build.
+
+**An ungated test is a suggestion — and the gate caught ME.** CI ran `npm ci && npm run build`
+and `npm audit` but never `npm test`, so the frontend tests were run by nobody but the author.
+Adding `npm test` to `.github/workflows/ci.yml` turned the frontend job RED within minutes, on a
+defect a local run structurally could not show: the tests imported the pure functions from
+`pages/Quoting.tsx`, which transitively imports `src/api.ts` -> `src/auth.ts`, and `auth.ts`
+calls `getAuth()` at MODULE SCOPE. That needs `VITE_FIREBASE_API_KEY` — present in `web/.env`,
+absent on a runner — so the suite passed here and failed there with `auth/invalid-api-key`, a
+failure about configuration rather than about the logic under test.
+
+Fixed at the cause, not by stubbing env or mocking the module: the pure rules moved to
+`web/src/lib/projectQuote.ts`, which has **ZERO imports**. They never belonged in a 3,000-line
+page component, and a leaf module cannot drag an auth singleton into a unit test. Verified the
+way CI would — `mv web/.env web/.env.hidden && npm test` -> 26 passed — rather than by assertion.
 
 **Design change from the plan, deliberate.** The plan said "lift the ~55 page-level scalar
 `quote*` inputs into a per-building record". I did not. `buildQuoteBody()` already turns the form
