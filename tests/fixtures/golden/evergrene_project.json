@@ -13,7 +13,23 @@
     "tile_install_745": 745.0,
     "metal_mobilisation_1050": 1050.0,
     "metal_install_735": 735.0,
-    "_warning": "These are NOT the four daily rates in our pricing config."
+    "_warning": "These are NOT the four daily rates in our pricing config.",
+    "_vs_our_config": {
+      "our_daily_overhead_rates": {
+        "tile": 745,
+        "metal": 850,
+        "shingle": 700,
+        "demo_dry_in_flat": 1050
+      },
+      "evergrene_actual": {
+        "tile_install": 745,
+        "demo_metalsdemo_delivery": 885,
+        "metal_install": 735,
+        "metal_mobilisation": 1050
+      },
+      "_finding": "tile install 745 MATCHES ours exactly. But his demo ran at 885 where our demo_dry_in_flat is 1050, and his metal install at 735 where ours is 850 \u2014 ours is 15% high against what he actually bid. His 1050 shows up only as METAL-scope mobilisation. So the rate may depend on which scope the day belongs to, not just the activity.",
+      "_question_for_tim": "On a multi-building commercial job you billed demo at $885 and metal install at $735. Our config carries $1,050 and $850. Are the commercial rates different, or have the numbers moved since the 7/24 email?"
+    }
   },
   "buildings": [
     {
