@@ -61,6 +61,14 @@ DEFAULT_ONCE_PER_PROJECT = frozenset({
 
 FLOOR_BASES = ("project", "week", "building")
 
+#: The ONLY keys core.estimator._build_fixed honours in `suppress_fixed_keys`. A key outside this
+#: set is silently ignored on BOTH sides — not suppressed per building, and not re-added once — so
+#: a typo (or the plausible-looking "stories_3_5_delivery_chute", named two lines below in this
+#: module's docstring) quietly reverts the bid to per-building pricing at HTTP 200.
+SUPPRESSIBLE_FEE_KEYS = frozenset({
+    "delivery_plywood_vents", "new_bonus_values", "permit_processing", "tile_dumpster",
+})
+
 
 @dataclass
 class ProjectItem:
@@ -68,9 +76,13 @@ class ProjectItem:
 
     Tim's General Conditions is (green fence + telehandler $22,800 + full-time PM $9,000) x 1.15
     = $36,570, and on his sheet it is referenced by NO total formula — it stands as its own quoted
-    line. His add-on blocks, by contrast, he folds into the Clubhouse. Both habits are supported
-    through `allocation`; the default keeps site money on its own line, because a customer doing
-    arithmetic on a $1,588/sq bus stop that silently carries green-fence money cannot be answered.
+    line. His add-on blocks, by contrast, he folds into the Clubhouse.
+
+    ⚠️ ONLY `allocation="project"` IS IMPLEMENTED. `"building:<name>"` is the shape reserved for
+    Tim's folding habit, and price_project does not branch on it — it was accepted, echoed back
+    and priced as its own line, so a caller asking to fold $42,050 of add-ons into the Clubhouse
+    got a page that said it had while the Clubhouse's per-square figure never moved. Refused at
+    the boundary until the fold exists, because a silent no-op on money is worse than a 422.
     """
     key: str
     label: str
@@ -120,7 +132,7 @@ def _fixed_once(config: PricingConfig, buildings: list[Building], zone: str,
                 once: frozenset[str], permit_count: int) -> list[dict]:
     """The site's share of the fees every building would otherwise have paid in full."""
     out: list[dict] = []
-    commercial = any(b.quote.project_kind == "commercial" for b in buildings)
+    commercial_count = sum(1 for b in buildings if b.quote.project_kind == "commercial")
 
     if "delivery_plywood_vents" in once:
         out.append({"key": "delivery_plywood_vents", "label": "Delivery / Plywood / Vents",
@@ -131,14 +143,19 @@ def _fixed_once(config: PricingConfig, buildings: list[Building], zone: str,
                     "amount": float(config.raw["new_bonus_values"]),
                     "basis": "once per site (per mobilisation vs per roof — pending Tim)"})
     if "permit_processing" in once:
-        each = float(config.raw["permit_processing"])
-        if commercial:
-            each += float(config.raw["permit_commercial_add"])
-        out.append({"key": "permit_processing",
-                    "label": f"Permit Processing x{permit_count}"
-                             if permit_count != 1 else "Permit Processing",
-                    "amount": round(each * permit_count, 2),
-                    "basis": f"{permit_count} permit(s) — count, not scope; pending Tim"})
+        base = float(config.raw["permit_processing"])
+        # The commercial adder is per COMMERCIAL permit, not per permit. With one commercial
+        # structure among nine and permit_count=9 (Palm Beach may issue one per structure), the
+        # old `if any(commercial)` charged the adder nine times. min() also gives the right answer
+        # for a single site permit: any commercial scope makes that one permit commercial.
+        commercial_permits = min(commercial_count, permit_count)
+        amount = base * permit_count + float(config.raw["permit_commercial_add"]) * commercial_permits
+        label = "Permit Processing" if permit_count == 1 else f"Permit Processing x{permit_count}"
+        basis = f"{permit_count} permit(s) — count, not scope; pending Tim"
+        if commercial_permits:
+            basis += f"; commercial adder on {commercial_permits} of them"
+        out.append({"key": "permit_processing", "label": label,
+                    "amount": round(amount, 2), "basis": basis})
     if "tile_dumpster" in once:
         # ONE ceil over the summed tile squares. Per building this rounds up per building.
         tile_sq = sum(b.quote.num_squares for b in buildings
@@ -178,8 +195,22 @@ def price_project(
     """
     if not buildings:
         raise ValueError("a bid project needs at least one building")
+    names = [b.name for b in buildings]
+    if len(set(names)) != len(names):
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        raise ValueError(
+            f"duplicate structure name(s) {dupes} — structure_name is how a persisted project "
+            f"tells nine anonymous estimates apart, so duplicates make it unreadable."
+        )
     if floor_basis not in FLOOR_BASES:
         raise ValueError(f"floor_basis must be one of {FLOOR_BASES}, got {floor_basis!r}")
+    unknown = sorted(set(once_per_project) - SUPPRESSIBLE_FEE_KEYS)
+    if unknown:
+        raise ValueError(
+            f"once_per_project contains key(s) the estimator cannot suppress: {unknown}. "
+            f"Valid: {sorted(SUPPRESSIBLE_FEE_KEYS)}. An unrecognised key is ignored on both "
+            f"sides, which silently reverts the bid to per-building pricing."
+        )
 
     out = ProjectPricing()
     zone = buildings[0].quote.code_zone
@@ -217,7 +248,20 @@ def price_project(
         out.project_fixed = _fixed_once(config, buildings, zone, once_per_project, permit_count)
         out.project_total += sum(f["amount"] for f in out.project_fixed)
 
+    seen_keys: set[str] = set()
     for item in (project_items or []):
+        if item.allocation != "project":
+            raise ValueError(
+                f"project_item {item.key!r}: allocation={item.allocation!r} is not implemented. "
+                f"Only 'project' is honoured; a 'building:<name>' fold would be recorded and "
+                f"then priced as its own line anyway, which is a silent no-op on money."
+            )
+        if item.key in seen_keys:
+            raise ValueError(
+                f"duplicate project_item key {item.key!r} — each block must be identifiable, "
+                f"or a roll-up cannot say which line an amount came from."
+            )
+        seen_keys.add(item.key)
         d = {"key": item.key, "label": item.label, "cost": item.cost,
              "markup": item.markup, "amount": item.amount, "allocation": item.allocation}
         out.project_items.append(d)
@@ -231,8 +275,20 @@ def price_project(
     return out.to_dict()
 
 
+def total_squares(buildings: list[Building]) -> float:
+    """Every square the bid PRICES — sloped plus low-slope.
+
+    A roof with both sections is one job (core/estimator.py prices `flat_squares` against
+    `flat_roof_type` in the same call), and 36% of Perkins roofs are mixed. Summing only
+    `num_squares` reported a Clubhouse of 20 sloped + 15 flat as 20 squares against a total that
+    priced 35 — measured on the live jupiter config, an implied $1,787.50/sq against a true
+    $1,021.43/sq, 75% high. That figure reaches a customer through project_snapshot.
+    """
+    return sum(b.quote.num_squares + (b.quote.flat_squares or 0) for b in buildings)
+
+
 def dominant_roof_type(buildings: list[Building]) -> str:
-    """The roof type carrying the most squares in the bid.
+    """The roof type carrying the most squares in the bid, counting BOTH sections.
 
     A project snapshot still has to answer "what roof is this?" with ONE value, because
     core/proposal.py:_REQUIRED_SNAPSHOT_KEYS demands a scalar `roof_type` and every consumer —
@@ -240,10 +296,16 @@ def dominant_roof_type(buildings: list[Building]) -> str:
     area rather than the first building means a nine-structure tile job does not describe itself
     as a metal job because the bus stop happened to be listed first. Ties break on the type name
     so the answer is stable across calls.
+
+    Low-slope sections count under their OWN `flat_roof_type`: a bid that is mostly TPO by area
+    should not call itself tile because the tile happens to sit on the sloped side.
     """
     by_type: dict[str, float] = {}
     for b in buildings:
         by_type[b.quote.roof_type] = by_type.get(b.quote.roof_type, 0.0) + b.quote.num_squares
+        flat = b.quote.flat_squares or 0
+        if flat and b.quote.flat_roof_type:
+            by_type[b.quote.flat_roof_type] = by_type.get(b.quote.flat_roof_type, 0.0) + flat
     return max(sorted(by_type), key=lambda t: by_type[t])
 
 
@@ -269,7 +331,7 @@ def project_snapshot(roll_up: dict[str, Any], buildings: list[Building],
     return {
         **base,
         "roof_type": dominant_roof_type(buildings),
-        "num_squares": round(sum(b.quote.num_squares for b in buildings), 2),
+        "num_squares": round(total_squares(buildings), 2),
         "buildings": roll_up["buildings"],
         "project_items": roll_up["project_items"] + roll_up["project_fixed"],
         "project_totals": {
@@ -303,9 +365,22 @@ def _apply_project_floor(config: PricingConfig, out: ProjectPricing,
     """
     weekly = float(config.weekly_profit_floor() or 0.0)
     job = float(config.job_profit_floor() or 0.0)
-    per_week = float(config.profit_floor_days_per_week() or 5) or 5
+    per_week = float(config.profit_floor_days_per_week() or 5)
     weeks = max(1, math.ceil(total_days / per_week)) if total_days > 0 else 1
     week_floor = round(weeks * weekly, 2)
+
+    # A week floor with no days is not a floor. `profit_guidance` is attached only to
+    # daily-overhead quotes, so a bid of per_sq buildings with no explicit `days` contributes
+    # zero and `weeks` collapses to 1 — nine structures on an 18-week site were quoting ONE
+    # week's $2,500 with no warning. Refuse rather than price it: the caller either supplies
+    # Building.days (Tim's sheet has a day column per building) or uses overhead_mode="daily".
+    if basis == "week" and total_days <= 0:
+        raise ValueError(
+            "floor_basis='week' needs on-site days, and none of the buildings supplied any. "
+            "Set Building.days per structure, or quote them with overhead_mode='daily' so the "
+            "day model derives them. Pricing a 1-week floor for a multi-week site silently "
+            "under-charges by the number of weeks."
+        )
 
     info = {"basis": basis, "on_site_days": round(total_days, 2), "on_site_weeks": weeks,
             "project_floor": job, "weekly_basis_would_be": week_floor,
@@ -335,7 +410,14 @@ def _apply_project_floor(config: PricingConfig, out: ProjectPricing,
             f"to ${target:,.0f} by one site-level floor ({basis} basis). Per building it would "
             f"have been {len(out.buildings)} separate floors."
         )
-    if basis == "project" and week_floor > target:
+    if basis == "project" and total_days <= 0:
+        out.warnings.append(
+            "project_floor_basis_undisclosed: no on-site days were supplied, so the #449 weekly "
+            "basis cannot be costed for comparison. The 'weekly_basis_would_be' figure below is "
+            "one week's floor, NOT this site's — supply Building.days or quote daily to see the "
+            "real divergence."
+        )
+    if basis == "project" and total_days > 0 and week_floor > target:
         out.warnings.append(
             f"project_floor_basis_divergence: #449 specifies a per-site-per-WEEK floor, which "
             f"here is {weeks} x ${weekly:,.0f} = ${week_floor:,.0f}. Tim's own Evergrene margin "

@@ -19,6 +19,7 @@ from core.bid_project import (
     dominant_roof_type,
     price_project,
     project_snapshot,
+    total_squares,
 )
 from core.estimator import QuoteInput, estimate
 from tests.core.test_estimator_v2 import _cfg_v2
@@ -291,3 +292,157 @@ def test_project_snapshot_does_not_mutate_the_base():
     base = {"roof_type": "standing_seam_metal", "num_squares": 1}
     project_snapshot(roll_up, buildings, base)
     assert base == {"roof_type": "standing_seam_metal", "num_squares": 1}
+
+
+# ---------------------------------------------------------------------------
+# Mixed sloped+flat roofs — 36% of Perkins roofs, and Evergrene's Clubhouse
+# ---------------------------------------------------------------------------
+
+def _mixed(name: str, sloped: float, flat: float, flat_type: str = "tpo") -> Building:
+    return Building(name=name, quote=QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="13_tile", num_squares=sloped,
+        flat_squares=flat, flat_roof_type=flat_type,
+        project_kind="commercial", existing_roof="tile"))
+
+
+def test_total_squares_counts_the_flat_section():
+    """A roof with both sections is ONE job and the estimator prices both.
+
+    Counting only num_squares reported a 20+15 Clubhouse as 20 squares against a total that
+    priced 35 — an implied $/sq 75% high, and that figure reaches a customer via the snapshot.
+    """
+    assert total_squares([_mixed("Clubhouse", 20, 15)]) == 35
+    assert total_squares([_mixed("A", 20, 15), _mixed("B", 10, 0)]) == 45
+
+
+def test_total_squares_tolerates_a_missing_flat_section():
+    """flat_squares defaults to 0 but may arrive as None from a stored snapshot."""
+    b = _b("Sloped only", 30)
+    assert total_squares([b]) == 30
+
+
+def test_dominant_roof_type_counts_the_flat_system_under_its_own_type():
+    """A bid that is mostly TPO by area must not call itself tile."""
+    # 5 sloped tile + 40 flat TPO -> TPO dominates.
+    assert dominant_roof_type([_mixed("Warehouse", 5, 40, "tpo")]) == "tpo"
+    # 30 sloped tile + 5 flat TPO -> tile dominates.
+    assert dominant_roof_type([_mixed("Clubhouse", 30, 5, "tpo")]) == "13_tile"
+
+
+def test_project_snapshot_num_squares_matches_what_was_priced():
+    buildings = [_mixed("Clubhouse", 20, 15)]
+    roll_up = price_project(_cfg_v2(), [_b("Clubhouse", 20)])  # priced separately; shape only
+    snap = project_snapshot(roll_up, buildings, {})
+    assert snap["num_squares"] == 35
+
+
+# ---------------------------------------------------------------------------
+# The week basis is meaningless without days — and used to price ONE week silently
+# ---------------------------------------------------------------------------
+
+def _per_sq(name: str, days: float | None = None) -> Building:
+    """A per_sq-overhead building: profit_guidance is ABSENT, so days are unknown."""
+    return Building(name=name, days=days, quote=QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="13_tile", num_squares=30,
+        project_kind="commercial", existing_roof="tile", overhead_mode="per_sq"))
+
+
+def test_week_basis_without_days_refuses_instead_of_pricing_one_week():
+    """Nine structures on an 18-week site were quoting ONE week's $2,500, with no warning."""
+    import pytest
+
+    with pytest.raises(ValueError, match="needs on-site days"):
+        price_project(_cfg_v2(), [_per_sq(f"B{i}") for i in range(9)], floor_basis="week")
+
+
+def test_week_basis_with_explicit_days_counts_the_whole_site():
+    """Tim's sheet carries a day column per building — that is the supported input."""
+    r = price_project(_cfg_v2(), [_per_sq(f"B{i}", days=10) for i in range(9)],
+                      floor_basis="week")
+    assert r["floor"]["on_site_days"] == 90
+    assert r["floor"]["on_site_weeks"] == 18
+    assert r["floor"]["target"] == 18 * 2500
+
+
+def test_project_basis_says_so_when_it_cannot_cost_the_449_divergence():
+    """The divergence warning exists so #449's spec gap is visible rather than buried.
+
+    With no days it silently compared against ONE week's floor, understating the gap.
+    """
+    r = price_project(_cfg_v2(), [_per_sq(f"B{i}") for i in range(9)], floor_basis="project")
+    assert any("project_floor_basis_undisclosed" in w for w in r["warnings"])
+    assert not any("project_floor_basis_divergence" in w for w in r["warnings"])
+
+
+def test_unknown_once_per_project_key_is_refused():
+    """An unrecognised key is ignored on BOTH sides — not suppressed per building, not re-added.
+
+    `stories_3_5_delivery_chute` is the plausible wrong guess: this module's own docstring names
+    it two lines below the default set. Silently, it reverted tile_dumpster to nine ceil()s.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match="cannot suppress"):
+        price_project(_cfg_v2(), [_b("Clubhouse", 30)],
+                      once_per_project=frozenset({"delivery_plywood_vents",
+                                                  "stories_3_5_delivery_chute"}))
+
+
+def test_commercial_permit_adder_is_per_commercial_permit_not_per_permit():
+    """One commercial structure among nine used to put the adder on ALL nine permits."""
+    def _kind(name, kind):
+        return Building(name=name, quote=QuoteInput(
+            code_zone="FBC", slope_type="sloped", roof_type="13_tile", num_squares=10,
+            project_kind=kind, existing_roof="tile"))
+
+    cfg = _cfg_v2()
+    buildings = [_kind("Commercial", "commercial")] + [
+        _kind(f"Res{i}", "residential") for i in range(8)]
+    r = price_project(cfg, buildings, permit_count=9)
+    permit = next(f for f in r["project_fixed"] if f["key"] == "permit_processing")
+
+    base = float(cfg.raw["permit_processing"])
+    add = float(cfg.raw["permit_commercial_add"])
+    assert permit["amount"] == round(base * 9 + add * 1, 2)
+    assert "commercial adder on 1" in permit["basis"]
+
+
+def test_a_single_site_permit_is_commercial_if_any_scope_is():
+    """permit_count=1 means one permit for the site; commercial scope makes it a commercial one."""
+    def _kind(name, kind):
+        return Building(name=name, quote=QuoteInput(
+            code_zone="FBC", slope_type="sloped", roof_type="13_tile", num_squares=10,
+            project_kind=kind, existing_roof="tile"))
+
+    cfg = _cfg_v2()
+    r = price_project(cfg, [_kind("Commercial", "commercial"), _kind("Res", "residential")],
+                      permit_count=1)
+    permit = next(f for f in r["project_fixed"] if f["key"] == "permit_processing")
+    assert permit["amount"] == round(float(cfg.raw["permit_processing"])
+                                     + float(cfg.raw["permit_commercial_add"]), 2)
+
+
+def test_duplicate_structure_names_refused_at_core():
+    """The API layer rejects too, but the guard belongs here — price_project is the pure entry."""
+    import pytest
+
+    with pytest.raises(ValueError, match="duplicate structure name"):
+        price_project(_cfg_v2(), [_b("Main", 10), _b("Main", 12)])
+
+
+def test_building_allocation_refused_at_core():
+    import pytest
+
+    with pytest.raises(ValueError, match="not implemented"):
+        price_project(_cfg_v2(), [_b("Clubhouse", 30)], project_items=[
+            ProjectItem(key="addons", label="Sloped add-ons", cost=42050,
+                        allocation="building:Clubhouse")])
+
+
+def test_duplicate_project_item_keys_refused_at_core():
+    import pytest
+
+    with pytest.raises(ValueError, match="duplicate project_item key"):
+        price_project(_cfg_v2(), [_b("Clubhouse", 30)], project_items=[
+            ProjectItem(key="gc", label="A", cost=100),
+            ProjectItem(key="gc", label="B", cost=200)])
