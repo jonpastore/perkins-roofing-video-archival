@@ -27,6 +27,11 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+# bid_project is imported rather than restated: the ORM default for
+# bid_projects.once_per_project_fees must be the SAME set price_project suppresses, or a row
+# created without naming its fees prices differently from the quote that created it.
+# core.bid_project imports only core.*, so there is no cycle back into app.models.
+from core.bid_project import DEFAULT_ONCE_PER_PROJECT as _DEFAULT_ONCE_PER_PROJECT
 from core.tenant import TenantMixin
 
 from .config import settings
@@ -537,6 +542,61 @@ class PricingConfig(Base):
     )
 
 
+class BidProject(Base, TenantMixin):
+    """One job site, many structures, quoted as ONE bid (migration 0052, #430/#449).
+
+    Tim's Evergrene bid prices 9 buildings at one address as a single deal. `estimate()` is a
+    pure function of ONE roof, so without this container every site-scoped fee was charged nine
+    times and $116,420 of project scope had nowhere to live. See core/bid_project.py for the
+    pricing, which stays pure — this model only persists the inputs and the roll-up.
+
+    Project-level money is JSONB rather than child tables on purpose: general_conditions is a
+    short list of labelled amounts typed once per bid and never queried across projects.
+    """
+    __tablename__ = "bid_projects"
+
+    id                        = Column(Integer, primary_key=True, autoincrement=True)
+    property_id               = Column(Integer, ForeignKey("properties.id"), nullable=True)
+    name                      = Column(String(300), nullable=False)
+    branch                    = Column(String(100), nullable=True)
+    code_zone                 = Column(String(10), nullable=True)
+    #: Shape [{"label": str, "amount": number}]. ⚠️ The MARKUP IS CARRIED PER ITEM here (see
+    #: core.bid_project.ProjectItem.markup, which is what price_project actually multiplies by).
+    #: `general_conditions_markup` below is the migration's single-rate column and is NOT the
+    #: authority — do not read it to price anything, or a bid with per-block markups silently
+    #: reprices at one rate.
+    general_conditions        = Column(JSON().with_variant(JSONB, "postgresql"),
+                                       nullable=False, default=list)
+    general_conditions_markup = Column(Numeric(6, 4), nullable=False, default=1.0)
+    add_on_blocks             = Column(JSON().with_variant(JSONB, "postgresql"),
+                                       nullable=False, default=list)
+    #: ONE authority: core.bid_project.DEFAULT_ONCE_PER_PROJECT, which is what price_project
+    #: actually suppresses and what scored Evergrene at +2.3%. Restating the list here is how it
+    #: drifted — migration 0052's server default carries only THREE keys and its comment argues
+    #: tile_dumpster is per-building, while the code counts it once over the SUMMED squares
+    #: because tile_dumpster_count is a ceil() and nine per-building calls round up nine times
+    #: (14 loads billed for a 10-load site). The code is the measured one; 0053 realigns the DB.
+    #: SQLAlchemy sends a Python-side default explicitly, so THIS value is what every ORM insert
+    #: writes and the server default only applies to raw SQL.
+    once_per_project_fees     = Column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False,
+        default=lambda: sorted(_DEFAULT_ONCE_PER_PROJECT))
+    #: 'project' (default) | 'week' | 'building' — see core.bid_project.FLOOR_BASES. NOT defaulted
+    #: to 'week' despite #449: measured on Evergrene that basis prices ~40% above Tim's own bid.
+    profit_floor_basis        = Column(String(20), nullable=False, default="project")
+    status                    = Column(String(30), nullable=False, default="draft")
+    notes                     = Column(Text, nullable=True)
+    created_at                = Column(DateTime, nullable=False, default=_utcnow)
+    updated_at                = Column(DateTime, nullable=False, default=_utcnow,
+                                       onupdate=_utcnow)
+    created_by                = Column(String(320), nullable=True)
+
+    __table_args__ = (
+        Index("ix_bid_projects_tenant", "tenant_id"),
+        Index("ix_bid_projects_property", "tenant_id", "property_id"),
+    )
+
+
 class Estimate(Base):
     """Saved estimate rows — hash columns added in migration 0015."""
     __tablename__ = "estimates"
@@ -552,6 +612,11 @@ class Estimate(Base):
     root_id             = Column(Integer, ForeignKey("estimates.id"), nullable=True)
     version_number      = Column(Integer, nullable=False, default=1, server_default="1")
     source_proposal_id  = Column(Integer, ForeignKey("proposals.id"), nullable=True)
+    # Both nullable: a single-building quote has no project and must keep behaving as it does
+    # today. structure_name is the label within the bid ("Bus Stop"); without it a project is a
+    # list of nine anonymous estimates and nobody can tell which roof is which.
+    bid_project_id      = Column(Integer, ForeignKey("bid_projects.id"), nullable=True)
+    structure_name      = Column(String(200), nullable=True)
     input_json          = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     result_json         = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     created_at          = Column(DateTime, nullable=False, default=_utcnow)
@@ -561,6 +626,7 @@ class Estimate(Base):
         Index("ix_estimates_tenant_id", "tenant_id"),
         Index("ix_estimates_root", "root_id"),
         Index("ix_estimates_source_proposal", "source_proposal_id"),
+        Index("ix_estimates_bid_project", "bid_project_id"),
     )
 
 
@@ -753,6 +819,11 @@ class Proposal(Base, TenantMixin):
     customer_id          = Column(Integer, ForeignKey("customers.id"), nullable=False)
     property_id          = Column(Integer, ForeignKey("properties.id"), nullable=False)
     estimate_id          = Column(Integer, ForeignKey("estimates.id"), nullable=True)
+    # A project proposal covers N estimates, so estimate_id alone cannot describe it. Nullable:
+    # a single-building proposal has no project. ⚠️ web/src/pages/Proposals.tsx re-quotes exactly
+    # ONE estimate and overwrites quote_snapshot — on a project snapshot that silently destroys
+    # every other building, so that edit path must be gated on this being non-null (slice 3).
+    bid_project_id       = Column(Integer, ForeignKey("bid_projects.id"), nullable=True)
     template_id          = Column(Integer, ForeignKey("proposal_templates.id"))
     root_id              = Column(Integer, ForeignKey("proposals.id"))
     parent_id            = Column(Integer, ForeignKey("proposals.id"))

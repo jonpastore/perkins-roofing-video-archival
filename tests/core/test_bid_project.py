@@ -16,7 +16,9 @@ from core.bid_project import (
     DEFAULT_ONCE_PER_PROJECT,
     Building,
     ProjectItem,
+    dominant_roof_type,
     price_project,
+    project_snapshot,
 )
 from core.estimator import QuoteInput, estimate
 from tests.core.test_estimator_v2 import _cfg_v2
@@ -205,3 +207,87 @@ def test_a_config_with_the_floor_disabled_applies_none():
     assert r["floor"]["applied"] == 0.0
     assert r["floor"]["note"] == "floor not enforced by this config"
     assert not any(i["key"] == "project_profit_floor" for i in r["project_items"])
+
+
+# ---------------------------------------------------------------------------
+# The project snapshot: how a nine-building bid survives as ONE proposal
+# ---------------------------------------------------------------------------
+
+def test_dominant_roof_type_is_by_area_not_order():
+    """Listed first != biggest. A tile job must not call itself metal."""
+    buildings = [
+        Building(name="Bus Stop", quote=QuoteInput(
+            code_zone="FBC", slope_type="sloped", roof_type="standing_seam_metal",
+            num_squares=3)),
+        Building(name="Clubhouse", quote=QuoteInput(
+            code_zone="FBC", slope_type="sloped", roof_type="13_tile", num_squares=40)),
+    ]
+    assert dominant_roof_type(buildings) == "13_tile"
+
+
+def test_dominant_roof_type_sums_across_buildings_of_the_same_type():
+    """Three small tile roofs outweigh one bigger metal one — the sum decides, not the max."""
+    buildings = [
+        Building(name="M", quote=QuoteInput(code_zone="FBC", slope_type="sloped",
+                                            roof_type="standing_seam_metal", num_squares=20)),
+        Building(name="T1", quote=QuoteInput(code_zone="FBC", slope_type="sloped",
+                                             roof_type="13_tile", num_squares=8)),
+        Building(name="T2", quote=QuoteInput(code_zone="FBC", slope_type="sloped",
+                                             roof_type="13_tile", num_squares=8)),
+        Building(name="T3", quote=QuoteInput(code_zone="FBC", slope_type="sloped",
+                                             roof_type="13_tile", num_squares=8)),
+    ]
+    assert dominant_roof_type(buildings) == "13_tile"
+
+
+def test_dominant_roof_type_is_stable_on_a_tie():
+    """Equal area must not depend on dict ordering — the same bid twice is the same answer."""
+    buildings = [
+        Building(name="A", quote=QuoteInput(code_zone="FBC", slope_type="sloped",
+                                            roof_type="standing_seam_metal", num_squares=10)),
+        Building(name="B", quote=QuoteInput(code_zone="FBC", slope_type="sloped",
+                                            roof_type="13_tile", num_squares=10)),
+    ]
+    assert dominant_roof_type(buildings) == dominant_roof_type(list(reversed(buildings)))
+
+
+def test_project_snapshot_keeps_every_required_key_a_scalar():
+    """core/proposal.py must need NO change: the project keys are additive."""
+    from core.proposal import _REQUIRED_SNAPSHOT_KEYS
+
+    buildings = [_b("Clubhouse", 30), _b("Bus Stop", 3)]
+    roll_up = price_project(_cfg_v2(), buildings)
+    base = {
+        "pricing_config_hash": "abc123", "sent_at_iso": "2026-08-01T00:00:00Z",
+        "roof_type": "13_tile", "num_squares": 30, "tiers": {}, "deposit_policy": {},
+        "floors": {"min_profit_pct": 0.13, "min_profit_plus_oh_pct": 0.33},
+        "estimator_version": "v2",
+    }
+    snap = project_snapshot(roll_up, buildings, base)
+
+    for key in _REQUIRED_SNAPSHOT_KEYS:
+        assert key in snap, key
+    assert isinstance(snap["roof_type"], str)
+    assert snap["num_squares"] == 33
+    assert snap["project_totals"]["building_count"] == 2
+    assert len(snap["buildings"]) == 2
+
+
+def test_project_snapshot_carries_the_site_fees_into_project_items():
+    """project_fixed is site money. If the snapshot drops it the proposal under-states the bid."""
+    buildings = [_b("Clubhouse", 30), _b("Bus Stop", 3)]
+    roll_up = price_project(_cfg_v2(), buildings)
+    snap = project_snapshot(roll_up, buildings, {})
+
+    keys = {i["key"] for i in snap["project_items"]}
+    assert "delivery_plywood_vents" in keys
+    assert snap["project_totals"]["project_total"] == roll_up["project_total"]
+
+
+def test_project_snapshot_does_not_mutate_the_base():
+    """The caller's single-building snapshot must survive being used as a base."""
+    buildings = [_b("Clubhouse", 30)]
+    roll_up = price_project(_cfg_v2(), buildings)
+    base = {"roof_type": "standing_seam_metal", "num_squares": 1}
+    project_snapshot(roll_up, buildings, base)
+    assert base == {"roof_type": "standing_seam_metal", "num_squares": 1}

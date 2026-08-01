@@ -10,6 +10,7 @@ Role requirements (core.authz):
                      POST /estimator/scope-of-work/rewrite
   estimating_manage → config CRUD (lives in api/routes/pricing_configs.py)
 """
+from dataclasses import replace
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,7 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.auth import can, get_db_session, require_role
-from app.models import Estimate, Measurement, PricingConfig
+from app.models import BidProject, Estimate, Measurement, PricingConfig, Property
+from core import bid_project as BP
 from core import estimator as E
 from core import scope_of_work as SOW
 from core.discounts import resolve_discounts
@@ -49,7 +51,7 @@ class DiscountInput(BaseModel):
     percent: Optional[float] = Field(default=None, ge=0, le=100)
 
 class RepairQuoteRequest(BaseModel):
-    branch: str = "miami"
+    branch: str = Field(default="miami", max_length=100)  # see QuoteRequest.branch
     # roof_type is config-driven (repair.roof_types), not a Literal — a static enum here would
     # 422 on a new category Tim adds to config without a code deploy (see roof_type on
     # QuoteRequest above for the same fix, and its history).
@@ -116,9 +118,15 @@ def _get_active_config_row(branch: str, db: Session) -> Optional[PricingConfig]:
 # ---------------------------------------------------------------------------
 
 class QuoteRequest(BaseModel):
-    branch: str = "miami"
+    # max_length tracks bid_projects.branch VARCHAR(100) (migration 0052) — the strictest DB bound
+    # on a column of this name. estimates.branch is an unbounded String, so this was unconstrained
+    # until a project quote started writing the same value into bid_projects, where an over-long
+    # branch would 500 on Postgres and pass silently on SQLite.
+    branch: str = Field(default="miami", max_length=100)
     code_zone: Literal["HVHZ", "FBC"] = "HVHZ"
-    county: Optional[str] = None
+    # 100 to match properties.county — the longest US county name is well under it, and an
+    # unbounded value 500s on Postgres while passing every SQLite test (the bug 16a662b shipped).
+    county: Optional[str] = Field(default=None, max_length=100)
     slope_type: Literal["sloped", "low_slope"] = "sloped"
     # roof_type keys are config-driven (exhibit_b uses granular low-slope system keys like
     # `tpo_adhered`, `pb_silicone_2coat`); a static Literal can't enumerate them, so validate
@@ -209,41 +217,24 @@ class QuoteRequest(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("/quote")
-def quote(
-    body: QuoteRequest,
-    claims=Depends(require_role("estimating_view")),
-    db: Session = Depends(get_db_session),
-):
-    """Compute an itemized roofing estimate.
+def _quote_input_from_request(body, cfg_row, db, claims):
+    """Map a QuoteRequest onto a core.estimator.QuoteInput against the active config.
 
-    Uses the active config for the branch (or a pinned config_id).
-    Returns HTTP 503 if no active config is seeded for the branch.
-    Stamps pricing_config_id and pricing_config_hash on the response and
-    persists an Estimate row for audit reproduction.
+    Extracted from /quote so /project-quote prices each building through the EXACT same
+    validation and field mapping. A second copy of this would be the real hazard: it is 110 lines
+    of roof_type/specialty_tile validation, measurement-backed cut-LF resolution and ~60 field
+    assignments, and a project quote that silently diverged from a single-building quote on any
+    one of them would be indistinguishable from a pricing bug.
+
+    Returns (QuoteInput, effective_slope_type, cut_lfs). `cut_lfs` comes back because /quote tests
+    it to decide whether the cut-calculator comparison is worth running; `pitch_primary` does NOT,
+    because it is already baked into the returned QuoteInput and no caller reads it separately.
     """
-    # Resolve the config row
-    if body.config_id is not None:
-        cfg_row = db.get(PricingConfig, body.config_id)
-        if cfg_row is None or cfg_row.tenant_id != db.info.get("tenant_id"):
-            raise HTTPException(404, f"Config {body.config_id} not found")
-    else:
-        cfg_row = _get_active_config_row(body.branch, db)
-
-    # No active config — refuse with 503 (no silent legacy fallback)
-    if cfg_row is None or not cfg_row.config:
-        raise HTTPException(
-            503,
-            detail=(
-                f"no active pricing config for branch '{body.branch}' — "
-                "seed/activate one in Admin -> Estimating"
-            ),
-        )
-
     # Route to the low-slope calculator whenever the roof_type is a low-slope system, regardless
     # of the client-sent slope_type flag. The set is config-driven (granular exhibit_b keys) plus
     # the coarse aliases so a caller can never mismatch roof_type and calculator.
-    low_slope_keys = LOW_SLOPE_ROOF_TYPES | set(_priced_low_slope_types(cfg_row.config, body.code_zone))
+    low_slope_keys = LOW_SLOPE_ROOF_TYPES | set(
+        _priced_low_slope_types(cfg_row.config, body.code_zone))
     effective_slope_type = "low_slope" if body.roof_type in low_slope_keys else body.slope_type
 
     # roof_type is a free str at the boundary (config-driven keys), so validate it here against the
@@ -364,26 +355,74 @@ def quote(
     q = E.QuoteInput(**qkwargs, **cut_lfs, apply_cut_calc_to_base=False,
                      pitch_primary=pitch_primary)
 
-    config = load_config(cfg_row.config)
+    return q, effective_slope_type, cut_lfs
 
-    # Gutter accessories (elbows, leaf guard, 2-story uplift) only price alongside a
-    # gutter run — reject them without gutter_lf so they can't silently drop to $0.
+
+def _validate_quote_guards(body, config, *, where: str = "") -> None:
+    """Guards that need the loaded CONFIG, so they sit outside _quote_input_from_request.
+
+    Shared because they were NOT extracted with the mapper and /project-quote therefore skipped
+    both. The gutter one is the expensive miss: core/estimator.py prices the whole accessory
+    block inside `if q.gutter_lf:`, so elbows / leaf guard / 2-story uplift silently cost $0
+    without it — a nine-building bid could ship under-priced with nothing in the response saying
+    so. `where` names the structure, because "unknown daily_series" is unactionable on a bid with
+    nine of them.
+    """
+    prefix = f"{where}: " if where else ""
     if (body.gutter_elbows or body.leaf_guard != "none" or body.gutter_two_story) and not body.gutter_lf:
         raise HTTPException(
             422,
-            detail="gutter_elbows, leaf_guard, and gutter_two_story require gutter_lf > 0.",
+            detail=f"{prefix}gutter_elbows, leaf_guard, and gutter_two_story require gutter_lf > 0.",
         )
-
-    # Validate daily series names against config before engine call (→422, not 500)
     if body.daily_series:
         known_series = set(config.daily_overhead_rates().keys())
         unknown = [s.series for s in body.daily_series if s.series not in known_series]
         if unknown:
             raise HTTPException(
                 422,
-                detail=f"unknown daily_series name(s): {unknown}. "
+                detail=f"{prefix}unknown daily_series name(s): {unknown}. "
                 f"Valid series: {sorted(known_series)}",
             )
+
+
+
+@router.post("/quote")
+def quote(
+    body: QuoteRequest,
+    claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
+):
+    """Compute an itemized roofing estimate.
+
+    Uses the active config for the branch (or a pinned config_id).
+    Returns HTTP 503 if no active config is seeded for the branch.
+    Stamps pricing_config_id and pricing_config_hash on the response and
+    persists an Estimate row for audit reproduction.
+    """
+    # Resolve the config row
+    if body.config_id is not None:
+        cfg_row = db.get(PricingConfig, body.config_id)
+        if cfg_row is None or cfg_row.tenant_id != db.info.get("tenant_id"):
+            raise HTTPException(404, f"Config {body.config_id} not found")
+    else:
+        cfg_row = _get_active_config_row(body.branch, db)
+
+    # No active config — refuse with 503 (no silent legacy fallback)
+    if cfg_row is None or not cfg_row.config:
+        raise HTTPException(
+            503,
+            detail=(
+                f"no active pricing config for branch '{body.branch}' — "
+                "seed/activate one in Admin -> Estimating"
+            ),
+        )
+
+    q, effective_slope_type, cut_lfs = _quote_input_from_request(body, cfg_row, db, claims)
+
+    config = load_config(cfg_row.config)
+
+    # Gutter accessories (elbows, leaf guard, 2-story uplift) only price alongside a
+    _validate_quote_guards(body, config)
 
     try:
         result = E.estimate(config, q)
@@ -483,8 +522,11 @@ def quote(
     # Pre-discount totals so the flat-vs-cut delta is purely the base difference.
     if any(cut_lfs.values()):
         try:
-            cut_res = E.estimate(config, E.QuoteInput(**qkwargs, **cut_lfs,
-                                                      pitch_primary=pitch_primary))
+            # Same input as the headline quote with the cut-adjusted base switched ON. Previously
+            # rebuilt from qkwargs; `q` already carries the cut LFs and pitch_primary and differs
+            # only by apply_cut_calc_to_base=False, so this is the same object by a shorter route
+            # — and cannot drift from the headline quote's field mapping.
+            cut_res = E.estimate(config, replace(q, apply_cut_calc_to_base=True))
         except (ValueError, ConfigError):
             cut_res = None
         if cut_res:
@@ -541,6 +583,194 @@ def quote(
     est.result_json = _audit_payload(result)
     db.flush()
 
+    return result
+
+
+class BuildingInput(BaseModel):
+    """One structure in the bid: a label, its own full quote, and optionally its on-site days."""
+    name: str = Field(..., min_length=1, max_length=200)
+    #: Days the crew spends on THIS structure. Only feeds the site week count; when absent the
+    #: building contributes its own estimate's derived series days.
+    days: Optional[float] = Field(default=None, ge=0)
+    quote: QuoteRequest
+
+
+class ProjectItemInput(BaseModel):
+    """A quoted block belonging to the site rather than to any one roof (General Conditions)."""
+    key: str = Field(..., min_length=1, max_length=100)
+    label: str = Field(..., min_length=1, max_length=300)
+    cost: float = Field(..., ge=0)
+    markup: float = Field(default=1.0, ge=1.0, le=3.0)
+    allocation: str = Field(default="project", max_length=210)
+
+
+class ProjectQuoteRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=300)
+    property_id: Optional[int] = None
+    buildings: list[BuildingInput] = Field(..., min_length=1)
+    project_items: list[ProjectItemInput] = Field(default_factory=list)
+    #: null = the measured default (see core.bid_project.DEFAULT_ONCE_PER_PROJECT). An explicit
+    #: list is how a bid opts out of a site-scoping decision that is still pending Tim.
+    once_per_project: Optional[list[str]] = None
+    floor_basis: Literal["project", "week", "building"] = "project"
+    permit_count: int = Field(default=1, ge=1, le=99)
+    notes: Optional[str] = None
+    #: False returns the roll-up without writing anything — the SPA re-prices on every keystroke.
+    persist: bool = True
+
+
+@router.post("/project-quote")
+def project_quote(
+    body: ProjectQuoteRequest,
+    claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
+):
+    """Price several structures at one site as ONE bid (#430/#449 slice 2).
+
+    Each building is priced through the SAME config resolution and field mapping as
+    POST /quote (`_quote_input_from_request`), then core.bid_project.price_project suppresses the
+    site-scoped fees per building, adds them once, and applies one profit floor over the bid.
+
+    Persists one `bid_projects` row and N `estimates` rows carrying `bid_project_id` +
+    `structure_name`, so a project is reproducible for audit exactly like a single quote is.
+
+    Returns 422 when the buildings disagree on branch or zone: a bid is one site with one permit
+    office and one price book, and silently pricing half the structures off another branch's
+    config would be invisible in the total.
+    """
+    branches = {b.quote.branch for b in body.buildings}
+    if len(branches) > 1:
+        raise HTTPException(422, detail=f"all buildings must share one branch, got {sorted(branches)}")
+    zones = {b.quote.code_zone for b in body.buildings}
+    if len(zones) > 1:
+        raise HTTPException(422, detail=f"all buildings must share one code_zone, got {sorted(zones)}")
+
+    first = body.buildings[0].quote
+    if first.config_id is not None:
+        cfg_row = db.get(PricingConfig, first.config_id)
+        if cfg_row is None or cfg_row.tenant_id != db.info.get("tenant_id"):
+            raise HTTPException(404, f"Config {first.config_id} not found")
+    else:
+        cfg_row = _get_active_config_row(first.branch, db)
+    if cfg_row is None or not cfg_row.config:
+        raise HTTPException(
+            503,
+            detail=(f"no active pricing config for branch '{first.branch}' — "
+                    "seed/activate one in Admin -> Estimating"),
+        )
+
+    # REFUSE what the project path cannot honour, rather than accepting and ignoring it.
+    # BuildingInput.quote is the FULL QuoteRequest, so it advertises every field /quote supports;
+    # the project roll-up implements a subset. Silently dropping the rest is the dangerous
+    # option — `discounts` in particular would be persisted into input_json while never coming
+    # off the price, so the audit row would disagree with what the customer was quoted.
+    unsupported = {
+        "discounts": [b.name for b in body.buildings if b.quote.discounts],
+        "parent_estimate_id": [b.name for b in body.buildings
+                               if b.quote.parent_estimate_id is not None],
+        "source_proposal_id": [b.name for b in body.buildings
+                               if b.quote.source_proposal_id is not None],
+    }
+    named = {k: v for k, v in unsupported.items() if v}
+    if named:
+        raise HTTPException(422, detail={
+            "message": "these fields are not supported on a project quote and were refused "
+                       "rather than silently ignored",
+            "fields": named,
+        })
+    # config_id is the third axis of the same decision as branch/code_zone above: pricing half a
+    # site off a pinned config and half off the active one is invisible in the total.
+    config_ids = {b.quote.config_id for b in body.buildings}
+    if len(config_ids) > 1:
+        raise HTTPException(422, detail=f"all buildings must share one config_id, got {sorted(config_ids, key=str)}")
+
+    # A property_id is a cross-tenant reference if it is not checked. bid_projects.property_id is
+    # a plain FK, and Postgres evaluates FK constraints with row security bypassed, so RLS on
+    # `properties` does NOT stop a bid pointing at another tenant's property — it only stops
+    # anyone reading it back. db.get under the tenant-scoped session returns None for a row this
+    # tenant cannot see, which is exactly the check.
+    if body.property_id is not None:
+        if db.get(Property, body.property_id) is None:
+            raise HTTPException(404, f"Property {body.property_id} not found")
+
+    config = load_config(cfg_row.config)
+    built: list[BP.Building] = []
+    for item in body.buildings:
+        q, _slope, _cuts = _quote_input_from_request(item.quote, cfg_row, db, claims)
+        _validate_quote_guards(item.quote, config, where=item.name)
+        built.append(BP.Building(name=item.name, quote=q, days=item.days))
+
+    once = (frozenset(body.once_per_project) if body.once_per_project is not None
+            else BP.DEFAULT_ONCE_PER_PROJECT)
+    try:
+        roll_up = BP.price_project(
+            config, built,
+            project_items=[BP.ProjectItem(**pi.model_dump()) for pi in body.project_items],
+            once_per_project=once,
+            floor_basis=body.floor_basis,
+            permit_count=body.permit_count,
+        )
+    except (ValueError, ConfigError) as exc:
+        raise HTTPException(422, detail=str(exc)) from exc
+
+    result = {
+        **roll_up,
+        "name": body.name,
+        "branch": first.branch,
+        "code_zone": first.code_zone,
+        "pricing_config_id": cfg_row.id,
+        "pricing_config_hash": cfg_row.config_hash,
+        "once_per_project": sorted(once),
+        "permit_count": body.permit_count,
+        "dominant_roof_type": BP.dominant_roof_type(built),
+        "num_squares": round(sum(b.quote.num_squares for b in built), 2),
+    }
+    if not body.persist:
+        return result
+
+    project = BidProject(
+        tenant_id=db.info["tenant_id"],
+        property_id=body.property_id,
+        name=body.name,
+        branch=first.branch,
+        code_zone=first.code_zone,
+        general_conditions=[pi.model_dump() for pi in body.project_items],
+        general_conditions_markup=1.0,
+        add_on_blocks=[],
+        once_per_project_fees=sorted(once),
+        profit_floor_basis=body.floor_basis,
+        notes=body.notes,
+        created_by=claims.get("email") or "unknown",
+    )
+    db.add(project)
+    db.flush()
+
+    # One estimate row per structure, each carrying the project id and its label. Written with the
+    # SAME _audit_payload shape a single quote uses, so an auditor replaying a project reads the
+    # same rows in the same format rather than a second, project-only schema.
+    estimate_ids: list[int] = []
+    for item, priced in zip(body.buildings, roll_up["buildings"], strict=True):
+        est = Estimate(
+            tenant_id=db.info["tenant_id"],
+            branch=item.quote.branch,
+            code_zone=item.quote.code_zone,
+            county=item.quote.county,
+            pricing_config_id=cfg_row.id,
+            pricing_config_hash=cfg_row.config_hash,
+            bid_project_id=project.id,
+            structure_name=item.name,
+            input_json=item.quote.model_dump(),
+            result_json=_audit_payload(priced),
+            created_by=claims.get("email") or "unknown",
+        )
+        db.add(est)
+        db.flush()
+        est.root_id = est.id
+        estimate_ids.append(est.id)
+    db.flush()
+
+    result["bid_project_id"] = project.id
+    result["estimate_ids"] = estimate_ids
     return result
 
 
