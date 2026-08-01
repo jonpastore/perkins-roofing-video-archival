@@ -299,6 +299,72 @@ so a project can only be created by API today.
 
 ---
 
+## §3.95 — SLICE 4: THE SPA SURFACE (built, PR pending)
+
+Branch `feat/430-slice4-project-quoting`. Slices 1-3 merged and deployed.
+
+**Design change from the plan, deliberate.** The plan said "lift the ~55 page-level scalar
+`quote*` inputs into a per-building record". I did not. `buildQuoteBody()` already turns the form
+into a complete `QuoteRequest`, so **the form IS the per-building editor** and a "building" is a
+captured snapshot of it. Both reviewers judged this the right call: it makes client/server payload
+drift structurally impossible, where a hand-lifted record would re-plumb 55 fields in a
+3,000-line page with no frontend test net, and any single divergence would look exactly like a
+pricing bug. The cost it charges is that a captured building can only be edited by remove-and-
+re-add — which is what MAJOR-1 below tripped over.
+
+### R2 ran twice and BOTH reviewers failed it first. That is the system working.
+
+**Architect, round 1** — 1 CRITICAL + 3 HIGH:
+- ⚠️ **Switching customer left the previous customer's bid on screen and would file a proposal
+  against the NEW customer.** Leaving the estimate builder is an early JSX *return*, not an
+  unmount, so no project state reset. Nothing on either side rejected the mismatch.
+- Per-building warnings declared and never rendered — the same "structure 2 hides behind
+  structure 1" defect slice 3 fixed for the LLM send gate, reintroduced on the estimator surface.
+- `priceProject` never cleared `projectProposalId`: the button vanished permanently and the badge
+  asserted something untrue about what was on screen.
+- No SPA path for `project_items`/`permit_count`, so **the screen could not reproduce the
+  Evergrene bid it exists for** ($36,570 of General Conditions).
+
+**Critic, round 2 — found two MAJORs INSIDE those fixes:**
+- ⚠️ **`savedSignature` outlived the result it described.** My signature covered name+squares but
+  not the roof config, and remove-and-re-add is the only edit path — so correcting a building
+  produced an identical signature, the button read "Saved" (disabled) about a bid whose price had
+  changed, and **the only save path was dead**. Separately, pressing "Price project" cleared the
+  signature and re-armed a duplicate save, reopening the MEDIUM the architect had closed.
+- ⚠️ **The proposal took its property from the currently selected measurement, not from the bid.**
+  Two lines in one feature answered "which site is this?" from different sources.
+
+Plus six MEDIUMs, of which one is real money: `Number(gcMarkup) || 1` silently turned a
+comma-decimal markup into 1.0 — **$31,800 instead of $36,570 on Tim's own General Conditions, a
+$4,770 under-charge with no message**. And `add_on_blocks` had no SPA path, so **$73,050** of
+Evergrene's project scope could only be entered mislabelled as General Conditions.
+
+All fixed. Also fixed server-side: `core/bid_project.py` reported per-building `squares` as the
+SLOPED side only while `total_squares()` counts both, so one screen showed the same building as
+"35 sq" and "20 sq" with a 35 headline — the 75%-high implied $/sq this module documents,
+rendered next to the correct figure.
+
+### What R1 cost, and where it was paid
+
+`buildProjectQuoteBody`, `rejectBuildingCapture` and `projectBidSignature` are exported
+module-level pure functions **because** the critic was right that both MAJORs lived outside the
+tested surface. 26 vitest cases now cover the payload shape, every capture refusal, and the
+duplicate-save gate. ⚠️ **CI does NOT run `npm test`** (only `npm ci && npm run build`), so these
+are a local gate — worth wiring into CI.
+
+⚠️ **`npx tsc --noEmit` is NOT the build gate.** It passed twice on code `npm run build`
+(`tsc -b`) rejected — a missing `Badge tone` prop and an unexported type. Use the build.
+
+### Still not exposed from the SPA (owner call)
+
+`floor_basis` is hard-locked to `"project"`, so #449's per-week basis is unreachable from the UI —
+though `project_floor_basis_divergence` still surfaces in the warnings the screen renders, so the
+divergence is disclosed even where the lever is not. `once_per_project` and `notes` likewise have
+no input. On-site days are captured and persisted but cannot change the price from here, because
+that only happens under the week basis.
+
+---
+
 ## §4 — NEXT
 
 0. ⚠️ **RETRY R2 WITH THE AGENTS** (see §3.5). The formal requirement is unmet — both reviewer

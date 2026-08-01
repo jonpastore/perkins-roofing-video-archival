@@ -192,6 +192,141 @@ interface RepairQuoteResult {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+export interface ProjectItemDraft {
+  key: string;
+  label: string;
+  cost: number;
+  markup: number;
+}
+
+export interface ProjectBuildingDraft {
+  name: string;
+  days?: number;
+  quote: Record<string, unknown>;
+  squares: number;
+  /** The property this roof was captured against — a bid must be ONE site. */
+  propertyId?: number | null;
+  /** Captured so a zone mismatch is caught here, where the user can still see the culprit. */
+  codeZone?: string;
+}
+
+interface ProjectQuoteResult {
+  project_total: number;
+  profit: number;
+  num_squares: number;
+  dominant_roof_type: string;
+  buildings: Array<{ name: string; squares: number; total: number; profit: number; days: number;
+                     warnings?: string[] }>;
+  project_items: Array<{ key: string; label: string; amount: number }>;
+  project_fixed: Array<{ key: string; label: string; amount: number; basis: string }>;
+  floor: Record<string, unknown>;
+  warnings: string[];
+  bid_project_id?: number;
+  estimate_ids?: number[];
+}
+
+
+/** The POST body for /estimator/project-quote. Module-level and exported so it can be tested
+ *  without mounting a 3,000-line page — the one place "the form is the per-building editor"
+ *  charges rent, paid here. */
+export function buildProjectQuoteBody(args: {
+  name: string;
+  buildings: ProjectBuildingDraft[];
+  persist: boolean;
+  propertyId?: number | null;
+  projectItems?: ProjectItemDraft[];
+  addOnBlocks?: ProjectItemDraft[];
+  permitCount?: number;
+}): Record<string, unknown> {
+  return {
+    name: args.name.trim() || "Untitled project",
+    property_id: args.propertyId ?? undefined,
+    buildings: args.buildings.map((b) => ({ name: b.name, days: b.days, quote: b.quote })),
+    project_items: (args.projectItems ?? []).map((i) => ({
+      key: i.key, label: i.label, cost: i.cost, markup: i.markup,
+    })),
+    // A SEPARATE list on purpose: Tim's proposal presents General Conditions and his add-on
+    // blocks ($42,050 sloped + $31,000 tile) as different quoted blocks, and bid_projects
+    // .add_on_blocks exists for exactly that. Folding them together prices identically but
+    // persists the misfiling slice 2 fixed.
+    add_on_blocks: (args.addOnBlocks ?? []).map((i) => ({
+      key: i.key, label: i.label, cost: i.cost, markup: i.markup,
+    })),
+    permit_count: args.permitCount && args.permitCount > 0 ? args.permitCount : 1,
+    persist: args.persist,
+  };
+}
+
+/** Identity of a bid, for "is this exact bid already saved?".
+ *
+ *  Includes each building's FULL quote: remove-and-re-add is the only way to edit a captured
+ *  roof, so a signature over name+squares alone reported "already saved" about a bid whose price
+ *  had changed — and disabled the only button that could save the correction. permitCount is
+ *  normalised because "1", "01" and "1.0" all send 1 but hash differently, which let an identical
+ *  bid save twice. */
+export function projectBidSignature(args: {
+  name: string;
+  buildings: ProjectBuildingDraft[];
+  items: ProjectItemDraft[];
+  permitCount: string;
+}): string {
+  return JSON.stringify({
+    n: args.name.trim(),
+    b: args.buildings.map((x) => [x.name, x.squares, x.days ?? null, JSON.stringify(x.quote)]),
+    i: args.items.map((x) => [x.key, x.cost, x.markup]),
+    p: Number(args.permitCount) || 1,
+  });
+}
+
+/** Why a roof may not join this bid. null = it may.
+ *
+ *  A bid is ONE site: every structure must share a property, or the "charged once for the site"
+ *  arithmetic is describing two sites. Nothing on the server can catch this — it only compares
+ *  branch, zone and config — so it is enforced where the capture happens. */
+export function rejectBuildingCapture(args: {
+  name: string;
+  existing: ProjectBuildingDraft[];
+  propertyId?: number | null;
+  discountCount: number;
+  days: string;
+  codeZone?: string;
+}): string | null {
+  const name = args.name.trim();
+  if (!name) {
+    return "Name the structure (e.g. \"Clubhouse\") — a bid of anonymous roofs cannot be read, "
+      + "and duplicates are refused.";
+  }
+  if (args.existing.some((b) => b.name.toLowerCase() === name.toLowerCase())) {
+    return `"${name}" is already in this bid.`;
+  }
+  if (args.discountCount > 0) {
+    return `Remove the ${args.discountCount} discount row(s) first — a project quote refuses `
+      + "per-building discounts, because a discount that never comes off the price would still "
+      + "be recorded on the estimate.";
+  }
+  if (args.days.trim() !== "" && !Number.isFinite(Number(args.days))) {
+    return `On-site days must be a number (got "${args.days}").`;
+  }
+  if (args.days.trim() !== "" && Number(args.days) < 0) {
+    return "On-site days cannot be negative.";
+  }
+  const first = args.existing[0];
+  if (first && first.propertyId != null && args.propertyId != null
+      && first.propertyId !== args.propertyId) {
+    return "Every structure in a bid must be at the SAME property — that is what makes delivery, "
+      + "permit and the dumpster site costs rather than per-roof ones.";
+  }
+  // The server refuses a mixed code_zone too, but by then it can only name the ZONES, not which
+  // of nine captured structures is the odd one — and the list shows no zone, so the only recovery
+  // was removing everything. Catch it where the user can still see what they changed.
+  if (first && args.codeZone && first.codeZone && first.codeZone !== args.codeZone) {
+    return `This roof is ${args.codeZone} but the bid is ${first.codeZone}. One bid is one site, `
+      + "so every structure shares a code zone — change the region back, or start a separate bid.";
+  }
+  return null;
+}
+
+
 function usd(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 }
@@ -721,6 +856,29 @@ export function Quoting() {
   const [recommendedTier, setRecommendedTier] = useState<"good" | "better" | "best">("good");
   const [estimateDiscounts, setEstimateDiscounts] = useState<EstimateDiscountRow[]>([]);
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
+  // MULTI-BUILDING BID (#430/#449 slice 4). Deliberately NOT a lift of the ~55 page-level
+  // `quote*` inputs into a per-building record: buildQuoteBody() already turns this form into a
+  // complete QuoteRequest, so the form IS the per-building editor and a "building" is a captured
+  // snapshot of it. Same capability, without a 55-field refactor of a 2,800-line page.
+  const [projectBuildings, setProjectBuildings] = useState<ProjectBuildingDraft[]>([]);
+  const [projectName, setProjectName] = useState("");
+  const [buildingName, setBuildingName] = useState("");
+  const [buildingDays, setBuildingDays] = useState("");
+  const [projectResult, setProjectResult] = useState<ProjectQuoteResult | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [projectProposalId, setProjectProposalId] = useState<number | null>(null);
+  // Site-wide scope. Tim's Evergrene General Conditions is green fence + telehandler ($22,800)
+  // and a full-time PM ($9,000) at x1.15 = $36,570 — without an input for it the screen cannot
+  // reproduce the bid this whole feature exists for.
+  const [projectItems, setProjectItems] = useState<ProjectItemDraft[]>([]);
+  const [addOnBlocks, setAddOnBlocks] = useState<ProjectItemDraft[]>([]);
+  const [gcIsAddOn, setGcIsAddOn] = useState(false);
+  const [gcLabel, setGcLabel] = useState("");
+  const [gcCost, setGcCost] = useState("");
+  const [gcMarkup, setGcMarkup] = useState("1.15");
+  const [permitCount, setPermitCount] = useState("1");
+  const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [inputsDirty, setInputsDirty] = useState(false);
   const [lastQuoteInput, setLastQuoteInput] = useState<Record<string, unknown> | null>(null);
   const [quoting, setQuoting] = useState(false);
@@ -1193,6 +1351,162 @@ export function Quoting() {
       ...overrides,
     };
   }
+
+  // ---- Multi-building bid -------------------------------------------------
+
+  function addCurrentRoofAsBuilding() {
+    const body = buildQuoteBody();
+    if (!body) {
+      setProjectError("Select a measurement first — a building needs its own roof measurement.");
+      return;
+    }
+    const refusal = rejectBuildingCapture({
+      name: buildingName,
+      existing: projectBuildings,
+      propertyId: selectedMeasurement?.property_id,
+      discountCount: ((body.discounts as unknown[] | undefined) ?? []).length,
+      days: buildingDays,
+      codeZone: String(body.code_zone ?? ""),
+    });
+    if (refusal) {
+      setProjectError(refusal);
+      return;
+    }
+    const name = buildingName.trim();
+    const squares = Number(body.num_squares || 0) + Number(body.flat_squares || 0);
+    setProjectBuildings((prev) => [...prev, {
+      name,
+      days: buildingDays.trim() === "" ? undefined : Number(buildingDays),
+      quote: body,
+      squares,
+      propertyId: selectedMeasurement?.property_id ?? null,
+      codeZone: String(body.code_zone ?? ""),
+    }]);
+    setBuildingName("");
+    setBuildingDays("");
+    setProjectError(null);
+    setProjectResult(null);
+    setProjectProposalId(null);
+  }
+
+  // Includes each building's FULL quote: remove-and-re-add is the only way to edit a captured
+  // roof, so a signature over name+squares alone said "already saved" about a bid whose price had
+  // changed — and disabled the only button that could save the correction. permitCount is
+  // normalised because "1", "01" and "1.0" all send 1 but hashed differently, which let an
+  // identical bid save twice.
+  const projectSignature = projectBidSignature({
+    name: projectName, buildings: projectBuildings,
+    items: [...projectItems, ...addOnBlocks], permitCount,
+  });
+  // Only meaningful while the result it describes is still on screen. Without the
+  // bid_project_id conjunct, pressing "Price project" (persist=false) cleared the signature and
+  // re-armed the save button for a second identical bid project.
+  const alreadySaved = !!projectResult?.bid_project_id && savedSignature === projectSignature;
+
+  function removeBuilding(name: string) {
+    setProjectBuildings((prev) => prev.filter((b) => b.name !== name));
+    setProjectResult(null);
+    setProjectProposalId(null);
+  }
+
+  async function priceProject(persist: boolean) {
+    if (projectBuildings.length === 0) return;
+    setProjectBusy(true);
+    setProjectError(null);
+    try {
+      const r = await apiFetch("/estimator/project-quote", {
+        method: "POST",
+        body: JSON.stringify(buildProjectQuoteBody({
+          name: projectName,
+          buildings: projectBuildings,
+          persist,
+          propertyId: projectBuildings[0]?.propertyId,
+          projectItems,
+          addOnBlocks,
+          permitCount: Number(permitCount) || 1,
+        })),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      const data = await r.json() as ProjectQuoteResult;
+      setProjectResult(data);
+      // A re-price supersedes any proposal made from the PREVIOUS bid project — leaving the id
+      // set hid the button forever and left the badge asserting something untrue about what is
+      // now on screen.
+      setProjectProposalId(null);
+      setSavedSignature(persist && data.bid_project_id ? projectSignature : null);
+    } catch (e: unknown) {
+      setProjectError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  async function createProjectProposal() {
+    // Persist first: the proposal route re-prices from the STORED estimates, so an unsaved
+    // roll-up has nothing to build from.
+    if (!projectResult?.bid_project_id) {
+      setProjectError("Save the project first (Price & save) — the proposal is built from the "
+        + "stored estimates, not from this screen.");
+      return;
+    }
+    // The BID's property, not the currently selected measurement's. Those are two different
+    // answers to "which site is this?", and selecting another measurement after saving would
+    // otherwise file the proposal against a property none of the structures are on.
+    const bidPropertyId = projectBuildings[0]?.propertyId ?? selectedMeasurement?.property_id;
+    if (!selectedCustomer?.id || !bidPropertyId) {
+      setProjectError("A project proposal needs a customer and a property.");
+      return;
+    }
+    if (selectedMeasurement?.property_id != null && bidPropertyId !== selectedMeasurement.property_id) {
+      setProjectError("The selected measurement is at a different property than this bid. "
+        + "Re-select a measurement at the bid's property before creating the proposal.");
+      return;
+    }
+    setProjectBusy(true);
+    setProjectError(null);
+    try {
+      const r = await apiFetch(
+        `/quoting/proposals/from-project/${projectResult.bid_project_id}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            customer_id: selectedCustomer.id,
+            property_id: bidPropertyId,
+            title: projectName.trim() || undefined,
+          }),
+        });
+      if (!r.ok) throw new Error(await errText(r));
+      const prop = await r.json() as { id: number };
+      setProjectProposalId(prop.id);
+    } catch (e: unknown) {
+      setProjectError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProjectBusy(false);
+    }
+  }
+
+  // CRITICAL: leaving the estimate builder is an early JSX return, NOT an unmount, so switching
+  // customer left the previous customer's structures, roll-up and bid_project_id on screen —
+  // and "Create project proposal" would then file THAT bid against the NEW customer, with
+  // nothing on either side rejecting it. Reset when the customer identity changes.
+  useEffect(() => {
+    setProjectBuildings([]);
+    setProjectResult(null);
+    setProjectProposalId(null);
+    setProjectItems([]);
+    setAddOnBlocks([]);
+    setProjectName("");
+    setProjectError(null);
+    setSavedSignature(null);
+    // permitCount MULTIPLIES money (_fixed_once prices permit_processing * permit_count), so
+    // carrying a 9-permit Evergrene setting into a single-house customer is a pricing error, not
+    // a cosmetic one.
+    setPermitCount("1");
+    setBuildingName("");
+    setBuildingDays("");
+    setGcLabel("");
+    setGcCost("");
+  }, [selectedCustomer?.id]);
 
   async function runQuote(overrides: Record<string, unknown> = {}) {
     const body = buildQuoteBody(overrides);
@@ -2321,6 +2635,218 @@ export function Quoting() {
                 </p>
               </Card>
             )}
+
+            {/* ---- MULTI-BUILDING BID (#430/#449 slice 4) --------------------------------
+                Tim's Evergrene bid prices 9 structures at one address as ONE deal. Quoting them
+                separately charged every once-per-site fee nine times and applied the profit floor
+                nine times. A "building" here is a captured snapshot of the form above, so the
+                inputs stay in one place. */}
+            <Card style={{ padding: "18px 18px", marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <SectionLabel>Multi-building bid</SectionLabel>
+                {projectBuildings.length > 0 && (
+                  <Badge tone="blue">{projectBuildings.length} structure{projectBuildings.length === 1 ? "" : "s"}</Badge>
+                )}
+              </div>
+              <p style={{ margin: "0 0 12px", fontSize: 12, color: BRAND.sub, lineHeight: 1.5 }}>
+                Several structures at ONE site, quoted as one bid. Delivery, permit, bonus values
+                and the tile dumpster are charged <strong>once for the site</strong>, and one
+                profit floor covers the whole project — not one per building.
+              </p>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+                <div style={{ flex: "1 1 220px" }}>
+                  <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}>Project name</label>
+                  <input value={projectName} onChange={(e) => setProjectName(e.target.value)}
+                         placeholder="Evergrene" style={inputStyle} />
+                </div>
+                <div style={{ flex: "1 1 180px" }}>
+                  <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}>Structure name</label>
+                  <input value={buildingName} onChange={(e) => setBuildingName(e.target.value)}
+                         placeholder="Clubhouse" style={inputStyle} />
+                </div>
+                <div style={{ flex: "0 0 110px" }}>
+                  <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}>On-site days</label>
+                  <input value={buildingDays} onChange={(e) => setBuildingDays(e.target.value)}
+                         placeholder="optional" inputMode="decimal" style={inputStyle} />
+                </div>
+                <Button variant="ghost" onClick={addCurrentRoofAsBuilding}
+                        disabled={!selectedMeasurement}
+                        title={selectedMeasurement ? "Capture the roof configured above as a structure in this bid"
+                                                   : "Select a measurement first"}>
+                  + Add this roof
+                </Button>
+              </div>
+
+              {projectBuildings.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  {projectBuildings.map((b) => (
+                    <div key={b.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                                               padding: "6px 0", borderBottom: `1px solid ${BRAND.bg}`, fontSize: 13 }}>
+                      <span><strong>{b.name}</strong> · {b.squares} sq{b.days ? ` · ${b.days}d` : ""}</span>
+                      <button type="button" onClick={() => removeBuilding(b.name)}
+                              title={`Remove ${b.name}`}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: BRAND.sub, fontSize: 18 }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Site-wide scope + permit count. Without these the screen cannot reproduce the
+                  Evergrene bid it exists for: General Conditions alone is $36,570 there, and a
+                  9-structure site may pull one permit per structure. */}
+              {projectBuildings.length > 0 && (
+                <div style={{ borderTop: `1px solid ${BRAND.bg}`, paddingTop: 10, marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 6 }}>
+                    Site-wide scope — costs that exist because the JOB does, not because any one roof does
+                  </div>
+                  {[...projectItems.map((i) => ({ i, addOn: false })),
+                    ...addOnBlocks.map((i) => ({ i, addOn: true }))].map(({ i, addOn }) => (
+                    <div key={i.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "3px 0" }}>
+                      <span>{i.label} · {usd(i.cost)} × {i.markup}
+                        <span style={{ color: BRAND.sub, fontSize: 11 }}>
+                          {addOn ? " · own block" : " · general conditions"}</span>
+                      </span>
+                      <button type="button" onClick={() => {
+                                (addOn ? setAddOnBlocks : setProjectItems)((p) => p.filter((x) => x.key !== i.key));
+                                setProjectResult(null); setProjectProposalId(null); }}
+                              style={{ background: "none", border: "none", cursor: "pointer", color: BRAND.sub, fontSize: 18 }}>×</button>
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 6 }}>
+                    <div style={{ flex: "1 1 180px" }}>
+                      <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}>Scope block</label>
+                      <input value={gcLabel} onChange={(e) => setGcLabel(e.target.value)}
+                             placeholder="General Conditions" style={inputStyle} />
+                    </div>
+                    <div style={{ flex: "0 0 120px" }}>
+                      <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}>Cost</label>
+                      <input value={gcCost} onChange={(e) => setGcCost(e.target.value)}
+                             placeholder="31800" inputMode="decimal" style={inputStyle} />
+                    </div>
+                    <div style={{ flex: "0 0 90px" }}>
+                      <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}>Markup</label>
+                      <input value={gcMarkup} onChange={(e) => setGcMarkup(e.target.value)}
+                             inputMode="decimal" style={inputStyle} />
+                    </div>
+                    <label style={{ fontSize: 11, color: BRAND.sub, display: "flex", alignItems: "center", gap: 4, alignSelf: "center" }}
+                           title="Tim's proposal presents General Conditions and his add-on blocks as separate quoted blocks">
+                      <input type="checkbox" checked={gcIsAddOn} onChange={(e) => setGcIsAddOn(e.target.checked)} />
+                      its own block
+                    </label>
+                    <Button variant="ghost" disabled={!gcLabel.trim() || !Number(gcCost)}
+                            onClick={() => {
+                              const cost = Number(gcCost);
+                              const markup = Number(gcMarkup);
+                              if (!Number.isFinite(cost) || cost <= 0) { setProjectError("Scope cost must be a positive number."); return; }
+                              // NOT `|| 1`: "1,15" and "115%" are Number() -> NaN, and falling back
+                              // to 1.0 turned Tim's $36,570 General Conditions into $31,800 with no
+                              // message — a $4,770 silent under-charge.
+                              if (!Number.isFinite(markup) || markup < 1 || markup > 3) {
+                                setProjectError("Markup must be a number between 1.0 and 3.0 (use a dot, not a comma)."); return; }
+                              const key = gcLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 90);
+                              if ([...projectItems, ...addOnBlocks].some((x) => x.key === key)) { setProjectError(`"${gcLabel.trim()}" is already on this bid.`); return; }
+                              (gcIsAddOn ? setAddOnBlocks : setProjectItems)((p) => [...p, { key, label: gcLabel.trim(), cost, markup }]);
+                              setGcLabel(""); setGcCost(""); setProjectError(null);
+                              setProjectResult(null); setProjectProposalId(null);
+                            }}>+ Add scope</Button>
+                    <div style={{ flex: "0 0 120px" }}>
+                      <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}
+                             title="Palm Beach may issue one permit per structure — pending Tim">Permits</label>
+                      <input value={permitCount} onChange={(e) => { setPermitCount(e.target.value); setProjectResult(null); }}
+                             inputMode="numeric" style={inputStyle} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {projectError && <ErrorMsg>{projectError}</ErrorMsg>}
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button variant="ghost" onClick={() => priceProject(false)}
+                        disabled={projectBusy || projectBuildings.length === 0}>
+                  {projectBusy ? "Pricing…" : "Price project"}
+                </Button>
+                <Button onClick={() => priceProject(true)}
+                        disabled={projectBusy || projectBuildings.length === 0 || alreadySaved}
+                        title={alreadySaved
+                          ? "This exact bid is already saved — saving again would create a second bid project"
+                          : "Persist the bid so a proposal can be built from it"}>
+                  {alreadySaved ? "Saved" : "Price & save"}
+                </Button>
+                {projectResult?.bid_project_id && !projectProposalId && (
+                  <Button variant="ghost" onClick={createProjectProposal} disabled={projectBusy}>
+                    Create project proposal
+                  </Button>
+                )}
+                {projectProposalId && <Badge tone="green">Proposal #{projectProposalId} created</Badge>}
+              </div>
+
+              {projectResult && (
+                <div style={{ marginTop: 14, borderTop: `1px solid ${BRAND.bg}`, paddingTop: 12 }}>
+                  <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: BRAND.sub }}>Project total</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: BRAND.navyText }}>{usd(projectResult.project_total)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: BRAND.sub }}>Profit</div>
+                      <div style={{ fontSize: 20, fontWeight: 700 }}>{usd(projectResult.profit)}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: BRAND.sub }}>Squares</div>
+                      <div style={{ fontSize: 20, fontWeight: 700 }}>{projectResult.num_squares}</div>
+                    </div>
+                  </div>
+
+                  {projectResult.buildings.map((b) => (
+                    <div key={b.name} style={{ padding: "3px 0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span>{b.name} · {b.squares} sq</span>
+                        <span>{usd(b.total)}</span>
+                      </div>
+                      {/* Per-building warnings are the "review before sending" signal, and the
+                          roll-up never merges them upward — rendering only the project-level list
+                          hid a margin or day-model flag on structure 2 behind a healthy
+                          structure 1, the same defect slice 3 fixed for the LLM send gate. */}
+                      {(b.warnings ?? []).map((w) => (
+                        <div key={w} style={{ fontSize: 11, color: BRAND.navyText, paddingLeft: 10 }}>⚠ {w}</div>
+                      ))}
+                    </div>
+                  ))}
+
+                  {projectResult.project_fixed.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 4 }}>
+                        Charged ONCE for the site (each of these was previously billed per building)
+                      </div>
+                      {projectResult.project_fixed.map((f) => (
+                        <div key={f.key} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: BRAND.sub, padding: "2px 0" }}>
+                          <span title={f.basis}>{f.label}</span>
+                          <span>{usd(f.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {projectResult.project_items.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 4 }}>Project scope</div>
+                      {projectResult.project_items.map((i) => (
+                        <div key={i.key} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0" }}>
+                          <span>{i.label}</span><span>{usd(i.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {projectResult.warnings.map((w) => (
+                    <p key={w} style={{ margin: "8px 0 0", fontSize: 12, color: BRAND.navyText, background: BRAND.bg,
+                                        padding: "8px 10px", borderRadius: 4, lineHeight: 1.5 }}>⚠ {w}</p>
+                  ))}
+                </div>
+              )}
+            </Card>
 
             {quoteResult && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

@@ -230,7 +230,12 @@ def price_project(
         days = b.days if b.days is not None else (guidance.get("total_series_days") or 0.0)
         total_days += float(days or 0.0)
         out.buildings.append({
-            "name": b.name, "squares": q.num_squares, "total": r["project_total"],
+            # BOTH sections. total_squares() counts sloped + flat, so reporting only the sloped
+            # side here made one screen show the same building as "35 sq" (capture) and "20 sq"
+            # (priced) with a 35 headline — the 75%-high implied $/sq this module documents,
+            # rendered next to the correct figure.
+            "name": b.name, "squares": q.num_squares + (q.flat_squares or 0),
+            "total": r["project_total"],
             "profit": profit, "days": float(days or 0.0),
             "would_be_floored_to": (
                 None if per_building_floor
