@@ -64,8 +64,22 @@ _UNIT_RE = re.compile(
 _PO_BOX_RE = re.compile(r"\bp\.?\s*o\.?\s*box\s*\d+", re.I)
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b")
 _PHONE_RE = re.compile(r"(?<!\d)(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}(?!\d)")
-# "25.7617, -80.1918" — CompanyCam stores per-photo coordinates; publishing a pair pins a house.
-_GEO_RE = re.compile(r"-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}")
+# CompanyCam stores per-photo coordinates; publishing a pair pins a house to ~0.1 m.
+#
+# THREE renderings, because only the first was covered and it is the one CompanyCam does NOT use.
+# core/photo_privacy.py quotes the real capture stamp verbatim as
+# "Sep 1, 2023 at 12:12:36 PM / 25.858694° N 80.120019° W" — the hemisphere form. An editor
+# pasting that caption into alt text, or a Knowify deliverable description carrying it, passed
+# `no_pii` clean while the criterion advertised "or GPS".
+#   1. "25.7617, -80.1918"           signed decimal pair
+#   2. "25.858694° N 80.120019° W"   hemisphere-suffixed, degree symbol optional
+#   3. "lat 25.7617 lon -80.1918"    labelled pair
+_GEO_RE = re.compile(
+    r"-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,}"
+    r"|\d{1,3}\.\d{4,}\s*°?\s*[NS]\s*[,/]?\s*\d{1,3}\.\d{4,}\s*°?\s*[EW]"
+    r"|lat(?:itude)?\.?\s*:?\s*-?\d{1,3}\.\d{4,}\D{0,12}?lon(?:g|gitude)?\.?\s*:?\s*-?\d{1,3}\.\d{4,}",
+    re.IGNORECASE,
+)
 
 # Words that make a name an ORGANISATION rather than a person. A condo/HOA/building name is
 # fine to publish — it is the client entity, not an individual.

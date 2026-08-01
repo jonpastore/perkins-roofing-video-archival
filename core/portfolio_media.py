@@ -19,6 +19,7 @@ The caller supplies already-fetched media rows; nothing here touches the DB or t
 """
 from __future__ import annotations
 
+import html
 import re
 from typing import Any, Iterable, Optional
 
@@ -130,7 +131,14 @@ def gallery_html(selections: Iterable[dict], media_by_id: dict[str, dict]) -> st
         if not row:
             continue
         if sel.get("kind") == "photo":
-            alt = (sel.get("alt") or "").strip()
+            # ESCAPED. `alt` is free text an editor types in the curation UI, and it is
+            # interpolated straight into an attribute. Unescaped, an alt ending in `" /><img
+            # src="<cdn url>` closes this tag and opens a second one pointing at a raw
+            # CompanyCam file — which publishes the burned-in GPS stamp AND passed
+            # `media_sanitized`, because unsanitized_media only saw double-quoted attributes.
+            # Every other interpolated value on a project page goes through
+            # core.portfolio_content._esc; this one did not.
+            alt = html.escape((sel.get("alt") or "").strip(), quote=True)
             parts.append(f'<img src="{row.get("url", "")}" alt="{alt}" loading="lazy" />')
         else:
             poster = row.get("thumbnail_url") or ""

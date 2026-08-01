@@ -38,7 +38,18 @@ _WP_UPLOADS = "/wp-content/uploads/"
 # urls into VideoObject.contentUrl/thumbnailUrl. Checking <img> alone let a video publish
 # CompanyCam-hosted frames carrying the same capture stamp the crop exists to remove.
 _MEDIA_TAG_RE = re.compile(r"<(?:img|video)\b[^>]*>", re.IGNORECASE)
-_MEDIA_URL_ATTR_RE = re.compile(r'\b(?:src|poster)="([^"]*)"', re.IGNORECASE)
+# Double-quoted, single-quoted AND bare. Matching only ``src="..."`` made this gate depend on how
+# the emitter happened to quote, and gallery_html interpolated editor-supplied alt text
+# unescaped — so an alt ending in `" /><img src='<cdn url>` produced a SINGLE-quoted tag that
+# this regex could not see, and a raw CompanyCam file published with media_sanitized green.
+# The emitter now escapes (core.portfolio_media.gallery_html), but a gate that is only correct
+# because of what its caller does is not a gate: both halves are fixed on purpose.
+# The bare branch must not start with `&`: once the emitter escapes alt text, a hostile alt
+# renders as `... src=&#x27;https://cdn/...` INSIDE the alt attribute, and a greedy bare match
+# read that as a real unsanitized src — refusing to publish a page whose only sin was the words
+# "src=" in a caption. Fail-closed is right; fail-closed on correct input is a different bug.
+_MEDIA_URL_ATTR_RE = re.compile(
+    r"""\b(?:src|poster)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>'"&][^\s>'"]*))""", re.IGNORECASE)
 
 
 def strip_stamp(data: bytes) -> bytes:
@@ -46,6 +57,14 @@ def strip_stamp(data: bytes) -> bytes:
 
     Raises ValueError on anything that does not decode as an image, so a failed download or an
     HTML error page cannot pass through as "sanitized".
+
+    ⚠️ THIS ALSO STRIPS EXIF, INCLUDING EXIF GPS — and that is load-bearing, not incidental.
+    The burned-in pixel stamp is only half the exposure; a CompanyCam JPEG can carry the same
+    fix in its metadata, which no crop would touch. It works because the round trip is
+    decode-to-pixels then re-encode, and OpenCV writes a bare JPEG with no metadata. Verified by
+    round-tripping an image with an injected GPS payload (see the test alongside this module).
+    Anything that makes this a lossless/metadata-preserving crop — a PIL rewrite, a
+    "don't re-encode if the band is zero" fast path — silently republishes coordinates.
     """
     import cv2  # noqa: PLC0415 — heavy import, only needed when a photo is actually published
     import numpy as np  # noqa: PLC0415
@@ -91,5 +110,9 @@ def unsanitized_media(content_html: str) -> list[str]:
     """
     urls: list[str] = []
     for tag in _MEDIA_TAG_RE.findall(content_html or ""):
-        urls += [u for u in _MEDIA_URL_ATTR_RE.findall(tag) if u and _WP_UPLOADS not in u]
+        for groups in _MEDIA_URL_ATTR_RE.findall(tag):
+            # One alternation per quoting style, so exactly one group is non-empty per match.
+            url = next((g for g in groups if g), "")
+            if url and _WP_UPLOADS not in url:
+                urls.append(url)
     return urls
