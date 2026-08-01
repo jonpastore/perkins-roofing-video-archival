@@ -92,6 +92,7 @@ from core.proposal_render import (
     ProposalRenderContext,
     calc_lines_from_estimate,
     render_proposal_html,
+    structure_groups,
 )
 
 _log = logging.getLogger(__name__)
@@ -276,9 +277,13 @@ def _proposal_pdf_key(row: Proposal) -> str:
     return f"tenants/{row.tenant_id}/proposals/{row.id}/rendered-v{row.version_number}-{stamp}.pdf"
 
 
-# Stamped onto every rendered PDF so a stored proposal says which design produced it.
+# Stamped onto every rendered PDF so a stored proposal says which design produced it. A cached PDF
+# is only re-served when this string still matches, so BUMP IT whenever DEFAULT_TEMPLATE_HTML
+# changes — otherwise a proposal rendered before the change keeps serving the old bytes and the new
+# section is silently missing from the document the customer receives.
 # v3 = 2026-07-24 redesign (page-1 decision page, tier cards, pre-line T&C, FAQ cards).
-_PDF_TEMPLATE_VERSION = "perkins-scope-v3"
+# v4 = 2026-08-02 "Structures Covered" block on multi-building bids (#6, per-building addresses).
+_PDF_TEMPLATE_VERSION = "perkins-scope-v4"
 
 
 def _fmt_money(value) -> float:
@@ -1196,7 +1201,12 @@ def create_proposal_from_project(
     for est in estimates:
         stored = dict(est.input_json or {})
         days = stored.pop("structure_days", None)
-        permit_count = int(stored.pop("project_permit_count", 1) or 1)
+        # What this bid was QUOTED with wins, even now that the rule is one permit per building:
+        # a proposal REPRODUCES a bid, it does not re-decide it. Falling through to None here would
+        # hand price_project its per-building default and re-propose a 9-structure bid that was
+        # quoted at one site permit as nine — $1,000 of permit fees becoming $9,000 on a document
+        # generated from a stored price. 1 is what an estimate without the key was priced at.
+        permit_count = int(stored.pop("project_permit_count", None) or 1)
         floor_basis = stored.pop("project_floor_basis", None) or project.profit_floor_basis
         once = stored.pop("project_once_per_project", None)
         # QuoteRequest fields only — the project facts above are not QuoteInput kwargs.
@@ -1207,7 +1217,8 @@ def create_proposal_from_project(
         except (TypeError, ValueError) as exc:
             raise HTTPException(422, f"estimate {est.id} inputs are not re-pricable: {exc}") from exc
         buildings.append(BP.Building(name=est.structure_name or f"Structure {est.id}",
-                                     quote=quote, days=days))
+                                     quote=quote, days=days,
+                                     address=est.structure_address))
 
     blocks = [*(project.general_conditions or []), *(project.add_on_blocks or [])]
     try:
@@ -1773,6 +1784,11 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         include_calc_breakdown=snap.get("include_calc_breakdown") is True,
         calc_lines=snap.get("calc_lines") or None,
         calc_audience=snap.get("calc_audience") or "internal",
+        # Multi-building bids: one row per ADDRESS. A building with no address of its own falls
+        # back to the property this proposal is filed against, which is the ordinary case —
+        # `structure_address` exists for the Evergrene gates that sit on a different road.
+        structures=(structure_groups(snap.get("buildings") or [], address)
+                    if is_project_snapshot(snap) else None),
     )
 
     try:

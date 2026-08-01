@@ -407,6 +407,53 @@ def test_commercial_permit_adder_is_per_commercial_permit_not_per_permit():
     assert "commercial adder on 1" in permit["basis"]
 
 
+def test_permit_count_defaults_to_one_per_building():
+    """Tim, 2026-08-02: one permit per building/structure. Verified against his own books —
+    73 of the 333 Knowify projects carrying a permit line bill more than one.
+
+    The default used to be 1, i.e. one permit for a nine-structure site, which is the case his
+    books show is the outlier."""
+    cfg = _cfg_v2()
+    r = price_project(cfg, [_b("Clubhouse", 30), _b("Gate A", 10), _b("Gate B", 10)])
+    permit = next(f for f in r["project_fixed"] if f["key"] == "permit_processing")
+    # _b() builds commercial structures, so each of the three permits carries the adder too.
+    per_permit = float(cfg.raw["permit_processing"]) + float(cfg.raw["permit_commercial_add"])
+
+    assert r["permit_count"] == 3
+    assert permit["amount"] == round(per_permit * 3, 2)
+    assert "one per building" in permit["basis"]
+
+
+def test_an_explicit_permit_count_still_wins():
+    """A county that issued ONE permit for the whole site is said out loud, not defaulted to."""
+    cfg = _cfg_v2()
+    r = price_project(cfg, [_b("Clubhouse", 30), _b("Gate A", 10)], permit_count=1)
+    permit = next(f for f in r["project_fixed"] if f["key"] == "permit_processing")
+
+    assert r["permit_count"] == 1
+    assert permit["amount"] == round(float(cfg.raw["permit_processing"])
+                                     + float(cfg.raw["permit_commercial_add"]), 2)
+    assert "not the 2-building default" in permit["basis"]
+
+
+def test_permit_count_below_one_is_refused():
+    """0 permits prices the fee away silently; a bid always pulls at least one."""
+    with pytest.raises(ValueError, match="permit_count must be at least 1"):
+        price_project(_cfg_v2(), [_b("Clubhouse", 30)], permit_count=0)
+
+
+def test_building_address_is_carried_through_the_roll_up():
+    """It moves no money — it has to reach the proposal render, and nothing else."""
+    cfg = _cfg_v2()
+    shared = price_project(cfg, [_b("Clubhouse", 30), _b("Gate A", 10)])
+    with_addr = price_project(cfg, [
+        Building(name="Clubhouse", quote=_b("Clubhouse", 30).quote),
+        Building(name="Gate A", quote=_b("Gate A", 10).quote, address="1 Hood Rd"),
+    ])
+    assert [b["address"] for b in with_addr["buildings"]] == [None, "1 Hood Rd"]
+    assert with_addr["project_total"] == shared["project_total"]
+
+
 def test_a_single_site_permit_is_commercial_if_any_scope_is():
     """permit_count=1 means one permit for the site; commercial scope makes it a commercial one."""
     def _kind(name, kind):

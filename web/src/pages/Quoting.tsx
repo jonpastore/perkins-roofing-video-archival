@@ -272,6 +272,13 @@ const GUTTER_STYLES: Array<{ value: string; label: string }> = [
 // on gutter_two_story:true. Hardcoded client-side since config isn't fetched per-style.
 const TWO_STORY_GUTTER_STYLES = new Set(["k6_alum", "k7_alum"]);
 
+// Where the commission slider starts, per basis. Tim, 2026-08-02: "they can take 15% of gross or
+// 50% of net and that's how we default the sliders." These MUST track
+// core.pricing_config.COMMISSION_DEFAULT_RATE — the slider is sent on every quote, so the server's
+// default is unreachable from this screen and the number a salesperson reads is whatever is here.
+// It said 30/10 while the server said 50/15, which is the whole reason this constant is named.
+const COMMISSION_DEFAULT_PCT: Record<"profit" | "job", string> = { profit: "50", job: "15" };
+
 let estimateDiscountKey = 0;
 function newEstimateDiscount(): EstimateDiscountRow {
   estimateDiscountKey += 1;
@@ -746,7 +753,7 @@ export function Quoting() {
   const [targetProfitMinDollars, setTargetProfitMinDollars] = useState("");
   const [activeProfitPreset, setActiveProfitPreset] = useState<number | null>(null);
   const [commissionBasis, setCommissionBasis] = useState<"profit" | "job">("profit");
-  const [commissionRate, setCommissionRate] = useState("30");  // percent; default 30% of profit / 10% of job
+  const [commissionRate, setCommissionRate] = useState(COMMISSION_DEFAULT_PCT.profit);
   const [recommendedTier, setRecommendedTier] = useState<"good" | "better" | "best">("good");
   const [estimateDiscounts, setEstimateDiscounts] = useState<EstimateDiscountRow[]>([]);
   const [quoteResult, setQuoteResult] = useState<QuoteResult | null>(null);
@@ -758,6 +765,9 @@ export function Quoting() {
   const [projectName, setProjectName] = useState("");
   const [buildingName, setBuildingName] = useState("");
   const [buildingDays, setBuildingDays] = useState("");
+  // Optional per-structure address. Blank is the normal answer — Tim, 2026-08-02: "yes but they
+  // can share" — and blank means the bid's property, resolved when the proposal renders.
+  const [buildingAddress, setBuildingAddress] = useState("");
   const [projectResult, setProjectResult] = useState<ProjectQuoteResult | null>(null);
   const [projectBusy, setProjectBusy] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
@@ -770,8 +780,12 @@ export function Quoting() {
   const [gcIsAddOn, setGcIsAddOn] = useState(false);
   const [gcLabel, setGcLabel] = useState("");
   const [gcCost, setGcCost] = useState("");
-  const [gcMarkup, setGcMarkup] = useState("1.15");
-  const [permitCount, setPermitCount] = useState("1");
+  // Per-BLOCK markup, blank = inherit the project one below. Tim's General Conditions is x1.15.
+  const [gcMarkup, setGcMarkup] = useState("");
+  const [gcProjectMarkup, setGcProjectMarkup] = useState("1.15");
+  // Blank = one permit per building, the server's default (Tim, 2026-08-02). Typed = the count
+  // this county actually issued.
+  const [permitCount, setPermitCount] = useState("");
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [inputsDirty, setInputsDirty] = useState(false);
   const [lastQuoteInput, setLastQuoteInput] = useState<Record<string, unknown> | null>(null);
@@ -1275,9 +1289,11 @@ export function Quoting() {
       squares,
       propertyId: selectedMeasurement?.property_id ?? null,
       codeZone: String(body.code_zone ?? ""),
+      address: buildingAddress.trim() || undefined,
     }]);
     setBuildingName("");
     setBuildingDays("");
+    setBuildingAddress("");
     setProjectError(null);
     setProjectResult(null);
     setProjectProposalId(null);
@@ -1291,6 +1307,7 @@ export function Quoting() {
   const projectSignature = projectBidSignature({
     name: projectName, buildings: projectBuildings,
     items: [...projectItems, ...addOnBlocks], permitCount,
+    generalConditionsMarkup: gcProjectMarkup,
   });
   // Only meaningful while the result it describes is still on screen. Without the
   // bid_project_id conjunct, pressing "Price project" (persist=false) cleared the signature and
@@ -1305,6 +1322,17 @@ export function Quoting() {
 
   async function priceProject(persist: boolean) {
     if (projectBuildings.length === 0) return;
+    // The project markup MULTIPLIES money and is now the default every markup-less General
+    // Conditions block inherits, so it needs the guard the per-block field has: "1,15" and "115%"
+    // are Number() -> NaN, and coercing that to 1.0 prices Tim's $36,570 block at $31,800 with no
+    // message. Validated here rather than on the input so a blank box is still recoverable while
+    // typing.
+    const projectMarkup = Number(gcProjectMarkup);
+    if (!Number.isFinite(projectMarkup) || projectMarkup < 1 || projectMarkup > 3) {
+      setProjectError("Project GC markup must be a number between 1.0 and 3.0 (use a dot, not a "
+        + "comma). Tim's General Conditions is 1.15.");
+      return;
+    }
     setProjectBusy(true);
     setProjectError(null);
     try {
@@ -1317,7 +1345,8 @@ export function Quoting() {
           propertyId: projectBuildings[0]?.propertyId,
           projectItems,
           addOnBlocks,
-          permitCount: Number(permitCount) || 1,
+          permitCount: Number(permitCount) || undefined,
+          generalConditionsMarkup: projectMarkup,
         })),
       });
       if (!r.ok) throw new Error(await errText(r));
@@ -1394,12 +1423,18 @@ export function Quoting() {
     setSavedSignature(null);
     // permitCount MULTIPLIES money (_fixed_once prices permit_processing * permit_count), so
     // carrying a 9-permit Evergrene setting into a single-house customer is a pricing error, not
-    // a cosmetic one.
-    setPermitCount("1");
+    // a cosmetic one. Blank = one per building, which is the rule rather than a leftover number.
+    setPermitCount("");
     setBuildingName("");
     setBuildingDays("");
+    setBuildingAddress("");
     setGcLabel("");
     setGcCost("");
+    // Same reason as permitCount, one field over: the project markup multiplies every General
+    // Conditions block that names no rate of its own, so a 1.30 left over from the last customer
+    // is a pricing error on this one.
+    setGcMarkup("");
+    setGcProjectMarkup("1.15");
   }, [selectedCustomer?.id]);
 
   async function runQuote(overrides: Record<string, unknown> = {}) {
@@ -2564,6 +2599,13 @@ export function Quoting() {
                   <input value={buildingDays} onChange={(e) => setBuildingDays(e.target.value)}
                          placeholder="optional" inputMode="decimal" style={inputStyle} />
                 </div>
+                <div style={{ flex: "1 1 200px" }}>
+                  <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}
+                         title="Leave blank unless this structure is on a different street from the rest of the site">
+                    Structure address</label>
+                  <input value={buildingAddress} onChange={(e) => setBuildingAddress(e.target.value)}
+                         placeholder="same as the site" style={inputStyle} />
+                </div>
                 <Button variant="ghost" onClick={addCurrentRoofAsBuilding}
                         disabled={!selectedMeasurement}
                         title={selectedMeasurement ? "Capture the roof configured above as a structure in this bid"
@@ -2577,7 +2619,8 @@ export function Quoting() {
                   {projectBuildings.map((b) => (
                     <div key={b.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
                                                padding: "6px 0", borderBottom: `1px solid ${BRAND.bg}`, fontSize: 13 }}>
-                      <span><strong>{b.name}</strong> · {b.squares} sq{b.days ? ` · ${b.days}d` : ""}</span>
+                      <span><strong>{b.name}</strong> · {b.squares} sq{b.days ? ` · ${b.days}d` : ""}
+                        {b.address ? <span style={{ color: BRAND.sub }}> · {b.address}</span> : null}</span>
                       <button type="button" onClick={() => removeBuilding(b.name)}
                               title={`Remove ${b.name}`}
                               style={{ background: "none", border: "none", cursor: "pointer", color: BRAND.sub, fontSize: 18 }}>×</button>
@@ -2597,8 +2640,9 @@ export function Quoting() {
                   {[...projectItems.map((i) => ({ i, addOn: false })),
                     ...addOnBlocks.map((i) => ({ i, addOn: true }))].map(({ i, addOn }) => (
                     <div key={i.key} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "3px 0" }}>
-                      <span>{i.label} · {usd(i.cost)} × {i.markup}
+                      <span>{i.label} · {usd(i.cost)} × {i.markup ?? (addOn ? 1 : (Number(gcProjectMarkup) || 1))}
                         <span style={{ color: BRAND.sub, fontSize: 11 }}>
+                          {i.markup === undefined && !addOn ? " · project markup" : ""}
                           {addOn ? " · own block" : " · general conditions"}</span>
                       </span>
                       <button type="button" onClick={() => {
@@ -2618,9 +2662,11 @@ export function Quoting() {
                       <input value={gcCost} onChange={(e) => setGcCost(e.target.value)}
                              placeholder="31800" inputMode="decimal" style={inputStyle} />
                     </div>
-                    <div style={{ flex: "0 0 90px" }}>
-                      <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}>Markup</label>
+                    <div style={{ flex: "0 0 110px" }}>
+                      <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}
+                             title="Blank = this block takes the project markup below">Markup</label>
                       <input value={gcMarkup} onChange={(e) => setGcMarkup(e.target.value)}
+                             placeholder={`project (${gcProjectMarkup || "1.0"})`}
                              inputMode="decimal" style={inputStyle} />
                     </div>
                     <label style={{ fontSize: 11, color: BRAND.sub, display: "flex", alignItems: "center", gap: 4, alignSelf: "center" }}
@@ -2631,24 +2677,38 @@ export function Quoting() {
                     <Button variant="ghost" disabled={!gcLabel.trim() || !Number(gcCost)}
                             onClick={() => {
                               const cost = Number(gcCost);
-                              const markup = Number(gcMarkup);
+                              // Blank means "inherit the project markup", which the server resolves.
+                              // A TYPED value is still validated: NOT `|| 1`, because "1,15" and
+                              // "115%" are Number() -> NaN, and falling back to 1.0 turned Tim's
+                              // $36,570 General Conditions into $31,800 with no message.
+                              const markup = gcMarkup.trim() === "" ? undefined : Number(gcMarkup);
                               if (!Number.isFinite(cost) || cost <= 0) { setProjectError("Scope cost must be a positive number."); return; }
-                              // NOT `|| 1`: "1,15" and "115%" are Number() -> NaN, and falling back
-                              // to 1.0 turned Tim's $36,570 General Conditions into $31,800 with no
-                              // message — a $4,770 silent under-charge.
-                              if (!Number.isFinite(markup) || markup < 1 || markup > 3) {
-                                setProjectError("Markup must be a number between 1.0 and 3.0 (use a dot, not a comma)."); return; }
+                              if (markup !== undefined && (!Number.isFinite(markup) || markup < 1 || markup > 3)) {
+                                setProjectError("Markup must be a number between 1.0 and 3.0 (use a dot, not a comma), or blank to take the project markup."); return; }
                               const key = gcLabel.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 90);
                               if ([...projectItems, ...addOnBlocks].some((x) => x.key === key)) { setProjectError(`"${gcLabel.trim()}" is already on this bid.`); return; }
                               (gcIsAddOn ? setAddOnBlocks : setProjectItems)((p) => [...p, { key, label: gcLabel.trim(), cost, markup }]);
                               setGcLabel(""); setGcCost(""); setProjectError(null);
                               setProjectResult(null); setProjectProposalId(null);
                             }}>+ Add scope</Button>
-                    <div style={{ flex: "0 0 120px" }}>
+                    {/* Tim, 2026-08-02: one permit per building. Blank sends nothing and the
+                        server applies that rule; a number here says the county issued a different
+                        count for THIS site. */}
+                    <div style={{ flex: "0 0 150px" }}>
                       <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}
-                             title="Palm Beach may issue one permit per structure — pending Tim">Permits</label>
+                             title="One permit per building (Tim, 2026-08-02). Override only if the county issued a different number.">Permits</label>
                       <input value={permitCount} onChange={(e) => { setPermitCount(e.target.value); setProjectResult(null); }}
+                             placeholder={`${projectBuildings.length} · one per building`}
                              inputMode="numeric" style={inputStyle} />
+                    </div>
+                    {/* Tim, 2026-08-02: "we have a slider for this". The project-level General
+                        Conditions markup — his Evergrene block is $31,800 x 1.15 = $36,570. */}
+                    <div style={{ flex: "0 0 150px" }}>
+                      <label style={{ fontSize: 11, color: BRAND.sub, display: "block", marginBottom: 4 }}
+                             title="Applied to every General Conditions block that names no markup of its own">Project GC markup</label>
+                      <input value={gcProjectMarkup}
+                             onChange={(e) => { setGcProjectMarkup(e.target.value); setProjectResult(null); }}
+                             inputMode="decimal" style={inputStyle} />
                     </div>
                   </div>
                 </div>
@@ -2902,7 +2962,7 @@ export function Quoting() {
                         {(["profit", "job"] as const).map((b, i) => (
                           <button
                             key={b} type="button"
-                            onClick={() => { setCommissionBasis(b); setCommissionRate(b === "profit" ? "30" : "10"); }}
+                            onClick={() => { setCommissionBasis(b); setCommissionRate(COMMISSION_DEFAULT_PCT[b]); }}
                             style={{
                               flex: 1, padding: "6px 8px", fontSize: 12, fontWeight: 600, border: "none",
                               borderRight: i === 0 ? `1px solid ${BRAND.border}` : "none", cursor: "pointer",

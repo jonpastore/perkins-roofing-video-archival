@@ -71,6 +71,10 @@ class ProposalRenderContext:
     # Which build-up was rendered. Frozen into the snapshot at send time so a re-render of an old
     # proposal reproduces what the customer actually received, not what today's default would be.
     calc_audience: str = field(default="internal")
+    # Multi-building bids only: the structures this proposal covers, already grouped by address
+    # (see structure_groups). Empty/None on an ordinary single-roof proposal, which renders exactly
+    # as it did before.
+    structures: list[dict[str, Any]] | None = field(default=None)
 
 
 class _SilentUndefined(jinja2.Undefined):
@@ -156,6 +160,7 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "license": ctx.tenant_license or "",
         },
         "accept_url": ctx.accept_url,
+        "structures": ctx.structures or [],
         "calc": {
             "include": ctx.include_calc_breakdown,
             "lines": ctx.calc_lines or [],
@@ -180,6 +185,34 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "include_contract_faq": ctx.include_contract_faq,
         },
     }
+
+
+def structure_groups(buildings: list[dict[str, Any]],
+                     default_address: str = "") -> list[dict[str, Any]]:
+    """Group a project snapshot's buildings by the address that will be PRINTED for each.
+
+    Tim, 2026-08-02, on per-building addresses: *"yes but they can share."* Both halves of that
+    matter. Nine Evergrene buildings sit on one parkway, so printing the same street nine times is
+    noise; two of its gates are on different roads, so printing one address for the site is wrong.
+    Grouping does both without asking anyone to choose: a building with no address of its own
+    inherits the bid's property, identical addresses collapse to one entry listing every structure
+    on them, and a structure that genuinely differs gets its own entry.
+
+    Insertion-ordered — the document reads in the order the bid was captured, not alphabetically,
+    so it lines up with every other per-building list in the system.
+    """
+    groups: list[dict[str, Any]] = []
+    by_address: dict[str, dict[str, Any]] = {}
+    for b in buildings or []:
+        address = str(b.get("address") or "").strip() or str(default_address or "").strip()
+        group = by_address.get(address)
+        if group is None:
+            group = {"address": address, "names": [], "squares": 0.0}
+            by_address[address] = group
+            groups.append(group)
+        group["names"].append(str(b.get("name") or ""))
+        group["squares"] = round(group["squares"] + float(b.get("squares") or 0), 2)
+    return groups
 
 
 def render_proposal_html(template_html: str, ctx: ProposalRenderContext) -> str:
@@ -262,9 +295,10 @@ DEFAULT_TEMPLATE_HTML = """\
     .spec { margin:0; color: var(--ink-muted); white-space: pre-line; }
     .bonus { margin-top: var(--sp-2); background: var(--surface-tint-info); border-left:3px solid var(--brand-navy); padding: var(--sp-2); font-size: var(--fs-small); color: var(--ink-muted); }
     .payment { border:1px solid var(--warn-border); background: var(--warn-bg); border-radius:7px; padding: var(--sp-3); margin: var(--sp-4) 0; break-inside: avoid; }
-    .payment table, .tc-ai-faq table, .lumber table { width:100%; border-collapse:collapse; margin-top: var(--sp-2); }
-    .payment th, .payment td, .tc-ai-faq th, .tc-ai-faq td, .lumber th, .lumber td { padding: var(--sp-1) 7px; border-bottom:1px solid var(--border-hairline); text-align:left; vertical-align:top; }
-    .payment th, .tc-ai-faq th, .lumber th { background: var(--surface-alt); color: var(--ink-muted); font-size: var(--fs-small); text-transform:uppercase; letter-spacing:.04em; }
+    .payment table, .tc-ai-faq table, .lumber table, .structures { width:100%; border-collapse:collapse; margin-top: var(--sp-2); }
+    .payment th, .payment td, .tc-ai-faq th, .tc-ai-faq td, .lumber th, .lumber td, .structures th, .structures td { padding: var(--sp-1) 7px; border-bottom:1px solid var(--border-hairline); text-align:left; vertical-align:top; }
+    .payment th, .tc-ai-faq th, .lumber th, .structures th { background: var(--surface-alt); color: var(--ink-muted); font-size: var(--fs-small); text-transform:uppercase; letter-spacing:.04em; }
+    .structures { margin-bottom: var(--sp-4); break-inside: avoid; }
     .payment tbody tr:first-child td { font-weight:800; }
     .lumber tbody tr:nth-child(even) td, .payment tbody tr:nth-child(even) td { background: var(--surface-alt); }
     .amt { text-align:right !important; white-space:nowrap; }
@@ -339,7 +373,29 @@ DEFAULT_TEMPLATE_HTML = """\
     <div style="font-size:9px;color:#667085;margin-top:6px;">{{ accept_url }}</div>
   </div>
 
+  {# Multi-building bids only. One entry per ADDRESS, so nine structures on one parkway read as
+     one line and the two gates on different roads read as their own. #}
+  {% if structures %}
+  <h2 class="page-break-1">Structures Covered</h2>
+  <table class="structures">
+    <thead><tr><th>Structure</th><th>Address</th><th class="amt">Squares</th></tr></thead>
+    <tbody>
+      {% for group in structures %}
+      <tr>
+        <td>{{ group.names|join(", ") }}</td>
+        {# A proposal can be filed against a property with no street on record, in which case the
+           fallback address is empty and the cell would read as a missing value rather than an
+           absent one. #}
+        <td>{{ group.address or "—" }}</td>
+        <td class="amt">{{ "%g"|format(group.squares) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h2>Scope of Work</h2>
+  {% else %}
   <h2 class="page-break-1">Scope of Work</h2>
+  {% endif %}
   {% if quote.line_items %}
     {% for item in quote.line_items %}
     <div class="scope">

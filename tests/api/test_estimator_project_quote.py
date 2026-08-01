@@ -402,6 +402,76 @@ def test_add_on_blocks_price_like_general_conditions_but_persist_separately(admi
         db.close()
 
 
+def test_permit_count_defaults_to_the_building_count_through_the_route(admin_client):
+    """Tim, 2026-08-02: one permit per building. A caller that sends nothing gets that, and the
+    number it was charged for is echoed AND persisted — otherwise the proposal re-price and the
+    quote would disagree about how many permits this bid bought."""
+    branch = _seeded_branch(admin_client)
+    r = admin_client.post("/estimator/project-quote", json=_payload(
+        branch, [_building("Clubhouse", 30, branch), _building("Bus Stop", 3, branch),
+                 _building("Gazebo", 5, branch)], persist=True), headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+
+    assert data["permit_count"] == 3
+    permit = next(f for f in data["project_fixed"] if f["key"] == "permit_processing")
+    assert permit["amount"] == 3 * float(SAMPLE_CONFIG["permit_processing"])
+
+    listed = admin_client.get("/estimator/estimates", headers=AUTH)
+    rows = [e for e in listed.json() if e.get("bid_project_id") == data["bid_project_id"]]
+    assert all(e["input_json"]["project_permit_count"] == 3 for e in rows)
+
+
+def test_structure_addresses_persist_and_reach_the_roll_up(admin_client):
+    """#6. The address moves no money; it has to survive to the proposal, so it is a COLUMN."""
+    branch = _seeded_branch(admin_client)
+    r = admin_client.post("/estimator/project-quote", json=_payload(
+        branch, [_building("Clubhouse", 30, branch),
+                 dict(_building("North Gate", 3, branch), address="1 Hood Rd")],
+        persist=True), headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert [b["address"] for b in data["buildings"]] == [None, "1 Hood Rd"]
+
+    db = SessionLocal()
+    db.info["tenant_id"] = 1
+    try:
+        rows = db.query(Estimate).filter(
+            Estimate.bid_project_id == data["bid_project_id"]).order_by(Estimate.id).all()
+        assert [e.structure_address for e in rows] == [None, "1 Hood Rd"]
+    finally:
+        db.close()
+
+
+def test_a_gc_block_with_no_markup_takes_the_project_slider(admin_client):
+    """Tim, 2026-08-02: "we have a slider for this". bid_projects.general_conditions_markup was
+    written as a flat 1.0 that nothing read; now it is the default a block inherits, and the
+    block is PERSISTED at the rate it was priced at so the proposal re-price reproduces it."""
+    branch = _seeded_branch(admin_client)
+    r = admin_client.post("/estimator/project-quote", json=_payload(
+        branch, [_building("Clubhouse", 30, branch)], persist=True,
+        general_conditions_markup=1.15,
+        project_items=[{"key": "gc", "label": "General Conditions", "cost": 31800},
+                       {"key": "own", "label": "Its own rate", "cost": 1000, "markup": 1.5}],
+    ), headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+
+    priced = {i["key"]: i for i in data["project_items"]}
+    assert priced["gc"]["amount"] == 31800 * 1.15          # inherited
+    assert priced["own"]["amount"] == 1000 * 1.5           # a block that named a rate keeps it
+
+    db = SessionLocal()
+    db.info["tenant_id"] = 1
+    try:
+        project = db.get(BidProject, data["bid_project_id"])
+        assert float(project.general_conditions_markup) == 1.15   # NUMERIC -> Decimal
+        stored = {b["key"]: b["markup"] for b in project.general_conditions}
+        assert stored == {"gc": 1.15, "own": 1.5}, "persist the EFFECTIVE markup, not the null"
+    finally:
+        db.close()
+
+
 class TestProjectProposal:
     """POST /quoting/proposals/from-project — the slice-3 feature, end to end.
 
@@ -454,6 +524,47 @@ class TestProjectProposal:
         assert snap["num_squares"] == 38
         assert any(i["key"] == "gc" for i in snap["project_items"])
         assert snap["deposit_policy"]["mode"] == "percent"
+
+    def test_the_proposal_reproduces_the_quoted_total_it_was_built_from(self, admin_client):
+        """The re-price must land on the SAME number the customer was quoted.
+
+        This is the seam the whole persist-then-re-price design rests on, and it has two live
+        hazards that only show up here: the General Conditions markup is INHERITED from the project
+        slider (so if the effective rate were not persisted, `float(b["markup"] or 1.0)` in
+        create_proposal_from_project would quietly quote the block at cost), and permit_count now
+        DEFAULTS to the building count (so if the stored count were not honoured, a bid quoted at
+        one site permit would be re-proposed with three).
+        """
+        branch = _seeded_branch(admin_client)
+        cid, pid = self._customer_and_property(admin_client)
+
+        quoted = admin_client.post("/estimator/project-quote", json=_payload(
+            branch,
+            [_building("Clubhouse", 30, branch), _building("Bus Stop", 3, branch),
+             _building("Gazebo", 5, branch)],
+            persist=True,
+            permit_count=1,                       # one site permit, against the 3-building default
+            general_conditions_markup=1.15,
+            project_items=[{"key": "gc", "label": "General Conditions", "cost": 31800}],
+        ), headers=AUTH)
+        assert quoted.status_code == 200, quoted.text
+        quote = quoted.json()
+        assert quote["permit_count"] == 1
+
+        r = admin_client.post(f"/quoting/proposals/from-project/{quote['bid_project_id']}",
+                              json={"customer_id": cid, "property_id": pid}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        snap = r.json()["quote_snapshot"]
+
+        assert snap["tiers"]["good"]["total"] == quote["project_total"], (
+            "the proposal re-priced to a different number than the bid it reproduces")
+        gc = next(i for i in snap["project_items"] if i["key"] == "gc")
+        assert gc["amount"] == round(31800 * 1.15, 2)
+        # project_snapshot folds project_fixed into project_items, so the permit line lands here.
+        quoted_permit = next(f for f in quote["project_fixed"] if f["key"] == "permit_processing")
+        permit = next(i for i in snap["project_items"] if i["key"] == "permit_processing")
+        assert permit["amount"] == quoted_permit["amount"]
+        assert "x3" not in permit["label"], "re-proposed with the default count, not the stored one"
 
     def test_the_generated_snapshot_passes_its_own_edit_gate(self, admin_client):
         """What we write must survive what we validate — otherwise the gate blocks our own output."""

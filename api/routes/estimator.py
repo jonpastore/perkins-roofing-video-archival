@@ -461,7 +461,7 @@ def quote(
         profit_pct = (adjusted_profit / eligible_base) if eligible_base else 0.0
         combined_pct = ((adjusted_profit + oh_dollars) / eligible_base) if eligible_base else 0.0
         commission_rate = (body.commission_rate if body.commission_rate is not None
-                            else config.commission_rate(effective_slope_type, body.code_zone))
+                            else config.commission_rate(body.commission_basis))
         warnings = list(result.get("margin_warnings") or [])
         if adjusted_profit < 0 and "discount_exceeds_profit" not in warnings:
             warnings.append("discount_exceeds_profit")
@@ -592,6 +592,10 @@ class BuildingInput(BaseModel):
     #: Days the crew spends on THIS structure. Only feeds the site week count; when absent the
     #: building contributes its own estimate's derived series days.
     days: Optional[float] = Field(default=None, ge=0)
+    #: This structure's own street address. Absent = the bid project's property, which is the
+    #: normal case (Tim, 2026-08-02: "yes but they can share"). Priced nowhere; it reaches the
+    #: customer through the proposal render, grouped so shared addresses print once.
+    address: Optional[str] = Field(default=None, max_length=300)
     quote: QuoteRequest
 
 
@@ -600,7 +604,11 @@ class ProjectItemInput(BaseModel):
     key: str = Field(..., min_length=1, max_length=100)
     label: str = Field(..., min_length=1, max_length=300)
     cost: float = Field(..., ge=0)
-    markup: float = Field(default=1.0, ge=1.0, le=3.0)
+    #: null = take the project-level default. For General Conditions that is
+    #: ProjectQuoteRequest.general_conditions_markup (Tim's slider, x1.15); an add-on block that
+    #: names no markup is quoted at cost. A block that DOES carry one wins — the project value is
+    #: a default, not a cap.
+    markup: Optional[float] = Field(default=None, ge=1.0, le=3.0)
     #: Only "project" is implemented — see core.bid_project.ProjectItem. "building:<name>" is
     #: reserved for Tim's folding habit and is refused until the fold exists.
     allocation: Literal["project"] = "project"
@@ -627,7 +635,15 @@ class ProjectQuoteRequest(BaseModel):
     #: list is how a bid opts out of a site-scoping decision that is still pending Tim.
     once_per_project: Optional[list[str]] = None
     floor_basis: Literal["project", "week", "building"] = "project"
-    permit_count: int = Field(default=1, ge=1, le=99)
+    #: Markup applied to every General Conditions block that names no markup of its own. Tim,
+    #: 2026-08-02: "we have a slider for this" — his Evergrene block is (green fence + telehandler
+    #: $22,800 + full-time PM $9,000) x 1.15. Persisted to bid_projects.general_conditions_markup,
+    #: which until now was written as a flat 1.0 that nothing read.
+    general_conditions_markup: float = Field(default=1.0, ge=1.0, le=3.0)
+    #: null = ONE PERMIT PER BUILDING (Tim, 2026-08-02; 73 of 333 Knowify projects with a permit
+    #: line bill more than one). An integer says the county issued a different number for this
+    #: site — a single site permit on a nine-structure bid is permit_count=1, said out loud.
+    permit_count: Optional[int] = Field(default=None, ge=1, le=99)
     notes: Optional[str] = None
     #: Defaults to FALSE. The primary caller is an SPA that re-prices on every keystroke, and
     #: there is no idempotency key or dedupe on name — defaulting to True meant any client that
@@ -714,21 +730,35 @@ def project_quote(
     for item in body.buildings:
         q, _slope, _cuts = _quote_input_from_request(item.quote, cfg_row, db, claims)
         _validate_quote_guards(item.quote, config, where=item.name)
-        built.append(BP.Building(name=item.name, quote=q, days=item.days))
+        built.append(BP.Building(name=item.name, quote=q, days=item.days,
+                                 address=(item.address or "").strip() or None))
 
     once = (frozenset(body.once_per_project) if body.once_per_project is not None
             else BP.DEFAULT_ONCE_PER_PROJECT)
+    # Resolve each block's EFFECTIVE markup once, here, and use the same list to price and to
+    # persist. Storing the request's nulls instead would leave the re-price path in
+    # /quoting/proposals/from-project reading `markup or 1.0` and quietly dropping the project
+    # slider — a 15% under-charge on Tim's $36,570 General Conditions, invisible in the total.
+    gc_items = [pi.model_copy(update={"markup": pi.markup if pi.markup is not None
+                                      else body.general_conditions_markup})
+                for pi in body.project_items]
+    add_on_items = [pi.model_copy(update={"markup": pi.markup if pi.markup is not None else 1.0})
+                    for pi in body.add_on_blocks]
     try:
         roll_up = BP.price_project(
             config, built,
             project_items=[BP.ProjectItem(**pi.model_dump())
-                           for pi in (*body.project_items, *body.add_on_blocks)],
+                           for pi in (*gc_items, *add_on_items)],
             once_per_project=once,
             floor_basis=body.floor_basis,
             permit_count=body.permit_count,
         )
     except (ValueError, ConfigError) as exc:
         raise HTTPException(422, detail=str(exc)) from exc
+    # The count that was actually PRICED, not the one that was asked for: null means one per
+    # building, and every consumer downstream (the response, the audit row, the re-price that
+    # builds the proposal) has to carry the same number the customer was charged for.
+    permit_count = roll_up["permit_count"]
 
     result = {
         **roll_up,
@@ -738,7 +768,8 @@ def project_quote(
         "pricing_config_id": cfg_row.id,
         "pricing_config_hash": cfg_row.config_hash,
         "once_per_project": sorted(once),
-        "permit_count": body.permit_count,
+        "permit_count": permit_count,
+        "general_conditions_markup": body.general_conditions_markup,
         "dominant_roof_type": BP.dominant_roof_type(built),
         "num_squares": round(BP.total_squares(built), 2),
     }
@@ -751,11 +782,14 @@ def project_quote(
         name=body.name,
         branch=first.branch,
         code_zone=first.code_zone,
-        general_conditions=[pi.model_dump() for pi in body.project_items],
-        # ⚠️ NOT the authority for markup — each block carries its own (ProjectItem.markup), which
-        # is what price_project multiplies by. Written as 1.0 so nothing reads a rate from here.
-        general_conditions_markup=1.0,
-        add_on_blocks=[pi.model_dump() for pi in body.add_on_blocks],
+        # The EFFECTIVE blocks — each already carries the markup it was priced at, so the
+        # re-price that builds the proposal reproduces this bid without re-deriving anything.
+        general_conditions=[pi.model_dump() for pi in gc_items],
+        # The project-level default the blocks above inherited when they named no markup of their
+        # own. Kept because Tim has a slider for it; it is NOT a second authority over a block
+        # that set its own rate, and price_project multiplies by the per-block value either way.
+        general_conditions_markup=body.general_conditions_markup,
+        add_on_blocks=[pi.model_dump() for pi in add_on_items],
         once_per_project_fees=sorted(once),
         profit_floor_basis=body.floor_basis,
         notes=body.notes,
@@ -778,13 +812,14 @@ def project_quote(
             pricing_config_hash=cfg_row.config_hash,
             bid_project_id=project.id,
             structure_name=item.name,
+            structure_address=(item.address or "").strip() or None,
             # The building's OWN inputs plus the two project-level facts that decide its price
             # and are not part of QuoteRequest. Without them a week-basis project cannot be
             # recomputed from what was stored, which is the whole point of an audit row.
             input_json={
                 **item.quote.model_dump(),
                 "structure_days": item.days,
-                "project_permit_count": body.permit_count,
+                "project_permit_count": permit_count,
                 "project_floor_basis": body.floor_basis,
                 "project_once_per_project": sorted(once),
             },
@@ -895,6 +930,8 @@ def _estimate_row(row: Estimate) -> dict:
         # way to tell they belong together — the write half of slice 2 had no reader at all.
         "bid_project_id": row.bid_project_id,
         "structure_name": row.structure_name,
+        # Read back so a typo'd structure address is visible somewhere other than the rendered PDF.
+        "structure_address": row.structure_address,
         "input_json": row.input_json or {},
         "result_json": row.result_json or {},
         "created_at": row.created_at.isoformat() if row.created_at else None,
