@@ -34,6 +34,14 @@ jobs:
           cd web
           npm ci
           npm run build
+      # The build is a COMPILE check, not a behavioural one. Without this the frontend tests were
+      # run by nobody but the author — R1 asks for a behavioural validation on new I/O, and an
+      # ungated one is a suggestion. (`npx tsc --noEmit` is likewise not the build gate: it has
+      # passed on code `tsc -b` rejected.)
+      - name: Test SPA
+        run: |
+          cd web
+          npm test
       - name: SCA gate (npm audit — prod deps, high+)
         run: |
           cd web
