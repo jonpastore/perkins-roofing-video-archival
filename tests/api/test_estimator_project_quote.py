@@ -330,3 +330,73 @@ class TestProjectQuoteBounds:
             project_items=[{"key": "gc", "label": "A", "cost": 100},
                            {"key": "gc", "label": "B", "cost": 200}]), headers=AUTH)
         assert r.status_code == 422
+
+
+class TestAProjectIsReadableAndReproducible:
+    """The write half of slice 2 shipped with no reader. These are the seams slice 3 needs."""
+
+    def test_estimates_list_exposes_the_project_join_and_a_total(self, admin_client):
+        branch = _seeded_branch(admin_client)
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [_building("Clubhouse", 30, branch), _building("Bus Stop", 3, branch)],
+            persist=True), headers=AUTH)
+        assert r.status_code == 200, r.text
+        pid = r.json()["bid_project_id"]
+
+        listed = admin_client.get("/estimator/estimates", headers=AUTH)
+        assert listed.status_code == 200, listed.text
+        rows = [e for e in listed.json() if e.get("bid_project_id") == pid]
+        assert len(rows) == 2, "the project join must be visible in the estimates list"
+        assert sorted(e["structure_name"] for e in rows) == ["Bus Stop", "Clubhouse"]
+        # Quoting.tsx reads result_json.project_total; without it every building renders "—".
+        for e in rows:
+            assert e["result_json"].get("project_total") is not None
+
+    def test_input_json_carries_what_the_price_depended_on(self, admin_client):
+        """days and permit_count decide the floor and are not part of QuoteRequest.
+
+        Without them a week-basis project cannot be recomputed from its own audit rows.
+        """
+        branch = _seeded_branch(admin_client)
+        buildings = [dict(_building("Clubhouse", 30, branch), days=6),
+                     dict(_building("Bus Stop", 3, branch), days=2)]
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, buildings, persist=True, permit_count=3), headers=AUTH)
+        assert r.status_code == 200, r.text
+        pid = r.json()["bid_project_id"]
+
+        listed = admin_client.get("/estimator/estimates", headers=AUTH)
+        rows = [e for e in listed.json() if e.get("bid_project_id") == pid]
+        assert {e["input_json"]["structure_days"] for e in rows} == {6, 2}
+        assert all(e["input_json"]["project_permit_count"] == 3 for e in rows)
+        assert all(e["input_json"]["project_floor_basis"] == "project" for e in rows)
+        assert all("tile_dumpster" in e["input_json"]["project_once_per_project"] for e in rows)
+
+
+def test_add_on_blocks_price_like_general_conditions_but_persist_separately(admin_client):
+    """Tim's bid keeps GC ($36,570) and add-ons ($42,050 + $31,000) as distinct quoted blocks.
+
+    The column existed for this and was being written as [] with everything folded into
+    general_conditions.
+    """
+    branch = _seeded_branch(admin_client)
+    r = admin_client.post("/estimator/project-quote", json=_payload(
+        branch, [_building("Clubhouse", 30, branch)], persist=True,
+        project_items=[{"key": "gc", "label": "General Conditions", "cost": 31800,
+                        "markup": 1.15}],
+        add_on_blocks=[{"key": "sloped_addons", "label": "Sloped add-ons", "cost": 42050}],
+    ), headers=AUTH)
+    assert r.status_code == 200, r.text
+    data = r.json()
+
+    keys = {i["key"] for i in data["project_items"]}
+    assert {"gc", "sloped_addons"} <= keys, "both blocks must reach the priced roll-up"
+
+    db = SessionLocal()
+    db.info["tenant_id"] = 1
+    try:
+        project = db.get(BidProject, data["bid_project_id"])
+        assert [b["key"] for b in project.general_conditions] == ["gc"]
+        assert [b["key"] for b in project.add_on_blocks] == ["sloped_addons"]
+    finally:
+        db.close()

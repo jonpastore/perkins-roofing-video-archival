@@ -613,7 +613,16 @@ class ProjectQuoteRequest(BaseModel):
     # estimating_view caller could otherwise hold a worker and a transaction with 10,000 of them.
     # Evergrene, the largest real bid, is 9.
     buildings: list[BuildingInput] = Field(..., min_length=1, max_length=50)
+    #: General Conditions — site-wide cost that exists because the JOB does. Tim's Evergrene block
+    #: is green fence + telehandler ($22,800) and a full-time PM ($9,000) at x1.15 = $36,570, and
+    #: on his sheet it stands as its own quoted line referenced by no total formula.
     project_items: list[ProjectItemInput] = Field(default_factory=list, max_length=50)
+    #: Scope blocks that belong to the project rather than to any one building — Tim's $42,050
+    #: sloped and $31,000 tile add-ons. Priced identically to project_items; kept as a SEPARATE
+    #: list because his proposal presents them as a separate block, and the bid_projects column
+    #: exists for exactly this and was being written as [] with everything folded into
+    #: general_conditions.
+    add_on_blocks: list[ProjectItemInput] = Field(default_factory=list, max_length=50)
     #: null = the measured default (see core.bid_project.DEFAULT_ONCE_PER_PROJECT). An explicit
     #: list is how a bid opts out of a site-scoping decision that is still pending Tim.
     once_per_project: Optional[list[str]] = None
@@ -712,7 +721,8 @@ def project_quote(
     try:
         roll_up = BP.price_project(
             config, built,
-            project_items=[BP.ProjectItem(**pi.model_dump()) for pi in body.project_items],
+            project_items=[BP.ProjectItem(**pi.model_dump())
+                           for pi in (*body.project_items, *body.add_on_blocks)],
             once_per_project=once,
             floor_basis=body.floor_basis,
             permit_count=body.permit_count,
@@ -742,8 +752,10 @@ def project_quote(
         branch=first.branch,
         code_zone=first.code_zone,
         general_conditions=[pi.model_dump() for pi in body.project_items],
+        # ⚠️ NOT the authority for markup — each block carries its own (ProjectItem.markup), which
+        # is what price_project multiplies by. Written as 1.0 so nothing reads a rate from here.
         general_conditions_markup=1.0,
-        add_on_blocks=[],
+        add_on_blocks=[pi.model_dump() for pi in body.add_on_blocks],
         once_per_project_fees=sorted(once),
         profit_floor_basis=body.floor_basis,
         notes=body.notes,
@@ -766,8 +778,20 @@ def project_quote(
             pricing_config_hash=cfg_row.config_hash,
             bid_project_id=project.id,
             structure_name=item.name,
-            input_json=item.quote.model_dump(),
-            result_json=_audit_payload(priced),
+            # The building's OWN inputs plus the two project-level facts that decide its price
+            # and are not part of QuoteRequest. Without them a week-basis project cannot be
+            # recomputed from what was stored, which is the whole point of an audit row.
+            input_json={
+                **item.quote.model_dump(),
+                "structure_days": item.days,
+                "project_permit_count": body.permit_count,
+                "project_floor_basis": body.floor_basis,
+                "project_once_per_project": sorted(once),
+            },
+            # `project_total` mirrors this building's own total. The roll-up's per-building dict
+            # calls it `total`, and GET /estimator/estimates -> Quoting.tsx reads
+            # result_json.project_total — so every project building rendered as an em dash.
+            result_json=_audit_payload({**priced, "project_total": priced["total"]}),
             created_by=claims.get("email") or "unknown",
         )
         db.add(est)
@@ -867,6 +891,10 @@ def _estimate_row(row: Estimate) -> dict:
         "root_id": row.root_id,
         "version_number": row.version_number,
         "source_proposal_id": row.source_proposal_id,
+        # Without these a persisted project is nine anonymous rows in the estimates list with no
+        # way to tell they belong together — the write half of slice 2 had no reader at all.
+        "bid_project_id": row.bid_project_id,
+        "structure_name": row.structure_name,
         "input_json": row.input_json or {},
         "result_json": row.result_json or {},
         "created_at": row.created_at.isoformat() if row.created_at else None,
