@@ -1,141 +1,155 @@
 Resume perkins-roofing/video-archival.
 
 READ FIRST:
-    CONTINUATION-2026-07-31-pm.md     statewide coverage + the sweep that had never run (this work)
-    CONTINUATION-2026-07-31.md        the measured-salinity build this continues
-    CONTINUATION-2026-07-30-pm.md     the overhead model, Tim's sheet, the unsent email
-⚠️ docs/continuations/CONTINUATION-2026-07-30.md (the morning doc) is SUPERSEDED and archived —
-two of its headline claims are disproven in the 07-30-pm doc's §0. Do not act on it.
+    CONTINUATION-2026-08-01.md        the bid-project work (this) — READ §3 BEFORE ANY DEPLOY
+    CONTINUATION-2026-07-31-pm.md     warranty tool statewide + the OAuth account-scoping fix
+    CONTINUATION-2026-07-31.md        the measured-salinity build those follow
 
-Before touching the warranty tool:
-    docs/superpowers/specs/2026-07-30-brackish-confidence.md      (what to build)
-    docs/superpowers/plans/2026-07-30-brackish-confidence-plan.md (W1/W2/W3 + gates)
-    docs/BRACKISH_DATA_SOURCES.md                                 (measured evidence, incl. §2b)
-    docs/WARRANTY_TOOL_TIDAL_LAYER.md                             (how the layer is built)
-
-HEAD 2115187, pushed, tree clean, CI + deploy green on that sha, terraform plan exit 0, full suite
-PYTEST_EXIT=0. Warranty plugin 1.3.1 live on staging. Prod migrations through 0051.
+HEAD bc771b3, pushed, tree clean, full suite PYTEST_EXIT=0, terraform plan exit 0.
+Warranty plugin 1.3.4 live on staging. Prod migrations through 0051.
+⚠️ 0052 IS COMMITTED AND NOT APPLIED — deliberately. See "THE ONE TRAP" below.
 
 Confirm before trusting any of this:
   git log --oneline -1 && git status --short
   git log --oneline origin/main..HEAD          # expect empty
   bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
-  gh run list --limit 4                        # MATCH THE SHA; "deploy skipped" == nothing shipped
+  gh run list --limit 4                        # MATCH THE SHA
   gcloud run jobs executions list --job salinity-sweep --region us-central1 --limit 3
-    # expect a RECENT one by scheduler-sa with succeededCount=1. A failure here has twice been a
-    # packaging problem, not a scheduler problem — read the job's logs before touching the schedule.
+    # expect a RECENT one by scheduler-sa with succeededCount=1
 
 ⛔ STAY ON STAGING. PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is CORRECT.
 ⛔ DO NOT CHANGE PRICING without Jon. Live: jupiter+naples overhead_basis="series"; miami "branch"
    at $4,250/day; concurrent_crews deployed but UNSET everywhere.
 
+════════════════════════════════════════════════════════════════════════════════
+⚠️ THE ONE TRAP: MIGRATION 0052 IS COMMITTED, NOT APPLIED, AND THE ORM IS NOT IN GIT
+════════════════════════════════════════════════════════════════════════════════
+MIGRATIONS HERE ARE APPLIED BY HAND. Neither scripts/deploy.sh nor CI runs them — verified.
+So the ORM half was written and then REVERTED ON PURPOSE. If you re-add BidProject /
+Estimate.bid_project_id / Proposal.bid_project_id BEFORE applying 0052, every SELECT on estimates
+and proposals fails in prod. Schema first, ORM second, always.
+
+  DB_URL=postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins \
+    .venv/bin/python scripts/apply_migrations_adc.py
+
+0052 is additive and idempotent (new table, 3 nullable columns, IF NOT EXISTS). Applying it alone
+changes no behaviour.
+
 ▶ START HERE — ONE OF THESE, ASK JON WHICH
 
-  1. TIM EMAIL: SENT 2026-07-31 (copy at ~/perkins-corpus/tim_email_2026-07-31.txt). It asks him
-     7 things; several open Jarvis tasks are waiting on those same answers (#414 #426 #428 #441
-     #446 #448). Do NOT re-ask him — check for his reply first, then reconcile those tasks.
+  1. SLICE 2 of #430 — persistence. Apply 0052, re-add the ORM, add POST /estimator/project-quote
+     returning the roll-up and persisting N estimates + one bid_project. Snapshot gains buildings /
+     project_items / project_totals; keep roof_type as the dominant building and num_squares summed
+     so core/proposal.py:_REQUIRED_SNAPSHOT_KEYS needs no change.
 
-  2. FIX REACH_MI. It clips tidal geometry to 3 mi of the COASTLINE, but the strictest warranty
-     provision (1 mi) bounds ADDRESS-to-water distance — different quantities. 21 salt/brackish
-     gauges fall outside the clip and SIX are already in South Florida: Faka Union 52,700 uS/cm and
-     St Lucie at Speedy Point 30,700, both 3.1 mi in. A house 500 ft from the tidal St Johns gets no
-     tidal answer at all. One constant in scripts/build_tidal_layer.py; the cost is asset size
-     (1.96 MB today, and checker.js already lazy-loads it on first check, not page load).
+  2. SLICE 3 — proposal surface. ⚠️ READ THIS BEFORE STARTING: web/src/pages/Proposals.tsx:414-419
+     re-quotes exactly ONE estimate and overwrites quote_snapshot. On a project snapshot that
+     SILENTLY DESTROYS EIGHT BUILDINGS. Hard-gate it in the same slice that first creates a project
+     proposal. Also api/routes/proposals.py:143-167 _assemble_review_text reads ONE roof, so the
+     LLM send-gate would review one building and green-light a nine-building contract — a silently
+     weakened safety gate. And api/routes/estimator.py:441-450 fires min_margin_breached per
+     building under project scope.
 
-  3. FIX THE VALIDATOR'S STATISTIC. validate_tidal_against_gauges.py's IV_URL has no date range, so
-     it scores against an INSTANTANEOUS reading while the build classifies on a 30-DAY MEDIAN. This
-     moves a number the project has been tracking, so confirm before doing it.
+  3. SEND TIM THE SIX QUESTIONS (below). None are defaultable and one is worth $8-16k.
 
-DO NOT RE-DERIVE (all measured this session)
-  - Statewide is LIVE: 55,749 waterways, 171 USGS gauges, tidal.geojson 1.96 MB / 6,482 geometries
-    (388 tagged, 86 measured salt, 54 measured fresh), bbox 24.30,-87.80,31.10,-79.80.
-  - Held-out 75% (128/171) vs 81% (52/64) before is NOT a regression: the SAME asset scored over the
-    old South Florida bbox gives 80% (51/64). Always score a coverage change over BOTH bboxes.
-  - Verified live on staging: Tampa 210 ft measured (USGS 02306028, 46,600 uS/cm) · Jacksonville
-    1,022 ft measured · Pensacola 3,778 ft tagged · Tequesta 1,351 ft measured (control, unchanged)
-    · Plantation silent (negative control).
-  - The sweep works now and is proven end to end (job stdout: "171 gauges in the bbox; refreshing 7
-    (slice 5/24)"), publishing 171 gauges to GCS. It had NEVER succeeded before today.
-  - The Places typeahead is GONE ON PURPOSE. google.maps.places.Autocomplete was closed to new
-    customers 2025-03-01 and this project postdates it, so it never produced a suggestion — only the
-    "This page can't load Google Maps correctly" dialog. Restoring needs Places API (New) +
-    PlaceAutocompleteElement + places-backend on the perkins-setback-widget key in Terraform (that
-    key is NOT in IaC today).
-  - Precedence: measured salt moves a verdict WITH a citation; measured fresh REMOVES a warning;
-    tagged moves a verdict; inferred is a caveat only.
-  - Structures ARE the salt line, confirmed by instruments (C-8 across S-28: 465 vs 20,450 uS/cm on
-    2026-07-31; Loxahatchee 52,500 at the mouth vs 709 at mile 9.1) — WHY propagation caps at 2 mi.
-    ⚠️ THOSE GAUGE VALUES ARE POINT-IN-TIME, NOT CONSTANTS. They are 30-day medians over a sliding
-    window, so they move: the same C-8 pair was recorded as 473 / 29,900 a day earlier. The
-    ORDERING (fresh landward, salt seaward of the structure) is the durable fact. Re-read the cache
-    before quoting a number to anyone.
+  4. IAM: api-run-sa cannot create a secret (has secretAccessor / secretVersionAdder / viewer,
+     nothing granting secrets.create), so the OAuth connect flow 502s. Needs a Terraform grant —
+     a security-scope decision, deliberately left for Jon.
+
+DO NOT RE-DERIVE (all measured, all committed)
+  - Slice 1 of #430 SHIPPED and scores against Tim's real bid: project total ours $390,230 vs his
+    $381,288 (+2.3%), profit $30,790 vs $30,363 (+1.4%). Bus Stop went +84.9% -> -24.3%.
+    Re-run: DB_URL=... .venv/bin/python scripts/validate_against_evergrene.py
+  - #430's OWN DIAGNOSIS WAS WRONG and it changed the plan. It reads as two pricing errors
+    cancelling. It is ONE systematic over-charge (+10.2% to +84.9% on EVERY building) masked by
+    $116,420 of project scope we never quoted. Fixing only the fees/floor would have swung the bid
+    from -9% to about -23%. Both halves had to land together.
+  - #449's SPEC DOES NOT RECONCILE. "$2,500 per site per WEEK" is 17 x $2,500 = $42,500 on
+    Evergrene against Tim's actual $30,363 — 40% over. Default basis is 'project'; 'week' exists
+    and BOTH numbers are returned on every call. Do not silently switch to 'week'.
+  - FOUR fees are site-scoped: delivery_plywood_vents, new_bonus_values, permit_processing (a
+    COUNT, not a scope) and tile_dumpster. ⚠️ tile_dumpster_count is a ceil(), so per-building
+    calls round up per building — 14 loads billed for a 10-load site. Recomputed over SUMMED
+    squares. stories_3_5_delivery_chute stays per building.
+  - Measured split: fixed fees ~$24,000 of the error, floor ~$5,000. #449 leads with the smaller.
+  - Tim's model, decoded from his FORMULAS (tests/fixtures/golden/evergrene_project.json):
+    price/sq = (base + OH/sq) x markup, markup 1.10-1.14 PER BUILDING, base 750-1085 PER BUILDING.
+    OH = (demo + metals_demo + delivery) x $885 + tile_install x $745.
+    His General Conditions ((22,800+9,000) x 1.15 = $36,570) is referenced by NO total formula.
+    His stated total K42 EXCLUDES the Clubhouse Flats ($38,480) AND GC — compare like for like.
+    He hand-edits the OH formula per row: that is DRIFT, not a model. Do not reproduce it.
+  - His day rates vs ours: tile install $745 MATCHES exactly; demo $885 vs our $1,050; metal
+    install $735 vs our $850 (ours 15% high). His $1,050 appears only as metal-scope mobilisation.
+
+SIX QUESTIONS FOR TIM (he has never stated any of them — that is the test for asking)
+  1. One permit per structure or per site on a multi-building job? ($500-$9,000 swing)
+  2. Is new_bonus_values ($1,350) per mobilisation or per roof completed?
+  3. IS COMMISSION PAID ON GENERAL CONDITIONS? ~$8-16k on Evergrene alone.
+  4. Is the General Conditions markup always 1.15, or per bid?
+  5. What are the bare +4250 (K33) and +2550 (K35) on the Evergrene sheet? Unlabelled anywhere.
+  6. Must a proposal list each building's own address? Two Evergrene gates are on different roads.
+  PLUS: on Evergrene you billed demo at $885 and metal install at $735; our config carries $1,050
+  and $850. Are commercial rates different, or have the numbers moved since the 7/24 email?
 
 STILL OPEN
   - Miami charges its whole office day per job -> ~$2,087/sq HVHZ tile vs $1,113/sq accepted.
-    concurrent_crews:4 -> $1,343/sq. 4 is Tim's capacity TARGET, not a measurement.
-  - Crew share (-0.3%) vs his four rates (+2.2%): one config write once he answers.
-  - W3 per-phase status is done for the warranty tool. The SPA's long-running actions (proposal
-    render, publish, batch articles) were never scoped — ASK JON.
-  - naples carries Jupiter's 1400 + office_men=None; tile +10-12% over sold under every model.
+  - #447(3) commission_pct keyed by slope type, not per salesperson as PRICING_RULES §11 says.
+  - #444 GCP budget: Billing API disabled, SA cannot enable it. TF resource waits on
+    var.billing_account.
+  - REACH_MI residual: 8 of 18 far live gauges never snap to mapped water (OSM maps those wide
+    rivers as natural=water POLYGONS, not waterway lines).
+  - Salinity banking is correct and INERT: every latest-only gauge is also stale (the two sets are
+    byte-identical), so nothing banks until a dormant station resumes.
+  - #445 code done; the Wendy/Crypt Keepers review meeting is separate. naples carries Jupiter's
+    $1,400 + office_men=None.
 
 GOTCHAS
-- ⚠️ .dockerignore ignores `scripts/*` and re-includes an ALLOWLIST. A job importing a NEW script
-  needs `!scripts/<name>.py` or the image ships an EMPTY scripts/ namespace package and the job dies
-  with "unknown location" (NOT ModuleNotFoundError). tests/jobs/test_dockerignore_covers_job_imports
-  .py now guards this.
-- ⚠️ The job container has NO writable $HOME (non-root user). Anything derived from Path.home()
-  raises PermissionError: '/home/appuser'. Use tempfile.gettempdir(); durable state goes to GCS.
-- ⚠️ A GREEN CI + CLEAN TERRAFORM + A FIRING SCHEDULER STILL PROVED NOTHING TWICE. Both sweep bugs
-  existed only inside the built image. Verify a job by RUNNING it and reading its stdout.
-- ⚠️ Do NOT `source .env` before GCS work: it sets GOOGLE_APPLICATION_CREDENTIALS=./infra/vertex-dev
-  -sa.json, a file that DOES NOT EXIST. Use $HOME/.config/gcloud/perkins-deploy-sa.json.
-- ⚠️ DB_URL in .env is sqlite. wp_install_plugin.py needs the platform DB over the Cloud SQL proxy:
-  postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins
-  ⚠️ `+psycopg` — psycopg2 is NOT installed and plain postgresql:// selects it and fails.
-- ⚠️ resolved_wp_url() swallows every exception and returns "". Empty means a config/driver error,
-  not an unset value — probe PlatformConfig directly to see the real one.
-- ⚠️ WE HAVE A SERVICE ACCOUNT. ~/.config/gcloud/perkins-deploy-sa.json reads the tfstate bucket, so
-  `terraform apply` works without the user reauth that `invalid_rapt` demands:
+- ⚠️ MIGRATIONS ARE APPLIED BY HAND. Schema first, ORM second. See THE ONE TRAP.
+- ⚠️ tile_dumpster_count is a ceil() — anything calling it per building over-counts.
+- ⚠️ profit_guidance is ABSENT from the estimate result unless it is a daily-overhead quote.
+- ⚠️ pricing_configs columns are `config` and `is_active`, NOT config_json/active. Roof types:
+  13_tile | barrel_tile | 3tab_shingle | dimensional_shingle | standing_seam_metal.
+- ⚠️ Do NOT `source .env` before GCS work: it sets GOOGLE_APPLICATION_CREDENTIALS to
+  ./infra/vertex-dev-sa.json, A FILE THAT DOES NOT EXIST. Use
+  $HOME/.config/gcloud/perkins-deploy-sa.json.
+- ⚠️ DB_URL in .env is sqlite. Platform DB needs postgresql+psycopg://... over the Cloud SQL proxy.
+  `+psycopg` — psycopg2 is NOT installed and plain postgresql:// selects it and fails.
+- ⚠️ .dockerignore ALLOWLISTS scripts/. A job importing a NEW script needs !scripts/<name>.py or
+  the image ships an EMPTY namespace package ("unknown location"). Guarded by a test now.
+- ⚠️ The job container has NO writable $HOME. Path.home() raises PermissionError '/home/appuser'.
+- ⚠️ GREEN CI + CLEAN TERRAFORM + A FIRING SCHEDULER PROVED NOTHING, TWICE. Both salinity-sweep
+  bugs existed only inside the built image. Verify a job by RUNNING it and reading its stdout.
+- ⚠️ Gauge readings are 30-day medians over a SLIDING window — they move. The ORDERING (fresh
+  landward of a structure, salt seaward) is the durable fact, not the number.
+- ⚠️ OSM `tidal=yes` means water LEVEL, not salinity. The St Johns is tidal ~160 mi inland and
+  fresh. Exempting `tagged` from the clip shipped a false VOID on freshwater Dunns Creek.
+- ⚠️ qwen3.6 passed all three review areas as "Correct" and was wrong twice. Local review is a
+  second opinion, NEVER a gate. Security-critical review stays on Claude.
+- ⚠️ resolved_wp_url() swallows every exception and returns "". Empty = config/driver error.
+- ⚠️ A bare `until` spin with no sleep burns the whole timeout; `sleep N` chained after a command
+  is blocked by the harness.
+- ⚠️ Printing .env leaks WP_PWD (it reached a transcript 7/31) — worth rotating.
+- Pre-push: .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs tests/tenancy
+  (~8m). The EXIT CODE is the evidence — the summary may not flush to a redirected log.
+- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97. tests/ is
+  NOT ruff-gated; tests/jobs/test_search_indexing_job.py carries 9 pre-existing errors.
+- WE HAVE A SERVICE ACCOUNT: ~/.config/gcloud/perkins-deploy-sa.json reads the tfstate bucket, so
+  terraform apply works without the reauth `invalid_rapt` demands:
     cd infra && unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
     export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/perkins-deploy-sa.json
     export USER_PROJECT_OVERRIDE=true GOOGLE_CLOUD_QUOTA_PROJECT=video-archival-and-content-gen
     export TF_VAR_cloudflare_api_token="$(gcloud secrets versions access latest --secret=cloudflare-api-token 2>/dev/null)"
-- ⚠️ scripts/deploy.sh iterates its JOBS map under `set -e`, so naming a job Terraform has not
-  created yet ABORTS THE WHOLE CI DEPLOY. terraform apply first, then add the line.
-- ⚠️ adapters.storage.upload_file is (local_path, bucket, key) — not (bucket, key, path).
-- ⚠️ A script inside scripts/ puts THAT dir on sys.path, not the repo root, so `import adapters`
-  fails and a GCS read silently falls back to local while printing a reassuring line.
-- ⚠️ Overpass answers HTTP 406 to a bare POST body — form-encode as data=.
-- ⚠️ SFWMD's ArcGIS host 403s a default curl UA. Send a browser UA.
-- ⚠️ Google's Maps auth dialog can come from a RUNTIME call, not the script load. A/B the loader
-  headless before blaming the key or the referrer.
-- ⚠️ String ids + PYTHONHASHSEED = a non-reproducible build. Sort seeds AND output.
-- ⚠️ A validator that measures the wrong thing passes forever. Hold-one-out must REVERT a reach to
-  its `prior` class, not delete it (deleting read 77%, reverting reads 81%).
-- ⚠️ `sleep N` chained after a command is blocked; use an until-loop WITH a sleep inside it or
-  run_in_background. A bare `until` spin burns the whole timeout.
-- ⚠️ pgrep -f "<pattern>" MATCHES THE POLLING SHELL'S OWN COMMAND LINE. Poll a status FILE.
-- ⚠️ The session scratchpad is WIPED ON RESTART. Durable work -> ~/perkins-corpus/.
-- ⚠️ NEVER edit the tree while a long gate runs (R7). `cmd | tail -n` returns TAIL's exit code.
-- ⚠️ Printing .env leaks WP_PWD (it reached a transcript on 7/31) — worth rotating.
-- Pre-push tests: .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs
-  tests/tenancy  (~4,099 tests, ~8m). The summary line may not flush to a redirected log — the
-  EXIT CODE is the evidence.
-- CI gates `ruff check core adapters api jobs` FIRST, then pytest --cov-fail-under=97. tests/ is NOT
-  ruff-gated and tests/jobs/test_search_indexing_job.py carries 9 pre-existing errors.
-- Cloud SQL proxy: ~/bin/cloud-sql-proxy (fetched 7/30; /tmp copies get wiped):
-  setsid nohup ~/bin/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
-  PW=$(gcloud secrets versions access latest --secret=db-password); queries need set app.tenant_id='1'.
+- Cloud SQL proxy: setsid nohup ~/bin/cloud-sql-proxy \
+    video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
+  Queries need `set app.tenant_id='1'`.
 - Rebuild + ship the warranty tool:
-  .venv/bin/python scripts/fetch_salinity_readings.py       # or let the hourly sweep do it
+  .venv/bin/python scripts/fetch_salinity_readings.py     # or let the hourly sweep do it
   GOOGLE_CLOUD_PROJECT=video-archival-and-content-gen .venv/bin/python scripts/build_tidal_layer.py
-  .venv/bin/python scripts/check_tidal_layer.py             # asserts; exits non-zero on regression
-  .venv/bin/python scripts/validate_tidal_against_gauges.py # hold-one-out score
+  .venv/bin/python scripts/check_tidal_layer.py           # asserts; non-zero on regression
+  .venv/bin/python scripts/validate_tidal_against_gauges.py
   bump PERKINS_MWC_VERSION, zip wp-plugin/perkins-metal-warranty, then
   set -a; source .env; set +a; export WP_LOGIN_PW="$WP_PWD"
-  PYTHONPATH=. .venv/bin/python scripts/wp_install_plugin.py <zip>   (WEB login, not the app pw)
-  ⚠️ that script ALSO needs the DB_URL above; .env alone is not enough.
-- Tim's sheets via perkins-deploy SA + DWD impersonating tim@perkinsroofing.net.
-  ⚠️ Cell COMMENTS carry values the visible cells do not (FBC TPO OH $125; busy-season tiers).
-  Comments are a DRIVE resource, invisible to Sheets values().get.
+  PYTHONPATH=. DB_URL=<platform> .venv/bin/python scripts/wp_install_plugin.py <zip>  (WEB login)
+- Tim's sheets via perkins-deploy SA + DWD impersonating tim@perkinsroofing.net. Cell COMMENTS
+  carry values the visible cells do not, and comments are a DRIVE resource.
 - EMAIL_SEND_MODE=test in prod. R7-R10 in docs/ENGINEERING_RULES.md are binding.

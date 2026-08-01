@@ -9,7 +9,8 @@ readings excluded, evidence unclipped, then `tagged` re-clipped after review. Th
 any figure from §0.
 
 Read `CONTINUATION-2026-07-31.md` for the measured-salinity build this continues, and
-`CONTINUATION-2026-07-30-pm.md` for the overhead work (Tim's sheet, the unsent email).
+`docs/continuations/CONTINUATION-2026-07-30-pm.md` for the overhead work (Tim's sheet, the
+unsent email).
 
 ---
 

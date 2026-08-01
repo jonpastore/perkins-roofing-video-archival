@@ -4,7 +4,7 @@
 **1.2.1** live on staging. Deployed `platform:a86d941` — later commits are scripts/docs/plugin/IaC,
 none of which the platform image carries. Prod migrations through **0051**.
 
-Read `CONTINUATION-2026-07-30-pm.md` for the overhead work (Tim's sheet, the crew-share answer,
+Read `docs/continuations/CONTINUATION-2026-07-30-pm.md` for the overhead work (Tim's sheet, the crew-share answer,
 the email draft). This doc covers the warranty tool's measured-salinity build.
 
 ---
