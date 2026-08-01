@@ -76,12 +76,15 @@ from app.models import (
 )
 from core.proposal import (
     InvalidTransitionError,
+    ProjectSnapshotError,
     SnapshotError,
     capture_selection,
     generate_accept_token,
+    is_project_snapshot,
     new_version,
     supersede,
     transition,
+    validate_project_snapshot,
     validate_snapshot,
 )
 from core.proposal_render import (
@@ -148,6 +151,38 @@ def _assemble_review_text(row: "Proposal", db: Session) -> str:
     parts = [f"PROPOSAL: {row.title}"]
     for ln in _proposal_scope_lines(snap):
         parts.append(f"- {ln['label']} qty={ln['qty_display']} {ln['price_display']}")
+
+    # A project proposal covers N structures, and _proposal_scope_lines reads the ONE estimate
+    # the snapshot's scalars describe. Reviewing only that meant the pre-send gate read one roof
+    # and green-lit a nine-building contract — a silently weakened safety check rather than a
+    # visible failure, which is the worse kind. Enumerate every building and the project-level
+    # money so the reviewer sees the document the customer will.
+    if is_project_snapshot(snap):
+        buildings = snap.get("buildings") or []
+        totals = snap.get("project_totals") or {}
+        parts.append(
+            f"THIS IS A MULTI-BUILDING PROJECT: {len(buildings)} structures at one site, "
+            f"quoted as ONE bid. Review the WHOLE bid, not one roof."
+        )
+        for b in buildings:
+            parts.append(
+                f"- STRUCTURE {b.get('name')}: {b.get('squares')} squares, "
+                f"total {_fmt_money(b.get('total'))}, profit {_fmt_money(b.get('profit'))}"
+            )
+            for w in (b.get("warnings") or []):
+                parts.append(f"  ! {b.get('name')} warning: {w}")
+        for item in (snap.get("project_items") or []):
+            parts.append(
+                f"- PROJECT ITEM {item.get('label')}: {_fmt_money(item.get('amount'))}"
+            )
+        parts.append(
+            f"PROJECT TOTAL: {_fmt_money(totals.get('project_total'))} "
+            f"across {totals.get('building_count')} structures; "
+            f"profit {_fmt_money(totals.get('profit'))}"
+        )
+        for w in (totals.get("warnings") or []):
+            parts.append(f"! PROJECT warning: {w}")
+
     dp = snap.get("deposit_policy") or {}
     if dp:
         parts.append(
@@ -549,6 +584,9 @@ def _proposal_row(row: Proposal, events: list | None = None) -> dict:
         "customer_id": row.customer_id,
         "property_id": row.property_id,
         "estimate_id": row.estimate_id,
+        # The SPA needs this to know the edit path is gated BEFORE the user hits a 422 — a
+        # refusal the interface never warned about reads as a bug, not a guard.
+        "bid_project_id": row.bid_project_id,
         "template_id": row.template_id,
         "root_id": row.root_id,
         "parent_id": row.parent_id,
@@ -1093,6 +1131,146 @@ def create_proposal(
     return _proposal_row(row)
 
 
+class ProposalFromProjectCreate(BaseModel):
+    customer_id: int
+    property_id: int
+    title: Optional[str] = Field(default=None, max_length=500)
+    template_id: Optional[int] = None
+    deposit_percent: Optional[float] = Field(default=None, ge=0, le=100)
+
+
+@router.post("/quoting/proposals/from-project/{bid_project_id}")
+def create_proposal_from_project(
+    bid_project_id: int,
+    body: ProposalFromProjectCreate,
+    claims=Depends(require_role("quoting_create")),
+    db: Session = Depends(get_db_session),
+):
+    """Turn a persisted multi-building bid into ONE proposal (#430/#449 slice 3).
+
+    RE-PRICES from the stored inputs rather than reassembling the stored outputs. That is the
+    whole reason the project facts were persisted onto each estimate: `structure_days`,
+    `project_permit_count`, `project_floor_basis` and `project_once_per_project` are exactly the
+    inputs that decide a building's price and are not part of QuoteRequest. Rebuilding a snapshot
+    by stitching together stored per-building results would let the scalars and the buildings
+    disagree the moment anything changed — which is the defect validate_project_snapshot exists
+    to catch. Pricing it once, from one config, cannot produce that.
+
+    The config is PINNED to the one the estimates were quoted against, so a proposal reproduces
+    the bid rather than silently re-pricing it at today's rates.
+    """
+    from app.models import BidProject, Estimate, PricingConfig  # noqa: PLC0415
+    from core import bid_project as BP  # noqa: PLC0415
+    from core.estimator import QuoteInput  # noqa: PLC0415
+    from core.pricing_config import ConfigError, load_config  # noqa: PLC0415
+
+    project = db.get(BidProject, bid_project_id)
+    if project is None:
+        raise HTTPException(404, f"Bid project {bid_project_id} not found")
+
+    estimates = db.execute(
+        select(Estimate)
+        .where(Estimate.bid_project_id == bid_project_id)
+        .order_by(Estimate.id)
+    ).scalars().all()
+    if not estimates:
+        raise HTTPException(
+            422,
+            f"Bid project {bid_project_id} has no estimates — quote it via "
+            f"POST /estimator/project-quote with persist=true before proposing it.",
+        )
+
+    config_ids = {e.pricing_config_id for e in estimates}
+    if len(config_ids) > 1:
+        raise HTTPException(
+            422,
+            f"the estimates in this project were priced against different configs "
+            f"({sorted(config_ids, key=str)}); a proposal must quote one price book.",
+        )
+    cfg_row = db.get(PricingConfig, estimates[0].pricing_config_id)
+    if cfg_row is None or not cfg_row.config:
+        raise HTTPException(422, "the pricing config this project was quoted against is gone")
+    config = load_config(cfg_row.config)
+
+    buildings: list[BP.Building] = []
+    for est in estimates:
+        stored = dict(est.input_json or {})
+        days = stored.pop("structure_days", None)
+        permit_count = int(stored.pop("project_permit_count", 1) or 1)
+        floor_basis = stored.pop("project_floor_basis", None) or project.profit_floor_basis
+        once = stored.pop("project_once_per_project", None)
+        # QuoteRequest fields only — the project facts above are not QuoteInput kwargs.
+        stored.pop("debug", None)
+        try:
+            quote = QuoteInput(**{k: v for k, v in stored.items()
+                                  if k in QuoteInput.__dataclass_fields__})
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, f"estimate {est.id} inputs are not re-pricable: {exc}") from exc
+        buildings.append(BP.Building(name=est.structure_name or f"Structure {est.id}",
+                                     quote=quote, days=days))
+
+    blocks = [*(project.general_conditions or []), *(project.add_on_blocks or [])]
+    try:
+        roll_up = BP.price_project(
+            config, buildings,
+            project_items=[BP.ProjectItem(
+                key=b["key"], label=b["label"], cost=float(b["cost"]),
+                markup=float(b.get("markup") or 1.0)) for b in blocks],
+            once_per_project=(frozenset(once) if once else
+                              frozenset(project.once_per_project_fees or ())
+                              or BP.DEFAULT_ONCE_PER_PROJECT),
+            floor_basis=floor_basis,
+            permit_count=permit_count,
+        )
+    except (ValueError, ConfigError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    total = roll_up["project_total"]
+    deposit_pct = body.deposit_percent
+    base = {
+        "pricing_config_hash": cfg_row.config_hash,
+        # Stamped by the send path; the key must exist for validate_snapshot.
+        "sent_at_iso": None,
+        "roof_type": BP.dominant_roof_type(buildings),
+        "num_squares": round(BP.total_squares(buildings), 2),
+        "branch": project.branch,
+        "code_zone": project.code_zone,
+        "tiers": {"good": {"label": project.name, "total": total, "line_items": []}},
+        "deposit_policy": {
+            "mode": "percent" if deposit_pct else "none",
+            "value": deposit_pct or 0,
+            "amount": round(total * (deposit_pct or 0) / 100.0, 2),
+        },
+        "floors": {
+            "min_profit_pct": config.raw["profit_floor_pct"],
+            "min_profit_plus_oh_pct": config.raw["profit_plus_oh_floor_pct"],
+        },
+        "estimator_version": "project_v1",
+    }
+    snapshot = BP.project_snapshot(roll_up, buildings, base)
+
+    row = Proposal(
+        tenant_id=_tenant_id(db),
+        customer_id=body.customer_id,
+        property_id=body.property_id,
+        bid_project_id=bid_project_id,
+        # estimate_id stays NULL on purpose: a project covers N estimates and pointing at one
+        # would be the same category error as re-quoting one.
+        estimate_id=None,
+        template_id=body.template_id,
+        title=body.title or project.name,
+        quote_snapshot=_freeze_calc_breakdown(snapshot),
+        status="draft",
+        accept_token=generate_accept_token(),
+        created_by=claims.get("email") or "unknown",
+        version_number=1,
+    )
+    db.add(row)
+    db.flush()
+    db.refresh(row)
+    return _proposal_row(row)
+
+
 @router.post("/quoting/proposals/from-quote/{contract_id}")
 def create_proposal_from_quote(
     contract_id: str,
@@ -1199,6 +1377,16 @@ def update_proposal(
             f"Proposal {proposal_id} is not a draft (status={row.status!r});"
             " use /revise to create a new version",
         )
+    # A project proposal's scalars must keep agreeing with its buildings. The SPA edit path
+    # re-quotes ONE estimate and rebuilds the snapshot by spreading the old one, so `buildings`
+    # survives while `total`/`num_squares`/`tiers` describe a single roof — a contract listing
+    # nine structures with one building's numbers. Gated HERE, on the API, because the UI is not
+    # the trust boundary and a disabled button is bypassable.
+    try:
+        validate_project_snapshot(row.quote_snapshot, body.quote_snapshot)
+    except ProjectSnapshotError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(row, field, value)
     db.flush()

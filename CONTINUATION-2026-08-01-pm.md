@@ -250,6 +250,55 @@ defaults False and `buildings` is capped, which removes the blast radius that ma
 
 ---
 
+## §3.9 — SLICE 3: THE PROPOSAL SURFACE (built, not yet merged)
+
+Branch `feat/430-slice3-proposal-surface`. Slice 2 is merged and deployed (`main 98f8623`).
+
+**The data-loss defect was subtler than recorded.** `Proposals.tsx handleSaveEditProposal` builds
+`{...baseSnap, total, num_squares, estimate_result, tiers}` — because it SPREADS, `buildings` and
+`project_items` SURVIVE. So it does not "destroy eight buildings"; it produces something worse: a
+contract still listing nine structures whose total, squares and tiers describe ONE roof, with
+nothing downstream able to say which half is true.
+
+So the gate is not "project proposals are read-only" — a gate that blocks ordinary edits gets
+worked around. `core.proposal.validate_project_snapshot` enforces that **the scalars keep agreeing
+with the buildings**: the project keys may not vanish, `num_squares` must remain the sum over
+`buildings`, and `project_totals.building_count` must match. A single-estimate re-quote fails all
+three; editing the deposit or the title fails none. Enforced in `update_proposal` (**the API is
+the trust boundary — a disabled button is bypassable**), with the SPA button disabled and
+explained so a user sees why instead of meeting a 422.
+
+**The send-gate reviewed one roof.** `_assemble_review_text` fed `core.proposal_review` the single
+estimate the scalars describe, so on a nine-building bid the pre-send LLM gate green-lit the whole
+contract off one structure — a silently weakened check, not a visible failure. It now enumerates
+every structure, the project-level money, and **per-building warnings**, so a `min_margin_breached`
+on structure 2 cannot hide behind a healthy structure 1.
+
+**`min_margin_breached` per building is MOOT, not fixed.** It sits inside the discount branch,
+which only runs in `/quote`, and project quotes refuse discounts outright. Recorded so nobody
+goes looking for a fix that should not exist.
+
+**The feature: `POST /quoting/proposals/from-project/{bid_project_id}`** — and this is where
+`project_snapshot()` finally gets called, closing the unwired-code finding from R2.
+
+It **re-prices from the stored inputs rather than reassembling the stored outputs**, with the
+pricing config PINNED to the one the estimates were quoted against. Stitching a snapshot together
+from per-building results would let the scalars and the buildings drift — precisely what the gate
+above exists to catch. Pricing once, from one config, cannot produce that. The project facts
+persisted in slice 2 (`structure_days`, `project_permit_count`, `project_floor_basis`,
+`project_once_per_project`) are what make it possible; they are load-bearing now, not speculative.
+`estimate_id` stays NULL: pointing at one of nine is the same category error as re-quoting one.
+
+⚠️ The test that matters most is `test_the_generated_snapshot_passes_its_own_edit_gate` — what we
+WRITE must survive what we VALIDATE. Without it the gate could have refused our own output and
+nobody would have found out until a real bid.
+
+**Still open in slice 3/4:** no SPA screen builds a multi-building quote (`Quoting.tsx` has ~55
+page-level scalar `quote*` inputs; a per-building repeat means lifting that block into a record),
+so a project can only be created by API today.
+
+---
+
 ## §4 — NEXT
 
 0. ⚠️ **RETRY R2 WITH THE AGENTS** (see §3.5). The formal requirement is unmet — both reviewer
