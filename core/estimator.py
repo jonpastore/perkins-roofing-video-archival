@@ -561,6 +561,20 @@ class QuoteInput:
     commission_basis: str = "profit"
     commission_rate_override: Optional[float] = None
 
+    # --- multi-building bids (#430/#449) --------------------------------------------------
+    # A building inside a BID PROJECT is not a standalone job, and two things that are correct
+    # once per job become wrong once per building. Both default to the single-job behaviour, so
+    # an ordinary quote is bit-for-bit unchanged; only core.bid_project sets them.
+    #
+    # profit_floor_scope="project": this building does NOT pay its own floor — the roll-up owns
+    #   one floor for the whole bid. Guidance is still computed and returned, so the per-building
+    #   card can say what it WOULD have been floored to standalone.
+    # suppress_fixed_keys: fixed fees the project charges once and adds itself. Suppressed on
+    #   EVERY building and re-added by the roll-up, which is what lets the dumpster count be
+    #   recomputed over the summed squares instead of rounding up once per building.
+    profit_floor_scope: str = "job"                  # "job" | "project"
+    suppress_fixed_keys: frozenset[str] = frozenset()
+
     # Legacy override fields — preserved for old "KEY block" tests using explicit per-sq values.
     override_base_cost: Optional[float] = None
     override_overhead: Optional[float] = None
@@ -774,6 +788,7 @@ def _apply_min_margin(
     config: PricingConfig, items: list[LineItem], sq: float, explicit_profit: bool = False,
     effective_floor: float = 0.0, on_site_weeks: Optional[int] = None,
     slope_type: Optional[str] = None, zone: Optional[str] = None,
+    profit_floor_scope: str = "job",
 ) -> Optional[str]:
     """Raise the profit line to the week-based floor. Returns a warning code if it fired.
 
@@ -794,6 +809,13 @@ def _apply_min_margin(
     # weekly multiple instead repriced 17 of Tim's 29 homes upward — most of his re-roofs run
     # 7-10 days, so a 2-week floor of $5,000 beats his own sliding scale on nearly every tile
     # job. He said "$2,500 a week"; he never said "$5,000 on a two-week job". Pending his answer.
+    # A building inside a bid project does NOT pay its own floor — one floor covers the site, and
+    # core.bid_project applies it over the summed days. Charging it per building is what took
+    # Evergrene's seven small structures to $2,500 of profit EACH, against Tim's $433 on the bus
+    # stop. compute_profit_guidance still runs upstream, so the per-building card can still show
+    # what this roof would have been floored to on its own.
+    if profit_floor_scope == "project":
+        return None
     if config.profit_floor_basis() == "weekly":
         floor = effective_floor
     else:
@@ -989,24 +1011,43 @@ def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
 # Project-level fixed costs
 # -------------------------------------------------------------------------
 def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineItem]:
+    """Fixed costs. "Fixed" here has always meant "added once per CALL", not "once per site".
+
+    That distinction is invisible on a single-building quote and wrong on a multi-building bid:
+    Tim's Evergrene site paid $3,000 of delivery + bonus values + permit against a 3-square bus
+    stop, because the estimator has no way to know eight other roofs share the truck and the
+    permit. `suppress_fixed_keys` is how core.bid_project takes them back.
+    """
     tags = config.raw["cost_category_tags"]
     items: list[LineItem] = []
+    skip = q.suppress_fixed_keys or frozenset()
 
-    dpv = config.raw["delivery_plywood_vents"]
-    items.append(LineItem("delivery_plywood_vents", "Delivery / Plywood / Vents", dpv, tags["delivery_plywood_vents"]))
+    if "delivery_plywood_vents" not in skip:
+        dpv = config.raw["delivery_plywood_vents"]
+        items.append(LineItem("delivery_plywood_vents", "Delivery / Plywood / Vents", dpv,
+                              tags["delivery_plywood_vents"]))
 
-    nbv = config.raw["new_bonus_values"]
-    items.append(LineItem("new_bonus_values", "New Bonus Values", nbv, tags["new_bonus_values"]))
+    if "new_bonus_values" not in skip:
+        nbv = config.raw["new_bonus_values"]
+        items.append(LineItem("new_bonus_values", "New Bonus Values", nbv,
+                              tags["new_bonus_values"]))
 
-    permit = config.raw["permit_processing"]
-    if q.project_kind == "commercial":
-        permit += config.raw["permit_commercial_add"]
-    items.append(LineItem("permit_processing", "Permit Processing", permit, tags["permit_processing"]))
+    if "permit_processing" not in skip:
+        permit = config.raw["permit_processing"]
+        if q.project_kind == "commercial":
+            permit += config.raw["permit_commercial_add"]
+        items.append(LineItem("permit_processing", "Permit Processing", permit,
+                              tags["permit_processing"]))
 
     # Tile dumpster — automatic when tile is involved on either side of the job:
     # new tile roofs need it, and tearing OFF tile generates the dump loads regardless
     # of what goes on (Zoom [33:20]: one tile dump truck ≈ $1,200).
-    if (_is_tile(q.roof_type) or q.existing_roof == "tile") and q.num_squares > 0:
+    # ⚠️ tile_dumpster_count is a ceil(), so calling it once per building rounds UP once per
+    # building: Evergrene's nine roofs bill 14 dumpsters where the site needs 10. A dump load is
+    # a SITE quantity even though it is not a flat fee, so the project suppresses this too and
+    # recomputes it over the summed squares.
+    if (("tile_dumpster" not in skip)
+            and (_is_tile(q.roof_type) or q.existing_roof == "tile") and q.num_squares > 0):
         count = config.tile_dumpster_count(q.num_squares, zone)
         dumpster_cost = count * config.raw["tile_dumpster_cost"]
         items.append(LineItem("tile_dumpster", "Tile Dumpster", dumpster_cost,
@@ -1560,7 +1601,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     floored = _apply_min_margin(
         config, all_items, total_sq, explicit_profit,
         effective_floor=effective_floor, on_site_weeks=guidance["on_site_weeks"],
-        slope_type=q.slope_type, zone=zone)
+        slope_type=q.slope_type, zone=zone, profit_floor_scope=q.profit_floor_scope)
     if floored:
         warnings.append(floored)
 
