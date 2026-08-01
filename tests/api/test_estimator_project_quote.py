@@ -88,8 +88,9 @@ class TestProjectQuote:
     def test_persists_one_project_and_one_estimate_per_building(self, admin_client):
         branch = _seeded_branch(admin_client)
         buildings = [_building("Clubhouse", 30, branch), _building("Bus Stop", 3, branch)]
+        # persist is opt-IN: the SPA re-prices per keystroke and must not grow two tables doing it.
         r = admin_client.post("/estimator/project-quote",
-                              json=_payload(branch, buildings), headers=AUTH)
+                              json=_payload(branch, buildings, persist=True), headers=AUTH)
         assert r.status_code == 200, r.text
         data = r.json()
 
@@ -119,10 +120,10 @@ class TestProjectQuote:
 
         r = admin_client.post(
             "/estimator/project-quote",
-            json=_payload(branch, [_building("Clubhouse", 30, branch)], persist=False),
+            json=_payload(branch, [_building("Clubhouse", 30, branch)]),
             headers=AUTH)
         assert r.status_code == 200, r.text
-        assert "bid_project_id" not in r.json()
+        assert "bid_project_id" not in r.json(), "persist must default to False"
 
         db = SessionLocal()
         db.info["tenant_id"] = 1
@@ -294,3 +295,38 @@ def test_unknown_property_id_is_refused(admin_client):
         branch, [_building("A", 10, branch)], property_id=999999), headers=AUTH)
     assert r.status_code == 404, r.text
     assert "Property" in r.text
+
+
+class TestProjectQuoteBounds:
+    def test_duplicate_structure_names_refused(self, admin_client):
+        """structure_name is how a persisted project tells nine estimates apart."""
+        branch = _seeded_branch(admin_client)
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [_building("Main", 10, branch), _building("Main", 12, branch)]), headers=AUTH)
+        assert r.status_code == 422
+        assert "duplicate structure name" in r.text
+
+    def test_building_list_is_capped(self, admin_client):
+        """One estimating_view caller could otherwise hold a worker with 10,000 buildings."""
+        branch = _seeded_branch(admin_client)
+        many = [_building(f"B{i}", 5, branch) for i in range(51)]
+        r = admin_client.post("/estimator/project-quote",
+                              json=_payload(branch, many), headers=AUTH)
+        assert r.status_code == 422
+
+    def test_building_allocation_is_refused_until_the_fold_exists(self, admin_client):
+        """It was accepted, echoed back, and priced as its own line — a silent no-op on money."""
+        branch = _seeded_branch(admin_client)
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [_building("Clubhouse", 30, branch)],
+            project_items=[{"key": "addons", "label": "Sloped add-ons", "cost": 42050,
+                            "allocation": "building:Clubhouse"}]), headers=AUTH)
+        assert r.status_code == 422
+
+    def test_duplicate_project_item_keys_refused(self, admin_client):
+        branch = _seeded_branch(admin_client)
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [_building("Clubhouse", 30, branch)],
+            project_items=[{"key": "gc", "label": "A", "cost": 100},
+                           {"key": "gc", "label": "B", "cost": 200}]), headers=AUTH)
+        assert r.status_code == 422

@@ -601,22 +601,29 @@ class ProjectItemInput(BaseModel):
     label: str = Field(..., min_length=1, max_length=300)
     cost: float = Field(..., ge=0)
     markup: float = Field(default=1.0, ge=1.0, le=3.0)
-    allocation: str = Field(default="project", max_length=210)
+    #: Only "project" is implemented — see core.bid_project.ProjectItem. "building:<name>" is
+    #: reserved for Tim's folding habit and is refused until the fold exists.
+    allocation: Literal["project"] = "project"
 
 
 class ProjectQuoteRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=300)
     property_id: Optional[int] = None
-    buildings: list[BuildingInput] = Field(..., min_length=1)
-    project_items: list[ProjectItemInput] = Field(default_factory=list)
+    # Capped: every building triggers a full estimate() plus an INSERT, and one authenticated
+    # estimating_view caller could otherwise hold a worker and a transaction with 10,000 of them.
+    # Evergrene, the largest real bid, is 9.
+    buildings: list[BuildingInput] = Field(..., min_length=1, max_length=50)
+    project_items: list[ProjectItemInput] = Field(default_factory=list, max_length=50)
     #: null = the measured default (see core.bid_project.DEFAULT_ONCE_PER_PROJECT). An explicit
     #: list is how a bid opts out of a site-scoping decision that is still pending Tim.
     once_per_project: Optional[list[str]] = None
     floor_basis: Literal["project", "week", "building"] = "project"
     permit_count: int = Field(default=1, ge=1, le=99)
     notes: Optional[str] = None
-    #: False returns the roll-up without writing anything — the SPA re-prices on every keystroke.
-    persist: bool = True
+    #: Defaults to FALSE. The primary caller is an SPA that re-prices on every keystroke, and
+    #: there is no idempotency key or dedupe on name — defaulting to True meant any client that
+    #: omitted the field grew two tables per request. The caller that wants a row asks for one.
+    persist: bool = False
 
 
 @router.post("/project-quote")
@@ -723,7 +730,7 @@ def project_quote(
         "once_per_project": sorted(once),
         "permit_count": body.permit_count,
         "dominant_roof_type": BP.dominant_roof_type(built),
-        "num_squares": round(sum(b.quote.num_squares for b in built), 2),
+        "num_squares": round(BP.total_squares(built), 2),
     }
     if not body.persist:
         return result
