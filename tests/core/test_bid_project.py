@@ -446,3 +446,23 @@ def test_duplicate_project_item_keys_refused_at_core():
         price_project(_cfg_v2(), [_b("Clubhouse", 30)], project_items=[
             ProjectItem(key="gc", label="A", cost=100),
             ProjectItem(key="gc", label="B", cost=200)])
+
+
+def test_per_building_squares_counts_both_sections():
+    """The roll-up's per-building `squares` must agree with total_squares().
+
+    Reporting the sloped side only made one screen show 35 sq and 20 sq for the same building.
+    Uses the exhibit_b fixture because _cfg_v2 leaves every low-slope base price null, so a mixed
+    roof cannot actually be priced against it.
+    """
+    import json
+    from pathlib import Path
+
+    from core.pricing_config import load_config
+
+    raw = json.loads((Path(__file__).parent.parent.parent / "infra" / "fixtures"
+                      / "pricing_config_exhibit_b.json").read_text())
+    buildings = [_mixed("Clubhouse", 20, 15, "tpo_adhered")]
+    r = price_project(load_config(raw), buildings)
+    assert r["buildings"][0]["squares"] == 35
+    assert sum(b["squares"] for b in r["buildings"]) == total_squares(buildings)
