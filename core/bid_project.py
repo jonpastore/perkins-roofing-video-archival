@@ -231,6 +231,57 @@ def price_project(
     return out.to_dict()
 
 
+def dominant_roof_type(buildings: list[Building]) -> str:
+    """The roof type carrying the most squares in the bid.
+
+    A project snapshot still has to answer "what roof is this?" with ONE value, because
+    core/proposal.py:_REQUIRED_SNAPSHOT_KEYS demands a scalar `roof_type` and every consumer —
+    the contract renderer, the T&C picker, the deposit policy — reads it. Picking the largest by
+    area rather than the first building means a nine-structure tile job does not describe itself
+    as a metal job because the bus stop happened to be listed first. Ties break on the type name
+    so the answer is stable across calls.
+    """
+    by_type: dict[str, float] = {}
+    for b in buildings:
+        by_type[b.quote.roof_type] = by_type.get(b.quote.roof_type, 0.0) + b.quote.num_squares
+    return max(sorted(by_type), key=lambda t: by_type[t])
+
+
+def project_snapshot(roll_up: dict[str, Any], buildings: list[Building],
+                     base: dict[str, Any]) -> dict[str, Any]:
+    """A proposal quote_snapshot for a whole bid, built from a single-building `base` snapshot.
+
+    ⚠️ NOT WIRED YET — as of slice 2 the only callers are tests. It takes a `base` because the
+    scalar snapshot fields (tiers, deposit_policy, floors, estimator_version, sent_at_iso) are
+    assembled by whoever creates the PROPOSAL, and /estimator/project-quote does not build a
+    proposal. Slice 3 is where it gets called. Said plainly here so nobody reads its test coverage
+    as evidence that project proposals work.
+
+    Deliberately ADDITIVE: `roof_type` becomes the dominant building and `num_squares` the sum, so
+    every key core/proposal.py already requires is still present and still a scalar of the right
+    type. That is why _REQUIRED_SNAPSHOT_KEYS needs no change and why an existing single-building
+    proposal keeps rendering unchanged — the project keys are extra, not a replacement.
+
+    ⚠️ The three added keys are the whole record of the other eight buildings. Anything that
+    rewrites a snapshot by re-quoting one estimate destroys them — see the guard owed on
+    web/src/pages/Proposals.tsx.
+    """
+    return {
+        **base,
+        "roof_type": dominant_roof_type(buildings),
+        "num_squares": round(sum(b.quote.num_squares for b in buildings), 2),
+        "buildings": roll_up["buildings"],
+        "project_items": roll_up["project_items"] + roll_up["project_fixed"],
+        "project_totals": {
+            "project_total": roll_up["project_total"],
+            "profit": roll_up["profit"],
+            "floor": roll_up["floor"],
+            "building_count": len(roll_up["buildings"]),
+            "warnings": roll_up["warnings"],
+        },
+    }
+
+
 def _with_project_flags(q: QuoteInput, once: frozenset[str],
                         per_building_floor: bool) -> QuoteInput:
     """Copy a QuoteInput with the project flags set, leaving the caller's object untouched."""
