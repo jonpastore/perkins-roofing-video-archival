@@ -182,3 +182,36 @@ def test_a_middle_initial_is_still_a_person():
 def test_a_lowercase_two_word_title_is_not_a_person():
     """Reaches the span guard: 2 words, no match at span 2, so span 3 is skipped."""
     assert person_name_risk("tile reroof") is False
+
+
+def test_gps_is_detected_in_the_format_companycam_actually_burns_in():
+    """`no_pii` advertises "or GPS" and only matched the signed decimal pair.
+
+    core/photo_privacy.py quotes the real capture stamp verbatim as
+    "Sep 1, 2023 at 12:12:36 PM / 25.858694° N 80.120019° W" — the hemisphere form, which passed
+    clean. An editor pasting that caption into alt text published the property's coordinates.
+    """
+    from core.pii import find_pii
+
+    for text in (
+        "25.858694, -80.120019",
+        "25.858694° N 80.120019° W",
+        "Sep 1, 2023 at 12:12:36 PM / 25.858694° N 80.120019° W",
+        "25.858694 N, 80.120019 W",
+        "lat 25.858694 lon -80.120019",
+        "Latitude: 25.858694, Longitude: -80.120019",
+    ):
+        kinds = [f.kind for f in find_pii(text)]
+        assert "gps_coordinates" in kinds, f"undetected GPS in {text!r}"
+
+
+def test_gps_detector_does_not_fire_on_ordinary_prose():
+    """A precision figure or a price must not read as a coordinate pair."""
+    from core.pii import find_pii
+
+    for text in (
+        "We installed 25.5 squares of tile at $1,100.00 per square.",
+        "The roof pitch is 6/12 and the job ran 12.5 days.",
+        "Wind rating 185 mph per FBC 2023.",
+    ):
+        assert [f.kind for f in find_pii(text)] == [], f"false positive in {text!r}"

@@ -149,3 +149,90 @@ def test_a_caller_cannot_forge_a_sanitized_selection():
         "wp_url": "https://evil.example/wp-content/uploads/x.jpg", "wp_media_id": 1,
     })
     assert sorted(forged.model_dump()) == ["alt", "id", "kind"]
+
+
+def test_strip_stamp_destroys_exif_gps_not_just_the_pixel_band():
+    """The crop is only half the exposure — the same fix can sit in EXIF, which no crop touches.
+
+    strip_stamp drops it because it decodes to pixels and re-encodes, and OpenCV writes a bare
+    JPEG. That is a PRIVACY GUARANTEE resting on an implementation detail, so it gets a test:
+    any change to a metadata-preserving crop would republish the coordinates and this fails.
+    """
+    import cv2
+    import numpy as np
+
+    from core.photo_privacy import STAMP_BAND, strip_stamp
+
+    img = (np.random.rand(200, 200, 3) * 255).astype("uint8")
+    ok, buf = cv2.imencode(".jpg", img)
+    assert ok
+    raw = buf.tobytes()
+
+    # A minimal APP1/Exif segment carrying a recognisable GPS payload, spliced in after SOI.
+    payload = b"Exif\x00\x00MM\x00\x2aGPSLatitude 25.858694N 80.120019W"
+    segment = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    with_exif = raw[:2] + segment + raw[2:]
+    assert b"GPSLatitude" in with_exif, "test fixture did not actually carry EXIF"
+
+    out = strip_stamp(with_exif)
+
+    assert b"GPSLatitude" not in out, "EXIF GPS survived sanitization"
+    assert b"Exif\x00\x00" not in out, "EXIF block survived sanitization"
+    height_in = cv2.imdecode(np.frombuffer(with_exif, np.uint8), cv2.IMREAD_COLOR).shape[0]
+    height_out = cv2.imdecode(np.frombuffer(out, np.uint8), cv2.IMREAD_COLOR).shape[0]
+    assert height_out == int(height_in * (1.0 - STAMP_BAND))
+
+
+# ---------------------------------------------------------------------------
+# The alt-text injection that defeated media_sanitized (R2 critic, 2026-08-01)
+# ---------------------------------------------------------------------------
+
+INJECTION_ALT = "Front elevation' /><img src='https://dn.companycam.com/photos/abc.jpg"
+
+
+def test_gallery_html_escapes_editor_alt_text():
+    """An editor types alt text. Unescaped, it can close the tag and open a second <img>.
+
+    That second tag pointed at a RAW CompanyCam file — burned-in GPS stamp and all — and the
+    whole gate passed, because unsanitized_media only matched double-quoted attributes.
+    """
+    from core.portfolio_media import gallery_html
+
+    out = gallery_html(
+        [{"kind": "photo", "id": "1", "alt": INJECTION_ALT}],
+        {"photo:1": {"url": "https://site/wp-content/uploads/p1.jpg"}},
+    )
+    assert out.count("<img") == 1, f"alt text injected a second tag: {out}"
+    assert "dn.companycam.com" not in out.replace("&#x27;", "'") or "&lt;img" in out
+
+
+def test_unsanitized_media_sees_every_quoting_style():
+    """The gate must not depend on how its caller happened to quote the attribute.
+
+    Escaping the emitter fixes today's path; this is the half that keeps the gate correct if a
+    future emitter quotes differently.
+    """
+    from core.photo_privacy import unsanitized_media
+
+    cdn = "https://dn.companycam.com/x.jpg"
+    assert unsanitized_media(f"<img src='{cdn}'>") == [cdn]
+    assert unsanitized_media(f"<img src={cdn}>") == [cdn]
+    assert unsanitized_media(f'<img src="{cdn}">') == [cdn]
+    assert unsanitized_media(f"<video poster='{cdn}' src='{cdn}'></video>") == [cdn, cdn]
+    # WP-hosted still passes, in every style.
+    wp = "https://site/wp-content/uploads/a.jpg"
+    assert unsanitized_media(f"<img src='{wp}'>") == []
+    assert unsanitized_media(f'<img src="{wp}">') == []
+
+
+def test_the_injection_no_longer_reaches_a_publishable_page():
+    """End to end: render with the hostile alt, and the gate must refuse or emit nothing hostile."""
+    from core.photo_privacy import unsanitized_media
+    from core.portfolio_media import gallery_html
+
+    out = gallery_html(
+        [{"kind": "photo", "id": "1", "alt": INJECTION_ALT}],
+        {"photo:1": {"url": "https://site/wp-content/uploads/p1.jpg"}},
+    )
+    assert unsanitized_media(out) == []
+    assert "<img src='https://dn.companycam.com" not in out
