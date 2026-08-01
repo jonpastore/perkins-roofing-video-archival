@@ -154,6 +154,71 @@ _REQUIRED_SNAPSHOT_KEYS = (
 _REQUIRED_FLOOR_KEYS = ("min_profit_pct", "min_profit_plus_oh_pct")
 
 
+class ProjectSnapshotError(SnapshotError):
+    """A write would leave a multi-building snapshot describing something other than the bid."""
+
+
+#: Keys that only exist on a project snapshot (core.bid_project.project_snapshot).
+PROJECT_SNAPSHOT_KEYS = ("buildings", "project_items", "project_totals")
+
+
+def is_project_snapshot(snapshot: dict[str, Any] | None) -> bool:
+    return bool((snapshot or {}).get("buildings"))
+
+
+def validate_project_snapshot(previous: dict[str, Any] | None,
+                              incoming: dict[str, Any] | None) -> None:
+    """Refuse a snapshot write that would make a PROJECT proposal incoherent.
+
+    THE DEFECT THIS EXISTS FOR. web/src/pages/Proposals.tsx's edit path re-quotes exactly ONE
+    estimate and rebuilds the snapshot as `{...baseSnap, total, num_squares, estimate_result,
+    tiers}`. The spread means `buildings` and `project_items` SURVIVE — which is worse than
+    losing them. The result is a contract document that still lists nine structures while its
+    total, squares and tiers describe one, and nothing downstream can tell which half is true.
+
+    So the rule is not "you may not edit a project proposal" — an editor changing the deposit or
+    the title is fine, and blocking that would push people to work around the gate. The rule is
+    that the SCALARS MUST KEEP AGREEING WITH THE BUILDINGS:
+
+      * a project snapshot may not silently become a single-building one,
+      * `num_squares` must remain the sum over the buildings,
+      * `project_totals.building_count` must match how many buildings are actually there.
+
+    A single-estimate re-quote fails all three. Editing the deposit fails none.
+
+    Raises ProjectSnapshotError; the route maps it to 422 with the reason.
+    """
+    if not is_project_snapshot(previous):
+        return                                    # not a project proposal — nothing to protect
+    if incoming is None:
+        return                                    # not touching the snapshot
+
+    missing = [k for k in PROJECT_SNAPSHOT_KEYS if not incoming.get(k)]
+    if missing:
+        raise ProjectSnapshotError(
+            f"this proposal covers {len(previous['buildings'])} buildings and the update drops "
+            f"{missing} — re-quote the whole project via POST /estimator/project-quote rather "
+            f"than re-pricing one estimate."
+        )
+
+    buildings = incoming.get("buildings") or []
+    expected = round(sum(float(b.get("squares") or 0) for b in buildings), 2)
+    got = round(float(incoming.get("num_squares") or 0), 2)
+    if expected and abs(expected - got) > 0.01:
+        raise ProjectSnapshotError(
+            f"num_squares={got} does not match the {len(buildings)} buildings in this snapshot "
+            f"(they sum to {expected}). That is the signature of re-pricing ONE estimate into a "
+            f"project proposal, which leaves the document describing two different jobs."
+        )
+
+    count = ((incoming.get("project_totals") or {}).get("building_count"))
+    if count is not None and int(count) != len(buildings):
+        raise ProjectSnapshotError(
+            f"project_totals.building_count={count} but the snapshot carries {len(buildings)} "
+            f"buildings."
+        )
+
+
 def validate_snapshot(snapshot: dict[str, Any]) -> None:
     """Raise SnapshotError if the quote_snapshot dict is structurally invalid.
 

@@ -69,6 +69,10 @@ interface ProposalRow {
   customer_id: number;
   property_id: number;
   estimate_id?: number | null;
+  // Set when this proposal covers a MULTI-BUILDING bid. The single-estimate edit path below
+  // cannot represent it, so the affordance is disabled rather than letting the API 422 —
+  // a refusal the interface never warned about reads as a bug rather than a guard.
+  bid_project_id?: number | null;
   template_id: number | null;
   root_id: number | null;
   parent_id: number | null;
@@ -637,10 +641,18 @@ export function Proposals() {
           <>
             <button
               type="button"
-              title="Edit draft"
+              title={proposal.bid_project_id
+                ? "Multi-building project — re-quote the whole project to change it"
+                : "Edit draft"}
               aria-label="Edit draft"
+              disabled={!!proposal.bid_project_id}
               onClick={() => openEditProposal(proposal)}
-              style={proposalIconButtonStyle}
+              style={{
+                ...proposalIconButtonStyle,
+                ...(proposal.bid_project_id
+                  ? { opacity: 0.35, cursor: "not-allowed" }
+                  : {}),
+              }}
             >
               ✎
             </button>
@@ -827,9 +839,16 @@ export function Proposals() {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {p.status === "draft" && (
                   <>
-                    <Button variant="ghost" onClick={() => openEditProposal(p)} style={{ fontSize: 13 }}>
-                      Edit draft
-                    </Button>
+                    {p.bid_project_id ? (
+                      <span style={{ fontSize: 12, color: BRAND.sub, alignSelf: "center" }}>
+                        Multi-building project ({(p.quote_snapshot?.buildings as unknown[] | undefined)?.length ?? "several"} structures)
+                        {" — "}re-quote the project to change pricing
+                      </span>
+                    ) : (
+                      <Button variant="ghost" onClick={() => openEditProposal(p)} style={{ fontSize: 13 }}>
+                        Edit draft
+                      </Button>
+                    )}
                     <Button onClick={() => handleSend(p.id)} disabled={sendingId === p.id} style={{ fontSize: 13 }}>
                       {sendingId === p.id ? "Sending…" : "Send to customer"}
                     </Button>

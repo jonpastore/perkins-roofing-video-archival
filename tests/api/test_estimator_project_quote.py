@@ -400,3 +400,87 @@ def test_add_on_blocks_price_like_general_conditions_but_persist_separately(admi
         assert [b["key"] for b in project.add_on_blocks] == ["sloped_addons"]
     finally:
         db.close()
+
+
+class TestProjectProposal:
+    """POST /quoting/proposals/from-project — the slice-3 feature, end to end.
+
+    Lives here rather than in the proposals suite because it needs a REAL persisted project:
+    the route re-prices from stored inputs, so a hand-built fixture would prove nothing about
+    whether what /estimator/project-quote writes is actually re-pricable.
+    """
+
+    def _customer_and_property(self, client):
+        c = client.post("/quoting/customers",
+                        json={"display_name": f"Cust-{uuid.uuid4().hex[:8]}",
+                              "email": f"{uuid.uuid4().hex[:8]}@test.com"}, headers=AUTH)
+        assert c.status_code == 200, c.text
+        cid = c.json()["id"]
+        p = client.post(f"/quoting/customers/{cid}/properties",
+                        json={"street": f"{uuid.uuid4().hex[:6]} Oak Ave", "city": "Jupiter",
+                              "state": "FL", "zip": "33478", "code_zone": "HVHZ"}, headers=AUTH)
+        assert p.status_code == 200, p.text
+        return cid, p.json()["id"]
+
+    def test_a_persisted_project_becomes_one_coherent_proposal(self, admin_client):
+        branch = _seeded_branch(admin_client)
+        cid, pid = self._customer_and_property(admin_client)
+
+        quoted = admin_client.post("/estimator/project-quote", json=_payload(
+            branch,
+            [_building("Clubhouse", 30, branch), _building("Bus Stop", 3, branch),
+             _building("Gazebo", 5, branch)],
+            persist=True,
+            project_items=[{"key": "gc", "label": "General Conditions", "cost": 31800,
+                            "markup": 1.15}],
+        ), headers=AUTH)
+        assert quoted.status_code == 200, quoted.text
+        project_id = quoted.json()["bid_project_id"]
+
+        r = admin_client.post(f"/quoting/proposals/from-project/{project_id}",
+                              json={"customer_id": cid, "property_id": pid,
+                                    "deposit_percent": 50}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        prop = r.json()
+        snap = prop["quote_snapshot"]
+
+        assert prop["bid_project_id"] == project_id
+        # A project covers N estimates; pointing at one would be the same category error as
+        # re-quoting one.
+        assert prop["estimate_id"] is None
+        assert len(snap["buildings"]) == 3
+        assert snap["project_totals"]["building_count"] == 3
+        # The scalars must agree with the buildings — that is what the edit gate enforces.
+        assert snap["num_squares"] == 38
+        assert any(i["key"] == "gc" for i in snap["project_items"])
+        assert snap["deposit_policy"]["mode"] == "percent"
+
+    def test_the_generated_snapshot_passes_its_own_edit_gate(self, admin_client):
+        """What we write must survive what we validate — otherwise the gate blocks our own output."""
+        from core.proposal import validate_project_snapshot, validate_snapshot
+
+        branch = _seeded_branch(admin_client)
+        cid, pid = self._customer_and_property(admin_client)
+        quoted = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [_building("A", 20, branch), _building("B", 12, branch)], persist=True,
+        ), headers=AUTH)
+        project_id = quoted.json()["bid_project_id"]
+
+        r = admin_client.post(f"/quoting/proposals/from-project/{project_id}",
+                              json={"customer_id": cid, "property_id": pid}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        snap = r.json()["quote_snapshot"]
+
+        validate_project_snapshot(snap, snap)          # must not raise
+        validate_snapshot({**snap, "sent_at_iso": "2026-08-01T00:00:00Z"})
+
+    def test_a_project_with_no_estimates_is_refused(self, admin_client):
+        branch = _seeded_branch(admin_client)
+        cid, pid = self._customer_and_property(admin_client)
+        quoted = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [_building("A", 20, branch)], persist=False), headers=AUTH)
+        assert "bid_project_id" not in quoted.json()
+
+        r = admin_client.post("/quoting/proposals/from-project/999999",
+                              json={"customer_id": cid, "property_id": pid}, headers=AUTH)
+        assert r.status_code == 404

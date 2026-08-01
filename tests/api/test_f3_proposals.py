@@ -1667,3 +1667,157 @@ class TestScopeTemplates:
                              json={"name": f"x{_uid()}", "text": "y", "job_type": "reroof"},
                              headers=AUTH)
         assert r.status_code == 403, f"writes need quoting_manage_templates: {r.text}"
+
+
+# ---------------------------------------------------------------------------
+# #430 slice 3 — a project proposal must not be re-priced as a single roof
+# ---------------------------------------------------------------------------
+
+def _project_snap(n: int = 9) -> dict:
+    """A snapshot shaped like core.bid_project.project_snapshot output."""
+    buildings = [{"name": f"B{i}", "squares": 10.0, "total": 12000.0, "profit": 1500.0,
+                  "warnings": []} for i in range(n)]
+    return {
+        **_SAMPLE_SNAPSHOT,
+        "num_squares": 10.0 * n,
+        "buildings": buildings,
+        "project_items": [{"key": "gc", "label": "General Conditions", "amount": 36570.0}],
+        "project_totals": {"project_total": 144570.0, "profit": 13500.0,
+                           "building_count": n, "warnings": []},
+    }
+
+
+class TestProjectProposalEditGate:
+    """The API is the trust boundary — a disabled button in the SPA is bypassable."""
+
+    def test_requoting_one_estimate_into_a_project_proposal_is_refused(self, admin_client):
+        """The exact SPA payload: spread the old snapshot, overwrite scalars from ONE roof.
+
+        `buildings` SURVIVES the spread, so the result is a contract listing nine structures
+        with one building's total and squares. That is worse than losing the buildings.
+        """
+        cid = _create_customer(admin_client)["id"]
+        pid = _create_property(admin_client, cid)["id"]
+        prop = _create_proposal(admin_client, cid, pid, snapshot=_project_snap(9))
+
+        previous = _project_snap(9)
+        hostile = {**previous, "num_squares": 10.0, "total": 12000.0,
+                   "tiers": {"good": {"total": 12000.0}}}
+        r = admin_client.put(f"/quoting/proposals/{prop['id']}",
+                             json={"quote_snapshot": hostile}, headers=AUTH)
+        assert r.status_code == 422, r.text
+        assert "does not match" in r.text
+
+    def test_dropping_the_project_keys_is_refused(self, admin_client):
+        cid = _create_customer(admin_client)["id"]
+        pid = _create_property(admin_client, cid)["id"]
+        prop = _create_proposal(admin_client, cid, pid, snapshot=_project_snap(9))
+
+        r = admin_client.put(f"/quoting/proposals/{prop['id']}",
+                             json={"quote_snapshot": dict(_SAMPLE_SNAPSHOT)}, headers=AUTH)
+        assert r.status_code == 422, r.text
+
+    def test_editing_the_deposit_on_a_project_proposal_still_works(self, admin_client):
+        """A gate that blocks ordinary edits gets worked around."""
+        cid = _create_customer(admin_client)["id"]
+        pid = _create_property(admin_client, cid)["id"]
+        prop = _create_proposal(admin_client, cid, pid, snapshot=_project_snap(3))
+
+        snap = _project_snap(3)
+        snap["deposit_policy"] = {"mode": "fixed", "value": 5000, "amount": 5000}
+        r = admin_client.put(f"/quoting/proposals/{prop['id']}",
+                             json={"quote_snapshot": snap}, headers=AUTH)
+        assert r.status_code == 200, r.text
+
+    def test_a_title_only_edit_still_works(self, admin_client):
+        cid = _create_customer(admin_client)["id"]
+        pid = _create_property(admin_client, cid)["id"]
+        prop = _create_proposal(admin_client, cid, pid, snapshot=_project_snap(3))
+
+        r = admin_client.put(f"/quoting/proposals/{prop['id']}",
+                             json={"title": "Renamed"}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert r.json()["title"] == "Renamed"
+
+    def test_an_ordinary_single_building_proposal_is_unaffected(self, admin_client):
+        cid = _create_customer(admin_client)["id"]
+        pid = _create_property(admin_client, cid)["id"]
+        prop = _create_proposal(admin_client, cid, pid)
+
+        snap = dict(_SAMPLE_SNAPSHOT)
+        snap["num_squares"] = 42
+        r = admin_client.put(f"/quoting/proposals/{prop['id']}",
+                             json={"quote_snapshot": snap}, headers=AUTH)
+        assert r.status_code == 200, r.text
+
+
+class TestSendGateReviewsEveryBuilding:
+    """The pre-send review flattens the proposal for core.proposal_review.
+
+    It read the ONE estimate the snapshot's scalars describe, so on a nine-building bid the gate
+    reviewed one roof and green-lit the whole contract — a silently weakened safety check, which
+    is worse than a visible failure.
+    """
+
+    def test_review_text_enumerates_every_structure(self):
+        from api.routes.proposals import _assemble_review_text
+
+        class _Row:
+            id = 1
+            title = "Evergrene"
+            quote_snapshot = _project_snap(9)
+
+        db = SessionLocal()
+        db.info["tenant_id"] = 1
+        try:
+            text = _assemble_review_text(_Row(), db)
+        finally:
+            db.close()
+
+        assert "MULTI-BUILDING PROJECT" in text
+        assert "9 structures" in text
+        for i in range(9):
+            assert f"STRUCTURE B{i}" in text, f"building B{i} missing from the review text"
+        assert "General Conditions" in text, "project-level money must be reviewable too"
+        assert "PROJECT TOTAL" in text
+
+    def test_a_single_building_proposal_review_is_unchanged(self):
+        from api.routes.proposals import _assemble_review_text
+
+        class _Row:
+            id = 2
+            title = "One roof"
+            quote_snapshot = dict(_SAMPLE_SNAPSHOT)
+
+        db = SessionLocal()
+        db.info["tenant_id"] = 1
+        try:
+            text = _assemble_review_text(_Row(), db)
+        finally:
+            db.close()
+
+        assert "MULTI-BUILDING PROJECT" not in text
+        assert text.startswith("PROPOSAL: One roof")
+
+    def test_building_warnings_reach_the_reviewer(self):
+        """A margin warning on one structure must not be invisible because another is fine."""
+        from api.routes.proposals import _assemble_review_text
+
+        snap = _project_snap(3)
+        snap["buildings"][1]["warnings"] = ["min_margin_breached"]
+        snap["project_totals"]["warnings"] = ["project_profit_floor_applied"]
+
+        class _Row:
+            id = 3
+            title = "Evergrene"
+            quote_snapshot = snap
+
+        db = SessionLocal()
+        db.info["tenant_id"] = 1
+        try:
+            text = _assemble_review_text(_Row(), db)
+        finally:
+            db.close()
+
+        assert "B1 warning: min_margin_breached" in text
+        assert "PROJECT warning: project_profit_floor_applied" in text
