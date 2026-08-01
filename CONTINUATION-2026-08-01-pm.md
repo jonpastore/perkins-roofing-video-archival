@@ -219,15 +219,34 @@ to `estimates.county`, which is an unbounded `String`. Both bounds are worth hav
 value 500s on Postgres and passes every SQLite test — the bug `16a662b` shipped), so the fix is
 to bound the field, not to add an `ALLOW` entry. Just know that a new import can turn this red.
 
-### Still flagged, deliberately NOT changed
+### Deferrals — CLOSED in the repair pass (2026-08-01 pm)
 
-`add_on_blocks` has no write path; `general_conditions_markup` is a scalar always written `1.0`
-while real markup is per-item; `_estimate_row` omits the new columns so nothing reads a project
-back; project `result_json` has a different shape from a single quote's, so `Quoting.tsx` will
-render `—`; `persist` defaults True; `buildings` is unbounded; `permit_count`/`days` are not
-persisted so a `week`-basis project cannot be reproduced. All are slice-3 scope — **stated here
-because R2's definition of done is "no unwired code", and five deferrals stated is a pass while
-five unstated is not.**
+Everything R2 listed as deferred has since been fixed, except one item held for Jon:
+
+| was deferred | now |
+|---|---|
+| flat sections uncounted in `num_squares` / `dominant_roof_type` | `total_squares()` counts both; measured 75% $/sq overstatement on a 20+15 building |
+| `week` basis silently priced ONE week with no days | refuses; the `project` basis says when it cannot cost the #449 divergence |
+| unknown `once_per_project` keys ignored on both sides | `SUPPRESSIBLE_FEE_KEYS`, validated |
+| commercial permit adder on EVERY permit | `min(commercial_count, permit_count)` |
+| `allocation="building:<name>"` accepted, never honoured | refused until the fold exists |
+| duplicate structure names / project_item keys | refused |
+| `buildings` unbounded, `persist` defaulting True | capped at 50; `persist` now defaults **False** |
+| `days` / `permit_count` unpersisted → not reproducible | stored in `input_json` as `structure_days` / `project_permit_count` / `project_floor_basis` / `project_once_per_project` |
+| `_estimate_row` omitted the join → no reader | `bid_project_id` + `structure_name` serialize |
+| project `result_json` shape → `Quoting.tsx` rendered `—` | persists `project_total` mirroring the building's own total |
+| `add_on_blocks` had no write path | wired as its own request list, persisted separately from `general_conditions` |
+
+**STILL OPEN, deliberately — Jon's call:** `general_conditions_markup` is a `NOT NULL` column with
+a `CHECK (1.0..3.0)` that is always written `1.0` and read by nothing, because the authority is
+`ProjectItem.markup` per block. Dropping a column from an applied migration is a destructive
+schema op and needs an explicit decision. The model comment says plainly not to read a rate from
+it. Risk if left: someone writes `1.15` there on a bid whose blocks already carry `1.15` and, if
+anything ever multiplies by it, the bid is silently double-marked-up.
+
+**Also open:** `estimating_view` on an endpoint that writes. It matches `/quote`'s precedent
+(which also persists an `Estimate` under that role), so it was not changed — but `persist` now
+defaults False and `buildings` is capped, which removes the blast radius that made it worrying.
 
 ---
 
