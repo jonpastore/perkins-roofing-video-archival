@@ -1,109 +1,114 @@
 Resume perkins-roofing/video-archival.
 
 READ FIRST:
-    CONTINUATION-2026-08-02.md        TIM ANSWERED THE SIX QUESTIONS — §0 is the whole point
-    CONTINUATION-2026-08-01-pm.md     #430/#449 slices 1-4 + the R2 reviews that found them
-    CONTINUATION-2026-08-01.md        the bid-project analysis those follow
+    CONTINUATION-2026-08-02-pm.md     ← START HERE. Jon's directives + the permit evidence
+    CONTINUATION-2026-08-02.md        Tim's first pass at the six questions
+    CONTINUATION-2026-08-01-pm.md     #430/#449 slices 1-4 and the R2 reviews
 
-main = be59ad5, pushed, tree clean, CI green.
+main pushed, tree clean, CI green.
 DEPLOYED AND VERIFIED: API platform:8b3f5cd (sha matches main), SPA bundle
-/assets/index-DSRtfOBu.js serving the new UI. Migrations through 0053, all applied.
-
-#430/#449 IS DONE — all four slices shipped (pricing, persistence, proposal surface, SPA).
+/assets/index-DSRtfOBu.js. Migrations through 0053, all applied.
+#430/#449 IS DONE — pricing, persistence, proposal surface, SPA.
 
 Confirm before trusting any of this:
   git log --oneline -1 && git status --short
   gh run list --limit 4                        # MATCH THE SHA
+  gh pr list                                   # expect none open
   .venv/bin/ruff check core adapters api jobs
   .venv/bin/python -m pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
     # ~10m. CI runs THIS (the whole tree), not the narrower pre-push set.
   bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
 
-⛔ STAY ON STAGING for WordPress. PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com
-⛔ DO NOT CHANGE PRICING without Jon.
-⛔ DO NOT send client email (EMAIL_SEND_MODE=test; Jon sends it).
+⛔ STAY ON STAGING for WordPress (PlatformConfig.WP_URL = 1228404.us6.myftpupload.com)
+⛔ DO NOT send client email (EMAIL_SEND_MODE=test; Jon sends it)
 
 ════════════════════════════════════════════════════════════════════════════════
-▶ START HERE — TIM'S ANSWERS, IN PRIORITY ORDER (full detail in §0)
+▶ BUILD THESE — Tim answered, Jon directed. Detail in CONTINUATION-2026-08-02-pm §0
 ════════════════════════════════════════════════════════════════════════════════
 
-1. PERMITS = ONE PER STRUCTURE. permit_count defaults to 1; his answer makes it the building
-   count. On Evergrene that is 9 x ($500 + $500 commercial) = $9,000 against the $1,000 we
-   charge now — +$8,000, which moves the bid from +2.3% to about +4.4%.
-   ⚠️ HIS OWN EVERGRENE SHEET CHARGES ONE PERMIT. Ship his stated rule AND report the
-   divergence in the same message; do not quietly pick one.
+1. COMMISSION RATE FROM BASIS. Tim: "commission either on gross or net. commission is to the
+   sales person. they can take 15% of gross or 50% of net and that's how we default the
+   sliders."
+   The machinery exists — commission_basis is "job" (gross) | "profit" (net), and
+   core/estimator.py:1628 already picks project_total vs margin.profit_dollars.
+   THE RATE IS WRONG: config.commission_rate(slope_type, zone) returns
+   {"sloped":0.10,"low_slope":0.15} — keyed by a dimension Tim's rule never mentions.
+       today  10% of NET     Tim says  50% of NET     -> 5x UNDER
+       today  10% of GROSS   Tim says  15% of GROSS   -> a third under
+   ⚠️ THIS IS A REPORTING ERROR, NOT A PRICING ERROR — commission is computed AFTER
+   project_total and surfaces only as estimated_commission. No customer quote moves; what is
+   wrong is the number the SALESPERSON is shown for their own payout.
+   Build: rate defaults FROM the basis (job -> 0.15, profit -> 0.50), both operator-adjustable
+   (commission_rate_override exists). Closes #447(3) — commission is per-SALESPERSON, not per
+   slope type.
+   ⚠️ RECONCILE FIRST: 15%-of-gross matches Marco's 15% on the NEW sheet, but Josh's 7.5% has
+   no home in a two-option rule. Ask whether that is a negotiated split or stale — do not
+   silently delete it.
 
-2. COMMISSION IS THE BIGGEST OPEN ITEM AND IT IS NOT ANSWERED. He replied "what do you mean
-   general conditions? comission is paid usually 50/50 on net project profits".
-   - Explain GC with HIS OWN cell: D19 = SUM(B19:B20)*1.15 = (22,800 + 9,000) x 1.15 = $36,570.
-   - "50/50 on net project profits" vs our configured 15% (Marco) / 7.5% (Josh) is an order of
-     magnitude apart. Three readings, all plausible — ASK.
-   ⛔ DO NOT TOUCH commission_pct until he answers.
+2. permit_count = BUILDING COUNT. ✅ EVIDENCE GATHERED, HIS RULE HOLDS: of 333 Knowify projects
+   carrying a permit line, 73 bill MORE THAN ONE, led by ISOLA CONDOMINIUM ASSOCIATION RE ROOF
+   with SIX. Evergrene's single permit is the outlier.
+   ⚠️ Those Knowify lines are the county's permit FEES passed through (variable); our
+   permit_processing is a flat $500 (+$500 commercial) PROCESSING fee. Their own scope says
+   "you pay permit fee(s) only" — plural. Both scale per structure; do not conflate them.
+   Ship it AND say in the same message that Evergrene moves +2.3% -> ~+4.4%, i.e. further from
+   what he actually bid.
 
-3. GC MARKUP: "we have a slider for this" — so it is per-bid, operator-set.
-   ⚠️ THIS REVERSES the pending recommendation to DROP bid_projects.general_conditions_markup.
-   KEEP THE COLUMN. Wire a project-level markup control in the SPA (today only per-block
-   markup is settable) and have price_project apply it to the GC block.
+3. PER-BUILDING ADDRESSES (#6, "build it"). Tim: "yes but they can share."
+   Optional address per building defaulting to the bid project's property; proposal render
+   lists each structure, collapsing where shared and separating where they differ (two
+   Evergrene gates are on different roads).
+   Prefer a COLUMN (estimates.structure_address) over a snapshot blob — it survives a snapshot
+   rewrite, which is exactly what validate_project_snapshot exists to police. Migration 0054,
+   applied BY HAND.
 
-4. SEND HIM THE +4,250 / +2,550 LOCATION (he asked for a pointer, not a question). It is his
-   own 2026-07-24 attachment "Evergrene Project Bid Spreadsheet.xlsx", sheet "Bid Sheet":
-       K33  =(G33*J33)+D22+D25+4250     row 33 = the 206-sq building (Clubhouse)
-       L33  =(H33*J33)+D22+E25+4250     the metal alternate carries it too
-       K35  =G35*J35+2550               row 35 = the 21-sq building
-       L35  =H35*J35                    the metal alternate does NOT
-
-5. PER-BUILDING ADDRESSES on the proposal: "yes but they can share". Optional per-building
-   address defaulting to the project property. Not built.
-
-6. DAY RATES: "follow the more conservative" = NO CHANGE. Conservative is the HIGHER cost
-   assumption — our config's demo $1,050 / metal $850, not his Evergrene actuals $885/$735.
-   The estimator already uses config, and the +2.3% match was achieved WITH them. Recorded so
-   nobody "fixes" it toward his actuals later.
-
-7. new_bonus_values PER SITE — confirms the shipped default. No change.
+4. GC MARKUP SLIDER. Tim: "we have a slider for this" — so KEEP
+   bid_projects.general_conditions_markup (this REVERSES an earlier recommendation to drop it).
+   Wire a project-level control; today only per-block markup is settable.
 
 ALSO OPEN
-  - ⚠️ The 'week' profit-floor basis MEASURES THE WRONG THING. Tim 2026-07-28: "how long it
-    ties up the schedule... including inspections so if it's 3 days demo and 4 days tile
-    install, we still call that 2 - 2.5 weeks". _apply_project_floor does ceil(crew_days / 5).
-    No price moves today (default is 'project'; the SPA cannot select 'week'), but #449 is
-    written in those terms. His inspection/cleanup allowance is NOT a number we have — ask.
+  - ⚠️ The 'week' profit-floor basis MEASURES THE WRONG THING. Tim 2026-07-28: "how long it ties
+    up the schedule... including inspections so if it's 3 days demo and 4 days tile install, we
+    still call that 2 - 2.5 weeks". _apply_project_floor does ceil(crew_days / 5). No price
+    moves today (default 'project'; the SPA cannot select 'week') but #449 is written in those
+    terms. His inspection/cleanup allowance is NOT a number we have — ask, do not invent.
+  - WIRE THE SPA DEPLOY INTO deploy.yml. GitOps is right and the API already works that way
+    (merge -> CI -> Cloud Run, keyless WIF, drift-gated, never by hand). The SPA is the
+    exception: deploy.yml never touches web/, so a merged UI change is NOT live until someone
+    hand-runs firebase deploy. Changes the deploy path, so R3 says decide it deliberately.
   - Jon's calls: estimating_view on a writing endpoint; whether to expose floor_basis at all.
-  - Wire the SPA deploy into deploy.yml (changes the deploy path — R3 says decide deliberately).
-  - Curate 5 ready portfolio projects (needs a human: pick photos AND type alt text) —
-    isola 1,452 / olsen 802 / fisher-7900 311 / fisher-77 285 / pinnacle 186.
-  - api-run-sa cannot create a secret (OAuth connect 502s); #444 budget blocked on Billing API;
-    REACH_MI 8 of 18 gauges unsnapped; #447(3) commission keyed by slope not salesperson;
-    Miami charges a whole office day per job (~$2,087/sq vs $1,113 accepted).
+  - Curate 5 ready portfolio projects (human: pick photos AND type alt text) — isola 1,452 /
+    olsen 802 / fisher-7900 311 / fisher-77 285 / pinnacle 186.
+  - api-run-sa cannot create a secret (OAuth 502s); #444 budget blocked on Billing API;
+    REACH_MI 8 of 18 gauges unsnapped; Miami charges a whole office day per job.
 
 GOTCHAS
-- ⚠️ CI runs `pytest tests/` — THE WHOLE TREE. The pre-push set does NOT reach
+- ⚠️ KNOWIFY: deliverables carry ContractId, NOT ProjectId. Join deliverables -> contracts ->
+  projects. The wrong join returns a clean, confident, WRONG answer.
+- ⚠️ Knowify mirror deliverable money is in CENTS.
+- ⚠️ CI runs `pytest tests/` — THE WHOLE TREE. The pre-push set does not reach
   tests/test_f2_engine.py, which is how main stayed red for three commits unnoticed.
-- ⚠️ CI DOES NOT DEPLOY THE SPA. deploy.yml builds the API image and never touches web/.
-  Ship it by hand and verify the SERVED bundle, not the CLI's "Deploy complete!":
+- ⚠️ CI DOES NOT DEPLOY THE SPA. Ship it by hand and verify the SERVED bundle:
     cd web && npm run build && npx --no-install firebase deploy --only hosting:app \
       --project video-archival-and-content-gen
 - ⚠️ `npx tsc --noEmit` is NOT the build gate. It passed twice on code `npm run build` rejected.
-- ⚠️ test_schema_maxlength binds on IMPORTED CLASS NAMES, not on writes — a new import can
-  newly bind an unrelated Pydantic field. Bound the field; do not add an ALLOW entry.
+- ⚠️ test_schema_maxlength binds on IMPORTED CLASS NAMES, not on writes — a new import can bind
+  an unrelated Pydantic field. Bound the field; do not add an ALLOW entry.
 - ⚠️ MIGRATIONS ARE APPLIED BY HAND. apply_migrations_adc.py IGNORES DB_URL (always prod) and
-  has NO ledger — it replays everything from 0013 each run. Run it and confirm it reaches DONE.
-  0027's UPDATE is unguarded and re-asserts every run; harmless only while tenant 2 does not exist.
+  has NO ledger — it replays from 0013 every run. Run it and confirm it reaches DONE. 0027's
+  UPDATE is unguarded and re-asserts each run; harmless only while tenant 2 does not exist.
 - ⚠️ tile_dumpster_count is a ceil() — anything calling it per building over-counts.
 - ⚠️ REVIEWER AGENTS MUST RUN WITH run_in_background: false or they return NOTHING. R2 needs
   BOTH architect and critic — the critic found two MAJORs inside the architect's own fixes.
-- ⚠️ LOCAL MODELS WERE NET-NEGATIVE ON REVIEW: qwen3.6-think fabricated a CRITICAL against code
-  that does not exist; gpt-oss-120b-think gave 1 real finding in 12, and hit the empty-return
-  trap twice (its real ceiling is 32768, not 65536). See
-  docs/2026-08-01-local-model-review-postmortem.md. Never gate on them.
+- ⚠️ LOCAL MODELS WERE NET-NEGATIVE ON REVIEW (qwen3.6-think fabricated a CRITICAL against code
+  that does not exist; gpt-oss-120b-think: 1 real finding in 12, real ceiling 32768 not 65536).
+  See docs/2026-08-01-local-model-review-postmortem.md. Never gate on them.
 - ⚠️ Do NOT `source .env` before GCS work — it sets GOOGLE_APPLICATION_CREDENTIALS to a file
   that does not exist. Use $HOME/.config/gcloud/perkins-deploy-sa.json.
 - ⚠️ DB_URL in .env is sqlite. App code needs postgresql+psycopg://…@127.0.0.1:5432/perkins over
-  the proxy (`+psycopg` — psycopg2 is NOT installed), and sessions must set
-  db.info["tenant_id"] or ["platform_scope"].
+  the proxy (`+psycopg`), and sessions must set db.info["tenant_id"] or ["platform_scope"].
 - ⚠️ resolved_wp_url() swallows every exception and returns "" — empty means a config error.
-- ⚠️ SEARCH THE MAILBOX, not just transcripts. Tim's week definition and several pricing answers
-  sat in email the whole time.
+- ⚠️ SEARCH THE MAILBOX, not just transcripts.
 - Cloud SQL proxy: setsid nohup ~/bin/cloud-sql-proxy \
     video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
 - Terraform without the invalid_rapt reauth:
@@ -111,6 +116,6 @@ GOTCHAS
     export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/perkins-deploy-sa.json
     export USER_PROJECT_OVERRIDE=true GOOGLE_CLOUD_QUOTA_PROJECT=video-archival-and-content-gen
     export TF_VAR_cloudflare_api_token="$(gcloud secrets versions access latest --secret=cloudflare-api-token 2>/dev/null)"
-- Mail: the o365 MCP refresh token EXPIRED (inactive 90d); the jon@perkinsroofing.net Gmail token
-  is also expired. gmail-enhanced reaches jon@degenito.ai.
+- Mail: the o365 MCP refresh token EXPIRED; jon@perkinsroofing.net Gmail token also expired.
+  gmail-enhanced reaches jon@degenito.ai.
 - R7-R10 in docs/ENGINEERING_RULES.md are binding.
