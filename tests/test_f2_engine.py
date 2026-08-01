@@ -29,7 +29,27 @@ from core.pricing_config import (
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "pricing_config_exhibit_b.json"
 GOLDEN_DIR = Path(__file__).parent / "fixtures" / "golden"
 
-GOLDEN_FILES = sorted(GOLDEN_DIR.glob("*.json")) if GOLDEN_DIR.exists() else []
+def _is_engine_golden(path: Path) -> bool:
+    """Is this an engine input/expected pair, as test_golden_file requires?
+
+    The golden dir also holds DECODED-REFERENCE fixtures — evergrene_project.json is Tim's bid
+    read out of his spreadsheet formulas (buildings, per-building markups, his own totals), not
+    a QuoteInput. Globbing every *.json swept it into the parametrized engine test, which then
+    died on KeyError: 'input', and pushed the committed count from 3 to 4. Both failures have
+    been red on main since 8c19501; CI runs `pytest tests/` so it caught them and the local
+    pre-push set (tests/api tests/core tests/adapters tests/jobs tests/tenancy) does not reach
+    this file. Select by SHAPE so a new reference fixture cannot re-break the engine harness.
+    """
+    try:
+        return "input" in json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
+GOLDEN_FILES = (
+    sorted(p for p in GOLDEN_DIR.glob("*.json") if _is_engine_golden(p))
+    if GOLDEN_DIR.exists() else []
+)
 
 _CONFIG_DICT: dict | None = None
 
@@ -1203,7 +1223,11 @@ def test_insulation_included_in_oh_total():
 # ---------------------------------------------------------------------------
 
 def test_golden_file_count_is_3():
-    """Exactly 3 golden fixtures are committed; 2 are pending Tim OI-1 sign-off."""
+    """Exactly 3 ENGINE golden fixtures are committed; 2 are pending Tim OI-1 sign-off.
+
+    Counts input/expected pairs only — decoded-reference fixtures in the same directory are not
+    golden files for this harness and must not move this number.
+    """
     assert len(GOLDEN_FILES) >= 3, (
         f"Expected >= 3 golden fixture files, found {len(GOLDEN_FILES)}. "
         "3/5 — 498sq+15sq low-slope blocked on OI-1 (Tim)"
