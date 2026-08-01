@@ -23,9 +23,16 @@ WHAT IS SITE-SCOPED, AND WHY
                             ⚠️ per mobilisation or per roof completed is genuinely 50/50 —
                             PENDING TIM. Defaulted to per-project because that is what makes
                             Evergrene reconcile.
-    permit_processing       ⚠️ a COUNT, not a scope. Palm Beach may issue one permit per
-                            structure. `permit_count` exists so neither answer is hard-coded;
-                            it defaults to 1. PENDING TIM.
+    permit_processing       a COUNT, not a scope — and the count is ONE PER BUILDING. Tim,
+                            2026-08-02, answered directly; verified against his own books, where
+                            73 of the 333 Knowify projects carrying a permit line bill more than
+                            one (ISOLA CONDOMINIUM ASSOCIATION bills six). `permit_count`
+                            therefore defaults to the number of buildings, and an operator who
+                            knows the county issued one site permit still says so explicitly.
+                            ⚠️ Those Knowify lines are the county's permit FEES passed through;
+                            ours is the flat $500 (+$500 commercial) PROCESSING fee. Both scale
+                            per structure — his catalog scope reads "you pay permit fee(s) only",
+                            plural — but they are not the same money.
     tile_dumpster           a site quantity that is NOT a flat fee. tile_dumpster_count is a
                             ceil(), so nine calls round up nine times — 14 dumpsters against the
                             10 the site needs. Recomputed here over the SUMMED squares.
@@ -104,6 +111,12 @@ class Building:
     #: Days the crew is on THIS structure. Used only for the site's week count; when absent the
     #: building contributes its own estimate's series days.
     days: Optional[float] = None
+    #: This structure's own street address. OPTIONAL, and normally absent: Tim, 2026-08-02, asked
+    #: for per-building addresses "yes but they can share", and sharing is the common case — nine
+    #: Evergrene buildings on one parkway. Absent means "the bid project's property", which is
+    #: resolved at RENDER time, not here: this module prices, and a street address moves no money.
+    #: Two of Evergrene's gates are on different roads, which is the case that needs the column.
+    address: Optional[str] = None
 
 
 @dataclass
@@ -115,6 +128,9 @@ class ProjectPricing:
     profit: float = 0.0
     floor: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    #: The count actually priced — reported because it now DEFAULTS to the building count, so a
+    #: caller that passed nothing still has to persist and display the number it was charged for.
+    permit_count: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +141,7 @@ class ProjectPricing:
             "profit": round(self.profit, 2),
             "floor": self.floor,
             "warnings": self.warnings,
+            "permit_count": self.permit_count,
         }
 
 
@@ -151,7 +168,9 @@ def _fixed_once(config: PricingConfig, buildings: list[Building], zone: str,
         commercial_permits = min(commercial_count, permit_count)
         amount = base * permit_count + float(config.raw["permit_commercial_add"]) * commercial_permits
         label = "Permit Processing" if permit_count == 1 else f"Permit Processing x{permit_count}"
-        basis = f"{permit_count} permit(s) — count, not scope; pending Tim"
+        basis = (f"{permit_count} permit(s) — one per building (Tim, 2026-08-02)"
+                 if permit_count == len(buildings)
+                 else f"{permit_count} permit(s) — set explicitly, not the {len(buildings)}-building default")
         if commercial_permits:
             basis += f"; commercial adder on {commercial_permits} of them"
         out.append({"key": "permit_processing", "label": label,
@@ -182,13 +201,16 @@ def price_project(
     project_items: Optional[list[ProjectItem]] = None,
     once_per_project: frozenset[str] = DEFAULT_ONCE_PER_PROJECT,
     floor_basis: str = "project",
-    permit_count: int = 1,
+    permit_count: Optional[int] = None,
 ) -> dict[str, Any]:
     """Price a multi-structure bid as one deal.
 
     Each building is priced by the ordinary estimator with the site-scoped fees suppressed and its
     own profit floor disabled; the site's fees are then added ONCE and one floor is applied over
     the whole bid.
+
+    `permit_count=None` (the default) means ONE PERMIT PER BUILDING — Tim's rule, see the module
+    docstring. Pass an integer to say the county issued a different number for this site.
 
     Returns the roll-up as a dict. Raises ValueError on an unknown floor basis or no buildings —
     silently pricing zero buildings as $0 is not a useful answer.
@@ -212,7 +234,10 @@ def price_project(
             f"sides, which silently reverts the bid to per-building pricing."
         )
 
-    out = ProjectPricing()
+    if permit_count is not None and permit_count < 1:
+        raise ValueError(f"permit_count must be at least 1, got {permit_count}")
+
+    out = ProjectPricing(permit_count=len(buildings) if permit_count is None else permit_count)
     zone = buildings[0].quote.code_zone
     per_building_floor = floor_basis == "building"
 
@@ -235,6 +260,7 @@ def price_project(
             # (priced) with a 35 headline — the 75%-high implied $/sq this module documents,
             # rendered next to the correct figure.
             "name": b.name, "squares": q.num_squares + (q.flat_squares or 0),
+            "address": b.address,
             "total": r["project_total"],
             "profit": profit, "days": float(days or 0.0),
             "would_be_floored_to": (
@@ -249,8 +275,14 @@ def price_project(
     # Under the legacy 'building' basis every building already paid its own fees, so adding the
     # site's set on top would bill them TWICE. Caught by test_building_basis_restores_the_old
     # _behaviour — the suppression and the re-adding are one decision and must move together.
-    if not per_building_floor:
-        out.project_fixed = _fixed_once(config, buildings, zone, once_per_project, permit_count)
+    if per_building_floor:
+        # Nothing is suppressed on the legacy basis, so every building pulled its OWN permit inside
+        # its own estimate: the count is the building count whatever the caller asked for, and
+        # reporting their number would put a figure in the audit row that nothing charged.
+        out.permit_count = len(buildings)
+    else:
+        out.project_fixed = _fixed_once(config, buildings, zone, once_per_project,
+                                        out.permit_count)
         out.project_total += sum(f["amount"] for f in out.project_fixed)
 
     seen_keys: set[str] = set()

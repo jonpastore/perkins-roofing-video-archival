@@ -15,6 +15,7 @@ from core.proposal_render import (
     DEFAULT_TEMPLATE_HTML,
     ProposalRenderContext,
     render_proposal_html,
+    structure_groups,
 )
 
 # ---------------------------------------------------------------------------
@@ -785,3 +786,63 @@ def test_an_explicitly_null_audience_also_defaults_rather_than_erroring():
     for empty in (None, ""):
         frozen = _freeze_calc_breakdown(_snap(calc_audience=empty))
         assert frozen["calc_audience"] == "internal", empty
+
+
+# ---------------------------------------------------------------------------
+# Per-building addresses (#6) — Tim, 2026-08-02: "yes but they can share"
+# ---------------------------------------------------------------------------
+
+def test_structures_sharing_an_address_collapse_to_one_row():
+    """Nine Evergrene buildings on one parkway must not print the same street nine times."""
+    groups = structure_groups(
+        [{"name": "Clubhouse", "squares": 206}, {"name": "Bus Stop", "squares": 3}],
+        default_address="650 Evergrene Pkwy, Palm Beach Gardens FL",
+    )
+    assert len(groups) == 1
+    assert groups[0]["names"] == ["Clubhouse", "Bus Stop"]
+    assert groups[0]["address"] == "650 Evergrene Pkwy, Palm Beach Gardens FL"
+    assert groups[0]["squares"] == 209
+
+
+def test_a_structure_on_another_road_gets_its_own_row():
+    """The case the column exists for: two Evergrene gates are on different roads."""
+    groups = structure_groups(
+        [
+            {"name": "Clubhouse", "squares": 206},
+            {"name": "North Gate", "squares": 4, "address": "1 Hood Rd"},
+            {"name": "South Gate", "squares": 4, "address": "1 Hood Rd"},
+        ],
+        default_address="650 Evergrene Pkwy",
+    )
+    assert [(g["address"], g["names"]) for g in groups] == [
+        ("650 Evergrene Pkwy", ["Clubhouse"]),
+        ("1 Hood Rd", ["North Gate", "South Gate"]),
+    ]
+    # Insertion order, not alphabetical — the document reads in bid-capture order.
+    assert groups[0]["names"] == ["Clubhouse"]
+
+
+def test_structures_render_into_the_default_template():
+    html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(
+        structures=[{"address": "650 Evergrene Pkwy", "names": ["Clubhouse", "Bus Stop"],
+                     "squares": 209.0}]))
+    assert "Structures Covered" in html
+    assert "Clubhouse, Bus Stop" in html
+    assert "650 Evergrene Pkwy" in html
+
+
+def test_a_single_roof_proposal_renders_no_structures_section():
+    """Additive: an ordinary proposal is unchanged, section and all."""
+    html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context())
+    assert "Structures Covered" not in html
+    assert "Scope of Work" in html
+
+
+def test_a_property_with_no_street_prints_an_absent_address_not_a_blank_cell():
+    """create_proposal_from_project accepts a property whose street is unset, so the fallback
+    address can be "". A blank cell reads as a missing value; the em dash says nobody stated one."""
+    groups = structure_groups([{"name": "Clubhouse", "squares": 30}], default_address="")
+    assert groups[0]["address"] == ""
+    html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(structures=groups))
+    assert "Structures Covered" in html
+    assert "—" in html.split("Structures Covered", 1)[1].split("Scope of Work", 1)[0]

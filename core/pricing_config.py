@@ -21,6 +21,14 @@ class ConfigValidationError(ConfigError):
     """Raised when the config dict is structurally invalid (missing required keys)."""
 
 
+#: Slider DEFAULTS for the commission rate, by basis. Tim, 2026-08-02: *"they can take 15% of
+#: gross or 50% of net and that's how we default the sliders."* Hard-coded rather than config-keyed
+#: because they are one company-wide rule, not a branch rate; a per-salesperson split is a
+#: per-quote override. ⚠️ web/src/pages/Quoting.tsx COMMISSION_DEFAULT_PCT must track these — the
+#: SPA sends an explicit rate on every quote, so what a salesperson READS comes from there.
+COMMISSION_DEFAULT_RATE = {"job": 0.15, "profit": 0.50}
+
+
 # ---------------------------------------------------------------------------
 # Required top-level keys (must be present and non-null at load time).
 # Low-slope sub-keys are allowed to be null (they raise ConfigError at access).
@@ -199,22 +207,37 @@ class PricingConfig:
     # ------------------------------------------------------------------ #
     # Commission                                                           #
     # ------------------------------------------------------------------ #
-    def commission_rate(self, slope_type: str, zone: str) -> float:
-        """Return commission rate for the given slope_type and zone.
+    def commission_rate(self, basis: str = "profit") -> float:
+        """Default commission rate for a commission BASIS. Fraction, e.g. 0.15.
 
-        slope_type: "sloped" | "low_slope"
-        zone: "HVHZ" | "FBC"
+        Tim, 2026-08-02: *"commission either on gross or net. commission is to the sales person.
+        they can take 15% of gross or 50% of net and that's how we default the sliders."*
 
-        sloped_HVHZ is an open item; defaults to sloped (0.10) until Tim confirms.
+            basis="job"      % of GROSS (project_total)   -> 0.15
+            basis="profit"   % of NET (profit_dollars)    -> 0.50
+
+        ⚠️ This USED to be keyed by (slope_type, zone) and returned 0.10 sloped / 0.15 low_slope —
+        a dimension Tim's rule does not mention, so on the default `profit` basis it reported 10%
+        of net against his 50%, five times under. It never moved a customer price (commission is
+        computed after project_total and surfaces only as `estimated_commission`); what it got
+        wrong is the number the SALESPERSON is shown for their own payout. Closes #447(3) /
+        PC-1 / OI-7: commission is per SALESPERSON, not per zone or slope type.
+
+        These are SLIDER DEFAULTS, not law. A negotiated split — Marco reads 15% and Josh 7.5% on
+        an identically-shaped grid in Tim's NEW sheet — is entered per quote as
+        ``QuoteInput.commission_rate_override``; nothing here deletes or overrides it.
+
+        Not config-keyed. One company-wide rule, stated by Tim in one sentence, and the axis it
+        genuinely varies on is the SALESPERSON, which is a per-quote override rather than a branch
+        rate. A ``commission_pct.gross``/``.net`` pair would be a lever no seeder writes and no
+        screen sets — the old ``commission_pct`` sub-keys are exactly that, and they are the
+        reason this method was wrong for a month.
         """
-        cp = self.raw["commission_pct"]
-        if slope_type == "low_slope":
-            return float(cp["low_slope"])
-        # sloped — check for sloped_hvhz override
-        sloped_hvhz = cp.get("sloped_hvhz")
-        if slope_type == "sloped" and zone == "HVHZ" and sloped_hvhz is not None:
-            return float(sloped_hvhz)
-        return float(cp["sloped"])
+        if basis not in COMMISSION_DEFAULT_RATE:
+            raise ConfigError(
+                f"commission basis must be one of {sorted(COMMISSION_DEFAULT_RATE)}, got {basis!r}"
+            )
+        return COMMISSION_DEFAULT_RATE[basis]
 
     # ------------------------------------------------------------------ #
     # PM incentive                                                         #

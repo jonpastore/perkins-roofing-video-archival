@@ -617,6 +617,10 @@ class Estimate(Base):
     # list of nine anonymous estimates and nobody can tell which roof is which.
     bid_project_id      = Column(Integer, ForeignKey("bid_projects.id"), nullable=True)
     structure_name      = Column(String(200), nullable=True)
+    # Optional per-structure street address (migration 0054). NULL = the bid project's property,
+    # which is the ordinary case — Tim, 2026-08-02: "yes but they can share." A COLUMN rather than
+    # a snapshot key so it survives the snapshot rewrites validate_project_snapshot polices.
+    structure_address   = Column(String(300), nullable=True)
     input_json          = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     result_json         = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     created_at          = Column(DateTime, nullable=False, default=_utcnow)

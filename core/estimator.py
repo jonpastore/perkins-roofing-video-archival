@@ -787,7 +787,7 @@ def _label(key: str) -> str:
 def _apply_min_margin(
     config: PricingConfig, items: list[LineItem], sq: float, explicit_profit: bool = False,
     effective_floor: float = 0.0, on_site_weeks: Optional[int] = None,
-    slope_type: Optional[str] = None, zone: Optional[str] = None,
+    commission_rate: Optional[float] = None,
     profit_floor_scope: str = "job",
 ) -> Optional[str]:
     """Raise the profit line to the week-based floor. Returns a warning code if it fired.
@@ -851,17 +851,24 @@ def _apply_min_margin(
                    "days_per_week": config.profit_floor_days_per_week(),
                    "squares": sq, "floored": True},
     }
-    # #422 — the floor moves the PROFIT line, and commission is a percentage OF that line
-    # (commission = margin.profit_dollars x rate). So protecting a small job also raises the
-    # salesperson's commission on it: a 10 sq HVHZ tile job floored from $1,400 to $2,500 takes
-    # commission from $140 to $250 at 10%. Tim has never said whether his $2,500 is what he keeps
-    # BEFORE or AFTER commission. If after, the floor should be 2500/(1-rate), not 2500.
+    # #422 — the floor moves the PROFIT line, and on the "profit" basis commission is a percentage
+    # OF that line (commission = margin.profit_dollars x rate). So protecting a small job also
+    # raises the salesperson's commission on it: a 10 sq HVHZ tile job floored from $1,400 to
+    # $2,500 takes commission from $700 to $1,250 at Tim's 50% of net. He has never said whether
+    # his $2,500 is what he keeps BEFORE or AFTER commission. If after, the floor should be
+    # 2500/(1-rate), not 2500 — and at 50% that is $5,000, so the question got twice as expensive
+    # when the rate was corrected.
     #
     # We cannot answer that for him, and quietly picking one reading would bury a real question
     # inside a number he is asked to sign. So the quote says it.
+    #
+    # `commission_rate` is the rate that MOVES WITH the profit line — the caller passes None on the
+    # "job" basis, where a commission on GROSS does not move when profit does and the note would be
+    # describing an effect that isn't happening. It is the effective rate, override included, so
+    # the note quotes the number this quote will actually pay rather than the config default.
     extra = ""
     try:
-        rate = config.commission_rate(slope_type, zone) if slope_type and zone else None
+        rate = commission_rate
         if rate:
             net = float(floor) * (1.0 - float(rate))
             extra = (f" Commission rises with it (${was * float(rate):,.0f} -> "
@@ -1598,10 +1605,17 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     # An operator minimum RAISES the config floor, never lowers it — the Quoting slider's "Min $"
     # box is a "don't go under this on this job" input, not a way to quote below Tim's $2,500.
     effective_floor = max(guidance["effective_floor"], q.min_profit_dollars or 0.0)
+    # The rate follows the BASIS, not the roof: 15% of gross or 50% of net (Tim, 2026-08-02).
+    # An operator slider (commission_rate_override) still wins — that is where a negotiated
+    # per-salesperson split lives. Computed here rather than at its point of use below because
+    # the floor's #422 note needs it, and depends on nothing the floor produces.
+    comm_rate = (q.commission_rate_override if q.commission_rate_override is not None
+                 else config.commission_rate(q.commission_basis))
     floored = _apply_min_margin(
         config, all_items, total_sq, explicit_profit,
         effective_floor=effective_floor, on_site_weeks=guidance["on_site_weeks"],
-        slope_type=q.slope_type, zone=zone, profit_floor_scope=q.profit_floor_scope)
+        commission_rate=comm_rate if q.commission_basis == "profit" else None,
+        profit_floor_scope=q.profit_floor_scope)
     if floored:
         warnings.append(floored)
 
@@ -1623,8 +1637,6 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
 
     margin = _compute_margin(config, all_items, q.slope_type, zone, flat_floor)
 
-    comm_rate = (q.commission_rate_override if q.commission_rate_override is not None
-                 else config.commission_rate(q.slope_type, zone))
     comm_base = project_total if q.commission_basis == "job" else margin.profit_dollars
     commission = comm_base * comm_rate
 

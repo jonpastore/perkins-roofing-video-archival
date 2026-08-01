@@ -69,14 +69,11 @@ def open_items(cfg: dict[str, Any]) -> list[str]:
             "supply the per-sheet plywood pricing (Lumber Schedule)"
         )
 
-    # OI-7: still null. Note the shape is also wrong — commission is per SALESPERSON (Marco 15% /
-    # Josh 7.5% on identically-zoned tabs), not per slope type. Filling this cell answers the
-    # narrow question and leaves the keying defect (docs/R2-2026-07-27.md §3.2) untouched.
-    if _get(cfg, "commission_pct", "sloped_hvhz") is None:
-        items.append(
-            "OI-7: commission_pct.sloped_hvhz — null; engine defaults to sloped (0.10). NOTE the "
-            "key SHAPE is wrong regardless: commission is per salesperson, not per zone (PC-1)"
-        )
+    # OI-7: RESOLVED 2026-08-02 — Tim: "they can take 15% of gross or 50% of net and that's how we
+    # default the sliders." commission_pct.sloped/low_slope/sloped_hvhz are no longer read at all;
+    # the rate follows the BASIS (core.pricing_config.commission_rate). Asking him to fill a
+    # sloped_hvhz cell would be asking about a key nothing consumes. What is still open is narrower
+    # and belongs to him, not to the config: Josh's 7.5% has no home in a two-option rule.
 
     # OI-9 / OI-10: both carry a presumed default rather than a null, so nothing raises and
     # nothing is verified. They stay open until Tim confirms the boundary rule either way.

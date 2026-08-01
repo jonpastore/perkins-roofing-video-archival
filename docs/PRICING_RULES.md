@@ -298,20 +298,30 @@ undertook to send a fixed repair price list by email; it has not arrived.
 
 ## 11. Commission
 
-**Set per salesperson, not per branch or zone.**
+**Set per salesperson, and the RATE follows the BASIS — 15% of gross or 50% of net.**
+
+> "commission either on gross or net. commission is to the sales person. they can take 15% of gross
+> or 50% of net and that's how we default the sliders." — Tim, 2026-08-02
 
 > "mostly net … unless it's like outside so like it just varies by the salesperson." — Tim, 7/20 [03:49]
 
-⚠️ **The engine does not do this yet** (audit 2026-07-27). `commission_pct` is keyed by slope type —
-low_slope 0.15, sloped 0.10, sloped_hvhz null — with no salesperson axis at all. Until that is
-rekeyed, the rule below describes Tim's intent, not the shipped behaviour.
+**SHIPPED 2026-08-02.** `config.commission_rate(basis)` returns 0.15 for `job` (gross) and 0.50 for
+`profit` (net); `commission_pct.gross` / `.net` override per branch, and
+`commission_rate_override` overrides per quote, which is where a negotiated split lives. The old
+`(slope_type, zone)` keying — low_slope 0.15, sloped 0.10, sloped_hvhz null — is gone: it reported
+10% of net against Tim's 50%, five times under. It moved no customer price (commission is computed
+after `project_total` and surfaces only as `estimated_commission`); what was wrong is the number
+the salesperson was shown for their own payout. Closes #447(3), PC-1 and OI-7.
 
 Two tabs on the newest sheet with an identical price grid read 15% (Marco) and 7.5% (Josh), which
-settles it: a rate that differs between identically-zoned tabs is not a function of zone. The earlier
-"Miami 15% / Jupiter 10%" reading was wrong — **no Jupiter tab carries a commission cell at all**.
+settles the shape: a rate that differs between identically-zoned tabs is not a function of zone. The
+earlier "Miami 15% / Jupiter 10%" reading was wrong — **no Jupiter tab carries a commission cell**.
 
-**OPEN:** each person's rate, and confirmation the percentage is of **profit** ("mostly net") rather
-than of the contract. Until then the engine pays 10% on Miami sloped jobs.
+**OPEN:** Marco's 15% is 15%-of-gross, so it fits. **Josh's 7.5% has no home in a two-option rule** —
+ask Tim whether that is a negotiated split (entered per quote as an override) or a stale cell. It has
+not been deleted from anything. Also open, by implication: if commission is a share of **net**, then
+General Conditions is a cost that reduces the pool rather than a commissionable revenue line —
+worth one line of confirmation.
 
 ---
 
@@ -339,7 +349,7 @@ Evergrene and Miramar price almost nothing the way the residential calculator do
 3. What counts as an on-site week (§4b), and whether $4,000 is a small-job walk-away.
 4. The 20-square profit band (§4a) and the tile dumpster threshold (§6).
 5. Miami's daily overhead and crew-size column (§3); the Miami cut-calculator fixed cost (§2).
-6. Per-person commission rates (§11); per-person repair rates (§10).
+6. Josh's 7.5% commission cell — negotiated split or stale? (§11); per-person repair rates (§10).
 7. Small coating jobs under 25 squares, and whether the 2024 silicone insurance increase reached the
    headline prices — the note sits on two cells reading $445 and $485.
 8. Commercial structure (§12).

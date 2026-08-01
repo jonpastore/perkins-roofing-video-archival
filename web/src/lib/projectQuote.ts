@@ -14,7 +14,9 @@ export interface ProjectItemDraft {
   key: string;
   label: string;
   cost: number;
-  markup: number;
+  /** undefined = take the project-level General Conditions markup (Tim's slider). A block that
+   *  names its own rate keeps it. */
+  markup?: number;
 }
 
 
@@ -27,6 +29,9 @@ export interface ProjectBuildingDraft {
   propertyId?: number | null;
   /** Captured so a zone mismatch is caught here, where the user can still see the culprit. */
   codeZone?: string;
+  /** This structure's own street address. Blank/absent = the bid's property, which is the normal
+   *  case (Tim, 2026-08-02: "yes but they can share"). */
+  address?: string;
 }
 
 
@@ -41,11 +46,15 @@ export function buildProjectQuoteBody(args: {
   projectItems?: ProjectItemDraft[];
   addOnBlocks?: ProjectItemDraft[];
   permitCount?: number;
+  generalConditionsMarkup?: number;
 }): Record<string, unknown> {
   return {
     name: args.name.trim() || "Untitled project",
     property_id: args.propertyId ?? undefined,
-    buildings: args.buildings.map((b) => ({ name: b.name, days: b.days, quote: b.quote })),
+    buildings: args.buildings.map((b) => ({
+      name: b.name, days: b.days, quote: b.quote,
+      address: b.address?.trim() || undefined,
+    })),
     project_items: (args.projectItems ?? []).map((i) => ({
       key: i.key, label: i.label, cost: i.cost, markup: i.markup,
     })),
@@ -56,7 +65,13 @@ export function buildProjectQuoteBody(args: {
     add_on_blocks: (args.addOnBlocks ?? []).map((i) => ({
       key: i.key, label: i.label, cost: i.cost, markup: i.markup,
     })),
-    permit_count: args.permitCount && args.permitCount > 0 ? args.permitCount : 1,
+    // The project-level default for a General Conditions block that names no markup of its own —
+    // Tim's x1.15 slider. A block that carries its own rate is untouched by it.
+    general_conditions_markup: args.generalConditionsMarkup && args.generalConditionsMarkup >= 1
+      ? args.generalConditionsMarkup : undefined,
+    // OMITTED, not 1: the server defaults to ONE PERMIT PER BUILDING (Tim, 2026-08-02), and
+    // sending a hard 1 from here would have quietly overridden that on every bid this screen makes.
+    permit_count: args.permitCount && args.permitCount > 0 ? args.permitCount : undefined,
     persist: args.persist,
   };
 }
@@ -73,13 +88,23 @@ export function projectBidSignature(args: {
   name: string;
   buildings: ProjectBuildingDraft[];
   items: ProjectItemDraft[];
+  /** Blank = one per building, so it hashes as the building count — "" and "3" on a 3-building
+   *  bid are the same bid and must not hash differently. */
   permitCount: string;
+  generalConditionsMarkup?: string;
 }): string {
   return JSON.stringify({
     n: args.name.trim(),
-    b: args.buildings.map((x) => [x.name, x.squares, x.days ?? null, JSON.stringify(x.quote)]),
-    i: args.items.map((x) => [x.key, x.cost, x.markup]),
-    p: Number(args.permitCount) || 1,
+    b: args.buildings.map((x) => [x.name, x.squares, x.days ?? null, x.address?.trim() ?? null,
+                                  JSON.stringify(x.quote)]),
+    i: args.items.map((x) => [x.key, x.cost, x.markup ?? null]),
+    // The EFFECTIVE count, so "1", "01", "1.0" and (on a one-building bid) a blank box all hash
+    // the same — they are the same bid, and hashing them differently let an identical bid save
+    // twice, which is what this signature exists to stop.
+    p: Number(args.permitCount) || args.buildings.length,
+    // A block inheriting the project markup changes price when the slider moves, and nothing in
+    // `i` above would show it: the block's own markup is still undefined.
+    m: Number(args.generalConditionsMarkup) || 0,
   });
 }
 

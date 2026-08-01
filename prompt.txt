@@ -1,127 +1,121 @@
 Resume perkins-roofing/video-archival.
 
 READ FIRST:
-    CONTINUATION-2026-08-01-pm.md     LAST NIGHT — migration runner fixed, #430 slice 2 built
-    CONTINUATION-2026-08-01.md        the bid-project work it follows
-    CONTINUATION-2026-07-31-pm.md     warranty tool statewide + the OAuth account-scoping fix
+    CONTINUATION-2026-08-02-pm.md     ← START HERE. Jon's directives + the permit evidence
+    CONTINUATION-2026-08-02.md        Tim's first pass at the six questions
+    CONTINUATION-2026-08-01-pm.md     #430/#449 slices 1-4 and the R2 reviews
 
-⚠️ NOTHING FROM LAST NIGHT IS COMMITTED. Tree is dirty on purpose — review before you push.
-⚠️ NOTHING IS DEPLOYED. Migration 0052 IS NOW APPLIED (it was not before).
+main pushed, tree clean, CI green.
+DEPLOYED AND VERIFIED: API platform:8b3f5cd (sha matches main), SPA bundle
+/assets/index-DSRtfOBu.js. Migrations through 0053, all applied.
+#430/#449 IS DONE — pricing, persistence, proposal surface, SPA.
 
 Confirm before trusting any of this:
-  git status --short                           # expect the slice-2 + portfolio changes, uncommitted
-  .venv/bin/ruff check core adapters api jobs  # CI's FIRST gate
+  git log --oneline -1 && git status --short
+  gh run list --limit 4                        # MATCH THE SHA
+  gh pr list                                   # expect none open
+  .venv/bin/ruff check core adapters api jobs
+  .venv/bin/python -m pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
+    # ~10m. CI runs THIS (the whole tree), not the narrower pre-push set.
   bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
-  .venv/bin/python -m pytest tests/api tests/core tests/adapters tests/jobs tests/tenancy
-    # ~8m. THE EXIT CODE IS THE EVIDENCE — the summary may not flush to a redirected log.
 
-⛔ STAY ON STAGING. PlatformConfig.WP_URL = https://1228404.us6.myftpupload.com is CORRECT.
-⛔ DO NOT CHANGE PRICING without Jon. jupiter+naples overhead_basis="series"; miami "branch"
-   at $4,250/day; concurrent_crews deployed but UNSET everywhere.
-⛔ DO NOT send client email. EMAIL_SEND_MODE=test and Jon sends it.
+⛔ STAY ON STAGING for WordPress (PlatformConfig.WP_URL = 1228404.us6.myftpupload.com)
+⛔ DO NOT send client email (EMAIL_SEND_MODE=test; Jon sends it)
 
 ════════════════════════════════════════════════════════════════════════════════
-⚠️ THE MIGRATION RUNNER: READ THIS BEFORE ADDING ANY MIGRATION
+▶ BUILD THESE — Tim answered, Jon directed. Detail in CONTINUATION-2026-08-02-pm §0
 ════════════════════════════════════════════════════════════════════════════════
-scripts/apply_migrations_adc.py IGNORES DB_URL — it always targets PROD via the Cloud SQL
-Connector from GOOGLE_CLOUD_PROJECT. Older docs show a `DB_URL=postgresql+psycopg://... python
-scripts/apply_migrations_adc.py` incantation; the prefix is decorative and does nothing.
 
-There is NO applied-ledger. Every run re-executes EVERY migration from 0013 forward and relies
-entirely on each being idempotent. One unguarded statement aborts the run and SILENTLY BLOCKS
-every later migration — that is exactly how 0041-0052 sat unapplicable behind 0040's bare
-ADD CONSTRAINT. Three such defects were fixed last night (0029 GUC, 0040 constraint, the
-single-quote-blind splitter). AFTER ADDING A MIGRATION, RUN THE SCRIPT AND CONFIRM IT REACHES
-"DONE".
+1. COMMISSION RATE FROM BASIS. Tim: "commission either on gross or net. commission is to the
+   sales person. they can take 15% of gross or 50% of net and that's how we default the
+   sliders."
+   The machinery exists — commission_basis is "job" (gross) | "profit" (net), and
+   core/estimator.py:1628 already picks project_total vs margin.profit_dollars.
+   THE RATE IS WRONG: config.commission_rate(slope_type, zone) returns
+   {"sloped":0.10,"low_slope":0.15} — keyed by a dimension Tim's rule never mentions.
+       today  10% of NET     Tim says  50% of NET     -> 5x UNDER
+       today  10% of GROSS   Tim says  15% of GROSS   -> a third under
+   ⚠️ THIS IS A REPORTING ERROR, NOT A PRICING ERROR — commission is computed AFTER
+   project_total and surfaces only as estimated_commission. No customer quote moves; what is
+   wrong is the number the SALESPERSON is shown for their own payout.
+   Build: rate defaults FROM the basis (job -> 0.15, profit -> 0.50), both operator-adjustable
+   (commission_rate_override exists). Closes #447(3) — commission is per-SALESPERSON, not per
+   slope type.
+   ⚠️ RECONCILE FIRST: 15%-of-gross matches Marco's 15% on the NEW sheet, but Josh's 7.5% has
+   no home in a two-option rule. Ask whether that is a negotiated split or stale — do not
+   silently delete it.
 
-⚠️ 0026 and 0027 carry UPDATEs with no guard and re-assert their values on every run. Harmless
-only because tenant 2 was never onboarded and Ez-Bids W2 never re-scoped cors_origins. Onboard a
-second tenant and the next migration run silently reverts it.
+2. permit_count = BUILDING COUNT. ✅ EVIDENCE GATHERED, HIS RULE HOLDS: of 333 Knowify projects
+   carrying a permit line, 73 bill MORE THAN ONE, led by ISOLA CONDOMINIUM ASSOCIATION RE ROOF
+   with SIX. Evergrene's single permit is the outlier.
+   ⚠️ Those Knowify lines are the county's permit FEES passed through (variable); our
+   permit_processing is a flat $500 (+$500 commercial) PROCESSING fee. Their own scope says
+   "you pay permit fee(s) only" — plural. Both scale per structure; do not conflate them.
+   Ship it AND say in the same message that Evergrene moves +2.3% -> ~+4.4%, i.e. further from
+   what he actually bid.
 
-  .venv/bin/python scripts/apply_migrations_adc.py     # no DB_URL; it goes to prod
+3. PER-BUILDING ADDRESSES (#6, "build it"). Tim: "yes but they can share."
+   Optional address per building defaulting to the bid project's property; proposal render
+   lists each structure, collapsing where shared and separating where they differ (two
+   Evergrene gates are on different roads).
+   Prefer a COLUMN (estimates.structure_address) over a snapshot blob — it survives a snapshot
+   rewrite, which is exactly what validate_project_snapshot exists to police. Migration 0054,
+   applied BY HAND.
 
-▶ START HERE — ONE OF THESE, ASK JON WHICH
+4. GC MARKUP SLIDER. Tim: "we have a slider for this" — so KEEP
+   bid_projects.general_conditions_markup (this REVERSES an earlier recommendation to drop it).
+   Wire a project-level control; today only per-block markup is settable.
 
-  1. REVIEW + COMMIT last night's work, then deploy. deploy.sh does NOT run migrations and 0052
-     is already applied, so the ORM is safe to ship. R2 (architect + critic deep review) has NOT
-     been run on slice 2.
-
-  2. SLICE 3 — proposal surface. Proposal.bid_project_id now EXISTS, so the gate is testable.
-     ⚠️ web/src/pages/Proposals.tsx:414-419 re-quotes exactly ONE estimate and overwrites
-     quote_snapshot. On a project snapshot that SILENTLY DESTROYS EIGHT BUILDINGS. Also
-     api/routes/proposals.py:143-167 _assemble_review_text reads ONE roof, so the LLM send-gate
-     would review one building and green-light a nine-building contract.
-
-  3. SEND TIM THE SIX QUESTIONS — drafted at docs/2026-08-01-six-questions-for-tim.md. All six
-     survived a full corpus sweep (zero hits each). Q3 is worth $8-16k on Evergrene alone.
-
-  4. CURATE THE FIVE READY PROJECTS in the admin UI (Jon does this): isola, olsen,
-     fisher-island-7900, fisher-77, pinnacle. Pick photos AND type alt text per image.
-
-  5. IAM: api-run-sa cannot create a secret, so the OAuth connect flow 502s. Needs a Terraform
-     grant — a security-scope decision, deliberately left for Jon.
-
-DO NOT RE-DERIVE (all measured, all verified last night)
-  - Evergrene still scores ours $390,230 vs Tim $381,288 (+2.3%), profit $30,790 vs $30,363
-    (+1.4%) AFTER the mapping refactor. Re-run: scripts/validate_against_evergrene.py
-  - PERMISSION IS UPSTREAM OF ALL PORTFOLIO MEDIA. _available_media filters the mirror through
-    publishable_media, so with permission_photos false a project reports ZERO photos against a
-    156,203-photo mirror. All 13 read "no media" purely because no flag was set. Now recorded
-    (scripts/portfolio_grant_permissions.py, idempotent, provenance in updated_by).
-  - Wendy chose the AVADA PORTFOLIO system; the nine /portfolio/ pages are being retired. Our
-    publisher already targets the right type. She did NOT answer schema/JSON-LD/alt/links.
-  - Tim: every project has client permission (contract term); location = town/city/HOA, never
-    the street address. ⚠️ That is about MARKETING PAGES and does NOT answer whether a PROPOSAL
-    needs each building's address.
-  - alt text is typed PER PHOTO by an editor (gallery_html reads sel["alt"]) — alt_present /
-    alt_unique can never be satisfied by code.
-  - #449's spec still does not reconcile: "per site per WEEK" is 17 x $2,500 = $42,500 against
-    Tim's actual $30,363. Default basis stays 'project'; both numbers returned every call.
-
-STILL OPEN
-  - R2 deep review never run on slice 2 (ENGINEERING_RULES R2 requires architect + critic).
-  - jim-malooly-delray-beach-roof trips title_not_a_person (rename); abacoa + miami-warehouse
-    have NO CompanyCam url; 6 projects match no Knowify scope; 4 write-ups under 120 words.
-  - Miami charges its whole office day per job -> ~$2,087/sq HVHZ tile vs $1,113/sq accepted.
-  - #447(3) commission_pct keyed by slope type, not per salesperson as PRICING_RULES §11 says.
-  - #444 GCP budget: Billing API disabled, SA cannot enable it.
-  - REACH_MI residual: 8 of 18 far live gauges never snap to mapped water.
-  - Salinity banking is correct and INERT (every latest-only gauge is also stale).
+ALSO OPEN
+  - ⚠️ The 'week' profit-floor basis MEASURES THE WRONG THING. Tim 2026-07-28: "how long it ties
+    up the schedule... including inspections so if it's 3 days demo and 4 days tile install, we
+    still call that 2 - 2.5 weeks". _apply_project_floor does ceil(crew_days / 5). No price
+    moves today (default 'project'; the SPA cannot select 'week') but #449 is written in those
+    terms. His inspection/cleanup allowance is NOT a number we have — ask, do not invent.
+  - WIRE THE SPA DEPLOY INTO deploy.yml. GitOps is right and the API already works that way
+    (merge -> CI -> Cloud Run, keyless WIF, drift-gated, never by hand). The SPA is the
+    exception: deploy.yml never touches web/, so a merged UI change is NOT live until someone
+    hand-runs firebase deploy. Changes the deploy path, so R3 says decide it deliberately.
+  - Jon's calls: estimating_view on a writing endpoint; whether to expose floor_basis at all.
+  - Curate 5 ready portfolio projects (human: pick photos AND type alt text) — isola 1,452 /
+    olsen 802 / fisher-7900 311 / fisher-77 285 / pinnacle 186.
+  - api-run-sa cannot create a secret (OAuth 502s); #444 budget blocked on Billing API;
+    REACH_MI 8 of 18 gauges unsnapped; Miami charges a whole office day per job.
 
 GOTCHAS
-- ⚠️ app/models.py carries 18 PRE-EXISTING ruff E702 errors (lines 63-233). app/ is NOT in the CI
-  ruff gate (`ruff check core adapters api jobs`). They are not yours; do not "fix" them blind.
+- ⚠️ KNOWIFY: deliverables carry ContractId, NOT ProjectId. Join deliverables -> contracts ->
+  projects. The wrong join returns a clean, confident, WRONG answer.
+- ⚠️ Knowify mirror deliverable money is in CENTS.
+- ⚠️ CI runs `pytest tests/` — THE WHOLE TREE. The pre-push set does not reach
+  tests/test_f2_engine.py, which is how main stayed red for three commits unnoticed.
+- ⚠️ CI DOES NOT DEPLOY THE SPA. Ship it by hand and verify the SERVED bundle:
+    cd web && npm run build && npx --no-install firebase deploy --only hosting:app \
+      --project video-archival-and-content-gen
+- ⚠️ `npx tsc --noEmit` is NOT the build gate. It passed twice on code `npm run build` rejected.
+- ⚠️ test_schema_maxlength binds on IMPORTED CLASS NAMES, not on writes — a new import can bind
+  an unrelated Pydantic field. Bound the field; do not add an ALLOW entry.
+- ⚠️ MIGRATIONS ARE APPLIED BY HAND. apply_migrations_adc.py IGNORES DB_URL (always prod) and
+  has NO ledger — it replays from 0013 every run. Run it and confirm it reaches DONE. 0027's
+  UPDATE is unguarded and re-asserts each run; harmless only while tenant 2 does not exist.
 - ⚠️ tile_dumpster_count is a ceil() — anything calling it per building over-counts.
-- ⚠️ profit_guidance is ABSENT from the estimate result unless it is a daily-overhead quote.
-- ⚠️ pricing_configs columns are `config` and `is_active`, NOT config_json/active. Roof types:
-  13_tile | barrel_tile | 3tab_shingle | dimensional_shingle | standing_seam_metal.
-- ⚠️ Do NOT `source .env` before GCS work: it sets GOOGLE_APPLICATION_CREDENTIALS to
-  ./infra/vertex-dev-sa.json, A FILE THAT DOES NOT EXIST. Use
-  $HOME/.config/gcloud/perkins-deploy-sa.json.
-- ⚠️ DB_URL in .env is sqlite. App code needs postgresql+psycopg://... over the Cloud SQL proxy
-  (`+psycopg` — psycopg2 is NOT installed). Sessions must set db.info["tenant_id"] or
-  ["platform_scope"]; core/tenant.py refuses to query otherwise.
-- ⚠️ resolved_wp_url() swallows every exception and returns "". EMPTY MEANS A CONFIG ERROR —
-  usually that you left DB_URL on sqlite.
-- ⚠️ .dockerignore ALLOWLISTS scripts/. A job importing a NEW script needs !scripts/<name>.py.
-- ⚠️ The job container has NO writable $HOME. Path.home() raises PermissionError '/home/appuser'.
-- ⚠️ GREEN CI + CLEAN TERRAFORM + A FIRING SCHEDULER PROVED NOTHING, TWICE. Verify a job by
-  RUNNING it and reading its stdout.
-- ⚠️ OSM `tidal=yes` means water LEVEL, not salinity. The St Johns is tidal ~160 mi inland.
-- ⚠️ qwen3.6 passed all three review areas as "Correct" and was wrong twice. Local review is a
-  second opinion, NEVER a gate. Security-critical review stays on Claude.
-- ⚠️ A bare `until` spin with no sleep burns the whole timeout; `sleep N` chained after a command
-  is blocked by the harness. Use Bash run_in_background with an until-loop.
-- ⚠️ Printing .env leaks WP_PWD (it reached a transcript 7/31) — worth rotating.
+- ⚠️ REVIEWER AGENTS MUST RUN WITH run_in_background: false or they return NOTHING. R2 needs
+  BOTH architect and critic — the critic found two MAJORs inside the architect's own fixes.
+- ⚠️ LOCAL MODELS WERE NET-NEGATIVE ON REVIEW (qwen3.6-think fabricated a CRITICAL against code
+  that does not exist; gpt-oss-120b-think: 1 real finding in 12, real ceiling 32768 not 65536).
+  See docs/2026-08-01-local-model-review-postmortem.md. Never gate on them.
+- ⚠️ Do NOT `source .env` before GCS work — it sets GOOGLE_APPLICATION_CREDENTIALS to a file
+  that does not exist. Use $HOME/.config/gcloud/perkins-deploy-sa.json.
+- ⚠️ DB_URL in .env is sqlite. App code needs postgresql+psycopg://…@127.0.0.1:5432/perkins over
+  the proxy (`+psycopg`), and sessions must set db.info["tenant_id"] or ["platform_scope"].
+- ⚠️ resolved_wp_url() swallows every exception and returns "" — empty means a config error.
+- ⚠️ SEARCH THE MAILBOX, not just transcripts.
 - Cloud SQL proxy: setsid nohup ~/bin/cloud-sql-proxy \
     video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
-- Terraform without the reauth invalid_rapt demands:
+- Terraform without the invalid_rapt reauth:
     cd infra && unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
     export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/perkins-deploy-sa.json
     export USER_PROJECT_OVERRIDE=true GOOGLE_CLOUD_QUOTA_PROJECT=video-archival-and-content-gen
     export TF_VAR_cloudflare_api_token="$(gcloud secrets versions access latest --secret=cloudflare-api-token 2>/dev/null)"
-- Tim's sheets via perkins-deploy SA + DWD impersonating tim@perkinsroofing.net. Cell COMMENTS
-  carry values the visible cells do not, and comments are a DRIVE resource.
-- Mail: the o365 MCP refresh token EXPIRED (inactive 90d). gmail-enhanced still reaches
-  jon@degenito.ai; the jon@perkinsroofing.net Gmail token is ALSO expired and needs re-auth.
-- EMAIL_SEND_MODE=test in prod. R7-R10 in docs/ENGINEERING_RULES.md are binding.
+- Mail: the o365 MCP refresh token EXPIRED; jon@perkinsroofing.net Gmail token also expired.
+  gmail-enhanced reaches jon@degenito.ai.
+- R7-R10 in docs/ENGINEERING_RULES.md are binding.

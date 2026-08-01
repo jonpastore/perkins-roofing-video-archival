@@ -295,50 +295,20 @@ def test_eligible_base_excludes_profit(cfg: PricingConfig):
     assert abs(r["margin"]["eligible_base"] - expected_eligible) < 0.01
 
 
-def test_commission_sloped_10pct(cfg: PricingConfig):
+@pytest.mark.parametrize("zone", ["FBC", "HVHZ"])
+def test_commission_is_half_of_net_in_every_zone(cfg: PricingConfig, zone: str):
+    """The rate follows the BASIS, not the zone. Same roof, both zones, 50% of net.
+
+    It used to read 10% here (and 15% on a low-slope roof) because the config was keyed by
+    (slope_type, zone) — a shape Tim's rule has no term for. Nothing about a permit zone decides
+    what a salesperson is paid.
+    """
     q = QuoteInput(
-        code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+        code_zone=zone, slope_type="sloped", roof_type="3tab_shingle",
         num_squares=10.0, project_kind="residential",
     )
     r = estimate(cfg, q)
-    expected = r["margin"]["profit_dollars"] * 0.10
-    assert abs(r["commission"] - expected) < 0.01
-
-
-def test_commission_low_slope_15pct():
-    """Low-slope commission rate is 15% of profit dollars."""
-    # Build a minimal config with filled-in low-slope values
-    raw = dict(_raw_config())
-    ls = dict(raw["low_slope"])
-    ls["base_cost_lm"] = {
-        "HVHZ": {"tpo": 200, "coatings": 200, "silicone": 200, "bur": 200},
-        "FBC":  {"tpo": 200, "coatings": 200, "silicone": 200, "bur": 200},
-    }
-    ls["overhead"] = {
-        "HVHZ": {"flat_oh": 50, "tpo_oh": 50, "coatings_oh": 50},
-        "FBC":  {"flat_oh": 50, "tpo_oh": 50, "coatings_oh": 50},
-    }
-    raw = dict(raw)
-    raw["low_slope"] = ls
-    cfg2 = load_config(raw)
-    q = QuoteInput(
-        code_zone="FBC", slope_type="low_slope", roof_type="tpo",
-        num_squares=10.0, project_kind="residential",
-    )
-    r = estimate(cfg2, q)
-    expected = r["margin"]["profit_dollars"] * 0.15
-    assert abs(r["commission"] - expected) < 0.01
-
-
-def test_commission_default_sloped_hvhz(cfg: PricingConfig):
-    """sloped HVHZ defaults to sloped rate (10%) when sloped_hvhz is null in config."""
-    q = QuoteInput(
-        code_zone="HVHZ", slope_type="sloped", roof_type="3tab_shingle",
-        num_squares=10.0, project_kind="residential",
-    )
-    r = estimate(cfg, q)
-    expected = r["margin"]["profit_dollars"] * 0.10
-    assert abs(r["commission"] - expected) < 0.01
+    assert abs(r["commission"] - r["margin"]["profit_dollars"] * 0.50) < 0.01
 
 
 # ---------------------------------------------------------------------------
@@ -674,11 +644,15 @@ def test_low_slope_tapered_no_oh_no_profit(cfg: PricingConfig):
     assert sorted(cfg.raw["floor_excluded_categories"]["tapered"]) == ["OH", "Profit"]
 
 
-def test_low_slope_commission_15pct(cfg: PricingConfig):
-    """Low slope commissions at 15% — a different rate from sloped (10%), and off PROFIT."""
+def test_low_slope_commission_follows_basis_not_slope(cfg: PricingConfig):
+    """A low-slope roof commissions at the same 50% of NET as any other roof.
+
+    It used to read 0.15 against sloped's 0.10 purely because the config was keyed by slope type.
+    Tim, 2026-08-02: 15% of gross or 50% of net, per SALESPERSON — the roof is not a term in it.
+    """
     r = _low_slope_q(cfg)
-    assert cfg.commission_rate("low_slope", "HVHZ") == pytest.approx(0.15)
-    assert r["commission"] == pytest.approx(r["profit_dollars"] * 0.15, abs=0.01)
+    assert cfg.commission_rate("profit") == pytest.approx(0.50)
+    assert r["commission"] == pytest.approx(r["profit_dollars"] * 0.50, abs=0.01)
 
 
 # ---------------------------------------------------------------------------
@@ -812,16 +786,25 @@ def test_sliding_scale_upper_inclusive_branch():
     assert cfg2.profit_per_sq(1.001) == 200  # past first tier
 
 
-def test_sloped_hvhz_commission_explicit_rate():
-    """Exercises the sloped_hvhz non-null branch in commission_rate."""
+def test_commission_rate_ignores_the_old_slope_keyed_config():
+    """The dead sloped/low_slope/sloped_hvhz keys must not come back to life through the config.
+
+    They still sit in every live branch config (removing them is a data change), and a reader who
+    edits one would reasonably expect it to move a rate. It does not — commission is one
+    company-wide rule off the basis, overridden per QUOTE, never per branch.
+    """
     raw = dict(_raw_config())
-    cp = dict(raw["commission_pct"])
-    cp["sloped_hvhz"] = 0.12   # set a non-null override
-    raw = dict(raw)
-    raw["commission_pct"] = cp
+    raw["commission_pct"] = {"sloped": 0.99, "low_slope": 0.99, "sloped_hvhz": 0.99,
+                             "gross": 0.99, "net": 0.99}
     cfg2 = load_config(raw)
-    rate = cfg2.commission_rate("sloped", "HVHZ")
-    assert rate == 0.12
+    assert cfg2.commission_rate("job") == 0.15
+    assert cfg2.commission_rate("profit") == 0.50
+
+
+def test_commission_rate_rejects_an_unknown_basis():
+    """A typo'd basis must raise, not quietly pay the profit rate on a gross number."""
+    with pytest.raises(ConfigError, match="commission basis"):
+        load_config(dict(_raw_config())).commission_rate("net")
 
 
 def test_pm_null_band_raises():

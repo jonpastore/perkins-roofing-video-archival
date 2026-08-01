@@ -50,22 +50,47 @@ describe("buildProjectQuoteBody", () => {
     expect(body.persist).toBe(true);
   });
 
-  it("sends only name/days/quote per building, matching BuildingInput", () => {
+  it("sends only address/days/name/quote per building, matching BuildingInput", () => {
     const body = buildProjectQuoteBody({
       name: "P", buildings: [draft("Clubhouse", { days: 6 })], persist: false,
     });
     const buildings = body.buildings as Array<Record<string, unknown>>;
-    expect(Object.keys(buildings[0]).sort()).toEqual(["days", "name", "quote"]);
+    expect(Object.keys(buildings[0]).sort()).toEqual(["address", "days", "name", "quote"]);
     expect(buildings[0].name).toBe("Clubhouse");
     expect(buildings[0].days).toBe(6);
+    // Blank = the bid's property. Sent as undefined, i.e. not sent at all.
+    expect(buildings[0].address).toBeUndefined();
   });
 
-  it("never sends an empty project name or a zero permit count", () => {
+  it("sends a structure's own address only when it has one", () => {
+    const body = buildProjectQuoteBody({
+      name: "Evergrene", persist: false,
+      buildings: [draft("Clubhouse"), draft("North Gate", { address: "  1 Hood Rd  " })],
+    });
+    const buildings = body.buildings as Array<Record<string, unknown>>;
+    expect(buildings[0].address).toBeUndefined();
+    expect(buildings[1].address).toBe("1 Hood Rd");
+  });
+
+  it("omits permit_count rather than sending 1 — the server means one per BUILDING", () => {
     const body = buildProjectQuoteBody({
       name: "   ", buildings: [draft("A")], persist: false, permitCount: 0,
     });
     expect(body.name).toBe("Untitled project");   // min_length=1 on the API
-    expect(body.permit_count).toBe(1);            // ge=1 on the API
+    // Sending a hard 1 from here would have overridden Tim's per-building rule on every bid.
+    expect(body.permit_count).toBeUndefined();
+  });
+
+  it("sends the project GC markup so a block with no markup of its own inherits it", () => {
+    const body = buildProjectQuoteBody({
+      name: "Evergrene", buildings: [draft("A")], persist: false,
+      projectItems: [{ key: "gc", label: "General Conditions", cost: 31800 }],
+      generalConditionsMarkup: 1.15,
+    });
+    expect(body.general_conditions_markup).toBe(1.15);
+    expect(body.project_items).toEqual([
+      { key: "gc", label: "General Conditions", cost: 31800, markup: undefined },
+    ]);
   });
 
   it("defaults persist to what the caller asked — the API default is False on purpose", () => {
@@ -149,6 +174,26 @@ describe("projectBidSignature — the duplicate-save gate", () => {
     expect(projectBidSignature({ ...base, buildings: [draft("A")], permitCount: "01" })).toBe(one);
     expect(projectBidSignature({ ...base, buildings: [draft("A")], permitCount: "1.0" })).toBe(one);
     expect(projectBidSignature({ ...base, buildings: [draft("A")], permitCount: "9" })).not.toBe(one);
+  });
+
+  it("treats a blank permit box as the building count, not as a different bid", () => {
+    // Blank means "one per building" — on a one-building bid that IS 1, so blank and "1" are the
+    // same bid and must not hash differently, or the identical bid saves twice.
+    expect(projectBidSignature({ ...base, buildings: [draft("A")], permitCount: "" }))
+      .toBe(projectBidSignature({ ...base, buildings: [draft("A")], permitCount: "1" }));
+    // On a two-building bid they are genuinely different: blank prices 2 permits, "1" prices one.
+    expect(projectBidSignature({ ...base, buildings: [draft("A"), draft("B")], permitCount: "" }))
+      .not.toBe(projectBidSignature({ ...base, buildings: [draft("A"), draft("B")], permitCount: "1" }));
+  });
+
+  it("changes when the project GC markup moves, even though no block names a markup", () => {
+    // A block that inherits the project rate changes price when the slider moves, and the block
+    // itself does not change — so without this the corrected bid reads as "already saved".
+    const items = [{ key: "gc", label: "General Conditions", cost: 31800 }];
+    expect(projectBidSignature({ ...base, buildings: [draft("A")], items,
+                                 generalConditionsMarkup: "1.15" }))
+      .not.toBe(projectBidSignature({ ...base, buildings: [draft("A")], items,
+                                      generalConditionsMarkup: "1.30" }));
   });
 
   it("changes when site-wide scope changes", () => {
