@@ -28,37 +28,98 @@ def _password() -> str:
     ).decode().strip()
 
 
+def _dollar_tag_at(sql: str, i: int) -> str | None:
+    """The dollar-quote delimiter starting at ``i`` (``$$`` or ``$name$``), else None.
+
+    A bare ``$`` that is not a delimiter — e.g. inside an identifier — must fall through to
+    ordinary text rather than toggling the scanner into a block it never leaves.
+    """
+    if sql[i] != "$":
+        return None
+    j = i + 1
+    while j < len(sql) and (sql[j].isalnum() or sql[j] == "_"):
+        j += 1
+    if j < len(sql) and sql[j] == "$":
+        return sql[i:j + 1]
+    return None
+
+
 def _statements(sql: str):
     """Split a .sql file into executable statements.
 
-    Dollar-quote-aware: $$ ... $$ blocks (PG DO blocks, anonymous functions) are
-    kept intact even if they contain semicolons. Line/inline -- comments are stripped
-    first so a semicolon inside a comment can't split a statement.
+    One left-to-right scan tracking three states, because a semicolon only ends a statement
+    outside all of them:
+
+      * ``$tag$ ... $tag$``  PG dollar-quoted blocks (DO blocks, function bodies) — their
+        internal semicolons are not separators. The tag may be empty (``$$``) or named
+        (``$func$``), and only the SAME tag closes it.
+      * ``' ... '``     string literals, with the SQL ``''`` escape for an embedded quote.
+      * ``-- ...``      line comments, skipped to end of line.
+
+    The quote state is why comments are handled HERE rather than stripped line-by-line first.
+    Both bugs that fix were real: 0046's column comment contains
+    ``'... NULL = split unknown; 0 = no flat section.'``, and a naive scan split it mid-string
+    and sent Postgres an unterminated literal (42601), aborting every later migration. A
+    pre-pass that cut at the first ``--`` had the mirror-image flaw — it would truncate any
+    string literal containing a double dash.
+
+    Tagged dollar-quotes are handled even though no migration uses one today: this parser sends
+    its output straight to PROD, and a `$func$ ... $func$` body treated as plain text would split
+    on the first internal semicolon and ship a fragment.
     """
-    stripped = []
-    for ln in sql.splitlines():
-        i = ln.find("--")
-        stripped.append(ln if i == -1 else ln[:i])
-    text = "\n".join(stripped)
     current: list[str] = []
-    in_dollar_quote = False
+    dollar_tag: str | None = None   # the OPEN delimiter, e.g. "$$" or "$func$"; None = outside
+    in_string = False
     i = 0
-    n = len(text)
+    n = len(sql)
     while i < n:
-        if text[i] == "$" and i + 1 < n and text[i + 1] == "$":
-            in_dollar_quote = not in_dollar_quote
-            current.append("$$")
-            i += 2
+        ch = sql[i]
+
+        if in_string:
+            # '' is an escaped quote and stays inside the literal; a lone ' ends it.
+            if ch == "'" and i + 1 < n and sql[i + 1] == "'":
+                current.append("''")
+                i += 2
+                continue
+            if ch == "'":
+                in_string = False
+            current.append(ch)
+            i += 1
             continue
-        ch = text[i]
-        if ch == ";" and not in_dollar_quote:
+
+        if dollar_tag is None and ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            while i < n and sql[i] != "\n":
+                i += 1
+            continue
+
+        if ch == "$":
+            tag = _dollar_tag_at(sql, i)
+            if tag is not None:
+                if dollar_tag is None:
+                    dollar_tag = tag          # opening delimiter
+                elif tag == dollar_tag:
+                    dollar_tag = None         # only the SAME tag closes it
+                current.append(tag)
+                i += len(tag)
+                continue
+
+        if ch == "'" and dollar_tag is None:
+            in_string = True
+            current.append(ch)
+            i += 1
+            continue
+
+        if ch == ";" and dollar_tag is None:
             stmt = "".join(current).strip()
             if stmt:
                 yield stmt
             current = []
-        else:
-            current.append(ch)
+            i += 1
+            continue
+
+        current.append(ch)
         i += 1
+
     stmt = "".join(current).strip()
     if stmt:
         yield stmt

@@ -15,5 +15,16 @@ ALTER TABLE comment_drafts DROP CONSTRAINT IF EXISTS uq_comment_drafts_comment_i
 
 -- Tenant-scoped per convention: fixes the RLS silent-drop path (crawl_comments.py's
 -- upsert existence check filtered on comment_id alone, ignoring tenant/RLS boundary).
-ALTER TABLE comment_drafts ADD CONSTRAINT uq_comment_drafts_tenant_platform_comment
-    UNIQUE (tenant_id, platform, comment_id);
+-- Guarded like 0032's chk_invoices_source: Postgres has no ADD CONSTRAINT IF NOT EXISTS, and
+-- scripts/apply_migrations_adc.py replays every migration from MIN_MIGRATION on each run, so an
+-- unguarded ADD CONSTRAINT made this file (which claims idempotency above) abort the whole run
+-- and blocked every later migration from being applied at all.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_comment_drafts_tenant_platform_comment'
+    ) THEN
+        ALTER TABLE comment_drafts ADD CONSTRAINT uq_comment_drafts_tenant_platform_comment
+            UNIQUE (tenant_id, platform, comment_id);
+    END IF;
+END $$;
