@@ -1,0 +1,233 @@
+{
+  "_source": "/home/jon/perkins-corpus/roofr-attachments/2026-07-24__Evergrene_Project_Bid_Spreadsheet.xlsx",
+  "_provenance": "Tim's own bid, decoded from the Bid Sheet FORMULAS (not retyped). Cell refs kept.",
+  "_note": "Tim's real model, which our engine does not implement. Per building: price/sq = (base_cost_per_sq + overhead_per_sq) x markup, markup 1.10-1.14 PER BUILDING and base_cost 750-1085 PER BUILDING. Overhead from DAYS at activity rates: (demo + metals_demo + delivery) x $885 + tile_install x $745. The Clubhouse (row 3) uses demo x 885 + install x 735; Clubhouse Flats (row 4) bills every day at 885.",
+  "site": {
+    "name": "Evergrene",
+    "street": "650 Evergrene Pkwy",
+    "city": "Palm Beach Gardens",
+    "state": "FL"
+  },
+  "overhead_day_rates": {
+    "tile_mobilisation_885": 885.0,
+    "tile_install_745": 745.0,
+    "metal_mobilisation_1050": 1050.0,
+    "metal_install_735": 735.0,
+    "_warning": "These are NOT the four daily rates in our pricing config."
+  },
+  "buildings": [
+    {
+      "name": "Clubhouse Sloped",
+      "squares": 206.0,
+      "days": {
+        "demo": 16.0,
+        "metals_demo": 14.0,
+        "delivery": null,
+        "tile_install": 25.0,
+        "metal_install": 24.0,
+        "total_tile": 55.0
+      },
+      "tile_overhead": 32535.0,
+      "tile_overhead_per_sq": 157.9368932,
+      "base_cost_per_sq": 750.0,
+      "tile_price_per_sq": 1007.809951,
+      "tile_total": 284908.85
+    },
+    {
+      "name": "Clubhouse Flats (3)",
+      "squares": 28.0,
+      "days": {
+        "demo": 4.0,
+        "metals_demo": null,
+        "delivery": null,
+        "tile_install": 3.0,
+        "metal_install": null,
+        "total_tile": 7.0
+      },
+      "tile_overhead": 6195.0,
+      "tile_overhead_per_sq": 221.25,
+      "base_cost_per_sq": 1085.0,
+      "tile_price_per_sq": null,
+      "tile_total": 38480.0
+    },
+    {
+      "name": "Tiki Hut",
+      "squares": 21.0,
+      "days": {
+        "demo": 2.0,
+        "metals_demo": 0.0,
+        "delivery": 0.5,
+        "tile_install": 2.5,
+        "metal_install": 2.0,
+        "total_tile": 5.0
+      },
+      "tile_overhead": 4075.0,
+      "tile_overhead_per_sq": 194.047619,
+      "base_cost_per_sq": 765.0,
+      "tile_price_per_sq": 1074.133333,
+      "tile_total": 25106.8
+    },
+    {
+      "name": "Pool Pump House",
+      "squares": 10.0,
+      "days": {
+        "demo": 1.5,
+        "metals_demo": 0.0,
+        "delivery": null,
+        "tile_install": 1.5,
+        "metal_install": 1.5,
+        "total_tile": 3.0
+      },
+      "tile_overhead": 2445.0,
+      "tile_overhead_per_sq": 244.5,
+      "base_cost_per_sq": 800.0,
+      "tile_price_per_sq": 1148.95,
+      "tile_total": 11489.5
+    },
+    {
+      "name": "Gazebo",
+      "squares": 4.0,
+      "days": {
+        "demo": 1.0,
+        "metals_demo": 0.0,
+        "delivery": null,
+        "tile_install": 2.0,
+        "metal_install": 2.0,
+        "total_tile": 3.0
+      },
+      "tile_overhead": 2375.0,
+      "tile_overhead_per_sq": 593.75,
+      "base_cost_per_sq": 930.0,
+      "tile_price_per_sq": 1706.6,
+      "tile_total": 6826.4
+    },
+    {
+      "name": "Boat House",
+      "squares": 16.0,
+      "days": {
+        "demo": 2.0,
+        "metals_demo": 0.0,
+        "delivery": null,
+        "tile_install": 2.5,
+        "metal_install": 2.0,
+        "total_tile": 4.5
+      },
+      "tile_overhead": 3632.5,
+      "tile_overhead_per_sq": 227.03125,
+      "base_cost_per_sq": 780.0,
+      "tile_price_per_sq": 1127.875,
+      "tile_total": 18046.0
+    },
+    {
+      "name": "Bus Stop",
+      "squares": 3.0,
+      "days": {
+        "demo": 1.0,
+        "metals_demo": 0.0,
+        "delivery": null,
+        "tile_install": 1.0,
+        "metal_install": 1.0,
+        "total_tile": 2.0
+      },
+      "tile_overhead": 1630.0,
+      "tile_overhead_per_sq": 543.3333333,
+      "base_cost_per_sq": 900.0,
+      "tile_price_per_sq": 1587.666667,
+      "tile_total": 4763.0
+    },
+    {
+      "name": "Donald Ross Gate (North)",
+      "squares": 17.0,
+      "days": {
+        "demo": 2.0,
+        "metals_demo": 0.0,
+        "delivery": null,
+        "tile_install": 3.0,
+        "metal_install": 2.5,
+        "total_tile": 5.0
+      },
+      "tile_overhead": 4005.0,
+      "tile_overhead_per_sq": 235.5882353,
+      "base_cost_per_sq": 830.0,
+      "tile_price_per_sq": 1193.458824,
+      "tile_total": 20288.8
+    },
+    {
+      "name": "Hood Road Gate (South)",
+      "squares": 7.0,
+      "days": {
+        "demo": 1.5,
+        "metals_demo": 0.0,
+        "delivery": null,
+        "tile_install": 2.0,
+        "metal_install": 2.0,
+        "total_tile": 3.5
+      },
+      "tile_overhead": 2817.5,
+      "tile_overhead_per_sq": 402.5,
+      "base_cost_per_sq": 855.0,
+      "tile_price_per_sq": 1408.4,
+      "tile_total": 9858.8
+    }
+  ],
+  "project_blocks": {
+    "general_conditions": {
+      "components": {
+        "green_fence_telehandler": 22800.0,
+        "full_time_pm_40_days": 9000.0
+      },
+      "markup": 1.15,
+      "total": 36570.0,
+      "cell": "D19=SUM(B19:B20)*1.15",
+      "_note": "NOT included in Tim's project total K42 \u2014 quoted as its own line."
+    },
+    "sloped_add_ons": {
+      "cedar_nailer_1x3": 15000.0,
+      "polyanchor_hv": 17510.0,
+      "skylights_2x4_six": 9540.0,
+      "total": 42050.0,
+      "cell": "D22=SUM(B21:B23)"
+    },
+    "tile_add_ons": {
+      "drip_metal_4x4": 3000.0,
+      "flashings_5x7_and_stucco": 28000.0,
+      "total": 31000.0,
+      "cell": "D25=SUM(B25:B26)"
+    },
+    "metal_add_ons": {
+      "stucco_only": 20000.0,
+      "total": 20000.0,
+      "cell": "E25=B24"
+    },
+    "flat_coping_cap": {
+      "total": 8100.0,
+      "cell": "B28",
+      "applied_to": "Clubhouse Flats (3)"
+    },
+    "unexplained_flat_add": {
+      "amount": 4250.0,
+      "cell": "K33",
+      "_question_for_tim": "K33 adds a bare 4250 with no label. Permit? Mobilisation?"
+    }
+  },
+  "totals": {
+    "squares_all": 312.0,
+    "squares_sloped": 284.0,
+    "tile_project_total": 381288.15,
+    "cell": "K42=SUM(K35:K41)+K33",
+    "_warning": "K42 EXCLUDES the Clubhouse Flats (K34 = $38,480) and EXCLUDES General Conditions ($36,570). Do not treat it as the all-in project price.",
+    "metal_project_total": 430011.925
+  },
+  "known_gap_vs_our_engine": {
+    "_from": "Jarvis #430",
+    "bus_stop_3sq": {
+      "tim": 4763.0,
+      "ours": 9995.0,
+      "delta_pct": 110.0
+    },
+    "gazebo_4sq_delta_pct": 69.0,
+    "clubhouse_206sq_delta_pct": -20.6,
+    "net_delta_pct": -7.8,
+    "_cause": "~$2,500 of fixed fees AND the $2,500 profit floor apply 9 times in our engine. Tim applies neither per building \u2014 Bus Stop profit is ~$433, 10% of base+OH."
+  }
+}
