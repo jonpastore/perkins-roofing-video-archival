@@ -147,11 +147,16 @@ order of magnitude apart. **→ Tim.**
 > reading** all along. If G26 is the correct one, every stucco-metal line is **10× over**: 200 LF
 > bills **$1,800** where it should bill **$180**.
 >
-> This is no longer a dormant question, it is live exposure, so the engine now emits
-> `stucco_metal_basis_contradiction` on any quote carrying stucco metal, naming both totals. It is
-> **not** defaulted to the cheaper reading — that would quietly cut a real charge by 90% on the
-> same evidence that cannot settle it. Tim's answer changes a number already on sent quotes, so
-> this belongs in his letter with the dollar consequence attached.
+> The engine now emits `stucco_metal_basis_contradiction` on any quote carrying stucco metal,
+> naming both totals. It is **not** defaulted to the cheaper reading — that would quietly cut a
+> real charge by 90% on the same evidence that cannot settle it.
+>
+> **Realised exposure today is $0, and that is a measurement, not an assumption.** Of the 101
+> estimates in prod, **zero** carry `stucco_metal_lf > 0` — and zero have `slope_type =
+> low_slope` at all, so the entire low-slope engine has never priced a production quote. The
+> defect is live in code and config and has simply not been reached yet. That is the good case:
+> it is fixable before it is ever billed, which is exactly why it belongs in Tim's letter now
+> rather than after the first low-slope job.
 
 **G12. Hauling under-recovers on small roofs.**
 E23 ($35/sq hauling, inside the $475 polyglass base) comment: *"$800 / 25 squares"* = $32/sq. The
