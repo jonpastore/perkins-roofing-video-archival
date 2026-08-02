@@ -554,3 +554,105 @@ def test_adhered_tpo_concrete_hvhz_quote_math():
     assert base["amount"] + oh["amount"] + deck["amount"] == pytest.approx((485 + 135 + 15) * sq)
     assert result["project_total"] >= base["amount"] + oh["amount"] + deck["amount"]
     assert result["project_total"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Stockmeier 12-square minimum (#417 G2/G3) — config that existed and was never read
+# ---------------------------------------------------------------------------
+# Live sheet M29: "STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is $390 M per SQ
+# and T&M)". stockmeier_min_sq and stockmeier_under_min_material_per_sq have been in the config
+# since the low-slope wave — including in all three ACTIVE prod configs, verified 2026-08-02 —
+# and no code read either. The fixture's own _note_stockmeier_floor said it was "now enforced as
+# a warning", which is the thing these tests exist to keep true.
+
+def _stockmeier_quote(sq: float, zone: str = "HVHZ") -> QuoteInput:
+    return QuoteInput(
+        code_zone=zone,
+        roof_type="stockmeier_polyurethane_2coat",
+        num_squares=sq,
+        slope_type="low_slope",
+        project_kind="commercial",
+    )
+
+
+def test_stockmeier_under_minimum_warns():
+    r = estimate(_cfg(), _stockmeier_quote(8))
+    warns = " ".join(r.get("warnings", []))
+    assert "stockmeier_below_minimum" in warns, r.get("warnings")
+
+
+def test_stockmeier_warning_names_the_basis_change_not_just_the_size():
+    """Below 12 squares the BASIS changes to T&M. A warning that only says "small job" would
+    let someone send a per-square quote believing the number was merely conservative."""
+    r = estimate(_cfg(), _stockmeier_quote(8))
+    warn = next(w for w in r["warnings"] if w.startswith("stockmeier_below_minimum"))
+    assert "TIME AND MATERIALS" in warn
+    assert "390" in warn  # his material figure, reported
+
+
+def test_stockmeier_at_and_above_minimum_is_silent():
+    for sq in (12, 30):
+        r = estimate(_cfg(), _stockmeier_quote(sq))
+        assert not any(w.startswith("stockmeier_below_minimum") for w in r.get("warnings", [])), sq
+
+
+def test_stockmeier_floor_disabled_when_unconfigured():
+    """0/absent disables the check rather than inventing a floor — a config predating the key
+    must not start emitting a minimum nobody set."""
+    cfg = _cfg({"low_slope": {"stockmeier_min_sq": 0}})
+    r = estimate(cfg, _stockmeier_quote(8))
+    assert not any(w.startswith("stockmeier_below_minimum") for w in r.get("warnings", []))
+
+
+def test_other_low_slope_systems_do_not_trip_the_stockmeier_floor():
+    q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=8,
+                   slope_type="low_slope", project_kind="commercial")
+    r = estimate(_cfg(), q)
+    assert not any(w.startswith("stockmeier_below_minimum") for w in r.get("warnings", []))
+
+
+# ---------------------------------------------------------------------------
+# Pressure cleaning (#417 G9) — priced config that nothing could reach
+# ---------------------------------------------------------------------------
+# Sheet O1/O2: $30/sq flat, $40/sq sloped. Correct in config (and in all three ACTIVE prod
+# configs) since the low-slope wave, and `grep -rn pressure_clean core/ api/ web/src` returned
+# NOTHING — so a maintenance or clean-only job could not be quoted at all.
+
+def _pc_quote(slope_type, sq=20, **kw):
+    return QuoteInput(
+        code_zone="HVHZ",
+        roof_type="polyglass_sav_sap" if slope_type == "low_slope" else "13_tile",
+        num_squares=sq, slope_type=slope_type, project_kind="commercial", **kw)
+
+
+def _line(result, key):
+    return next((li for li in result["line_items_detail"] if li["key"] == key), None)
+
+
+def test_pressure_cleaning_absent_unless_requested():
+    assert _line(estimate(_cfg(), _pc_quote("low_slope")), "pressure_cleaning") is None
+
+
+def test_pressure_cleaning_flat_rate_on_a_low_slope_roof():
+    r = estimate(_cfg(), _pc_quote("low_slope", include_pressure_cleaning=True))
+    li = _line(r, "pressure_cleaning")
+    assert li is not None and li["per_sq"] == 30 and li["amount"] == 30 * 20
+
+
+def test_pressure_cleaning_sloped_rate_on_a_sloped_roof():
+    """The rate follows the ROOF, not the config block. O2 is the sloped rate and lives under
+    low_slope purely because that is the sheet block it was transcribed from — reading it as
+    'flat roofs only' would under-charge every sloped clean by $10/sq."""
+    r = estimate(_cfg(), _pc_quote("sloped", include_pressure_cleaning=True))
+    li = _line(r, "pressure_cleaning")
+    assert li is not None and li["per_sq"] == 40
+
+
+def test_pressure_cleaning_silent_when_unconfigured():
+    """A config predating the key must not start emitting a $0 line. Built by deleting the key
+    rather than via _cfg overrides — _deep_update MERGES dicts, so passing {} leaves the real
+    rates in place and the test would pass without proving anything."""
+    raw = _load_fixture()
+    del raw["low_slope"]["pressure_cleaning"]
+    r = estimate(load_config(raw), _pc_quote("low_slope", include_pressure_cleaning=True))
+    assert _line(r, "pressure_cleaning") is None

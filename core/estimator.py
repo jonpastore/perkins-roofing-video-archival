@@ -501,6 +501,10 @@ class QuoteInput:
     include_insulation: bool = False
     insulation_thickness: str = "1in"    # 1in | 1_5in | 2in — Tim prices board by thickness
     include_tapered: bool = False
+    #: Pressure cleaning as an add-on (sheet O1/O2: $30/sq flat, $40/sq sloped). Applies to BOTH
+    #: roof kinds — the rates live under low_slope only because that is the sheet block they were
+    #: transcribed from. Off by default: it is a line Tim adds, not one every job carries.
+    include_pressure_cleaning: bool = False
     # Plywood deck replacement — Tim's Lumber Schedule prices this per SHEET, not per square,
     # and it applies to ANY roof type (his golden proposal attaching it is a TILE re-roof), so
     # it is a fixed item, not a low_slope.deck_types entry (OI-5). The first
@@ -1123,6 +1127,15 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
         rate = config.raw["penetration_each"]
         items.append(LineItem("penetrations", "Penetrations", q.penetrations * rate, tags["penetrations"]))
 
+    if q.include_pressure_cleaning:
+        # Rate follows the ROOF's slope, not the config block the value is stored in.
+        pc_rate = config.pressure_cleaning_per_sq(q.slope_type)
+        if pc_rate:
+            items.append(LineItem(
+                "pressure_cleaning", "Pressure Cleaning", pc_rate * q.num_squares,
+                tags.get("pressure_cleaning", "Labor"), pc_rate,
+            ))
+
     if q.ridge_vent_lf:
         rate = config.raw["ridge_vent_per_lf"]
         items.append(LineItem("ridge_vents", "Ridge Vents", q.ridge_vent_lf * rate, tags["ridge_vents"]))
@@ -1511,6 +1524,27 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
             warnings.append(
                 f"coating_demo_not_in_price: {q.roof_type} is an all-in price that EXCLUDES demo "
                 "(Tim's sheet says add $100/sq). Confirm the demo charge — pending Tim."
+            )
+
+    # Stockmeier's 12-square minimum (live sheet M29: "min. 12 SQ job (less than 12 SQ is $390 M
+    # per SQ and T&M)"). Both config keys have existed since the low-slope wave and neither was
+    # ever read, while the fixture note claimed this was "now enforced as a warning" — so an
+    # 8-square job quoted the flat all-in rate with nothing said.
+    #
+    # Warn rather than price it: below the minimum Tim's basis changes from per-square to time-
+    # and-materials, and T&M is not a number the engine can derive. $390 is his MATERIAL rate, not
+    # a total, so substituting it would look like a price and be one input short of being one.
+    if q.slope_type == "low_slope" and (q.roof_type or "").startswith("stockmeier"):
+        _min_sq = config.stockmeier_min_sq()
+        if _min_sq and q.num_squares < _min_sq:
+            _mat = config.stockmeier_under_min_material_per_sq()
+            warnings.append(
+                f"stockmeier_below_minimum: {q.num_squares:g} squares is under Tim's {_min_sq:g}-square "
+                f"Stockmeier minimum, where the job is TIME AND MATERIALS, not the per-square rate "
+                f"quoted here"
+                + (f" (his material figure below the minimum is ${_mat:g}/sq, materials only)"
+                   if _mat else "")
+                + ". This quote's basis is wrong, not just its total — price it T&M before sending."
             )
 
     # Crane flag (Tim, email 2026-07-27 20:24: ">2.5 stories"). The hard manual-review raise stays

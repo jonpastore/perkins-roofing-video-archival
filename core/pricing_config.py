@@ -702,6 +702,41 @@ class PricingConfig:
             val = (self.raw.get("low_slope") or {}).get("crane_threshold_stories")
         return float(val if val is not None else 3)
 
+    def pressure_cleaning_per_sq(self, slope_type: str) -> float:
+        """Pressure-cleaning rate per square: $30 flat, $40 sloped (sheet O1/O2).
+
+        Priced and correct since the low-slope wave and completely unreachable — a grep for
+        ``pressure_clean`` across core/, api/ and web/src returned nothing, so a maintenance or
+        clean-only job could not be quoted at all. Values live under ``low_slope`` because that is
+        the sheet block they came from, NOT because they only apply to flat roofs: O2 is the
+        SLOPED rate. That mismatch between where a value is stored and what it varies by is this
+        project's recurring defect, so read it through here rather than reaching into the block.
+
+        0 when unconfigured — the line is then simply not emitted.
+        """
+        pc = (self.raw.get("low_slope") or {}).get("pressure_cleaning") or {}
+        key = "flat" if slope_type == "low_slope" else "sloped"
+        return float(pc.get(key) or 0)
+
+    def stockmeier_min_sq(self) -> float:
+        """Job size below which Stockmeier polyurethane is time-and-materials, not per-square.
+
+        Live low-slope sheet M29: "STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is
+        $390 M per SQ and T&M)". Both this and ``stockmeier_under_min_material_per_sq`` have sat
+        in the config since the low-slope wave and NOTHING read either one — while the fixture's
+        own ``_note_stockmeier_floor`` claimed it was "now enforced as a warning". It was not.
+        An 8-square Stockmeier job quoted the flat all-in rate: wrong number AND wrong basis.
+
+        0 when unconfigured, which disables the check rather than inventing a floor.
+        """
+        return float((self.raw.get("low_slope") or {}).get("stockmeier_min_sq") or 0)
+
+    def stockmeier_under_min_material_per_sq(self) -> float:
+        """Material-only rate Tim quotes below the Stockmeier minimum ($390/sq). Reported, never
+        priced — the rest of that job is T&M, which the engine cannot compute."""
+        return float((self.raw.get("low_slope") or {})
+                     .get("stockmeier_under_min_material_per_sq") or 0)
+
     def low_slope_not_hvhz_deck_types(self) -> dict[str, str]:
         """Deck-type keys -> restriction text, for low-slope deck systems Tim's sheet marks as
         not legal in HVHZ (e.g. "BUR Wood (WB-3000 Primer) - not HVHZ (1 story only)").
