@@ -148,6 +148,10 @@ class QuoteRequest(BaseModel):
     accessibility_flat: Optional[float] = Field(default=None, ge=0)
     waterfront: bool = False   # salt exposure -> gate the COASTAL package
     roof_height: Literal["1_story", "2_stories", "3_5_stories", "6_plus"] = "1_story"
+    #: Poor access to part of the roof (a back slope the truck cannot reach, a tight lot). Feeds
+    #: the DAY model only — accessibility_flat is the money field. #436: the single feature that
+    #: moved the day model most, 83% -> 90% of homes within a day of Tim's own booked days.
+    access_difficult: bool = False
     tile_pointing: Literal["no", "yes"] = "no"
     specialty_tile: Optional[str] = None
     project_kind: Literal["residential", "commercial"] = "residential"
@@ -372,6 +376,7 @@ def _quote_input_from_request(body, cfg_row, db, claims):
         accessibility_flat=body.accessibility_flat,
         waterfront=body.waterfront,
         roof_height=body.roof_height,
+        access_difficult=body.access_difficult,
         tile_pointing=body.tile_pointing,
         specialty_tile=body.specialty_tile,
         project_kind=body.project_kind,

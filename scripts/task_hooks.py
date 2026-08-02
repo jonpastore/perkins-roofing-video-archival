@@ -108,14 +108,23 @@ def changed_files(sha: str = "HEAD") -> list[str]:
     return [f for f in out.stdout.split("\n") if f.strip()]
 
 
+#: The tree CI lints (`ruff check core adapters api jobs` in .github/workflows/ci.yml). The hook
+#: MUST mirror it. Linting more than CI does means a commit that CI would pass gets its task held
+#: at 90%, and a gate that fires on work the repo does not gate is noise — which is how a hook
+#: gets ignored, and an ignored hook is the rule it replaced. Found by using it: the #436 commit
+#: touched scripts/, which carries pre-existing lint debt CI has never enforced.
+_LINTED_ROOTS = ("core/", "adapters/", "api/", "jobs/")
+
+
 def cheap_gates(files: list[str]) -> tuple[bool, str]:
-    """Lint the changed Python. Fast (~1s) and a genuine signal: code that does not lint is not done.
+    """Lint the changed Python that CI lints. Fast (~1s), and a genuine signal.
 
     Deliberately NOT the coverage gate — R7. CI runs that on every push and is the real verdict.
     """
-    py = [f for f in files if f.endswith(".py") and Path(f).exists()]
+    py = [f for f in files
+          if f.endswith(".py") and f.startswith(_LINTED_ROOTS) and Path(f).exists()]
     if not py:
-        return True, "no python changed"
+        return True, "no CI-linted python changed"
     ruff = Path(".venv/bin/ruff")
     if not ruff.exists():
         return True, "ruff not installed — skipped"

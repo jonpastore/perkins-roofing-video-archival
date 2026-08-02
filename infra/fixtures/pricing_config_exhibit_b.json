@@ -197,7 +197,8 @@
         "loo_r2": 0.662,
         "requires": [
           "eaves"
-        ]
+        ],
+        "access": 0.51359
       },
       "tile": {
         "intercept": 0.5478,
@@ -207,7 +208,8 @@
         "ridges": 0.012978,
         "rakes": 0.010716,
         "wall_flash": 0.001379,
-        "loo_r2": 0.825
+        "loo_r2": 0.825,
+        "access": 0.746911
       },
       "shingle": {
         "intercept": 0.7963,
@@ -218,7 +220,8 @@
         "loo_r2": 0.563,
         "requires": [
           "squares"
-        ]
+        ],
+        "access": 0.225064
       },
       "metal": {
         "intercept": 0.8548,
@@ -227,14 +230,16 @@
         "valleys": 0.00525,
         "ridges": 0.008518,
         "rakes": 0.013001,
-        "loo_r2": 0.883
+        "loo_r2": 0.883,
+        "access": 0.33943
       }
     },
     "pitch_day_adder": {
       "threshold": 6,
       "days": 0.5,
       "_note": "Steep-roof day adder. Tim books more time than the geometry model predicts on steep roofs: measured residual -0.29 days at <=4/12, +0.03 at 5/12, +0.64 at >=6/12 across his 29 homes. Applied to the INSTALL series only, once per job. A threshold rule rather than a fitted coefficient because only 7 of the 29 homes are >=6/12 and pitch as a regressor made every install series worse out-of-sample. NO homes in the sample are >=7/12, where Tim's own sheet says cost jumps ($305/sq tile adder) \u2014 revisit when he labels steeper roofs."
-    }
+    },
+    "_note_access_term": "#436, 2026-08-02. `access` = 1 when QuoteInput.access_difficult, else 0. Fitted per series on Tim's 29 RoofR homes joined to his 30-home sheet's access_issue flag. Tim, 2026-07-27: 'if there's a back roof that has very poor access ... you're going to work slower.' MEASURED with the feature set FROZEN and coefficients + the steep rule refit inside each LOO fold: geometry only 83% within a day (MAE 0.672), +access 90% (MAE 0.586). +stories scored 86% and +stories+access 90% at a WORSE MAE (0.603), so access alone ships: same top score, lowest MAE, fewest features, and it won 14 of 29 folds when the set was chosen per fold. NOTE the nested estimate of the whole choose-a-feature-set PROCEDURE is 86%, so the truth for this shipped model is between 86 and 90 - picking the best of four arms on 29 homes is itself worth something. STILL SHORT of Tim's 95%: with n=29 one home is 3.4 points, so the binding constraint is DATA, not features. He offered another 20 homes on the 7/27 call; that is the cheapest next move."
   },
   "profit_mode_default": "scale",
   "weekly_profit_floor": 2500,

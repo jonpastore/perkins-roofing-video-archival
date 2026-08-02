@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections import Counter
 
 import scripts.honest_day_model_cv as H
@@ -89,7 +90,40 @@ def best_pool_on(train, subset):
     return best[1], best[2]
 
 
+def frozen_scores():
+    """Score each candidate with the FEATURE SET FROZEN across folds.
+
+    The 86% headline is the score of a PROCEDURE that re-chooses the feature set per fold, and the
+    folds disagree (access 14, stories 8, both 7). Shipping one fixed set and quoting 86% would be
+    the same in-sample selection that turned "93%" into 83% — one level up. This is the number a
+    SHIPPED model may claim: set fixed, coefficients and steep rule still refit per fold.
+    """
+    homes = joined_homes()
+    usable = usable_pairs(homes)
+    print(f"\nFROZEN feature set (coefficients + steep rule still refit per fold), n={len(usable)}")
+    rows = []
+    for pool in CANDIDATES:
+        errors = []
+        for home, series in usable:
+            train = [x for x in homes if x is not home and "stories" in x]
+            subset = [(a, b) for a, b in usable if a is not home]
+            H.POOL = pool
+            rule = H.choose_rule(train, subset)
+            errors.append(H.predict(H.fit_series(train, series), H.fit_series(train, "demo"),
+                                    home, *rule) - H.tim_total(home, series))
+        mae, w1, wh = H.score(errors)
+        label = "+".join(pool[len(BASE):]) or "geometry only (shipped)"
+        rows.append((w1, mae, label))
+        print(f"   {label:<28} MAE {mae:.3f} d | within 1 day {w1:.0f}% | within 0.5 {wh:.0f}%")
+    best = max(rows)
+    print(f"\n   BEST FROZEN: {best[2]} at {best[0]:.0f}% within a day")
+    return best
+
+
 def main():
+    if "--frozen" in sys.argv:
+        frozen_scores()
+        return
     homes = joined_homes()
     usable = usable_pairs(homes)
     errors, chosen = [], []

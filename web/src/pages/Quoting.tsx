@@ -689,6 +689,10 @@ export function Quoting() {
   // and the specialty-tile upgrades were never sent at all.
   const [quoteRoofCutsPerSq, setQuoteRoofCutsPerSq] = useState("");
   const [quoteAccessibilityFlat, setQuoteAccessibilityFlat] = useState("");
+  // #436 — poor access costs TIME, separately from the flat dollars above. It is the single
+  // feature that moved the day model most: 83% -> 90% of Tim's homes within a day of his own
+  // booked days. Feeds the day model only; it never touches a rate.
+  const [quoteAccessDifficult, setQuoteAccessDifficult] = useState(false);
   const [quoteWaterfront, setQuoteWaterfront] = useState(false);
   // Mixed roofs: 9 of the 30 homes Tim sent have a flat section, up to 34% of the roof, and it was
   // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
@@ -1211,6 +1215,7 @@ export function Quoting() {
       roof_cuts: quoteRoofCuts,
       roof_cuts_per_sq: quoteRoofCutsPerSq.trim() === "" ? undefined : Number(quoteRoofCutsPerSq),
       accessibility_flat: quoteAccessibilityFlat.trim() === "" ? undefined : Number(quoteAccessibilityFlat),
+      access_difficult: quoteAccessDifficult,
       waterfront: quoteWaterfront,
       base_tile_brand: baseTileBrand || undefined,
       roof_height: quoteRoofHeight,
@@ -2168,6 +2173,15 @@ export function Quoting() {
                   Tim, 7/27: there is no set price — enter what the delivery company or sub
                   actually charges for handloading or hand-demo.
                 </div>
+                {/* The TIME half of the same problem. The dollars above are what a sub charges;
+                    this is the crew working slower, and it is a different number. */}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8,
+                                fontSize: 12, color: BRAND.sub, cursor: "pointer" }}
+                       title="Tim, 7/27: a back roof with very poor access means the crew works slower. Adds fitted crew DAYS (tile +0.75, demo +0.51, metal +0.34, shingle +0.23) — never a rate.">
+                  <input type="checkbox" checked={quoteAccessDifficult}
+                         onChange={(e) => { setQuoteAccessDifficult(e.target.checked); setInputsDirty(true); }} />
+                  Poor access — crew works slower (adds days)
+                </label>
               </div>
               <div>
                 <FieldLabel>Waterfront / salt exposed</FieldLabel>

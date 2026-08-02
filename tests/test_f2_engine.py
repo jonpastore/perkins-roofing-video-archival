@@ -1452,3 +1452,61 @@ def test_classification_carries_no_pricing_value():
             continue
         assert "_scope" not in value, f"{key} carries an inline _scope; use the top-level map"
     json.dumps(raw)  # still serialisable
+
+
+# ---------------------------------------------------------------------------
+# #436 — poor access adds crew DAYS, and only days.
+#
+# Tim, 2026-07-27: "if there's a back roof that has very poor access ... you're going to work
+# slower." Fitted per series on his 29 RoofR homes joined to the access_issue flag on his 30-home
+# sheet. Measured with the feature set FROZEN and coefficients + steep rule refit inside each LOO
+# fold: geometry only 83% of homes within a day of Tim's booked days, +access 90% (MAE 0.672 ->
+# 0.586). Still short of his 95%, and with n=29 one home is worth 3.4 points — the binding
+# constraint is data, not features.
+# ---------------------------------------------------------------------------
+
+def _cuts_quote(cfg, **over):
+    from core.estimator import QuoteInput
+    base = dict(code_zone="HVHZ", slope_type="sloped", roof_type="13_tile", num_squares=30.0,
+                overhead_mode="daily", existing_roof="tile",
+                eaves_lf=299, hips_lf=142, ridges_lf=103, valleys_lf=88, rakes_lf=61,
+                wall_flashings_lf=40)
+    base.update(over)
+    return QuoteInput(**base)
+
+
+def test_poor_access_adds_days(cfg: PricingConfig):
+    from core.estimator import derive_daily_series
+    easy = {s.series: s.days for s in derive_daily_series(cfg, _cuts_quote(cfg))}
+    hard = {s.series: s.days for s in derive_daily_series(cfg, _cuts_quote(cfg,
+                                                                          access_difficult=True))}
+    assert sum(hard.values()) > sum(easy.values()), (
+        f"a hard-access roof must book more crew days: {easy} vs {hard}")
+
+
+def test_access_moves_days_not_the_per_square_price(cfg: PricingConfig):
+    """It is a TIME feature. accessibility_flat is the money field; this must not touch a rate."""
+    r_easy = estimate(cfg, _cuts_quote(cfg))
+    r_hard = estimate(cfg, _cuts_quote(cfg, access_difficult=True))
+    # Overhead is time-driven, so the total legitimately moves...
+    assert r_hard["project_total"] >= r_easy["project_total"]
+    # ...but the base cost per square is a rate and must be untouched.
+    def base_per_sq(r):
+        return next(li["per_sq"] for li in r["line_items_detail"] if li["key"] == "base_cost_lm")
+    assert base_per_sq(r_hard) == base_per_sq(r_easy)
+
+
+def test_access_alone_does_not_trigger_the_geometry_model(cfg: PricingConfig):
+    """`access` is a MODEL term, not a GEOMETRY term. A quote with no cut LFs must still use the
+    squares-only fit — evaluating the geometry model with every complexity term at zero reads as
+    the simplest possible roof and under-quotes the days."""
+    from core.estimator import derive_daily_series
+    no_cuts = dict(code_zone="HVHZ", slope_type="sloped", roof_type="13_tile", num_squares=30.0,
+                   overhead_mode="daily", existing_roof="tile")
+    from core.estimator import QuoteInput
+    plain = {s.series: s.days for s in derive_daily_series(cfg, QuoteInput(**no_cuts))}
+    hard = {s.series: s.days
+            for s in derive_daily_series(cfg, QuoteInput(**no_cuts, access_difficult=True))}
+    # Same squares-only fit both ways: no cut measurements means no geometry model, and the
+    # access coefficient lives in the geometry model.
+    assert plain == hard, f"access must not switch a cut-less quote onto the geometry model: {plain} vs {hard}"
