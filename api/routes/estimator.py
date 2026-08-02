@@ -315,10 +315,16 @@ def _quote_input_from_request(body, cfg_row, db, claims):
         # `if m.pitched_sq` is truthy, not `is not None`: a measurement may legitimately record
         # `pitched_sq = 0` (a flat-only building), and assigning that would bypass the
         # `num_squares: Field(..., gt=0)` boundary guarantee and raise deeper in the engine.
-        if effective_slope_type == "sloped" and m.pitched_sq:
+        # RECORDED is not the same as NON-ZERO. A flat-only building legitimately records
+        # pitched_sq = 0 (prod #16: 0 pitched / 12.67 flat), and that roof's split IS known — it
+        # must not be reported as unknown, and assigning 0 to num_squares would bypass the
+        # `gt=0` bound the field carries and fail deeper in the engine. So: `is not None` decides
+        # whether we KNOW, and truthiness decides whether we can OVERRIDE.
+        split_recorded = m.pitched_sq is not None
+        if effective_slope_type == "sloped" and split_recorded and m.pitched_sq:
             num_squares = m.pitched_sq
             flat_squares = m.flat_sq or 0.0
-        elif effective_slope_type == "sloped" and flat_squares:
+        elif effective_slope_type == "sloped" and not split_recorded and flat_squares:
             raise HTTPException(422, detail={
                 "message": (
                     "this measurement has no recorded pitched/flat split, so a separate flat "
@@ -337,8 +343,9 @@ def _quote_input_from_request(body, cfg_row, db, claims):
         else:
             # No flat figure was offered, so nothing can double-count. The quote proceeds — but if
             # total_sq DID include a flat section it is now priced at the sloped rate, so say so
-            # rather than let it pass unremarked.
-            split_unknown = True
+            # rather than let it pass unremarked. Only when the split is genuinely UNRECORDED:
+            # a recorded 0-pitched roof is known, not unknown.
+            split_unknown = not split_recorded
 
     # Build QuoteInput kwargs. The headline quote keeps the FLAT base (Tim's standard pricing) —
     # the cut-adjusted base is shown alongside it in the cut_calc reference block below and Tim
