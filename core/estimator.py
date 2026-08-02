@@ -109,6 +109,13 @@ def compute_daily_overhead(
 # homes, eaves lifts DEMO from 0.363 to 0.662 leave-one-out (tear-off and haul-away scale with the
 # eave line) while making tile and metal slightly worse, so only demo carries an eaves coefficient.
 _GEOMETRY_TERMS = ("squares", "hips", "valleys", "ridges", "rakes", "wall_flash", "eaves")
+#: The full regressor list. `access` is a MODEL term but deliberately NOT a GEOMETRY term: the
+#: has_geometry test below asks "does this quote carry cut measurements?", and a hard-access roof
+#: with no cut LFs must still fall back to the squares-only fit rather than evaluate the geometry
+#: model with every complexity term at zero (which reads as the simplest possible roof).
+#: #436, measured on Tim's 29 homes with the feature set FROZEN and coefficients + steep rule
+#: refit inside each fold: geometry only 83% within a day, +access 90% (MAE 0.672 -> 0.586).
+_MODEL_TERMS = (*_GEOMETRY_TERMS, "access")
 
 
 def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOverheadSeries]:
@@ -147,6 +154,10 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
         "squares": q.num_squares, "hips": q.hips_lf, "valleys": q.valleys_lf,
         "ridges": q.ridges_lf, "rakes": q.rakes_lf, "wall_flash": q.wall_flashings_lf,
         "eaves": q.eaves_lf,
+        # Tim, 2026-07-27: "if there's a back roof that has very poor access ... you're going to
+        # work slower". Fitted per series — tile +0.75 d, demo +0.51, metal +0.34, shingle +0.23,
+        # which orders exactly by how much material has to be carried.
+        "access": 1.0 if q.access_difficult else 0.0,
     }
     # Geometry only applies when the quote actually carries cut measurements; squares alone
     # would silently evaluate the geometry model with every complexity term at zero, which
@@ -167,7 +178,7 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
         if has_geometry and coef:
             raw = float(coef.get("intercept", 0.0)) + sum(
                 float(coef.get(term, 0.0) or 0.0) * float(geom_inputs[term])
-                for term in _GEOMETRY_TERMS)
+                for term in _MODEL_TERMS)
         else:
             fit = fits.get(name)
             if not fit:
@@ -466,6 +477,10 @@ class QuoteInput:
     # that says WHEN to reach for it.
     waterfront: bool = False
     roof_height: str = "1_story"         # 1_story | 2_stories | 3_5_stories | 6_plus
+    #: Poor access to some part of the roof — a back slope the truck cannot reach, a tight lot.
+    #: Feeds the DAY model only (never a price adder; accessibility_flat is the money field).
+    #: The single feature that moved the day model most in #436.
+    access_difficult: bool = False
     tile_pointing: str = "no"            # no | yes
     specialty_tile: Optional[str] = None
     project_kind: str = "residential"    # residential | commercial
