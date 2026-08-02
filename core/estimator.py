@@ -117,6 +117,11 @@ _GEOMETRY_TERMS = ("squares", "hips", "valleys", "ridges", "rakes", "wall_flash"
 #: refit inside each fold: geometry only 83% within a day, +access 90% (MAE 0.672 -> 0.586).
 _MODEL_TERMS = (*_GEOMETRY_TERMS, "access")
 
+#: roof_height band -> the SMALLEST storey count consistent with it. A band cannot answer "how
+#: many storeys", so anything that needs a count (crane threshold, trash-chute sections) takes the
+#: floor and says so. Choosing the floor means an unknown never over-bills.
+_STOREY_FLOOR = {"1_story": 1, "2_stories": 2, "3_5_stories": 3, "6_plus": 6}
+
 
 def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOverheadSeries]:
     """Auto-fill labor days per series, preferring the ROOF GEOMETRY model.
@@ -508,6 +513,14 @@ class QuoteInput:
     #: Polyglass warranty upgrade key (see low_slope.polyglass_warranty_upgrades) — 20/25/30-year
     #: systems, priced as a per-square adder over the base. None = the base warranty.
     warranty_upgrade: Optional[str] = None
+    #: Actual storey count. roof_height is a BAND ("3_5_stories"), which cannot answer "how many
+    #: trash-chute sections". None = fall back to the band's floor and say so in a warning.
+    stories: Optional[int] = None
+    #: Silicone add-on keys (see low_slope.silicone_addons) — granules, traffic coat, TPO primer.
+    silicone_addons: list[str] = field(default_factory=list)
+    #: Detail-item key -> quantity, in the sheet's own unit (each / 10' piece / square / LF).
+    #: See low_slope.detail_items.
+    detail_items: dict[str, float] = field(default_factory=dict)
     # Plywood deck replacement — Tim's Lumber Schedule prices this per SHEET, not per square,
     # and it applies to ANY roof type (his golden proposal attaching it is a TILE re-roof), so
     # it is a fixed item, not a low_slope.deck_types entry (OI-5). The first
@@ -1130,6 +1143,31 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
         rate = config.raw["penetration_each"]
         items.append(LineItem("penetrations", "Penetrations", q.penetrations * rate, tags["penetrations"]))
 
+    for _addon in q.silicone_addons:
+        _rates = config.silicone_addons()
+        _rate = _rates.get(_addon)
+        if _rate is None:
+            raise ConfigError(
+                f"silicone add-on {_addon!r} is not priced for this config. "
+                f"Known add-ons: {', '.join(sorted(_rates)) or 'none configured'}."
+            )
+        items.append(LineItem(f"silicone_addon_{_addon}", _addon.replace("_", " ").title(),
+                              _rate * q.num_squares, tags.get("silicone_addons", "Materials"),
+                              _rate))
+
+    for _key, _qty in (q.detail_items or {}).items():
+        if not _qty:
+            continue
+        _rates = config.low_slope_detail_items()
+        _rate = _rates.get(_key)
+        if _rate is None:
+            raise ConfigError(
+                f"detail item {_key!r} is not priced for this branch's config. "
+                f"Known detail items: {', '.join(sorted(_rates)) or 'none configured'}."
+            )
+        items.append(LineItem(f"detail_{_key}", _key.replace("_", " ").title(),
+                              _rate * _qty, tags.get("detail_items", "Materials")))
+
     if q.include_pressure_cleaning:
         # Rate follows the ROOF's slope, not the config block the value is stored in.
         pc_rate = config.pressure_cleaning_per_sq(q.slope_type)
@@ -1550,11 +1588,38 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
                 + ". This quote's basis is wrong, not just its total — price it T&M before sending."
             )
 
+    # Stucco metal: Tim's sheet gives the SAME adder twice, an order of magnitude apart. D29 (the
+    # polyglass block) says "Add $9 per LF for stucco metal / L flashing"; G26 (the TPO block) says
+    # "$9 per 10 LF". We bill per LF, so if G26 is the right reading every stucco line is 10x over
+    # — 200 LF bills $1,800 where it should bill $180. The comment audit recorded this as "neither
+    # is implemented"; one of them very much is, which is why this warns instead of staying a note.
+    # Not defaulted to the cheaper reading either: that would quietly cut a real charge by 90%.
+    if q.stucco_metal_lf:
+        _rate = config.raw.get("stucco_metal_per_lf")
+        warnings.append(
+            f"stucco_metal_basis_contradiction: billing {q.stucco_metal_lf:g} LF x ${_rate:g}/LF = "
+            f"${q.stucco_metal_lf * float(_rate or 0):,.2f}. Tim's sheet states this adder twice and "
+            f"disagrees with itself by 10x — D29 '$9 per LF' (polyglass block) vs G26 '$9 per 10 LF' "
+            f"(TPO block). On the G26 reading this line should be "
+            f"${q.stucco_metal_lf * float(_rate or 0) / 10:,.2f}. Confirm the basis before sending "
+            "— pending Tim."
+        )
+
+    # Trash-chute sections were computed from a storey BAND, not a count (see _build_low_slope).
+    if q.roof_height == "3_5_stories" and not q.stories:
+        _per_story, _per_section = config.trash_chute_sections()
+        if _per_story and _per_section:
+            warnings.append(
+                f"trash_chute_storeys_assumed: '3_5_stories' is a band, so the chute sections were "
+                f"priced at {_STOREY_FLOOR['3_5_stories']:g} storeys — the smallest the band allows, "
+                f"at ${_per_story * _per_section:g}/storey. A 5-storey job is under-billed by "
+                f"${_per_story * _per_section * 2:g}. Set `stories` to bill the real count."
+            )
+
     # Crane flag (Tim, email 2026-07-27 20:24: ">2.5 stories"). The hard manual-review raise stays
     # at 6+; a 3-5 storey job still quotes (trash chute / $1,200 flat add) and until now carried no
     # crane signal at all, because the configured threshold of 3 was never read by anything.
-    _storey_floor = {"1_story": 1, "2_stories": 2, "3_5_stories": 3, "6_plus": 6}
-    _stories = _storey_floor.get(q.roof_height or "")
+    _stories = q.stories or _STOREY_FLOOR.get(q.roof_height or "")
     if _stories is not None and _stories >= config.crane_threshold_stories():
         warnings.append(
             f"crane_likely: {q.roof_height.replace('_', ' ')} is at or above the "
@@ -1846,6 +1911,18 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     if q.roof_height == "3_5_stories":
         flat_add = config.raw["low_slope"]["trash_chute_flat_add"]
         items.append(LineItem("trash_chute", "Trash Chute", flat_add, "Labor"))
+        # E18 reads "$1,500 + sections"; its comment: "3 sections of trash chute per story —
+        # charge $100 per section". Only the flat part was ever billed, so a 5-storey job paid a
+        # 3-storey chute. Additive, per the cell's own "+".
+        per_story, per_section = config.trash_chute_sections()
+        if per_story and per_section:
+            # roof_height is a BAND. Without an explicit count, use its floor — the smallest
+            # number consistent with the band, so an unknown never over-bills. estimate() warns.
+            storeys = q.stories if q.stories else _STOREY_FLOOR.get(q.roof_height, 3)
+            items.append(LineItem(
+                "trash_chute_sections", "Trash Chute Sections",
+                per_story * per_section * storeys, "Labor",
+            ))
 
     height_val = config.raw["roof_height"].get(q.roof_height)
     if height_val:

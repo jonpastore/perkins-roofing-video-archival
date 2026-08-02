@@ -568,7 +568,27 @@
       "sav_plus_3ply_25yr": 175,
       "polyfresko_sav_plus_30yr": 315
     },
-    "_note_polyglass_warranty_upgrades": "Sheet E26-E28 + E28's comment. Stored as ADDERS over the polyglass base, not as the totals the old prose note recorded (650/555/790): those were HVHZ-base-475 results and could not be applied to FBC. 475+80=555, +175=650, +315=790 — the note's own numbers, reconciled. sav_plus_2ply (+$65) is from E28's comment and was never in that note at all. ⚠️ PROD CONFIGS DO NOT CARRY THIS KEY YET (checked 2026-08-02: jupiter v29 / miami v30 / naples v29). Until they are updated, a warranty_upgrade request raises rather than mispricing — the engine will not silently quote the base warranty at an upgrade's price."
+    "_note_polyglass_warranty_upgrades": "Sheet E26-E28 + E28's comment. Stored as ADDERS over the polyglass base, not as the totals the old prose note recorded (650/555/790): those were HVHZ-base-475 results and could not be applied to FBC. 475+80=555, +175=650, +315=790 — the note's own numbers, reconciled. sav_plus_2ply (+$65) is from E28's comment and was never in that note at all. ⚠️ PROD CONFIGS DO NOT CARRY THIS KEY YET (checked 2026-08-02: jupiter v29 / miami v30 / naples v29). Until they are updated, a warranty_upgrade request raises rather than mispricing — the engine will not silently quote the base warranty at an upgrade's price.",
+    "trash_chute_sections_per_story": 3,
+    "trash_chute_per_section": 100,
+    "_note_trash_chute_sections": "E18 reads '$1,500 + sections'; its comment: '3 sections of trash chute per story - charge $100 per section'. Only the $1,500 was ever billed, so a 5-storey job paid a 3-storey chute. Additive per the cell's own '+'. roof_height is a BAND, so without an explicit `stories` the engine bills the band's FLOOR (3) and warns — an unknown must never over-bill.",
+    "silicone_addons": {
+      "granules": 50,
+      "traffic_coat_1coat": 225,
+      "tpo_primer": 25
+    },
+    "_note_silicone_addons": "N25 Add Granules $50/sq (M $20); N26 Traffic Coat 1 coat $225/sq (M $85); L27 'for TPO add $25 for TPO primer'. L27's EXTRA-COAT price is deliberately absent: it reads '$100 per extra coat (L, OH & P) + M' and never says what M is, so the number is incomplete and pricing it would invent Tim's material cost. -> Tim.",
+    "detail_items": {
+      "penetration_flashing": 70,
+      "l_metal_galv_10ft": 85,
+      "term_bar_counter_flashing_10ft": 90,
+      "scupper_drain_detail": 350,
+      "alum_coping_cap_10ft": 250,
+      "third_ply_sav_fr_20yr": 25,
+      "additional_demo_layer": 35,
+      "flashing_valley_metal_oh_per_lf": 2.3
+    },
+    "_note_detail_items": "Overhead-tab detail list, JUPITER column. Units are the sheet's own: per each (penetration, scupper), per 10' piece (L metal, term bar, coping cap), per square (3rd ply, extra demo layer), per LF (flashing OH). Miami differs on two: penetration_flashing 75 and third_ply_sav_fr_20yr 43. That split is expressed by MIAMI'S OWN CONFIG holding those values - pricing_configs is already keyed by branch, so nesting a branch dimension in here would be the 'config keys shaped by source, not dimension' defect. NAPLES: Tim's sheet has no Naples column. Its config carries Jupiter's numbers, which is what every other key already does (all three configs are byte-identical today) - but it is an assumption, not his data. -> Tim."
   },
   "plywood_replacement": {
     "per_sheet": {

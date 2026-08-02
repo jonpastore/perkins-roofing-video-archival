@@ -743,3 +743,110 @@ def test_warranty_upgrade_on_a_config_without_the_key_raises():
     del raw["low_slope"]["polyglass_warranty_upgrades"]
     with pytest.raises(ConfigError):
         estimate(load_config(raw), _poly_quote("polyfresko_20yr"))
+
+
+# ---------------------------------------------------------------------------
+# Trash-chute sections (G6), silicone add-ons (G13), detail items (G10),
+# stucco-metal contradiction (G11)
+# ---------------------------------------------------------------------------
+
+def _chute_quote(stories=None, height="3_5_stories"):
+    return QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                      slope_type="low_slope", project_kind="commercial",
+                      roof_height=height, stories=stories)
+
+
+def test_trash_chute_sections_billed_per_storey():
+    r = estimate(_cfg(), _chute_quote(stories=5))
+    assert _line(r, "trash_chute")["amount"] == 1500          # flat part unchanged
+    assert _line(r, "trash_chute_sections")["amount"] == 3 * 100 * 5
+
+
+def test_trash_chute_without_a_storey_count_uses_the_band_floor_and_warns():
+    """roof_height is a BAND. Billing its floor means an unknown under-bills rather than
+    over-bills, and the warning says by how much so nobody has to work it out."""
+    r = estimate(_cfg(), _chute_quote())
+    assert _line(r, "trash_chute_sections")["amount"] == 3 * 100 * 3
+    warn = next(w for w in r["warnings"] if w.startswith("trash_chute_storeys_assumed"))
+    assert "under-billed by $600" in warn
+
+
+def test_trash_chute_sections_absent_below_the_band():
+    r = estimate(_cfg(), _chute_quote(height="2_stories"))
+    assert _line(r, "trash_chute_sections") is None
+
+
+def test_trash_chute_sections_silent_when_unconfigured():
+    raw = _load_fixture()
+    del raw["low_slope"]["trash_chute_sections_per_story"]
+    r = estimate(load_config(raw), _chute_quote(stories=5))
+    assert _line(r, "trash_chute_sections") is None
+    assert _line(r, "trash_chute")["amount"] == 1500
+
+
+@pytest.mark.parametrize("key,rate", [
+    ("granules", 50), ("traffic_coat_1coat", 225), ("tpo_primer", 25)])
+def test_silicone_addons_price_per_square(key, rate):
+    q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=20,
+                   slope_type="low_slope", project_kind="commercial", silicone_addons=[key])
+    r = estimate(_cfg(), q)
+    assert _line(r, f"silicone_addon_{key}")["amount"] == rate * 20
+
+
+def test_extra_coat_is_not_priced_because_its_material_half_is_unspecified():
+    """L27 reads "$100 per extra coat (L, OH & P) + M" and never says what M is. Pricing it would
+    invent Tim's material cost, so the key must not exist."""
+    assert "extra_coat" not in _cfg().silicone_addons()
+
+
+def test_unknown_silicone_addon_raises():
+    from core.estimator import ConfigError
+    q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=20,
+                   slope_type="low_slope", project_kind="commercial",
+                   silicone_addons=["gold_flakes"])
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), q)
+
+
+def test_detail_items_price_in_the_sheets_own_units():
+    q = QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                   slope_type="low_slope", project_kind="commercial",
+                   detail_items={"penetration_flashing": 4, "scupper_drain_detail": 2,
+                                 "flashing_valley_metal_oh_per_lf": 100})
+    r = estimate(_cfg(), q)
+    assert _line(r, "detail_penetration_flashing")["amount"] == 70 * 4
+    assert _line(r, "detail_scupper_drain_detail")["amount"] == 350 * 2
+    assert _line(r, "detail_flashing_valley_metal_oh_per_lf")["amount"] == 230
+
+
+def test_detail_items_absent_by_default_and_zero_quantities_skipped():
+    r = estimate(_cfg(), QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                                    slope_type="low_slope", project_kind="commercial",
+                                    detail_items={"penetration_flashing": 0}))
+    assert _line(r, "detail_penetration_flashing") is None
+
+
+def test_unknown_detail_item_raises_naming_the_branch_config():
+    from core.estimator import ConfigError
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                                    slope_type="low_slope", project_kind="commercial",
+                                    detail_items={"gutter_helmet": 3}))
+
+
+def test_stucco_metal_warns_about_the_ten_times_contradiction():
+    """We bill $9/LF live in all three prod configs. If Tim's TPO block ("$9 per 10 LF") is the
+    right reading, every stucco line is 10x over. The warning must carry BOTH totals so the
+    exposure is legible without opening the sheet."""
+    q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=20,
+                   project_kind="residential", stucco_metal_lf=200)
+    r = estimate(_cfg(), q)
+    warn = next(w for w in r["warnings"] if w.startswith("stucco_metal_basis_contradiction"))
+    assert "$1,800.00" in warn and "$180.00" in warn
+
+
+def test_no_stucco_warning_when_none_quoted():
+    q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=20,
+                   project_kind="residential")
+    r = estimate(_cfg(), q)
+    assert not any(w.startswith("stucco_metal_basis_contradiction") for w in r.get("warnings", []))

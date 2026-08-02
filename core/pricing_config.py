@@ -702,6 +702,46 @@ class PricingConfig:
             val = (self.raw.get("low_slope") or {}).get("crane_threshold_stories")
         return float(val if val is not None else 3)
 
+    def trash_chute_sections(self) -> tuple[float, float]:
+        """(sections per storey, price per section) for the trash chute — E18's "+ sections".
+
+        The cell reads "$1,500 + sections" and its comment: "3 sections of trash chute per story —
+        charge $100 per section". Only the $1,500 was ever charged, so a 5-storey job paid the same
+        chute cost as a 3-storey one. Additive, per the cell's own "+".
+
+        (0, 0) when unconfigured, which keeps the flat-only behaviour.
+        """
+        ls = self.raw.get("low_slope") or {}
+        return (float(ls.get("trash_chute_sections_per_story") or 0),
+                float(ls.get("trash_chute_per_section") or 0))
+
+    def silicone_addons(self) -> dict[str, float]:
+        """Silicone add-on key -> per-square price (N25/N26/L27).
+
+        Granules $50/sq, traffic coat (1 coat) $225/sq, TPO primer $25/sq. The extra-COAT price is
+        deliberately NOT here: L27 gives "$100 per extra coat (L, OH & P) + M" and never says what
+        M is, so the number is incomplete and pricing it would invent Tim's material cost.
+        """
+        ups = (self.raw.get("low_slope") or {}).get("silicone_addons") or {}
+        return {k: float(v) for k, v in ups.items()
+                if not k.startswith("_") and isinstance(v, (int, float))}
+
+    def low_slope_detail_items(self) -> dict[str, float]:
+        """Detail-item key -> price, in the unit the sheet quotes it in (each / 10' piece / sq / LF).
+
+        The overhead tabs carry a priced detail list the engine never modelled: penetration
+        flashing, L metal, term bar, scupper, coping cap, 3rd-ply SAV FR, extra demo layer, and
+        per-LF flashing overhead.
+
+        Branch variation is expressed by each BRANCH'S OWN CONFIG holding its own values — not by
+        a branch-keyed map inside one config. pricing_configs is already keyed by branch, so a
+        nested branch dimension here would be the "config keys shaped by source, not dimension"
+        defect this project keeps re-committing. Empty when unconfigured.
+        """
+        items = (self.raw.get("low_slope") or {}).get("detail_items") or {}
+        return {k: float(v) for k, v in items.items()
+                if not k.startswith("_") and isinstance(v, (int, float))}
+
     def cover_board_oh_adder(self) -> float:
         """Extra overhead per square when the deck system carries a cover board.
 
