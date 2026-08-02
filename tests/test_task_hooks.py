@@ -64,3 +64,32 @@ def test_no_task_opt_out_is_distinguishable_from_forgetting():
 def test_comment_lines_are_ignored():
     """git's own commit template is comments; a `# Closes #1` in it must not close task 1."""
     assert parse("subject\n\n# Closes #1\nNo-Task: n/a\n")["closes"] == []
+
+
+# ---------------------------------------------------------------------------
+# Git-generated commits must not be blocked by a rule about AUTHORED work.
+# A merge restates the branch's trailers, a revert restates the original's, and
+# a fixup is folded before it lands — none of them has a task to name, and
+# blocking them would make `git merge` fail.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("subject", [
+    "Merge pull request #14 from jonpastore/feat/backfill",
+    "Merge branch 'main' into feature",
+    'Revert "fix(estimator): guard the split"',
+    "fixup! chore(hooks): mechanise R6.3",
+    "squash! earlier commit",
+])
+def test_git_generated_subjects_are_exempt(tmp_path, monkeypatch, subject):
+    msg = tmp_path / "COMMIT_EDITMSG"
+    msg.write_text(f"{subject}\n")
+    monkeypatch.setattr(task_hooks.sys, "argv", ["task_hooks.py", "--check", str(msg)])
+    assert task_hooks.main() == 0
+
+
+def test_an_ordinary_commit_is_still_blocked(tmp_path, monkeypatch):
+    """The exemption must be narrow — a normal subject with no task still fails."""
+    msg = tmp_path / "COMMIT_EDITMSG"
+    msg.write_text("feat: merge the two code paths\n")   # says 'merge', is not a merge commit
+    monkeypatch.setattr(task_hooks.sys, "argv", ["task_hooks.py", "--check", str(msg)])
+    assert task_hooks.main() == 1

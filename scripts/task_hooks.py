@@ -149,6 +149,14 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--check":
         # commit-msg hook: validate the message, block a bad one.
         msg = Path(sys.argv[2]).read_text()
+        subject = next((ln for ln in msg.splitlines() if ln.strip()
+                        and not ln.lstrip().startswith("#")), "")
+        # Git generates these itself and there is no task to name: a merge restates the branch's
+        # trailers, a revert restates the original's, and a fixup is folded before it lands.
+        # Blocking them would make `git merge` fail for a rule about authored work.
+        if (subject.startswith(("Merge ", "Revert ", "fixup!", "squash!", "amend!"))
+                or Path(".git/MERGE_HEAD").exists()):
+            return 0
         intents = parse(msg)
         if not (intents["closes"] or intents["refs"] or intents["no_task"]):
             print(
