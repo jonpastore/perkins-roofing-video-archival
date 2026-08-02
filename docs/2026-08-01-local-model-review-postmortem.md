@@ -230,3 +230,67 @@ grep -n "property_id" api/routes/estimator.py
 
 Raw outputs are in the session scratchpad: `review_qwen.txt`, `review_gptoss.txt`,
 `gptoss_resp.json`.
+
+---
+
+# Follow-up — same day, after the fixes
+
+Every tooling recommendation above shipped, and rec #11 was executed. **The re-measure contradicts
+this document's closing optimism.**
+
+## What shipped
+
+`llm` is no longer an unbacked script in `~/.local/bin`; it is versioned at
+`deployments/litellm/llm` in morpheus-mono-repo, alongside the gateway config it talks to.
+
+| rec | fix |
+|---|---|
+| 3.1 / #1 | Body POSTed on stdin (`curl -d @-`). The JSON builder had the same argv bug and was fixed too — the first attempt just moved `Argument list too long` from curl to python. A 132KB prompt now round-trips. |
+| 3.2 / #4 | Dropped `curl -f`, which was discarding the 400 body. The gateway's own `ContextWindowExceededError: request (54213 tokens) exceeds the available context size (32768)` now prints verbatim. No per-model ceiling table to maintain and rot — the server already knows. |
+| 3.3 / #2 | `finish_reason == "length"` with empty content now reports `thinking budget exhausted — N chars of reasoning, 0 of content`, and `$LLM_MAX_TOKENS` is settable so the advice is actionable. |
+| 3.4 / #3 | `--show-reasoning`. |
+| #5, #6, #8 | `--review` prepends grounding rules: `EVIDENCE: <verbatim line>` before every finding, HIGH/UNSURE labels, no verdicts, and an explicit ban on claiming code is correct. |
+
+New: **`llmcheck`** greps every `EVIDENCE:` line against the source tree and exits 1 on any that is
+not there. **The oracle is the filesystem, not the internet** — every fabrication in §1 and §2 was a
+claim about this repo, which no search engine can check. Against those documented fabrications it
+catches 4/4 of the ones citing non-existent code.
+
+Two bugs found while testing it, both fixed:
+
+- Quotes matched **this post-mortem**, which reproduces the fabrications verbatim — the fabrication
+  validated itself out of the document describing it. Prose (`*.md`, `*.rst`, `*.patch`) is now excluded.
+- A model emitted `EVIDENCE: <real line>` followed by a bare `HIGH` with no finding attached, and
+  llmcheck passed it green. It now measures the claim, not just the citation.
+
+## Rec #11 re-measured — the answer is negative
+
+Re-ran the slice 2 review against `472bd78` (13.5k tokens), scored on the ground truth recorded above:
+
+| | with `--review` + llmcheck | control, no rules |
+|---|---|---|
+| qwen3.6-think | `NO FINDINGS` — 0 fabricated, 0 real | 6 findings, **3 provably false**, 0 real |
+| gpt-oss-120b-think | could not run — 13.5k in + 71k chars of reasoning ≫ 32768 ctx | — |
+| gpt-oss-120b | `EVIDENCE:` + `HIGH` with no finding attached | — |
+
+The control reproduces this document's original score — 6 reported, 0 real, 3 fabricated — on the
+same model and the same diff. That is the result that matters: the grounding rule **suppresses**
+fabrications rather than the model having had nothing to say. It generates plenty. It simply cannot
+cite it, so it now declines instead.
+
+So §5's hopeful line — *"the capability is real when the plumbing works; three of four failures were
+plumbing, not reasoning"* — is **not supported**. The fixes bought speed of failure, not signal:
+what cost 3 invocations, ~25 minutes and a fabricated `BLOCKED` verdict now returns nothing in one
+shot at $0, and the paths that still fail say why.
+
+Limits: n=1 diff. The two CRITICALs are not in this commit, and the `property_id` find could not be
+re-tested — it was folded into `472bd78` before it landed, so no committed diff still contains that
+defect. This measures fabrication rate well and recall barely.
+
+## Standing rule
+
+Rec #10 tightened as recommended, in `~/.claude/CLAUDE.md`: **do not invoke a local model for
+CRITICAL or security review at all**, not even as a second opinion. Local review is for bulk and
+mechanical passes where a fabrication is cheap and obvious. And `NO FINDINGS` from a local model
+means *no information* — never "clean". It is not permitted to assert that anything is correct,
+because the most dangerous failure in §1 was exactly that assertion.
