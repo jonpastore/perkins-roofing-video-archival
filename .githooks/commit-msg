@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# R6.3 gate — a commit must say which task it belongs to, and a commit that CLOSES a task must
+# say what it verified. See scripts/task_hooks.py for why this is a hook and not a rule.
+# Bypass for a genuine emergency: git commit --no-verify
+exec python3 "$(git rev-parse --show-toplevel)/scripts/task_hooks.py" --check "$1"

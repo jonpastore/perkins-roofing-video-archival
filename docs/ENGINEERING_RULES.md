@@ -58,9 +58,28 @@ every change must satisfy these. CI enforces what it can; the rest is a manual p
      the source of truth. No feature ships with stale docs.
   2. **Drift** — run `scripts/drift_check.sh`; show no drift (R4). If the change touched infra,
      apply from git first, then re-check.
-  3. **Jarvis** — update tasks/projects via the `jarvis-memory` MCP (`complete_task`,
-     `set_next_action`, `add_task`) so the canonical task list matches reality. Jarvis is
-     canonical; never leave a parallel list in markdown.
+  3. **Jarvis** — update tasks/projects so the canonical task list matches reality. Jarvis is
+     canonical; never leave a parallel list in markdown. **ENFORCED BY HOOK since 2026-08-02** —
+     `.githooks/commit-msg` refuses a commit that references no task, and refuses a `Closes`
+     without evidence. Every commit carries one of:
+
+         Closes #453                 finished it — REQUIRES a `Verified:` line
+         Refs #429 60%               progress, never closes
+         No-Task: <reason>           deliberately not task work
+
+     `.githooks/post-commit` then applies it to Jarvis in real time, running `ruff` on the changed
+     Python first and leaving the task **open at 90%** instead of closing it when that fails.
+     Enable in a fresh clone with `git config core.hooksPath .githooks`.
+
+     ⚠️ **What the hook does NOT do, so nobody reads a green check as more than it is:** it cannot
+     evaluate a task's acceptance criteria — those are prose ("95% out-of-sample with rule
+     selection nested inside the CV") and no parser settles them. It cannot run the coverage gate
+     either; R7 forbids it and an hour-long commit hook gets bypassed within a day. **CI is still
+     the verdict.** The hook makes the claim explicit and the evidence mandatory.
+
+     Why it exists: R6.3 was written 2026-07-18 and skipped six times — #430, #449, #418,
+     #385/#386, #409/#410 — the last two fixed by ONE commit whose subject names both task numbers
+     and closed neither. An unenforced rule is a suggestion.
   4. **Memory** — record durable, non-obvious facts in project memory (`memory/` + `MEMORY.md`
      index): decisions, blockers, gotchas, credential/data gates. Not code structure or git
      history (those live in the repo).

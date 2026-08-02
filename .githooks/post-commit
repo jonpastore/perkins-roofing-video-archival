@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Applies the commit's task trailers to Jarvis in real time (close / set pct).
+# Never fails the commit: a task tracker being down must not cost you work.
+python3 "$(git rev-parse --show-toplevel)/scripts/task_hooks.py" || true
