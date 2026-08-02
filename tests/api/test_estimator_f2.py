@@ -14,6 +14,7 @@ version counter pollution — init_db() creates the schema once and tests share
 the same SQLite file across the suite.
 """
 import copy
+import json
 import hashlib
 import uuid
 
@@ -1434,3 +1435,144 @@ def test_api_default_overhead_mode_is_daily():
                         eaves_lf=300, hips_lf=150, ridges_lf=90, valleys_lf=70)
     assert "overhead_mode" not in body.model_fields_set
     assert body.overhead_mode == "daily"
+
+
+# ---------------------------------------------------------------------------
+# The pitched/flat split is resolved SERVER-side (#453)
+#
+# core/estimator.py sums num_squares + flat_squares, and measurements.total_sq is ambiguous by
+# provenance — Tim's sheet means sloped-only, a RoofR transcription means pitched+flat. A caller
+# that sends total_sq as num_squares AND a flat figure bills the flat area twice. Measured on prod
+# 2026-08-02: 13 of 42 measurements carry no split, 10 estimates were quoted off one.
+#
+# These are ROUTE-level on purpose. The defect was first found in Quoting.tsx, but a guard there
+# fixes one screen and leaves /estimator/project-quote, scripts/ and every direct API caller
+# exposed — so the guard lives in the shared mapper and is tested through the wire.
+# ---------------------------------------------------------------------------
+
+class TestPitchedFlatSplitResolution:
+    def _branch(self, client):
+        branch = _unique_branch("split")
+        created = _create_config(client, branch=branch, config=SAMPLE_CONFIG)
+        _activate_config(client, created["id"])
+        return branch
+
+    def _measure(self, client, **fields):
+        m = client.post("/measurements", headers=AUTH, json=fields)
+        assert m.status_code == 200, m.text
+        return m.json()["id"]
+
+    def test_unknown_split_plus_an_explicit_flat_figure_is_refused(self, admin_client):
+        """The double-bill case. 0 live instances today — the guard is what keeps it 0."""
+        branch = self._branch(admin_client)
+        mid = self._measure(admin_client, total_sq=40.0)          # no pitched/flat recorded
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile",
+            "num_squares": 40.0, "flat_squares": 8.0, "flat_roof_type": "tpo",
+            "measurement_id": mid,
+        })
+        assert r.status_code == 422, r.text
+        detail = r.json()["detail"]
+        # The message must name BOTH readings — an operator cannot act on "ambiguous".
+        assert "sloped" in detail["why"].lower() and "roofr" in detail["why"].lower()
+        assert detail["measurement_id"] == mid
+
+    def test_unknown_split_with_no_flat_figure_prices_and_says_so(self, admin_client):
+        """The case all 10 measured prod estimates are in. A blanket 422 here would refuse every
+        legitimately all-sloped legacy quote, so it prices — and stamps the uncertainty."""
+        branch = self._branch(admin_client)
+        mid = self._measure(admin_client, total_sq=40.0)
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile",
+            "num_squares": 40.0, "measurement_id": mid,
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["split_unknown"] is True
+        assert any("split_unknown" in w for w in body["warnings"])
+        assert body["num_squares"] == 40.0          # priced, not refused
+
+    def test_a_recorded_split_wins_over_a_conflicting_body(self, admin_client):
+        """Deliberately the OPPOSITE of the cut-LF rule (explicit-body-wins) three lines above it
+        in the same function: a cut LF is a measurement an operator may correct, the split is
+        money and the body demonstrably cannot be trusted to know it."""
+        branch = self._branch(admin_client)
+        # A RECORDED all-sloped roof: the split is known, and it says there is no flat section.
+        mid = self._measure(admin_client, total_sq=32.0, pitched_sq=32.0, flat_sq=0.0)
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile",
+            # A caller sending a LARGER sloped figure plus a flat section the measurement denies —
+            # the exact shape that double-bills. Both body values must lose.
+            "num_squares": 40.0, "flat_squares": 8.0,
+            "measurement_id": mid,
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["num_squares"] == 32.0            # the measurement's sloped figure, not 40
+        assert body.get("split_unknown") is None      # the split is known, so nothing is stamped
+        # And the flat section the body invented is gone: 32 sloped squares priced, not 40 + 8.
+        assert body["squares_subtotal"] > 0
+
+    def test_quoting_without_a_measurement_is_untouched(self, admin_client):
+        """Direct callers and scripts type squares by hand; omitting flat_squares must not 422
+        now that the field is nullable."""
+        branch = self._branch(admin_client)
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile", "num_squares": 30.0,
+        })
+        assert r.status_code == 200, r.text
+        assert r.json().get("split_unknown") is None
+
+
+class TestSplitResolutionDoesNotBreakLowSlope:
+    """R2 caught this: the first cut of the split rule applied it to EVERY quote.
+
+    `_build_low_slope` prices `base * q.num_squares` and never reads `flat_squares` — the
+    mixed-roof block is gated on `slope_type == "sloped"` (core/estimator.py). So resolving a
+    low-slope quote to `num_squares=pitched_sq, flat_squares=flat_sq` moved the whole area into a
+    field that path ignores: measured on the exhibit_b fixture, 45 squares of `tpo_adhered` went
+    from $35,050 to $8,250 — **76% under**, silent, and worse per occurrence than the double-bill
+    the rule exists to prevent. Both reviewers rejected the change on this.
+    """
+
+    def _exhibit_branch(self, client):
+        from pathlib import Path
+        cfg = json.loads(
+            (Path(__file__).parent.parent.parent / "infra" / "fixtures"
+             / "pricing_config_exhibit_b.json").read_text())
+        branch = _unique_branch("lowslope-split")
+        created = _create_config(client, branch=branch, config=cfg)
+        _activate_config(client, created["id"])
+        return branch
+
+    def test_a_low_slope_quote_keeps_its_squares(self, admin_client):
+        branch = self._exhibit_branch(admin_client)
+        m = admin_client.post("/measurements", headers=AUTH,
+                              json={"total_sq": 50.0, "pitched_sq": 5.0, "flat_sq": 45.0})
+        assert m.status_code == 200, m.text
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "HVHZ", "roof_type": "tpo_adhered",
+            "slope_type": "low_slope", "num_squares": 45.0, "measurement_id": m.json()["id"],
+        })
+        assert r.status_code == 200, r.text
+        # The operator's 45 squares survive. Under the rejected version this was 5.
+        assert r.json()["num_squares"] == 45.0
+
+    def test_a_mixed_sloped_roof_prices_both_sections_from_the_measurement(self, admin_client):
+        """The case no route test covered: pitched > 0 AND flat > 0. Without it, the line that
+        carries the flat area from the measurement into the price is covered only by accident."""
+        branch = self._exhibit_branch(admin_client)
+        m = admin_client.post("/measurements", headers=AUTH,
+                              json={"total_sq": 40.0, "pitched_sq": 32.0, "flat_sq": 8.0})
+        assert m.status_code == 200, m.text
+        r = admin_client.post("/estimator/quote", headers=AUTH, json={
+            "branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile",
+            # The ambiguous total as num_squares — the exact shape that double-bills.
+            "num_squares": 40.0, "measurement_id": m.json()["id"],
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["num_squares"] == 32.0                     # not the 40 the body sent
+        keys = {li["key"] for li in body["line_items_detail"]}
+        assert any(k.startswith("flat_") for k in keys), \
+            "the measurement's 8 flat squares must reach the price as their own line"
