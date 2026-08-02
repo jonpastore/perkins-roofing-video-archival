@@ -176,8 +176,25 @@ def _make_sales_client():
 # Helper: seed a config version via the API
 # ---------------------------------------------------------------------------
 
+def _ensure_branch(client, branch: str) -> str:
+    """Create `branch` if it does not exist yet, and return it.
+
+    A pricing config for a branch that is not in `branches` is not a thing that can exist —
+    migration 0055 made (tenant_id, branch) a foreign key and POST /estimator/configs now
+    422s. These tests minted synthetic branch keys and never created them, which passed
+    because SQLite does not enforce foreign keys and nothing validated. Creating the branch
+    first is the order the product has: a branch, then configs for it.
+
+    Branch keys are `^[a-z0-9_-]+$`, which every _unique_branch() value already satisfies.
+    """
+    r = client.post("/branches", json={"key": branch, "name": branch}, headers=AUTH)
+    assert r.status_code in (201, 409), r.text  # 409 = already created by an earlier call
+    return branch
+
+
 def _create_config(client, branch="miami", label="Test", config=None):
     cfg = config or SAMPLE_CONFIG
+    _ensure_branch(client, branch)
     r = client.post("/estimator/configs", json={"branch": branch, "label": label, "config": cfg},
                     headers=AUTH)
     assert r.status_code == 200, r.text
@@ -241,6 +258,7 @@ class TestListConfigs:
 class TestCreateConfig:
     def test_create_returns_version_and_hash(self, admin_client):
         branch = _unique_branch("create-hash")
+        _ensure_branch(admin_client, branch)
         r = admin_client.post(
             "/estimator/configs",
             json={"branch": branch, "label": "Exhibit B", "config": SAMPLE_CONFIG},
@@ -256,6 +274,7 @@ class TestCreateConfig:
 
     def test_create_hash_matches_rfc8785(self, admin_client):
         branch = _unique_branch("create-rfc")
+        _ensure_branch(admin_client, branch)
         r = admin_client.post(
             "/estimator/configs",
             json={"branch": branch, "config": SAMPLE_CONFIG},
@@ -283,6 +302,7 @@ class TestCreateConfig:
 
     def test_create_returns_config_body(self, admin_client):
         branch = _unique_branch("cfg-body")
+        _ensure_branch(admin_client, branch)
         r = admin_client.post(
             "/estimator/configs",
             json={"branch": branch, "config": SAMPLE_CONFIG},
@@ -950,6 +970,7 @@ class TestHashConsistency:
         expected_hash = compute_hash(fixture)
 
         branch = _unique_branch("hash-consistency")
+        _ensure_branch(admin_client, branch)
         r = admin_client.post(
             "/estimator/configs",
             json={"branch": branch, "config": fixture},

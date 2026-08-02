@@ -48,6 +48,32 @@ looking for a PAT in the UI. It is under **Application Keys**, not Personal Acce
 `companycam-webhook-secret` is intentionally NOT wired into `--set-secrets`: it has no version,
 and a versionless secret in `--set-secrets` fails *every* deploy, including unrelated ones.
 
+## The webhook signature — corrected 2026-08-02, before it was ever used
+
+`api/routes/companycam.py` was written ahead of the account against an assumed scheme, and both
+halves of the assumption were wrong. A real event would have been rejected 100% of the time, and
+the tests passed because they signed the same wrong way the route verified.
+
+| | assumed | actual ([docs](https://docs.companycam.com/docs/webhooks-1)) |
+|---|---|---|
+| algorithm | HMAC-**SHA256**, hex | HMAC-**SHA1**, **base64** |
+| header | `X-CompanyCam-Signature` | `X-CompanyCam-Signature` ✓ |
+| event key | `type` | `event_type` |
+| envelope | `{type, payload}` | `{event_type, created_at, payload, webhook_id}` |
+
+**The HMAC key is not a secret CompanyCam issues us.** It is the `token` parameter *we* supply
+when calling their create-webhook endpoint. So wiring this up is: generate a value → store it as
+a version of `companycam-webhook-secret` → pass that same value as `token` when registering the
+webhook → add the secret to `--set-secrets` in `scripts/deploy.sh`. Storing a value CompanyCam
+never saw would 401 every event, with a signature mismatch as the only symptom.
+
+Replay protection uses the envelope's `created_at` (±5 min), not a header — CompanyCam sends no
+timestamp header, and `created_at` is inside the signed body so it cannot be re-stamped by
+whoever captured the request. An event without it is rejected.
+
+Event names are lowercase-dotted (`photo.created`, `photo.updated`, `video.created`, …); the
+route mirrors `photo.*` and `video.*` and acks everything else without a write.
+
 All four containers are declared in `infra/main.tf` `local.secret_ids`. The two new ones were
 created out-of-band and then `terraform import`ed, so state matches git (R3).
 

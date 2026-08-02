@@ -99,3 +99,39 @@ class TestCustomerBranch:
                                 json={"display_name": "Mover Co"}, headers=AUTH).json()["id"]
         r = admin_client.put(f"/quoting/customers/{cid}", json={"branch": "naples"}, headers=AUTH)
         assert r.status_code == 200 and r.json()["branch"] == "naples"
+
+
+class TestPricingConfigBranch:
+    """#359: `branch` is a reference, not a free string — on every writer, not just customers.
+
+    Migration 0055 enforces it in Postgres; these cover the API answer, which must be a 422
+    naming the branch rather than the integrity error the FK would otherwise raise. SQLite
+    does not enforce foreign keys, so without this the route is the only thing standing
+    between a typo and a config version nothing will ever read.
+    """
+
+    _CONFIG = {"branch": "atlantis", "config": {"labor": {"rate": 1.0}}, "label": "t"}
+
+    def test_create_config_unknown_branch_422(self, admin_client):
+        r = admin_client.post("/estimator/configs", json=self._CONFIG, headers=AUTH)
+        assert r.status_code == 422, r.text
+        assert "atlantis" in r.text
+
+    def test_create_config_valid_branch_accepted(self, admin_client):
+        # A branch of its own, not a seeded one: `init_db` builds ONE SQLite DB for the whole
+        # session and nothing truncates between tests, so writing a config under a shared
+        # branch key collides with whichever other test claims (tenant, branch, version=1) —
+        # tests/test_f2_models.py claims exactly that for 'jupiter'.
+        admin_client.post("/branches", json={"key": "cfgok", "name": "CfgOk"}, headers=AUTH)
+        r = admin_client.post("/estimator/configs",
+                              json={**self._CONFIG, "branch": "cfgok"}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert r.json()["branch"] == "cfgok"
+
+    def test_create_config_inactive_branch_422(self, admin_client):
+        bid = admin_client.post("/branches", json={"key": "cfgtemp", "name": "T"},
+                                headers=AUTH).json()["id"]
+        admin_client.put(f"/branches/{bid}", json={"active": False}, headers=AUTH)
+        r = admin_client.post("/estimator/configs",
+                              json={**self._CONFIG, "branch": "cfgtemp"}, headers=AUTH)
+        assert r.status_code == 422, r.text

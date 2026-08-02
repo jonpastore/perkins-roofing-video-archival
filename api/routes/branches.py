@@ -23,6 +23,20 @@ def _dict(b: Branch) -> dict:
     return {"id": b.id, "key": b.key, "name": b.name, "active": b.active, "sort": b.sort}
 
 
+def validate_branch(db: Session, key: str) -> str:
+    """422 unless `key` is an ACTIVE branch of the session's tenant.
+
+    Lives here rather than in each writer because the DB constraint below it
+    (migration 0055, fk_*_branch) only knows "exists" — `active` is a product rule, and a
+    422 naming the branch is a better answer than a 500 from an integrity error. The query
+    is tenant-scoped by RLS via the session's stamped tenant_id.
+    """
+    b = db.execute(select(Branch).where(Branch.key == key)).scalar_one_or_none()
+    if b is None or not b.active:
+        raise HTTPException(422, f"unknown or inactive branch {key!r}")
+    return key
+
+
 @router.get("")
 def list_branches(
     include_inactive: bool = False,
