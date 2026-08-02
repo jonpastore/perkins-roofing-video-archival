@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
+from api.routes.branches import validate_branch as _validate_branch
 from app.models import Contact, Customer, Measurement, Property, Proposal
 
 router = APIRouter(prefix="/quoting", tags=["quoting_customers"])
@@ -99,17 +100,6 @@ class PropertyUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 # Serializers
 # ---------------------------------------------------------------------------
-
-def _validate_branch(db: Session, key: str) -> str:
-    """422 unless `key` is an ACTIVE branch (branches drive every selector; assets must
-    not land in branches that don't exist or were deactivated)."""
-    from app.models import Branch  # noqa: PLC0415
-
-    b = db.execute(select(Branch).where(Branch.key == key)).scalar_one_or_none()
-    if b is None or not b.active:
-        raise HTTPException(422, f"unknown or inactive branch {key!r}")
-    return key
-
 
 def _customer_row(
     row: Customer,

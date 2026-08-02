@@ -190,6 +190,12 @@ def create_config(
     db: Session = Depends(get_db_session),
 ):
     """Create a new immutable config version. Server computes the RFC 8785 hash."""
+    # Before 0055's FK this route would happily version a config under a branch that does not
+    # exist — the config then never activates for anything, because every reader looks it up
+    # by a branch key no selector offers.
+    from api.routes.branches import validate_branch  # noqa: PLC0415
+    validate_branch(db, body.branch)
+
     config_hash = _core_compute_hash(body.config)
 
     # Compute next version number for (caller's tenant, branch)

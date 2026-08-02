@@ -643,7 +643,12 @@ def quote(
 
     est = Estimate(
         tenant_id=db.info["tenant_id"],
-        branch=body.branch,
+        # cfg_row.branch, not body.branch: the row records which config priced this quote, and
+        # the config IS a branch. They are the same value when the config was looked up BY
+        # branch, and when the caller pins config_id they need not be — body.branch is then
+        # unvalidated free text, so the audit row claimed a branch the quote was never priced
+        # for. (#359's FK turns that from a quiet wrong value into a write that fails.)
+        branch=cfg_row.branch,
         code_zone=body.code_zone,
         county=body.county,
         pricing_config_id=cfg_row.id,
@@ -879,7 +884,7 @@ def project_quote(
         tenant_id=db.info["tenant_id"],
         property_id=body.property_id,
         name=body.name,
-        branch=first.branch,
+        branch=cfg_row.branch,  # see the single-quote path — the config priced it, so it names it
         code_zone=first.code_zone,
         # The EFFECTIVE blocks — each already carries the markup it was priced at, so the
         # re-price that builds the proposal reproduces this bid without re-deriving anything.
@@ -905,7 +910,9 @@ def project_quote(
                                       strict=True):
         est = Estimate(
             tenant_id=db.info["tenant_id"],
-            branch=item.quote.branch,
+            # One cfg_row prices the whole project, so a per-building branch was never what
+            # this row was priced with — it only ever looked like it was.
+            branch=cfg_row.branch,
             code_zone=item.quote.code_zone,
             county=item.quote.county,
             pricing_config_id=cfg_row.id,

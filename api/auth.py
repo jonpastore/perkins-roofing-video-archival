@@ -22,7 +22,6 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import text
 
-from app.config import settings
 from core.authz import can, effective_role
 
 log = logging.getLogger(__name__)
@@ -132,32 +131,14 @@ def _apply_impersonation(claims: dict, x_tenant_id: Optional[str], path: str) ->
 # Core verify logic
 # ---------------------------------------------------------------------------
 
-def _verify(authorization: str) -> dict:
-    """Verify the bearer token → claims dict with the effective role.
-
-    Legacy path used by existing endpoints that don't have a DB session.
-    Uses the config DEFAULT_ADMINS frozenset for effective_role (backward compat).
-    New F4+ endpoints should use _verify_with_db() via the session dependency.
-    """
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="missing bearer token")
-    try:
-        claims = dict(_get_verifier()(authorization[7:]))
-    except Exception:
-        raise HTTPException(status_code=401, detail="invalid token")
-
-    email = claims.get("email")
-    role = claims.get("role", "")
-    email_verified = claims.get("email_verified", False)
-
-    # Legacy path: pass DEFAULT_ADMINS frozenset as tenant_id arg (detected via isinstance)
-    # email_verified must be a keyword arg so it doesn't fall into db_session position.
-    claims["role"] = effective_role(
-        email, role, settings.DEFAULT_ADMINS, email_verified=email_verified
-    )
-    if "tenant_id" not in claims:
-        claims["tenant_id"] = 1
-    return claims
+# _verify() — the legacy no-DB verify that resolved "admin" from the deployment-wide
+# settings.DEFAULT_ADMINS frozenset and defaulted tenant_id to 1 — was deleted in #359.
+# It is not replaced: there is now exactly one verify path, _verify_with_db below.
+#
+# It is deleted rather than left unused on purpose. Both of its shortcuts are correct only
+# while Perkins is the sole tenant, and neither announces itself at the call site — an
+# endpoint written against it looks gated and is, for tenant 1. Keeping it available meant
+# the next endpoint could re-acquire the bug by picking the more convenient import.
 
 
 def _verify_with_db(authorization: str, db_session) -> dict:
@@ -234,39 +215,6 @@ def _stash(request: Optional[Request], claims: dict) -> dict:
     return claims
 
 
-def current_claims(request: Request = None, authorization: str = Header(default="")):
-    """Any authenticated user — no role gate. Returns claims + effective role. Use for /me."""
-    return _stash(request, _verify(authorization))
-
-
-def require_role(action):
-    """FastAPI dependency factory — allow the request only if the caller's role `can(action)`."""
-    def dep(request: Request = None, authorization: str = Header(default="")):
-        claims = _stash(request, _verify(authorization))
-        if not can(claims["role"], action):
-            # Stash BEFORE the gate: a 403 nobody can explain is the main thing the audit log
-            # is for, and it can only name the actor if the claims were published first.
-            raise HTTPException(status_code=403, detail="forbidden")
-        return claims
-    return dep
-
-
-def require_role_db(action):
-    """Like require_role, but resolves claims through the F4 DB path so
-    claims["tenant_id"] reflects GCIP tenant resolution (not the legacy _verify
-    default of 1). Use for any tenant-scoped endpoint that reads/writes data
-    keyed by the caller's own tenant (e.g. /admin/tenant/settings)."""
-    def dep(claims: dict = Depends(current_claims_with_db)):
-        if not can(claims["role"], action):
-            raise HTTPException(status_code=403, detail="forbidden")
-        return claims
-    return dep
-
-
-# ---------------------------------------------------------------------------
-# Tenant-scoped session dependency (TRD-F4 §3.2) — the authoritative F4 path
-# ---------------------------------------------------------------------------
-
 def current_claims_with_db(request: Request = None, authorization: str = Header(default="")):
     """Verify a token through the DB-backed F4 path (GCIP tenant resolution +
     platform_admins lookup + tenant_default_admins effective_role).
@@ -277,6 +225,9 @@ def current_claims_with_db(request: Request = None, authorization: str = Header(
 
     Claims are published on request.state (see _stash) — this is the F4 path, so it is where
     the audit trail learns the caller's resolved tenant.
+
+    Every dependency below is built on this one, and FastAPI caches it per request: a route
+    declaring both a gate and get_db_session performs this lookup once, not twice.
     """
     from app.models import PlatformSessionLocal
 
@@ -287,6 +238,51 @@ def current_claims_with_db(request: Request = None, authorization: str = Header(
     finally:
         db.close()
 
+
+def current_claims(request: Request = None, claims: dict = Depends(current_claims_with_db)):
+    """Any authenticated user — no role gate. Returns claims + effective role. Use for /me.
+
+    Resolved through the same DB path as every gate. /me is what the SPA renders its
+    navigation from, so a role resolved differently here than at the gate produces the
+    worst version of the bug: a tenant-2 admin shown a non-admin UI while every endpoint
+    behind it would have let them through.
+    """
+    return _stash(request, claims)
+
+
+def require_role_db(action):
+    """FastAPI dependency factory — allow the request only if the caller's role `can(action)`,
+    with the role resolved through the F4 DB path (`tenant_default_admins` for the caller's
+    GCIP-resolved tenant) rather than the process-wide DEFAULT_ADMINS frozenset.
+
+    The distinction is the whole tenant-2 story. The deleted `_verify` granted "admin" from
+    `settings.DEFAULT_ADMINS`, one env-var list for the entire deployment: a tenant-2 admin
+    is in `tenant_default_admins` and never in that list, so every endpoint on the legacy
+    path saw their raw token role and 403'd. `require_role` is now this function (below) so
+    all ~190 call sites moved together — gating a route correctly must not be something each
+    endpoint has to opt into.
+
+    Sub-dependency `current_claims_with_db` is FastAPI-cached per request, so a route that
+    already depends on `get_db_session` shares the same lookup rather than repeating it.
+    """
+    def dep(request: Request = None, claims: dict = Depends(current_claims_with_db)):
+        _stash(request, claims)
+        if not can(claims["role"], action):
+            # Stash BEFORE the gate: a 403 nobody can explain is the main thing the audit log
+            # is for, and it can only name the actor if the claims were published first.
+            raise HTTPException(status_code=403, detail="forbidden")
+        return claims
+    return dep
+
+
+#: Both names resolve identically. Kept as an alias rather than renamed at 190 call sites:
+#: the old name carries no wrong meaning now that there is only one path.
+require_role = require_role_db
+
+
+# ---------------------------------------------------------------------------
+# Tenant-scoped session dependency (TRD-F4 §3.2) — the authoritative F4 path
+# ---------------------------------------------------------------------------
 
 def get_db_session(claims: dict = Depends(current_claims_with_db)):
     """Yield a tenant-scoped DB session stamped with the caller's VERIFIED tenant.

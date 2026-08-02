@@ -102,15 +102,18 @@ def register_tenant_session_events(session_factory, strict: bool = True) -> None
                     un-migrated call site.
       strict=False — default to tenant 1 with a CRITICAL log naming the caller.
 
-    The production SessionLocal registers with strict=False (see app/models.py).
-    RATIONALE (F4 → pre-tenant-2 transition contract): ~150 bare `SessionLocal()`
-    call sites across api/jobs/scripts predate F4 and do not stamp
-    session.info["tenant_id"] yet. Raising for them would 500 every un-migrated
-    endpoint in the single-tenant world that exists today. Defaulting to tenant 1
-    (the only real tenant) preserves current correctness while the CRITICAL log
-    flags every site that MUST be converted to get_db_session before tenant #2 is
-    provisioned. This is a documented, temporary contract — not a permanent
-    fallback. Once every call site is stamped, flip strict back to True.
+    The production SessionLocal registers with strict=True (app/models.py) — the flip
+    happened in C1 Part 2 and this paragraph described the world before it, which is worse
+    than no comment: it told every reader that an unstamped session silently becomes tenant
+    1, so an unstamped call site looks survivable when it now raises.
+
+    HISTORY, because the reasoning still matters: strict=False was a deliberate, documented
+    transition contract. ~150 bare `SessionLocal()` call sites across api/jobs/scripts
+    predated F4 and did not stamp session.info["tenant_id"]; raising for them would have
+    500'd every un-migrated endpoint in the single-tenant world, so they defaulted to tenant
+    1 with a CRITICAL log naming each one. Those logs were the worklist. It is spent — do not
+    re-flip to buy time for a new un-migrated call site, because there is no longer a "only
+    real tenant" for it to fall back to.
     """
     from sqlalchemy import event
 

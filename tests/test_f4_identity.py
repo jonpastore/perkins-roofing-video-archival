@@ -516,3 +516,71 @@ class TestMigrationContent:
     def test_identity_section_marker_present(self):
         content = self._get_migration()
         assert "IDENTITY TABLES" in content or "GCIP IDENTITY" in content
+
+
+# ---------------------------------------------------------------------------
+# 8. The gate itself resolves roles from the DB (#359 — tenant-2 hardening)
+# ---------------------------------------------------------------------------
+
+class TestGateUsesDbRoleResolution:
+    """`require_role` must grant from `tenant_default_admins`, not `settings.DEFAULT_ADMINS`.
+
+    This is the tenant-2 blocker, and it is invisible in a single-tenant world: DEFAULT_ADMINS
+    is one env-var list for the whole deployment, seeded with Perkins staff. A tenant-2 admin
+    is granted in `tenant_default_admins` for tenant 2 and is in nobody's env var, so the
+    legacy gate saw their raw token role and returned 403 — on ~190 endpoints, while the
+    handful already on the DB path let them through. These go through the real app so they
+    fail if the gate ever reverts to the frozenset, not just if a helper changes.
+    """
+
+    _EMAIL = "newtenant-admin@example.com"  # deliberately NOT in DEFAULT_ADMINS
+
+    @pytest.fixture()
+    def client(self):
+        from fastapi.testclient import TestClient
+        import api.app as appmod
+        from app.models import init_db
+        init_db()
+        return TestClient(appmod.app)
+
+    def _grant(self, tenant_id=1):
+        from app.models import PlatformSessionLocal, TenantDefaultAdmin
+        with PlatformSessionLocal() as db:
+            db.info["platform_scope"] = True
+            existing = db.query(TenantDefaultAdmin).filter_by(
+                tenant_id=tenant_id, email=self._EMAIL).one_or_none()
+            if existing is None:
+                db.add(TenantDefaultAdmin(tenant_id=tenant_id, email=self._EMAIL))
+                db.commit()
+
+    def test_email_not_in_default_admins_frozenset(self):
+        """Guards the premise: if this address ever lands in the env list, the tests below
+        would pass for the wrong reason."""
+        from app.config import settings
+        assert self._EMAIL not in settings.DEFAULT_ADMINS
+
+    def test_db_granted_admin_passes_require_role_gate(self, client):
+        from api.auth import set_verifier
+        self._grant()
+        set_verifier(_make_verifier(
+            {"uid": "t2", "email": self._EMAIL, "role": "", "email_verified": True}))
+        r = client.get("/branches", headers=_auth_header())
+        assert r.status_code == 200, r.text
+
+    def test_me_reports_the_same_role_the_gate_used(self, client):
+        """/me is what the SPA renders navigation from. If it resolved roles differently it
+        would show a non-admin UI to someone every endpoint admits."""
+        from api.auth import set_verifier
+        self._grant()
+        set_verifier(_make_verifier(
+            {"uid": "t2", "email": self._EMAIL, "role": "", "email_verified": True}))
+        r = client.get("/me", headers=_auth_header())
+        assert r.status_code == 200, r.text
+        assert r.json()["role"] == "admin"
+
+    def test_ungranted_email_is_still_refused(self, client):
+        """The change must widen role RESOLUTION, not the gate."""
+        from api.auth import set_verifier
+        set_verifier(_make_verifier(
+            {"uid": "t3", "email": "nobody@example.com", "role": "", "email_verified": True}))
+        assert client.get("/branches", headers=_auth_header()).status_code == 403
