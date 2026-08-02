@@ -702,6 +702,40 @@ class PricingConfig:
             val = (self.raw.get("low_slope") or {}).get("crane_threshold_stories")
         return float(val if val is not None else 3)
 
+    def cover_board_oh_adder(self) -> float:
+        """Extra overhead per square when the deck system carries a cover board.
+
+        H17 reply (2022-11-04): "note, add an additional $40 OH for any cover board." The cover
+        board's MATERIAL is already inside the deck-type rate (SecuRock 1/4" $98 / 1/2" $108 are
+        absorbed into tpo_wood_densdeck_iso at $120); only the overhead was lost. This adds the
+        overhead alone — adding material here too would double-charge the board.
+
+        Stacks with wood_deck_oh_adder, which is what Tim's "an ADDITIONAL $40" says: a wood deck
+        with a cover board carries both. 0 when unconfigured.
+        """
+        return float((self.raw.get("low_slope") or {}).get("cover_board_oh_adder") or 0)
+
+    def cover_board_deck_types(self) -> frozenset:
+        """Deck-type keys whose system includes a cover board. Data, not a substring match on
+        'densdeck' — the next cover board Tim adds will not have that word in its key."""
+        vals = (self.raw.get("low_slope") or {}).get("cover_board_deck_types") or []
+        return frozenset(vals)
+
+    def polyglass_warranty_upgrades(self) -> dict[str, float]:
+        """Warranty-upgrade key -> per-square adder over the polyglass base.
+
+        Sheet E26-E28: Polyfresko +$80 (20 yr), SAV Plus 3-ply +$175 (25 yr), +$315 (30 yr), and
+        E28's comment adds a $65 SAV Plus 2nd-ply upgrade the config note never carried. Each
+        checks out against the HVHZ base of $475 (475+175=650, +80=555, +315=790), which is how
+        the note recorded them — as resulting totals, so they could not be applied to any other
+        zone. Stored as ADDERS so FBC gets the same upgrade off its own base.
+
+        Warranty length is a sales lever and it was unpriceable. Empty when unconfigured.
+        """
+        ups = (self.raw.get("low_slope") or {}).get("polyglass_warranty_upgrades") or {}
+        return {k: float(v) for k, v in ups.items()
+                if not k.startswith("_") and isinstance(v, (int, float))}
+
     def pressure_cleaning_per_sq(self, slope_type: str) -> float:
         """Pressure-cleaning rate per square: $30 flat, $40 sloped (sheet O1/O2).
 

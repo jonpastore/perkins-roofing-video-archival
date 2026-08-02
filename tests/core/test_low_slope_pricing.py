@@ -656,3 +656,90 @@ def test_pressure_cleaning_silent_when_unconfigured():
     del raw["low_slope"]["pressure_cleaning"]
     r = estimate(load_config(raw), _pc_quote("low_slope", include_pressure_cleaning=True))
     assert _line(r, "pressure_cleaning") is None
+
+
+# ---------------------------------------------------------------------------
+# Cover board OH adder (#417 G7) + polyglass warranty upgrades (#417 G8)
+# ---------------------------------------------------------------------------
+# ⚠️ Unlike Stockmeier/pressure-cleaning above, these keys are NEW — the three ACTIVE prod
+# configs do not carry them (checked 2026-08-02). The engine is correct ahead of the data, so
+# these tests pin the unconfigured behaviour as hard as the configured behaviour: a config
+# without the keys must price exactly as it did before, and must never quote an upgrade it
+# cannot price.
+
+def _deck_quote(deck_type, sq=20):
+    return QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=sq,
+                      slope_type="low_slope", project_kind="commercial", deck_type=deck_type)
+
+
+def test_cover_board_adds_forty_to_overhead():
+    plain = _line(estimate(_cfg(), _deck_quote("bur_tpo_concrete_primer")), "overhead")
+    board = _line(estimate(_cfg(), _deck_quote("tpo_wood_densdeck_iso")), "overhead")
+    # densdeck is also a WOOD deck, so it carries the $50 wood adder too — "an ADDITIONAL $40".
+    assert board["per_sq"] - plain["per_sq"] == 90
+
+
+def test_cover_board_adder_is_overhead_only_not_material():
+    """The board's material is already inside the deck-type rate. If this adder also moved the
+    deck line, the board would be charged twice."""
+    r = estimate(_cfg(), _deck_quote("tpo_wood_densdeck_iso"))
+    assert _line(r, "deck_type")["amount"] == 120 * 20  # unchanged deck rate
+
+
+def test_cover_board_silent_when_unconfigured():
+    raw = _load_fixture()
+    del raw["low_slope"]["cover_board_oh_adder"]
+    del raw["low_slope"]["cover_board_deck_types"]
+    with_key = _line(estimate(_cfg(), _deck_quote("tpo_wood_densdeck_iso")), "overhead")
+    without = _line(estimate(load_config(raw), _deck_quote("tpo_wood_densdeck_iso")), "overhead")
+    assert without["per_sq"] == with_key["per_sq"] - 40
+
+
+def _poly_quote(upgrade=None, zone="HVHZ", sq=20):
+    return QuoteInput(code_zone=zone, roof_type="polyglass_sav_sap", num_squares=sq,
+                      slope_type="low_slope", project_kind="commercial",
+                      warranty_upgrade=upgrade)
+
+
+def test_warranty_upgrade_absent_by_default():
+    assert _line(estimate(_cfg(), _poly_quote()), "warranty_upgrade") is None
+
+
+@pytest.mark.parametrize("key,adder", [
+    ("polyfresko_20yr", 80), ("sav_plus_2ply", 65),
+    ("sav_plus_3ply_25yr", 175), ("polyfresko_sav_plus_30yr", 315)])
+def test_warranty_upgrade_prices_as_an_adder(key, adder):
+    r = estimate(_cfg(), _poly_quote(key))
+    assert _line(r, "warranty_upgrade")["per_sq"] == adder
+
+
+def test_warranty_upgrade_totals_reconcile_with_the_old_prose_note():
+    """The config note recorded these as TOTALS off the HVHZ base of 475 (555/650/790). Stored as
+    adders they must reproduce exactly those totals — that is what proves the re-encoding lossless."""
+    for key, total in (("polyfresko_20yr", 555), ("sav_plus_3ply_25yr", 650),
+                       ("polyfresko_sav_plus_30yr", 790)):
+        r = estimate(_cfg(), _poly_quote(key))
+        assert _line(r, "base_cost_lm")["per_sq"] + _line(r, "warranty_upgrade")["per_sq"] == total
+
+
+def test_warranty_upgrade_applies_to_fbc_off_its_own_base():
+    """Storing totals instead of adders is what made these HVHZ-only. FBC must get the same
+    upgrade against the FBC base."""
+    r = estimate(_cfg(), _poly_quote("sav_plus_3ply_25yr", zone="FBC"))
+    assert _line(r, "warranty_upgrade")["per_sq"] == 175
+
+
+def test_unknown_warranty_upgrade_raises_rather_than_quoting_the_base():
+    from core.estimator import ConfigError
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), _poly_quote("gold_plated_50yr"))
+
+
+def test_warranty_upgrade_on_a_config_without_the_key_raises():
+    """Prod's configs do not carry this key yet. Asking for an upgrade there must fail loudly,
+    not silently return the base warranty at the base price."""
+    from core.estimator import ConfigError
+    raw = _load_fixture()
+    del raw["low_slope"]["polyglass_warranty_upgrades"]
+    with pytest.raises(ConfigError):
+        estimate(load_config(raw), _poly_quote("polyfresko_20yr"))

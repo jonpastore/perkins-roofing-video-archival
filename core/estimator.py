@@ -505,6 +505,9 @@ class QuoteInput:
     #: roof kinds — the rates live under low_slope only because that is the sheet block they were
     #: transcribed from. Off by default: it is a line Tim adds, not one every job carries.
     include_pressure_cleaning: bool = False
+    #: Polyglass warranty upgrade key (see low_slope.polyglass_warranty_upgrades) — 20/25/30-year
+    #: systems, priced as a per-square adder over the base. None = the base warranty.
+    warranty_upgrade: Optional[str] = None
     # Plywood deck replacement — Tim's Lumber Schedule prices this per SHEET, not per square,
     # and it applies to ANY roof type (his golden proposal attaching it is a TILE re-roof), so
     # it is a fixed item, not a low_slope.deck_types entry (OI-5). The first
@@ -1761,6 +1764,20 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
     base = config.low_slope_base(zone, rt)
     items.append(LineItem("base_cost_lm", "Base Cost (L+M)", base * sq, tags["base_cost_lm"], base))
 
+    # Polyglass warranty upgrades (E26-E28): 20/25/30-year systems priced as per-square adders
+    # over the base. Warranty length is a sales lever and until now it could not be quoted at all
+    # — the config carried the upgrades as a prose note tagged "encode as adders when quoting (v2)".
+    if q.warranty_upgrade:
+        _ups = config.polyglass_warranty_upgrades()
+        _add = _ups.get(q.warranty_upgrade)
+        if _add is None:
+            raise ConfigError(
+                f"warranty_upgrade {q.warranty_upgrade!r} is not priced for this config. "
+                f"Known upgrades: {', '.join(sorted(_ups)) or 'none configured'}."
+            )
+        items.append(LineItem("warranty_upgrade", "Warranty Upgrade", _add * sq,
+                              tags.get("warranty_upgrade", tags["base_cost_lm"]), _add))
+
 
     if not config.is_all_in(rt):
         # Overhead — per_sq mode (default) or day-based mode (v2)
@@ -1772,7 +1789,12 @@ def _build_low_slope(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
             oh = config.low_slope_overhead(zone, oh_key)
             # Wood deck type adds $50/sq to overhead (concrete deck is the baseline)
             wood_adder = config.wood_deck_oh_adder() if q.deck_type in _WOOD_DECK_TYPES() else 0.0
-            effective_oh = oh + wood_adder
+            # Cover board adds $40/sq OH on top (H17: "an ADDITIONAL $40 OH for any cover board").
+            # The board's MATERIAL is already inside the deck-type rate; only its overhead was
+            # lost, so this stacks with the wood adder rather than replacing it.
+            cover_adder = (config.cover_board_oh_adder()
+                           if q.deck_type in config.cover_board_deck_types() else 0.0)
+            effective_oh = oh + wood_adder + cover_adder
             items.append(LineItem("overhead", "Overhead", effective_oh * sq, tags["overhead"], effective_oh))
 
         # Profit — scale mode (default) or flat-dollar mode (v2)

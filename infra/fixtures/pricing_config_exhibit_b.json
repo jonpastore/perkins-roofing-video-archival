@@ -4,19 +4,19 @@
     "source": "Exhibit B (Ez-Bids legal package)",
     "exhibit_version": "B-2026-07-10-r2",
     "date": "2026-07-10",
-    "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit \u2014 engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. tim_verify_open_items is regenerated from this config by scripts/prune_stale_open_items.py \u2014 do not hand-edit it.",
+    "description": "Low-slope pricing filled (2026-07-10) from Tim's live Low-Slope Roof Price Calculator tab 1. All-in system prices include OH+profit — engine must NOT add OH/profit for all_in_systems. Wood-deck OH adder = $50 (concrete baseline). FBC SAV-M = -$25 vs HVHZ per sheet note. tim_verify_open_items is regenerated from this config by scripts/prune_stale_open_items.py — do not hand-edit it.",
     "tim_verify_open_items": [
-      "OI-9: boundary_inclusive_lower / boundary_exclusive_upper \u2014 PRESUMED lower-inclusive / upper-exclusive per Exhibit B wording, never confirmed (PC-2). Answering it is a data change only",
-      "OI-10: tile_dumpster_boundary_inclusive \u2014 PRESUMED true (the threshold SQ itself triggers the next dumpster), never confirmed (Adv-1)",
-      "OI-11: low_slope zones \u2014 Exhibit B \u00a74 is one table for both zones (Zoom 2026-07-20) and his sheet shows the zone split as availability, not price. the not-HVHZ deck restrictions ARE encoded (2 systems) and the engine warns on them; what remains is confirming the PRICES against his live low-slope calculator",
-      "OI-12: office_daily_overhead / office_men \u2014 unset, so daily_overhead_rates pass through UNSCALED (i.e. this branch prices at Jupiter's rates). Tim stated Jupiter $28k/20 = $1,400 and Miami $85k/20 = $4,250 on 2026-07-27; Naples is still unstated"
+      "OI-9: boundary_inclusive_lower / boundary_exclusive_upper — PRESUMED lower-inclusive / upper-exclusive per Exhibit B wording, never confirmed (PC-2). Answering it is a data change only",
+      "OI-10: tile_dumpster_boundary_inclusive — PRESUMED true (the threshold SQ itself triggers the next dumpster), never confirmed (Adv-1)",
+      "OI-11: low_slope zones — Exhibit B §4 is one table for both zones (Zoom 2026-07-20) and his sheet shows the zone split as availability, not price. the not-HVHZ deck restrictions ARE encoded (2 systems) and the engine warns on them; what remains is confirming the PRICES against his live low-slope calculator",
+      "OI-12: office_daily_overhead / office_men — unset, so daily_overhead_rates pass through UNSCALED (i.e. this branch prices at Jupiter's rates). Tim stated Jupiter $28k/20 = $1,400 and Miami $85k/20 = $4,250 on 2026-07-27; Naples is still unstated"
     ]
   },
   "schema_version": 1,
   "exhibit_version": "B-2026-07-10-r2",
   "boundary_inclusive_lower": true,
   "boundary_exclusive_upper": false,
-  "_pending_boundary": "Tim \u2014 NARROWED 2026-07-26. The boundary RULE is settled: his own band labels are inclusive of the upper number (1 sq $400, 2-4 $200, ... 30+ $100), so boundary_exclusive_upper=false. What remains is only that his sheet claims 20 squares in TWO bands ('15-20' AND '20-29'); we resolve it to $120, the higher of the two.",
+  "_pending_boundary": "Tim — NARROWED 2026-07-26. The boundary RULE is settled: his own band labels are inclusive of the upper number (1 sq $400, 2-4 $200, ... 30+ $100), so boundary_exclusive_upper=false. What remains is only that his sheet claims 20 squares in TWO bands ('15-20' AND '20-29'); we resolve it to $120, the higher of the two.",
   "zones": [
     "HVHZ",
     "FBC"
@@ -160,7 +160,7 @@
     "shingle": 700
   },
   "daily_overhead_weeks_rounding_mode": "ceil",
-  "_note_daily_overhead_day_model": "days = setup + rate x SQ, least-squares fit over Tim's 30-home TIME LEARNING log (docs/ROOFR_OVERHEAD_TIERS.md). Tile R2 0.70 / Metal 0.66 fit well; demo+shingle are noisy (R2 ~0.37) \u2014 refit when Tim logs tear-off type. Low-slope systems are deliberately absent: no fitted data, so their labor days stay manual.",
+  "_note_daily_overhead_day_model": "days = setup + rate x SQ, least-squares fit over Tim's 30-home TIME LEARNING log (docs/ROOFR_OVERHEAD_TIERS.md). Tile R2 0.70 / Metal 0.66 fit well; demo+shingle are noisy (R2 ~0.37) — refit when Tim logs tear-off type. Low-slope systems are deliberately absent: no fitted data, so their labor days stay manual.",
   "daily_overhead_day_model": {
     "demo_series": "demo_dry_in_flat",
     "install_series_by_roof_type": {
@@ -237,7 +237,7 @@
     "pitch_day_adder": {
       "threshold": 6,
       "days": 0.5,
-      "_note": "Steep-roof day adder. Tim books more time than the geometry model predicts on steep roofs: measured residual -0.29 days at <=4/12, +0.03 at 5/12, +0.64 at >=6/12 across his 29 homes. Applied to the INSTALL series only, once per job. A threshold rule rather than a fitted coefficient because only 7 of the 29 homes are >=6/12 and pitch as a regressor made every install series worse out-of-sample. NO homes in the sample are >=7/12, where Tim's own sheet says cost jumps ($305/sq tile adder) \u2014 revisit when he labels steeper roofs."
+      "_note": "Steep-roof day adder. Tim books more time than the geometry model predicts on steep roofs: measured residual -0.29 days at <=4/12, +0.03 at 5/12, +0.64 at >=6/12 across his 29 homes. Applied to the INSTALL series only, once per job. A threshold rule rather than a fitted coefficient because only 7 of the 29 homes are >=6/12 and pitch as a regressor made every install series worse out-of-sample. NO homes in the sample are >=7/12, where Tim's own sheet says cost jumps ($305/sq tile adder) — revisit when he labels steeper roofs."
     },
     "_note_access_term": "#436, 2026-08-02. `access` = 1 when QuoteInput.access_difficult, else 0. Fitted per series on Tim's 29 RoofR homes joined to his 30-home sheet's access_issue flag. Tim, 2026-07-27: 'if there's a back roof that has very poor access ... you're going to work slower.' MEASURED with the feature set FROZEN and coefficients + the steep rule refit inside each LOO fold: geometry only 83% within a day (MAE 0.672), +access 90% (MAE 0.586). +stories scored 86% and +stories+access 90% at a WORSE MAE (0.603), so access alone ships: same top score, lowest MAE, fewest features, and it won 14 of 29 folds when the set was chosen per fold. NOTE the nested estimate of the whole choose-a-feature-set PROCEDURE is 86%, so the truth for this shipped model is between 86 and 90 - picking the best of four arms on 29 homes is itself worth something. STILL SHORT of Tim's 95%: with n=29 one home is 3.4 points, so the binding constraint is DATA, not features. He offered another 20 homes on the 7/27 call; that is the cheapest next move."
   },
@@ -255,7 +255,7 @@
       "one_man": 1185.0,
       "two_man": 1435.0
     },
-    "_note_daily_labor_rate": "CONFIRMED by Jon 2026-07-21 (Tim's words): $1185.00 per one-man day, $1435.00 per two-man day. Earlier draft mis-transcribed these as $11.85/$14.35 (100x decimal slip) \u2014 corrected."
+    "_note_daily_labor_rate": "CONFIRMED by Jon 2026-07-21 (Tim's words): $1185.00 per one-man day, $1435.00 per two-man day. Earlier draft mis-transcribed these as $11.85/$14.35 (100x decimal slip) — corrected."
   },
   "profit_scale": [
     [
@@ -352,7 +352,7 @@
           250
         ]
       ],
-      "_source": "FBC!N7='< 20 squares' $50, N8='20 - 50 squares' $100, N9='> 50 squares' $250. No residential/commercial split \u2014 the bands apply to both."
+      "_source": "FBC!N7='< 20 squares' $50, N8='20 - 50 squares' $100, N9='> 50 squares' $250. No residential/commercial split — the bands apply to both."
     }
   },
   "roof_height": {
@@ -364,8 +364,8 @@
   "roof_height_3_5_flat_add": 1200,
   "crane_threshold_stories": 3,
   "overhead_basis": "series",
-  "_note_overhead_basis": "How a day of overhead is priced. 'branch' = ONE number per branch (monthly fixed overhead, calculated outside this system, divided by the working days in a month) x the days the job runs \u2014 Jon 2026-07-28, and Tim 2026-07-27 'my branch is like 28 grand... divide that by 20 work days'. 'series' = the legacy per-activity rates Tim emailed 2026-07-24 ($1,050 demo / $745 tile / $700 shingle / $850 metal). Defaults to 'series' because the two disagree by ~1.7x: against Tim's 21 actual sold prices the series rates land at +1.0% median, a flat $1,400/day at +13.3% with 19 of 21 below his own $2,500/week floor. Which is correct was a business decision (Jarvis #431), and Jon settled it 2026-07-28: 'use tim's numbers, we validated it in the transcripts and his own quote sheet showing 1400/day OH'. ALL THREE LIVE BRANCHES NOW RUN 'branch' (jupiter v26 $1,400/day, miami v28 $4,250/day, naples v26 $1,400/day carried forward from Jupiter because Tim has never stated Naples) \u2014 see scripts/seed_overhead_basis.py. This FIXTURE stays 'series' because it is a branch-agnostic template with office_daily_overhead null, and 'branch' without a burn number raises on every quote by design; a new branch sets its burn and flips. The burn is a FLOOR: margin is the only negotiable lever.",
-  "_note_crane_threshold_stories": "Tim, email 2026-07-27 20:24: crane flag for >2.5 stories. low_slope.crane_threshold_stories has said 3 since the low-slope wave but NOTHING read it \u2014 both engine paths hardcoded a 6+ manual-review raise, so a 3-storey job was quoted with no crane signal at all. Now read by both paths as a WARNING at 3+; the hard manual-review raise stays at 6+ because 3-5 storeys still quotes (trash chute / $1,200 flat add).",
+  "_note_overhead_basis": "How a day of overhead is priced. 'branch' = ONE number per branch (monthly fixed overhead, calculated outside this system, divided by the working days in a month) x the days the job runs — Jon 2026-07-28, and Tim 2026-07-27 'my branch is like 28 grand... divide that by 20 work days'. 'series' = the legacy per-activity rates Tim emailed 2026-07-24 ($1,050 demo / $745 tile / $700 shingle / $850 metal). Defaults to 'series' because the two disagree by ~1.7x: against Tim's 21 actual sold prices the series rates land at +1.0% median, a flat $1,400/day at +13.3% with 19 of 21 below his own $2,500/week floor. Which is correct was a business decision (Jarvis #431), and Jon settled it 2026-07-28: 'use tim's numbers, we validated it in the transcripts and his own quote sheet showing 1400/day OH'. ALL THREE LIVE BRANCHES NOW RUN 'branch' (jupiter v26 $1,400/day, miami v28 $4,250/day, naples v26 $1,400/day carried forward from Jupiter because Tim has never stated Naples) — see scripts/seed_overhead_basis.py. This FIXTURE stays 'series' because it is a branch-agnostic template with office_daily_overhead null, and 'branch' without a burn number raises on every quote by design; a new branch sets its burn and flips. The burn is a FLOOR: margin is the only negotiable lever.",
+  "_note_crane_threshold_stories": "Tim, email 2026-07-27 20:24: crane flag for >2.5 stories. low_slope.crane_threshold_stories has said 3 since the low-slope wave but NOTHING read it — both engine paths hardcoded a 6+ manual-review raise, so a 3-storey job was quoted with no crane signal at all. Now read by both paths as a WARNING at 3+; the hard manual-review raise stays at 6+ because 3-5 storeys still quotes (trash chute / $1,200 flat add).",
   "roof_cuts": {
     "low": 0,
     "medium": 25,
@@ -417,7 +417,7 @@
     "FBC": 30
   },
   "tile_dumpster_boundary_inclusive": true,
-  "_pending_tile_dumpster_boundary": "Tim \u2014 Adv-1: confirm whether threshold boundary SQ itself triggers next dumpster (default true = inclusive) (OI-10)",
+  "_pending_tile_dumpster_boundary": "Tim — Adv-1: confirm whether threshold boundary SQ itself triggers next dumpster (default true = inclusive) (OI-10)",
   "line_items": {
     "HVHZ": {
       "blown_in_iso_r19": 135,
@@ -438,10 +438,10 @@
       "chimney_cap_replacement": 2393.46
     }
   },
-  "_note_line_items_accent": "skylight_impact_replacement / skylight_curb_mounted_impact / solar_vents_metal_roof / chimney_cap_replacement added 2026-07-28 from Tim's OWN Knowify catalog (Perkins Roofing Jupiter, Company 30586 / Tenant 28403), which he asked us to scrape over Josh's: 'I would scrape my notify... it's more updated as far as, like, accent items' (2026-07-27). The convention was already prod-verified \u2014 solar_vents $1,489.00 and turbine_vents $257.50 match his catalog entries to the cent. HVHZ CARRIES FBC FORWARD and is NOT measured: Jupiter is Palm Beach = FBC, and the one item that differs by zone goes the counter-intuitive way (solar_vents FBC 1489 vs HVHZ 1339), so there is no rule to extrapolate. Ask Tim for Miami's. These keys are inert until a quote names them in extra_line_items, so adding them repriced nothing.",
+  "_note_line_items_accent": "skylight_impact_replacement / skylight_curb_mounted_impact / solar_vents_metal_roof / chimney_cap_replacement added 2026-07-28 from Tim's OWN Knowify catalog (Perkins Roofing Jupiter, Company 30586 / Tenant 28403), which he asked us to scrape over Josh's: 'I would scrape my notify... it's more updated as far as, like, accent items' (2026-07-27). The convention was already prod-verified — solar_vents $1,489.00 and turbine_vents $257.50 match his catalog entries to the cent. HVHZ CARRIES FBC FORWARD and is NOT measured: Jupiter is Palm Beach = FBC, and the one item that differs by zone goes the counter-intuitive way (solar_vents FBC 1489 vs HVHZ 1339), so there is no rule to extrapolate. Ask Tim for Miami's. These keys are inert until a quote names them in extra_line_items, so adding them repriced nothing.",
   "low_slope": {
-    "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached \u2014 engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* \u2014 prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
-    "_note_fbc_deltas": "RESOLVED 2026-07-25: FBC == HVHZ is correct. The live low-slope sheet (1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ) has ONE price table \u2014 the Tim, Josh and Marco tabs are three copies of it, differing only in the calculator inputs in column A/B. There is no zone split to model. See docs/low-slope-comment-audit-2026-07-25.md.",
+    "_note_base_systems": "polyglass_sav_sap / tpo_adhered / tpo_mech_attached — engine adds OH+profit on top (separate-OH path). pb_* / stockmeier_* — prices are ALL-IN (include OH+profit); engine must NOT add OH/profit (see all_in_systems).",
+    "_note_fbc_deltas": "RESOLVED 2026-07-25: FBC == HVHZ is correct. The live low-slope sheet (1hTGWCWzIVLgWwNFln_AYBnEcKkj0tLbaZiv82zHXWWQ) has ONE price table — the Tim, Josh and Marco tabs are three copies of it, differing only in the calculator inputs in column A/B. There is no zone split to model. See docs/low-slope-comment-audit-2026-07-25.md.",
     "all_in_systems": [
       "pb_acrylic_2coat",
       "pb_premium_acrylic",
@@ -461,8 +461,8 @@
         "pb_silicone_2coat": 515,
         "pb_silicone_3coat": 645,
         "stockmeier_polyurethane_2coat": 595,
-        "_note_polyglass_upgrades": "SAV+ 3-ply +175 \u2192 650; polyfresko upgrade +80 \u2192 555; polyfresko+SAVplus +315 \u2192 790; encode as adders when quoting (v2)",
-        "_note_stockmeier_floor": "stockmeier min 12 sq; under 12 sq = $390/sq T&M \u2014 floor note only, not engine logic v1"
+        "_note_polyglass_upgrades": "SAV+ 3-ply +175 → 650; polyfresko upgrade +80 → 555; polyfresko+SAVplus +315 → 790; encode as adders when quoting (v2)",
+        "_note_stockmeier_floor": "stockmeier min 12 sq; under 12 sq = $390/sq T&M — floor note only, not engine logic v1"
       },
       "FBC": {
         "polyglass_sav_sap": 450,
@@ -492,7 +492,7 @@
       }
     },
     "wood_deck_oh_adder": 50,
-    "_note_wood_deck_oh": "Add $50/sq to overhead when deck_type is a wood variant (concrete is baseline). Jon corrected 45\u219250 on 2026-07-10 from Tim's operational sheet; Jon 2026-07-21 reaffirmed Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES Exhibit B \u00a74.2's $45 snapshot.",
+    "_note_wood_deck_oh": "Add $50/sq to overhead when deck_type is a wood variant (concrete is baseline). Jon corrected 45→50 on 2026-07-10 from Tim's operational sheet; Jon 2026-07-21 reaffirmed Tim's home-office/live sheet is the MOST CURRENT pricing and SUPERSEDES Exhibit B §4.2's $45 snapshot.",
     "insulation_tiers": [
       [
         null,
@@ -507,7 +507,7 @@
         310
       ]
     ],
-    "_note_insulation_tiers": "LEGACY \u2014 superseded by insulation_by_thickness. Do not edit.",
+    "_note_insulation_tiers": "LEGACY — superseded by insulation_by_thickness. Do not edit.",
     "tapered_cost_per_sq": 400,
     "deck_types": {
       "existing_concrete": 0,
@@ -542,7 +542,7 @@
     "roof_height_notes": {
       "1_4_stories": 0,
       "5_plus": null,
-      "_note_5_plus": "5+ stories requires crane \u2014 manual quote only (null = not engine-quoted). 3-5 stories uses trash_chute_flat_add."
+      "_note_5_plus": "5+ stories requires crane — manual quote only (null = not engine-quoted). 3-5 stories uses trash_chute_flat_add."
     },
     "trash_chute_flat_add": 1500,
     "crane_threshold_stories": 3,
@@ -556,7 +556,19 @@
     "_note_default_flat_system": "The flat section of a MIXED sloped+flat roof, when the estimator does not pick a system. Evidence: all three mixed-roof proposals in the golden set sell it as 'PERKINS PROTECTOR - Flat Re-Roof - Polyglass SAP modified bitumen' (butterworth 2026-05-14, allen 2026-06-23, thompson 2026-05-05). Confirm with Tim that this is always the default.",
     "stockmeier_min_sq": 12,
     "stockmeier_under_min_material_per_sq": 390,
-    "_note_stockmeier_floor": "Live low-slope sheet M29: 'STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is $390 M per SQ and T&M)'. Now enforced as a warning rather than kept as prose."
+    "_note_stockmeier_floor": "Live low-slope sheet M29: 'STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is $390 M per SQ and T&M)'. Now enforced as a warning rather than kept as prose.",
+    "cover_board_oh_adder": 40,
+    "cover_board_deck_types": [
+      "tpo_wood_densdeck_iso"
+    ],
+    "_note_cover_board": "H17 reply (2022-11-04): 'note, add an additional $40 OH for any cover board.' The board's MATERIAL is already inside the deck-type rate (SecuRock 1/4\" $98 / 1/2\" $108 absorbed into tpo_wood_densdeck_iso at $120); only the OVERHEAD was lost. Adder is OH-only — pricing the material here too would double-charge the board. 'Additional' means it stacks with wood_deck_oh_adder. Listed by deck-type key, not matched on the substring 'densdeck', because the next cover board Tim adds will not carry that word.",
+    "polyglass_warranty_upgrades": {
+      "polyfresko_20yr": 80,
+      "sav_plus_2ply": 65,
+      "sav_plus_3ply_25yr": 175,
+      "polyfresko_sav_plus_30yr": 315
+    },
+    "_note_polyglass_warranty_upgrades": "Sheet E26-E28 + E28's comment. Stored as ADDERS over the polyglass base, not as the totals the old prose note recorded (650/555/790): those were HVHZ-base-475 results and could not be applied to FBC. 475+80=555, +175=650, +315=790 — the note's own numbers, reconciled. sav_plus_2ply (+$65) is from E28's comment and was never in that note at all. ⚠️ PROD CONFIGS DO NOT CARRY THIS KEY YET (checked 2026-08-02: jupiter v29 / miami v30 / naples v29). Until they are updated, a warranty_upgrade request raises rather than mispricing — the engine will not silently quote the base warranty at an upgrade's price."
   },
   "plywood_replacement": {
     "per_sheet": {
@@ -566,11 +578,11 @@
     },
     "sheets_included": 2
   },
-  "_note_plywood_replacement": "OI-5, resolved 2026-07-27 from Tim's Lumber Schedule (~/perkins-corpus/pricing/Lumber Schedule.pdf), which his proposals attach as a contract exhibit. Prices are installed, un-primed, per SHEET \u2014 not low_slope-scoped: the quote it comes from is a TILE re-roof. '2-Story: Add $5.00 per LF or $85.00/sheet for any carpentry (with the exception of roof decking wood)' \u2014 roof decking is EXEMPT from the 2-story surcharge, so no story adder is modeled here. sheets_included=2 matches his proposal scope language: 'An allotment of 100 linear feet of decking wood (total) OR 2 sheets of plywood is included at no additional charge.'",
+  "_note_plywood_replacement": "OI-5, resolved 2026-07-27 from Tim's Lumber Schedule (~/perkins-corpus/pricing/Lumber Schedule.pdf), which his proposals attach as a contract exhibit. Prices are installed, un-primed, per SHEET — not low_slope-scoped: the quote it comes from is a TILE re-roof. '2-Story: Add $5.00 per LF or $85.00/sheet for any carpentry (with the exception of roof decking wood)' — roof decking is EXEMPT from the 2-story surcharge, so no story adder is modeled here. sheets_included=2 matches his proposal scope language: 'An allotment of 100 linear feet of decking wood (total) OR 2 sheets of plywood is included at no additional charge.'",
   "enforce_profit_floor": true,
   "profit_floor_basis": "weekly",
   "profit_floor_days_per_week": 5.0,
-  "_note_profit_floor_keys": "Added to the fixture 2026-07-25. These live in prod (set by scripts/seed_min_margin.py) but were absent from git, so pricing_config.enforce_profit_floor() returned False against the fixture and any tenant built from it \u2014 GC, tenant-2, a DR rebuild \u2014 shipped with NO profit floor and quoted a 1-square tile roof at $400 profit. ENGINEERING_RULES R3. profit_floor_days_per_week=6 is still ASSUMED; Tim's own Miramar commercial calculator says '5 days per week' twice.",
+  "_note_profit_floor_keys": "Added to the fixture 2026-07-25. These live in prod (set by scripts/seed_min_margin.py) but were absent from git, so pricing_config.enforce_profit_floor() returned False against the fixture and any tenant built from it — GC, tenant-2, a DR rebuild — shipped with NO profit floor and quoted a 1-square tile roof at $400 profit. ENGINEERING_RULES R3. profit_floor_days_per_week=6 is still ASSUMED; Tim's own Miramar commercial calculator says '5 days per week' twice.",
   "gutters": {
     "styles": {
       "k6_alum": {
@@ -678,5 +690,5 @@
     "winterguard_add": "mixed",
     "zones": "shared"
   },
-  "_scopes_doc": "Which values a 'copy config to other branches' action may propagate. Jon, 2026-07-27: 'material cost should be shared by default, overhead and labor costs are branch specific.' shared = one company, one rule or one negotiated price. branch = what THIS branch's crews and office actually cost. mixed = the key fuses labour and material in one figure (Tim prices everything L+M+OH+P), so it cannot be classified until those are split; never copied. unclassified = the key's SHAPE is wrong (commission_pct is per salesperson, not per zone) and must be re-keyed before it can be scoped. An absent key defaults to 'branch' \u2014 fail closed, so a key nobody thought about is never propagated silently. Classification only: it moves no numbers, and scripts/seed_config_scopes.py asserts that."
+  "_scopes_doc": "Which values a 'copy config to other branches' action may propagate. Jon, 2026-07-27: 'material cost should be shared by default, overhead and labor costs are branch specific.' shared = one company, one rule or one negotiated price. branch = what THIS branch's crews and office actually cost. mixed = the key fuses labour and material in one figure (Tim prices everything L+M+OH+P), so it cannot be classified until those are split; never copied. unclassified = the key's SHAPE is wrong (commission_pct is per salesperson, not per zone) and must be re-keyed before it can be scoped. An absent key defaults to 'branch' — fail closed, so a key nobody thought about is never propagated silently. Classification only: it moves no numbers, and scripts/seed_config_scopes.py asserts that."
 }
