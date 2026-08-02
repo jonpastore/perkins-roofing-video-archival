@@ -134,7 +134,12 @@ class QuoteRequest(BaseModel):
     roof_type: str = Field(default="13_tile", max_length=40)
     num_squares: float = Field(..., gt=0)
     # A roof with both sections is one job. Tim's own sheet has a "Squares (Flat)" column.
-    flat_squares: float = Field(default=0, ge=0)
+    #
+    # NULLABLE ON PURPOSE, and the default is None rather than 0. `0` means "there is no flat
+    # section"; `None` means "nobody has said". Those were the same value until 2026-08-02, which is
+    # why a NULL-split measurement could not be told apart from a genuinely all-sloped roof — see
+    # the split resolution in _quote_input_from_request. The engine still treats None as 0.0.
+    flat_squares: Optional[float] = Field(default=None, ge=0)
     flat_roof_type: Optional[str] = Field(default=None, max_length=40)
     roof_cuts: Literal["low", "medium", "high"] = "low"
     roof_cuts_per_sq: Optional[float] = Field(default=None, ge=0)  # explicit $/sq overrides the pick
@@ -272,6 +277,12 @@ def _quote_input_from_request(body, cfg_row, db, claims):
     }
     # Predominant pitch drives the steep-roof day adder; same explicit-wins-else-measurement rule.
     pitch_primary = body.pitch_primary
+    num_squares = body.num_squares
+    flat_squares = body.flat_squares
+    #: True when the roof was priced against a measurement whose pitched/flat split nobody has
+    #: recorded. Not an error — most legacy rows are all-sloped and price correctly — but the one
+    #: state where `num_squares` might silently already contain the flat area.
+    split_unknown = False
     if body.measurement_id is not None:
         m = db.get(Measurement, body.measurement_id)
         if m is None or m.tenant_id != db.info.get("tenant_id"):
@@ -281,6 +292,53 @@ def _quote_input_from_request(body, cfg_row, db, claims):
                 cut_lfs[field_name] = getattr(m, field_name) or 0
         if not pitch_primary:
             pitch_primary = m.pitch_primary
+
+        # ── The pitched/flat split. DELIBERATELY the OPPOSITE rule to the cut LFs above. ────────
+        # core/estimator.py sums `num_squares + flat_squares`, and `measurements.total_sq` is
+        # AMBIGUOUS by provenance: Tim's sheet means sloped-only, a RoofR transcription means
+        # pitched + flat. So a caller that sends total_sq as num_squares AND a flat figure bills
+        # the flat area twice. A cut LF is a measurement an operator may reasonably correct; the
+        # split is MONEY and the body demonstrably cannot be trusted to know it — that is the whole
+        # defect. The operator's escape hatch is to fix the measurement, not to out-argue it per
+        # quote. Measured on prod 2026-08-02: 13 of 42 measurements carry no split.
+        #
+        # ⚠️ SLOPED ONLY, and this guard is load-bearing. `_build_low_slope` prices
+        # `base * q.num_squares` and NEVER reads `flat_squares` — the mixed-roof block is gated on
+        # `q.slope_type == "sloped"` (core/estimator.py:1375). So applying a sloped roof's split to
+        # a low-slope quote moves the whole area into a field that path ignores and DELETES it from
+        # the price: measured on the exhibit_b fixture, a 45-square `tpo_adhered` roof resolved to
+        # `num_squares=5, flat_squares=45` prices $8,250 against $35,050 — **76% under**, silent,
+        # and larger per occurrence than the double-bill this block exists to prevent. On a
+        # low-slope quote `num_squares` IS the flat area, so the sloped split does not apply and
+        # nothing here touches it.
+        #
+        # `if m.pitched_sq` is truthy, not `is not None`: a measurement may legitimately record
+        # `pitched_sq = 0` (a flat-only building), and assigning that would bypass the
+        # `num_squares: Field(..., gt=0)` boundary guarantee and raise deeper in the engine.
+        if effective_slope_type == "sloped" and m.pitched_sq:
+            num_squares = m.pitched_sq
+            flat_squares = m.flat_sq or 0.0
+        elif effective_slope_type == "sloped" and flat_squares:
+            raise HTTPException(422, detail={
+                "message": (
+                    "this measurement has no recorded pitched/flat split, so a separate flat "
+                    "figure cannot be added to it without risking double-billing the flat area"),
+                "measurement_id": body.measurement_id,
+                "total_sq": m.total_sq,
+                "flat_squares": flat_squares,
+                "why": ("total_sq is ambiguous: on Tim's sheet it is the SLOPED area only, on a "
+                        "RoofR transcription it is pitched + flat. If it already includes the "
+                        "flat section, adding flat_squares bills that area twice."),
+                # NOT "PATCH /measurements/{id}" — api/routes/measurements.py implements POST and
+                # GET only, so that instruction would 405 the operator who followed it.
+                "fix": ("re-save the measurement with its Pitched SQ and Flat SQ filled in "
+                        "(POST /measurements), then quote against the new one."),
+            })
+        else:
+            # No flat figure was offered, so nothing can double-count. The quote proceeds — but if
+            # total_sq DID include a flat section it is now priced at the sloped rate, so say so
+            # rather than let it pass unremarked.
+            split_unknown = True
 
     # Build QuoteInput kwargs. The headline quote keeps the FLAT base (Tim's standard pricing) —
     # the cut-adjusted base is shown alongside it in the cut_calc reference block below and Tim
@@ -298,8 +356,8 @@ def _quote_input_from_request(body, cfg_row, db, claims):
         code_zone=body.code_zone,
         slope_type=effective_slope_type,
         roof_type=body.roof_type,
-        num_squares=body.num_squares,
-        flat_squares=body.flat_squares,
+        num_squares=num_squares,      # measurement-resolved; see the split block above
+        flat_squares=flat_squares or 0.0,
         flat_roof_type=body.flat_roof_type,
         county=body.county,
         roof_cuts=body.roof_cuts,
@@ -355,7 +413,7 @@ def _quote_input_from_request(body, cfg_row, db, claims):
     q = E.QuoteInput(**qkwargs, **cut_lfs, apply_cut_calc_to_base=False,
                      pitch_primary=pitch_primary)
 
-    return q, effective_slope_type, cut_lfs
+    return q, effective_slope_type, cut_lfs, split_unknown
 
 
 def _validate_quote_guards(body, config, *, where: str = "") -> None:
@@ -417,7 +475,8 @@ def quote(
             ),
         )
 
-    q, effective_slope_type, cut_lfs = _quote_input_from_request(body, cfg_row, db, claims)
+    q, effective_slope_type, cut_lfs, split_unknown = _quote_input_from_request(
+        body, cfg_row, db, claims)
 
     config = load_config(cfg_row.config)
 
@@ -437,6 +496,16 @@ def quote(
     result["county"] = body.county
     result["slope_type"] = effective_slope_type
     result["selected_tier"] = body.selected_tier
+    # Priced off a measurement with no recorded pitched/flat split. Stamped on the response AND
+    # therefore on the persisted audit row, so a quote that MIGHT have charged a flat section at
+    # the sloped rate can be found later by query rather than by memory.
+    if split_unknown:
+        result["split_unknown"] = True
+        result.setdefault("warnings", []).append(
+            "split_unknown: this measurement records no pitched/flat split, so total_sq was priced "
+            "entirely as sloped. If the roof has a flat section, record pitched_sq/flat_sq on the "
+            "measurement and re-quote — total_sq means sloped-only on Tim's sheet but pitched+flat "
+            "on a RoofR transcription.")
     # Config floor percentages, exposed so clients (proposal snapshot "floors") stay
     # config-driven per branch instead of hardcoding 13%/33%.
     result["floors"] = {
@@ -512,8 +581,11 @@ def quote(
     # AFTER discounts so tier totals, the proposal snapshot, and the deposit all agree
     # with the discounted headline number ("Discounts affect total and margin").
     from core.perkins_packages import package_options  # noqa: PLC0415
+    # RESOLVED squares, not body.num_squares: PROTECTOR is the engine total (priced off the
+    # resolved split) while every upgrade tier is catalog $/sq x squares. Reading the body here
+    # made the two disagree by exactly the amount the split resolution corrected.
     result["package_options"] = package_options(
-        body.roof_type, float(body.num_squares), float(result["project_total"]),
+        body.roof_type, float(q.num_squares), float(result["project_total"]),
         discount_total=float(result.get("discount_total") or 0),
     )
 
@@ -568,7 +640,12 @@ def quote(
         root_id=root_id,
         version_number=version_number,
         source_proposal_id=body.source_proposal_id,
-        input_json=body.model_dump(),
+        # The RESOLVED squares, not the raw body. api/routes/proposals.py rebuilds a QuoteInput
+        # straight from this row without going through _quote_input_from_request, so persisting
+        # the rejected values would let a customer-facing proposal re-price a bid to a number no
+        # estimate ever produced. An audit row must record what was CHARGED.
+        input_json={**body.model_dump(), "num_squares": q.num_squares,
+                    "flat_squares": q.flat_squares},
         result_json=_audit_payload(result),
         created_by=claims.get("email") or "unknown",
     )
@@ -727,9 +804,15 @@ def project_quote(
 
     config = load_config(cfg_row.config)
     built: list[BP.Building] = []
+    # Named per structure: on a nine-building bid an unstamped flag says a flat section may have
+    # been priced as sloped SOMEWHERE, which is not actionable.
+    split_unknown_structures: list[str] = []
     for item in body.buildings:
-        q, _slope, _cuts = _quote_input_from_request(item.quote, cfg_row, db, claims)
+        q, _slope, _cuts, split_unknown = _quote_input_from_request(
+            item.quote, cfg_row, db, claims)
         _validate_quote_guards(item.quote, config, where=item.name)
+        if split_unknown:
+            split_unknown_structures.append(item.name)
         built.append(BP.Building(name=item.name, quote=q, days=item.days,
                                  address=(item.address or "").strip() or None))
 
@@ -769,6 +852,10 @@ def project_quote(
         "pricing_config_hash": cfg_row.config_hash,
         "once_per_project": sorted(once),
         "permit_count": permit_count,
+        # Same stamp as /quote, per structure. Additive: absent means every building's measurement
+        # carried a recorded split.
+        **({"split_unknown_structures": split_unknown_structures}
+           if split_unknown_structures else {}),
         "general_conditions_markup": body.general_conditions_markup,
         "dominant_roof_type": BP.dominant_roof_type(built),
         "num_squares": round(BP.total_squares(built), 2),
@@ -802,7 +889,8 @@ def project_quote(
     # SAME _audit_payload shape a single quote uses, so an auditor replaying a project reads the
     # same rows in the same format rather than a second, project-only schema.
     estimate_ids: list[int] = []
-    for item, priced in zip(body.buildings, roll_up["buildings"], strict=True):
+    for item, resolved, priced in zip(body.buildings, built, roll_up["buildings"],
+                                      strict=True):
         est = Estimate(
             tenant_id=db.info["tenant_id"],
             branch=item.quote.branch,
@@ -818,6 +906,12 @@ def project_quote(
             # recomputed from what was stored, which is the whole point of an audit row.
             input_json={
                 **item.quote.model_dump(),
+                # RESOLVED, not the raw body — /quoting/proposals/from-project rebuilds a
+                # QuoteInput straight from this row without the mapper, so storing the rejected
+                # squares would let the customer-facing proposal re-price to a number no estimate
+                # ever produced. An audit row records what was CHARGED.
+                "num_squares": resolved.quote.num_squares,
+                "flat_squares": resolved.quote.flat_squares,
                 "structure_days": item.days,
                 "project_permit_count": permit_count,
                 "project_floor_basis": body.floor_basis,
