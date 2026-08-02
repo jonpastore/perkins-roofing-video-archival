@@ -4,7 +4,7 @@
 `platform:8b3f5cd` (sha matches), SPA bundle `/assets/index-DSRtfOBu.js`. Migrations through
 0053, all applied.** #430/#449 shipped (all four slices).
 
-Follows `CONTINUATION-2026-08-02.md`, which recorded Tim's first pass at the six questions. This
+Follows `docs/continuations/CONTINUATION-2026-08-02.md`, which recorded Tim's first pass at the six questions. This
 doc records **Jon's follow-up directives** and the evidence gathered for them.
 
 ---
