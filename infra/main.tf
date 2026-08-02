@@ -1301,11 +1301,17 @@ resource "google_secret_manager_secret" "secrets" {
 # code-only task:
 #   1. var.billing_account set in infra/perkins.auto.tfvars (committed) — needs the account id,
 #      readable once the API above is applied.
-#   2. roles/billing.costsManager for perkins-deploy-sa@... ON THE BILLING ACCOUNT. A billing
-#      account is a separate resource hierarchy from the project, so no project-level grant in
-#      this file can confer it and terraform cannot create it for itself. Only a billing admin
-#      can, which is the same person the "move billing off Jon's Amex" half of #444 waits on.
-# Until both land, applying this file is a no-op on the budget rather than an error.
+#
+# BOTH ARE NOW DONE and the budget is LIVE (created 2026-08-02, id ...fac2760b81e4). The account
+# id came from `gcloud billing projects describe` — the PROJECT's billing linkage, a project-level
+# read — and is set in perkins.auto.tfvars.
+#
+# ⚠️ A NOTE ON WHAT THE PERMISSION ERRORS DO AND DO NOT MEAN. perkins-deploy-sa CANNOT run
+# `gcloud billing accounts list` (returns 0 items) or `gcloud billing budgets list` (403), and I
+# read that as "the SA has no billing rights, so a billing admin must grant them". That was wrong:
+# those two commands need billing.accounts.list / billing.budgets.list, and the SA has neither —
+# but it DOES have budgets.create/get, which is all terraform uses. The apply succeeded on the
+# first attempt. Do not re-derive a blocker from those errors; check terraform state instead.
 resource "google_billing_budget" "spend_cap" {
   count = var.billing_account != "" ? 1 : 0
 
@@ -1313,7 +1319,11 @@ resource "google_billing_budget" "spend_cap" {
   display_name    = "Perkins Platform Monthly Cap"
 
   budget_filter {
-    projects = ["projects/${var.project_id}"]
+    # PROJECT NUMBER, not the id. The API normalises "projects/<id>" to "projects/<number>" on
+    # read, so writing the id here produces a diff that never converges — terraform rewrites it
+    # every plan and R4's drift gate fails forever on a budget that is in fact correct. Measured:
+    # the first apply created the budget and the very next plan wanted to change it back.
+    projects = ["projects/${data.google_project.this.number}"]
   }
 
   amount {
