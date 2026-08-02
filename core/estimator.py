@@ -518,6 +518,11 @@ class QuoteInput:
     stories: Optional[int] = None
     #: Silicone add-on keys (see low_slope.silicone_addons) — granules, traffic coat, TPO primer.
     silicone_addons: list[str] = field(default_factory=list)
+    #: Extra silicone coats beyond the quoted system. Priced at L27's $100/sq (L, OH & P) PLUS
+    #: `extra_coat_material_per_sq`, which the caller must supply — see silicone_extra_coat_lop
+    #: for why the material half cannot be a constant.
+    extra_coats: int = 0
+    extra_coat_material_per_sq: Optional[float] = None
     #: Detail-item key -> quantity, in the sheet's own unit (each / 10' piece / square / LF).
     #: See low_slope.detail_items.
     detail_items: dict[str, float] = field(default_factory=dict)
@@ -1154,6 +1159,27 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
         items.append(LineItem(f"silicone_addon_{_addon}", _addon.replace("_", " ").title(),
                               _rate * q.num_squares, tags.get("silicone_addons", "Materials"),
                               _rate))
+
+    if q.extra_coats:
+        _lop = config.silicone_extra_coat_lop()
+        if not _lop:
+            raise ConfigError(
+                "extra_coats requested but low_slope.silicone_extra_coat_lop is not configured."
+            )
+        # Material is required, not defaulted to zero: a coat with no material is not a coat, and
+        # billing L/OH/P alone would look like a complete price while under-charging every time.
+        if q.extra_coat_material_per_sq is None:
+            raise ConfigError(
+                f"extra_coats={q.extra_coats} needs extra_coat_material_per_sq. L27 prices an "
+                f"extra coat at ${_lop:g}/sq (L, OH & P) PLUS materials, and the material half "
+                "varies by coat — Tim's own build-ups run $195/$220/$300 for 1/2/3 coats."
+            )
+        _per_sq = _lop + float(q.extra_coat_material_per_sq)
+        items.append(LineItem(
+            "silicone_extra_coats", f"Extra Silicone Coats (x{q.extra_coats})",
+            _per_sq * q.num_squares * q.extra_coats,
+            tags.get("silicone_addons", "Materials"), _per_sq,
+        ))
 
     for _key, _qty in (q.detail_items or {}).items():
         if not _qty:

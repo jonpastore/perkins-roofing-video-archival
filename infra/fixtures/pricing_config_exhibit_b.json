@@ -577,7 +577,7 @@
       "traffic_coat_1coat": 225,
       "tpo_primer": 25
     },
-    "_note_silicone_addons": "N25 Add Granules $50/sq (M $20); N26 Traffic Coat 1 coat $225/sq (M $85); L27 'for TPO add $25 for TPO primer'. L27's EXTRA-COAT price is deliberately absent: it reads '$100 per extra coat (L, OH & P) + M' and never says what M is, so the number is incomplete and pricing it would invent Tim's material cost. -> Tim.",
+    "_note_silicone_addons": "N25 Add Granules $50/sq (M $20); N26 Traffic Coat 1 coat $225/sq (M $85); L27 'for TPO add $25 for TPO primer'. Extra COATS are not here — they are per-coat with a material component; see silicone_extra_coat_lop.",
     "detail_items": {
       "penetration_flashing": 70,
       "l_metal_galv_10ft": 85,
@@ -588,7 +588,9 @@
       "additional_demo_layer": 35,
       "flashing_valley_metal_oh_per_lf": 2.3
     },
-    "_note_detail_items": "Overhead-tab detail list, JUPITER column. Units are the sheet's own: per each (penetration, scupper), per 10' piece (L metal, term bar, coping cap), per square (3rd ply, extra demo layer), per LF (flashing OH). Miami differs on two: penetration_flashing 75 and third_ply_sav_fr_20yr 43. That split is expressed by MIAMI'S OWN CONFIG holding those values - pricing_configs is already keyed by branch, so nesting a branch dimension in here would be the 'config keys shaped by source, not dimension' defect. NAPLES: Tim's sheet has no Naples column. Its config carries Jupiter's numbers, which is what every other key already does (all three configs are byte-identical today) - but it is an assumption, not his data. -> Tim."
+    "_note_detail_items": "Overhead-tab detail list, JUPITER column. Units are the sheet's own: per each (penetration, scupper), per 10' piece (L metal, term bar, coping cap), per square (3rd ply, extra demo layer), per LF (flashing OH). Miami differs on two: penetration_flashing 75 and third_ply_sav_fr_20yr 43. That split is expressed by MIAMI'S OWN CONFIG holding those values - pricing_configs is already keyed by branch, so nesting a branch dimension in here would be the 'config keys shaped by source, not dimension' defect. NAPLES: CONFIRMED by Jon 2026-08-02 — the branch has not started operating yet and will clone Tim's (Jupiter) rates, so Jupiter's column is the right answer here, not a placeholder. Revisit if Naples ever prices independently.",
+    "silicone_extra_coat_lop": 100,
+    "_note_silicone_extra_coat": "L27: '$100 per extra coat (L, OH & P) + M'. M is MATERIALS (Jon, 2026-08-02). The material half is NOT stored here because it is not a constant — the sheet's own silicone build-ups run $195/$220/$300 for 1/2/3 coats (+$25 then +$80), so there is no single per-coat figure. The caller supplies extra_coat_material_per_sq; omitting it RAISES rather than billing L/OH/P alone, which would look like a complete price while under-charging every time."
   },
   "plywood_replacement": {
     "per_sheet": {

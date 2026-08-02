@@ -793,10 +793,37 @@ def test_silicone_addons_price_per_square(key, rate):
     assert _line(r, f"silicone_addon_{key}")["amount"] == rate * 20
 
 
-def test_extra_coat_is_not_priced_because_its_material_half_is_unspecified():
-    """L27 reads "$100 per extra coat (L, OH & P) + M" and never says what M is. Pricing it would
-    invent Tim's material cost, so the key must not exist."""
-    assert "extra_coat" not in _cfg().silicone_addons()
+def test_extra_coat_is_not_a_flat_addon():
+    """An extra coat is per-COAT and carries materials, so it must not sit in the flat
+    per-square add-on map alongside granules and traffic coat."""
+    assert not any(k.startswith("extra_coat") for k in _cfg().silicone_addons())
+
+
+def _coat_quote(coats, material=None, sq=20):
+    return QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=sq,
+                      slope_type="low_slope", project_kind="commercial",
+                      extra_coats=coats, extra_coat_material_per_sq=material)
+
+
+def test_extra_coats_bill_lop_plus_materials_per_coat():
+    """L27: "$100 per extra coat (L, OH & P) + M", M = materials (Jon, 2026-08-02)."""
+    r = estimate(_cfg(), _coat_quote(2, material=30))
+    li = _line(r, "silicone_extra_coats")
+    assert li["per_sq"] == 130                     # 100 L/OH/P + 30 material
+    assert li["amount"] == 130 * 20 * 2            # x squares x coats
+
+
+def test_extra_coats_without_materials_raises_rather_than_billing_labour_alone():
+    """The material half is genuinely variable — Tim's own build-ups run $195/$220/$300 for
+    1/2/3 coats, so there is no constant to default to. Billing only L/OH/P would look like a
+    complete price and under-charge every time."""
+    from core.estimator import ConfigError
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), _coat_quote(1))
+
+
+def test_no_extra_coat_line_when_none_requested():
+    assert _line(estimate(_cfg(), _coat_quote(0)), "silicone_extra_coats") is None
 
 
 def test_unknown_silicone_addon_raises():

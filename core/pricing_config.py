@@ -715,12 +715,25 @@ class PricingConfig:
         return (float(ls.get("trash_chute_sections_per_story") or 0),
                 float(ls.get("trash_chute_per_section") or 0))
 
+    def silicone_extra_coat_lop(self) -> float:
+        """Labour + overhead + profit per extra silicone coat, per square. L27: "$100 per extra
+        coat (L, OH & P) + M ... for TPO add $25 for TPO primer".
+
+        M is MATERIALS (confirmed by Jon 2026-08-02) and is deliberately NOT a config constant,
+        because it is not one: the sheet's own silicone material build-ups run $195 / $220 / $300
+        for 1 / 2 / 3 coats, i.e. +$25 then +$80 — so there is no single per-coat material figure
+        to store. The caller supplies it per quote; this key holds only the half Tim did state.
+
+        0 when unconfigured.
+        """
+        return float((self.raw.get("low_slope") or {}).get("silicone_extra_coat_lop") or 0)
+
     def silicone_addons(self) -> dict[str, float]:
         """Silicone add-on key -> per-square price (N25/N26/L27).
 
-        Granules $50/sq, traffic coat (1 coat) $225/sq, TPO primer $25/sq. The extra-COAT price is
-        deliberately NOT here: L27 gives "$100 per extra coat (L, OH & P) + M" and never says what
-        M is, so the number is incomplete and pricing it would invent Tim's material cost.
+        Granules $50/sq, traffic coat (1 coat) $225/sq, TPO primer $25/sq. Extra COATS are not
+        here — they are per-coat and carry a material component, so they go through
+        silicone_extra_coat_lop + the quote's own material figure.
         """
         ups = (self.raw.get("low_slope") or {}).get("silicone_addons") or {}
         return {k: float(v) for k, v in ups.items()

@@ -10,14 +10,14 @@ WHAT IT ADDS. Only keys the engine gained in #417 and that no config carries yet
   cover_board_oh_adder / cover_board_deck_types              (G7)
   polyglass_warranty_upgrades                                (G8)
   detail_items                                               (G10)
-  silicone_addons                                            (G13)
+  silicone_addons / silicone_extra_coat_lop                  (G13)
 
 BRANCH SPLIT. Only `detail_items` differs, and only on two entries — Tim's overhead tabs give a
 Jupiter and a Miami column. Each branch's own config carries its own values; there is no
 branch-keyed map inside a config, because pricing_configs is already keyed by branch.
 
-⚠️ NAPLES has no column in Tim's sheet. It gets Jupiter's numbers, which is what every other key
-already does (all three configs are byte-identical today) — but it is an assumption, not his data.
+NAPLES: confirmed by Jon 2026-08-02 — the branch has not started operating yet and will clone
+Tim's (Jupiter) rates. Jupiter's column is the right answer, not a placeholder.
 
 PRICE IMPACT, measured against prod before writing this (2026-08-02):
   Of 101 estimates, ZERO are low_slope, ZERO use a densdeck deck, ZERO are 3-5 storey.
@@ -50,6 +50,7 @@ COMMON = {
         "polyfresko_sav_plus_30yr": 315,
     },
     "silicone_addons": {"granules": 50, "traffic_coat_1coat": 225, "tpo_primer": 25},
+    "silicone_extra_coat_lop": 100,
 }
 
 # Jupiter column of the overhead-tab detail list.
@@ -69,7 +70,9 @@ _DETAIL_MIAMI = {**_DETAIL_JUPITER, "penetration_flashing": 75, "third_ply_sav_f
 DETAIL_BY_BRANCH = {
     "jupiter": _DETAIL_JUPITER,
     "miami": _DETAIL_MIAMI,
-    "naples": _DETAIL_JUPITER,  # assumption — no Naples column exists
+    # Naples has not started operating and will clone Tim's (Jon, 2026-08-02),
+    # so Jupiter's column is the answer here, not a placeholder.
+    "naples": _DETAIL_JUPITER,
 }
 
 
