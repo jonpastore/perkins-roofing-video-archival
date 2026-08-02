@@ -131,6 +131,18 @@ class ProjectPricing:
     #: The count actually priced — reported because it now DEFAULTS to the building count, so a
     #: caller that passed nothing still has to persist and display the number it was charged for.
     permit_count: int = 1
+    #: The salesperson's payout on the whole bid (#452). A single-roof quote has reported
+    #: `estimated_commission` all along; a multi-building bid reported NOTHING — on exactly the
+    #: shape #430/#449 was built for, the salesperson saw a blank where their own number goes.
+    commission: float = 0.0
+    commission_basis: str = "profit"
+    commission_rate: float = 0.0
+    #: What the rate was applied to, reported so the payout is checkable without re-deriving it.
+    commission_base: float = 0.0
+    #: Margin contributed by project BLOCKS (general conditions, add-ons) rather than by roofs.
+    #: Surfaced because on the `profit` basis it sits inside commission_base and #451 has not
+    #: settled whether it should — see the warning this raises.
+    project_items_margin: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -142,6 +154,11 @@ class ProjectPricing:
             "floor": self.floor,
             "warnings": self.warnings,
             "permit_count": self.permit_count,
+            "commission": round(self.commission, 2),
+            "commission_basis": self.commission_basis,
+            "commission_rate": self.commission_rate,
+            "commission_base": round(self.commission_base, 2),
+            "project_items_margin": round(self.project_items_margin, 2),
         }
 
 
@@ -305,11 +322,54 @@ def price_project(
         out.project_total += item.amount
         # Markup ON a project block is margin the same way a roof's markup is.
         out.profit += item.amount - item.cost
+        out.project_items_margin += item.amount - item.cost
 
     out.floor = _apply_project_floor(config, out, total_days, floor_basis)
+    _apply_commission(config, out, buildings)
     out.project_total = round(out.project_total, 2)
     out.profit = round(out.profit, 2)
     return out.to_dict()
+
+
+def _apply_commission(config: PricingConfig, out: ProjectPricing,
+                      buildings: list[Building]) -> None:
+    """Compute the salesperson's payout on the whole bid (#452).
+
+    Runs AFTER the floor, deliberately: the floor moves the profit line, and on the `profit`
+    basis commission is a percentage of that line. Computing it first would pay the salesperson
+    on a number the customer was never charged — and it is the same ordering the single-roof path
+    uses (core/estimator.py applies _apply_min_margin before deriving estimated_commission).
+
+    Basis and rate come from the FIRST building, matching how `zone` is already taken: a bid is
+    one deal with one salesperson, so a per-building commission basis would describe something
+    that does not exist. An operator override on that building still wins, which is where a
+    negotiated per-salesperson split lives.
+    """
+    first = buildings[0].quote
+    out.commission_basis = first.commission_basis
+    out.commission_rate = (
+        first.commission_rate_override if first.commission_rate_override is not None
+        else config.commission_rate(first.commission_basis)
+    )
+    out.commission_base = (out.project_total if out.commission_basis == "job" else out.profit)
+    out.commission = out.commission_base * out.commission_rate
+
+    # #451, unresolved: is the margin on a project BLOCK commissionable? On the `profit` basis it
+    # is inside the base above, because `out.profit` sums every block's markup alongside every
+    # roof's. Tim has never said whether general conditions — his own $22,800 green fence /
+    # telehandler plus $9,000 full-time PM, marked up x1.15 — pay the salesperson.
+    #
+    # Stated with the dollar consequence rather than silently resolved either way: excluding it
+    # would cut a real payout, including it may pay on scope he considers pass-through cost.
+    if out.commission_basis == "profit" and out.project_items_margin > 0:
+        excl = (out.profit - out.project_items_margin) * out.commission_rate
+        out.warnings.append(
+            f"commission_base_includes_project_blocks: ${out.commission:,.2f} is "
+            f"{out.commission_rate * 100:.3g}% of the WHOLE ${out.profit:,.2f} profit, of which "
+            f"${out.project_items_margin:,.2f} is markup on project blocks (general conditions, "
+            f"add-ons) rather than on roofs. If that scope is not commissionable the payout is "
+            f"${excl:,.2f} — a ${out.commission - excl:,.2f} difference. Pending Tim (#451)."
+        )
 
 
 def total_squares(buildings: list[Building]) -> float:
@@ -377,6 +437,13 @@ def project_snapshot(roll_up: dict[str, Any], buildings: list[Building],
             "floor": roll_up["floor"],
             "building_count": len(roll_up["buildings"]),
             "warnings": roll_up["warnings"],
+            # #452 — carried here because the snapshot is what the salesperson's screen reads.
+            # A roll-up that computes commission and then drops it on the way out is the same
+            # blank by a longer route.
+            "commission": roll_up["commission"],
+            "commission_basis": roll_up["commission_basis"],
+            "commission_rate": roll_up["commission_rate"],
+            "commission_base": roll_up["commission_base"],
         },
     }
 

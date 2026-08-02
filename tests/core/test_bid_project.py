@@ -513,3 +513,88 @@ def test_per_building_squares_counts_both_sections():
     r = price_project(load_config(raw), buildings)
     assert r["buildings"][0]["squares"] == 35
     assert sum(b["squares"] for b in r["buildings"]) == total_squares(buildings)
+
+
+# ---------------------------------------------------------------------------
+# Commission on a multi-building bid (#452)
+# ---------------------------------------------------------------------------
+# A single-roof quote has reported `estimated_commission` all along. A project reported NOTHING —
+# so on exactly the bid shape #430/#449 was built for, the salesperson saw a blank where their own
+# payout goes. Found by the critic in the 2026-08-02 R2.
+
+def test_project_reports_a_commission_at_all():
+    r = price_project(_cfg_v2(), [_b("A", 30), _b("B", 20)])
+    assert r["commission"] > 0
+    assert r["commission_base"] > 0
+
+
+def test_commission_on_the_profit_basis_is_a_share_of_the_rolled_up_profit():
+    cfg = _cfg_v2()
+    r = price_project(cfg, [_b("A", 30), _b("B", 20)])
+    assert r["commission_basis"] == "profit"
+    assert r["commission_base"] == r["profit"]
+    assert r["commission"] == pytest.approx(r["profit"] * r["commission_rate"])
+
+
+def test_commission_on_the_job_basis_is_a_share_of_gross():
+    cfg = _cfg_v2()
+    b = _b("A", 30)
+    from dataclasses import replace
+    b = Building(name=b.name, days=b.days, quote=replace(b.quote, commission_basis="job"))
+    r = price_project(cfg, [b, _b("B", 20)])
+    assert r["commission_basis"] == "job"
+    assert r["commission_base"] == r["project_total"]
+    assert r["commission"] == pytest.approx(r["project_total"] * r["commission_rate"])
+
+
+def test_commission_is_computed_after_the_floor_not_before():
+    """The floor MOVES the profit line, and on the profit basis commission is a percentage of that
+    line. Paying on the pre-floor number would pay the salesperson on a figure the customer was
+    never charged — the same ordering the single-roof path uses."""
+    cfg = _cfg_v2()
+    r = price_project(cfg, [_b("Tiny", 3)])          # small enough to be floored
+    assert r["floor"], "expected this bid to be floored"
+    assert r["commission"] == pytest.approx(r["profit"] * r["commission_rate"])
+
+
+def test_operator_override_wins_over_the_config_rate():
+    from dataclasses import replace
+    b = _b("A", 30)
+    b = Building(name=b.name, days=b.days,
+                 quote=replace(b.quote, commission_rate_override=0.075))   # Josh's split
+    r = price_project(_cfg_v2(), [b, _b("B", 20)])
+    assert r["commission_rate"] == 0.075
+
+
+def test_project_block_margin_is_reported_and_flagged_not_silently_commissioned():
+    """#451 is unresolved: nobody has said whether markup on general conditions pays the
+    salesperson. It sits inside the profit base, so the roll-up states the amount and what the
+    payout would be without it, rather than resolving it either way."""
+    cfg = _cfg_v2()
+    gc = ProjectItem(key="gc", label="General Conditions", cost=30000.0, markup=1.15,
+                     allocation="project")
+    r = price_project(cfg, [_b("A", 30)], project_items=[gc])
+    assert r["project_items_margin"] == pytest.approx(30000 * 0.15)
+    warn = next(w for w in r["warnings"]
+                if w.startswith("commission_base_includes_project_blocks"))
+    assert "#451" in warn
+    # The warning must carry BOTH payouts, or it is a question without its price.
+    excl = (r["profit"] - r["project_items_margin"]) * r["commission_rate"]
+    assert f"${excl:,.2f}" in warn
+
+
+def test_no_project_block_warning_when_there_are_no_blocks():
+    r = price_project(_cfg_v2(), [_b("A", 30)])
+    assert not any(w.startswith("commission_base_includes_project_blocks")
+                   for w in r["warnings"])
+
+
+def test_snapshot_carries_the_commission_through():
+    """A roll-up that computes commission and then drops it on the way out is the same blank by
+    a longer route — the snapshot is what the salesperson's screen reads."""
+    cfg = _cfg_v2()
+    buildings = [_b("A", 30), _b("B", 20)]
+    r = price_project(cfg, buildings)
+    snap = project_snapshot(r, buildings, {"roof_type": "13_tile", "num_squares": 1})
+    assert snap["project_totals"]["commission"] == r["commission"]
+    assert snap["project_totals"]["commission_basis"] == r["commission_basis"]
