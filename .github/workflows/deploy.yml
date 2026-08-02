@@ -93,3 +93,59 @@ jobs:
             *":$want") echo "serving $want" ;;
             *) echo "::error::prod is serving '$got', expected tag '$want'"; exit 1 ;;
           esac
+
+      # ---------------------------------------------------------------------
+      # The SPA. Until 2026-08-02 this workflow never touched web/, so a merged
+      # UI change was not live until someone remembered to run `firebase deploy`
+      # by hand — #430 slice 4's entire interface shipped CI-green and invisible
+      # for a day, and "deployed" in a commit message meant the API only.
+      #
+      # AFTER the API, deliberately: the SPA calls endpoints the new image
+      # serves, so shipping the interface first exposes buttons that 404.
+      # ---------------------------------------------------------------------
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Materialise the SPA build environment
+        run: |
+          gcloud secrets versions access latest --secret=spa-build-env > web/.env
+          # A build with no .env SUCCEEDS and ships a bundle whose Firebase key is `undefined` —
+          # every user then hits auth/invalid-api-key. Fail here, where the cause is legible.
+          grep -qE '^VITE_FIREBASE_API_KEY=.+' web/.env \
+            || { echo "::error::spa-build-env has no VITE_FIREBASE_API_KEY — refusing to ship a bundle that cannot authenticate"; exit 1; }
+
+      - name: Build the SPA
+        working-directory: web
+        run: |
+          npm ci
+          # `npm run build` is `tsc -b && vite build`. NOT `tsc --noEmit`, which has passed twice
+          # on code the real build rejected.
+          npm run build
+
+      - name: The built bundle must actually carry the key
+        run: |
+          key="$(grep -E '^VITE_FIREBASE_API_KEY=' web/.env | cut -d= -f2-)"
+          grep -rqF "$key" web/dist/assets/ \
+            || { echo "::error::the built bundle does not contain the Firebase key — the env did not reach vite"; exit 1; }
+
+      - name: Deploy hosting
+        working-directory: web
+        # firebase.json and .firebaserc live in web/, and hosting target `app` maps to
+        # public: dist -> web/dist. `setback` is a separate site with its own build and is
+        # deliberately NOT deployed here. The CLI authenticates with the same WIF credentials
+        # google-github-actions/auth exported (GOOGLE_APPLICATION_CREDENTIALS); no CI token.
+        # Pinned to the version this path was verified against by hand on 2026-08-02, so a CLI
+        # release cannot change how prod ships without someone choosing it.
+        run: npx --yes firebase-tools@15.23.0 deploy --only hosting:app --project video-archival-and-content-gen --non-interactive
+
+      # "Deploy complete!" is the CLI's claim, not evidence. Check what the site SERVES —
+      # the same discipline as the image-tag check above.
+      - name: Verify the SERVED bundle is the one just built
+        run: |
+          want="$(basename "$(ls web/dist/assets/index-*.js | head -1)")"
+          got="$(curl -fsS https://video-archival-and-content-gen.web.app/ \
+                   | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1)"
+          echo "want=$want got=$got"
+          [ "$want" = "$got" ] \
+            || { echo "::error::hosting is serving '$got', expected '$want'"; exit 1; }

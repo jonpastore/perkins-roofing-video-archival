@@ -169,9 +169,14 @@ postgres, and the module path is needed because `scripts/` is not a package.
    *including inspections*; `_apply_project_floor` does `ceil(crew_days / 5)`. No price moves today
    (default `project`, the SPA cannot select `week`) but #449 is written in those terms. His
    inspection/cleanup allowance is **not a number we have** — ask, do not invent.
-3. **Wire the SPA deploy into `deploy.yml`.** Unchanged from the pm doc: `deploy.yml` never touches
-   `web/`, so a merged UI change is not live until someone hand-runs `firebase deploy`. This
-   session's SPA changes are subject to exactly that.
+3. ~~**Wire the SPA deploy into `deploy.yml`.**~~ **DONE 2026-08-02.** `deploy.yml` now builds and
+   ships the SPA after the API (that order on purpose — the interface calls endpoints the new image
+   serves). Three gates, because a hosting deploy fails quietly in three different ways: the build
+   env must contain a Firebase key (a build with no `web/.env` **succeeds** and ships a bundle whose
+   key is `undefined`, giving every user `auth/invalid-api-key`), the built bundle must actually
+   contain that key, and the SERVED bundle must be the one just built — "Deploy complete!" is the
+   CLI's claim, not evidence. Needed `roles/firebasehosting.admin` on `ci-deployer` and a
+   `spa-build-env` secret (`web/.env` is gitignored, so CI had no source for it).
 4. **Jon's calls:** `estimating_view` on a writing endpoint; whether to expose `floor_basis` at all.
 5. Curate 5 ready portfolio projects (human: photos AND alt text) — isola 1,452 · olsen 802 ·
    fisher-7900 311 · fisher-77 285 · pinnacle 186.
@@ -194,7 +199,11 @@ postgres, and the module path is needed because `scripts/` is not a package.
 - ⚠️ Knowify mirror deliverable money is in **CENTS**.
 - ⚠️ **CI runs `pytest tests/`** — the whole tree; the pre-push set does not reach
   `tests/test_f2_engine.py`.
-- ⚠️ **CI does not deploy the SPA.** Verify the SERVED bundle, not "Deploy complete!".
+- ⚠️ ~~CI does not deploy the SPA.~~ **It does now** (2026-08-02, §4.3). Still verify the SERVED
+  bundle rather than "Deploy complete!" — the workflow does exactly that, and so should a human.
+- ⚠️ **A frontend build with no `web/.env` SUCCEEDS** and ships a bundle whose Firebase key is
+  `undefined`. It fails at `getAuth()` for every user, not at build time. Same trap that made the
+  frontend tests pass locally and fail in CI.
 - ⚠️ `npx tsc --noEmit` is NOT the build gate; `npm run build` (`tsc -b`) is.
 - ⚠️ `test_schema_maxlength` binds on IMPORTED CLASS NAMES, not on writes.
 - ⚠️ **Migrations are applied BY HAND**; `apply_migrations_adc.py` ignores `DB_URL` (always prod)
