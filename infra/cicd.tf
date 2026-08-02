@@ -93,6 +93,11 @@ resource "google_project_iam_member" "deployer_roles" {
     # client_secret as unset and plans an update-in-place FOREVER — the drift gate could never
     # go green even with zero real drift. Viewer, not admin: read-only.
     "roles/identityplatform.viewer",
+    # The SPA half of the deploy. `deploy.yml` never touched web/, so a merged UI change was not
+    # live until someone remembered to run `firebase deploy` by hand — slice 4's entire interface
+    # shipped CI-green and invisible for a day. Hosting admin is the narrow role: it can release a
+    # new version of a site, and cannot touch Auth, Firestore or project settings.
+    "roles/firebasehosting.admin",
   ])
   project = var.project_id
   role    = each.value
@@ -142,6 +147,41 @@ resource "google_secret_manager_secret_iam_member" "deployer_cf_token" {
 # passing by reference so it doesn't have to.
 resource "google_secret_manager_secret_iam_member" "deployer_idp_secret" {
   secret_id = google_secret_manager_secret.secrets["google-idp-client-secret"].id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.deployer.email}"
+}
+
+# ---------------------------------------------------------------------------
+# The SPA's build-time environment.
+#
+# Vite INLINES every VITE_* value into the bundle at build time, so these are compiled in, not
+# read at runtime — and they are already public: the Firebase web API key is downloadable from
+# the served bundle right now, by design (it identifies the project; access is gated by Firebase
+# Auth, not by the key's secrecy).
+#
+# They live in Secret Manager anyway, for one non-security reason: `web/.env` is gitignored, so
+# CI has no source for them, and a build WITHOUT them still SUCCEEDS — Vite substitutes undefined
+# and the app dies at getAuth() with `auth/invalid-api-key` for every user. That is the same trap
+# that made the frontend tests pass locally and fail in CI. A secret keeps one source of truth and
+# lets the key rotate without a repo edit; deploy.yml asserts the built bundle actually carries it.
+#
+# The container is Terraformed; the VALUE is added by hand and never enters Terraform state:
+#   gcloud secrets versions add spa-build-env --data-file=web/.env
+# ---------------------------------------------------------------------------
+resource "google_secret_manager_secret" "spa_build_env" {
+  secret_id = "spa-build-env"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# The third and last secret VALUE the deployer can read (with the Cloudflare token and the IdP
+# client secret above). Resource-scoped, same as those.
+resource "google_secret_manager_secret_iam_member" "deployer_spa_build_env" {
+  secret_id = google_secret_manager_secret.spa_build_env.id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.deployer.email}"
 }
