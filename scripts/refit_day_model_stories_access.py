@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections import Counter
 
 import scripts.honest_day_model_cv as H
@@ -120,9 +121,9 @@ def frozen_scores():
 
 
 def main():
-    import sys
     if "--frozen" in sys.argv:
-        frozen_scores(); return
+        frozen_scores()
+        return
     homes = joined_homes()
     usable = usable_pairs(homes)
     errors, chosen = [], []
