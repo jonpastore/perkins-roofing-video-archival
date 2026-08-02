@@ -1597,3 +1597,41 @@ class TestSplitResolutionDoesNotBreakLowSlope:
         keys = {li["key"] for li in body["line_items_detail"]}
         assert any(k.startswith("flat_") for k in keys), \
             "the measurement's 8 flat squares must reach the price as their own line"
+
+
+# ---------------------------------------------------------------------------
+# The request model must be able to express every engine input (#417 follow-up)
+# ---------------------------------------------------------------------------
+# Deploying #417 shipped the engine inputs and NOT the API fields to set them, so warranty
+# upgrades and pressure cleaning were silently absent from real quotes — Pydantic dropped the
+# unknown keys and the engine defaulted them off. The endpoint returned 200 the whole time. This
+# is the config-with-no-reader defect one layer up: a capability no caller can reach.
+
+_LOW_SLOPE_ENGINE_INPUTS = [
+    "stories", "include_pressure_cleaning", "warranty_upgrade",
+    "silicone_addons", "extra_coats", "extra_coat_material_per_sq", "detail_items",
+]
+
+
+@pytest.mark.parametrize("field_name", _LOW_SLOPE_ENGINE_INPUTS)
+def test_quote_request_can_express_each_low_slope_engine_input(field_name):
+    from api.routes.estimator import QuoteRequest
+    assert field_name in QuoteRequest.model_fields, (
+        f"QuoteRequest cannot express {field_name!r}, so no caller can ever set it. "
+        "core.estimator.QuoteInput has the field and the engine reads it — an input the API "
+        "cannot express is dead capability that still returns 200."
+    )
+
+
+@pytest.mark.parametrize("field_name", _LOW_SLOPE_ENGINE_INPUTS)
+def test_each_low_slope_input_is_actually_forwarded_to_the_engine(field_name):
+    """Declaring the field is half of it. This asserts the value reaches QuoteInput, because a
+    field that parses and is then never passed through fails exactly as silently."""
+    import inspect
+
+    from api.routes import estimator as mod
+    src = inspect.getsource(mod._quote_input_from_request)
+    assert f"body.{field_name}" in src, (
+        f"QuoteRequest declares {field_name!r} but _quote_input_from_request never reads it, "
+        "so it parses and is discarded."
+    )

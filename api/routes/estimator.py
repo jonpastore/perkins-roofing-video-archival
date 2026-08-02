@@ -148,6 +148,29 @@ class QuoteRequest(BaseModel):
     accessibility_flat: Optional[float] = Field(default=None, ge=0)
     waterfront: bool = False   # salt exposure -> gate the COASTAL package
     roof_height: Literal["1_story", "2_stories", "3_5_stories", "6_plus"] = "1_story"
+    # ── #417 low-slope inputs ────────────────────────────────────────────────────────────
+    # These reach QuoteInput and nothing else. They exist here because an engine capability the
+    # request model cannot express is unreachable: the first live check after deploying #417 found
+    # the warranty upgrade and pressure cleaning silently absent from real quotes, because Pydantic
+    # dropped the unknown keys and the engine defaulted them off. Same shape as the config-with-no-
+    # reader defect #417 itself was about, one layer up.
+    #: Actual storey count. roof_height is a BAND and cannot say how many trash-chute sections a
+    #: job needs; absent means the engine bills the band's floor and warns.
+    stories: Optional[int] = Field(default=None, ge=1, le=60)
+    #: Pressure cleaning as an add-on — $30/sq flat, $40/sq sloped (sheet O1/O2).
+    include_pressure_cleaning: bool = False
+    #: Polyglass warranty upgrade key (low_slope.polyglass_warranty_upgrades). An unknown key is
+    #: a 422 from the engine, never a silent fall back to the base warranty.
+    warranty_upgrade: Optional[str] = Field(default=None, max_length=60)
+    #: Silicone add-on keys (low_slope.silicone_addons) — granules, traffic coat, TPO primer.
+    silicone_addons: list[str] = Field(default_factory=list, max_length=10)
+    #: Extra silicone coats. Needs extra_coat_material_per_sq — L27 prices a coat as
+    #: "$100 (L, OH & P) + M", and billing the labour half alone under-charges every time.
+    extra_coats: int = Field(default=0, ge=0, le=10)
+    extra_coat_material_per_sq: Optional[float] = Field(default=None, ge=0)
+    #: Detail-item key -> quantity in the sheet's own unit (low_slope.detail_items).
+    detail_items: dict[str, float] = Field(default_factory=dict)
+    # ─────────────────────────────────────────────────────────────────────────────────────
     #: Poor access to part of the roof (a back slope the truck cannot reach, a tight lot). Feeds
     #: the DAY model only — accessibility_flat is the money field. #436: the single feature that
     #: moved the day model most, 83% -> 90% of homes within a day of Tim's own booked days.
@@ -403,6 +426,14 @@ def _quote_input_from_request(body, cfg_row, db, claims):
         include_insulation=body.include_insulation,
         insulation_thickness=body.insulation_thickness,
         include_tapered=body.include_tapered,
+        # #417 — see the request model. Every one of these is inert unless the caller sets it.
+        stories=body.stories,
+        include_pressure_cleaning=body.include_pressure_cleaning,
+        warranty_upgrade=body.warranty_upgrade,
+        silicone_addons=list(body.silicone_addons),
+        extra_coats=body.extra_coats,
+        extra_coat_material_per_sq=body.extra_coat_material_per_sq,
+        detail_items=dict(body.detail_items),
         plywood_sheets=body.plywood_sheets,
         plywood_thickness=body.plywood_thickness,
         override_base_cost=body.override_base_cost,
