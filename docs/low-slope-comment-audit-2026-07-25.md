@@ -47,7 +47,25 @@ Each of these is a build-up in a comment that sums to the headline we use. This 
 
 ## 2. Gaps — in Tim's comments, absent from our engine
 
-Ranked by exposure. Nothing here is implemented; each is a real quote that comes out wrong today.
+Ranked by exposure.
+
+> **STATUS, updated 2026-08-02 (#417).** The original line here read *"Nothing here is
+> implemented"*. That was wrong in both directions when written or shortly after, and re-reading
+> the code rather than this doc is what found it:
+>
+> | | state | note |
+> |---|---|---|
+> | G2 coating basis + demo | **was already done** | both live as warnings, deliberately unpriced |
+> | G4 FBC `tpo_oh` 125 | **was already done** | config carries 125 with Tim's comment cited |
+> | G3 Stockmeier · G9 pressure cleaning | **done 2026-08-02** | values were already in config — *including all three ACTIVE prod configs* — and **no code read them**. `_note_stockmeier_floor` claimed it was "now enforced as a warning". It was not. |
+> | G7 cover board · G8 warranty upgrades | **built 2026-08-02** | ⚠️ engine-complete but the keys are not in prod's configs yet |
+> | G6 trash chute · G10 detail items · G13 silicone add-ons | **built 2026-08-02** | new inputs: `stories`, `detail_items`, `silicone_addons` |
+> | G11 stucco metal | **⚠️ was NEVER "not implemented"** | see below — we bill one side of a 10× ambiguity, live |
+> | G1 · G5 · G12 | **open, → Tim** | no number can be derived from the sheet |
+>
+> The lesson worth keeping: **a value sitting correctly in config is not an implemented rule.**
+> Four of these had the right number and no reader, and two carried notes asserting they were
+> already enforced. Grep for the reader, not for the key.
 
 ### HIGH
 
@@ -121,7 +139,24 @@ Both overhead tabs carry a priced detail list we do not model, and it is branch-
 **G11. The sheet contradicts itself on stucco metal — by 10×.**
 D29 (polyglass block): *"Add **$9 per LF** for stucco metal / L flashing and $75 per penetration."*
 G26 (TPO block): *"Add **$9 per 10 LF** … and $75 per penetration."* Same adder, two blocks, one
-order of magnitude apart. Neither is implemented. **→ Tim.**
+order of magnitude apart. **→ Tim.**
+
+> ⚠️ **CORRECTION 2026-08-02: "Neither is implemented" was false, and this is the most expensive
+> error in this document.** `stucco_metal_per_lf: 9` is live in **all three active prod configs**
+> and `_build_optional` bills `stucco_metal_lf × 9` — i.e. we have been shipping the **D29
+> reading** all along. If G26 is the correct one, every stucco-metal line is **10× over**: 200 LF
+> bills **$1,800** where it should bill **$180**.
+>
+> The engine now emits `stucco_metal_basis_contradiction` on any quote carrying stucco metal,
+> naming both totals. It is **not** defaulted to the cheaper reading — that would quietly cut a
+> real charge by 90% on the same evidence that cannot settle it.
+>
+> **Realised exposure today is $0, and that is a measurement, not an assumption.** Of the 101
+> estimates in prod, **zero** carry `stucco_metal_lf > 0` — and zero have `slope_type =
+> low_slope` at all, so the entire low-slope engine has never priced a production quote. The
+> defect is live in code and config and has simply not been reached yet. That is the good case:
+> it is fixable before it is ever billed, which is exactly why it belongs in Tim's letter now
+> rather than after the first low-slope job.
 
 **G12. Hauling under-recovers on small roofs.**
 E23 ($35/sq hauling, inside the $475 polyglass base) comment: *"$800 / 25 squares"* = $32/sq. The

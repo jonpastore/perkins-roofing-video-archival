@@ -265,9 +265,30 @@ where e.input_json->>'measurement_id' is not null and m.pitched_sq is null;  -- 
 
 Pasted here because "re-run the query" without the query is §0's own thesis applied to this wave's
 exit assertion. **`0` is a point-in-time measurement of operator behaviour, not a property** — a
-salesperson can make it non-zero before the guard lands. **If it returns non-zero, stop:** each row
-is a quote that double-billed a flat section, and any that reached a customer as a sent proposal is
-a commercial decision, not a code fix.
+salesperson can make it non-zero before the guard lands.
+
+> **RUN 2026-08-02: returns 10, and the "stop" reading was WRONG.** The original line said each row
+> *"is a quote that double-billed a flat section"*. Measured, they are not:
+>
+> - **All 36 RoofR measurements already carry the split** (29 `roofr` + 7 `roofr_fixture`, 36/36).
+>   The 6 without one are **5 manual entries** created by jon@perkinsroofing.net on 7/13–7/18 and
+>   **1 `google_solar` demo** (1200 Brickell Ave). None is Knowify-sourced; none has a
+>   `raw_payload` to backfill *from*. **`#429a` has nothing to backfill.**
+> - **All 10 estimates have `flat_squares = None`** — which is the case this section's own
+>   acceptance criteria (§5.1) says must **proceed**, because a blanket refusal "would refuse every
+>   legitimately all-sloped legacy quote". The exit assertion and the acceptance criteria
+>   contradicted each other; the acceptance criteria is the correct one.
+> - **0 of the 10 have a proposal.** Nothing reached a customer, so the "commercial decision"
+>   escalation never applies. They are Jon's own test rows.
+>
+> **One row still deserves a human glance:** measurement 18 carries `provenance_note='RoofR'` with
+> `provider='manual'` — RoofR numbers typed in by hand. RoofR's `total_sq` is pitched+flat, so
+> estimate 5 ($53,910, draft, never sent) may price a flat section at the sloped rate. The shipped
+> guard now stamps `split_unknown` on both the result and the persisted audit row for any *new*
+> quote against these, and its warning names this exact provenance trap.
+>
+> **The assertion to keep is not `= 0`.** It is: every measurement whose `total_sq` came from a
+> pitched+flat source carries a split. A manual all-sloped entry legitimately has none.
 
 ---
 

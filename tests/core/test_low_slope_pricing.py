@@ -554,3 +554,326 @@ def test_adhered_tpo_concrete_hvhz_quote_math():
     assert base["amount"] + oh["amount"] + deck["amount"] == pytest.approx((485 + 135 + 15) * sq)
     assert result["project_total"] >= base["amount"] + oh["amount"] + deck["amount"]
     assert result["project_total"] > 0
+
+
+# ---------------------------------------------------------------------------
+# Stockmeier 12-square minimum (#417 G2/G3) — config that existed and was never read
+# ---------------------------------------------------------------------------
+# Live sheet M29: "STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is $390 M per SQ
+# and T&M)". stockmeier_min_sq and stockmeier_under_min_material_per_sq have been in the config
+# since the low-slope wave — including in all three ACTIVE prod configs, verified 2026-08-02 —
+# and no code read either. The fixture's own _note_stockmeier_floor said it was "now enforced as
+# a warning", which is the thing these tests exist to keep true.
+
+def _stockmeier_quote(sq: float, zone: str = "HVHZ") -> QuoteInput:
+    return QuoteInput(
+        code_zone=zone,
+        roof_type="stockmeier_polyurethane_2coat",
+        num_squares=sq,
+        slope_type="low_slope",
+        project_kind="commercial",
+    )
+
+
+def test_stockmeier_under_minimum_warns():
+    r = estimate(_cfg(), _stockmeier_quote(8))
+    warns = " ".join(r.get("warnings", []))
+    assert "stockmeier_below_minimum" in warns, r.get("warnings")
+
+
+def test_stockmeier_warning_names_the_basis_change_not_just_the_size():
+    """Below 12 squares the BASIS changes to T&M. A warning that only says "small job" would
+    let someone send a per-square quote believing the number was merely conservative."""
+    r = estimate(_cfg(), _stockmeier_quote(8))
+    warn = next(w for w in r["warnings"] if w.startswith("stockmeier_below_minimum"))
+    assert "TIME AND MATERIALS" in warn
+    assert "390" in warn  # his material figure, reported
+
+
+def test_stockmeier_at_and_above_minimum_is_silent():
+    for sq in (12, 30):
+        r = estimate(_cfg(), _stockmeier_quote(sq))
+        assert not any(w.startswith("stockmeier_below_minimum") for w in r.get("warnings", [])), sq
+
+
+def test_stockmeier_floor_disabled_when_unconfigured():
+    """0/absent disables the check rather than inventing a floor — a config predating the key
+    must not start emitting a minimum nobody set."""
+    cfg = _cfg({"low_slope": {"stockmeier_min_sq": 0}})
+    r = estimate(cfg, _stockmeier_quote(8))
+    assert not any(w.startswith("stockmeier_below_minimum") for w in r.get("warnings", []))
+
+
+def test_other_low_slope_systems_do_not_trip_the_stockmeier_floor():
+    q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=8,
+                   slope_type="low_slope", project_kind="commercial")
+    r = estimate(_cfg(), q)
+    assert not any(w.startswith("stockmeier_below_minimum") for w in r.get("warnings", []))
+
+
+# ---------------------------------------------------------------------------
+# Pressure cleaning (#417 G9) — priced config that nothing could reach
+# ---------------------------------------------------------------------------
+# Sheet O1/O2: $30/sq flat, $40/sq sloped. Correct in config (and in all three ACTIVE prod
+# configs) since the low-slope wave, and `grep -rn pressure_clean core/ api/ web/src` returned
+# NOTHING — so a maintenance or clean-only job could not be quoted at all.
+
+def _pc_quote(slope_type, sq=20, **kw):
+    return QuoteInput(
+        code_zone="HVHZ",
+        roof_type="polyglass_sav_sap" if slope_type == "low_slope" else "13_tile",
+        num_squares=sq, slope_type=slope_type, project_kind="commercial", **kw)
+
+
+def _line(result, key):
+    return next((li for li in result["line_items_detail"] if li["key"] == key), None)
+
+
+def test_pressure_cleaning_absent_unless_requested():
+    assert _line(estimate(_cfg(), _pc_quote("low_slope")), "pressure_cleaning") is None
+
+
+def test_pressure_cleaning_flat_rate_on_a_low_slope_roof():
+    r = estimate(_cfg(), _pc_quote("low_slope", include_pressure_cleaning=True))
+    li = _line(r, "pressure_cleaning")
+    assert li is not None and li["per_sq"] == 30 and li["amount"] == 30 * 20
+
+
+def test_pressure_cleaning_sloped_rate_on_a_sloped_roof():
+    """The rate follows the ROOF, not the config block. O2 is the sloped rate and lives under
+    low_slope purely because that is the sheet block it was transcribed from — reading it as
+    'flat roofs only' would under-charge every sloped clean by $10/sq."""
+    r = estimate(_cfg(), _pc_quote("sloped", include_pressure_cleaning=True))
+    li = _line(r, "pressure_cleaning")
+    assert li is not None and li["per_sq"] == 40
+
+
+def test_pressure_cleaning_silent_when_unconfigured():
+    """A config predating the key must not start emitting a $0 line. Built by deleting the key
+    rather than via _cfg overrides — _deep_update MERGES dicts, so passing {} leaves the real
+    rates in place and the test would pass without proving anything."""
+    raw = _load_fixture()
+    del raw["low_slope"]["pressure_cleaning"]
+    r = estimate(load_config(raw), _pc_quote("low_slope", include_pressure_cleaning=True))
+    assert _line(r, "pressure_cleaning") is None
+
+
+# ---------------------------------------------------------------------------
+# Cover board OH adder (#417 G7) + polyglass warranty upgrades (#417 G8)
+# ---------------------------------------------------------------------------
+# ⚠️ Unlike Stockmeier/pressure-cleaning above, these keys are NEW — the three ACTIVE prod
+# configs do not carry them (checked 2026-08-02). The engine is correct ahead of the data, so
+# these tests pin the unconfigured behaviour as hard as the configured behaviour: a config
+# without the keys must price exactly as it did before, and must never quote an upgrade it
+# cannot price.
+
+def _deck_quote(deck_type, sq=20):
+    return QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=sq,
+                      slope_type="low_slope", project_kind="commercial", deck_type=deck_type)
+
+
+def test_cover_board_adds_forty_to_overhead():
+    plain = _line(estimate(_cfg(), _deck_quote("bur_tpo_concrete_primer")), "overhead")
+    board = _line(estimate(_cfg(), _deck_quote("tpo_wood_densdeck_iso")), "overhead")
+    # densdeck is also a WOOD deck, so it carries the $50 wood adder too — "an ADDITIONAL $40".
+    assert board["per_sq"] - plain["per_sq"] == 90
+
+
+def test_cover_board_adder_is_overhead_only_not_material():
+    """The board's material is already inside the deck-type rate. If this adder also moved the
+    deck line, the board would be charged twice."""
+    r = estimate(_cfg(), _deck_quote("tpo_wood_densdeck_iso"))
+    assert _line(r, "deck_type")["amount"] == 120 * 20  # unchanged deck rate
+
+
+def test_cover_board_silent_when_unconfigured():
+    raw = _load_fixture()
+    del raw["low_slope"]["cover_board_oh_adder"]
+    del raw["low_slope"]["cover_board_deck_types"]
+    with_key = _line(estimate(_cfg(), _deck_quote("tpo_wood_densdeck_iso")), "overhead")
+    without = _line(estimate(load_config(raw), _deck_quote("tpo_wood_densdeck_iso")), "overhead")
+    assert without["per_sq"] == with_key["per_sq"] - 40
+
+
+def _poly_quote(upgrade=None, zone="HVHZ", sq=20):
+    return QuoteInput(code_zone=zone, roof_type="polyglass_sav_sap", num_squares=sq,
+                      slope_type="low_slope", project_kind="commercial",
+                      warranty_upgrade=upgrade)
+
+
+def test_warranty_upgrade_absent_by_default():
+    assert _line(estimate(_cfg(), _poly_quote()), "warranty_upgrade") is None
+
+
+@pytest.mark.parametrize("key,adder", [
+    ("polyfresko_20yr", 80), ("sav_plus_2ply", 65),
+    ("sav_plus_3ply_25yr", 175), ("polyfresko_sav_plus_30yr", 315)])
+def test_warranty_upgrade_prices_as_an_adder(key, adder):
+    r = estimate(_cfg(), _poly_quote(key))
+    assert _line(r, "warranty_upgrade")["per_sq"] == adder
+
+
+def test_warranty_upgrade_totals_reconcile_with_the_old_prose_note():
+    """The config note recorded these as TOTALS off the HVHZ base of 475 (555/650/790). Stored as
+    adders they must reproduce exactly those totals — that is what proves the re-encoding lossless."""
+    for key, total in (("polyfresko_20yr", 555), ("sav_plus_3ply_25yr", 650),
+                       ("polyfresko_sav_plus_30yr", 790)):
+        r = estimate(_cfg(), _poly_quote(key))
+        assert _line(r, "base_cost_lm")["per_sq"] + _line(r, "warranty_upgrade")["per_sq"] == total
+
+
+def test_warranty_upgrade_applies_to_fbc_off_its_own_base():
+    """Storing totals instead of adders is what made these HVHZ-only. FBC must get the same
+    upgrade against the FBC base."""
+    r = estimate(_cfg(), _poly_quote("sav_plus_3ply_25yr", zone="FBC"))
+    assert _line(r, "warranty_upgrade")["per_sq"] == 175
+
+
+def test_unknown_warranty_upgrade_raises_rather_than_quoting_the_base():
+    from core.estimator import ConfigError
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), _poly_quote("gold_plated_50yr"))
+
+
+def test_warranty_upgrade_on_a_config_without_the_key_raises():
+    """Prod's configs do not carry this key yet. Asking for an upgrade there must fail loudly,
+    not silently return the base warranty at the base price."""
+    from core.estimator import ConfigError
+    raw = _load_fixture()
+    del raw["low_slope"]["polyglass_warranty_upgrades"]
+    with pytest.raises(ConfigError):
+        estimate(load_config(raw), _poly_quote("polyfresko_20yr"))
+
+
+# ---------------------------------------------------------------------------
+# Trash-chute sections (G6), silicone add-ons (G13), detail items (G10),
+# stucco-metal contradiction (G11)
+# ---------------------------------------------------------------------------
+
+def _chute_quote(stories=None, height="3_5_stories"):
+    return QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                      slope_type="low_slope", project_kind="commercial",
+                      roof_height=height, stories=stories)
+
+
+def test_trash_chute_sections_billed_per_storey():
+    r = estimate(_cfg(), _chute_quote(stories=5))
+    assert _line(r, "trash_chute")["amount"] == 1500          # flat part unchanged
+    assert _line(r, "trash_chute_sections")["amount"] == 3 * 100 * 5
+
+
+def test_trash_chute_without_a_storey_count_uses_the_band_floor_and_warns():
+    """roof_height is a BAND. Billing its floor means an unknown under-bills rather than
+    over-bills, and the warning says by how much so nobody has to work it out."""
+    r = estimate(_cfg(), _chute_quote())
+    assert _line(r, "trash_chute_sections")["amount"] == 3 * 100 * 3
+    warn = next(w for w in r["warnings"] if w.startswith("trash_chute_storeys_assumed"))
+    assert "under-billed by $600" in warn
+
+
+def test_trash_chute_sections_absent_below_the_band():
+    r = estimate(_cfg(), _chute_quote(height="2_stories"))
+    assert _line(r, "trash_chute_sections") is None
+
+
+def test_trash_chute_sections_silent_when_unconfigured():
+    raw = _load_fixture()
+    del raw["low_slope"]["trash_chute_sections_per_story"]
+    r = estimate(load_config(raw), _chute_quote(stories=5))
+    assert _line(r, "trash_chute_sections") is None
+    assert _line(r, "trash_chute")["amount"] == 1500
+
+
+@pytest.mark.parametrize("key,rate", [
+    ("granules", 50), ("traffic_coat_1coat", 225), ("tpo_primer", 25)])
+def test_silicone_addons_price_per_square(key, rate):
+    q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=20,
+                   slope_type="low_slope", project_kind="commercial", silicone_addons=[key])
+    r = estimate(_cfg(), q)
+    assert _line(r, f"silicone_addon_{key}")["amount"] == rate * 20
+
+
+def test_extra_coat_is_not_a_flat_addon():
+    """An extra coat is per-COAT and carries materials, so it must not sit in the flat
+    per-square add-on map alongside granules and traffic coat."""
+    assert not any(k.startswith("extra_coat") for k in _cfg().silicone_addons())
+
+
+def _coat_quote(coats, material=None, sq=20):
+    return QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=sq,
+                      slope_type="low_slope", project_kind="commercial",
+                      extra_coats=coats, extra_coat_material_per_sq=material)
+
+
+def test_extra_coats_bill_lop_plus_materials_per_coat():
+    """L27: "$100 per extra coat (L, OH & P) + M", M = materials (Jon, 2026-08-02)."""
+    r = estimate(_cfg(), _coat_quote(2, material=30))
+    li = _line(r, "silicone_extra_coats")
+    assert li["per_sq"] == 130                     # 100 L/OH/P + 30 material
+    assert li["amount"] == 130 * 20 * 2            # x squares x coats
+
+
+def test_extra_coats_without_materials_raises_rather_than_billing_labour_alone():
+    """The material half is genuinely variable — Tim's own build-ups run $195/$220/$300 for
+    1/2/3 coats, so there is no constant to default to. Billing only L/OH/P would look like a
+    complete price and under-charge every time."""
+    from core.estimator import ConfigError
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), _coat_quote(1))
+
+
+def test_no_extra_coat_line_when_none_requested():
+    assert _line(estimate(_cfg(), _coat_quote(0)), "silicone_extra_coats") is None
+
+
+def test_unknown_silicone_addon_raises():
+    from core.estimator import ConfigError
+    q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=20,
+                   slope_type="low_slope", project_kind="commercial",
+                   silicone_addons=["gold_flakes"])
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), q)
+
+
+def test_detail_items_price_in_the_sheets_own_units():
+    q = QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                   slope_type="low_slope", project_kind="commercial",
+                   detail_items={"penetration_flashing": 4, "scupper_drain_detail": 2,
+                                 "flashing_valley_metal_oh_per_lf": 100})
+    r = estimate(_cfg(), q)
+    assert _line(r, "detail_penetration_flashing")["amount"] == 70 * 4
+    assert _line(r, "detail_scupper_drain_detail")["amount"] == 350 * 2
+    assert _line(r, "detail_flashing_valley_metal_oh_per_lf")["amount"] == 230
+
+
+def test_detail_items_absent_by_default_and_zero_quantities_skipped():
+    r = estimate(_cfg(), QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                                    slope_type="low_slope", project_kind="commercial",
+                                    detail_items={"penetration_flashing": 0}))
+    assert _line(r, "detail_penetration_flashing") is None
+
+
+def test_unknown_detail_item_raises_naming_the_branch_config():
+    from core.estimator import ConfigError
+    with pytest.raises(ConfigError):
+        estimate(_cfg(), QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
+                                    slope_type="low_slope", project_kind="commercial",
+                                    detail_items={"gutter_helmet": 3}))
+
+
+def test_stucco_metal_warns_about_the_ten_times_contradiction():
+    """We bill $9/LF live in all three prod configs. If Tim's TPO block ("$9 per 10 LF") is the
+    right reading, every stucco line is 10x over. The warning must carry BOTH totals so the
+    exposure is legible without opening the sheet."""
+    q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=20,
+                   project_kind="residential", stucco_metal_lf=200)
+    r = estimate(_cfg(), q)
+    warn = next(w for w in r["warnings"] if w.startswith("stucco_metal_basis_contradiction"))
+    assert "$1,800.00" in warn and "$180.00" in warn
+
+
+def test_no_stucco_warning_when_none_quoted():
+    q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=20,
+                   project_kind="residential")
+    r = estimate(_cfg(), q)
+    assert not any(w.startswith("stucco_metal_basis_contradiction") for w in r.get("warnings", []))

@@ -702,6 +702,128 @@ class PricingConfig:
             val = (self.raw.get("low_slope") or {}).get("crane_threshold_stories")
         return float(val if val is not None else 3)
 
+    def trash_chute_sections(self) -> tuple[float, float]:
+        """(sections per storey, price per section) for the trash chute — E18's "+ sections".
+
+        The cell reads "$1,500 + sections" and its comment: "3 sections of trash chute per story —
+        charge $100 per section". Only the $1,500 was ever charged, so a 5-storey job paid the same
+        chute cost as a 3-storey one. Additive, per the cell's own "+".
+
+        (0, 0) when unconfigured, which keeps the flat-only behaviour.
+        """
+        ls = self.raw.get("low_slope") or {}
+        return (float(ls.get("trash_chute_sections_per_story") or 0),
+                float(ls.get("trash_chute_per_section") or 0))
+
+    def silicone_extra_coat_lop(self) -> float:
+        """Labour + overhead + profit per extra silicone coat, per square. L27: "$100 per extra
+        coat (L, OH & P) + M ... for TPO add $25 for TPO primer".
+
+        M is MATERIALS (confirmed by Jon 2026-08-02) and is deliberately NOT a config constant,
+        because it is not one: the sheet's own silicone material build-ups run $195 / $220 / $300
+        for 1 / 2 / 3 coats, i.e. +$25 then +$80 — so there is no single per-coat material figure
+        to store. The caller supplies it per quote; this key holds only the half Tim did state.
+
+        0 when unconfigured.
+        """
+        return float((self.raw.get("low_slope") or {}).get("silicone_extra_coat_lop") or 0)
+
+    def silicone_addons(self) -> dict[str, float]:
+        """Silicone add-on key -> per-square price (N25/N26/L27).
+
+        Granules $50/sq, traffic coat (1 coat) $225/sq, TPO primer $25/sq. Extra COATS are not
+        here — they are per-coat and carry a material component, so they go through
+        silicone_extra_coat_lop + the quote's own material figure.
+        """
+        ups = (self.raw.get("low_slope") or {}).get("silicone_addons") or {}
+        return {k: float(v) for k, v in ups.items()
+                if not k.startswith("_") and isinstance(v, (int, float))}
+
+    def low_slope_detail_items(self) -> dict[str, float]:
+        """Detail-item key -> price, in the unit the sheet quotes it in (each / 10' piece / sq / LF).
+
+        The overhead tabs carry a priced detail list the engine never modelled: penetration
+        flashing, L metal, term bar, scupper, coping cap, 3rd-ply SAV FR, extra demo layer, and
+        per-LF flashing overhead.
+
+        Branch variation is expressed by each BRANCH'S OWN CONFIG holding its own values — not by
+        a branch-keyed map inside one config. pricing_configs is already keyed by branch, so a
+        nested branch dimension here would be the "config keys shaped by source, not dimension"
+        defect this project keeps re-committing. Empty when unconfigured.
+        """
+        items = (self.raw.get("low_slope") or {}).get("detail_items") or {}
+        return {k: float(v) for k, v in items.items()
+                if not k.startswith("_") and isinstance(v, (int, float))}
+
+    def cover_board_oh_adder(self) -> float:
+        """Extra overhead per square when the deck system carries a cover board.
+
+        H17 reply (2022-11-04): "note, add an additional $40 OH for any cover board." The cover
+        board's MATERIAL is already inside the deck-type rate (SecuRock 1/4" $98 / 1/2" $108 are
+        absorbed into tpo_wood_densdeck_iso at $120); only the overhead was lost. This adds the
+        overhead alone — adding material here too would double-charge the board.
+
+        Stacks with wood_deck_oh_adder, which is what Tim's "an ADDITIONAL $40" says: a wood deck
+        with a cover board carries both. 0 when unconfigured.
+        """
+        return float((self.raw.get("low_slope") or {}).get("cover_board_oh_adder") or 0)
+
+    def cover_board_deck_types(self) -> frozenset:
+        """Deck-type keys whose system includes a cover board. Data, not a substring match on
+        'densdeck' — the next cover board Tim adds will not have that word in its key."""
+        vals = (self.raw.get("low_slope") or {}).get("cover_board_deck_types") or []
+        return frozenset(vals)
+
+    def polyglass_warranty_upgrades(self) -> dict[str, float]:
+        """Warranty-upgrade key -> per-square adder over the polyglass base.
+
+        Sheet E26-E28: Polyfresko +$80 (20 yr), SAV Plus 3-ply +$175 (25 yr), +$315 (30 yr), and
+        E28's comment adds a $65 SAV Plus 2nd-ply upgrade the config note never carried. Each
+        checks out against the HVHZ base of $475 (475+175=650, +80=555, +315=790), which is how
+        the note recorded them — as resulting totals, so they could not be applied to any other
+        zone. Stored as ADDERS so FBC gets the same upgrade off its own base.
+
+        Warranty length is a sales lever and it was unpriceable. Empty when unconfigured.
+        """
+        ups = (self.raw.get("low_slope") or {}).get("polyglass_warranty_upgrades") or {}
+        return {k: float(v) for k, v in ups.items()
+                if not k.startswith("_") and isinstance(v, (int, float))}
+
+    def pressure_cleaning_per_sq(self, slope_type: str) -> float:
+        """Pressure-cleaning rate per square: $30 flat, $40 sloped (sheet O1/O2).
+
+        Priced and correct since the low-slope wave and completely unreachable — a grep for
+        ``pressure_clean`` across core/, api/ and web/src returned nothing, so a maintenance or
+        clean-only job could not be quoted at all. Values live under ``low_slope`` because that is
+        the sheet block they came from, NOT because they only apply to flat roofs: O2 is the
+        SLOPED rate. That mismatch between where a value is stored and what it varies by is this
+        project's recurring defect, so read it through here rather than reaching into the block.
+
+        0 when unconfigured — the line is then simply not emitted.
+        """
+        pc = (self.raw.get("low_slope") or {}).get("pressure_cleaning") or {}
+        key = "flat" if slope_type == "low_slope" else "sloped"
+        return float(pc.get(key) or 0)
+
+    def stockmeier_min_sq(self) -> float:
+        """Job size below which Stockmeier polyurethane is time-and-materials, not per-square.
+
+        Live low-slope sheet M29: "STOCKMEIER (POLYURETHANE) - min. 12 SQ job (less than 12 SQ is
+        $390 M per SQ and T&M)". Both this and ``stockmeier_under_min_material_per_sq`` have sat
+        in the config since the low-slope wave and NOTHING read either one — while the fixture's
+        own ``_note_stockmeier_floor`` claimed it was "now enforced as a warning". It was not.
+        An 8-square Stockmeier job quoted the flat all-in rate: wrong number AND wrong basis.
+
+        0 when unconfigured, which disables the check rather than inventing a floor.
+        """
+        return float((self.raw.get("low_slope") or {}).get("stockmeier_min_sq") or 0)
+
+    def stockmeier_under_min_material_per_sq(self) -> float:
+        """Material-only rate Tim quotes below the Stockmeier minimum ($390/sq). Reported, never
+        priced — the rest of that job is T&M, which the engine cannot compute."""
+        return float((self.raw.get("low_slope") or {})
+                     .get("stockmeier_under_min_material_per_sq") or 0)
+
     def low_slope_not_hvhz_deck_types(self) -> dict[str, str]:
         """Deck-type keys -> restriction text, for low-slope deck systems Tim's sheet marks as
         not legal in HVHZ (e.g. "BUR Wood (WB-3000 Primer) - not HVHZ (1 story only)").
