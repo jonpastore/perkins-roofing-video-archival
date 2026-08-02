@@ -154,7 +154,17 @@ postgres, and the module path is needed because `scripts/` is not a package.
 
 ## §4 — STILL OPEN
 
-1. **Josh's 7.5%**, and whether General Conditions is commissionable (§1.1) — both for Tim.
+0. ⚠️ **GENERAL CONDITIONS SITS UNLABELLED INSIDE THE CUSTOMER'S TOTAL.** Jon asked why we carry it
+   at all if Tim doesn't, and the check (`docs/2026-08-02-general-conditions-questions.md`) is
+   uncomfortable: the label is **his** (`D18` on his Bid Sheet), but `D19` is referenced by **no
+   total formula** — his `K42` skips it — and of **26,063** mirrored Knowify deliverable lines
+   exactly **one** is called "General Conditions" ($12,000, unsigned, 2023). Meanwhile
+   `project_total` includes `project_items` while `tiers.good.line_items` is `[]`, so a project
+   proposal would show one number silently containing $36,570. On Evergrene that is $397,230 vs
+   $433,800. **Nothing is exposed — prod has 0 bid_projects, 0 project proposals** — so it is a
+   decision, not an incident, and it is one line either way once Tim answers.
+1. **Josh's 7.5%**, and whether General Conditions is commissionable (§1.1) — both for Tim. If it
+   is not commissionable, `price_project` must stop counting its markup as profit.
 2. **The `week` profit-floor basis measures the wrong thing.** Tim 2026-07-28 counts schedule time
    *including inspections*; `_apply_project_floor` does `ceil(crew_days / 5)`. No price moves today
    (default `project`, the SPA cannot select `week`) but #449 is written in those terms. His
