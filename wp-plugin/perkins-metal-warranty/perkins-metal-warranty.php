@@ -9,7 +9,10 @@
  *              ship as plugin assets. Tidal/brackish reaches count toward the distance when OSM
  *              confirms them; a merely inferred reach raises a caveat and never moves a verdict
  *              (see docs/WARRANTY_TOOL_TIDAL_LAYER.md).
- * Version:     1.3.4
+ *              [metal_roof_guide] shortcode — the educational page: the manufacturer warranty
+ *              comparison rendered from the SAME zones.json the checker uses, plus published
+ *              wind-uplift approvals and the aluminum-roof example videos.
+ * Version:     1.4.0
  * Author:      DeGenito
  *
  * SETUP (one manual step): the geocoder uses the Google Maps JavaScript API. Its browser key is
@@ -22,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PERKINS_MWC_VERSION', '1.3.4' );
+define( 'PERKINS_MWC_VERSION', '1.4.0' );
 define( 'PERKINS_MWC_URL', plugin_dir_url( __FILE__ ) );
 
 // Default browser key (referrer-restricted). Overridable in Settings so a per-site key can be used
@@ -114,6 +117,173 @@ function perkins_mwc_shortcode() {
 add_shortcode( 'metal_warranty_checker', 'perkins_mwc_shortcode' );
 
 // ---------------------------------------------------------------------------
+// [metal_roof_guide] — the educational page content (warranty comparison + wind uplift)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a bundled JSON asset. Returns [] on any failure — a guide section that cannot load its
+ * data renders nothing rather than fataling the whole page.
+ */
+function perkins_mwc_asset( $name ) {
+	$path = plugin_dir_path( __FILE__ ) . 'assets/' . $name;
+	if ( ! is_readable( $path ) ) {
+		return [];
+	}
+	$data = json_decode( (string) file_get_contents( $path ), true );
+	return is_array( $data ) ? $data : [];
+}
+
+/**
+ * How one manufacturer treats one material near salt water, as a short phrase.
+ *
+ * `void_within_ft` and `conditional_within_ft` are the same two fields the checker reads out of
+ * zones.json, so the guide table and the tool can never disagree about a manufacturer — there is
+ * one dataset, not a prose copy of one. A copy is how a warranty table goes stale silently.
+ *
+ * Returns the checker's OWN verdict classes (ok/void/cond) so red means the same thing on both,
+ * without a second palette to keep in sync.
+ */
+function perkins_mwc_provision_phrase( $p ) {
+	$void = $p['void_within_ft'] ?? null;
+	$cond = $p['conditional_within_ft'] ?? null;
+	if ( $void ) {
+		return [ 'void', sprintf( 'No warranty within %s ft', number_format( (int) $void ) ) ];
+	}
+	if ( $cond ) {
+		return [ 'cond', sprintf( 'Covered at any distance; conditions within %s ft', number_format( (int) $cond ) ) ];
+	}
+	return [ 'ok', 'Covered at any distance' ];
+}
+
+function perkins_mwc_guide_shortcode() {
+	wp_enqueue_style(
+		'perkins-mwc',
+		PERKINS_MWC_URL . 'assets/checker.css',
+		[],
+		PERKINS_MWC_VERSION
+	);
+
+	$zones  = perkins_mwc_asset( 'zones.json' );
+	$guide  = perkins_mwc_asset( 'guide.json' );
+	$videos = [];
+	foreach ( $guide['videos'] ?? [] as $v ) {
+		$videos[ $v['section'] ][] = $v;
+	}
+
+	ob_start();
+	?>
+	<div class="perkins-mwc perkins-mwg">
+
+		<section class="perkins-mwg-section">
+			<h2>Which metal keeps its warranty near salt water</h2>
+			<p>Every manufacturer below publishes a setback: a distance from salt or brackish water
+				inside which the paint or perforation warranty is reduced, conditioned, or void
+				outright. The distances differ by <em>brand</em>, not just by metal, which is why two
+				quotes for &ldquo;a metal roof&rdquo; can carry completely different coverage at the
+				same address.</p>
+			<?php foreach ( $zones['materials'] ?? [] as $m ) : ?>
+				<h3><?php echo esc_html( $m['name'] ); ?></h3>
+				<p class="perkins-mwg-blurb"><?php echo esc_html( $m['blurb'] ); ?></p>
+				<table class="perkins-mwg-table">
+					<thead>
+						<tr><th>Manufacturer</th><th>Near salt water</th><th>Published provision</th></tr>
+					</thead>
+					<tbody>
+					<?php foreach ( $m['provisions'] ?? [] as $p ) : ?>
+						<?php list( $cls, $phrase ) = perkins_mwc_provision_phrase( $p ); ?>
+						<tr>
+							<td><?php echo esc_html( $p['manufacturer'] ); ?></td>
+							<td><span class="<?php echo esc_attr( $cls ); ?>"><?php echo esc_html( $phrase ); ?></span></td>
+							<td><?php echo esc_html( $p['note'] ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endforeach; ?>
+			<p class="perkins-mwg-note">Distances are straight-line to mapped salt water, which
+				includes tidal and brackish canals &mdash; manufacturers treat a brackish canal behind
+				the house the same as the ocean. Check a specific address with the
+				<strong>warranty checker</strong>; these tables are the published provisions behind
+				its answer.</p>
+		</section>
+
+		<?php if ( ! empty( $guide['uplift'] ) ) : ?>
+		<section class="perkins-mwg-section">
+			<h2>Wind uplift: not all standing seam is the same roof</h2>
+			<p>&ldquo;Standing seam&rdquo; on a quote can mean a <strong>snap lock</strong> panel that
+				clips together, or a <strong>mechanically seamed</strong> panel that is bent closed over
+				concealed clips. They look similar from the street and they do not perform alike. These
+				are the manufacturer&rsquo;s own published approval numbers:</p>
+			<table class="perkins-mwg-table">
+				<thead>
+					<tr>
+						<th>Panel</th><th>Attachment</th>
+						<th>Design pressure</th><th>Equivalent wind</th><th></th>
+					</tr>
+				</thead>
+				<tbody>
+				<?php foreach ( $guide['uplift'] as $u ) : ?>
+					<tr>
+						<td><strong><?php echo esc_html( $u['panel'] ); ?></strong>
+							<?php if ( ! empty( $u['hvhz'] ) ) : ?>
+								<span class="ok">HVHZ approved</span>
+							<?php endif; ?>
+						</td>
+						<td><?php echo esc_html( $u['attachment'] ); ?></td>
+						<td><?php echo esc_html( $u['psf'] ); ?> psf</td>
+						<td><?php echo esc_html( $u['mph'] ); ?> mph</td>
+						<td><?php echo esc_html( $u['note'] ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+			<p class="perkins-mwg-note"><?php echo esc_html( $guide['_sources']['uplift'] ?? '' ); ?></p>
+			<?php echo perkins_mwc_video_list( $videos['uplift'] ?? [] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped — escaped inside ?>
+		</section>
+		<?php endif; ?>
+
+		<?php if ( ! empty( $videos['aluminum'] ) ) : ?>
+		<section class="perkins-mwg-section">
+			<h2>Aluminum on the water</h2>
+			<p>Aluminum does not rust. That is the whole reason it is the coastal answer: it is the one
+				material class above that every manufacturer here warranties at <em>any</em> distance
+				from salt water, including beachfront &mdash; and, seamed, it reaches essentially the
+				same uplift numbers as steel. Most brands ask for a twice-yearly fresh-water rinse near
+				the water, and they mean it: keep the records.</p>
+			<?php echo perkins_mwc_video_list( $videos['aluminum'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped — escaped inside ?>
+		</section>
+		<?php endif; ?>
+
+		<p class="perkins-mwg-cta">
+			<a href="<?php echo esc_url( perkins_mwc_contact_url() ); ?>">Talk to Perkins Roofing about your address</a>
+		</p>
+	</div>
+	<?php
+	return ob_get_clean();
+}
+add_shortcode( 'metal_roof_guide', 'perkins_mwc_guide_shortcode' );
+
+/**
+ * Video links for one guide section. Plain anchors, not iframe embeds: an embed per section costs
+ * a third-party script on page load and the page is meant to be read, not watched.
+ */
+function perkins_mwc_video_list( $videos ) {
+	if ( ! $videos ) {
+		return '';
+	}
+	$out = '<ul class="perkins-mwg-videos">';
+	foreach ( $videos as $v ) {
+		$out .= sprintf(
+			'<li><a href="%s" target="_blank" rel="noopener">%s</a> &mdash; %s</li>',
+			esc_url( $v['url'] ),
+			esc_html( $v['title'] ),
+			esc_html( $v['why'] )
+		);
+	}
+	return $out . '</ul>';
+}
+
+// ---------------------------------------------------------------------------
 // Settings — Google Maps key + contact URL (Settings -> Metal Warranty Checker)
 // ---------------------------------------------------------------------------
 
@@ -136,7 +306,13 @@ function perkins_mwc_settings_page() {
 	?>
 	<div class="wrap">
 		<h1>Metal Warranty Checker</h1>
-		<p>Place the tool on any page or post with the shortcode <code>[metal_warranty_checker]</code>.</p>
+		<p>Two shortcodes, placed on any page or post:</p>
+		<ul>
+			<li><code>[metal_warranty_checker]</code> &mdash; the address lookup tool (map + per-address verdict).</li>
+			<li><code>[metal_roof_guide]</code> &mdash; the educational page: the manufacturer warranty
+				comparison, published wind-uplift approvals, and the aluminum-roof example videos. Needs
+				no API key and renders server-side, so it is readable by search engines.</li>
+		</ul>
 		<p><strong>Google Maps key:</strong> the geocoder needs this WordPress domain added to the key's
 			HTTP-referrer allowlist in Google Cloud Console (APIs &amp; Services → Credentials). Leave
 			blank to use the built-in default key.</p>
