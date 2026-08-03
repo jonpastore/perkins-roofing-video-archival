@@ -1510,3 +1510,47 @@ def test_access_alone_does_not_trigger_the_geometry_model(cfg: PricingConfig):
     # Same squares-only fit both ways: no cut measurements means no geometry model, and the
     # access coefficient lives in the geometry model.
     assert plain == hard, f"access must not switch a cut-less quote onto the geometry model: {plain} vs {hard}"
+
+
+def test_low_slope_daily_overhead_falls_back_and_says_so(cfg: PricingConfig):
+    """Asking for daily overhead on a low-slope system must not silently bill per-square.
+
+    `derive_daily_series` returns [] for every low-slope system — Tim's time-learning workbook is
+    `Residential_OH_Calculator_SLOPED_ONLY`, so no low-slope day series was ever fitted. The
+    estimate then used the per-square overhead table while the caller had asked for days, and
+    NOTHING in the result said so: a quote that quietly ignored the request was indistinguishable
+    from one that honoured it. Tim, 2026-08-03: "Why is this still trying to use per SQ prices on
+    the OH? It's all going to be based on days".
+
+    The per-square number is not necessarily wrong, but it is NOT his method: both commercial
+    workbooks derive the per-square overhead FROM a day count (Miramar "$1,175 x 25 days & $765 x
+    30 days = $52,325" over 142 sq = its displayed $370/sq; Evergrene's flat row 28 sq / 7 days /
+    $6,195 = its displayed $221.25/sq). So this is an unpriced gap, and the silence was the bug.
+    """
+    r = estimate(cfg, QuoteInput(
+        roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
+        code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="daily"))
+    assert r["overhead_basis_used"] == "per_sq"
+    assert any("overhead_fell_back_to_per_sq" in w for w in r["warnings"]), r["warnings"]
+
+
+def test_sloped_daily_overhead_is_not_labelled_a_fallback(cfg: PricingConfig):
+    """The complement, and it fails for a different reason: a roof type that HAS a fitted series
+    must report `daily` and carry no fallback warning. A warning on every quote is a warning on
+    none."""
+    r = estimate(cfg, QuoteInput(
+        roof_type="13_tile", num_squares=20.0, slope_type="sloped", code_zone="HVHZ",
+        overhead_mode="daily", existing_roof="tile"))
+    assert r["overhead_basis_used"] == "daily"
+    assert r["daily_series"], "a fitted roof type must derive days"
+    assert not any("fell_back" in w for w in r["warnings"]), r["warnings"]
+
+
+def test_per_sq_request_is_not_reported_as_a_fallback(cfg: PricingConfig):
+    """Only a request for days that could not be honoured is a fallback. A caller who asked for
+    the per-square table got exactly what it asked for, and must not be warned about it."""
+    r = estimate(cfg, QuoteInput(
+        roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
+        code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="per_sq"))
+    assert "overhead_basis_used" not in r
+    assert not any("fell_back" in w for w in r["warnings"]), r["warnings"]
