@@ -49,3 +49,20 @@
 .perkins-mwc .perkins-mwc-foot { font-size: 12px; color: var(--sub); padding: 18px 0 8px; line-height: 1.6; }
 .perkins-mwc .err { color: #b42318; font-size: 14px; margin: 8px 0; }
 .perkins-mwc .spin { color: var(--sub); font-size: 14px; margin: 8px 0; }
+
+/* ---- [metal_roof_guide] — the educational page. Tables, flags and colours are inherited from
+   the checker rules above on purpose: one palette, so "void" is the same red in both places. --- */
+.perkins-mwg-section { margin: 0 0 40px; }
+.perkins-mwg-section h2 { font-size: 22px; margin: 0 0 8px; }
+.perkins-mwg-section h3 { font-size: 16px; margin: 24px 0 2px; }
+.perkins-mwg-blurb { font-size: 14px; color: var(--sub); margin: 0 0 10px; }
+.perkins-mwg-note { font-size: 12px; color: var(--sub); line-height: 1.6; margin: 10px 0 0; }
+/* Wide provision tables must scroll inside their own box; the page body must not scroll sideways. */
+.perkins-mwg-table { display: block; overflow-x: auto; white-space: normal; }
+.perkins-mwg-videos { margin: 14px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.7; }
+.perkins-mwg-videos a { font-weight: 700; }
+.perkins-mwg-cta { margin: 8px 0 0; }
+.perkins-mwg-cta a {
+	display: inline-block; background: var(--navy); color: #fff; font-weight: 700;
+	text-decoration: none; padding: 12px 22px; border-radius: 10px;
+}
