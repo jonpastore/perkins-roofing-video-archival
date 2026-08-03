@@ -38,6 +38,10 @@ UPGRADE = re.compile(
 )
 FLAT = re.compile(r"\bflat\b|built[- ]?up|\bbur\b|3-ply|modified bitumen", re.I)
 SLOPED = re.compile(r"\btile\b|\bshingle\b|\bmetal\b|\bslate\b", re.I)
+# low_slope.stockmeier_min_sq in every active prod config. Hard-coded rather than read from the
+# DB: this script's job is to describe the SOLD book, and a threshold that moves would silently
+# change what the historical number means.
+STOCKMEIER_MIN_SQ = 12
 
 
 def main() -> None:
@@ -103,6 +107,16 @@ def main() -> None:
     print(f"flat share of a mixed roof: median {100*st.median(shares):.0f}%, "
           f"p25 {100*shares[len(shares)//4]:.0f}%, p75 {100*shares[3*len(shares)//4]:.0f}%, "
           f"max {100*shares[-1]:.0f}%")
+
+    # The ABSOLUTE size matters more than the share, and it is small: a percentage hides that
+    # the typical flat section is a handful of squares, which is what decides whether a
+    # per-square minimum applies.
+    sizes = sorted(m["flat_sq"] for m in mixed)
+    under = 100 * sum(1 for s in sizes if s < STOCKMEIER_MIN_SQ) / len(sizes)
+    print(f"flat SECTION SIZE (sq):     median {st.median(sizes):.0f}, "
+          f"p25 {sizes[len(sizes)//4]:.0f}, p75 {sizes[3*len(sizes)//4]:.0f}, max {sizes[-1]:.0f}")
+    print(f"   {under:.0f}% are under {STOCKMEIER_MIN_SQ} sq — the Stockmeier minimum is the NORM "
+          f"on a mixed roof, not the edge case")
     print()
 
     by_year: dict[str, list[float]] = defaultdict(list)
@@ -112,6 +126,25 @@ def main() -> None:
     print("FLAT section sold $/sq, by year (time-sliced — an all-time median blends price lists):")
     for y in sorted(by_year):
         v = sorted(by_year[y])
+        if len(v) < 5:
+            continue
+        print(f"   {y}  n={len(v):<4} median ${st.median(v):>7,.0f}   "
+              f"p25 ${v[len(v)//4]:>7,.0f}  p75 ${v[3*len(v)//4]:>7,.0f}")
+
+    # ⚠️ THE PER-LINE NUMBER ABOVE IS NOT COMPARABLE TO THE ENGINE. A Knowify scope line's Price
+    # is customer-facing and carries its share of the job's fixed costs; the engine keeps those
+    # in project_fixed_costs and spreads them across the whole job. Comparing the two directly
+    # says the engine underprices flat by 21-39%, which is an ALLOCATION ARTIFACT — measured
+    # 2026-08-03. Compare whole jobs, below, which is apples to apples.
+    whole: dict[str, list[float]] = defaultdict(list)
+    for m in mixed:
+        if m["year"]:
+            whole[m["year"]].append(
+                (m["sloped_price"] + m["flat_price"]) / (m["sloped_sq"] + m["flat_sq"]))
+    print()
+    print("WHOLE-JOB sold $/sq (scope lines only) — the figure to back-test the engine against:")
+    for y in sorted(whole):
+        v = sorted(whole[y])
         if len(v) < 5:
             continue
         print(f"   {y}  n={len(v):<4} median ${st.median(v):>7,.0f}   "
