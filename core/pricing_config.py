@@ -207,6 +207,24 @@ class PricingConfig:
     # ------------------------------------------------------------------ #
     # Commission                                                           #
     # ------------------------------------------------------------------ #
+    def commission_excludes_project_blocks(self) -> bool:
+        """Whether markup on project BLOCKS (general conditions, add-ons) is commissionable.
+
+        On the `profit` basis a bid's commission base is the roll-up's profit, which sums every
+        project block's markup alongside every roof's — Tim's general conditions ($22,800 green
+        fence / telehandler + $9,000 full-time PM at x1.15) among them. He has never said whether
+        that scope pays the salesperson (#451).
+
+        False (the default) keeps it IN the base, which is what the single-roof path has always
+        done with a roof's own markup — changing the default would silently cut a real payout on
+        the strength of a question nobody has answered.
+
+        This exists so his answer is a CONFIG FLIP rather than a code change. #452's own defect —
+        a project reporting no commission at all — is fixed either way; this is the one knob whose
+        value is genuinely his.
+        """
+        return bool((self.raw.get("commission_pct") or {}).get("excludes_project_blocks") is True)
+
     def commission_rate(self, basis: str = "profit") -> float:
         """Default commission rate for a commission BASIS. Fraction, e.g. 0.15.
 

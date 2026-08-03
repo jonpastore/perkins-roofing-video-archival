@@ -188,7 +188,16 @@ export function Proposals() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [editingProposal, setEditingProposal] = useState<ProposalRow | null>(null);
-  const [editForm, setEditForm] = useState({ title: "", total: "", deposit: "", squares: "" });
+  const [editForm, setEditForm] = useState({ title: "", total: "", deposit: "", squares: "", notes: "" });
+  // #387 — a NOTES-ONLY edit, separate from the full edit drawer on purpose. The full drawer is
+  // disabled for multi-building bids because its save path re-quotes ONE estimate and would leave
+  // the scalars disagreeing with `buildings` (validate_project_snapshot exists for exactly that).
+  // Notes touch none of those invariants, so this path is safe for a project bid and is the only
+  // way one can receive a note at all.
+  const [notesProposal, setNotesProposal] = useState<ProposalRow | null>(null);
+  const [notesText, setNotesText] = useState("");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -398,6 +407,10 @@ export function Proposals() {
       total: Number.isFinite(total) && total > 0 ? String(total) : "",
       deposit: dp.amount != null ? String(dp.amount) : dp.value != null ? String(dp.value) : "",
       squares: snap.num_squares != null ? String(snap.num_squares) : "",
+      // Both spellings, same precedence as the renderer and the pre-send review
+      // (`notes or customer_notes`) — otherwise editing a proposal that used the older key
+      // would show an empty box and then blank the note on save.
+      notes: String(snap.notes ?? snap.customer_notes ?? ""),
     });
     setCreateOpen(false);
     setDrawerProposal(null);
@@ -472,6 +485,9 @@ export function Proposals() {
         estimate_input: revisedEstimateInput ?? baseSnap.estimate_input,
         estimate_result: revisedEstimateResult ?? baseSnap.estimate_result,
         num_squares: squares,
+        // #387 — trimmed, and written as `null` rather than "" when cleared so the document's
+        // `{% if notes %}` drops the block instead of printing an empty heading.
+        notes: editForm.notes.trim() || null,
         tiers,
         deposit_policy: {
           ...((baseSnap.deposit_policy ?? {}) as Record<string, unknown>),
@@ -655,6 +671,15 @@ export function Proposals() {
               }}
             >
               ✎
+            </button>
+            <button
+              type="button"
+              title="Notes for this job"
+              aria-label="Notes for this job"
+              onClick={() => openNotes(proposal)}
+              style={proposalIconButtonStyle}
+            >
+              📝
             </button>
             <button
               type="button"
@@ -942,6 +967,85 @@ export function Proposals() {
     );
   }
 
+  function openNotes(proposal: ProposalRow) {
+    const snap = (proposal.quote_snapshot ?? {}) as Record<string, unknown>;
+    setNotesProposal(proposal);
+    setNotesText(String(snap.notes ?? snap.customer_notes ?? ""));
+    setNotesError(null);
+    setEditingProposal(null);
+    setDrawerProposal(null);
+  }
+
+  async function handleSaveNotes() {
+    if (!notesProposal) return;
+    setNotesSaving(true);
+    setNotesError(null);
+    try {
+      const baseSnap = (notesProposal.quote_snapshot ?? {}) as Record<string, unknown>;
+      // ONLY notes changes. Spreading the existing snapshot and sending quote_snapshot alone
+      // (the route applies exclude_none) means nothing is re-quoted and no scalar moves, which
+      // is what keeps this legal on a project bid.
+      const snapshot = { ...baseSnap, notes: notesText.trim() || null };
+      const r = await apiFetch(`/quoting/proposals/${notesProposal.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ quote_snapshot: snapshot }),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      const updated: ProposalRow = await r.json();
+      setProposals((prev: ProposalRow[]) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+      if (drawerProposal?.id === updated.id) setDrawerProposal((prev) => (prev ? { ...prev, ...updated } : prev));
+      setNotesProposal(null);
+    } catch (e: unknown) {
+      setNotesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNotesSaving(false);
+    }
+  }
+
+  function renderNotesDrawer() {
+    if (!notesProposal) return null;
+    const isProject = !!notesProposal.bid_project_id;
+    return (
+      <div style={{
+        position: "fixed", top: 0, right: 0, width: "min(520px, 96vw)", height: "100vh",
+        background: "#fff", borderLeft: `1px solid ${BRAND.border}`,
+        boxShadow: "-4px 0 24px rgba(0,0,0,0.12)", overflowY: "auto", zIndex: 200, fontFamily: FONT,
+      }}>
+        <div style={{ padding: "18px 24px", borderBottom: `1px solid ${BRAND.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 800, color: BRAND.navyText, fontSize: 16 }}>Notes — Proposal #{notesProposal.id}</div>
+            <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+              {isProject ? "Multi-building project — notes are safe to edit here; nothing is re-quoted." : "Draft"}
+            </div>
+          </div>
+          <button onClick={() => setNotesProposal(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 22, color: BRAND.sub, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: 20, display: "grid", gap: 12 }}>
+          <div>
+            <SectionLabel>Notes for this job</SectionLabel>
+            <textarea
+              rows={8}
+              autoFocus
+              style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "inherit" }}
+              placeholder="Gate code, access constraints, an agreed exclusion — anything specific to this job."
+              value={notesText}
+              onChange={(e) => setNotesText(e.target.value)}
+            />
+            <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
+              Printed on the customer's proposal under “Notes for This Job”. Clear the box to
+              remove the section entirely.
+            </div>
+          </div>
+          {notesError && <ErrorMsg>Error: {notesError}</ErrorMsg>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <Button variant="ghost" onClick={() => setNotesProposal(null)} disabled={notesSaving}>Cancel</Button>
+            <Button onClick={handleSaveNotes} disabled={notesSaving}>{notesSaving ? "Saving…" : "Save notes"}</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderEditDrawer() {
     if (!editingProposal) return null;
     return (
@@ -986,6 +1090,20 @@ export function Proposals() {
           <div>
             <SectionLabel>Squares</SectionLabel>
             <input type="number" step="0.1" min="0" style={{ ...inputStyle, width: "100%" }} value={editForm.squares} onChange={(e) => setEditForm((f) => ({ ...f, squares: e.target.value }))} />
+          </div>
+          <div>
+            <SectionLabel>Notes for this job</SectionLabel>
+            <textarea
+              rows={3}
+              style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "inherit" }}
+              placeholder="Gate code, access constraints, an agreed exclusion — anything specific to this job."
+              value={editForm.notes}
+              onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+            <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 3 }}>
+              Printed on the customer's proposal under “Notes for This Job”. Leave blank to omit
+              the section entirely.
+            </div>
           </div>
           {editError && <ErrorMsg>Error: {editError}</ErrorMsg>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -1381,6 +1499,7 @@ export function Proposals() {
       {renderDrawer()}
       {renderCreateDrawer()}
       {renderEditDrawer()}
+      {renderNotesDrawer()}
       {renderImportDialog()}
     </main>
   );

@@ -58,8 +58,8 @@ Ranked by exposure.
 > | G2 coating basis + demo | **was already done** | both live as warnings, deliberately unpriced |
 > | G4 FBC `tpo_oh` 125 | **was already done** | config carries 125 with Tim's comment cited |
 > | G3 Stockmeier · G9 pressure cleaning | **done 2026-08-02** | values were already in config — *including all three ACTIVE prod configs* — and **no code read them**. `_note_stockmeier_floor` claimed it was "now enforced as a warning". It was not. |
-> | G7 cover board · G8 warranty upgrades | **built 2026-08-02** | ⚠️ engine-complete but the keys are not in prod's configs yet |
-> | G6 trash chute · G10 detail items · G13 silicone add-ons | **built 2026-08-02** | new inputs: `stories`, `detail_items`, `silicone_addons` |
+> | G7 cover board · G8 warranty upgrades | **DONE 2026-08-02, live** | keys added to all three prod configs (jupiter v31 / miami v32 / naples v31); verified against the live API |
+> | G6 trash chute · G10 detail items · G13 silicone add-ons | **DONE 2026-08-02, live** | new inputs `stories`, `detail_items`, `silicone_addons`, `extra_coats` — all seven reachable through the API only after a follow-up fix: `QuoteInput` had them and `QuoteRequest` did not, so a real quote returned 200 with the lines silently absent |
 > | G11 stucco metal | **⚠️ was NEVER "not implemented"** | see below — we bill one side of a 10× ambiguity, live |
 > | G1 · G5 · G12 | **open, → Tim** | no number can be derived from the sheet |
 >

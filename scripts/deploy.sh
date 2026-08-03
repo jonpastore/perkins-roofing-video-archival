@@ -89,9 +89,18 @@ SECRETS="${SECRETS},SQUARES_API_KEY=squares-api-key:latest"
 # user account. Verified against the live API: /v2/projects, /projects/{id}/photos and
 # /projects/{id}/videos all 200.
 SECRETS="${SECRETS},COMPANYCAM_PAT=companycam-pat:latest"
-# COMPANYCAM_WEBHOOK_SECRET is deliberately still NOT wired: that container has no version,
-# and a versionless secret in --set-secrets fails EVERY deploy, including unrelated ones.
-# Add it here only once `gcloud secrets versions add companycam-webhook-secret` has run.
+# COMPANYCAM_WEBHOOK_SECRET — version 1 created 2026-08-02, so this is now safe to inject. It
+# was held back until then for a real reason: a versionless secret in --set-secrets fails EVERY
+# deploy, including unrelated ones.
+#
+# ⚠️ This value is the HMAC key, and CompanyCam does NOT issue it — it is the `token` WE supply
+# when registering the webhook with them. So the secret and the registration must carry the same
+# string, and rotating one without the other silently 401s every event. The endpoint refuses to
+# run unverified: no secret -> 503, bad signature -> 401 (api/routes/companycam.py).
+#
+# The webhook is not registered with CompanyCam yet, which is the remaining operational step —
+# until it is, this secret is simply unused rather than wrong.
+SECRETS="${SECRETS},COMPANYCAM_WEBHOOK_SECRET=companycam-webhook-secret:latest"
 # companycam-client-id / -client-secret are stored but not injected either — nothing uses the
 # authorization-code flow yet; they exist so the app can be moved onto it without re-issuing.
 

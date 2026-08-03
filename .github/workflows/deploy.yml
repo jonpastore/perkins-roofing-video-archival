@@ -36,21 +36,53 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
           fetch-depth: 0        # deploy.sh tags the image with `git rev-parse --short HEAD`
 
+      # Two merges in quick succession queue TWO deploys, one per ci run, each checked out at its
+      # OWN triggering commit (that is what the ref above asks for, deliberately). concurrency
+      # runs them in sequence with cancel-in-progress:false, so whichever finishes LAST wins —
+      # and that can be the OLDER commit.
+      #
+      # It happened on 2026-08-02: PRs #21 (dedca28) and #22 (ff54eaa) merged minutes apart.
+      # ff54eaa deployed at 03:10, dedca28 deployed at 03:17 and overwrote it. Prod ran one merge
+      # behind — API image AND the SPA bundle — with both runs green, because each correctly
+      # verified the artefact IT had just built. Nothing was broken; something was simply stale,
+      # which is the harder thing to notice.
+      #
+      # So: refuse to ship a commit main has already moved past. This keeps the intent above
+      # (deploy what CI validated) and drops only the superseded run. Skipping is a success, not
+      # a failure — the newer deploy is the correct outcome and a red X here would be noise.
+      - name: Skip if this commit is already superseded on main
+        id: supersede
+        run: |
+          git fetch --quiet origin main
+          HEAD_SHA="$(git rev-parse HEAD)"
+          MAIN_SHA="$(git rev-parse origin/main)"
+          if [ "$HEAD_SHA" != "$MAIN_SHA" ] && git merge-base --is-ancestor "$HEAD_SHA" "$MAIN_SHA"; then
+            echo "::notice::Superseded — ${HEAD_SHA:0:7} is behind origin/main (${MAIN_SHA:0:7}). Skipping so a stale deploy cannot overwrite a newer one."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Deploying ${HEAD_SHA:0:7} (origin/main is ${MAIN_SHA:0:7})."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - id: auth
+        if: steps.supersede.outputs.skip != 'true'
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/981279422576/locations/global/workloadIdentityPools/github-actions/providers/github
           service_account: ci-deployer@video-archival-and-content-gen.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
+        if: steps.supersede.outputs.skip != 'true'
 
       - uses: hashicorp/setup-terraform@v3
+        if: steps.supersede.outputs.skip != 'true'
         with:
           terraform_version: 1.9.8
           terraform_wrapper: false
 
       # ::add-mask:: BEFORE the value is ever used, so a later failure can't echo it into logs.
       - id: cf
+        if: steps.supersede.outputs.skip != 'true'
         name: Read the Cloudflare token for the plan
         run: |
           token="$(gcloud secrets versions access latest --secret=cloudflare-api-token)"
@@ -61,6 +93,7 @@ jobs:
       # `apply` from CI would need near-editor rights, and a plan that silently converges prod
       # to a bad commit is worse than a failed build. Exit 2 = drift, and the deploy stops.
       - name: Terraform drift gate (plan must be clean)
+        if: steps.supersede.outputs.skip != 'true'
         working-directory: infra
         env:
           # The cloudflare provider READS the zone during plan; without a real token every CF
@@ -81,9 +114,11 @@ jobs:
           exit "$code"
 
       - name: Deploy (build image, roll service + jobs)
+        if: steps.supersede.outputs.skip != 'true'
         run: bash scripts/deploy.sh
 
       - name: Verify the served image is this commit
+        if: steps.supersede.outputs.skip != 'true'
         run: |
           want="$(git rev-parse --short HEAD)"
           got="$(gcloud run services describe api --region us-central1 \
@@ -104,10 +139,12 @@ jobs:
       # serves, so shipping the interface first exposes buttons that 404.
       # ---------------------------------------------------------------------
       - uses: actions/setup-node@v5
+        if: steps.supersede.outputs.skip != 'true'
         with:
           node-version: "24"
 
       - name: Materialise the SPA build environment
+        if: steps.supersede.outputs.skip != 'true'
         run: |
           gcloud secrets versions access latest --secret=spa-build-env > web/.env
           # A build with no .env SUCCEEDS and ships a bundle whose Firebase key is `undefined` —
@@ -116,6 +153,7 @@ jobs:
             || { echo "::error::spa-build-env has no VITE_FIREBASE_API_KEY — refusing to ship a bundle that cannot authenticate"; exit 1; }
 
       - name: Build the SPA
+        if: steps.supersede.outputs.skip != 'true'
         working-directory: web
         run: |
           npm ci
@@ -124,12 +162,14 @@ jobs:
           npm run build
 
       - name: The built bundle must actually carry the key
+        if: steps.supersede.outputs.skip != 'true'
         run: |
           key="$(grep -E '^VITE_FIREBASE_API_KEY=' web/.env | cut -d= -f2-)"
           grep -rqF "$key" web/dist/assets/ \
             || { echo "::error::the built bundle does not contain the Firebase key — the env did not reach vite"; exit 1; }
 
       - name: Deploy hosting
+        if: steps.supersede.outputs.skip != 'true'
         working-directory: web
         # firebase.json and .firebaserc live in web/, and hosting target `app` maps to
         # public: dist -> web/dist. `setback` is a separate site with its own build and is
@@ -142,6 +182,7 @@ jobs:
       # "Deploy complete!" is the CLI's claim, not evidence. Check what the site SERVES —
       # the same discipline as the image-tag check above.
       - name: Verify the SERVED bundle is the one just built
+        if: steps.supersede.outputs.skip != 'true'
         run: |
           want="$(basename "$(ls web/dist/assets/index-*.js | head -1)")"
           got="$(curl -fsS https://video-archival-and-content-gen.web.app/ \

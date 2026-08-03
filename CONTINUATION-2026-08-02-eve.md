@@ -1,6 +1,6 @@
 # CONTINUATION — 2026-08-02 (eve)
 
-**All four directives from `CONTINUATION-2026-08-02-pm.md` §0 are BUILT.** Uncommitted at the time
+**All four directives from `docs/continuations/CONTINUATION-2026-08-02-pm.md` §0 are BUILT.** Uncommitted at the time
 of writing on `docs/2026-08-02-tim-answers`; migration `0054` written and applied by hand; R2 run
 with BOTH reviewers and every HIGH/CRITICAL finding fixed.
 
