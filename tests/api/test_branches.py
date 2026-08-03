@@ -135,3 +135,69 @@ class TestPricingConfigBranch:
         r = admin_client.post("/estimator/configs",
                               json={**self._CONFIG, "branch": "cfgtemp"}, headers=AUTH)
         assert r.status_code == 422, r.text
+
+
+class TestCopyPricingConfigBetweenBranches:
+    """#388 — the copy-config flow the Branches page performs.
+
+    A branch with no pricing config cannot be quoted: the estimator returns 503 rather than
+    guessing a price. Perkins Construction (`gc`) has been in the branch list since migration 0041
+    and has never had one, so it has been unquotable since the day it was created.
+
+    The UI composes three EXISTING endpoints — read active, create version, activate — because
+    configs are immutable-versioned, so a copy is just a create. These pin that sequence, since
+    the button has no backend of its own to test.
+    """
+
+    _CFG = {"labor": {"rate": 2.5}, "schema_version": 1}
+
+    def _branch(self, client, key):
+        client.post("/branches", json={"key": key, "name": key}, headers=AUTH)
+        return key
+
+    def test_target_branch_has_no_active_config_to_begin_with(self, admin_client):
+        self._branch(admin_client, "copysrc")
+        dst = self._branch(admin_client, "copydst")
+        r = admin_client.get(f"/estimator/configs/active?branch={dst}", headers=AUTH)
+        assert r.status_code == 404, "a branch with no config must not report one"
+
+    def test_copy_makes_the_target_active_with_the_source_config(self, admin_client):
+        src, dst = self._branch(admin_client, "cpsrc2"), self._branch(admin_client, "cpdst2")
+        created = admin_client.post(
+            "/estimator/configs", json={"branch": src, "label": "v1", "config": self._CFG},
+            headers=AUTH).json()
+        admin_client.post(f"/estimator/configs/{created['id']}/activate", headers=AUTH)
+
+        # ── exactly what the button does ──
+        active_src = admin_client.get(f"/estimator/configs/active?branch={src}", headers=AUTH).json()
+        copied = admin_client.post("/estimator/configs", headers=AUTH, json={
+            "branch": dst, "label": f"copied from {src} v{active_src['version']}",
+            "config": active_src["config"]}).json()
+        act = admin_client.post(f"/estimator/configs/{copied['id']}/activate", headers=AUTH)
+        assert act.status_code == 200, act.text
+
+        got = admin_client.get(f"/estimator/configs/active?branch={dst}", headers=AUTH).json()
+        assert got["config"] == self._CFG
+        assert got["branch"] == dst
+
+    def test_copy_leaves_the_source_untouched(self, admin_client):
+        """The source branch must keep its own active version — a copy is not a move."""
+        src, dst = self._branch(admin_client, "cpsrc3"), self._branch(admin_client, "cpdst3")
+        created = admin_client.post(
+            "/estimator/configs", json={"branch": src, "config": self._CFG}, headers=AUTH).json()
+        admin_client.post(f"/estimator/configs/{created['id']}/activate", headers=AUTH)
+        before = admin_client.get(f"/estimator/configs/active?branch={src}", headers=AUTH).json()
+
+        copied = admin_client.post("/estimator/configs", headers=AUTH,
+                                   json={"branch": dst, "config": before["config"]}).json()
+        admin_client.post(f"/estimator/configs/{copied['id']}/activate", headers=AUTH)
+
+        after = admin_client.get(f"/estimator/configs/active?branch={src}", headers=AUTH).json()
+        assert after["id"] == before["id"], "copying must not move the source's active pointer"
+
+    def test_copy_to_an_unknown_branch_is_refused(self, admin_client):
+        """The 422 from #417's create_config guard is what stops a typo'd target creating a config
+        no selector can ever reach."""
+        r = admin_client.post("/estimator/configs",
+                              json={"branch": "atlantis", "config": self._CFG}, headers=AUTH)
+        assert r.status_code == 422

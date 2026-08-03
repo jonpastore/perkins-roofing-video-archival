@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { BRAND, FONT, Card, Button, Loading, ErrorMsg, Badge, inputStyle } from "../ui";
-import { listBranches, createBranch, updateBranch, type BranchRow } from "../api";
+import {
+  listBranches, createBranch, updateBranch, type BranchRow,
+  getActivePricingConfig, createPricingConfig, activatePricingConfig,
+} from "../api";
 
 type Role = "admin" | "web_admin" | "sales" | "platform_admin" | null;
 
@@ -173,6 +176,80 @@ interface BranchesConfigProps {
   role: Role;
 }
 
+/** Clone one branch's ACTIVE pricing config onto another branch, as a new active version.
+ *
+ * A branch with no pricing config cannot be quoted at all — the estimator returns 503 "no active
+ * pricing config for branch X". Perkins Construction (`gc`) has been in the branch list since
+ * migration 0041 and has never had one, so it has been unquotable the whole time. Seeding it by
+ * hand meant a script and a prod DB session.
+ *
+ * Built from the three endpoints that already exist (read active -> create version -> activate)
+ * rather than a new copy endpoint: configs are immutable-versioned, so a copy IS just a create,
+ * and a bespoke endpoint would be a second way to write the same row.
+ */
+function CopyConfigPanel({ branches, manage }: { branches: BranchRow[]; manage: boolean }) {
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  const active = branches.filter((b) => b.active);
+
+  async function handleCopy() {
+    setBusy(true); setErr(null); setDone(null);
+    try {
+      const src = await getActivePricingConfig(from);
+      const created = await createPricingConfig({
+        branch: to,
+        label: `copied from ${from} v${src.version}`,
+        config: src.config as Record<string, unknown>,
+      });
+      await activatePricingConfig(created.id);
+      setDone(`${to} now runs a copy of ${from} v${src.version}, active as v${created.version}.`);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!manage) return null;
+
+  return (
+    <Card style={{ marginTop: 20 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: BRAND.navyText }}>Copy pricing config</div>
+      <p style={{ margin: "4px 0 12px", fontSize: 12, color: BRAND.sub }}>
+        Copies a branch's <strong>active</strong> pricing config onto another branch as a new active
+        version. A branch with no config cannot be quoted — the estimator refuses with 503 rather
+        than guessing a price. The source is left untouched, and the target keeps its old versions,
+        so this is reversible by re-activating the previous one.
+      </p>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 180 }}>
+          <FieldLabel>Copy from</FieldLabel>
+          <select value={from} onChange={(e) => setFrom(e.target.value)} style={inputStyle} disabled={busy}>
+            <option value="">Select a branch…</option>
+            {active.map((b) => <option key={b.key} value={b.key}>{b.name}</option>)}
+          </select>
+        </div>
+        <div style={{ minWidth: 180 }}>
+          <FieldLabel>Copy to</FieldLabel>
+          <select value={to} onChange={(e) => setTo(e.target.value)} style={inputStyle} disabled={busy}>
+            <option value="">Select a branch…</option>
+            {active.filter((b) => b.key !== from).map((b) => <option key={b.key} value={b.key}>{b.name}</option>)}
+          </select>
+        </div>
+        <Button onClick={handleCopy} disabled={busy || !from || !to || from === to} style={{ fontSize: 13 }}>
+          {busy ? "Copying…" : "Copy config"}
+        </Button>
+      </div>
+      {err && <div style={{ marginTop: 10 }}><ErrorMsg>Copy failed: {err}</ErrorMsg></div>}
+      {done && <div style={{ marginTop: 10 }}><Badge tone="green">{done}</Badge></div>}
+    </Card>
+  );
+}
+
 export function BranchesConfig({ role }: BranchesConfigProps) {
   const manage = canManage(role);
   const [branches, setBranches] = useState<BranchRow[]>([]);
@@ -228,6 +305,8 @@ export function BranchesConfig({ role }: BranchesConfigProps) {
 
         {branches.map((b) => <BranchRowView key={b.id} branch={b} onSaved={handleRowSaved} manage={manage} />)}
       </Card>
+
+      <CopyConfigPanel branches={branches} manage={manage} />
     </div>
   );
 }
