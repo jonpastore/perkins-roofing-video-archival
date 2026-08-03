@@ -42,6 +42,10 @@ selections, comment replies, and grounded answers — all LLM-driven — and non
 systematically evaluated. The only eval in the repo (`app/eval.py`) is the legacy 12-question
 Ask-Tim seed from the prototype. Today every prompt tweak and model swap ships blind.
 
+> **Partly closed 2026-08-03 (#342):** retrieval and grounding now have an offline harness that
+> gates CI — see 0.1/0.2 below. Article, FAQ, clip selection and comment replies are still
+> unevaluated, so "ships blind" remains true for everything except retrieval and grounding.
+
 For an AI product, **eval is what tests are for normal software**: the quality gate.
 
 ### 0.1 Offline eval harness (`evals/`)
@@ -58,12 +62,34 @@ For an AI product, **eval is what tests are for normal software**: the quality g
   - `python -m evals run <suite>` prints a scorecard; results are reproducible (seeded).
 - **Effort:** L (the foundational investment).
 
+**BUILT 2026-08-03 (#342), partially — read this before assuming a gap or a completion.**
+`evals/` exists, runs offline in 0.23s with no DB/key/LLM, and gates CI. Three suites over
+frozen snapshots of the live corpus: `retrieval` (60 question-shaped known-item queries),
+`retrieval_keyword` (60 keyword-shaped — the only suite that reaches the lexical and
+Content-Graph legs of `rank()`), and `grounding` (20 published articles vs the transcripts they
+were written from). Refresh with `scripts/run_cloudsql_job.sh evals.refresh`.
+
+DELIVERED: recall@k, precision@k, MRR, groundedness, `pool_recall` (the retrieval ceiling the
+ranker cannot beat), and fusion-coverage diagnostics. Baseline committed at `evals/baseline.json`,
+zero tolerance, and each gate was verified to FIRE by mutating `core/retrieval.rank` and
+`core/grounding` — not merely to exist.
+
+NOT DELIVERED, deliberately: LLM-as-judge (needs a key + budget in CI and is non-deterministic;
+see `docs/2026-08-01-local-model-review-postmortem.md`), citation accuracy, hallucination rate,
+and the per-feature article/FAQ/clip suites. Add the judge when a metric is genuinely not
+computable deterministically — not before.
+
 ### 0.2 Eval-gated CI
 - **Why:** make quality a merge gate, not a hope.
 - **Acceptance:** a CI job runs the eval suite against a small golden set on PRs touching
   prompts/retrieval/models; fails (or warns with sign-off) on a regression beyond a threshold.
   Baseline scores committed and diffed.
 - **Effort:** M.
+
+**BUILT 2026-08-03 (#342).** `ci.yml` runs `python -m evals run --all --check` on every push;
+it exits 1 when any gated metric falls below `evals/baseline.json`. It runs on EVERY PR rather
+than only those touching prompts/retrieval — a path filter is one more thing that can be wrong,
+and the whole gate costs 0.23s.
 
 ### 0.3 Prompt registry + versioning
 - **Why:** prompts are inline strings today — no A/B, no rollback, no provenance.

@@ -1,0 +1,19 @@
+{
+  "grounding": {
+    "groundedness": 0.3762
+  },
+  "retrieval": {
+    "mrr": 0.5104,
+    "precision@8": 0.1291,
+    "recall@1": 0.4,
+    "recall@4": 0.65,
+    "recall@8": 0.7166
+  },
+  "retrieval_keyword": {
+    "mrr": 0.2409,
+    "precision@8": 0.0916,
+    "recall@1": 0.1166,
+    "recall@4": 0.3833,
+    "recall@8": 0.4833
+  }
+}

@@ -37,10 +37,11 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r app/requirements.txt pytest pytest-cov ruff bandit pip-audit
 
 # the CI gates
-ruff check core adapters api jobs
-bandit -r core adapters api jobs app -lll -q
+ruff check core adapters api jobs evals
+bandit -r core adapters api jobs app evals -lll -q
 pip-audit -r app/requirements.txt
 pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
+python -m evals run --all --check      # eval gate: retrieval + grounding vs evals/baseline.json
 
 # frontend
 # Requires Node.js 24 (matches GitHub Actions / Firebase deploy host).
@@ -75,6 +76,7 @@ Rules for every change are binding — read **[docs/ENGINEERING_RULES.md](docs/E
 | [`app/`](app/README.md) | Shared data layer / config / LLM routing (+ the v1 prototype core) |
 | [`infra/`](infra/README.md) | Terraform + `migrations/*.sql` + Ansible |
 | [`poc/`](poc/README.md) | Original proof-of-concept CLI |
+| [`evals/`](evals/) | Offline eval harness — `python -m evals run --all` scores retrieval + grounding over frozen corpus snapshots and gates CI against `baseline.json` |
 | [`tests/`](tests/) | Test suite (`core`, `api`, `adapters`, `jobs`) |
 | [`docs/`](docs/) | All project documentation (indexed below) |
 

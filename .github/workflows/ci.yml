@@ -14,13 +14,20 @@ jobs:
       - name: Install deps
         run: pip install -r app/requirements.txt pytest pytest-cov ruff bandit pip-audit
       - name: Lint gate
-        run: ruff check core adapters api jobs
+        run: ruff check core adapters api jobs evals
       - name: SAST gate (bandit — fail on HIGH)
-        run: bandit -r core adapters api jobs app -lll -q
+        run: bandit -r core adapters api jobs app evals -lll -q
       - name: SCA gate (pip-audit — known CVEs)
         run: pip-audit -r app/requirements.txt
       - name: Test + coverage gate (core >= 97%)
         run: pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
+
+      # Eval gate (#342). Offline and deterministic: it replays frozen corpus snapshots through
+      # the SAME retrieval and grounding functions prod uses, so it needs no DB, no key and no
+      # LLM. Exits 1 when a gated metric falls more than --tolerance below evals/baseline.json.
+      # The scorecard prints either way — the numbers are the point, not just the exit code.
+      - name: Eval gate (retrieval + grounding vs baseline)
+        run: python -m evals run --all --check
 
   frontend:
     runs-on: ubuntu-latest
