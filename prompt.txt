@@ -1,111 +1,99 @@
 Resume perkins-roofing/video-archival.
 
 READ FIRST:
-    CONTINUATION-2026-08-02-night.md   ← START HERE. The backlog audit + what it found underneath
+    CONTINUATION-2026-08-03.md         ← START HERE. §0 is the pattern; §3 is what to do next.
+    CONTINUATION-2026-08-02-night.md   the backlog audit this session executed
     CONTINUATION-2026-08-02-eve.md     Tim's four answers, shipped
-    docs/2026-08-02-perkins-execution-plan.md   the ralplan-reviewed plan (v2)
+    docs/ENGINEERING_RULES.md          binding (R1 coverage, R2 dual review, R3 IaC, R4 drift)
 
 main pushed, tree clean, CI green, ZERO open PRs.
-DEPLOYED AND VERIFIED: API platform:4cb73a5 (sha matches main), SPA /assets/index-C3NGvMvU.js.
-Migrations through 0054. Live configs: jupiter v29, miami v30, naples v29.
+DEPLOYED AND VERIFIED: API platform:b3b8144 (tag matches main), SPA /assets/index-CPfttX26.js.
+Migrations through 0055. Live configs: jupiter v31, miami v32, naples v31.
+GCP spend budget LIVE ($200/mo, 0.5/0.8/0.9/0.95) — there was none at all before 2026-08-02.
+Closed 2026-08-02/03: #359 #360 #387 #388 #417 #452.
 
 Confirm before trusting any of this:
   git log --oneline -1 && git status --short
-  gh run list --limit 4                        # MATCH THE SHA
   gh pr list                                   # expect none open
+  gh run list --workflow=deploy.yml --limit 3  # MATCH THE SHA to main
+  gcloud run services describe api --region us-central1 \
+    --format='value(spec.template.spec.containers[0].image)'    # tag must EQUAL main
+  B=$(curl -s https://app.perkinsroofing.net/ | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)
+  curl -s "https://app.perkinsroofing.net$B" | grep -c 'Copy pricing config'   # expect 1
+    # ^ THAT LAST CHECK IS NOT DECORATION. It is what caught prod running a merge behind while
+    #   every CI run was green. Check the SERVED artefact, not the run status.
   .venv/bin/ruff check core adapters api jobs
-  .venv/bin/python -m pytest tests/ --cov=core --cov-config=.coveragerc --cov-fail-under=97
-    # ~10m. CI runs THIS (the whole tree).
-  bash scripts/plan_as_ci.sh                   # expect "plan exit code: 0"
+  .venv/bin/python -m pytest tests/ -q          # ~15m. CI runs the WHOLE tree.
+  bash scripts/drift_check.sh                   # needs TF_VAR_cloudflare_api_token; it fetches it
 
-⛔ STAY ON STAGING for WordPress (prod's newest post is 2026-07-02 — see #456)
-⛔ DO NOT send client email (EMAIL_SEND_MODE=test; Jon sends it)
+WHAT TO DO, in order. Everything here is UNBLOCKED — nothing waits on Tim, Jon, Wendy or Marie.
 
-════════════════════════════════════════════════════════════════════════════════
-▶ THE ONE THING TO KNOW
-════════════════════════════════════════════════════════════════════════════════
-The backlog was lying in one direction. A sweep of all 64 open tasks found SIX describing work
-already shipped — #430 #449 #418 #385/#386 #409/#410, the last two fixed by ONE commit (4fd78f7)
-that closed neither. VERIFY EVERY TASK AGAINST THE CODE BEFORE WORKING IT. Two greps lied this
-session and were caught by reading the match: a keyword hit is not a done task.
+ 1. #342 — BUILD THE EVAL HARNESS. `evals/` is confirmed absent. recall@k, precision@k,
+    groundedness over the 832-video corpus, wired to CI. Supersedes #333 (app/eval.py, never
+    wired, never run).
+    WHY IT LEADS: it is the missing instrument for a known-broken thing. Memory
+    `claim-checker-retrieval-broken` records the claim checker measured at 0/3 precision, and
+    every grounding fix so far shipped unmeasured. Until this exists, no retrieval change can be
+    shown to help or hurt.
 
-R6.3 is now a HOOK (.githooks/, core.hooksPath). Every commit needs one of:
-    Closes #453          finished it — REQUIRES a `Verified:` line
-    Refs #429 60%        progress
-    No-Task: <reason>    deliberately not task work
-post-commit syncs Jarvis in real time; a red ruff gate holds the task at 90% instead of closing.
-It CANNOT evaluate acceptance criteria (prose) and CANNOT run the coverage gate (R7). CI is the
-verdict.
+ 2. #429b — the 890 Knowify contracts. Analysis, not code.
+    ⚠️ Knowify deliverables carry ContractId, NOT ProjectId. The wrong join once returned a clean,
+    confident, WRONG answer. Money is CENTS on the MCP path and dollars on the mirror.
+    #429a is already settled — NOT a defect, see CONTINUATION-2026-08-03.md §4. Do not redo it.
 
-════════════════════════════════════════════════════════════════════════════════
-▶ NEXT UP — verified not-done at the end of the last session
-════════════════════════════════════════════════════════════════════════════════
+ 3. #459 — 2-minute tracker fix. It asks to split #429; §4 already answers half. Close or re-scope.
 
-1. #359 tenant-2 hardening. strict=True present, require_role_db in 2 routes, BRANCH FK ABSENT
-   (grep -c 'ForeignKey("branches' app/models.py = 0). The branches table is at app/models.py:686.
-   The FK + create_config validation is what remains.
+ 4. #402 (~5 min) and #382 — buildable now. wp-plugin/perkins-metal-warranty/ already exists.
+    ⚠️ Content lands on STAGING until the WordPress cutover (#456, Jon's). Build them; do NOT
+    report them as customer-facing.
 
-2. #360 CompanyCam READER. api/routes/companycam.py has ONLY @router.post("/webhook") — the mirror
-   is write-only. CompanyCamPhoto exists. Build the reader; the PAT half stays blocked on Tim.
+DO NOT START (blocked, and on whom — detail in §5):
+    #492  stucco metal 10x — TIM. The only open item with real money on it.
+    #444  BigQuery billing export — a permission perkins-deploy-sa does not have (403 READING the
+          billing account). ⚠️ Do NOT re-derive this from `gcloud billing accounts list` returning
+          0 items — that is a DIFFERENT permission. Terraform only needs budgets.create/get, which
+          it HAS, and the budget applied first try. Check terraform state, not gcloud.
+    #504  register the CompanyCam webhook — operational, ~10 min, recipe in
+          docs/2026-07-28-companycam-credentials.md.
+    #456  WordPress cutover — Jon + Wendy. Gates the whole content wave.
+    #472  SquareQuote rebuild — Jon deferred it 2026-08-02: "we're going to use roofr for now."
 
-3. #417 thirteen low-slope gaps (docs/low-slope-comment-audit-2026-07-25.md). SORT THEM FIRST into
-   implementable-from-config vs needs-Tim, or it stalls halfway.
+HOW TO WORK HERE — this is the part that actually matters:
 
-4. #342 eval harness (evals/ absent) — a project, not a task. #402 aluminum link (5 min).
+    FIVE defects last session were one shape: A CORRECT THING NOTHING COULD REACH. Unread config,
+    engine inputs the API could not express, a branch with no pricing config, a renderer with no
+    writer, a terraform resource behind two missing APIs. In FOUR of the five, something ASSERTED
+    it was done — a config note, a green suite, a tracker entry, a `count` guard.
 
-5. #452 project-bid commission — price_project computes NONE. Plumbing buildable; the BASE waits
-   on #451 (is General Conditions commissionable?).
+    Not one was caught by reading code or by the test suite. Every one was caught by exercising
+    the running system:
+      * config rule      -> grep for the READER (accessor, call site), never the key
+      * new API input    -> call the real endpoint and assert the line appears; a 200 proves nothing
+      * new config key   -> confirm it exists in PROD's active config, not just the fixture
+      * renderer field   -> establish WHICH renderer; _assemble_review_text feeds the AI review,
+                            NOT the customer document
+      * terraform        -> plan AFTER apply; "Apply complete!" is not convergence
 
-ALSO OPEN
-  - #456 THE WORDPRESS CUTOVER GATES ALL CONTENT WORK. 11 unchecked items in
-    docs/PRODUCTION_CUTOVER_PLAN.md, in no task until now. Jon owns the prod WP app password + the
-    mu-plugin re-install; Wendy owns 3. Prod's newest post is 2026-07-02 and everything publishes
-    to staging, so #378 #379 #382 #384 #407 are shelfware until this clears.
-  - #319 social dev-app registrations: 2-4 weeks of EXTERNAL calendar, 0% since filed, and blocked
-    on JON'S DECISION — under whose identity do the apps register, Tim's or DeGenito's? An
-    afternoon of forms creates that fact permanently.
-  - THE LETTER TO TIM. 13 questions queued for one man. Rebuilt rule: corpus-exhaustion for
-    INCLUSION (zero hits in HIS material), his own artefact for PHRASING — send `D19 =
-    SUM(B19:B20)×1.15`, never the words "General Conditions", which already failed once. ≤6
-    questions, ≤400 words, each with a stated default so silence resolves to a decision.
-    Separately, as a TELLING with no question mark: the permit divergence we owe him (#457,
-    +2.3% → +4.2%, further from his own bid) and #431's margin-squeeze findings.
-  - #436 is DONE but its finding is for Tim: 95% is NOT reachable from 29 homes (one home = 3.4
-    points). He offered 20 more on the 7/27 call — cheapest next move.
+    Write two tests that fail for DIFFERENT reasons — one that the surface can express the thing,
+    one that it forwards it. A field that parses and is then discarded fails exactly as silently
+    as one never declared.
 
-GOTCHAS
-- ⚠️ A keyword hit is not a done task. #331's "solar" = solar panels as a roof FEATURE, not the
-  Google Solar API. #410's "placeholder" = prompt text, not the guard.
-- ⚠️ _build_low_slope NEVER reads flat_squares — the mixed-roof block is gated on
-  slope_type=="sloped". Moving area into flat_squares on a low-slope quote DELETES it from the
-  price (45 sq tpo_adhered: $35,050 -> $8,250, 76% under). This shipped and R2 caught it.
-- ⚠️ measurements.total_sq is AMBIGUOUS by provenance: Tim's sheet = sloped-only, RoofR =
-  pitched+flat. The split now resolves SERVER-side in _quote_input_from_request (shared by /quote
-  AND /project-quote); 6 measurements still carry no split and get a `split_unknown` stamp.
-- ⚠️ A default is only a default where nothing supplies a value (the SPA sends commission_rate on
-  every quote, so config.commission_rate() has no caller from that screen).
-- ⚠️ Bump _PDF_TEMPLATE_VERSION whenever DEFAULT_TEMPLATE_HTML changes or cached PDFs keep the old
-  bytes.
-- ⚠️ A reproduction path needs a different default from a creation path (permit_count).
-- ⚠️ KNOWIFY: deliverables carry ContractId, NOT ProjectId. Money is in CENTS.
-- ⚠️ CI runs `pytest tests/` (whole tree); CI ruff scope is ONLY `core adapters api jobs`.
-- ⚠️ CI DEPLOYS THE SPA NOW (deploy.yml, since 2026-08-02). Still verify the SERVED bundle.
-- ⚠️ MIGRATIONS ARE APPLIED BY HAND. apply_migrations_adc.py IGNORES DB_URL (always prod) and has
-  NO ledger — it replays from 0013. Confirm it reaches DONE.
-- ⚠️ REVIEWER AGENTS MUST RUN WITH run_in_background: false. R2 needs BOTH — the critic found the
-  architect's fix was aimed at the wrong LAYER this session.
-- ⚠️ LOCAL MODELS ARE NET-NEGATIVE ON REVIEW. docs/2026-08-01-local-model-review-postmortem.md.
-- ⚠️ Do NOT `source .env` before GCS work. DB_URL in .env is sqlite; prod is
-  postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins
-  over the proxy, and scripts need PYTHONPATH=.
-- ⚠️ SEARCH THE MAILBOX, not just transcripts.
-- Cloud SQL proxy: setsid nohup ~/bin/cloud-sql-proxy \
-    video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
-- Terraform without the invalid_rapt reauth:
-    cd infra && unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
-    export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/perkins-deploy-sa.json
-    export USER_PROJECT_OVERRIDE=true GOOGLE_CLOUD_QUOTA_PROJECT=video-archival-and-content-gen
-    export TF_VAR_cloudflare_api_token="$(gcloud secrets versions access latest --secret=cloudflare-api-token)"
-- Jarvis: ONE project, `perkins-roofing-video-archival` (id 2013), named for the repo. The naming
-  rule is enforced in jarvis@b1add89 so it cannot re-fragment.
-- R7-R10 in docs/ENGINEERING_RULES.md are binding. R6.3 is now hook-enforced.
+    THE BACKLOG LIES IN BOTH DIRECTIONS. Verify before building: #388's "add a 4th branch" was
+    already done, #417's audit said "nothing here is implemented" when two of thirteen were, and
+    #417 G11 was described as unimplemented while it was billing live in all three prod configs.
+
+DEPLOY RULES:
+    CI is the ONLY path to prod: merge -> ci -> deploy (image AND SPA). Do NOT run
+    scripts/deploy.sh by hand — it SKIPS the R4 drift gate, which is how GCP got ahead of git and
+    the next plan wanted to DESTROY a just-created budget.
+    R3: git -> apply, never the reverse. Commit and merge BEFORE `terraform apply`.
+    ⚠️ Merging two PRs close together used to let the OLDER deploy finish last and overwrite the
+    newer one, silently, with every check green. A supersede guard now blocks that — but it has
+    NEVER BEEN GENUINELY EXERCISED. Next double-merge, check the superseded run for its ::notice
+    instead of assuming.
+    ⚠️ `npm run build` is the gate, NOT `tsc --noEmit` — --noEmit has passed on code that fails
+    the build, twice.
+
+COMMITS:
+    The hook requires `Refs #N <pct>%`, `Closes #N`, or `No-Task: <reason>` ALONE on its line —
+    trailing prose breaks the regex and the commit is rejected.
