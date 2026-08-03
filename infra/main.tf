@@ -46,6 +46,11 @@ locals {
     "admin.googleapis.com",           # Admin SDK Directory API (Workspace user dropdown, via DWD)
     "cloudresourcemanager.googleapis.com",
     "serviceusage.googleapis.com",
+    # #444 — both are prerequisites for google_billing_budget.spend_cap below, and BOTH were
+    # missing, which is why that resource has never created anything: `gcloud billing accounts
+    # list` fails with SERVICE_DISABLED, so nobody could even read the account id the budget needs.
+    "cloudbilling.googleapis.com",   # read the billing account; required to fill var.billing_account
+    "billingbudgets.googleapis.com", # the budget + threshold rules themselves
   ])
 }
 
@@ -1287,6 +1292,26 @@ resource "google_secret_manager_secret" "secrets" {
 #     Format: XXXXXX-XXXXXX-XXXXXX (find in GCP Console → Billing).
 # ---------------------------------------------------------------------------
 
+# ⚠️ THIS RESOURCE HAS NEVER EXISTED. var.billing_account defaults to "", so count is 0 and there
+# is NO spend alerting on this project at all — verified 2026-08-02: `terraform state list` has no
+# budget, and `gcloud billing accounts list` cannot even read the account (Cloud Billing API was
+# disabled; now enabled above).
+#
+# Two things are still needed and NEITHER is a code change, which is why #444 is not a
+# code-only task:
+#   1. var.billing_account set in infra/perkins.auto.tfvars (committed) — needs the account id,
+#      readable once the API above is applied.
+#
+# BOTH ARE NOW DONE and the budget is LIVE (created 2026-08-02, id ...fac2760b81e4). The account
+# id came from `gcloud billing projects describe` — the PROJECT's billing linkage, a project-level
+# read — and is set in perkins.auto.tfvars.
+#
+# ⚠️ A NOTE ON WHAT THE PERMISSION ERRORS DO AND DO NOT MEAN. perkins-deploy-sa CANNOT run
+# `gcloud billing accounts list` (returns 0 items) or `gcloud billing budgets list` (403), and I
+# read that as "the SA has no billing rights, so a billing admin must grant them". That was wrong:
+# those two commands need billing.accounts.list / billing.budgets.list, and the SA has neither —
+# but it DOES have budgets.create/get, which is all terraform uses. The apply succeeded on the
+# first attempt. Do not re-derive a blocker from those errors; check terraform state instead.
 resource "google_billing_budget" "spend_cap" {
   count = var.billing_account != "" ? 1 : 0
 
@@ -1294,7 +1319,11 @@ resource "google_billing_budget" "spend_cap" {
   display_name    = "Perkins Platform Monthly Cap"
 
   budget_filter {
-    projects = ["projects/${var.project_id}"]
+    # PROJECT NUMBER, not the id. The API normalises "projects/<id>" to "projects/<number>" on
+    # read, so writing the id here produces a diff that never converges — terraform rewrites it
+    # every plan and R4's drift gate fails forever on a budget that is in fact correct. Measured:
+    # the first apply created the budget and the very next plan wanted to change it back.
+    projects = ["projects/${data.google_project.this.number}"]
   }
 
   amount {
@@ -1304,19 +1333,15 @@ resource "google_billing_budget" "spend_cap" {
     }
   }
 
-  threshold_rules {
-    threshold_percent = 0.5
-    spend_basis       = "CURRENT_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 0.9
-    spend_basis       = "CURRENT_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 1.0
-    spend_basis       = "CURRENT_SPEND"
+  # 50 / 80 / 90 / 95 (#444). Was 50/90/100: the 100% rule fires only once the cap is already
+  # spent, which is a receipt rather than a warning, and the gap from 50 to 90 is where an
+  # unattended job would run. 95 replaces it so the last alert still leaves room to act.
+  dynamic "threshold_rules" {
+    for_each = [0.5, 0.8, 0.9, 0.95]
+    content {
+      threshold_percent = threshold_rules.value
+      spend_basis       = "CURRENT_SPEND"
+    }
   }
 
   # all_updates_rule omitted — alerts fire to the billing account's default contacts.

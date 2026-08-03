@@ -16,3 +16,10 @@
 
 cloudflare_zone_id = "730729a1b3ac1d718727a0fccc07933b"
 google_dkim_key    = "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlN0ipWhTgUUhnM5i/G9DGKPT4FzyPSdDrXIXUf3ZTp/MMem6k61rFXCmwyjDSbwuZmymI7vBloGz1F/4m0n3GK7vWkV/Bi62vEpcDMXIGw8KD+x6s3bRba517f9bzwAJ8tSyX5kSxBW4ecEWjw0pZWSs6ja/MlwDBxIirY7kVpE6VHQOhweooEJ5LEQTiwsBrgDkIhmakh3wY7XAj0Ul8G9rnHnHFyL73L27ip2R/IKcPbpWUDj+LrcUPYe5ljbLJdETjvFVi0eetJq9ivqPDMZNQwPXqnaNNqf+aiQfg88/Wtb8EnLxl1eioBysM5QZt2yCpC+dxEn+vElpwzDGeQIDAQAB"
+
+# Billing account for google_billing_budget.spend_cap (#444). Read from the PROJECT's billing
+# linkage (`gcloud billing projects describe`), which is a project-level permission — note that
+# `gcloud billing accounts list` still returns 0 items for perkins-deploy-sa, because listing
+# accounts needs a role ON the billing account. Not a secret: it is an account identifier, and it
+# has to be here for the budget to be reproducible from git (R3).
+billing_account = "01549D-4220C6-D775AD"
