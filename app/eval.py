@@ -1,6 +1,12 @@
-"""Eval harness (council requirement). Runs a seed question set against the indexed corpus,
-calibrates the abstain threshold (separating answerable vs off-topic by retrieval confidence),
-and measures citation + keyword-hit quality. Run: python3 -m app.eval"""
+"""SUPERSEDED by `evals/` (#342). This is NOT the eval harness — it is never wired, never run,
+and needs a live DB plus an LLM, which is why it proved nothing for a year. `python -m evals run`
+is the harness that gates CI. What survives here and has no replacement is the abstain-threshold
+calibration below (`settings.ABSTAIN_THRESHOLD` was set from it), so it is kept rather than
+deleted; port that into a suite before removing this file.
+
+Runs a seed question set against the indexed corpus, calibrates the abstain threshold (separating
+answerable vs off-topic by retrieval confidence), and measures citation + keyword-hit quality.
+Run: python3 -m app.eval"""
 import json
 import os
 
