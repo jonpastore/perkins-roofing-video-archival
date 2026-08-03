@@ -846,3 +846,47 @@ def test_a_property_with_no_street_prints_an_absent_address_not_a_blank_cell():
     html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(structures=groups))
     assert "Structures Covered" in html
     assert "—" in html.split("Structures Covered", 1)[1].split("Scope of Work", 1)[0]
+
+
+# ---------------------------------------------------------------------------
+# Per-job notes on the CUSTOMER document (#387)
+# ---------------------------------------------------------------------------
+# `quote_snapshot.notes` was read in exactly one place — _assemble_review_text, which builds the
+# text for the pre-send AI review. So a note an estimator wrote was read by the reviewer and never
+# printed on the thing the customer signs. None of the four document renderers touched it.
+
+class TestJobNotes:
+    def test_notes_render_on_the_document(self):
+        html = render_proposal_html(
+            DEFAULT_TEMPLATE_HTML,
+            _minimal_context(notes="Gate code 4417. Homeowner clears the patio."))
+        assert "Gate code 4417" in html
+        assert "Notes for This Job" in html
+
+    def test_no_empty_block_when_there_are_no_notes(self):
+        """The heading must not print on the ~every proposal that carries no notes — an empty
+        'Notes for This Job' section on a signed contract reads as something omitted."""
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context())
+        assert "Notes for This Job" not in html
+
+    def test_blank_and_whitespace_notes_do_not_render_the_block(self):
+        for value in ("", None):
+            html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(notes=value))
+            assert "Notes for This Job" not in html, repr(value)
+
+    def test_notes_are_html_escaped(self):
+        """Operator-supplied text into HTML. The env is autoescape+sandboxed, and this pins it for
+        THIS field rather than trusting the global setting stays on."""
+        html = render_proposal_html(
+            DEFAULT_TEMPLATE_HTML,
+            _minimal_context(notes='<script>alert("xss")</script> & "quoted"'))
+        assert "<script>alert" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_notes_default_to_absent_so_old_snapshots_are_unchanged(self):
+        """Every proposal rendered before #387 has no `notes` key. The field must default to None
+        and change nothing about those documents."""
+        ctx = _minimal_context()
+        assert ctx.notes is None
+        before = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
+        assert "Notes for This Job" not in before

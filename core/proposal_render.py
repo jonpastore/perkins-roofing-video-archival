@@ -61,6 +61,15 @@ class ProposalRenderContext:
     # silently drops its T&C is a contract defect, not a formatting choice.
     include_terms: bool = field(default=True)
     include_contract_faq: bool = field(default=True)
+    #: Free-text notes for THIS job (quote_snapshot.notes) — the per-quote variation a template
+    #: cannot carry: "homeowner will move the patio furniture", "gate code 4417", an agreed
+    #: exclusion. #387.
+    #:
+    #: Rendered on the customer document. Before this it existed only in _assemble_review_text,
+    #: which feeds the pre-send AI review — so a note an estimator wrote was read by the reviewer
+    #: and never printed on the thing the customer signs. Escaped by the sandboxed autoescape env
+    #: like every other ctx value; it is operator-supplied text, not template source.
+    notes: str | None = field(default=None)
     # "How this price was built" — the per-line formula trace the engine already produces for
     # debug=true. Off by default: it is internal build-up, not customer-facing boilerplate. Turned
     # on when the reader needs to check our arithmetic against their own sheet rather than take a
@@ -160,6 +169,7 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "license": ctx.tenant_license or "",
         },
         "accept_url": ctx.accept_url,
+        "notes": ctx.notes or "",
         "structures": ctx.structures or [],
         "calc": {
             "include": ctx.include_calc_breakdown,
@@ -444,6 +454,13 @@ DEFAULT_TEMPLATE_HTML = """\
     {% endif %}
     {% if deposit.instructions %}<p>{{ deposit.instructions }}</p>{% endif %}
   </div>
+
+  {% if notes %}
+  <div class="scope">
+    <h2>Notes for This Job</h2>
+    <div class="scope-body"><p class="spec">{{ notes }}</p></div>
+  </div>
+  {% endif %}
 
   {% if calc.include and calc.lines %}
   <div class="calc">

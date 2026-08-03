@@ -82,6 +82,19 @@ class TestWhatMustStillBeAllowed:
                                                    "amount": 5000}}
         validate_project_snapshot(previous, incoming)   # must not raise
 
+    def test_adding_notes_to_a_project_proposal_is_allowed(self):
+        """#387 — notes touch none of the three invariants this gate protects (buildings survive,
+        num_squares still sums, building_count still matches), so the backend permits a note on a
+        multi-building bid exactly as it permits a deposit edit.
+
+        Recorded because the SPA currently cannot reach it: Proposals.tsx disables the edit button
+        outright when bid_project_id is set, so a project bid has no way to receive a note through
+        the UI. That is a UI limitation, not a rule — this pins that the rule does not exist, so
+        nobody later "discovers" a gate here that was never there.
+        """
+        previous = _project_snapshot(3)
+        validate_project_snapshot(previous, {**previous, "notes": "Gate code 4417"})
+
     def test_a_genuine_reprice_of_the_whole_project_is_allowed(self):
         """Every building re-priced together — scalars and buildings still agree."""
         previous = _project_snapshot(3)

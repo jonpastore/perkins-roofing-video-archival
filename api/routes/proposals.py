@@ -283,7 +283,8 @@ def _proposal_pdf_key(row: Proposal) -> str:
 # section is silently missing from the document the customer receives.
 # v3 = 2026-07-24 redesign (page-1 decision page, tier cards, pre-line T&C, FAQ cards).
 # v4 = 2026-08-02 "Structures Covered" block on multi-building bids (#6, per-building addresses).
-_PDF_TEMPLATE_VERSION = "perkins-scope-v4"
+# v5 = 2026-08-02 "Notes for This Job" block (#387) — per-quote free text on the customer document.
+_PDF_TEMPLATE_VERSION = "perkins-scope-v5"
 
 
 def _fmt_money(value) -> float:
@@ -1789,6 +1790,10 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         # `structure_address` exists for the Evergrene gates that sit on a different road.
         structures=(structure_groups(snap.get("buildings") or [], address)
                     if is_project_snapshot(snap) else None),
+        # #387 — both spellings, because _assemble_review_text has read both since it was written
+        # and a note that reaches the AI reviewer but not the customer's document is the defect
+        # this closes. Same precedence as there, so the two never disagree about which one wins.
+        notes=snap.get("notes") or snap.get("customer_notes"),
     )
 
     try:
@@ -1923,6 +1928,11 @@ def preview_template(
         tenant_name="Perkins Roofing",
         tenant_license=None,
         accept_url="#preview",
+        # Populated in the preview on purpose: this endpoint exists so an admin editing the
+        # template can SEE each block, and a section that only appears on jobs that happen to
+        # carry notes is one they would edit blind. Every other optional block here is likewise
+        # given a sample value rather than left empty.
+        notes="Sample note — gate code 4417; homeowner will clear the patio before we start.",
     )
 
     try:

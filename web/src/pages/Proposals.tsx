@@ -188,7 +188,7 @@ export function Proposals() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [editingProposal, setEditingProposal] = useState<ProposalRow | null>(null);
-  const [editForm, setEditForm] = useState({ title: "", total: "", deposit: "", squares: "" });
+  const [editForm, setEditForm] = useState({ title: "", total: "", deposit: "", squares: "", notes: "" });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -398,6 +398,10 @@ export function Proposals() {
       total: Number.isFinite(total) && total > 0 ? String(total) : "",
       deposit: dp.amount != null ? String(dp.amount) : dp.value != null ? String(dp.value) : "",
       squares: snap.num_squares != null ? String(snap.num_squares) : "",
+      // Both spellings, same precedence as the renderer and the pre-send review
+      // (`notes or customer_notes`) — otherwise editing a proposal that used the older key
+      // would show an empty box and then blank the note on save.
+      notes: String(snap.notes ?? snap.customer_notes ?? ""),
     });
     setCreateOpen(false);
     setDrawerProposal(null);
@@ -472,6 +476,9 @@ export function Proposals() {
         estimate_input: revisedEstimateInput ?? baseSnap.estimate_input,
         estimate_result: revisedEstimateResult ?? baseSnap.estimate_result,
         num_squares: squares,
+        // #387 — trimmed, and written as `null` rather than "" when cleared so the document's
+        // `{% if notes %}` drops the block instead of printing an empty heading.
+        notes: editForm.notes.trim() || null,
         tiers,
         deposit_policy: {
           ...((baseSnap.deposit_policy ?? {}) as Record<string, unknown>),
@@ -986,6 +993,20 @@ export function Proposals() {
           <div>
             <SectionLabel>Squares</SectionLabel>
             <input type="number" step="0.1" min="0" style={{ ...inputStyle, width: "100%" }} value={editForm.squares} onChange={(e) => setEditForm((f) => ({ ...f, squares: e.target.value }))} />
+          </div>
+          <div>
+            <SectionLabel>Notes for this job</SectionLabel>
+            <textarea
+              rows={3}
+              style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "inherit" }}
+              placeholder="Gate code, access constraints, an agreed exclusion — anything specific to this job."
+              value={editForm.notes}
+              onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+            <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 3 }}>
+              Printed on the customer's proposal under “Notes for This Job”. Leave blank to omit
+              the section entirely.
+            </div>
           </div>
           {editError && <ErrorMsg>Error: {editError}</ErrorMsg>}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
