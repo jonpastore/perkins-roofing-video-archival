@@ -598,3 +598,59 @@ def test_snapshot_carries_the_commission_through():
     snap = project_snapshot(r, buildings, {"roof_type": "13_tile", "num_squares": 1})
     assert snap["project_totals"]["commission"] == r["commission"]
     assert snap["project_totals"]["commission_basis"] == r["commission_basis"]
+
+
+class TestCommissionExcludesProjectBlocks:
+    """#451 as a CONFIG FLIP, so Tim's answer is not a code change (#452's last 20%).
+
+    Whether markup on general conditions pays the salesperson is his call. What the engine owes
+    is that both answers are one setting apart and that the quote says which one is in force.
+    """
+
+    def _cfg_excluding(self):
+        cfg = _cfg_v2()
+        cfg.raw.setdefault("commission_pct", {})["excludes_project_blocks"] = True
+        return cfg
+
+    def _gc(self):
+        return ProjectItem(key="gc", label="General Conditions", cost=30000.0, markup=1.15,
+                           allocation="project")
+
+    def test_default_includes_block_margin(self):
+        """Unset must not change what the salesperson is paid — cutting a real payout on an
+        unanswered question is the worse of the two defaults."""
+        r = price_project(_cfg_v2(), [_b("A", 30)], project_items=[self._gc()])
+        assert r["commission_base"] == r["profit"]
+
+    def test_flipping_the_flag_removes_block_margin_from_the_base(self):
+        r = price_project(self._cfg_excluding(), [_b("A", 30)], project_items=[self._gc()])
+        assert r["project_items_margin"] == pytest.approx(30000 * 0.15)
+        assert r["commission_base"] == pytest.approx(r["profit"] - r["project_items_margin"])
+        assert r["commission"] == pytest.approx(r["commission_base"] * r["commission_rate"])
+
+    def test_the_warning_states_which_answer_is_in_force(self):
+        """Both readings produce a payout; only the warning tells the reader which one they are
+        looking at, so each branch must name itself."""
+        incl = price_project(_cfg_v2(), [_b("A", 30)], project_items=[self._gc()])
+        excl = price_project(self._cfg_excluding(), [_b("A", 30)], project_items=[self._gc()])
+        assert any(w.startswith("commission_base_includes_project_blocks") for w in incl["warnings"])
+        assert any(w.startswith("commission_excludes_project_blocks") for w in excl["warnings"])
+        # and never both, or the reader has to guess
+        assert not any(w.startswith("commission_base_includes") for w in excl["warnings"])
+
+    def test_the_flag_does_not_touch_the_job_basis(self):
+        """On `job` the base is GROSS, where a block's markup is part of the contract price and
+        the question does not arise."""
+        from dataclasses import replace
+        b = _b("A", 30)
+        b = Building(name=b.name, days=b.days, quote=replace(b.quote, commission_basis="job"))
+        r = price_project(self._cfg_excluding(), [b], project_items=[self._gc()])
+        assert r["commission_base"] == r["project_total"]
+
+    def test_the_flag_moves_no_customer_price(self):
+        """Commission is reported, never charged — project_total and profit must be identical
+        under both readings."""
+        incl = price_project(_cfg_v2(), [_b("A", 30)], project_items=[self._gc()])
+        excl = price_project(self._cfg_excluding(), [_b("A", 30)], project_items=[self._gc()])
+        assert incl["project_total"] == excl["project_total"]
+        assert incl["profit"] == excl["profit"]

@@ -38,15 +38,26 @@ ever exposed.
 | `companycam-pat` | the **application key** | `COMPANYCAM_PAT` (`scripts/deploy.sh`) |
 | `companycam-client-id` | OAuth app client id | not injected |
 | `companycam-client-secret` | OAuth app client secret | not injected |
-| `companycam-webhook-secret` | — **still empty** | not injected |
+| `companycam-webhook-secret` | the HMAC key **we** chose (v1, 2026-08-02) | `COMPANYCAM_WEBHOOK_SECRET` (`scripts/deploy.sh`) |
 
 ⚠️ **The container name `companycam-pat` is now a misnomer** — it holds an application key. GCP
 secrets cannot be renamed, and the env var is referenced in `deploy.sh` and
 `adapters/companycam.py`, so the name stays and this note exists so nobody rotating it goes
 looking for a PAT in the UI. It is under **Application Keys**, not Personal Access Tokens.
 
-`companycam-webhook-secret` is intentionally NOT wired into `--set-secrets`: it has no version,
-and a versionless secret in `--set-secrets` fails *every* deploy, including unrelated ones.
+`companycam-webhook-secret` now has version 1 (2026-08-02) and IS wired into `--set-secrets`.
+It was held back until then for a real reason: a versionless secret in `--set-secrets` fails
+*every* deploy, including unrelated ones.
+
+⚠️ **CompanyCam does not issue this value — we do.** It is the `token` parameter supplied when
+registering the webhook, so the secret and the registration must carry the same string;
+rotating one without the other 401s every event with a signature mismatch as the only symptom.
+
+**Remaining operational step: the webhook is not registered with CompanyCam yet.** Until it is,
+the secret is unused rather than wrong, and `POST /companycam/webhook` simply never receives
+anything. To finish: call their create-webhook endpoint with `url` =
+`https://api-jnr6bsxyea-uc.a.run.app/companycam/webhook`, `token` = this secret's value, and the
+scopes `photo.*` and `video.*` (both are mirrored — see the signature section below).
 
 ## The webhook signature — corrected 2026-08-02, before it was ever used
 

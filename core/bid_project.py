@@ -351,7 +351,14 @@ def _apply_commission(config: PricingConfig, out: ProjectPricing,
         first.commission_rate_override if first.commission_rate_override is not None
         else config.commission_rate(first.commission_basis)
     )
-    out.commission_base = (out.project_total if out.commission_basis == "job" else out.profit)
+    if out.commission_basis == "job":
+        out.commission_base = out.project_total
+    else:
+        # #451, as a config flip rather than a code change. Default keeps block markup IN the
+        # base — the single-roof path has always commissioned a roof's own markup, and cutting a
+        # real payout on an unanswered question is the worse default of the two.
+        out.commission_base = out.profit - (
+            out.project_items_margin if config.commission_excludes_project_blocks() else 0.0)
     out.commission = out.commission_base * out.commission_rate
 
     # #451, unresolved: is the margin on a project BLOCK commissionable? On the `profit` basis it
@@ -362,14 +369,27 @@ def _apply_commission(config: PricingConfig, out: ProjectPricing,
     # Stated with the dollar consequence rather than silently resolved either way: excluding it
     # would cut a real payout, including it may pay on scope he considers pass-through cost.
     if out.commission_basis == "profit" and out.project_items_margin > 0:
-        excl = (out.profit - out.project_items_margin) * out.commission_rate
-        out.warnings.append(
-            f"commission_base_includes_project_blocks: ${out.commission:,.2f} is "
-            f"{out.commission_rate * 100:.3g}% of the WHOLE ${out.profit:,.2f} profit, of which "
-            f"${out.project_items_margin:,.2f} is markup on project blocks (general conditions, "
-            f"add-ons) rather than on roofs. If that scope is not commissionable the payout is "
-            f"${excl:,.2f} — a ${out.commission - excl:,.2f} difference. Pending Tim (#451)."
-        )
+        if config.commission_excludes_project_blocks():
+            # Answered: the exclusion is configured, so the payout is already correct and the
+            # only thing worth saying is WHY it is smaller than the profit line above it.
+            out.warnings.append(
+                f"commission_excludes_project_blocks: ${out.commission:,.2f} is "
+                f"{out.commission_rate * 100:.3g}% of ${out.commission_base:,.2f}, which is the "
+                f"${out.profit:,.2f} profit LESS ${out.project_items_margin:,.2f} of markup on "
+                "project blocks (general conditions, add-ons). Configured via "
+                "commission_pct.excludes_project_blocks."
+            )
+        else:
+            incl_base = out.profit
+            excl = (out.profit - out.project_items_margin) * out.commission_rate
+            out.warnings.append(
+                f"commission_base_includes_project_blocks: ${out.commission:,.2f} is "
+                f"{out.commission_rate * 100:.3g}% of the WHOLE ${incl_base:,.2f} profit, of which "
+                f"${out.project_items_margin:,.2f} is markup on project blocks (general conditions, "
+                f"add-ons) rather than on roofs. If that scope is not commissionable the payout is "
+                f"${excl:,.2f} — a ${out.commission - excl:,.2f} difference. Pending Tim (#451); "
+                "set commission_pct.excludes_project_blocks once he answers."
+            )
 
 
 def total_squares(buildings: list[Building]) -> float:
