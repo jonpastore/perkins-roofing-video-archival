@@ -1821,3 +1821,55 @@ class TestSendGateReviewsEveryBuilding:
 
         assert "B1 warning: min_margin_breached" in text
         assert "PROJECT warning: project_profit_floor_applied" in text
+
+
+# ---------------------------------------------------------------------------
+# Notes-only edit (#387) — the seam the Notes drawer uses
+# ---------------------------------------------------------------------------
+# The full edit drawer is disabled for multi-building bids because its save path re-quotes ONE
+# estimate, which is what validate_project_snapshot exists to refuse. A notes-only PUT touches
+# none of those invariants, so it is the only route by which a project bid can ever carry a note.
+
+class TestNotesOnlyUpdate:
+    def test_notes_only_put_persists_without_touching_anything_else(self, admin_client):
+        cust = _create_customer(admin_client)
+        prop = _create_property(admin_client, cust["id"])
+        p = _create_proposal(admin_client, cust["id"], prop["id"])
+        before = p["quote_snapshot"]
+
+        r = admin_client.put(
+            f"/quoting/proposals/{p['id']}",
+            json={"quote_snapshot": {**before, "notes": "Gate code 4417"}},
+            headers=AUTH)
+        assert r.status_code == 200, r.text
+        snap = r.json()["quote_snapshot"]
+        assert snap["notes"] == "Gate code 4417"
+        # Everything else must be byte-identical — the drawer spreads the old snapshot and the
+        # route applies exclude_none, so a notes edit must not disturb price, tiers or deposit.
+        for key in ("total", "num_squares", "tiers", "deposit_policy", "floors"):
+            assert snap.get(key) == before.get(key), key
+
+    def test_the_title_survives_a_notes_only_put(self, admin_client):
+        """The drawer sends `quote_snapshot` alone. `exclude_none` must leave title untouched
+        rather than blanking it."""
+        cust = _create_customer(admin_client)
+        prop = _create_property(admin_client, cust["id"])
+        p = _create_proposal(admin_client, cust["id"], prop["id"])
+        r = admin_client.put(f"/quoting/proposals/{p['id']}",
+                             json={"quote_snapshot": {**p["quote_snapshot"], "notes": "x"}},
+                             headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert r.json()["title"] == p["title"]
+
+    def test_clearing_notes_writes_null_so_the_document_drops_the_section(self, admin_client):
+        cust = _create_customer(admin_client)
+        prop = _create_property(admin_client, cust["id"])
+        p = _create_proposal(admin_client, cust["id"], prop["id"])
+        admin_client.put(f"/quoting/proposals/{p['id']}",
+                         json={"quote_snapshot": {**p["quote_snapshot"], "notes": "temp"}},
+                         headers=AUTH)
+        r = admin_client.put(f"/quoting/proposals/{p['id']}",
+                             json={"quote_snapshot": {**p["quote_snapshot"], "notes": None}},
+                             headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert r.json()["quote_snapshot"].get("notes") is None
