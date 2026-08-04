@@ -1,12 +1,13 @@
 # CONTINUATION — 2026-08-04
 
-**`main` = `618a296`, DEPLOYED AND VERIFIED (prod image tag equals main).** Live configs are now
+**`main` = `be1a295`, DEPLOYED AND VERIFIED (prod image tag equals main).** Live configs are
 jupiter **v32**, miami **v33**, naples **v32** — all three on **overhead by days, per branch**.
-Migrations through 0055. Closed 2026-08-03/04: **#342 #402 #429 #459 #504**, **#382 → 100%**.
+Migrations through 0055. **Zero open PRs, tree clean, R4 drift clean** (terraform plan clean,
+ansible `--check` changed=0, verified before the merges).
+Closed 2026-08-03/04: **#342 #402 #429 #459 #504**, **#382 → 100%**.
 
-⚠️ **PR #28 IS OPEN AND UNMERGED ON PURPOSE.** CI green. It is a pricing-path change and the
-review found a money defect in my own work twice; merging deploys to prod, so it waits for a human.
-See §3.
+Everything below shipped and is live. PRs **#28** (day suggestion + slope_type audit) and **#31**
+(required day cells + `/estimator/suggested-days`) merged 2026-08-04 after the drift check.
 
 ---
 
@@ -76,10 +77,24 @@ the truth, the JSON is not.**
 
 ---
 
-## §3 — PR #28: OPEN, GREEN, DELIBERATELY NOT MERGED
+## §3 — THE DAY CELLS (#28 + #31, both merged and live)
 
 Finishes Tim's *"suggested # of days that can be edited within the cell"*, plus the slope_type
-audit fix. **It is a pricing path and it needs a human on the merge.**
+audit fix. Verified on the **live** API after deploy:
+
+```
+suggested-days (mixed 20+6)  demo=2.0 install=4.0  from 3 series (tile 3.0 + demo 2.0 + low_slope 1.0)
+two-cell quote               $39,260
+derived (blank cells) quote  $39,260   MATCH
+demo-only (the $1,960 bug)   422  "install days are required and must be at least 1"
+```
+
+**Tim's 2026-08-04 rules, both implemented:** install days required (min 1), demo may be 0;
+days derived and shown in the cell, overridable. `POST /estimator/suggested-days` derives without
+pricing or persisting, so the cell is filled BEFORE the first quote. The UI has **two** cells for
+a roof that derives **three** series — `install_days` folds the flat section in, which is exact
+under branch basis because every series bills the same rate. A test pins that and names when it
+breaks (`overhead_basis="series"`).
 
 What it contains, after two review rounds:
 - day suggestion, with the rule **"if the model derived a series that has no cell, suggest
@@ -93,10 +108,21 @@ What it contains, after two review rounds:
 - `estimates.input_json` persists the **coerced** slope_type; `proposals.py` coerces `daily_series`
   back from dicts (it raised an unhandled **500** on a customer-facing document)
 
-**Still open on it, and worth a decision rather than a patch:** the flat section has no day cell
-of its own, and server-side derivation is all-or-nothing (`core/estimator.py`: `if ... and not
-q.daily_series`). Making derivation **additive per series** is the real fix and would let the UI
-show all three. Both reviewers recommended it; I did not attempt it overnight.
+**Still open, and worth a decision rather than a patch:** server-side derivation is
+all-or-nothing (`core/estimator.py`: `if ... and not q.daily_series`). The two-cell collapse makes
+that harmless today, but making derivation **additive per series** is the real fix and would let a
+third cell show the flat days directly. Both reviewers recommended it.
+
+**LOW-SLOPE DAY MODEL — settled, do not re-derive.** Candidates scored against Tim's 9 flat homes
+and, independently, the Evergrene bid they were NOT fitted on:
+
+    pure rate 0.1176 d/sq (a multiplier)  MAE 0.17  6/9 exact   Evergrene 28sq -> 3.5 d (he booked 3)
+    SHIPPED fit 0.389 + 0.0851 x sq       MAE 0.17  6/9 exact   Evergrene 28sq -> 3.0 d  MATCH
+    tile's rate 0.1412 d/sq               MAE 0.39  2/9 exact   Evergrene 28sq -> 4.0 d
+
+⚠️ And the premise correction: "low slope takes longer" is true vs shingle (x2.45) and metal
+(x1.23) but NOT vs tile (x0.99 — same speed; tile is already the slowest sloped type). A single
+multiplier would have to span 0.99–2.45, which is why low slope carries its own measured rate.
 
 ---
 
@@ -132,8 +158,13 @@ Both are now numbers, not opinions, and any fix is provable against the baseline
   `office_daily_overhead`/`concurrent_crews`, so **git cannot currently reproduce prod's overhead
   config** (R3). The low-slope day model was added to the fixture; the basis flip was not, because
   it moves golden numbers. Needs a reviewed change.
-- **Email draft to Tim** is in his Outlook thread, unsent, and in
-  `docs/email-drafts/2026-08-03-tim-overhead-by-days.md`.
+- **Email draft to Tim** is in his Outlook thread, UNSENT, refreshed 2026-08-04 to the shipped
+  state (days now in the box; the blank-install-days under-bill; the flat-vs-tile speed
+  correction). Repo copy: `docs/email-drafts/2026-08-03-tim-overhead-by-days.md` — note the repo
+  copy is the ORIGINAL and the Outlook draft is newer.
+- **`overhead_basis`/`office_daily_overhead`/`concurrent_crews` still differ between the git
+  fixture and prod.** Flipping the fixture breaks **23 pricing tests** (measured) — most look like
+  they assert "series basis is the default", which is simply no longer true. Its own change.
 
 ---
 

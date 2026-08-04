@@ -1,98 +1,97 @@
 Resume perkins-roofing/video-archival.
 
 READ FIRST:
-    CONTINUATION-2026-08-03.md         ← START HERE. §0 is the pattern; §3 is what to do next.
-    CONTINUATION-2026-08-02-night.md   the backlog audit this session executed
-    CONTINUATION-2026-08-02-eve.md     Tim's four answers, shipped
+    CONTINUATION-2026-08-04.md         ← START HERE. §0 is the pattern; §5/§6 are what is next.
+    CONTINUATION-2026-08-03.md         the session before (the stale-deploy lesson)
     docs/ENGINEERING_RULES.md          binding (R1 coverage, R2 dual review, R3 IaC, R4 drift)
 
-main pushed, tree clean, CI green, ZERO open PRs.
-DEPLOYED AND VERIFIED: API platform:b3b8144 (tag matches main), SPA /assets/index-CPfttX26.js.
-Migrations through 0055. Live configs: jupiter v31, miami v32, naples v31.
-GCP spend budget LIVE ($200/mo, 0.5/0.8/0.9/0.95) — there was none at all before 2026-08-02.
-Closed 2026-08-02/03: #359 #360 #387 #388 #417 #452.
+main pushed, tree clean, CI green, ZERO open PRs, R4 drift clean.
+DEPLOYED AND VERIFIED: API platform:be1a295 (tag matches main), SPA /assets/index-bGeyGWjd.js.
+Migrations through 0055. Live pricing configs: jupiter v32, miami v33, naples v32 —
+ALL THREE on overhead_basis="branch" (days x branch burn / crews), applied 2026-08-04.
+Closed 2026-08-03/04: #342 #402 #429 #459 #504, and #382 -> 100%.
 
 Confirm before trusting any of this:
   git log --oneline -1 && git status --short
   gh pr list                                   # expect none open
-  gh run list --workflow=deploy.yml --limit 3  # MATCH THE SHA to main
   gcloud run services describe api --region us-central1 \
     --format='value(spec.template.spec.containers[0].image)'    # tag must EQUAL main
   B=$(curl -s https://app.perkinsroofing.net/ | grep -o '/assets/index-[A-Za-z0-9_-]*\.js' | head -1)
   curl -s "https://app.perkinsroofing.net$B" | grep -c 'Copy pricing config'   # expect 1
-    # ^ THAT LAST CHECK IS NOT DECORATION. It is what caught prod running a merge behind while
-    #   every CI run was green. Check the SERVED artefact, not the run status.
-  .venv/bin/ruff check core adapters api jobs
-  .venv/bin/python -m pytest tests/ -q          # ~15m. CI runs the WHOLE tree.
+    # ^ CHECK THE SERVED ARTEFACT, NOT THE RUN STATUS. That is what caught prod running a
+    #   merge behind while every CI run was green.
+  .venv/bin/ruff check core adapters api jobs evals
+  .venv/bin/python -m evals run --all --check   # 0.23s, offline; the eval gate
+  .venv/bin/python -m pytest tests/ -q          # ~13m. CI runs the WHOLE tree.
   bash scripts/drift_check.sh                   # needs TF_VAR_cloudflare_api_token; it fetches it
 
-WHAT TO DO, in order. Everything here is UNBLOCKED — nothing waits on Tim, Jon, Wendy or Marie.
+WHAT TO DO, in order. Everything here is UNBLOCKED.
 
- 1. #342 — BUILD THE EVAL HARNESS. `evals/` is confirmed absent. recall@k, precision@k,
-    groundedness over the 832-video corpus, wired to CI. Supersedes #333 (app/eval.py, never
-    wired, never run).
-    WHY IT LEADS: it is the missing instrument for a known-broken thing. Memory
-    `claim-checker-retrieval-broken` records the claim checker measured at 0/3 precision, and
-    every grounding fix so far shipped unmeasured. Until this exists, no retrieval change can be
-    shown to help or hurt.
+ 1. #342's OWN FINDINGS — the eval harness exists now, so these are numbers, not opinions:
+      * pool_recall 0.783 vs recall@8 0.717 — 22% of the time the right video NEVER ENTERS the
+        candidate pool. Ranking is not the bottleneck; retrieval upstream is.
+      * groundedness 0.376 — published articles name more than half their proper nouns outside
+        Tim's transcripts. Worst case: a 27,000-char article built from a 514-WORD source whose
+        three cited videos hold 6 chunks between them.
+    Any fix is provable against evals/baseline.json. ⚠️ DO NOT "fix" the graph leg's 0/60
+    coverage by term-matching the ILIKE — measured, it drops recall@1 0.4000 -> 0.1667 and mrr
+    0.5104 -> 0.3035. The note is in evals/scoring.py at the diagnostic itself.
 
- 2. #429b — the 890 Knowify contracts. Analysis, not code.
-    ⚠️ Knowify deliverables carry ContractId, NOT ProjectId. The wrong join once returned a clean,
-    confident, WRONG answer. Money is CENTS on the MCP path and dollars on the mirror.
-    #429a is already settled — NOT a defect, see CONTINUATION-2026-08-03.md §4. Do not redo it.
+ 2. R3 FIXTURE GAP — git cannot reproduce prod's overhead config.
+    infra/fixtures/pricing_config_exhibit_b.json still has overhead_basis="series" and no
+    office_daily_overhead / concurrent_crews, while all three prod branches are on "branch".
+    Flipping it breaks 23 pricing tests (MEASURED) — most appear to assert "series basis is the
+    default", which is no longer true. Own reviewed change; re-baselining goldens is the work.
 
- 3. #459 — 2-minute tracker fix. It asks to split #429; §4 already answers half. Close or re-scope.
+ 3. ADDITIVE DAY DERIVATION (optional, both reviewers recommended it).
+    core/estimator.py derives days ONLY when daily_series arrives empty. The two-cell UI collapse
+    makes that harmless today, but making derivation additive per series would let a third cell
+    show the flat days directly instead of folding them into install.
 
- 4. #402 (~5 min) and #382 — buildable now. wp-plugin/perkins-metal-warranty/ already exists.
-    ⚠️ Content lands on STAGING until the WordPress cutover (#456, Jon's). Build them; do NOT
-    report them as customer-facing.
+ 4. SEND THE EMAIL TO TIM. Drafted and UNSENT in his Outlook thread (refreshed 2026-08-04).
+    It ends with one open question: does he want the Evergrene phase split ($1,175/day demo+temp,
+    $765/day tapered+base) on residential, or one branch day rate?
 
-DO NOT START (blocked, and on whom — detail in §5):
+DO NOT START (blocked, and on whom — detail in §6):
     #492  stucco metal 10x — TIM. The only open item with real money on it.
-    #444  BigQuery billing export — a permission perkins-deploy-sa does not have (403 READING the
-          billing account). ⚠️ Do NOT re-derive this from `gcloud billing accounts list` returning
-          0 items — that is a DIFFERENT permission. Terraform only needs budgets.create/get, which
-          it HAS, and the budget applied first try. Check terraform state, not gcloud.
-    #504  register the CompanyCam webhook — operational, ~10 min, recipe in
-          docs/2026-07-28-companycam-credentials.md.
+    #444  BigQuery billing export — a permission perkins-deploy-sa does not have. ⚠️ Do NOT
+          re-derive this from `gcloud billing accounts list` returning 0 — different permission.
+          Check terraform state, not gcloud.
     #456  WordPress cutover — Jon + Wendy. Gates the whole content wave.
-    #472  SquareQuote rebuild — Jon deferred it 2026-08-02: "we're going to use roofr for now."
+    #472  SquareQuote rebuild — Jon deferred 2026-08-02: "we're going to use roofr for now."
 
 HOW TO WORK HERE — this is the part that actually matters:
 
-    FIVE defects last session were one shape: A CORRECT THING NOTHING COULD REACH. Unread config,
-    engine inputs the API could not express, a branch with no pricing config, a renderer with no
-    writer, a terraform resource behind two missing APIs. In FOUR of the five, something ASSERTED
-    it was done — a config note, a green suite, a tracker entry, a `count` guard.
+    2026-08-04's pattern: A DISPLAYED NUMBER AND AN INPUT NUMBER ARE NOT THE SAME THING. Three
+    times in one session, each time confidently wrong until the actual artefact was opened:
+      * Tim's "$370/sq" commercial OH cell IS "$1,175 x 25 days & $765 x 30 days ÷ 142 sq" — an
+        OUTPUT read as an input. It reversed the whole conclusion about how he prices low slope.
+      * "the engine underprices flat by 21-39%" — a Knowify line price carries allocated fixed
+        costs; the engine's marginal does not. Right table, right units, WRONG AGGREGATION.
+      * "pre-filling shows the operator the suggestion" — the day cells are an OVERRIDE CHANNEL.
+        Filling 2 of 3 made the server stop deriving the 3rd: -$2,940 / -$5,880 on 36% of the book.
 
-    Not one was caught by reading code or by the test suite. Every one was caught by exercising
-    the running system:
-      * config rule      -> grep for the READER (accessor, call site), never the key
-      * new API input    -> call the real endpoint and assert the line appears; a 200 proves nothing
-      * new config key   -> confirm it exists in PROD's active config, not just the fixture
-      * renderer field   -> establish WHICH renderer; _assemble_review_text feeds the AI review,
-                            NOT the customer document
-      * terraform        -> plan AFTER apply; "Apply complete!" is not convergence
+    2026-08-03's pattern still holds: A CORRECT THING NOTHING COULD REACH. Grep for the READER,
+    not the key. Call the real endpoint. Check PROD's active config, not the fixture.
 
-    Write two tests that fail for DIFFERENT reasons — one that the surface can express the thing,
-    one that it forwards it. A field that parses and is then discarded fails exactly as silently
-    as one never declared.
+    ⚠️ RUN THE REVIEW. The architect + critic caught a money defect in my work, and then caught
+    TWO MORE IN MY FIXES — each one had solved a real problem by removing a guard that was
+    load-bearing for something else. R2 is not ceremony on this engine.
 
-    THE BACKLOG LIES IN BOTH DIRECTIONS. Verify before building: #388's "add a 4th branch" was
-    already done, #417's audit said "nothing here is implemented" when two of thirteen were, and
-    #417 G11 was described as unimplemented while it was billing live in all three prod configs.
+    Verify tests are GATES: revert the fix, watch the test fail, restore. Three tests written
+    this session passed without their fix until that was checked.
 
 DEPLOY RULES:
     CI is the ONLY path to prod: merge -> ci -> deploy (image AND SPA). Do NOT run
-    scripts/deploy.sh by hand — it SKIPS the R4 drift gate, which is how GCP got ahead of git and
-    the next plan wanted to DESTROY a just-created budget.
-    R3: git -> apply, never the reverse. Commit and merge BEFORE `terraform apply`.
-    ⚠️ Merging two PRs close together used to let the OLDER deploy finish last and overwrite the
-    newer one, silently, with every check green. A supersede guard now blocks that — but it has
-    NEVER BEEN GENUINELY EXERCISED. Next double-merge, check the superseded run for its ::notice
-    instead of assuming.
-    ⚠️ `npm run build` is the gate, NOT `tsc --noEmit` — --noEmit has passed on code that fails
-    the build, twice.
+    scripts/deploy.sh by hand — it SKIPS the R4 drift gate.
+    R3: git -> apply, never the reverse. Config changes: scripts/seed_*.py are dry-run by default
+    and version the config, so reactivating the prior row rolls back.
+    ⚠️ MERGING A PR WITH --delete-branch CLOSES ANY PR STACKED ON IT, and a closed PR cannot be
+    reopened or retargeted. #30 was lost that way and had to be reopened as #31.
+    ⚠️ `gh run view --json headSha` reports the BRANCH head for workflow_run events — both runs
+    of a double-merge look identical. The LOG is the truth; that is where the supersede
+    ::notice appears (it fired correctly on 2026-08-03).
+    ⚠️ `npm run build` is the gate, NOT `tsc --noEmit`.
 
 COMMITS:
     The hook requires `Refs #N <pct>%`, `Closes #N`, or `No-Task: <reason>` ALONE on its line —
