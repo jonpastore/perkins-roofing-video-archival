@@ -1527,7 +1527,22 @@ def test_low_slope_daily_overhead_falls_back_and_says_so(cfg: PricingConfig):
     30 days = $52,325" over 142 sq = its displayed $370/sq; Evergrene's flat row 28 sq / 7 days /
     $6,195 = its displayed $221.25/sq). So this is an unpriced gap, and the silence was the bug.
     """
-    r = estimate(cfg, QuoteInput(
+    # The shipped fixture now carries a low_slope series, so low slope derives days like anything
+    # else — assert that first, because it is the behaviour Tim asked for.
+    ok = estimate(cfg, QuoteInput(
+        roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
+        code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="daily"))
+    assert ok["overhead_basis_used"] == "daily"
+    assert not any("overhead_fell_back_to_per_sq" in w for w in ok["warnings"])
+
+    # The fallback still has to announce itself for any config that lacks the series — an older
+    # branch config, or one rolled back to a previous version.
+    import copy as _copy
+
+    from core.pricing_config import load_config as _load
+    raw = _copy.deepcopy(cfg.raw)
+    raw["daily_overhead_day_model"]["install_series_by_roof_type"].pop("polyglass_sav_sap", None)
+    r = estimate(_load(raw), QuoteInput(
         roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
         code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="daily"))
     assert r["overhead_basis_used"] == "per_sq"

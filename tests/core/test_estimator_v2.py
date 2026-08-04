@@ -864,11 +864,22 @@ def test_derive_daily_series_skips_demo_on_new_construction():
 
 
 def test_derive_daily_series_empty_for_unmodelled_roof():
-    """Low-slope systems have no fitted model → no derivation (stays manual)."""
+    """A roof type with no fitted series derives nothing and stays manual.
+
+    Low slope USED to be the example here. Since 2026-08-03 it has its own fitted series (Tim:
+    "It's all going to be based on days"), so it derives like anything else — asserted below.
+    The no-model branch still matters for any config that lacks the series, so it is exercised
+    with the mapping removed rather than deleted.
+    """
     cfg = _cfg_v2()
     q = QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=40.0,
                    slope_type="low_slope", existing_roof="flat", overhead_mode="daily")
-    assert derive_daily_series(cfg, q) == []
+    assert derive_daily_series(cfg, q), "low slope should derive days now"
+
+    import copy as _copy
+    raw = _copy.deepcopy(cfg.raw)
+    raw["daily_overhead_day_model"]["install_series_by_roof_type"].pop("tpo_adhered", None)
+    assert derive_daily_series(load_config(raw), q) == []
 
 
 def test_derive_daily_series_always_half_day_multiples():

@@ -1167,7 +1167,7 @@ def create_proposal_from_project(
     """
     from app.models import BidProject, Estimate, PricingConfig  # noqa: PLC0415
     from core import bid_project as BP  # noqa: PLC0415
-    from core.estimator import QuoteInput  # noqa: PLC0415
+    from core.estimator import DailyOverheadSeries, QuoteInput  # noqa: PLC0415
     from core.pricing_config import ConfigError, load_config  # noqa: PLC0415
 
     project = db.get(BidProject, bid_project_id)
@@ -1212,6 +1212,16 @@ def create_proposal_from_project(
         once = stored.pop("project_once_per_project", None)
         # QuoteRequest fields only — the project facts above are not QuoteInput kwargs.
         stored.pop("debug", None)
+        # daily_series round-trips through JSON as a list of DICTS, and QuoteInput expects
+        # DailyOverheadSeries. Left raw, price_project raises `AttributeError: 'dict' object has
+        # no attribute 'days'` — an unhandled 500 on a customer-facing document, and NOT caught by
+        # either handler here. Latent while the day cells were always blank (an empty list is
+        # safe); the day-suggestion pre-fill makes a populated daily_series the normal case.
+        if stored.get("daily_series"):
+            stored["daily_series"] = [
+                s if isinstance(s, DailyOverheadSeries) else DailyOverheadSeries(**s)
+                for s in stored["daily_series"]
+            ]
         try:
             quote = QuoteInput(**{k: v for k, v in stored.items()
                                   if k in QuoteInput.__dataclass_fields__})

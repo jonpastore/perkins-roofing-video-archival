@@ -115,7 +115,25 @@ class PricingConfig:
     # Sloped rate accessors                                                #
     # ------------------------------------------------------------------ #
     def sloped_base(self, zone: str, roof_type: str) -> float:
-        return self.raw["sloped_base_cost_lm"][zone][roof_type]
+        try:
+            return self.raw["sloped_base_cost_lm"][zone][roof_type]
+        except KeyError as exc:
+            # A LOW-SLOPE system asked for on the sloped path. `/estimator/quote` coerces
+            # slope_type from the roof type so it never sends this, but anything rebuilding a
+            # QuoteInput from a stored `input_json` can — that row records the RAW body, so a
+            # low-slope estimate comes back as slope_type='sloped'. A bare KeyError there is an
+            # unhandled 500 in proposal generation; this says what is actually wrong.
+            if roof_type in (((self.raw.get("low_slope") or {}).get("base_cost_lm") or {}).get(zone) or {}):
+                raise ConfigError(
+                    f"{roof_type!r} is a LOW-SLOPE system but was priced with "
+                    f"slope_type='sloped'. Set slope_type='low_slope' (the API derives this from "
+                    f"the roof type; a QuoteInput rebuilt from a stored input_json must too)."
+                ) from exc
+            known = ", ".join(sorted((self.raw.get("sloped_base_cost_lm") or {}).get(zone, {})))
+            raise ConfigError(
+                f"sloped_base_cost_lm[{zone}] has no entry for roof_type {roof_type!r}. "
+                f"Known sloped roof types: {known or 'none configured'}."
+            ) from exc
 
     def sloped_overhead(self, zone: str, roof_type: str) -> float:
         return self.raw["sloped_overhead"][zone][roof_type]
