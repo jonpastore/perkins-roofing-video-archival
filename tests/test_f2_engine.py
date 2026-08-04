@@ -1617,3 +1617,36 @@ def test_flat_days_need_both_a_series_and_a_rate(cfg: PricingConfig):
         roof_type="13_tile", num_squares=20.0, flat_squares=6.0, code_zone="HVHZ",
         slope_type="sloped", overhead_mode="daily", existing_roof="tile"))
     assert all(s.series != "nope" for s in got)
+
+
+def test_a_pure_low_slope_quote_books_no_extra_days_for_flat_squares(cfg: PricingConfig):
+    """`flat_squares` must not add days to a quote that never prices it.
+
+    `_build_low_slope` prices `base * num_squares` and never reads `flat_squares`, so on a PURE
+    low-slope quote the flat area is not a priced section — it is the same roof. The frontend
+    sends `flat_squares` off the measurement regardless of roof type, so a day block without a
+    `slope_type` guard charges overhead against squares no line item covers: measured +$1,575 on
+    30 sq tpo_adhered + 12 flat. Mirrors the pricing guard, which has always been sloped-only.
+    """
+    from core.estimator import derive_daily_series
+    raw = dict(cfg.raw)
+    raw["daily_overhead_day_model"] = {
+        **raw["daily_overhead_day_model"],
+        "series": {**raw["daily_overhead_day_model"]["series"],
+                   "low_slope": {"setup": 0.389, "rate": 0.0851}},
+        "flat_series": {"series": "low_slope"},
+        "install_series_by_roof_type": {
+            **raw["daily_overhead_day_model"].get("install_series_by_roof_type", {}),
+            "tpo_adhered": "low_slope"},
+    }
+    raw["daily_overhead_rates"] = {**raw["daily_overhead_rates"], "low_slope": 1050.0}
+    from core.pricing_config import load_config
+    c2 = load_config(raw)
+
+    base = dict(roof_type="tpo_adhered", num_squares=30.0, slope_type="low_slope",
+                code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="daily")
+    without = {s.series: s.days for s in derive_daily_series(c2, QuoteInput(**base))}
+    with_flat = {s.series: s.days
+                 for s in derive_daily_series(c2, QuoteInput(**base, flat_squares=12.0))}
+    assert without == with_flat, (
+        f"flat_squares changed the day count on a pure low-slope quote: {without} -> {with_flat}")

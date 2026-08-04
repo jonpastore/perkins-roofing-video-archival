@@ -134,3 +134,22 @@ def test_version_was_bumped_for_the_new_shortcode(src):
     version = [ln for ln in header.splitlines() if "Version:" in ln][0].split(":")[1].strip()
     assert f"define( 'PERKINS_MWC_VERSION', '{version}' );" in src, "header and define disagree"
     assert version >= "1.4.0", "the guide shipped without a version bump"
+
+
+def test_day_cells_invalidate_the_quote_when_edited():
+    """A day-cell edit must mark the quote stale. Source-level check, in pytest for the same
+    reason the PHP brace check above is: the SPA has no DOM harness (no jsdom, no
+    testing-library) and adding one for a two-line invariant is not worth a dependency.
+
+    `quoteBodyKey` deliberately excludes `daily_series` so the day-suggestion pre-fill cannot
+    mark its OWN fresh quote stale. That removed the only path by which typing in a day cell
+    reached `setInputsDirty` — so an operator could type 6 days over a suggested 3, press
+    "Create proposal" (which snapshots the previous response rather than re-quoting) and ship a
+    document priced at 3. The edit is the entire feature Tim asked for; it has to invalidate.
+    """
+    src = (PLUGIN_DIR.parent.parent / "web" / "src" / "pages" / "Quoting.tsx").read_text()
+    for setter in ("setQuoteDemoDays", "setQuoteInstallDays"):
+        handler = next((ln for ln in src.splitlines()
+                        if "onChange={(e) =>" in ln and f"{setter}(e.target.value)" in ln), None)
+        assert handler, f"no onChange handler found for {setter}"
+        assert "setInputsDirty(true)" in handler, f"{setter} edit does not mark the quote dirty"

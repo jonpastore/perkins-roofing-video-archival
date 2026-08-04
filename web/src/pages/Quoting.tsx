@@ -2376,7 +2376,7 @@ export function Quoting() {
                     type="number" min="0" step="0.5"
                     disabled={quoteExistingRoof === "none"}
                     value={quoteDemoDays}
-                    onChange={(e) => setQuoteDemoDays(e.target.value)}
+                    onChange={(e) => { setQuoteDemoDays(e.target.value); setInputsDirty(true); }}
                     style={{ ...inputStyle, width: "100%", opacity: quoteExistingRoof === "none" ? 0.5 : 1 }}
                   />
                 </div>
@@ -2538,7 +2538,7 @@ export function Quoting() {
                           <input
                             type="number" min="0" step="0.5"
                             value={quoteInstallDays}
-                            onChange={(e) => setQuoteInstallDays(e.target.value)}
+                            onChange={(e) => { setQuoteInstallDays(e.target.value); setInputsDirty(true); }}
                             style={{ ...inputStyle, width: "100%" }}
                           />
                         </div>
