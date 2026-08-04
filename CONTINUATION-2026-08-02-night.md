@@ -4,7 +4,7 @@
 `/assets/index-C3NGvMvU.js`. Zero open PRs. Migrations through 0054, applied.** Live pricing
 configs: jupiter **v29**, miami **v30**, naples **v29**.
 
-Follows `CONTINUATION-2026-08-02-eve.md`. That doc shipped Tim's four answers; this one is about
+Follows `docs/continuations/CONTINUATION-2026-08-02-eve.md`. That doc shipped Tim's four answers; this one is about
 what a full backlog audit found underneath them — including a live pricing defect that was in no
 task at all.
 
