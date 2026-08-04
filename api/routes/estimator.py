@@ -484,7 +484,79 @@ def _validate_quote_guards(body, config, *, where: str = "") -> None:
                 detail=f"{prefix}unknown daily_series name(s): {unknown}. "
                 f"Valid series: {sorted(known_series)}",
             )
+        # Tim, 2026-08-04: "no install days is an error, 1 min required" (demo may be 0, which is
+        # expressed by omitting it — DailySeriesItem already requires days > 0 per entry).
+        #
+        # This closes a silent under-bill: the engine derives days ONLY when daily_series arrives
+        # empty, so a caller who sent demo days alone got a quote with NO install overhead at all
+        # and no warning. Measured on a 20 sq HVHZ tile roof: $25,090 against the $27,050 the same
+        # job prices at when the days are derived — $1,960 missing, because "blank" was read as
+        # "zero" rather than "estimate it".
+        # ⚠️ This reads `demo_series` to know which entry is the tear-off. A config that does not
+        # declare it counts demo days AS install and the guard silently passes — which is exactly
+        # how this guard's own test first went green against a 200. All three prod configs declare
+        # it; if you add a branch, declare it there too.
+        demo_series = (config.daily_overhead_day_model() or {}).get("demo_series")
+        install_days = sum(s.days for s in body.daily_series if s.series != demo_series)
+        if install_days < 1:
+            raise HTTPException(
+                422,
+                detail=f"{prefix}install days are required and must be at least 1 "
+                f"(got {install_days:g}). Demo days may be omitted for new construction; "
+                f"install days may not.",
+            )
 
+
+
+@router.post("/suggested-days")
+def suggested_days(
+    body: QuoteRequest,
+    claims=Depends(require_role("estimating_view")),
+    db: Session = Depends(get_db_session),
+):
+    """The day counts the model would derive for this roof — WITHOUT pricing or persisting it.
+
+    Tim, 2026-08-04: *"you can derive days and estimate working days to create the value and let
+    tim or a sales rep override."* The day cells must never be blank, because a blank one is
+    read as ZERO rather than "estimate it" — so the UI needs the derived number BEFORE the first
+    quote, not after it. `/quote` could not serve that: it prices, validates and writes an audit
+    row, none of which a pre-fill should do.
+
+    Returns `{demo_days, install_days, series}`. `install_days` FOLDS IN the flat section of a
+    mixed roof: every series bills the same `office_daily_overhead / concurrent_crews` under the
+    branch basis all three branches now use, so what the money depends on is the day TOTAL, not
+    which series carries it. One cell per crew — demo and install — is the whole model.
+    """
+    if body.config_id is not None:
+        cfg_row = db.get(PricingConfig, body.config_id)
+        if cfg_row is None or cfg_row.tenant_id != db.info.get("tenant_id"):
+            raise HTTPException(404, f"Config {body.config_id} not found")
+    else:
+        cfg_row = _get_active_config_row(body.branch, db)
+    if cfg_row is None or not cfg_row.config:
+        raise HTTPException(
+            503,
+            detail=(
+                f"no active pricing config for branch '{body.branch}' — "
+                "seed/activate one in Admin -> Estimating"
+            ),
+        )
+
+    # Derive from the roof, never from what the caller typed: this endpoint answers "what does
+    # the model say", so any daily_series on the body is deliberately ignored.
+    q, _slope, _cuts, _split = _quote_input_from_request(body, cfg_row, db, claims)
+    config = load_config(cfg_row.config)
+    derived = E.derive_daily_series(config, replace(q, daily_series=[]))
+
+    demo_series = (config.daily_overhead_day_model() or {}).get("demo_series")
+    demo = sum(s.days for s in derived if s.series == demo_series)
+    install = sum(s.days for s in derived if s.series != demo_series)
+    return {
+        "demo_days": demo,
+        "install_days": install,
+        "series": [{"series": s.series, "days": s.days} for s in derived],
+        "derived": bool(derived),
+    }
 
 
 @router.post("/quote")

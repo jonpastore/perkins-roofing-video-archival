@@ -60,6 +60,17 @@ def _branch_that_prices_low_slope(client, prefix="lowslope"):
     cfg["overhead_basis"] = "branch"
     cfg["office_daily_overhead"] = 1470
     cfg["concurrent_crews"] = 1.5
+    # `demo_series` is what tells the install-days guard which entry is the tear-off. Without it
+    # a demo-only quote counts its demo days AS install and slips through — which is how the
+    # guard's own test first passed against a 200.
+    cfg.setdefault("daily_overhead_day_model", {}).update({
+        "demo_series": "demo_dry_in_flat",
+        "series": {"tile": {"setup": 0.45, "rate": 0.129},
+                   "demo_dry_in_flat": {"setup": 1.31, "rate": 0.044},
+                   "low_slope": {"setup": 0.389, "rate": 0.0851}},
+        "install_series_by_roof_type": {"13_tile": "tile", "tpo": "low_slope"},
+        "flat_series": {"series": "low_slope"},
+    })
     for zone in ("HVHZ", "FBC"):
         cfg.setdefault("low_slope", {}).setdefault("base_cost_lm", {}).setdefault(zone, {})["tpo"] = 485
         cfg["low_slope"].setdefault("overhead", {}).setdefault(zone, {})["tpo_oh"] = 135
@@ -703,3 +714,41 @@ class TestProjectProposal:
         # Anything but a 500. A 422 with a reason is a valid outcome; an unhandled crash is not.
         assert made.status_code != 500, made.text
         assert made.status_code == 200, made.text
+    def test_install_days_are_required_and_at_least_one(self, admin_client):
+        """Tim, 2026-08-04: "no install days is an error, 1 min required" (demo may be 0).
+
+        This closes a silent UNDER-BILL, not a typo: the engine derives days only when
+        daily_series arrives EMPTY, so a caller who sent demo days alone got a quote with no
+        install overhead at all and no warning. Measured on a 20 sq HVHZ tile roof, $25,090
+        against the $27,050 the same job prices at when the days are derived — $1,960 missing,
+        because "blank" was read as "zero" rather than "estimate it".
+        """
+        branch, _cfg = _branch_that_prices_low_slope(admin_client)
+        demo_only = _building("Clubhouse", 30, branch)
+        demo_only["quote"]["overhead_mode"] = "daily"
+        demo_only["quote"]["daily_series"] = [{"series": "demo_dry_in_flat", "days": 2.0}]
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [demo_only]), headers=AUTH)
+        assert r.status_code == 422, r.text
+        assert "install days are required" in r.text
+
+        # …and the same body with install days priced is accepted.
+        ok = _building("Clubhouse", 30, branch)
+        ok["quote"]["overhead_mode"] = "daily"
+        ok["quote"]["daily_series"] = [{"series": "demo_dry_in_flat", "days": 2.0},
+                                       {"series": "tile", "days": 4.5}]
+        r2 = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [ok]), headers=AUTH)
+        assert r2.status_code == 200, r2.text
+
+    def test_demo_days_may_be_omitted_entirely(self, admin_client):
+        """"0 is acceptable" for demo — new construction has no tear-off. Omitting the entry is
+        how zero is expressed, since DailySeriesItem requires days > 0 per entry."""
+        branch, _cfg = _branch_that_prices_low_slope(admin_client)
+        b = _building("Clubhouse", 30, branch)
+        b["quote"]["overhead_mode"] = "daily"
+        b["quote"]["existing_roof"] = "none"
+        b["quote"]["daily_series"] = [{"series": "tile", "days": 4.5}]
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [b]), headers=AUTH)
+        assert r.status_code == 200, r.text
