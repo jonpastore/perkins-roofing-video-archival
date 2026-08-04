@@ -1510,3 +1510,95 @@ def test_access_alone_does_not_trigger_the_geometry_model(cfg: PricingConfig):
     # Same squares-only fit both ways: no cut measurements means no geometry model, and the
     # access coefficient lives in the geometry model.
     assert plain == hard, f"access must not switch a cut-less quote onto the geometry model: {plain} vs {hard}"
+
+
+def test_low_slope_daily_overhead_falls_back_and_says_so(cfg: PricingConfig):
+    """Asking for daily overhead on a low-slope system must not silently bill per-square.
+
+    `derive_daily_series` returns [] for every low-slope system — Tim's time-learning workbook is
+    `Residential_OH_Calculator_SLOPED_ONLY`, so no low-slope day series was ever fitted. The
+    estimate then used the per-square overhead table while the caller had asked for days, and
+    NOTHING in the result said so: a quote that quietly ignored the request was indistinguishable
+    from one that honoured it. Tim, 2026-08-03: "Why is this still trying to use per SQ prices on
+    the OH? It's all going to be based on days".
+
+    The per-square number is not necessarily wrong, but it is NOT his method: both commercial
+    workbooks derive the per-square overhead FROM a day count (Miramar "$1,175 x 25 days & $765 x
+    30 days = $52,325" over 142 sq = its displayed $370/sq; Evergrene's flat row 28 sq / 7 days /
+    $6,195 = its displayed $221.25/sq). So this is an unpriced gap, and the silence was the bug.
+    """
+    r = estimate(cfg, QuoteInput(
+        roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
+        code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="daily"))
+    assert r["overhead_basis_used"] == "per_sq"
+    assert any("overhead_fell_back_to_per_sq" in w for w in r["warnings"]), r["warnings"]
+
+
+def test_sloped_daily_overhead_is_not_labelled_a_fallback(cfg: PricingConfig):
+    """The complement, and it fails for a different reason: a roof type that HAS a fitted series
+    must report `daily` and carry no fallback warning. A warning on every quote is a warning on
+    none."""
+    r = estimate(cfg, QuoteInput(
+        roof_type="13_tile", num_squares=20.0, slope_type="sloped", code_zone="HVHZ",
+        overhead_mode="daily", existing_roof="tile"))
+    assert r["overhead_basis_used"] == "daily"
+    assert r["daily_series"], "a fitted roof type must derive days"
+    assert not any("fell_back" in w for w in r["warnings"]), r["warnings"]
+
+
+def test_per_sq_request_is_not_reported_as_a_fallback(cfg: PricingConfig):
+    """Only a request for days that could not be honoured is a fallback. A caller who asked for
+    the per-square table got exactly what it asked for, and must not be warned about it."""
+    r = estimate(cfg, QuoteInput(
+        roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
+        code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="per_sq"))
+    assert "overhead_basis_used" not in r
+    assert not any("fell_back" in w for w in r["warnings"]), r["warnings"]
+
+
+def test_mixed_roof_books_days_for_its_flat_section(cfg: PricingConfig):
+    """A mixed sloped+flat roof must book the flat crew's days too.
+
+    The install fit is driven by `num_squares`, which is the SLOPED area, so before `flat_series`
+    a mixed roof booked the sloped days and NONE of the flat — under-quoting the overhead by
+    exactly the days the flat crew is on the roof. 36% of the sold book is mixed
+    (docs/mixed-roof-sold-book-2026-08-03.md), and Tim logs "Flat (days)" beside "Squares (Flat)"
+    on every home in his own workbook.
+    """
+    from core.estimator import derive_daily_series
+    raw = dict(cfg.raw)
+    raw["daily_overhead_day_model"] = {
+        **raw["daily_overhead_day_model"],
+        "series": {**raw["daily_overhead_day_model"]["series"],
+                   "low_slope": {"setup": 0.389, "rate": 0.0851}},
+        "flat_series": {"series": "low_slope"},
+    }
+    raw["daily_overhead_rates"] = {**raw["daily_overhead_rates"], "low_slope": 1050.0}
+    from core.pricing_config import load_config
+    c2 = load_config(raw)
+
+    common = dict(roof_type="13_tile", num_squares=20.0, code_zone="HVHZ",
+                  slope_type="sloped", overhead_mode="daily", existing_roof="tile")
+    dry = {s.series: s.days for s in derive_daily_series(c2, QuoteInput(**common))}
+    wet = {s.series: s.days
+           for s in derive_daily_series(c2, QuoteInput(**common, flat_squares=6.0,
+                                                       flat_roof_type="polyglass_sav_sap"))}
+    assert "low_slope" not in dry, "a roof with no flat section must book no flat days"
+    assert wet.get("low_slope", 0) > 0, "the flat section booked no days"
+    # The sloped side is untouched — adding a flat section must not change the sloped day count.
+    assert {k: v for k, v in wet.items() if k != "low_slope"} == dry
+
+
+def test_flat_days_need_both_a_series_and_a_rate(cfg: PricingConfig):
+    """Config that names a flat series with no rate for it must book nothing rather than raise:
+    `compute_daily_overhead` would ConfigError on the unknown series and take the whole quote
+    down, which is a worse failure than the per-square fallback it replaces."""
+    from core.estimator import derive_daily_series
+    raw = dict(cfg.raw)
+    raw["daily_overhead_day_model"] = {**raw["daily_overhead_day_model"],
+                                       "flat_series": {"series": "nope"}}
+    from core.pricing_config import load_config
+    got = derive_daily_series(load_config(raw), QuoteInput(
+        roof_type="13_tile", num_squares=20.0, flat_squares=6.0, code_zone="HVHZ",
+        slope_type="sloped", overhead_mode="daily", existing_roof="tile"))
+    assert all(s.series != "nope" for s in got)

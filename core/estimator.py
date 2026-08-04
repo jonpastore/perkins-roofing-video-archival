@@ -220,6 +220,19 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
         demo_days = days_for(demo_series)
         if demo_days is not None:
             totals[demo_series] = totals.get(demo_series, 0.0) + demo_days
+
+    # The FLAT section of a mixed roof is its own crew-days. 36% of the sold book is mixed
+    # sloped+flat (890 of 2,492 contracts, docs/mixed-roof-sold-book-2026-08-03.md), and the
+    # install fit above is driven by q.num_squares, which is the SLOPED area only — so without
+    # this a mixed roof books the sloped days and none of the flat, and under-quotes the overhead
+    # by exactly the days the flat crew is on the roof. Tim logs "Flat (days)" alongside
+    # "Squares (Flat)" on every home in his own workbook, so he counts them separately too.
+    flat_series = (model.get("flat_series") or {}).get("series")
+    if q.flat_squares and flat_series and flat_series in rates:
+        fit = fits.get(flat_series)
+        if fit:
+            raw = float(fit["setup"]) + float(fit["rate"]) * float(q.flat_squares)
+            totals[flat_series] = totals.get(flat_series, 0.0) + max(0.5, round(raw * 2) / 2)
     return [DailyOverheadSeries(series=n, days=d) for n, d in totals.items()]
 
 
@@ -1423,13 +1436,41 @@ def estimate(config_or_input, input_or_none=None) -> dict:
     # falling back to per-square OH (the ~$2k PROTECTOR gap — Zoom 2026-07-17). Days the
     # caller typed always win.
     auto_days = False
+    fell_back_to_per_sq = False
     if q.overhead_mode == "daily" and not q.daily_series:
         derived = derive_daily_series(config, q)
         if derived:
             q = replace(q, daily_series=derived)
             auto_days = True
+        else:
+            # No fitted day model for this roof type — `derive_daily_series` returns [] for every
+            # low-slope system, because the fitted workbook is SLOPED ONLY. The estimate then
+            # silently uses the per-square overhead table while the caller asked for days, and
+            # nothing in the result said so. Tim, 2026-08-03: "Why is this still trying to use per
+            # SQ prices on the OH? It's all going to be based on days" — a quote that quietly
+            # ignores that reads exactly like one that honoured it.
+            #
+            # This is a GAP, not Tim's method. He prices low-slope by days too, and both
+            # commercial workbooks show the per-square figure being DERIVED from days rather than
+            # driving them: Miramar's overhead cell reads "$1,175 x 25 days & $765 x 30 days =
+            # $52,325" against 142 squares (= the $370/sq it displays), and Evergrene's bid sheet
+            # carries a TOTAL DAYS column whose "Clubhouse Flats (3)" row is 28 sq / 7 days /
+            # $6,195 OH (= the $221.25/sq it displays). A per-square number that is an OUTPUT of a
+            # day calculation must not be read as the input.
+            fell_back_to_per_sq = True
 
     result = _estimate_config(config, q).to_dict()
+    if fell_back_to_per_sq:
+        result["overhead_basis_used"] = "per_sq"
+        result["warnings"] = list(result.get("warnings") or []) + [
+            f"overhead_fell_back_to_per_sq: daily overhead was requested, but {q.roof_type!r} has "
+            "no fitted day series (the time-learning model covers sloped roofs only), so overhead "
+            "came from the per-square table. Tim prices low-slope by DAYS as well — his commercial "
+            "bids derive the per-square figure from a day count — so treat this as an unpriced gap "
+            "and confirm the overhead against a day estimate before sending."
+        ]
+    elif q.overhead_mode == "daily" and q.daily_series:
+        result["overhead_basis_used"] = "daily"
     if auto_days:
         # By-days OH lands well below the per-square OH on tile/metal, so an auto-filled
         # estimate must never look hand-checked. Say the days came from the model.
