@@ -1587,10 +1587,44 @@ export function Quoting() {
     // with its own control.
     quoteAccessDifficult,
   ]);
+  // Fetch the model's day estimate whenever the inputs that decide it change, and put it IN the
+  // cells. Tim, 2026-08-04: "you can derive days and estimate working days to create the value
+  // and let tim or a sales rep override" — and "no install days is an error, 1 min required".
+  //
+  // The cells must never be blank, because the engine reads an absent series as ZERO rather than
+  // "estimate it": a quote sent with demo days alone priced $25,090 against the $27,050 the same
+  // 20 sq tile roof costs when the days are derived. /estimator/suggested-days derives without
+  // pricing or persisting, so the number is there BEFORE the first quote rather than after it.
+  //
+  // install_days folds in the flat section of a mixed roof — every series bills the same
+  // office_daily_overhead / concurrent_crews under the branch basis all three branches use, so
+  // the money depends on the day TOTAL, not on which series carries it. One cell per crew.
   useEffect(() => {
-    setQuoteDemoDays("");
-    setQuoteInstallDays("");
-  }, [daysInputKey]);
+    const body = buildQuoteBody();
+    if (!body) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch("/estimator/suggested-days", {
+          method: "POST", body: JSON.stringify(body),
+        });
+        if (!r.ok || cancelled) return;
+        const d = await r.json() as { demo_days: number; install_days: number; derived: boolean };
+        if (cancelled || !d.derived) return;
+        // Demo shows an explicit "0" rather than a blank: "0 is acceptable" (new construction,
+        // no tear-off), and a blank is the ambiguity that started all of this — the engine reads
+        // an absent series as zero, so the operator should SEE the zero they are agreeing to.
+        setQuoteDemoDays(String(d.demo_days));
+        // Install is left blank only when the model has nothing to say (no fitted series for
+        // this roof type). The operator must then enter it — the API rejects install < 1.
+        setQuoteInstallDays(d.install_days > 0 ? String(d.install_days) : "");
+      } catch {
+        // A failed suggestion must not block quoting: the cells stay as they are and the server
+        // still derives when they are empty.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [daysInputKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function applyTargetProfit(pct: number) {
     if (!quoteResult?.margin || !Number.isFinite(pct) || pct <= 0) return;

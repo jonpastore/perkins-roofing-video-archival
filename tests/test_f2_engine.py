@@ -1650,3 +1650,50 @@ def test_a_pure_low_slope_quote_books_no_extra_days_for_flat_squares(cfg: Pricin
                  for s in derive_daily_series(c2, QuoteInput(**base, flat_squares=12.0))}
     assert without == with_flat, (
         f"flat_squares changed the day count on a pure low-slope quote: {without} -> {with_flat}")
+
+
+def test_two_day_cells_price_the_same_as_the_three_series_the_model_derives(cfg: PricingConfig):
+    """The UI has TWO day cells (demo, install) while a mixed roof derives THREE series. Folding
+    the flat days into the install cell must not move the price.
+
+    That holds because `overhead_basis="branch"` bills every series the same
+    `office_daily_overhead / concurrent_crews` — Tim, 2026-08-04: "we charge OH per install day,
+    roof type doesn't matter." So the money depends on the day TOTAL, not on which series carries
+    it, and one cell per crew is the whole model.
+
+    ⚠️ This is the assumption the two-cell design rests on, and it is FALSE under
+    `overhead_basis="series"`, where each series has its own rate. If a branch is ever moved back
+    to the series basis, the UI has to send the three series separately again — this test is what
+    will tell you.
+    """
+    raw = dict(cfg.raw)
+    raw["overhead_basis"] = "branch"
+    raw["office_daily_overhead"] = 1470
+    raw["concurrent_crews"] = 1.5
+    raw["daily_overhead_day_model"] = {
+        **raw["daily_overhead_day_model"],
+        "series": {**raw["daily_overhead_day_model"]["series"],
+                   "low_slope": {"setup": 0.389, "rate": 0.0851}},
+        "flat_series": {"series": "low_slope"},
+    }
+    raw["daily_overhead_rates"] = {**raw["daily_overhead_rates"], "low_slope": 1050.0}
+    from core.estimator import DailyOverheadSeries, derive_daily_series
+    from core.pricing_config import load_config
+    c2 = load_config(raw)
+
+    base = dict(roof_type="13_tile", num_squares=20.0, flat_squares=6.0,
+                flat_roof_type="polyglass_sav_sap", slope_type="sloped", code_zone="HVHZ",
+                existing_roof="tile", overhead_mode="daily")
+    derived = derive_daily_series(c2, QuoteInput(**base))
+    assert len({s.series for s in derived}) == 3, f"expected a 3-series mixed roof, got {derived}"
+
+    demo_series = c2.daily_overhead_day_model()["demo_series"]
+    demo = sum(s.days for s in derived if s.series == demo_series)
+    install = sum(s.days for s in derived if s.series != demo_series)
+    collapsed = [DailyOverheadSeries(series="tile", days=install)]
+    if demo:
+        collapsed.append(DailyOverheadSeries(series=demo_series, days=demo))
+
+    three = estimate(c2, QuoteInput(**base))["project_total"]
+    two = estimate(c2, QuoteInput(**base, daily_series=collapsed))["project_total"]
+    assert three == two, f"two cells priced {two} against the model's {three}"
