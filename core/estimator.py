@@ -228,7 +228,12 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
     # by exactly the days the flat crew is on the roof. Tim logs "Flat (days)" alongside
     # "Squares (Flat)" on every home in his own workbook, so he counts them separately too.
     flat_series = (model.get("flat_series") or {}).get("series")
-    if q.flat_squares and flat_series and flat_series in rates:
+    # `slope_type == "sloped"` mirrors the PRICING guard below: `_build_low_slope` prices
+    # `base * num_squares` and never reads `flat_squares`, so on a PURE low-slope quote the flat
+    # area is not priced — booking days for it charges overhead against squares no line item
+    # covers (measured +$1,575 on 30 sq tpo_adhered + 12 flat). The frontend sends flat_squares
+    # from the measurement regardless of roof type, so the guard has to live here.
+    if q.slope_type == "sloped" and q.flat_squares and flat_series and flat_series in rates:
         fit = fits.get(flat_series)
         if fit:
             raw = float(fit["setup"]) + float(fit["rate"]) * float(q.flat_squares)

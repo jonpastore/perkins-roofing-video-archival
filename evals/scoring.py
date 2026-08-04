@@ -125,6 +125,15 @@ def score_retrieval(cases: list[dict], ks: tuple[int, ...] = (1, 4, 8)) -> dict:
     # 0/60 and 1/60, so every fusion change scores identically there. The `retrieval_keyword`
     # set exists to cover them (19/60 and 15/60). Never gated: a change that legitimately
     # narrows the lexical filter would fail a floor for being correct.
+    #
+    # ⚠️ DO NOT "FIX" THE 0/60 BY TERM-MATCHING THE ILIKE. Measured 2026-08-04 over these exact
+    # queries: matching graph nodes and chunks on the query's distinctive words (len>=5, OR, top
+    # 5) takes graph coverage from 0/60 to 60/60 and makes retrieval MUCH WORSE —
+    # recall@1 0.4000 -> 0.1667, mrr 0.5104 -> 0.3035. An OR over distinctive terms matches so
+    # many videos that the +0.1 boost lands on wrong ones and displaces the right answer. Low
+    # coverage here is not a bug to close; it is what keeps the boost precise. The graph leg
+    # earns its place on KEYWORD-shaped queries (the article path), which is what
+    # `retrieval_keyword` measures.
     out["graph_signal_cases"] = float(sum(1 for c in cases if c["graph_video_ids"]))
     out["lexical_cases"] = float(
         sum(1 for c in cases if any(x["lexical"] for x in c["candidates"])))

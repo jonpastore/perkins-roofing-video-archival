@@ -44,6 +44,32 @@ def _seeded_branch(client, prefix="proj"):
     return branch
 
 
+
+def _branch_that_prices_low_slope(client, prefix="lowslope"):
+    """SAMPLE_CONFIG carries the low-slope KEYS with null prices, so nothing low-slope can be
+    quoted against it. Give this branch a real price for `tpo` — the slope_type invariant under
+    test is about which path prices the roof, not about the rate."""
+    import copy as _copy
+    cfg = _copy.deepcopy(SAMPLE_CONFIG)
+    # SAMPLE_CONFIG also has no daily_overhead_rates, so nothing can be quoted BY DAYS against it
+    # — the API validates every submitted series name against that map. Give it Tim's four rates
+    # plus low_slope. (infra/fixtures/pricing_config_exhibit_b.json has the same gap against prod;
+    # see the fixture-drift note in the handoff.)
+    cfg.setdefault("daily_overhead_rates", {}).update(
+        {"tile": 745, "metal": 850, "shingle": 700, "demo_dry_in_flat": 1050, "low_slope": 1050})
+    cfg["overhead_basis"] = "branch"
+    cfg["office_daily_overhead"] = 1470
+    cfg["concurrent_crews"] = 1.5
+    for zone in ("HVHZ", "FBC"):
+        cfg.setdefault("low_slope", {}).setdefault("base_cost_lm", {}).setdefault(zone, {})["tpo"] = 485
+        cfg["low_slope"].setdefault("overhead", {}).setdefault(zone, {})["tpo_oh"] = 135
+        cfg["low_slope"]["overhead"][zone].setdefault("flat_oh", 155)
+    branch = _unique_branch(prefix)
+    created = _create_config(client, branch=branch, label="v1", config=cfg)
+    _activate_config(client, created["id"])
+    return branch, cfg
+
+
 def _building(name, squares, branch, **over):
     quote = {"branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile",
              "num_squares": squares, "overhead_mode": "per_sq"}
@@ -595,3 +621,85 @@ class TestProjectProposal:
         r = admin_client.post("/quoting/proposals/from-project/999999",
                               json={"customer_id": cid, "property_id": pid}, headers=AUTH)
         assert r.status_code == 404
+
+    def test_input_json_records_the_slope_type_that_was_PRICED(self, admin_client):
+        """A low-slope structure must persist slope_type='low_slope', not the body's 'sloped'.
+
+        `/estimator/quote` and `/estimator/project-quote` coerce slope_type FROM the roof type
+        (`effective_slope_type`), so a TPO structure prices down the low-slope path whatever the
+        body said. The audit row stored the RAW body, and
+        `/quoting/proposals/from-project` rebuilds a QuoteInput straight from that row — so the
+        rebuilt quote priced the SLOPED path and died on
+        `sloped_base_cost_lm[zone][<low-slope key>]`. An unhandled 500 on a customer-facing
+        document, generated from a row that had priced perfectly well.
+
+        Six such rows existed in prod (estimates 27-31 and 105); none had reached a bid project,
+        so nothing shipped wrong. The row now records what was CHARGED, which is the same rule
+        num_squares and flat_squares already followed.
+        """
+        branch, _cfg = _branch_that_prices_low_slope(admin_client)
+        flat = _building("Clubhouse Flats", 28, branch,
+                         roof_type="tpo", slope_type="sloped")
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [flat], persist=True), headers=AUTH)
+        assert r.status_code == 200, r.text
+        pid = r.json()["bid_project_id"]
+
+        listed = admin_client.get("/estimator/estimates", headers=AUTH)
+        rows = [e for e in listed.json() if e.get("bid_project_id") == pid]
+        assert len(rows) == 1, rows
+        assert rows[0]["input_json"]["slope_type"] == "low_slope", (
+            "the audit row kept the raw 'sloped'; rebuilding it prices the wrong path")
+
+    def test_a_stored_low_slope_row_can_be_repriced(self, admin_client):
+        """The end the previous test protects: rebuild a QuoteInput from the stored row exactly
+        as proposals.py does, and price it. This fails for a DIFFERENT reason than the assertion
+        above — a row could carry the right slope_type and still not re-price."""
+        from dataclasses import fields as _fields
+
+        from core.estimator import QuoteInput, estimate
+        from core.pricing_config import load_config
+
+        branch, cfg = _branch_that_prices_low_slope(admin_client)
+        flat = _building("Flats", 28, branch, roof_type="tpo", slope_type="sloped")
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [flat], persist=True), headers=AUTH)
+        pid = r.json()["bid_project_id"]
+        row = [e for e in admin_client.get("/estimator/estimates", headers=AUTH).json()
+               if e.get("bid_project_id") == pid][0]
+
+        stored = dict(row["input_json"])
+        keep = {f.name for f in _fields(QuoteInput)}
+        quote = QuoteInput(**{k: v for k, v in stored.items() if k in keep and v is not None})
+        priced = estimate(load_config(cfg), quote)
+        assert priced["project_total"] > 0
+
+    def test_a_by_days_project_proposal_reprices_without_500(self, admin_client):
+        """`daily_series` round-trips through JSON as DICTS, and QuoteInput wants
+        DailyOverheadSeries. Left raw it reached price_project and raised
+        `AttributeError: 'dict' object has no attribute 'days'` — an unhandled 500 on the
+        customer-facing document, caught by neither handler in the rebuild path.
+
+        Latent while the day cells were always blank (an empty list is harmless); the day
+        suggestion pre-fill makes a populated daily_series the normal case, which is why this is
+        now a gate.
+        """
+        branch, _cfg = _branch_that_prices_low_slope(admin_client)
+        b = _building("Clubhouse", 30, branch)
+        b["quote"]["overhead_mode"] = "daily"
+        b["quote"]["daily_series"] = [{"series": "tile", "days": 4.5},
+                                      {"series": "demo_dry_in_flat", "days": 2.0}]
+        r = admin_client.post("/estimator/project-quote", json=_payload(
+            branch, [b], persist=True), headers=AUTH)
+        assert r.status_code == 200, r.text
+        pid = r.json()["bid_project_id"]
+
+        from tests.api.test_f3_proposals import _create_customer, _create_property
+        cust = _create_customer(admin_client)
+        prop_row = _create_property(admin_client, cust["id"])
+        made = admin_client.post(
+            f"/quoting/proposals/from-project/{pid}",
+            json={"customer_id": cust["id"], "property_id": prop_row["id"]}, headers=AUTH)
+        # Anything but a 500. A 422 with a reason is a valid outcome; an unhandled crash is not.
+        assert made.status_code != 500, made.text
+        assert made.status_code == 200, made.text

@@ -692,8 +692,14 @@ def quote(
         # straight from this row without going through _quote_input_from_request, so persisting
         # the rejected values would let a customer-facing proposal re-price a bid to a number no
         # estimate ever produced. An audit row must record what was CHARGED.
+        # slope_type is RESOLVED for the same reason as the squares above, and was missed when
+        # they were: a low-slope system (tpo_adhered, polyglass_sav_sap, pb_silicone_*) is coerced
+        # to slope_type='low_slope' before pricing, but the raw body says 'sloped'. Persisting the
+        # raw value means proposals.py rebuilds a QuoteInput that prices the sloped path and
+        # KeyErrors on `sloped_base_cost_lm[zone][tpo_adhered]` — an unhandled 500 on a
+        # customer-facing document, from a row that priced fine.
         input_json={**body.model_dump(), "num_squares": q.num_squares,
-                    "flat_squares": q.flat_squares},
+                    "flat_squares": q.flat_squares, "slope_type": q.slope_type},
         result_json=_audit_payload(result),
         created_by=claims.get("email") or "unknown",
     )
@@ -962,6 +968,11 @@ def project_quote(
                 # ever produced. An audit row records what was CHARGED.
                 "num_squares": resolved.quote.num_squares,
                 "flat_squares": resolved.quote.flat_squares,
+                # …and slope_type, for the same reason: a low-slope structure in a multi-building
+                # bid is coerced to 'low_slope' before pricing, so storing the body's 'sloped'
+                # makes the rebuilt QuoteInput price the sloped path and KeyError. This is the
+                # site that path actually reads.
+                "slope_type": resolved.quote.slope_type,
                 "structure_days": item.days,
                 "project_permit_count": permit_count,
                 "project_floor_basis": body.floor_basis,

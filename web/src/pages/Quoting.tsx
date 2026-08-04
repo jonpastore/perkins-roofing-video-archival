@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch, listBranches, type BranchRow } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, PillButton, SectionLabel } from "../ui";
 import { errText } from "../lib/errors";
+import { installSeriesFor, suggestedDayCells } from "../lib/quoteDays";
 import {
   buildProjectQuoteBody,
   projectBidSignature,
@@ -244,19 +245,6 @@ const EXISTING_ROOF_OPTIONS: Array<{ value: "none" | "shingle" | "tile" | "metal
 // Roof type -> the daily-overhead "install" series (the crew rate for putting the new roof on).
 // The roof type is already chosen, so the builder asks for ONE "install days" number, not one per type.
 // Low-slope/flat systems fall back to the demo/dry-in/flat daily rate.
-const INSTALL_SERIES_BY_ROOF: Record<string, string> = {
-  "13_tile": "tile", barrel_tile: "tile",
-  standing_seam_metal: "metal",
-  "3tab_shingle": "shingle", dimensional_shingle: "shingle",
-};
-// Low-slope systems are config-driven (tpo_adhered, pb_silicone_2coat, polyglass_sav_sap, ...), so
-// they cannot be enumerated here. Tim quotes one daily rate for "demo and flat" ($1,050), which is
-// the flat-roof install rate too — so resolve by SLOPE rather than by listing system keys, which is
-// what the old tpo/coatings/silicone/bur entries tried and missed (those keys never existed).
-function installSeriesFor(roofType: string, isLowSlope: boolean): string | null {
-  return INSTALL_SERIES_BY_ROOF[roofType] ?? (isLowSlope ? "demo_dry_in_flat" : null);
-}
-
 const GUTTER_STYLES: Array<{ value: string; label: string }> = [
   { value: "k6_alum", label: "6\" Alum K-Style" },
   { value: "k7_alum", label: "7\" Alum K-Style" },
@@ -1442,6 +1430,18 @@ export function Quoting() {
     setGcProjectMarkup("1.15");
   }, [selectedCustomer?.id]);
 
+  // Tim, 2026-08-03: "only offer suggested pricing and a suggested # of days that can be edited
+  // within the cell." The decision lives in lib/quoteDays so it can be tested without the page.
+  function fillSuggestedDays(data: QuoteResult) {
+    const next = suggestedDayCells(data.daily_series, quoteRoofType, isLowSlopeRoofType,
+                                   quoteDemoDays, quoteInstallDays);
+    // Functional updates: `next` was computed from state captured BEFORE the await, so a value
+    // typed while the request was in flight would otherwise be overwritten — the one thing the
+    // suggestion promises never to do. Re-check emptiness against the latest state.
+    if (next.demo != null) setQuoteDemoDays((prev) => (prev === "" ? next.demo! : prev));
+    if (next.install != null) setQuoteInstallDays((prev) => (prev === "" ? next.install! : prev));
+  }
+
   async function runQuote(overrides: Record<string, unknown> = {}) {
     const body = buildQuoteBody(overrides);
     if (!body) {
@@ -1460,6 +1460,7 @@ export function Quoting() {
       }
       const data: QuoteResult = await r.json();
       setQuoteResult(data);
+      fillSuggestedDays(data);
       setInputsDirty(false);
       loadEstimatesForMeasurement(selectedMeasurement!.id);
     } catch (e: unknown) {
@@ -1557,8 +1558,39 @@ export function Quoting() {
 
   // Any change to an estimate input (reuses buildQuoteBody as the single source of
   // truth for "what counts as an input") marks the last quote stale; runQuote clears it.
-  const quoteBodyKey = JSON.stringify(buildQuoteBody());
+  // The day cells are excluded: the pre-fill WRITES them after a quote returns, so including
+  // them made a fresh quote mark ITSELF stale — "Inputs changed — recalculate" on a result that
+  // had just arrived, with Create-proposal disabled until the operator quoted again. Typing in a
+  // day cell still re-quotes through the normal flow; it just no longer invalidates its own
+  // answer. `daysInputKey` below owns the day cells for the mirror-image reason.
+  const quoteBodyKey = JSON.stringify({ ...(buildQuoteBody() ?? {}), daily_series: null });
   useEffect(() => { setInputsDirty(true); }, [quoteBodyKey]);
+
+  // Clear the day cells when the inputs that DECIDE the days change.
+  //
+  // The cells are pre-filled from the model after a quote so the operator can see and adjust the
+  // suggestion. That makes them non-empty, and a non-empty cell is submitted as an explicit
+  // override — so without this, quoting a 20-square tile roof and then switching to a 60-square
+  // metal roof would bill the metal roof the TILE roof's day counts, silently, because the cells
+  // still held 3 and 2 and the pre-fill refuses to overwrite a non-empty cell.
+  //
+  // Keyed on the day-determining inputs only, NOT on quoteBodyKey — that key contains the day
+  // cells themselves, so filling them would re-trigger the clear and wipe the suggestion.
+  // Discarding a typed override here is intended: a day count entered for 20 squares of tile is
+  // not an answer for 60 squares of metal.
+  const daysInputKey = JSON.stringify([
+    quoteRoofType, isLowSlopeRoofType, selectedMeasurement?.id ?? null,
+    selectedMeasurement?.total_sq ?? null, quoteFlatSquares, quoteExistingRoof, quoteRegion,
+    // access_difficult is a FITTED day-model term (tile +0.75 d, demo +0.51, metal +0.34), so a
+    // stale suggestion survives toggling it and is resubmitted as an override — measured -$1,470.
+    // Every other model input arrives via the measurement, which the id covers; access is the one
+    // with its own control.
+    quoteAccessDifficult,
+  ]);
+  useEffect(() => {
+    setQuoteDemoDays("");
+    setQuoteInstallDays("");
+  }, [daysInputKey]);
 
   async function applyTargetProfit(pct: number) {
     if (!quoteResult?.margin || !Number.isFinite(pct) || pct <= 0) return;
@@ -2344,7 +2376,7 @@ export function Quoting() {
                     type="number" min="0" step="0.5"
                     disabled={quoteExistingRoof === "none"}
                     value={quoteDemoDays}
-                    onChange={(e) => setQuoteDemoDays(e.target.value)}
+                    onChange={(e) => { setQuoteDemoDays(e.target.value); setInputsDirty(true); }}
                     style={{ ...inputStyle, width: "100%", opacity: quoteExistingRoof === "none" ? 0.5 : 1 }}
                   />
                 </div>
@@ -2506,7 +2538,7 @@ export function Quoting() {
                           <input
                             type="number" min="0" step="0.5"
                             value={quoteInstallDays}
-                            onChange={(e) => setQuoteInstallDays(e.target.value)}
+                            onChange={(e) => { setQuoteInstallDays(e.target.value); setInputsDirty(true); }}
                             style={{ ...inputStyle, width: "100%" }}
                           />
                         </div>
