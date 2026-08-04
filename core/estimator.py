@@ -220,6 +220,19 @@ def derive_daily_series(config: PricingConfig, q: "QuoteInput") -> list[DailyOve
         demo_days = days_for(demo_series)
         if demo_days is not None:
             totals[demo_series] = totals.get(demo_series, 0.0) + demo_days
+
+    # The FLAT section of a mixed roof is its own crew-days. 36% of the sold book is mixed
+    # sloped+flat (890 of 2,492 contracts, docs/mixed-roof-sold-book-2026-08-03.md), and the
+    # install fit above is driven by q.num_squares, which is the SLOPED area only — so without
+    # this a mixed roof books the sloped days and none of the flat, and under-quotes the overhead
+    # by exactly the days the flat crew is on the roof. Tim logs "Flat (days)" alongside
+    # "Squares (Flat)" on every home in his own workbook, so he counts them separately too.
+    flat_series = (model.get("flat_series") or {}).get("series")
+    if q.flat_squares and flat_series and flat_series in rates:
+        fit = fits.get(flat_series)
+        if fit:
+            raw = float(fit["setup"]) + float(fit["rate"]) * float(q.flat_squares)
+            totals[flat_series] = totals.get(flat_series, 0.0) + max(0.5, round(raw * 2) / 2)
     return [DailyOverheadSeries(series=n, days=d) for n, d in totals.items()]
 
 

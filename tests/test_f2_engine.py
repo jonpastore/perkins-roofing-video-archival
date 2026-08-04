@@ -1554,3 +1554,51 @@ def test_per_sq_request_is_not_reported_as_a_fallback(cfg: PricingConfig):
         code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="per_sq"))
     assert "overhead_basis_used" not in r
     assert not any("fell_back" in w for w in r["warnings"]), r["warnings"]
+
+
+def test_mixed_roof_books_days_for_its_flat_section(cfg: PricingConfig):
+    """A mixed sloped+flat roof must book the flat crew's days too.
+
+    The install fit is driven by `num_squares`, which is the SLOPED area, so before `flat_series`
+    a mixed roof booked the sloped days and NONE of the flat — under-quoting the overhead by
+    exactly the days the flat crew is on the roof. 36% of the sold book is mixed
+    (docs/mixed-roof-sold-book-2026-08-03.md), and Tim logs "Flat (days)" beside "Squares (Flat)"
+    on every home in his own workbook.
+    """
+    from core.estimator import derive_daily_series
+    raw = dict(cfg.raw)
+    raw["daily_overhead_day_model"] = {
+        **raw["daily_overhead_day_model"],
+        "series": {**raw["daily_overhead_day_model"]["series"],
+                   "low_slope": {"setup": 0.389, "rate": 0.0851}},
+        "flat_series": {"series": "low_slope"},
+    }
+    raw["daily_overhead_rates"] = {**raw["daily_overhead_rates"], "low_slope": 1050.0}
+    from core.pricing_config import load_config
+    c2 = load_config(raw)
+
+    common = dict(roof_type="13_tile", num_squares=20.0, code_zone="HVHZ",
+                  slope_type="sloped", overhead_mode="daily", existing_roof="tile")
+    dry = {s.series: s.days for s in derive_daily_series(c2, QuoteInput(**common))}
+    wet = {s.series: s.days
+           for s in derive_daily_series(c2, QuoteInput(**common, flat_squares=6.0,
+                                                       flat_roof_type="polyglass_sav_sap"))}
+    assert "low_slope" not in dry, "a roof with no flat section must book no flat days"
+    assert wet.get("low_slope", 0) > 0, "the flat section booked no days"
+    # The sloped side is untouched — adding a flat section must not change the sloped day count.
+    assert {k: v for k, v in wet.items() if k != "low_slope"} == dry
+
+
+def test_flat_days_need_both_a_series_and_a_rate(cfg: PricingConfig):
+    """Config that names a flat series with no rate for it must book nothing rather than raise:
+    `compute_daily_overhead` would ConfigError on the unknown series and take the whole quote
+    down, which is a worse failure than the per-square fallback it replaces."""
+    from core.estimator import derive_daily_series
+    raw = dict(cfg.raw)
+    raw["daily_overhead_day_model"] = {**raw["daily_overhead_day_model"],
+                                       "flat_series": {"series": "nope"}}
+    from core.pricing_config import load_config
+    got = derive_daily_series(load_config(raw), QuoteInput(
+        roof_type="13_tile", num_squares=20.0, flat_squares=6.0, code_zone="HVHZ",
+        slope_type="sloped", overhead_mode="daily", existing_roof="tile"))
+    assert all(s.series != "nope" for s in got)
