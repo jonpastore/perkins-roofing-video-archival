@@ -24,8 +24,17 @@ makes no runtime API call.
 Output `assets/tidal.geojson` — a GeometryCollection of LineStrings, each carrying a `confidence`:
 
     tagged      OSM tags THIS reach tidal=yes / salt=yes. Authoritative; may move a verdict.
+    mapped      FDEP classifies the water body this reach sits in Class III-Marine or Class II,
+                AND the fill reached it. Authoritative; may move a verdict; carries the name.
     inferred    everything else the fill reached, INCLUDING reaches that merely open onto the
                 coastline. Touching salt water at one end says nothing about the other end.
+
+OSM tags almost no South Florida tidal river (Miami River 0 of 4 ways, New River 0 of 33) and USGS
+gauges sit miles apart, so before `mapped` existed the water people actually live on landed in
+`inferred` and only ever raised a caveat. Tim, 2026-08-06, on a customer with a dock and a boat and
+a rusted-through steel chimney cap: "other roofers came and told her she can install a steel roof.
+She 100% can not. I need this tool to work correctly to show her this." Her canal is 590 ft away,
+FDEP Class III-Marine, and the tool was clearing steel off a 2.5-mile open-water measurement.
 
 That distinction is load-bearing. The first build labelled any coastline-touching way "tagged" for
 its whole length, so a 43-mile canal carried "confirmed salt water" 20 miles inland and told Golden
@@ -73,8 +82,28 @@ OVERPASS = "https://overpass-api.de/api/interpreter"
 # waterways against 21,914 and 174 salinity gauges against 64. Keep this in step with the same
 # constant in fetch_salinity_readings.py and validate_tidal_against_gauges.py.
 BBOX = "24.30,-87.80,31.10,-79.80"
+
+#: The classes checker.js lets MOVE A WARRANTY VERDICT. One definition, imported by the validator,
+#: the pin script and the tests — adding `mapped` in three places and forgetting the fourth is how
+#: 3,491 reaches got scored as if they were not in the file at all.
+VERDICT_MOVING = ("measured", "tagged", "mapped")
 WATERWAY_KINDS = "canal|river|stream|drain|ditch"
 BARRIER_KINDS = "lock_gate|weir|dam|floodgate|sluice_gate|tidal_gate|check_dam"
+
+# FDEP's Waterbody IDs. Florida law CLASSIFIES every named water body, and `3M` (Class III-Marine)
+# / `2` (Class II shellfish) IS the state saying that water is marine. That is the surface-water
+# authority the layer never had: OSM tags almost no South Florida tidal river, and USGS gauges are
+# 7+ miles apart, so the water people actually live on lands in `inferred` and only raises a caveat.
+#
+# ⚠️ WBID polygons are BASIN polygons — they cover dry land. A point-in-polygon test on the ADDRESS
+# is therefore meaningless (a dry inland lot inside an estuarine basin returns 3M) and would ship
+# exactly the false VOID this module exists to prevent. Only REACH GEOMETRY may be classified: a
+# reach is in water by construction, so the basin's class describes the water it is in.
+WBID_CACHE = Path.home() / "perkins-corpus/osm/fdep-wbid-marine.json"
+WBID_URL = ("https://ca.dep.state.fl.us/arcgis/rest/services/OpenData/WBIDS/MapServer/0/query")
+WBID_WHERE = "CLASS IN ('2','3M')"
+WBID_PAGE = 1000
+WBID_INSIDE_FRAC = 0.6   # most of the reach must lie in the marine basin, not just clip its edge
 
 SALINITY_CACHE = Path.home() / "perkins-corpus/osm/salinity-readings.json"
 GAUGE_SNAP_M = 250.0     # a gauge further than this from mapped water is not on a reach we know
@@ -127,6 +156,139 @@ def fetch() -> None:
             time.sleep(wait)
     CACHE.write_bytes(raw)
     print(f"cached {len(raw) / 1e6:.1f} MB -> {CACHE}", flush=True)
+
+
+def fetch_wbid() -> None:
+    """Cache FDEP's marine-classified water bodies. ~1,358 polygons, changes on a multi-year cycle.
+
+    ⚠️ The host 403s a default urllib/curl user agent. Send a browser UA or you will conclude the
+    service is down — the same trap `docs/BRACKISH_DATA_SOURCES.md` records for SFWMD.
+    """
+    WBID_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    feats: list[dict] = []
+    offset = 0
+    while True:
+        q = urllib.parse.urlencode({
+            "where": WBID_WHERE, "outFields": "WBID,WATERBODY_NAME,WATER_TYPE,CLASS",
+            "outSR": "4326", "returnGeometry": "true", "f": "geojson",
+            "resultOffset": offset, "resultRecordCount": WBID_PAGE})
+        req = urllib.request.Request(
+            f"{WBID_URL}?{q}",
+            headers={"User-Agent": "Mozilla/5.0 (perkins-warranty-tool build)"})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            page = json.loads(r.read())
+        got = page.get("features") or []
+        feats.extend(got)
+        print(f"  WBID page at offset {offset}: {len(got)}", flush=True)
+        if len(got) < WBID_PAGE:
+            break
+        offset += WBID_PAGE
+    if not feats:
+        sys.exit("FDEP returned no WBID polygons — refusing to cache an empty marine layer")
+    WBID_CACHE.write_text(json.dumps({"type": "FeatureCollection", "features": feats},
+                                     separators=(",", ":")))
+    print(f"cached {len(feats)} marine WBIDs -> {WBID_CACHE} "
+          f"({WBID_CACHE.stat().st_size / 1e6:.1f} MB)", flush=True)
+
+
+def _ring_contains(ring: list, x: float, y: float) -> bool:
+    """Ray casting. Rings come from ArcGIS as [[lon,lat], ...] and may or may not be closed."""
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _wbid_index(cell: float = 0.05) -> tuple[dict, list]:
+    """Bucket each marine polygon's bbox cells so a point test is local, not 1,358 ray casts."""
+    if not WBID_CACHE.exists():
+        print(f"no FDEP WBID cache at {WBID_CACHE} — skipping marine classification "
+              f"(run with --fetch)", flush=True)
+        return {}, []
+    polys: list[tuple[list, dict]] = []
+    for f in json.loads(WBID_CACHE.read_text())["features"]:
+        g = f.get("geometry") or {}
+        if g.get("type") == "Polygon":
+            parts = [g["coordinates"]]
+        elif g.get("type") == "MultiPolygon":
+            parts = g["coordinates"]
+        else:
+            continue
+        for part in parts:
+            polys.append((part, f.get("properties") or {}))
+    grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for i, (part, _) in enumerate(polys):
+        xs = [p[0] for p in part[0]]
+        ys = [p[1] for p in part[0]]
+        for cx in range(int(min(xs) / cell), int(max(xs) / cell) + 1):
+            for cy in range(int(min(ys) / cell), int(max(ys) / cell) + 1):
+                grid[(cx, cy)].append(i)
+    print(f"FDEP WBID: {len(polys)} marine polygons ({WBID_WHERE})", flush=True)
+    return grid, polys
+
+
+def _wbid_at(lon: float, lat: float, grid: dict, polys: list, cell: float = 0.05) -> dict | None:
+    for i in grid.get((int(lon / cell), int(lat / cell)), ()):
+        part, props = polys[i]
+        if not _ring_contains(part[0], lon, lat):
+            continue
+        if any(_ring_contains(hole, lon, lat) for hole in part[1:]):
+            continue    # a hole is not the water body
+        return props
+    return None
+
+
+def _classify_wbid(ways, by_id, nodes, confidence: dict) -> dict:
+    """Which `inferred` reaches lie inside a marine-classified water body.
+
+    Only `inferred` is considered, and that conjunction is the safety argument: the reach is
+    ALREADY known to connect to tidewater without crossing a control structure, and FDEP
+    INDEPENDENTLY classifies the water body it sits in as marine. Either signal alone is weak —
+    connectivity because OSM's barrier coverage is incomplete, the class because the polygon covers
+    dry land too — but they fail in unrelated ways, so agreeing is evidence.
+
+    Verified against the cases that matter (2026-08-06): Tim's client's canal in Palm Beach Gardens
+    reads ICWW ABOVE ROYAL PALM BRIDGE / ESTUARY / 3M, his own New River reads ESTUARY / 3M, while
+    Golden Gate Estates, Wellington and Jupiter Farms — the three known false-VOID traps — all read
+    STREAM / 3F and are untouched.
+    """
+    grid, polys = _wbid_index()
+    if not polys:
+        return {}
+    out: dict[str, dict] = {}
+    rings = 0
+    for wid, conf in confidence.items():
+        if conf != "inferred":
+            continue
+        # A CLOSED ring is a water POLYGON — a pond or lagoon outline — not a channel, and the
+        # whole outline would be emitted as verdict-moving geometry. The tagged seed already
+        # excludes rings for this reason; the fill can still REACH one, and before this the marine
+        # class promoted 19 of them. Left `inferred`, so they still raise the caveat.
+        w_nodes = by_id[wid]["nodes"]
+        if len(w_nodes) > 2 and w_nodes[0] == w_nodes[-1]:
+            rings += 1
+            continue
+        pts = [nodes[n] for n in w_nodes if n in nodes]
+        if not pts:
+            continue
+        hits = [_wbid_at(x, y, grid, polys) for x, y in pts]
+        marine = [h for h in hits if h]
+        if len(marine) < WBID_INSIDE_FRAC * len(hits):
+            continue
+        # Name the water body the majority of the reach sits in, so the citation is specific.
+        top = max({m.get("WBID"): m for m in marine}.values(),
+                  key=lambda m: sum(1 for h in marine if h.get("WBID") == m.get("WBID")))
+        out[wid] = {"wbid": top.get("WBID"), "name": top.get("WATERBODY_NAME"),
+                    "water_class": top.get("CLASS"), "water_type": top.get("WATER_TYPE")}
+    print(f"FDEP WBID: {len(out)} inferred reaches sit in marine water bodies -> mapped "
+          f"({rings} closed rings left inferred — a pond outline is not a channel)", flush=True)
+    return out
 
 
 def _reading_expired(latest_at: str | None, now: datetime | None = None) -> bool:
@@ -473,10 +635,16 @@ def build() -> None:
                 if nxt not in confidence:
                     confidence[nxt] = "inferred"
                     queue.append(nxt)
+    # FDEP's class before the gauges, so a gauge reading still overrides it in BOTH directions —
+    # `measured` fresh water must beat a marine basin exactly as it beats an OSM tidal tag.
+    marine = _classify_wbid(ways, by_id, nodes, confidence)
+    for wid in marine:
+        confidence[wid] = "mapped"
     measured = _propagate_gauges(ways, by_id, by_node, nodes, barriers)
 
     print(f"salt-carrying: {len(confidence)} reaches "
           f"({sum(v == 'tagged' for v in confidence.values())} tagged, "
+          f"{sum(v == 'mapped' for v in confidence.values())} mapped FDEP-marine, "
           f"{sum(v == 'inferred' for v in confidence.values())} inferred)", flush=True)
 
     # --- emit: CLIP geometry to the coastal reach, don't just filter whole ways ----------------
@@ -536,7 +704,12 @@ def build() -> None:
         # `measured` is different in kind: it is anchored to a real reading and propagates at most
         # PROPAGATE_MI along the channel, so it cannot run away inland. `fresh` only ever REMOVES
         # a warning, so keeping it far inland is the safe direction.
-        evidenced = conf in ("measured", "fresh")
+        # `mapped` is exempt for the same reason `measured` is, and NOT for the reason `tagged`
+        # was wrongly given: a marine WBID is bounded by its own polygon — the class changes to 3F
+        # where the water turns fresh — so it cannot run away inland the way an OSM `tidal=yes` tag
+        # runs 160 mi up the St Johns. The clip measures distance to the COASTLINE, and Tim's
+        # client lives 590 ft from Class III-Marine water that is 2.5 mi from open water.
+        evidenced = conf in ("measured", "fresh", "mapped")
         if evidenced:
             parts = [coords] if len(coords) >= 2 else []
         else:
@@ -558,6 +731,8 @@ def build() -> None:
             g = {"type": "LineString", "confidence": conf,
                  "coordinates": [[round(x, 5), round(y, 5)]
                                  for x, y in _simplify(part, SIMPLIFY_M)]}
+            if conf == "mapped":
+                g["wbid"] = marine[wid]
             if conf in ("measured", "fresh") and m:
                 g["measurement"] = {
                     "us_cm": m["us_cm"], "station": m["station"],
@@ -572,6 +747,9 @@ def build() -> None:
                      "carries its reading. Water MEASURED FRESH is removed from this file "
                      "entirely. confidence=tagged: OSM "
                      "tags the reach tidal=yes or salt=yes — authoritative, may move a verdict. "
+                     "confidence=mapped: FDEP classifies this water body Class III-Marine or "
+                     "Class II AND the reach connects to tidewater without crossing a structure — "
+                     "authoritative, may move a verdict, carries the water body's name. "
                      "confidence=inferred: reached from tidewater through shared nodes without "
                      "crossing a mapped control structure, INCLUDING reaches that merely open onto "
                      "the coastline. OSM barrier coverage is incomplete, so the UI must never turn "
@@ -589,8 +767,13 @@ def build() -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--fetch", action="store_true", help="pull from Overpass into the cache first")
+    ap.add_argument("--fetch", action="store_true",
+                    help="pull Overpass + the FDEP WBID classes into the caches first")
+    ap.add_argument("--fetch-wbid", action="store_true",
+                    help="refresh only the FDEP marine-WBID cache (seconds, vs minutes for OSM)")
     a = ap.parse_args()
     if a.fetch:
         fetch()
+    if a.fetch or a.fetch_wbid:
+        fetch_wbid()
     build()

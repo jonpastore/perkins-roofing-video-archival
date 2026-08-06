@@ -123,7 +123,65 @@ PYTHONPATH=. .venv/bin/python scripts/wp_install_plugin.py /path/to/perkins-meta
 - **Nominatim does not know every address** (the Boynton one fails); Google's geocoder does. The
   offline checker uses Nominatim, so a miss there is a geocoder gap, not a layer gap.
 
-## ⚠️ The capability gap this currently has — read before telling Tim it's done
+## ✅ CLOSED 2026-08-06 — FDEP's marine classification (`mapped`)
+
+The gap below was real for six days. It is closed by a source neither Tim nor we had looked at:
+**FDEP classifies every Florida water body in law**, and `3M` (Class III-Marine) / `2` (Class II,
+shellfish) *is* the state saying that water is marine.
+
+```
+https://ca.dep.state.fl.us/arcgis/rest/services/OpenData/WBIDS/MapServer/0/query
+where=CLASS IN ('2','3M')   →  1,358 polygons, free, keyless, statewide
+```
+
+⚠️ **The host 403s a default curl/urllib user agent** — same trap as SFWMD.
+
+⚠️ **WBID polygons are BASIN polygons and cover dry land.** A dry inland lot inside an estuarine
+basin returns 3M, so classifying the *address* would ship exactly the false VOID this file is
+about. Only **reach geometry** is classified — a reach is in water by construction.
+
+**The safety argument is the conjunction.** A reach becomes `mapped` only if it is *already*
+`inferred` (connected to tidewater without crossing a structure) *and* FDEP independently
+classifies its water body marine. Connectivity is weak because OSM's barrier coverage is
+incomplete; the class is weak because the polygon covers land. They fail in unrelated ways.
+
+| | before | after |
+|---|---|---|
+| New River south fork, FTL (Tim's own case) | 1,407 ft `inferred` — caveat | 1,407 ft **`mapped`** — moves the verdict |
+| Miami River | 266 ft `inferred` | 266 ft **`mapped`** (C-6/Miami River lower segment) |
+| PGA Blvd, Palm Beach Gardens (Tim's customer) | 3,517 ft to open water, steel CLEARED | 853 ft **`mapped`** (ICWW above Royal Palm Bridge) |
+| Golden Gate Estates / Snake Creek inland / Plantation | safe | **unchanged** — 4.1 / 8.0 / 4.1 mi to verdict-moving water |
+
+Layer: 310 tagged, **3,501 mapped**, 5,798 inferred, 61 measured salt, 42 measured fresh.
+Asset 2.32 MB (was 1.96). Held-out agreement against live USGS gauges **82%** (was 75%), in-sample
+92% (was 86%); the verdict-moving bucket scores **16 salt / 1 fresh**.
+
+**Precedence is unchanged: a gauge still outranks everything, in both directions.** The single
+held-out false positive is `LOXAHATCHEE RIVER AT MILE 9.1` (711 µS/cm — fresh) sitting inside the
+Loxahatchee marine polygon. In the *shipped* asset that reach is `fresh`, because the gauge is
+there and wins. The residual risk is reaches inside a marine polygon more than `PROPAGATE_MI` from
+any gauge, upstream of the real salt front.
+
+`mapped` is **exempt from the `REACH_MI` clip**, and unlike the `tagged` exemption that shipped
+Dunns Creek, that is bounded: a marine WBID ends where the class turns `3F`. Measured — farthest
+mapped reach 7.8 mi inland (Indian River above Max Brewer Causeway, a Class II estuary), median
+0.27 mi, none beyond 10 mi.
+
+### Two things this cost, both now pinned
+
+- **19 closed rings became verdict-moving.** The fill can *reach* a pond outline, and the tagged
+  seed's ring exclusion did not apply to the new class. Rings are now left `inferred`.
+- **`validate_tidal_against_gauges.py` kept its own copy of the verdict-moving list** and silently
+  scored all 3,491 mapped reaches as absent — a 77% that was grading a layer we do not ship. There
+  is now one `VERDICT_MOVING` in `build_tidal_layer.py`, imported by the validator and the pin
+  script, and a test asserts `checker.js` agrees with it.
+- **The inland pins were blind to the worst breaches.** `_inland_mi` returned `inf` when no
+  coastline sat in the surrounding 3×3 grid block and both callers *skipped* `inf` — so the
+  further a runaway ran, the less likely it was caught. A Dunns-Creek-class breach at 25 mi passed
+  silently. The helper now widens its search; proved by re-running each pin against a doctored
+  asset and watching it fail.
+
+## ⚠️ The capability gap this had until 2026-08-06 — kept for the pattern
 
 **OSM does not tag South Florida's tidal rivers.** Measured across the named rivers:
 
@@ -141,23 +199,21 @@ is decisive in 0 of them** — every populated address behaves as the pre-featur
 caveat. New River downtown still reads VOID, but from `coastline.geojson`, which already contained
 the river mouth.
 
-So the CRITICAL above was closed by *narrowing the capability*, not by fixing the label, and Tim's
-2026-07-19 complaint is **deferred, not done** for the Miami River class of address. That is the
-right safety trade — a false VOID is far worse than a missed one, and the caveat plus the "if
-tidal" column is honest — but it must not be reported as finished.
+So the CRITICAL above was closed by *narrowing the capability*, not by fixing the label — Tim's
+2026-07-19 complaint stayed open for the Miami River class of address until the FDEP class landed.
 
-Two ways to close it properly, cheapest first:
+The lesson worth keeping: **we went looking for a better inference and the answer was a register.**
+Two planned fixes — a curated allowlist of ~10 named tidal reaches, and bounding the tagged label
+by channel distance — were both attempts to guess better from the same OSM data. Neither was
+needed. Florida already publishes which water bodies are marine.
 
-1. **A curated allowlist** of genuinely tidal named reaches with their upstream limit — Miami River
-   to the S-25B salinity dam, New River to the forks, Loxahatchee to Lainhart Dam, Caloosahatchee
-   to the Franklin Lock, Hillsboro to the ICW. ~10 rows, verifiable by Tim, and it matches how the
-   manufacturer provisions are actually written.
-2. **Bound the tagged label by distance along the channel** from the coastal contact node — tagged
-   for the first N miles, inferred beyond. Generalises past the named rivers; needs the BFS to
-   carry cumulative channel distance.
+## Rejected
 
-## Not done
-
-Live salinity readings. NOAA is model output and USGS is an interactive mapper — neither is a
-per-address API. They informed the model (structures divide fresh from tidal) but nothing queries
-them, and nothing should at runtime.
+**Tim's three links (2026-07-19), all checked.** `salinity.oceansciences.org` is NASA
+Aquarius/SMAP satellite sea-surface salinity — open ocean, cannot see a canal. The NOAA
+tides & currents salinity nowcast is model output, and its `ofsregion=sj` is the **St. Johns River,
+Jacksonville**: NOAA's OFS list has **no southeast-Florida model at all** (nearest are SJROFS,
+Tampa Bay and the northern Gulf), so it covers no Perkins branch. The USGS Water Level and Salinity
+Analysis Mapper is the one real source — it maps the USGS South Florida network — but it is a
+viewer, and the same network is already read programmatically via NWIS IV `00095`. None of the
+three is a per-address API, and nothing queries them at runtime.

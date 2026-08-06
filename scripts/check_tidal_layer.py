@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.build_tidal_layer import VERDICT_MOVING  # noqa: E402  — path set above
 
 ASSETS = Path(__file__).resolve().parent.parent / "wp-plugin/perkins-metal-warranty/assets"
 
@@ -36,6 +40,11 @@ CASES = [
     ("1350 SW 21st Ter, Fort Lauderdale, FL 33312", "New River south fork, inland FTL — Tim's case"),
     ("1701 NW North River Dr, Miami, FL 33125", "Miami River, well inland of Biscayne Bay"),
     ("18989 SE Federal Hwy, Tequesta, FL 33469", "Loxahatchee River, Jupiter branch's own back yard"),
+    # Tim, 2026-08-06: a customer with a dock, a boat and a rusted-through steel chimney cap, whom
+    # other roofers told she could have a steel roof. Her canal is FDEP Class III-Marine (ICWW
+    # above Royal Palm Bridge); the tool measured 2.5 mi to open water and cleared steel.
+    ("2400 PGA Blvd, Palm Beach Gardens, FL 33410",
+     "canal off Lake Worth Creek — Class III-Marine, must read as salt water"),
 ]
 
 # Regression pins. The first build labelled any reach that merely touched the coastline "tagged"
@@ -119,11 +128,12 @@ def main() -> None:
     # inland they run. A gate that watched `tagged` alone would have let an unclipped `measured`
     # reach produce exactly the inland false VOID these pins exist to catch. Flagged by the
     # architect review the same day the unclipping shipped.
-    tagged_only = [s for s in tidal if s[4] in ("tagged", "measured")]
-    n_tag = sum(1 for s in tidal if s[4] == "tagged")
-    n_meas = sum(1 for s in tidal if s[4] == "measured")
+    # VERDICT_MOVING is imported, not restated. The validator carried its own copy of this list
+    # and silently scored 3,491 `mapped` reaches as absent when that class shipped.
+    tagged_only = [s for s in tidal if s[4] in VERDICT_MOVING]
+    counts = {k: sum(1 for s in tidal if s[4] == k) for k in VERDICT_MOVING}
     print(f"\n{len(tagged_only):,} verdict-moving segments of {len(tidal):,} "
-          f"({n_tag:,} tagged + {n_meas:,} measured) — pins measure THESE only\n")
+          f"({', '.join(f'{v:,} {k}' for k, v in counts.items())}) — pins measure THESE only\n")
     for (lat, lon), why in NEVER_TAGGED_NEAR:
         dt, _ = nearest(lat, lon, tagged_only)
         ft = dt * 3.28084
