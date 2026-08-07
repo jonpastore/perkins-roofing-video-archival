@@ -91,12 +91,14 @@ def test_no_tagged_reach_runs_far_inland(asset, coast_grid):
     for g in asset["geometries"]:
         if g.get("confidence") != "tagged":
             continue
-        x, y = g["coordinates"][0]
-        mi = _inland_mi(x, y, coast_grid)
+        # EVERY vertex, not coordinates[0]. A reach is only split at barriers, not at length —
+        # the Golden Gate incident was a 24-mile way — so sampling one endpoint means a runaway
+        # whose OSM way happens to START at the coast is invisible to the pin written to catch it.
         # `inf` means no coastline found even at the widest span — that is MORE inland, not less,
         # so it must fail rather than be skipped.
+        mi = max(_inland_mi(x, y, coast_grid) for x, y in g["coordinates"])
         if mi > limit:
-            offenders.append((round(mi, 1), x, y))
+            offenders.append((round(mi, 1), g["coordinates"][0]))
     assert not offenders, (
         f"tagged (verdict-moving) geometry more than {limit} mi from the coast: "
         f"{sorted(offenders, reverse=True)[:5]}"
@@ -168,8 +170,7 @@ def test_no_mapped_reach_runs_far_inland(asset, coast_grid):
     for g in asset["geometries"]:
         if g.get("confidence") != "mapped":
             continue
-        x, y = g["coordinates"][0]
-        mi = _inland_mi(x, y, coast_grid)
+        mi = max(_inland_mi(x, y, coast_grid) for x, y in g["coordinates"])   # see the note above
         if mi > MAPPED_MAX_INLAND_MI:
             offenders.append((round(mi, 1), (g.get("wbid") or {}).get("name")))
     assert not offenders, (
@@ -216,3 +217,41 @@ def test_no_verdict_moving_water_within_a_mile_of_the_inland_pins(asset, lat, lo
     assert ft > 5280, (
         f"{why}: verdict-moving water {ft:,.0f} ft away "
         f"({(best_g or {}).get('confidence')}, {((best_g or {}).get('wbid') or {}).get('name')})")
+
+
+def test_no_mapped_geometry_lies_outside_a_marine_polygon(asset):
+    """The HIGH-1 pin: `mapped` must not extend past the polygon that authorises it.
+
+    Acceptance is a 60% majority over VERTICES, but vertex density is not length — Pablo Creek
+    passed at 186/240 vertices while 5,763 m of its 10,877 m ran outside every marine polygon.
+    Labelling the whole reach and then exempting it from REACH_MI shipped 16.5 mi of verdict-moving
+    geometry into water FDEP itself classifies 3F, in polygons named "(FRESHWATER SEGMENT)":
+    Pablo Creek, South Fork St Lucie, Billy Creek in Fort Myers, Deep Creek. A homeowner on the
+    fresh segment read a hard VOID with the state register as the disproof.
+
+    Skips rather than fails when the WBID cache is absent, because the cache is not in git — but
+    the build now exits on a missing cache, so a shipped asset cannot have been built without it.
+    """
+    from scripts.build_tidal_layer import WBID_CACHE, _wbid_at, _wbid_index
+
+    if not WBID_CACHE.exists():
+        pytest.skip(f"no FDEP WBID cache at {WBID_CACHE}")
+    grid, polys = _wbid_index()
+    outside = []
+    for g in asset["geometries"]:
+        if g.get("confidence") != "mapped":
+            continue
+        for x, y in g["coordinates"]:
+            if _wbid_at(x, y, grid, polys) is None:
+                outside.append(((g.get("wbid") or {}).get("name"), x, y))
+                break
+    assert not outside, (
+        f"{len(outside)} mapped geometries have vertices outside every marine WBID: {outside[:5]}")
+
+
+def test_the_asset_actually_contains_mapped_geometry(asset):
+    """MEDIUM-2: every other `mapped` invariant filters on confidence == 'mapped', so all of them
+    pass vacuously on a layer built without the FDEP cache. Without this, a fresh clone silently
+    rebuilds the pre-feature asset and reports green."""
+    n = sum(1 for g in asset["geometries"] if g.get("confidence") == "mapped")
+    assert n > 1000, f"only {n} mapped geometries — was the asset built without the FDEP cache?"
