@@ -102,7 +102,7 @@ BARRIER_KINDS = "lock_gate|weir|dam|floodgate|sluice_gate|tidal_gate|check_dam"
 WBID_CACHE = Path.home() / "perkins-corpus/osm/fdep-wbid-marine.json"
 WBID_URL = ("https://ca.dep.state.fl.us/arcgis/rest/services/OpenData/WBIDS/MapServer/0/query")
 WBID_WHERE = "CLASS IN ('2','3M')"
-WBID_PAGE = 1000
+WBID_PAGE = 1000   # == the service maxRecordCount; see the pagination note in fetch_wbid
 WBID_INSIDE_FRAC = 0.6   # most of the reach must lie in the marine basin, not just clip its edge
 
 SALINITY_CACHE = Path.home() / "perkins-corpus/osm/salinity-readings.json"
@@ -180,9 +180,19 @@ def fetch_wbid() -> None:
         got = page.get("features") or []
         feats.extend(got)
         print(f"  WBID page at offset {offset}: {len(got)}", flush=True)
-        if len(got) < WBID_PAGE:
+        # `exceededTransferLimit` is the DOCUMENTED "there is more" signal. Terminating on
+        # len(got) < WBID_PAGE instead is a heuristic that holds only while the service's
+        # maxRecordCount stays >= WBID_PAGE (it is exactly 1000 today). If FDEP lowers it, every
+        # page comes back short and the loop stops after the first one, silently caching a
+        # TRUNCATED marine layer — under-warning, but with no error to notice.
+        more = page.get("exceededTransferLimit")
+        if more is None:
+            more = bool(page.get("properties", {}).get("exceededTransferLimit"))
+        if not more and len(got) < WBID_PAGE:
             break
-        offset += WBID_PAGE
+        if not got:
+            break
+        offset += len(got)
     if not feats:
         sys.exit("FDEP returned no WBID polygons — refusing to cache an empty marine layer")
     WBID_CACHE.write_text(json.dumps({"type": "FeatureCollection", "features": feats},
@@ -205,11 +215,18 @@ def _ring_contains(ring: list, x: float, y: float) -> bool:
     return inside
 
 
-def _wbid_index(cell: float = 0.05) -> tuple[dict, list]:
+def _wbid_index(cell: float = 0.05, allow_missing: bool = False) -> tuple[dict, list]:
     """Bucket each marine polygon's bbox cells so a point test is local, not 1,358 ray casts."""
     if not WBID_CACHE.exists():
-        print(f"no FDEP WBID cache at {WBID_CACHE} — skipping marine classification "
-              f"(run with --fetch)", flush=True)
+        # EXIT, do not "skip". Skipping runs to completion and emits the PRE-FEATURE layer with
+        # exit 0, while every `mapped` invariant filters on confidence == "mapped" and so passes
+        # vacuously on the empty set. A fresh clone would silently rebuild a different asset and
+        # call it green. Mirrors how the OSM cache is handled.
+        if not allow_missing:
+            sys.exit(f"no FDEP WBID cache at {WBID_CACHE} — run with --fetch-wbid first. "
+                     f"(Pass --allow-no-wbid to build the pre-FDEP layer deliberately.)")
+        print(f"no FDEP WBID cache at {WBID_CACHE} — building the PRE-FDEP layer (--allow-no-wbid)",
+              flush=True)
         return {}, []
     polys: list[tuple[list, dict]] = []
     for f in json.loads(WBID_CACHE.read_text())["features"]:
@@ -244,7 +261,7 @@ def _wbid_at(lon: float, lat: float, grid: dict, polys: list, cell: float = 0.05
     return None
 
 
-def _classify_wbid(ways, by_id, nodes, confidence: dict) -> dict:
+def _classify_wbid(ways, by_id, nodes, confidence: dict, grid, polys) -> dict:
     """Which `inferred` reaches lie inside a marine-classified water body.
 
     Only `inferred` is considered, and that conjunction is the safety argument: the reach is
@@ -258,7 +275,6 @@ def _classify_wbid(ways, by_id, nodes, confidence: dict) -> dict:
     Golden Gate Estates, Wellington and Jupiter Farms — the three known false-VOID traps — all read
     STREAM / 3F and are untouched.
     """
-    grid, polys = _wbid_index()
     if not polys:
         return {}
     out: dict[str, dict] = {}
@@ -519,7 +535,7 @@ def _propagate_gauges(ways, by_id, by_node, nodes, barriers) -> dict:
     return best
 
 
-def build() -> None:
+def build(allow_no_wbid: bool = False) -> None:
     if not CACHE.exists():
         sys.exit(f"no cache at {CACHE} — run with --fetch first")
     data = json.loads(CACHE.read_text())
@@ -637,7 +653,8 @@ def build() -> None:
                     queue.append(nxt)
     # FDEP's class before the gauges, so a gauge reading still overrides it in BOTH directions —
     # `measured` fresh water must beat a marine basin exactly as it beats an OSM tidal tag.
-    marine = _classify_wbid(ways, by_id, nodes, confidence)
+    wbid_grid, wbid_polys = _wbid_index(allow_missing=allow_no_wbid)
+    marine = _classify_wbid(ways, by_id, nodes, confidence, wbid_grid, wbid_polys)
     for wid in marine:
         confidence[wid] = "mapped"
     measured = _propagate_gauges(ways, by_id, by_node, nodes, barriers)
@@ -709,8 +726,42 @@ def build() -> None:
         # where the water turns fresh — so it cannot run away inland the way an OSM `tidal=yes` tag
         # runs 160 mi up the St Johns. The clip measures distance to the COASTLINE, and Tim's
         # client lives 590 ft from Class III-Marine water that is 2.5 mi from open water.
-        evidenced = conf in ("measured", "fresh", "mapped")
-        if evidenced:
+        evidenced = conf in ("measured", "fresh")
+        pre_simplified = False
+        if conf == "mapped":
+            # ⚠️ CLIP TO THE POLYGON ITSELF, per vertex. Acceptance in `_classify_wbid` is a 60%
+            # majority over VERTICES, but vertex density is not length: Pablo Creek passed at
+            # 186/240 vertices (77%) while 5,763 m of its 10,877 m ran OUTSIDE every marine
+            # polygon — dense vertices in the mapped estuary, sparse ones up the fresh creek.
+            # Labelling the whole reach then exempting it from REACH_MI shipped 16.5 mi of
+            # verdict-moving geometry into water FDEP itself classifies 3F, in polygons literally
+            # named "(FRESHWATER SEGMENT)": Pablo Creek, South Fork St Lucie, Billy Creek in
+            # Fort Myers, Deep Creek. A homeowner on the fresh segment reads a hard VOID with the
+            # state register as the disproof — the Golden Gate failure with a new cause.
+            #
+            # Clipping here is what makes "a marine WBID is self-bounding" STRUCTURALLY true
+            # instead of statistically true, which matters because 81% of mapped reaches come
+            # from blanket basin polygons that have no 3F counterpart to bound them.
+            # Thin and ROUND FIRST, then clip, so the invariant holds on the coordinates that
+            # actually ship. Clipping the full-precision line and rounding afterwards left 4
+            # vertices ~1 m on the fresh side of a segment boundary — a rounding artifact, but one
+            # that makes the pin un-assertable at zero and hides real overhang in the noise.
+            emitted = [(round(x, 5), round(y, 5)) for x, y in _simplify(coords, SIMPLIFY_M)]
+            run: list[tuple[float, float]] = []
+            parts = []
+            for x, y in emitted:
+                if _wbid_at(x, y, wbid_grid, wbid_polys) is not None:
+                    run.append((x, y))
+                else:
+                    if len(run) >= 2:
+                        parts.append(run)
+                    run = []
+            if len(run) >= 2:
+                parts.append(run)
+            if len(parts) != 1 or len(parts[0]) != len(emitted):
+                clipped += 1
+            pre_simplified = True
+        elif evidenced:
             parts = [coords] if len(coords) >= 2 else []
         else:
             run: list[tuple[float, float]] = []
@@ -729,10 +780,19 @@ def build() -> None:
         m = measured.get(wid)
         for part in parts:
             g = {"type": "LineString", "confidence": conf,
-                 "coordinates": [[round(x, 5), round(y, 5)]
-                                 for x, y in _simplify(part, SIMPLIFY_M)]}
+                 "coordinates": ([[x, y] for x, y in part] if pre_simplified else
+                                 [[round(x, 5), round(y, 5)]
+                                  for x, y in _simplify(part, SIMPLIFY_M)])}
             if conf == "mapped":
-                g["wbid"] = marine[wid]
+                # Cite the polygon this SURVIVING part actually sits in, taken at its midpoint,
+                # not the reach-wide majority — after clipping, a reach can contribute parts in
+                # two different water bodies and the customer-facing name must match the geometry
+                # they were measured to. Falls back to the majority if the midpoint misses.
+                mx, my = part[len(part) // 2]
+                hit = _wbid_at(mx, my, wbid_grid, wbid_polys)
+                g["wbid"] = ({"wbid": hit.get("WBID"), "name": hit.get("WATERBODY_NAME"),
+                              "water_class": hit.get("CLASS"), "water_type": hit.get("WATER_TYPE")}
+                             if hit else marine[wid])
             if conf in ("measured", "fresh") and m:
                 g["measurement"] = {
                     "us_cm": m["us_cm"], "station": m["station"],
@@ -771,9 +831,11 @@ if __name__ == "__main__":
                     help="pull Overpass + the FDEP WBID classes into the caches first")
     ap.add_argument("--fetch-wbid", action="store_true",
                     help="refresh only the FDEP marine-WBID cache (seconds, vs minutes for OSM)")
+    ap.add_argument("--allow-no-wbid", action="store_true",
+                    help="deliberately build the PRE-FDEP layer with no marine classification")
     a = ap.parse_args()
     if a.fetch:
         fetch()
     if a.fetch or a.fetch_wbid:
         fetch_wbid()
-    build()
+    build(allow_no_wbid=a.allow_no_wbid)

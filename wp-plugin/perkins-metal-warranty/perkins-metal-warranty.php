@@ -12,7 +12,7 @@
  *              [metal_roof_guide] shortcode — the educational page: the manufacturer warranty
  *              comparison rendered from the SAME zones.json the checker uses, plus published
  *              wind-uplift approvals and the aluminum-roof example videos.
- * Version:     1.5.0
+ * Version:     1.5.1
  * Author:      DeGenito
  *
  * SETUP (one manual step): the geocoder uses the Google Maps JavaScript API. Its browser key is
@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PERKINS_MWC_VERSION', '1.5.0' );
+define( 'PERKINS_MWC_VERSION', '1.5.1' );
 define( 'PERKINS_MWC_URL', plugin_dir_url( __FILE__ ) );
 
 // Default browser key (referrer-restricted). Overridable in Settings so a per-site key can be used
