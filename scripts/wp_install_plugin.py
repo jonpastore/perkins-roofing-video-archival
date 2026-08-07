@@ -39,7 +39,10 @@ def main():
         pg.fill("#user_login", USER)
         pg.fill("#user_pass", PW)
         pg.click("#wp-submit")
-        pg.wait_for_load_state("networkidle")
+        # NOT networkidle: WordPress 7.0.3's admin holds connections open (heartbeat), so that
+        # state never settles and every step 30s-timeouts. This script broke the moment GoDaddy
+        # auto-updated staging core, with nothing wrong at either end.
+        pg.wait_for_load_state("domcontentloaded")
         if "wp-login" in pg.url and "dashboard" not in pg.url:
             # verify we actually reached admin
             pg.goto(f"{BASE}/wp-admin/", wait_until="domcontentloaded")
@@ -53,21 +56,27 @@ def main():
         pg.goto(f"{BASE}/wp-admin/plugin-install.php?tab=upload", wait_until="domcontentloaded")
         pg.set_input_files('input[name="pluginzip"]', ZIP)
         pg.click("#install-plugin-submit")
-        pg.wait_for_load_state("networkidle")
+        pg.wait_for_load_state("domcontentloaded")
 
         body = pg.content().lower()
         # WP shows an "Activate Plugin" link on success, or "already installed"/overwrite prompt
         if "activate plugin" in body:
             pg.click("text=Activate Plugin")
-            pg.wait_for_load_state("networkidle")
+            pg.wait_for_load_state("domcontentloaded")
             print("INSTALLED + ACTIVATED")
         elif "replace current with uploaded" in body or "already installed" in body:
-            # overwrite existing
-            try:
-                pg.click("text=Replace current with uploaded")
-                pg.wait_for_load_state("networkidle")
+            # NAVIGATE the confirm link, do not click it. The anchor is present with the expected
+            # wording, but in headless Chromium it never becomes "visible, enabled and stable", so
+            # click() 30s-timeouts and this branch printed "no overwrite link" while the link was
+            # sitting right there. Match on the href, which carries overwrite=update-plugin plus
+            # its own nonce and is version-agnostic, rather than on the visible text.
+            link = pg.locator('a[href*="overwrite=update-plugin"]')
+            if link.count():
+                href = link.first.get_attribute("href")
+                pg.goto(f"{BASE}/wp-admin/{href}", wait_until="domcontentloaded")
+                pg.wait_for_load_state("domcontentloaded")
                 print("REPLACED existing plugin")
-            except Exception:
+            else:
                 print("plugin already installed (no overwrite link)")
         else:
             print("UNEXPECTED result — check page. url:", pg.url)
