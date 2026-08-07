@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import json
 import math
-import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -142,6 +143,13 @@ def test_no_closed_rings_are_emitted_as_verdict_moving_geometry(asset):
 
 #: Generous — the farthest legitimate mapped reach measured 7.8 mi (Indian River above Max Brewer
 #: Causeway, a Class II estuary). This catches a RUNAWAY, not 8 miles against 9.
+#:
+#: ⚠️ NOT a validated bound — it is "twice the biggest number we saw, once", measured against an
+#: UNSIGNED distance to the coastline that cannot tell 13 mi up a river from 13 mi out to sea.
+#: `test_no_mapped_geometry_lies_outside_a_marine_polygon` is the REAL gate and strictly subsumes
+#: this one: with every vertex inside a marine polygon, distance from the coast is bounded by
+#: FDEP's own geometry. Do not relax the polygon test on the grounds that "the inland pin covers
+#: it" — the dependency runs the other way.
 MAPPED_MAX_INLAND_MI = 15.0
 CHECKER_JS = ASSETS / "checker.js"
 
@@ -178,19 +186,62 @@ def test_no_mapped_reach_runs_far_inland(asset, coast_grid):
         f"{sorted(offenders, reverse=True)[:5]}")
 
 
-def test_checker_js_moves_verdicts_on_exactly_the_python_classes():
-    """The UI's list and the build's list must not drift.
+def _extract_fn(js: str, name: str) -> str:
+    """Slice `function <name>(...) {...}` out of checker.js by brace matching."""
+    i = js.index(f"function {name}(")
+    j = js.index("{", i)
+    depth = 0
+    for k in range(j, len(js)):
+        if js[k] == "{":
+            depth += 1
+        elif js[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return js[i:k + 1]
+    raise AssertionError(f"unbalanced braces extracting {name}")
 
-    They already did: `validate_tidal_against_gauges.py` kept its own copy and silently scored
-    3,491 `mapped` reaches as if they were absent from the file. A class the build treats as
-    authoritative and the UI treats as a caveat is a silent under-warning; the reverse is a false
-    VOID.
+
+def test_checker_js_moves_verdicts_on_exactly_the_python_classes(tmp_path):
+    """EXECUTE checker.js's own flatten() and assert which bucket each class lands in.
+
+    The previous version of this test regexed for `g.confidence === '<literal>'` and compared the
+    literal set to VERDICT_MOVING. That is a spelling check, not a behavioural one: inserting
+    `if (g.confidence === 'mapped') { bucket = out.inferred; }` removes mapped from the
+    verdict-moving bucket while leaving the literal set identical, and the old test passed on it —
+    verified. It was also brittle the other way, since indexOf/!==/double quotes/minification would
+    fail it with no behavioural change at all.
+
+    So run the real function. Every class in VERDICT_MOVING must land in `tagged` (the bucket
+    nearestSaltwater measures against), `inferred` must not, and `fresh` must be dropped entirely.
     """
-    js = CHECKER_JS.read_text()
-    in_js = set(re.findall(r"g\.confidence === '([a-z]+)'", js))
-    assert in_js == set(VERDICT_MOVING) | {"fresh"}, (
-        f"checker.js verdict classes {sorted(in_js)} disagree with VERDICT_MOVING "
-        f"{sorted(VERDICT_MOVING)} (+fresh, which is filtered out)")
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+    js = (ASSETS / "checker.js").read_text()
+    classes = list(VERDICT_MOVING) + ["inferred", "fresh"]
+    geoms = [{"type": "LineString", "confidence": c,
+              "coordinates": [[-80.1, 26.1], [-80.2, 26.2]]} for c in classes]
+    harness = tmp_path / "harness.js"
+    harness.write_text(
+        _extract_fn(js, "flatten")
+        + "\nconst classes = " + json.dumps(classes) + ";\n"
+        + "const doc = {type:'GeometryCollection', geometries: " + json.dumps(geoms) + "};\n"
+        + """
+const out = {};
+for (const c of classes) {
+  const one = {type:'GeometryCollection', geometries: doc.geometries.filter(g => g.confidence === c)};
+  const r = flatten(one, 'inferred');
+  out[c] = r.tagged.length ? 'verdict-moving' : (r.inferred.length ? 'caveat' : 'dropped');
+}
+console.log(JSON.stringify(out));
+""")
+    res = subprocess.run([node, str(harness)], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, f"node failed: {res.stderr[:400]}"
+    got = json.loads(res.stdout)
+    expected = {c: "verdict-moving" for c in VERDICT_MOVING}
+    expected["inferred"] = "caveat"
+    expected["fresh"] = "dropped"
+    assert got == expected, f"checker.js buckets {got}, expected {expected}"
 
 
 @pytest.mark.parametrize("lat,lon,why", [
