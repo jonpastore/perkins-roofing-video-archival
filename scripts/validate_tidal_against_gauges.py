@@ -30,9 +30,13 @@ from __future__ import annotations
 import json
 import math
 import statistics
+import sys
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.build_tidal_layer import VERDICT_MOVING  # noqa: E402  — path set above
 
 ASSETS = Path(__file__).resolve().parent.parent / "wp-plugin/perkins-metal-warranty/assets"
 BBOX = (24.30, -87.80, 31.10, -79.80)          # south, west, north, east — matches the tidal layer
@@ -138,7 +142,10 @@ def nearest(lat: float, lon: float, segs: list[tuple]) -> tuple[float, str]:
 def main() -> None:
     coast = _segments(ASSETS / "coastline.geojson", "coast")
     tidal = _segments(ASSETS / "tidal.geojson", "inferred")
-    tagged = [s for s in tidal if s[4] in ("measured", "tagged")]
+    # EVERY verdict-moving class, or the score grades a layer the tool does not ship. `mapped`
+    # (FDEP Class III-Marine) was added 2026-08-06 and moves verdicts exactly as `tagged` does;
+    # omitting it here silently scored 3,491 reaches as if they were not in the file.
+    tagged = [s for s in tidal if s[4] in VERDICT_MOVING]
     inferred = [s for s in tidal if s[4] == "inferred"]   # "fresh" is deliberately in neither
 
     gs = gauges()
@@ -161,7 +168,7 @@ def main() -> None:
         # deleting them understates our knowledge and makes the score look worse than it is.
         others = [(s[0], s[1], s[2], s[3], (s[6] if s[5] == g["id"] else s[4]), s[5], s[6])
                   for s in tidal]
-        oth_tag = [s for s in others if s[4] in ("measured", "tagged")]
+        oth_tag = [s for s in others if s[4] in VERDICT_MOVING]
         oth_inf = [s for s in others if s[4] == "inferred"]
         dc, _ = nearest(g["lat"], g["lon"], coast)
         dtag, _ = nearest(g["lat"], g["lon"], oth_tag)

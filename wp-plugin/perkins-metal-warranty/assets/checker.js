@@ -13,6 +13,8 @@
 	// SEGS   open salt water — ocean, gulf, bays, ICW (natural=coastline)
 	// TIDAL_SEGS  inland reaches that carry salt, built by scripts/build_tidal_layer.py.
 	//        "tagged"   = OSM tags THAT reach tidal=yes/salt=yes. Moves a verdict.
+	//        "mapped"   = FDEP classifies this water body Class III-Marine / Class II AND the reach
+	//                     connects to tidewater. Moves a verdict; carries the water body's name.
 	//        "inferred" = reached from tidewater without crossing a mapped structure, including
 	//                     reaches that merely open onto the coastline. NEVER moves a verdict —
 	//                     OSM barrier coverage is incomplete and a false "void" tells a homeowner
@@ -39,13 +41,17 @@
 			// Water a gauge MEASURED as fresh belongs in neither bucket: it is not salt water, and
 			// raising it as "may be tidal" would warn about water we know is fine.
 			if (g.confidence === 'fresh') continue;
-			// A gauge reading and an OSM tag both move a verdict; connectivity never does.
+			// A gauge reading, an OSM tag and FDEP's marine class all move a verdict; bare
+			// connectivity never does. Keep this list in step with VERDICT_MOVING in
+			// scripts/build_tidal_layer.py — a test asserts the two agree.
 			var verdictMoving = g.confidence === 'measured' || g.confidence === 'tagged'
+				|| g.confidence === 'mapped'
 				|| (!g.confidence && defaultBucket === 'tagged');
 			var bucket = verdictMoving ? out.tagged : out.inferred;
 			for (var i = 0; i + 1 < c.length; i++) {
 				bucket.push(c[i][0], c[i][1], c[i + 1][0], c[i + 1][1]);
-				if (verdictMoving) out.meta.push(g.measurement || null);
+				// A measurement outranks a classification, so prefer it when a reach has both.
+				if (verdictMoving) out.meta.push(g.measurement || g.wbid || null);
 			}
 		}
 		return out;
@@ -320,13 +326,27 @@
 				// two layers disagree — a homeowner should see WHICH water we measured to.
 				var covered = inTidalCoverage(lat, lon);
 				var r = ns.reading;
-				// Say WHY we call it salt water. A measured reading beats any adjective.
-				var basis = r
-					? ' <span class="note">(measured at ' + Math.round(r.us_cm).toLocaleString() +
-					  ' µS/cm — ' + esc(r.station_name) + ', USGS ' + esc(r.station) + ', ' +
-					  fmtDist(r.distance_m) + ' along the waterway)</span>'
-					: ' <span class="note">(a tidal waterway — open ocean/ICW is ' +
-					  fmtDist(ns.coast.meters) + ')</span>';
+				// Say WHY we call it salt water. A measured reading beats any adjective; a state
+				// classification beats "a tidal waterway", which tells a homeowner nothing they
+				// can check. `r` is a gauge reading when it has us_cm, an FDEP class when it has
+				// water_class — both are evidence a customer can look up.
+				var basis;
+				if (r && r.us_cm != null) {
+					basis = ' <span class="note">(measured at ' + Math.round(r.us_cm).toLocaleString() +
+						' µS/cm — ' + esc(r.station_name) + ', USGS ' + esc(r.station) + ', ' +
+						fmtDist(r.distance_m) + ' along the waterway)</span>';
+				} else if (r && r.water_class) {
+					basis = ' <span class="note">(' + esc(r.name || 'this waterway') +
+						' — classified ' +
+						(r.water_class === '3M' ? 'Class III-Marine' :
+							r.water_class === '2' ? 'Class II marine (shellfish)' :
+								'marine, Class ' + esc(r.water_class)) +
+						' by the Florida DEP; open ocean/ICW is ' + fmtDist(ns.coast.meters) +
+						')</span>';
+				} else {
+					basis = ' <span class="note">(a tidal waterway — open ocean/ICW is ' +
+						fmtDist(ns.coast.meters) + ')</span>';
+				}
 				var distLine = ns.kind === 'tidal'
 					? 'Distance to salt water: <strong>' + fmtDist(meters) + '</strong>' + basis
 					: 'Distance to open salt water: <strong>' + fmtDist(meters) + '</strong>' +

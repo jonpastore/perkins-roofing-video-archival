@@ -19,11 +19,16 @@ and improve rather than a claim.
 | **SFWMD DBHYDRO stations** | SFWMD/USGS/USACE monitoring network | **1,673 active water-quality stations**, 4,639 total | station geometry via ArcGIS REST; values via DBHYDRO |
 | **SFWMD Saltwater Interface** | the mapped **250 mg/L isochlor** — farthest inland extent of the salt front, updated every 5 years | 7 polylines, 2024 edition, 130 KB GeoJSON; East Coast covers Broward, Martin, Palm Beach, St. Lucie; Miami-Dade maintained by USGS | `geoweb.sfwmd.gov/agsext2/rest/services/Hydrogeology/Saltwater_Interface/FeatureServer/80` |
 | **SFWMD Chloride Concentration Control Points** | the chloride samples behind that isochlor | 2009 / 2014 / 2019 / 2024 editions | same host, `Hydrogeology/ChlorideConcentrationControlPoints` |
-| NOAA OFS salinity nowcast | model output, not per-address | — | not usable programmatically per address |
+| **FDEP WBIDs** | Florida's **legal classification** of every water body: `3M` Class III-Marine, `2` Class II shellfish, `3F` fresh | **1,358 marine polygons statewide** | `ca.dep.state.fl.us/arcgis/rest/services/OpenData/WBIDS/MapServer/0` — free, keyless, `f=geojson` |
+| NOAA OFS salinity nowcast | model output, not per-address; **no southeast-Florida model exists** (`sj` is the St. Johns at Jacksonville) | — | not usable programmatically per address |
 
 ⚠️ **The SFWMD isochlor is GROUNDWATER, not surface water.** It answers "is the aquifer salty
 here", not "is that canal behind the house tidal". It is a strong corroborating signal and an
 authoritative name to cite, but it is not a substitute for the surface-water question.
+
+✅ **FDEP's WBID class IS the surface-water answer, and it shipped 2026-08-06** — see
+`WARRANTY_TOOL_TIDAL_LAYER.md`. ⚠️ WBID polygons are **basin** polygons that cover dry land, so
+they may only classify REACH geometry, never an address. ⚠️ The host 403s a default curl UA.
 
 ⚠️ **SFWMD's host 403s a default `curl` user agent.** Send a browser UA or you will conclude the
 service is down.
