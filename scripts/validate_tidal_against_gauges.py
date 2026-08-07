@@ -27,6 +27,7 @@ Usage: .venv/bin/python scripts/validate_tidal_against_gauges.py
 """
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import statistics
@@ -140,8 +141,16 @@ def nearest(lat: float, lon: float, segs: list[tuple]) -> tuple[float, str]:
 
 
 def main() -> None:
+    # --asset makes a BEFORE/AFTER delta reproducible. Without it the script can only ever score
+    # whatever is in the working tree, so "82% (was 75%)" compared two runs months apart over
+    # different gauge populations — see the retraction in docs/WARRANTY_TOOL_TIDAL_LAYER.md.
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--asset", default=str(ASSETS / "tidal.geojson"),
+                    help="tidal.geojson to score (default: the one in the working tree)")
+    args = ap.parse_args()
     coast = _segments(ASSETS / "coastline.geojson", "coast")
-    tidal = _segments(ASSETS / "tidal.geojson", "inferred")
+    tidal = _segments(Path(args.asset), "inferred")
+    print(f"scoring asset: {args.asset}")
     # EVERY verdict-moving class, or the score grades a layer the tool does not ship. `mapped`
     # (FDEP Class III-Marine) was added 2026-08-06 and moves verdicts exactly as `tagged` does;
     # omitting it here silently scored 3,491 reaches as if they were not in the file.

@@ -50,7 +50,10 @@
 			var bucket = verdictMoving ? out.tagged : out.inferred;
 			for (var i = 0; i + 1 < c.length; i++) {
 				bucket.push(c[i][0], c[i][1], c[i + 1][0], c[i + 1][1]);
-				// A measurement outranks a classification, so prefer it when a reach has both.
+				// A measurement outranks a classification. In practice a reach never carries both:
+				// build_tidal_layer.py sets `wbid` only on `mapped` and `measurement` only on
+				// `measured`/`fresh`, and the gauge pass relabels `mapped` out of the class. The
+				// ordering is kept so it stays correct if that ever changes.
 				if (verdictMoving) out.meta.push(g.measurement || g.wbid || null);
 			}
 		}

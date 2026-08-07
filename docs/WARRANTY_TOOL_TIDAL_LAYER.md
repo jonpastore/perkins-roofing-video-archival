@@ -153,14 +153,48 @@ incomplete; the class is weak because the polygon covers land. They fail in unre
 | Golden Gate Estates / Snake Creek inland / Plantation | safe | **unchanged** — 4.1 / 8.0 / 4.1 mi to verdict-moving water |
 
 Layer: 310 tagged, **3,501 mapped**, 5,798 inferred, 61 measured salt, 42 measured fresh.
-Asset 2.32 MB (was 1.96). Held-out agreement against live USGS gauges **82%** (was 75%), in-sample
-92% (was 86%); the verdict-moving bucket scores **16 salt / 1 fresh**.
+Asset 2.31 MB (was 1.96).
+
+### ⚠️ Do NOT cite "82% held-out, up from 75%" — RETRACTED 2026-08-07
+
+That comparison was written here and in PR #33 and it is not apples-to-apples. It is also not
+evidence about the thing it was cited for.
+
+- **The denominator changed before either build.** `42c1ead` (2026-07-31) made `readings()` omit
+  stations with no series in the 30-day window and score a median instead of an instantaneous
+  value. That dropped the 65 stale stations — "33 of them classified salt/brackish", i.e. exactly
+  the gauges that were scoring as misses — taking the gauge population from 171 to 106. The 75%
+  baseline is 128/171 under the old rule; today's 82% is 87/106 under the new one.
+- **The metric is insensitive to the defect class it was quoted about.** Clipping `mapped` to the
+  polygon removed 16.5 mi of live false-VOID geometry and held-out agreement did not move: still
+  82%, still 16 salt / 1 fresh. A number unchanged by the removal of the worst false-VOID defect
+  this feature has shipped cannot be offered as evidence about false-VOID risk.
+- Half the numerator is free credit: of 106 gauges, 53 land in `none` and 45 of those are "we map
+  no water here, gauge reads fresh". And the score weights a missed warning identically to a false
+  VOID — the one asymmetry this layer exists for.
+
+**The supportable sentence is "the clip cost no agreement", and it is now measured rather than
+asserted.** `validate_tidal_against_gauges.py --asset <path>` scores an arbitrary asset, so a
+before/after delta is reproducible. Run back-to-back on 2026-08-07 over the same 106 reporting
+gauges:
+
+```
+pre-clip  (cb83aee)   HELD-OUT 87/106 = 82%   verdict-moving bucket 16 salt / 1 fresh
+post-clip (96aafec)   HELD-OUT 87/106 = 82%   verdict-moving bucket 16 salt / 1 fresh
+```
+
+Identical — which is the point twice over: the clip cost nothing, **and** a metric that cannot see
+16.5 mi of false-VOID geometry appear or disappear must never again be quoted as evidence about
+false-VOID risk. (Two consecutive runs, not one frozen snapshot; USGS values move between runs, so
+treat small deltas as noise.)
 
 **Precedence is unchanged: a gauge still outranks everything, in both directions.** The single
 held-out false positive is `LOXAHATCHEE RIVER AT MILE 9.1` (711 µS/cm — fresh) sitting inside the
 Loxahatchee marine polygon. In the *shipped* asset that reach is `fresh`, because the gauge is
-there and wins. The residual risk is reaches inside a marine polygon more than `PROPAGATE_MI` from
-any gauge, upstream of the real salt front.
+there and wins. ⚠️ **n=17 in that bucket** — a 1-in-17 false-positive rate has a 95% upper bound
+near 25–30%, so "16 salt / 1 fresh" is not a precision guarantee. The residual risk is reaches
+inside a marine polygon more than `PROPAGATE_MI` from any gauge, and hold-one-out is structurally
+blind to exactly that population, because a gauge is what creates a scoreable point.
 
 `mapped` is **exempt from the `REACH_MI` clip**, and unlike the `tagged` exemption that shipped
 Dunns Creek, that is bounded: a marine WBID ends where the class turns `3F`. Measured — farthest
