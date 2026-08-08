@@ -43,8 +43,33 @@ CASES = [
     # Tim, 2026-08-06: a customer with a dock, a boat and a rusted-through steel chimney cap, whom
     # other roofers told she could have a steel roof. Her canal is FDEP Class III-Marine (ICWW
     # above Royal Palm Bridge); the tool measured 2.5 mi to open water and cleared steel.
+    # ⚠️ 2400 PGA Blvd is a STAND-IN — it was picked before anyone had her address, and it passing
+    # is what made the real case look covered. Her actual address is pinned in MUST_REACH_NEAR.
     ("2400 PGA Blvd, Palm Beach Gardens, FL 33410",
      "canal off Lake Worth Creek — Class III-Marine, must read as salt water"),
+    ("188 Lone Pine Dr, Palm Beach Gardens, FL 33410",
+     "Tim's actual client — NHD canal 117 ft away, ICWW above Royal Palm Bridge, 3M"),
+]
+
+# The mirror image of NEVER_TAGGED_NEAR, and the gate this layer did not have. Every pin below is a
+# house we KNOW sits on salt water, from evidence outside this pipeline — a dock and a boat, a
+# rusted-out steel cap, a named tidal river. Verdict-moving water must be within `max_ft`, or the
+# tool tells a waterfront homeowner their steel roof is fine and argues the competing roofer's case.
+#
+# ⚠️ This direction of failure is SILENT. NEVER_TAGGED_NEAR catches a false VOID because somebody
+# complains; a false CLEAR just loses the job and nobody ever reports it. 188 Lone Pine Drive read
+# 3,079 ft and "warranty-safe" for a month with every other pin green.
+MUST_REACH_NEAR = [
+    ((26.8560414, -80.0764616), 500,
+     "188 Lone Pine Dr, Palm Beach Gardens — Tim's client; dock, boat, rusted-through steel "
+     "chimney cap. OSM draws this canal as untagged water polygons; NHD has it at 117 ft"),
+    # Coordinates are GEOCODED, not typed from memory: the first draft of this list put Fort
+    # Lauderdale 1.2 mi and Tequesta 2.5 mi off, which would have pinned water near the wrong houses.
+    ((26.1046644, -80.1703294), 1800,
+     "1350 SW 21st Ter, Fort Lauderdale — New River south fork, Tim's own July 19 example"),
+    ((25.7863480, -80.2228480), 900,
+     "1701 NW N River Dr, Miami — Miami River, well inland of the bay"),
+    ((26.9708673, -80.0875254), 1500, "18989 SE Federal Hwy, Tequesta — Loxahatchee River"),
 ]
 
 # Regression pins. The first build labelled any reach that merely touched the coastline "tagged"
@@ -142,6 +167,16 @@ def main() -> None:
               f"        nearest VERDICT-MOVING water {ft:,.0f} ft")
         if verdict == "FAIL":
             failures.append(f"{why}: verdict-moving water {ft:,.0f} ft away would move a verdict")
+
+    for (lat, lon), max_ft, why in MUST_REACH_NEAR:
+        dt, _ = nearest(lat, lon, tagged_only)
+        ft = dt * 3.28084
+        verdict = "ok" if ft <= max_ft else "FAIL"
+        print(f"[{verdict}] must-reach pin: {why}\n"
+              f"        nearest VERDICT-MOVING water {ft:,.0f} ft (limit {max_ft:,} ft)")
+        if verdict == "FAIL":
+            failures.append(f"{why}: nearest verdict-moving water {ft:,.0f} ft away, over the "
+                            f"{max_ft:,} ft limit — this house reads WARRANTY-SAFE on salt water")
 
     dc_far, _ = nearest(26.1876, -81.6431, coast)
     print(f"\n(Golden Gate Estates is {dc_far * 3.28084 / 5280:.1f} mi from open salt water)")

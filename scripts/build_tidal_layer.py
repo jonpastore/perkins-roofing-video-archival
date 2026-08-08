@@ -33,8 +33,19 @@ OSM tags almost no South Florida tidal river (Miami River 0 of 4 ways, New River
 gauges sit miles apart, so before `mapped` existed the water people actually live on landed in
 `inferred` and only ever raised a caveat. Tim, 2026-08-06, on a customer with a dock and a boat and
 a rusted-through steel chimney cap: "other roofers came and told her she can install a steel roof.
-She 100% can not. I need this tool to work correctly to show her this." Her canal is 590 ft away,
-FDEP Class III-Marine, and the tool was clearing steel off a 2.5-mile open-water measurement.
+She 100% can not. I need this tool to work correctly to show her this."
+
+GEOMETRY COMES FROM TWO SOURCES, and the second one is why that customer still read as safe after
+`mapped` shipped. Classification can only ever label geometry the graph already contains, and every
+reach came from an OSM `waterway=*` LINE. When her address arrived on 2026-08-07 the tool measured
+3,079 ft to open water and cleared all three steels: OSM draws her canal as 19 untagged
+`natural=water` POLYGONS, so it was never in the graph, and no FDEP work could reach it. USGS NHD
+has the same water as a CANAL/DITCH 117 ft from her house. See NHD_CACHE below.
+
+⚠️ The lesson underneath, because it is cheap to repeat: that hole survived a review pass which
+"verified" the layer by querying OSM for waterways near the address — the layer's own upstream
+source. A check that shares a blind spot with the thing it checks always agrees with it. Hydrology
+gets cross-checked against NHD, never against OSM.
 
 That distinction is load-bearing. The first build labelled any coastline-touching way "tagged" for
 its whole length, so a 43-mile canal carried "confirmed salt water" 20 miles inland and told Golden
@@ -59,6 +70,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import math
 import os
@@ -105,6 +117,31 @@ WBID_WHERE = "CLASS IN ('2','3M')"
 WBID_PAGE = 1000   # == the service maxRecordCount; see the pagination note in fetch_wbid
 WBID_INSIDE_FRAC = 0.6   # most of the reach must lie in the marine basin, not just clip its edge
 
+# USGS National Hydrography Dataset. THE COVERAGE HOLE THIS CLOSES: every reach in this layer used
+# to come from an OSM `waterway=*` LINE (see QUERY). South Florida finger canals are frequently
+# drawn in OSM as untagged `natural=water` POLYGONS instead — no waterway line, no tidal tag — so
+# they never entered the graph at all, and FDEP cannot classify a reach that does not exist.
+#
+# Found 2026-08-07 on Tim's own showcase client, 188 Lone Pine Drive, Palm Beach Gardens: NHD has a
+# CANAL/DITCH 117 ft from the house, connected to Earman River / North Palm Beach Waterway /
+# Frenchmans Creek and on to the ICWW, inside WBID 3226W1 (ESTUARY, Class III-Marine). OSM had it as
+# 19 unnamed pond polygons. The tool measured 3,079 ft to open water and cleared every steel product
+# on a house with a dock and a boat — the false CLEAR, which costs Tim the job and his credibility.
+#
+# ⚠️ NHD is fetched ONLY where marine WBIDs exist. That is not laziness about coverage: a reach
+# outside every marine polygon can never be promoted past `inferred`, and `inferred` moves no
+# verdict, so statewide NHD would add ~270k reaches of pure asset weight. NHD ways carry NO tags, so
+# they can never seed `tagged` — they enter as geometry and must earn `mapped` the same way any
+# other reach does: reached by the fill from tidewater without crossing a structure, AND ≥60% inside
+# a marine WBID, AND clipped to that polygon per vertex on the way out.
+NHD_CACHE = Path.home() / "perkins-corpus/osm/nhd-coastal-flowlines.json"
+NHD_URL = "https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/6/query"
+#: 336 canal/ditch, 460 stream/river, 558 artificial path (how NHD threads a channel through a
+#: mapped waterbody — this is what carries the ICWW itself), 334 connector.
+NHD_FTYPES = (336, 460, 558, 334)
+NHD_TILE = 0.25          # degrees; 165 tiles cover every marine WBID in Florida
+NHD_PAGE = 2000          # == the service maxRecordCount
+
 SALINITY_CACHE = Path.home() / "perkins-corpus/osm/salinity-readings.json"
 GAUGE_SNAP_M = 250.0     # a gauge further than this from mapped water is not on a reach we know
 MAX_READING_AGE_DAYS = 30.0  # older than this is history, not a measurement — see _reading_expired
@@ -118,6 +155,9 @@ COAST_SNAP_M = 60.0      # a waterway mouth this close to the coastline counts a
 BARRIER_SNAP_M = 25.0    # structures are often drawn offset from the canal, sharing no node
 REACH_MI = 3.0           # clips INFERRED reaches only; evidenced water is never clipped
 SIMPLIFY_M = 8.0         # vertex thinning; 1-mile thresholds do not need metre precision
+#: Drop an NHD reach shadowed end-to-end by kept OSM geometry — see the dedupe note in build().
+#: Bounded by the tightest provision in zones.json (ZAM, 300 ft), so it cannot move a verdict.
+DEDUPE_M = 15.0
 
 QUERY = f"""
 [out:json][timeout:600];
@@ -199,6 +239,132 @@ def fetch_wbid() -> None:
                                      separators=(",", ":")))
     print(f"cached {len(feats)} marine WBIDs -> {WBID_CACHE} "
           f"({WBID_CACHE.stat().st_size / 1e6:.1f} MB)", flush=True)
+
+
+def _marine_tiles(cell: float = NHD_TILE) -> list[tuple[float, float, float, float]]:
+    """The NHD_TILE-degree tiles any marine WBID polygon touches. Drives the NHD fetch."""
+    if not WBID_CACHE.exists():
+        sys.exit(f"no FDEP WBID cache at {WBID_CACHE} — run --fetch-wbid before --fetch-nhd "
+                 f"(the marine polygons are what bound the NHD fetch)")
+    tiles: set[tuple[int, int]] = set()
+    for f in json.loads(WBID_CACHE.read_text())["features"]:
+        g = f.get("geometry") or {}
+        parts = [g["coordinates"]] if g.get("type") == "Polygon" else (g.get("coordinates") or [])
+        for part in parts:
+            for ring in part:
+                for x, y in ring:
+                    tiles.add((int(x // cell), int(y // cell)))
+    return [(cx * cell, cy * cell, cx * cell + cell, cy * cell + cell)
+            for cx, cy in sorted(tiles)]
+
+
+def _nhd_tile(bounds: tuple[float, float, float, float], where: str) -> list[dict]:
+    """Every flowline in one tile, paged. Returns raw feature dicts."""
+    x0, y0, x1, y1 = bounds
+    out, offset = [], 0
+    while True:
+        q = urllib.parse.urlencode({
+            "geometry": f"{x0},{y0},{x1},{y1}", "geometryType": "esriGeometryEnvelope",
+            "inSR": "4326", "outSR": "4326", "where": where,
+            "outFields": "permanent_identifier,ftype,gnis_name",
+            "returnGeometry": "true", "f": "json",
+            "resultOffset": offset, "resultRecordCount": NHD_PAGE})
+        req = urllib.request.Request(
+            f"{NHD_URL}?{q}",
+            headers={"User-Agent": "perkins-warranty-tool/1.0 (build-time layer generator)"})
+        page = None
+        for attempt in range(1, 5):
+            try:
+                with urllib.request.urlopen(req, timeout=300) as r:
+                    page = json.loads(r.read())
+                break
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+                if attempt == 4:
+                    raise RuntimeError(f"NHD tile {x0},{y0} failed after {attempt}: {e}") from e
+                time.sleep(10 * attempt)
+        if page.get("error"):
+            raise RuntimeError(f"NHD tile {x0},{y0}: {page['error'].get('message')}")
+        got = page.get("features") or []
+        out.extend(got)
+        if not got or (not page.get("exceededTransferLimit") and len(got) < NHD_PAGE):
+            return out
+        offset += len(got)
+
+
+def fetch_nhd(workers: int = 6) -> None:
+    """Cache NHD flowlines over the marine-WBID tiles. ~164k features, changes on a slow cycle.
+
+    Tiles are fetched CONCURRENTLY. Serially this is a two-hour pull — each tile is a geometry
+    query the size of a small county — and a two-hour build step is one nobody re-runs, which is
+    how a layer goes stale between the data changing and anyone noticing.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    tiles = _marine_tiles()
+    where = f"ftype IN ({','.join(str(f) for f in NHD_FTYPES)})"
+    feats: dict[str, dict] = {}
+    print(f"NHD: {len(tiles)} coastal tiles, {where}, {workers} workers", flush=True)
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for got in pool.map(lambda b: _nhd_tile(b, where), tiles):
+            for f in got:
+                a = f.get("attributes") or {}
+                pid = a.get("permanent_identifier")
+                paths = (f.get("geometry") or {}).get("paths") or []
+                if not pid or not paths:
+                    continue
+                # Tiles overlap at their edges and ArcGIS returns whole features, so the SAME
+                # flowline comes back from up to four tiles. Keyed by permanent_identifier, not
+                # appended — duplicated geometry would double every reach in the fill graph.
+                feats[pid] = {"id": pid, "ftype": a.get("ftype"),
+                              "name": a.get("gnis_name"), "paths": paths}
+            done += 1
+            if done % 10 == 0 or done == len(tiles):
+                print(f"  tile {done}/{len(tiles)}: {len(feats):,} flowlines so far", flush=True)
+    if not feats:
+        sys.exit("NHD returned no flowlines — refusing to cache an empty hydrography layer")
+    NHD_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    NHD_CACHE.write_text(json.dumps({"features": list(feats.values())}, separators=(",", ":")))
+    print(f"cached {len(feats):,} NHD flowlines -> {NHD_CACHE} "
+          f"({NHD_CACHE.stat().st_size / 1e6:.1f} MB)", flush=True)
+
+
+def _nhd_elements(next_id: int = -1) -> tuple[dict, list]:
+    """NHD flowlines as OSM-shaped nodes and ways, so ONE pipeline handles both sources.
+
+    Node ids are synthesised from rounded coordinates, which is what joins the network: NHD
+    flowlines share exact endpoints, so two reaches meeting at a confluence get the same id and the
+    fill crosses between them exactly as it does across a shared OSM node id. Ids are NEGATIVE so
+    they can never collide with an OSM node id.
+
+    Ways carry NO tags on purpose — see the NHD_CACHE note. An NHD reach can only ever be
+    `inferred` (fill) or `mapped` (FDEP marine); it can never seed `tagged`.
+    """
+    if not NHD_CACHE.exists():
+        print(f"no NHD cache at {NHD_CACHE} — building WITHOUT NHD hydrography "
+              f"(polygon-mapped canals will be missing; run --fetch-nhd)", flush=True)
+        return {}, []
+    nodes: dict[int, tuple[float, float]] = {}
+    ids: dict[tuple[float, float], int] = {}
+    ways = []
+    for f in json.loads(NHD_CACHE.read_text())["features"]:
+        for pi, path in enumerate(f["paths"]):
+            nids = []
+            for x, y in path:
+                k = (round(float(x), 6), round(float(y), 6))
+                nid = ids.get(k)
+                if nid is None:
+                    nid = ids[k] = next_id
+                    next_id -= 1
+                    nodes[nid] = k
+                if not nids or nids[-1] != nid:
+                    nids.append(nid)
+            if len(nids) >= 2:
+                # ftype rides along so the emit step can weigh what each NHD class actually adds.
+                ways.append({"id": f"nhd{f['ftype']}_{f['id']}:{pi}", "nodes": nids, "tags": {}})
+    print(f"NHD: {len(ways):,} flowline reaches, {len(nodes):,} nodes merged into the graph",
+          flush=True)
+    return nodes, ways
 
 
 def _ring_contains(ring: list, x: float, y: float) -> bool:
@@ -558,6 +724,12 @@ def build(allow_no_wbid: bool = False) -> None:
             barrier_pts.extend(nodes[n] for n in (e.get("nodes") or ()) if n in nodes)
             continue
         raw_ways.append({"id": e["id"], "nodes": e.get("nodes") or [], "tags": tags})
+    # NHD joins BEFORE the barrier snap below, so structures cut NHD geometry exactly as they cut
+    # OSM geometry. Joining after would leave every NHD canal uncuttable and let the fill run
+    # straight through a salinity dam — the Golden Gate failure, reintroduced by the coverage fix.
+    nhd_nodes, nhd_ways = _nhd_elements()
+    nodes.update(nhd_nodes)
+    raw_ways.extend(nhd_ways)
     barriers = barrier_nodes | barrier_way_nodes
     barrier_pts.extend(nodes[n] for n in barrier_nodes if n in nodes)
 
@@ -692,8 +864,44 @@ def build(allow_no_wbid: bool = False) -> None:
     print(f"measurement: {promoted} reaches promoted to measured, {suppressed} labelled "
           f"measured FRESH (kept in the file, ignored by the UI)", flush=True)
 
+    # NHD and OSM both draw the ICWW, the New River, every named tidal creek. Keeping both doubles
+    # the asset and moves no answer: the verdict depends only on the NEAREST water, so a second
+    # centreline a few metres off the first is bytes every visitor downloads for nothing. Keep an
+    # NHD reach only where it ADDS coverage — i.e. it is not shadowed end to end by OSM geometry.
+    #
+    # DEDUPE_M is bounded by the tightest provision in zones.json, ZAM's 300 ft: dropping a reach
+    # whose every vertex sits within 15 m (49 ft) of kept geometry can move a measured distance by
+    # at most 15 m, which cannot cross that line from either side at any distance that matters.
+    osm_vertex_cells: set[tuple[int, int]] = set()
+    dedupe_cell = DEDUPE_M / 92000.0
     for wid, conf in confidence.items():
+        if conf not in VERDICT_MOVING or str(wid).startswith("nhd"):
+            continue
+        for x, y in (nodes[n] for n in by_id[wid]["nodes"] if n in nodes):
+            osm_vertex_cells.add((int(x / dedupe_cell), int(y / dedupe_cell)))
+
+    def _shadowed_by_osm(pts: list[tuple[float, float]]) -> bool:
+        for x, y in pts:
+            cx, cy = int(x / dedupe_cell), int(y / dedupe_cell)
+            if not any((cx + dx, cy + dy) in osm_vertex_cells
+                       for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+                return False
+        return True
+
+    nhd_dropped = 0
+    nhd_deduped = 0
+    for wid, conf in confidence.items():
+        # NHD is ingested to close a VERDICT-MOVING hole, not to draw more blue lines. An NHD reach
+        # that only ever reached `inferred` moves nothing (checker.js renders it as the dashed
+        # "possible tidal canal" caveat at most) and NHD's coastal density is ~10x OSM's, so keeping
+        # them would multiply a 3 MB asset every visitor downloads for no change in any answer.
+        if str(wid).startswith("nhd") and conf == "inferred":
+            nhd_dropped += 1
+            continue
         coords = [nodes[n] for n in by_id[wid]["nodes"] if n in nodes]
+        if str(wid).startswith("nhd") and _shadowed_by_osm(coords):
+            nhd_deduped += 1
+            continue
         # ⚠️ The clip measures distance to the COASTLINE. The 1-mile provision measures
         # ADDRESS-to-water. Those are different quantities, and conflating them is why a house
         # 500 ft from the tidal St Johns got no tidal answer at all: the river is 14 mi from the
@@ -725,7 +933,7 @@ def build(allow_no_wbid: bool = False) -> None:
         # was wrongly given: a marine WBID is bounded by its own polygon — the class changes to 3F
         # where the water turns fresh — so it cannot run away inland the way an OSM `tidal=yes` tag
         # runs 160 mi up the St Johns. The clip measures distance to the COASTLINE, and Tim's
-        # client lives 590 ft from Class III-Marine water that is 2.5 mi from open water.
+        # client lives 117 ft from Class III-Marine water whose open-water measurement is 3,079 ft.
         evidenced = conf in ("measured", "fresh")
         pre_simplified = False
         if conf == "mapped":
@@ -783,6 +991,8 @@ def build(allow_no_wbid: bool = False) -> None:
                  "coordinates": ([[x, y] for x, y in part] if pre_simplified else
                                  [[round(x, 5), round(y, 5)]
                                   for x, y in _simplify(part, SIMPLIFY_M)])}
+            if str(wid).startswith("nhd"):
+                g["nhd_ftype"] = int(str(wid).split("_")[0][3:])
             if conf == "mapped":
                 # Cite the polygon this SURVIVING part actually sits in, taken at its midpoint,
                 # not the reach-wide majority — after clipping, a reach can contribute parts in
@@ -815,13 +1025,26 @@ def build(allow_no_wbid: bool = False) -> None:
                      "the coastline. OSM barrier coverage is incomplete, so the UI must never turn "
                      "an inferred reach into a hard 'void' verdict."),
            "_coverage_bbox": BBOX,
-           "_built_by": "scripts/build_tidal_layer.py", "_source": "OpenStreetMap via Overpass"}
+           "_built_by": "scripts/build_tidal_layer.py",
+           "_source": ("OpenStreetMap via Overpass (waterway lines) + USGS NHD flowlines over the "
+                       "FDEP marine-WBID tiles (canals OSM draws as untagged water polygons); "
+                       "classified by FDEP WBID surface-water class")}
     # Sorted so a rebuild is byte-identical: without it the asset reshuffles every run and a
     # 0.93 MB diff hides whether anything actually changed.
     geoms.sort(key=lambda g: (g["confidence"], g["coordinates"]))
     path = ASSETS / "tidal.geojson"
     path.write_text(json.dumps(out, separators=(",", ":")))
-    print(f"emitted {kept} geometries ({clipped} reaches clipped at {REACH_MI} mi) -> "
+    # The .json stays canonical — git, the tests, the validator and the sweep all read it. The .gz
+    # twin exists only because the WordPress host serves no content-encoding, so 22 MB of JSON
+    # would cross the wire uncompressed; checker.js prefers it and falls back to the .json.
+    # mtime=0 so a rebuild that changes nothing produces a byte-identical .gz, same as the .json.
+    gz = path.with_suffix(".geojson.gz")
+    with gzip.GzipFile(gz, "wb", compresslevel=9, mtime=0) as fh:
+        fh.write(path.read_bytes())
+    nhd_kept = sum(1 for g in geoms if g["confidence"] in VERDICT_MOVING)
+    print(f"emitted {kept} geometries ({clipped} reaches clipped at {REACH_MI} mi, "
+          f"{nhd_dropped:,} NHD inferred-only + {nhd_deduped:,} NHD shadowed-by-OSM dropped, "
+          f"{nhd_kept} verdict-moving total) -> "
           f"{path.name}, {path.stat().st_size / 1e6:.2f} MB", flush=True)
 
 
@@ -831,11 +1054,17 @@ if __name__ == "__main__":
                     help="pull Overpass + the FDEP WBID classes into the caches first")
     ap.add_argument("--fetch-wbid", action="store_true",
                     help="refresh only the FDEP marine-WBID cache (seconds, vs minutes for OSM)")
+    ap.add_argument("--fetch-nhd", action="store_true",
+                    help="refresh only the USGS NHD flowline cache over the marine-WBID tiles")
     ap.add_argument("--allow-no-wbid", action="store_true",
                     help="deliberately build the PRE-FDEP layer with no marine classification")
+    ap.add_argument("--no-build", action="store_true", help="fetch only; do not rebuild the asset")
     a = ap.parse_args()
     if a.fetch:
         fetch()
     if a.fetch or a.fetch_wbid:
         fetch_wbid()
-    build(allow_no_wbid=a.allow_no_wbid)
+    if a.fetch or a.fetch_nhd:
+        fetch_nhd()
+    if not a.no_build:
+        build(allow_no_wbid=a.allow_no_wbid)

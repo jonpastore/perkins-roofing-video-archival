@@ -98,10 +98,14 @@ deliberate trade: we accept some under-warning to eliminate false "void".
 ## Rebuilding
 
 ```sh
-.venv/bin/python scripts/build_tidal_layer.py --fetch   # Overpass -> ~/perkins-corpus/osm/ cache
-.venv/bin/python scripts/build_tidal_layer.py           # cache -> assets/tidal.geojson
+.venv/bin/python scripts/build_tidal_layer.py --fetch   # Overpass + FDEP + NHD -> caches
+.venv/bin/python scripts/build_tidal_layer.py           # caches -> assets/tidal.geojson
 .venv/bin/python scripts/check_tidal_layer.py           # sanity-check against known addresses
 ```
+
+`--fetch` pulls three sources; `--fetch-wbid` and `--fetch-nhd` refresh one each (minutes, versus
+the better part of an hour for the statewide Overpass pull). **The NHD fetch is bounded by the FDEP
+cache** — it walks the 165 quarter-degree tiles the marine WBIDs touch — so fetch WBIDs first.
 
 Then bump `PERKINS_MWC_VERSION` (WordPress cache-busts assets on `?ver=`), zip the plugin folder,
 and upload:
@@ -122,6 +126,51 @@ PYTHONPATH=. .venv/bin/python scripts/wp_install_plugin.py /path/to/perkins-meta
   forever. `checker.js` now handles that and has a 12 s backstop.
 - **Nominatim does not know every address** (the Boynton one fails); Google's geocoder does. The
   offline checker uses Nominatim, so a miss there is a geocoder gap, not a layer gap.
+
+## ✅ CLOSED 2026-08-07 — the geometry hole under `mapped` (USGS NHD)
+
+`mapped` classifies reaches. It cannot classify a reach that is not in the graph, and every reach
+came from an OSM `waterway=*` **line**. **South Florida finger canals are routinely drawn in OSM as
+untagged `natural=water` polygons instead** — no line, no tidal tag, invisible to the fill.
+
+Found the day Tim finally sent the address of the client this whole feature was built for:
+
+| 188 Lone Pine Drive, Palm Beach Gardens | |
+|---|---|
+| what the live tool said | 3,079 ft to salt water → **all three steels warranty-safe** |
+| USGS NHD | `CANAL/DITCH` **117 ft** from the house |
+| the canal's NHD network | Earman River, North Palm Beach Waterway, Frenchmans Creek → the ICWW |
+| FDEP at that canal | WBID 3226W1, ESTUARY, **Class III-Marine** |
+| on the ground (Tim) | "that canal is literally in her backyard; she has a dock and a boat" |
+| OSM | 19 unnamed pond polygons, no waterway line |
+
+So the tool cleared steel for the exact customer whose rusted-out steel chimney cap was the reason
+Tim asked for it — arguing the competing roofers' case, on his own showcase job.
+
+**The fix**: NHD flowlines (ftype 336/460/558/334) over the marine-WBID tiles are merged into the
+graph as untagged ways *before* the barrier snap, so they are cut by structures and must earn
+`mapped` on exactly the same terms as OSM geometry. NHD reaches that only reach `inferred` are
+dropped at emit — they move no verdict and NHD's coastal density is ~10x OSM's.
+
+```
+https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer/6/query
+where=ftype IN (336,460,558,334)   →  ~164k flowlines over 165 tiles, free, keyless
+```
+
+### Two lessons, both cheap to repeat
+
+1. **A false CLEAR is silent.** Every pin in this file bounded the false VOID, because a homeowner
+   wrongly told VOID complains. Nobody reports being wrongly told their steel roof is fine — they
+   just buy it from the roofer who said yes. `MUST_REACH_NEAR` / the waterfront pins in
+   `tests/jobs/test_tidal_asset_invariants.py` are the mirror gate, and 188 Lone Pine Drive fails
+   them on the pre-fix asset while every inland pin stays green.
+2. **Do not verify hydrology against OSM.** The review that blessed `mapped` checked the layer by
+   querying Overpass for waterways near the address — the layer's own upstream source. A check that
+   shares a blind spot with the thing it checks always agrees with it. Cross-check against NHD.
+
+A third, smaller one: `2400 PGA Blvd` sat in `check_tidal_layer.py` as "Tim's client" for a day.
+It was a **stand-in picked before anyone had her address**, it passed, and it made the real case
+look covered. A pin against a guessed address tests the guess.
 
 ## ✅ CLOSED 2026-08-06 — FDEP's marine classification (`mapped`)
 
