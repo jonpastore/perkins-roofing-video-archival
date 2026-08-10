@@ -244,6 +244,35 @@ console.log(JSON.stringify(out));
     assert got == expected, f"checker.js buckets {got}, expected {expected}"
 
 
+def _nearest_verdict_moving(asset, lat, lon):
+    """Feet to the nearest verdict-moving water, measured to the SEGMENT as checker.js does.
+
+    ⚠️ Not to the nearest VERTEX. `_simplify` drops collinear points at an 8 m tolerance, so a
+    straight canal ships as two vertices however long it runs, and a house beside its midpoint can
+    sit a mile from either endpoint. Measured 2026-08-07: the Loxahatchee at Tequesta reads 1,351 ft
+    to the segment and 3,066 ft to the nearest vertex. Vertex distance is not a conservative
+    approximation — it is wrong in the unsafe direction for the inland pins, which is where this
+    was found.
+    """
+    best, best_g = float("inf"), None
+    kx, ky = 111320.0 * math.cos(math.radians(lat)), 110540.0
+    for g in asset["geometries"]:
+        if g.get("confidence") not in VERDICT_MOVING:
+            continue
+        c = g["coordinates"]
+        for i in range(len(c) - 1):
+            ax, ay = c[i]
+            bx, by = c[i + 1]
+            px, py = (lon - ax) * kx, (lat - ay) * ky
+            vx, vy = (bx - ax) * kx, (by - ay) * ky
+            l2 = vx * vx + vy * vy
+            t = max(0.0, min(1.0, (px * vx + py * vy) / l2)) if l2 else 0.0
+            d = math.hypot(px - t * vx, py - t * vy)
+            if d < best:
+                best, best_g = d, g
+    return best * 3.28084, best_g
+
+
 @pytest.mark.parametrize("lat,lon,why", [
     (26.1876, -81.6431, "Golden Gate Estates, Naples — miles behind the weirs"),
     (25.9490, -80.2800, "inland Snake Creek Canal (C-9), behind structure S-29"),
@@ -255,19 +284,39 @@ def test_no_verdict_moving_water_within_a_mile_of_the_inland_pins(asset, lat, lo
     A mile is the strictest provision in zones.json, so verdict-moving water inside a mile of
     these addresses is a warranty voided by fresh water.
     """
-    kx = 111320.0 * math.cos(math.radians(lat))
-    best, best_g = float("inf"), None
-    for g in asset["geometries"]:
-        if g.get("confidence") not in VERDICT_MOVING:
-            continue
-        for x, y in g["coordinates"]:
-            d = math.hypot((x - lon) * kx, (y - lat) * 110540.0)
-            if d < best:
-                best, best_g = d, g
-    ft = best * 3.28084
+    ft, best_g = _nearest_verdict_moving(asset, lat, lon)
     assert ft > 5280, (
         f"{why}: verdict-moving water {ft:,.0f} ft away "
         f"({(best_g or {}).get('confidence')}, {((best_g or {}).get('wbid') or {}).get('name')})")
+
+
+@pytest.mark.parametrize("lat,lon,max_ft,why", [
+    (26.8560414, -80.0764616, 500,
+     "188 Lone Pine Dr, Palm Beach Gardens — Tim's client: dock, boat, rusted-through steel "
+     "chimney cap. OSM draws her canal as untagged water polygons; NHD has it at 117 ft"),
+    (26.1046644, -80.1703294, 1800, "1350 SW 21st Ter, Fort Lauderdale — New River south fork"),
+    (25.7863480, -80.2228480, 900, "1701 NW N River Dr, Miami — Miami River"),
+    (26.9708673, -80.0875254, 1500, "18989 SE Federal Hwy, Tequesta — Loxahatchee River"),
+])
+def test_verdict_moving_water_reaches_the_waterfront_pins(asset, lat, lon, max_ft, why):
+    """The mirror of the inland pins, and the gate the layer went a month without.
+
+    Every test above this one bounds the FALSE VOID — verdict-moving water where the water is
+    fresh. Nothing bounded the FALSE CLEAR: a house on salt water the layer cannot see reads
+    "warranty-safe", and that failure is silent. A homeowner wrongly told VOID complains; one
+    wrongly told their steel roof is fine just buys it from the roofer who said yes.
+
+    188 Lone Pine Drive is the case that proved it. It read 3,079 ft and cleared all three steels
+    for a client with a boat tied up 117 ft from her house, while every inland pin stayed green,
+    because reach geometry came only from OSM `waterway=*` lines and OSM draws that canal as
+    untagged `natural=water` polygons. Coordinates are geocoded, never typed from memory.
+    """
+    ft, best_g = _nearest_verdict_moving(asset, lat, lon)
+    assert ft <= max_ft, (
+        f"{why}: nearest verdict-moving water is {ft:,.0f} ft away, over the {max_ft:,} ft limit — "
+        f"this address reads WARRANTY-SAFE on salt water "
+        f"(nearest: {(best_g or {}).get('confidence')}, "
+        f"{((best_g or {}).get('wbid') or {}).get('name')})")
 
 
 def test_no_mapped_geometry_lies_outside_a_marine_polygon(asset):

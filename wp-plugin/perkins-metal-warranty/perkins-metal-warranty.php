@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PERKINS_MWC_VERSION', '1.5.1' );
+define( 'PERKINS_MWC_VERSION', '1.6.0' );
 define( 'PERKINS_MWC_URL', plugin_dir_url( __FILE__ ) );
 
 // Default browser key (referrer-restricted). Overridable in Settings so a per-site key can be used

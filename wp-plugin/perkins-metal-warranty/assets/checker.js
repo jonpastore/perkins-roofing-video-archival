@@ -70,9 +70,36 @@
 		return lat >= COVERAGE[0] && lon >= COVERAGE[1] && lat <= COVERAGE[2] && lon <= COVERAGE[3];
 	}
 
-	// Three megabytes of geometry: fetched on the first check, not on page load, so simply landing
-	// on the page costs nothing. `?ver=` follows the plugin version so a corrected layer is not
-	// served from a stale browser or CDN cache.
+	// Geometry is fetched on the first check, not on page load, so simply landing on the page costs
+	// nothing. `?ver=` follows the plugin version so a corrected layer is not served from a stale
+	// browser or CDN cache.
+	//
+	// The tidal layer is 22 MB of JSON and the host sends NO content-encoding (verified against the
+	// live URL: no gzip, no br), so it would go over the wire uncompressed. The build writes a
+	// pre-gzipped twin and we inflate it here with DecompressionStream — native since Chrome 80 /
+	// Safari 16.4 / Firefox 113, no library — which puts it back at 2.9 MB, the size the layer was
+	// before NHD hydrography closed the polygon-canal hole.
+	//
+	// ⚠️ ALWAYS falls back to the plain .json: an old browser, a host that will not serve .gz, or a
+	// truncated file must degrade to a slow load, never to a wrong answer. The tidal layer being
+	// absent silently downgrades every waterfront address to the open-water measurement, which is
+	// exactly the false CLEAR this layer exists to prevent — so failure has to be loud in the log.
+	function fetchMaybeGzipped(name) {
+		var plain = function () {
+			return fetch(CFG.assetsUrl + name + VER)
+				.then(function (r) { return r.ok ? r.json() : null; });
+		};
+		if (typeof DecompressionStream !== 'function') return plain();
+		return fetch(CFG.assetsUrl + name + '.gz' + VER).then(function (r) {
+			if (!r.ok || !r.body) throw new Error('no gz');
+			return new Response(
+				r.body.pipeThrough(new DecompressionStream('gzip'))).json();
+		}).catch(function (e) {
+			if (window.console) console.warn('perkins-mwc: gz load failed, falling back', e);
+			return plain();
+		});
+	}
+
 	var dataReady = null;
 	function loadData() {
 		if (dataReady) return dataReady;
@@ -80,9 +107,7 @@
 			fetch(CFG.assetsUrl + 'coastline.geojson' + VER).then(function (r) { return r.json(); }),
 			fetch(CFG.assetsUrl + 'zones.json' + VER).then(function (r) { return r.json(); }),
 			// The tidal layer is additive: if it fails to load the tool still answers on open water.
-			fetch(CFG.assetsUrl + 'tidal.geojson' + VER)
-				.then(function (r) { return r.ok ? r.json() : null; })
-				.catch(function () { return null; }),
+			fetchMaybeGzipped('tidal.geojson').catch(function () { return null; }),
 		]).then(function (res) {
 			ZONES = res[1];
 			SEGS = flatten(res[0], 'tagged').tagged;
