@@ -181,8 +181,22 @@
 		};
 	}
 
+	// ⚠️ MEMOISED, and that is load-bearing, not an optimisation. The input's focus handler warms
+	// the geocoder and check() loads it again; unmemoised, a visitor who clicks into the box, types
+	// and hits Check before the API finishes downloading gets TWO calls, and the second one sees
+	// `window.google.maps.Geocoder` still undefined, injects a SECOND Maps <script>, and overwrites
+	// window.__perkinsMwcGm with its own resolver. The duplicate bootstrap logs
+	// "Element with name gmp-internal-* already defined" and leaves a Geocoder that never invokes
+	// its callback — the tool sits on "Finding the address…" forever with no error.
+	//
+	// Measured on live staging 2026-08-07: focus-then-immediate-click HUNG 2 of 3 runs; the same
+	// click with a 6 s gap answered 2 of 2. That is a real visitor typing quickly, not a test
+	// artifact. Same latching shape as `dataReady` above, and cleared on failure for the same
+	// reason: one flaky load must not break the tool for the rest of the page view.
+	var gmapsReady = null;
 	function loadGmaps() {
-		return new Promise(function (resolve, reject) {
+		if (gmapsReady) return gmapsReady;
+		gmapsReady = new Promise(function (resolve, reject) {
 			if (window.google && window.google.maps && window.google.maps.Geocoder) return resolve();
 			var settled = false;
 			function fail(msg) {
@@ -209,10 +223,26 @@
 			setTimeout(function () { fail('The map service did not respond. Please try again.'); }, 12000);
 			document.head.appendChild(s);
 		});
+		// Do not latch a FAILURE: a flaky load would otherwise poison every later attempt on this
+		// page view, which is exactly the trap `dataReady` documents.
+		gmapsReady.catch(function () { gmapsReady = null; });
+		return gmapsReady;
 	}
 
 	function geocode(addr) {
 		return new Promise(function (resolve, reject) {
+			// NOTHING else bounds this. Every other step in check() has a terminal state, but the
+			// Geocoder callback is Google's to invoke, and when the API is in a bad state it simply
+			// never fires — no error, no rejection, just "Finding the address…" until the visitor
+			// gives up. The memoised loadGmaps above removes the cause we know about; this bounds
+			// the ones we do not, because a wrong answer is worse than a spinner but a silent
+			// spinner is worse than a stated failure.
+			var settled = false;
+			var backstop = setTimeout(function () {
+				if (settled) { return; }
+				settled = true;
+				reject(new Error('The address service did not respond. Please try again.'));
+			}, 20000);
 			new google.maps.Geocoder().geocode(
 				{
 					address: addr,
@@ -221,6 +251,9 @@
 						{ lat: 24.3, lng: -87.7 }, { lat: 31.2, lng: -79.7 }),
 				},
 				function (res, status) {
+					if (settled) { return; }        // a late callback after the backstop fired
+					settled = true;
+					clearTimeout(backstop);
 					if (status === 'OK' && res && res.length) resolve(res[0]);
 					else reject(new Error(status === 'ZERO_RESULTS'
 						? 'Address not found — try adding city and ZIP.'
