@@ -355,3 +355,47 @@ def test_the_asset_actually_contains_mapped_geometry(asset):
     rebuilds the pre-feature asset and reports green."""
     n = sum(1 for g in asset["geometries"] if g.get("confidence") == "mapped")
     assert n > 1000, f"only {n} mapped geometries — was the asset built without the FDEP cache?"
+
+
+def test_loadgmaps_injects_the_maps_api_once_however_often_it_is_called(tmp_path):
+    """EXECUTE loadGmaps() twice back-to-back and count the <script> tags it appends.
+
+    The input's focus handler warms the geocoder and check() loads it again. Unmemoised, a visitor
+    who clicks into the box, types, and hits Check before the API has downloaded produces two
+    calls; the second sees `google.maps.Geocoder` still undefined, injects a SECOND Maps script and
+    overwrites `window.__perkinsMwcGm` with its own resolver. The duplicate bootstrap logs
+    "Element with name gmp-internal-* already defined" and leaves a Geocoder that never invokes its
+    callback, so the tool sits on "Finding the address…" with no error and no answer.
+
+    Measured against live staging 2026-08-07 BEFORE the fix: focus-then-immediate-click hung 2 of 3
+    runs; the same click with a 6 s gap answered 2 of 2. This asserts the property that makes the
+    race impossible — one script, one callback owner — rather than the wording of the fix.
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+    js = (ASSETS / "checker.js").read_text()
+    # `var gmapsReady = null;` lives outside the function, so pull it in with the body.
+    harness = tmp_path / "gmaps.js"
+    harness.write_text(
+        "var CFG = {gmapsKey: 'k'};\n"
+        "var appended = [];\n"
+        "var window = {google: undefined};\n"
+        "var document = {createElement: () => ({}),"
+        " head: {appendChild: (s) => appended.push(s)}};\n"
+        "function setTimeout() { return 0; }\n"
+        "var gmapsReady = null;\n"
+        + _extract_fn(js, "loadGmaps")
+        + """
+const a = loadGmaps();
+const b = loadGmaps();
+a.catch(() => {}); b.catch(() => {});
+console.log(JSON.stringify({scripts: appended.length, samePromise: a === b}));
+""")
+    res = subprocess.run([node, str(harness)], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, f"node failed: {res.stderr[:400]}"
+    got = json.loads(res.stdout)
+    assert got["scripts"] == 1, (
+        f"loadGmaps() appended {got['scripts']} Maps <script> tags for two calls — the second "
+        f"bootstrap clobbers window.__perkinsMwcGm and wedges the Geocoder")
+    assert got["samePromise"], "loadGmaps() must hand both callers the same promise"
