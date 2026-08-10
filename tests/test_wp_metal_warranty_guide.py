@@ -153,3 +153,26 @@ def test_day_cells_invalidate_the_quote_when_edited():
                         if "onChange={(e) =>" in ln and f"{setter}(e.target.value)" in ln), None)
         assert handler, f"no onChange handler found for {setter}"
         assert "setInputsDirty(true)" in handler, f"{setter} edit does not mark the quote dirty"
+
+
+def test_the_plugin_declares_one_version_twice_and_they_agree(src):
+    """The header `Version:` and PERKINS_MWC_VERSION are two literals for one fact.
+
+    WordPress reads the HEADER (it parses the file as text, so the constant is invisible to it)
+    for the plugin list and update checks, while the CONSTANT is what `?ver=` cache-busts the
+    assets with. Bumping only the constant ships new geometry that browsers do fetch — the
+    cache-bust works — under a plugin row still reporting the old version, so the admin screen
+    says the deploy did not happen while the site behaves as though it did.
+
+    Caught on 2026-08-07 verifying the NHD deploy: assets served `?ver=1.6.0` against a plugin
+    list showing 1.5.1. Nothing was broken; nothing agreed either.
+    """
+    import re
+
+    header = re.search(r"^ \* Version:\s+([0-9.]+)", src, re.MULTILINE)
+    const = re.search(r"define\(\s*'PERKINS_MWC_VERSION',\s*'([0-9.]+)'\s*\)", src)
+    assert header, "no `Version:` line in the plugin header — WordPress needs it"
+    assert const, "no PERKINS_MWC_VERSION define — the asset cache-bust needs it"
+    assert header.group(1) == const.group(1), (
+        f"plugin header says {header.group(1)}, PERKINS_MWC_VERSION says {const.group(1)} — "
+        f"bump both or the admin screen and the served assets disagree")

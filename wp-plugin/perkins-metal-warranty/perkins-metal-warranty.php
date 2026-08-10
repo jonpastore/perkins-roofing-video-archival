@@ -12,7 +12,7 @@
  *              [metal_roof_guide] shortcode — the educational page: the manufacturer warranty
  *              comparison rendered from the SAME zones.json the checker uses, plus published
  *              wind-uplift approvals and the aluminum-roof example videos.
- * Version:     1.5.1
+ * Version:     1.6.0
  * Author:      DeGenito
  *
  * SETUP (one manual step): the geocoder uses the Google Maps JavaScript API. Its browser key is
