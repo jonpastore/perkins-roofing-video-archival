@@ -172,6 +172,10 @@ function ModelField({
 }
 
 // ---------------------------------------------------------------------------
+// Config values that are paragraphs rather than a word — edited in a textarea, not an input.
+const LONG_TEXT_KEYS = new Set(["VIDEO_DESCRIPTION_PROMPT", "EMAIL_HTML_HEADER"]);
+
+// ---------------------------------------------------------------------------
 // InlineEditField — plain text edit for non-model keys
 // ---------------------------------------------------------------------------
 
@@ -228,12 +232,33 @@ function InlineEditField({
 
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-      <input
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        style={{ ...inputStyle, minWidth: 260 }}
-        autoFocus
-      />
+      {LONG_TEXT_KEYS.has(entry.key) ? (
+        // A prompt or an HTML block is paragraphs, not a word. In a one-line input you cannot see
+        // what you are editing and Enter does nothing useful, so multi-line values get a textarea.
+        <textarea
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          rows={10}
+          spellCheck={false}
+          style={{
+            ...inputStyle,
+            width: "100%",
+            minWidth: 320,
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            resize: "vertical",
+          }}
+          autoFocus
+        />
+      ) : (
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          style={{ ...inputStyle, minWidth: 260 }}
+          autoFocus
+        />
+      )}
       <Button
         onClick={save}
         disabled={pending || saving}
