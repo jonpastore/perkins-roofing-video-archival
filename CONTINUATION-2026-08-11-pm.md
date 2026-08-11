@@ -55,6 +55,43 @@ T&C selection, scope of work on the proposal, the price build-up, real package n
 Proposals loading state, gutters/Coastal include-toggles, customer auto-select, paste-to-fill
 addresses, **Roofr report upload**, repair metal profiles, Contacts relabelled.
 
+### PR #49 — the address decides waterfront; metal warranty on the proposal (§1a)
+Jon's follow-ups, same day.
+
+- **Waterfront is OFF by default again. `core/salt_water.py` decides it from the ADDRESS**, using
+  the same tidal layer and the same published setbacks the public warranty checker uses. One
+  implementation in `core/`, because an estimate that disagrees with the customer-facing tool
+  about the same house is the two-copies defect this repo keeps shipping. Validated against the
+  checker's own gate pins and against the 77 ft read out of a real browser: 188 Lone Pine Dr
+  **77 ft** (steel VOID, aluminium conditional), Miami River 266 ft, Fort Lauderdale 1,406 ft,
+  Golden Gate Estates 38,052 ft and correctly NOT waterfront.
+  It only ever ticks the box **on** — a deliberate untick is never silently restored — and a
+  failed lookup is non-fatal and never reads as "not waterfront".
+- **"Metal Roof Warranty at This Address"** on metal proposals: the distance, each
+  manufacturer's verdict at that house, and the terms from Tim's proposal (Metal Alliance 25 yr
+  substrate corrosion + 40 yr Kynar, Perkins 10 yr workmanship, Polyglass 20 yr underlayment).
+  Two "metal roofs" quoted on one house can carry completely different coverage and the
+  difference is the salt-water setback, not the metal — that is the fact a competitor's quote
+  does not have.
+- ⚠️ The Dockerfile now **COPYs the warranty assets**. Without that line this imports fine,
+  deploys fine, and 500s on the first real call.
+- Cost measured rather than assumed: 0.9s lazy load, ~3ms per query after, **220 MB peak against
+  a 1 GiB limit**, and lazy — an instance that never runs a check never pays it. 100% coverage
+  on `core/salt_water.py`.
+
+### The price build-up, verified end to end (Jon asked directly)
+`debug=true` → **7 of 7** line items carry `explain`; `debug=false` → **0**. That was the missing
+link, and it is fixed. The proposal section renders real arithmetic:
+
+| Line | How it is calculated | Amount |
+|---|---|---|
+| Base Cost (L+M) | 30 squares × $420.00 | $12,600.00 |
+| Overhead | 2 days shingle × $1,064 + 2.5 days demo dry-in flat × $1,064 | $4,789.12 |
+| Profit | 30 squares × $100.00 | $3,000.00 |
+
+Tick **Show pricing breakdown** with audience **Internal** — customer mode deliberately collapses
+to three summary rows and prints no formulas.
+
 ### Prod config written (not code — these are live now)
 | key | before | after |
 |---|---|---|
@@ -65,15 +102,21 @@ addresses, **Roofr report upload**, repair metal profiles, Contacts relabelled.
 
 ## §2 ⚠️ THINGS JON MUST DECIDE
 
-1. **`v0.1-DRAFT` TcVersion (id=2) is still in prod with a NULL `content_gcs`.** The code now
-   skips it, but it is a placeholder shadowing the real `perkins-josh-2026-07-11` terms and
-   probably wants deleting.
-2. **218.8 PSF has two clip spacings.** The old guide table said 6" O.C.; Josh's sheet says 12"
-   O.C. — and that difference IS the sheet's whole argument. I removed the old row rather than
-   publish both. **Resolve against Metal Alliance's actual approval document**, not against
-   either copy of the number. Note in `guide.json`.
-3. **Waterfront now defaults ON**, so every new estimate quotes the Coastal package unless
-   unticked. Jon asked for this explicitly; flagging because it moves price.
+1. **`v0.1-DRAFT` TcVersion (id=2) is still in prod with a NULL `content_gcs`.** Harmless now —
+   the code skips it and Josh's real terms load (**verified: 42,042 chars, byte-identical to
+   row 1**) — but it is a placeholder that will confuse the next person. Worth deleting.
+2. ~~218.8 PSF has two clip spacings~~ — **SETTLED 2026-08-11 from Perkins' own proposal** (Tim
+   Kanak, "Metal and Flat Re-Roof", 5/26/2026, in the thread Marco sent):
+
+   > "Panel fabricated by Metal Alliance (US Steel) for a **-218.8psf at 12" clip spacing**.
+   > Increase clip spacing to 6" for an additional $45.00 per SQ. NOTE: 24 GA is THICKER than
+   > 26 GA."
+
+   Josh's sheet was right, the old row (218.8 at 6") was wrong, removing it was correct. The
+   quote is now the recorded source, and 6" spacing is shown as the paid upgrade it is — one
+   that does NOT raise the tested pressure, which is the section's whole argument.
+3. ~~Waterfront defaults ON~~ — **reversed the same day at Jon's request**. It is off, and the
+   ADDRESS decides it now (§1a).
 4. ~~Warranty plugin 1.7.0 built but not installed~~ — **installed on staging and verified in a
    real browser** (see §3). Nothing outstanding.
 
