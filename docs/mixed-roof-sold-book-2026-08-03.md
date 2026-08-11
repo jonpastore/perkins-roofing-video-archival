@@ -8,7 +8,7 @@ DB_URL=… PYTHONPATH=. .venv/bin/python scripts/mixed_roof_sold_analysis.py
 ```
 
 Every number below is from the live mirror (26,063 deliverables / 16,783 contracts), not a
-fixture. `#429a` is settled separately and is **not a defect** — see `CONTINUATION-2026-08-03.md`
+fixture. `#429a` is settled separately and is **not a defect** — see `continuations/CONTINUATION-2026-08-03.md`
 §4; do not redo it.
 
 ---

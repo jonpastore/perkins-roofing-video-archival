@@ -3,7 +3,7 @@
 Warranty-tool NHD fix shipped and verified; Josh's two approval-queue asks built and deployed;
 Josh's brand-video upload unblocked. **Four things are still open and §5 is the plan for them.**
 
-Prior sessions: `CONTINUATION-2026-08-04.md`, `CONTINUATION-2026-08-03.md`.
+Prior sessions: `CONTINUATION-2026-08-04.md`, `docs/continuations/CONTINUATION-2026-08-03.md`.
 
 ---
 
