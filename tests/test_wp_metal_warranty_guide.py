@@ -46,6 +46,9 @@ def test_every_uplift_field_has_a_reader(src):
     for row in GUIDE["uplift"]:
         for key in row:
             assert f"$u['{key}']" in src, f"guide.json uplift.{key} is never read by the renderer"
+    for row in GUIDE["panel_types"]:
+        for key in row:
+            assert f"$t['{key}']" in src, f"guide.json panel_types.{key} is never read by the renderer"
 
 
 def test_every_field_the_renderer_reads_is_provided(src):
@@ -54,6 +57,12 @@ def test_every_field_the_renderer_reads_is_provided(src):
     import re
     for key in set(re.findall(r"\$u\['(\w+)'\]", src)):
         assert all(key in row for row in GUIDE["uplift"]), f"renderer reads uplift.{key}; some rows lack it"
+    for key in set(re.findall(r"\$t\['(\w+)'\]", src)):
+        assert all(key in row for row in GUIDE["panel_types"]), \
+            f"renderer reads panel_types.{key}; some rows lack it"
+    for key in set(re.findall(r"\$c\['(\w+)'\]", src)):
+        assert all(key in row for row in GUIDE["clip_spacing"]), \
+            f"renderer reads clip_spacing.{key}; some rows lack it"
     for key in set(re.findall(r"\$p\['(\w+)'\]", src)):
         assert any(key in prov for m in ZONES["materials"] for prov in m["provisions"]), \
             f"renderer reads provision.{key}; zones.json has no such field"
@@ -102,19 +111,53 @@ def test_every_video_section_is_one_the_renderer_emits(src):
 def test_uplift_figures_carry_their_source():
     """These are the MANUFACTURER's published approval numbers. Publishing them unattributed on a
     licensed roofer's site is the liability `core.grounding` exists to prevent."""
-    assert "670QE0CZQGE" in GUIDE["_sources"]["uplift"]
-    assert "Metal Alliance" in GUIDE["_sources"]["uplift"]
+    assert "Josh Kaufman" in GUIDE["_sources"]["uplift"]
+    assert "MANUFACTURER" in GUIDE["_sources"]["uplift"]
+    assert "670QE0CZQGE" in GUIDE["_sources"]["panel_types"]
     for row in GUIDE["uplift"]:
+        assert row["psf"] > 0
+    for row in GUIDE["panel_types"]:
         assert row["psf"] > 0 and row["mph"] > 0
 
 
 def test_snap_lock_is_the_weakest_row():
     """The point of the table. If an edit ever makes snap lock the strongest panel, the page is
     telling homeowners the opposite of what Tim demonstrates on camera."""
-    snap = [r for r in GUIDE["uplift"] if "snap lock" in r["panel"].lower()]
-    seamed = [r for r in GUIDE["uplift"] if "seamed" in r["panel"].lower()]
+    snap = [r for r in GUIDE["panel_types"] if "snap lock" in r["panel"].lower()]
+    seamed = [r for r in GUIDE["panel_types"] if "seamed" in r["panel"].lower()]
     assert snap and seamed
     assert max(r["psf"] for r in snap) < min(r["psf"] for r in seamed)
+
+
+def test_the_most_clips_is_not_the_highest_rating():
+    """The page's whole claim (Josh's sheet): strength is the tested assembly, not the clip count.
+
+    If an edit ever leaves the densest clip pattern also holding the highest tested pressure, the
+    page argues against itself while every table still renders.
+    """
+    rows = [r for r in GUIDE["uplift"] if r.get("clips_per_20ft")]
+    assert len(rows) >= 2, "need at least two clip-count rows to make the comparison"
+    most_clips = max(rows, key=lambda r: r["clips_per_20ft"])
+    strongest = max(GUIDE["uplift"], key=lambda r: r["psf"])
+    assert most_clips is not strongest, (
+        "the assembly with the most clips is also the strongest — that is the opposite of the "
+        "thesis this section states")
+    assert strongest.get("specified"), "Perkins should specify the highest tested assembly"
+
+
+def test_clip_spacing_arithmetic_holds():
+    """20 ft of panel at N inches on centre. A transcription slip here is a number a customer can
+    check with a tape measure."""
+    for row in GUIDE["clip_spacing"]:
+        inches = float(row["spacing"].split()[0])
+        assert row["clips_per_20ft"] == round(240 / inches), row
+    # And the per-system rows must agree with that same table, not carry a second set of numbers.
+    by_spacing = {r["spacing"]: r["clips_per_20ft"] for r in GUIDE["clip_spacing"]}
+    for u in GUIDE["uplift"]:
+        if u.get("clips_per_20ft"):
+            key = u["attachment"].replace(" clips", "")
+            assert by_spacing.get(key) == u["clips_per_20ft"], \
+                f"{u['manufacturer']} says {u['clips_per_20ft']} clips at {key}; the table disagrees"
 
 
 def test_php_braces_balance(src):

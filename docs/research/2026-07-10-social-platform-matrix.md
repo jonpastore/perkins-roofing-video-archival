@@ -14,7 +14,7 @@ From `adapters/` directory listing:
 | Instagram / Meta | `meta_ig.py` | Have |
 | TikTok | `tiktok.py` | Have |
 | WordPress | `wordpress.py` | Have |
-| B-roll providers | `broll_providers.py` | Have (stub) |
+| B-roll providers | `pexels.py` | Have (search + download; the `broll_providers.py` stub was deleted 2026-08-11) |
 | ElevenLabs | `elevenlabs.py` | Have |
 | HeyGen | `heygen.py` | Have |
 | FFmpeg | `ffmpeg.py` | Have |

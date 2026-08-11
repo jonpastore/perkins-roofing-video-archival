@@ -1,64 +1,101 @@
 {
-  "_note": "Content for the [metal_roof_guide] shortcode. Warranty provisions are NOT duplicated here — the guide renders them from zones.json, which the checker already uses, so the two can never disagree.",
-  "_sources": {
-    "uplift": "Metal Alliance published product approvals (metalalliance.com), read off on camera in https://www.youtube.com/watch?v=670QE0CZQGE at 11:00-17:00. These are the MANUFACTURER's tested approval numbers, not Perkins test data.",
-    "mph_conversion": "Equivalent design wind speed as computed in that same video from the design pressure; it is a derived figure for comparison between panels, not a code rating."
+ "_note": "Content for the [metal_roof_guide] shortcode. Warranty provisions are NOT duplicated here — the guide renders them from zones.json, which the checker already uses, so the two can never disagree. uplift[] is the 1.5 in mechanical-seam system comparison from Josh's sheet; panel_types[] is the older snap-lock vs mechanically-seamed vs aluminum comparison.",
+ "_sources": {
+  "uplift": "Perkins Roofing metal clip-spacing reference sheet (Josh Kaufman, 2026-08-11). Tested design pressures are each MANUFACTURER's published approval figure, not Perkins test data.",
+  "panel_types": "Metal Alliance published product approvals (metalalliance.com), read off on camera in https://www.youtube.com/watch?v=670QE0CZQGE at 11:00-17:00. These are the MANUFACTURER's tested approval numbers, not Perkins test data.",
+  "mph_conversion": "Equivalent design wind speed as computed in that same video from the design pressure; it is a derived figure for comparison between panels, not a code rating."
+ },
+ "uplift": [
+  {
+   "manufacturer": "Metal Alliance",
+   "system": "1.5 in mechanical seam",
+   "attachment": "12 in O.C. clips",
+   "clips_per_20ft": 20,
+   "psf": 218.8,
+   "specified": true,
+   "note": "The system Perkins specifies. The highest tested pressure here, using the FEWEST clips of the three."
   },
-  "uplift": [
-    {
-      "panel": "26 ga steel — snap lock",
-      "attachment": "screwed through the flange, 12 in spacing",
-      "psf": 116,
-      "mph": 212,
-      "hvhz": true,
-      "note": "The panel most quotes mean by \"standing seam\". Held together only by the snap; nothing is bent."
-    },
-    {
-      "panel": "24 ga steel — mechanically seamed",
-      "attachment": "concealed clips, 8 in spacing",
-      "psf": 199,
-      "mph": 279,
-      "hvhz": true,
-      "note": "Heavier gauge, seamed rather than snapped."
-    },
-    {
-      "panel": "26 ga steel — mechanically seamed",
-      "attachment": "concealed clips, 6 in spacing, 90° single lock",
-      "psf": 218.8,
-      "mph": 292,
-      "hvhz": true,
-      "note": "Same metal as the snap lock in row 1 — 89% more uplift resistance purely from being crimped instead of snapped. A double lock would raise it further."
-    },
-    {
-      "panel": ".032 aluminum, 16 in — mechanically seamed",
-      "attachment": "concealed clips, 8 in spacing",
-      "psf": 214,
-      "mph": 290,
-      "hvhz": true,
-      "note": "The coastal answer: near the best uplift number here AND the only material class warrantied at any distance from salt water."
-    }
-  ],
-  "videos": [
-    {
-      "id": "KIE4gR7Bgo4",
-      "url": "https://www.youtube.com/shorts/KIE4gR7Bgo4",
-      "title": "Aluminum standing seam going in",
-      "why": "An aluminum standing seam roof being installed — what the coastal recommendation actually looks like on a house.",
-      "section": "aluminum"
-    },
-    {
-      "id": "IHnNKhUPkSI",
-      "url": "https://www.youtube.com/watch?v=IHnNKhUPkSI",
-      "title": "When to Install Aluminum, Copper or Stainless Steel on a Roof in Florida",
-      "why": "Which metal belongs on which house, and why proximity to salt water decides it.",
-      "section": "aluminum"
-    },
-    {
-      "id": "670QE0CZQGE",
-      "url": "https://www.youtube.com/watch?v=670QE0CZQGE",
-      "title": "Snap Lock vs Mechanically Seamed Standing Seam: What's the REAL Difference?",
-      "why": "The uplift numbers in the table above, read directly off the manufacturer's published approvals.",
-      "section": "uplift"
-    }
-  ]
+  {
+   "manufacturer": "Gulf Coast",
+   "system": "Versaloc 1.5 in mechanical seam",
+   "attachment": "8 in O.C. clips",
+   "clips_per_20ft": 30,
+   "psf": 189.25,
+   "specified": false,
+   "note": "Half again as many clips as the Metal Alliance assembly, and a lower tested pressure."
+  },
+  {
+   "manufacturer": "Englert",
+   "system": "Series 1300, 1.5 in mechanical seam",
+   "attachment": "approved assembly",
+   "clips_per_20ft": null,
+   "psf": 165,
+   "specified": false,
+   "note": "Same nominal seam height, lowest tested pressure of the three."
+  }
+ ],
+ "videos": [
+  {
+   "id": "KIE4gR7Bgo4",
+   "url": "https://www.youtube.com/shorts/KIE4gR7Bgo4",
+   "title": "Aluminum standing seam going in",
+   "why": "An aluminum standing seam roof being installed — what the coastal recommendation actually looks like on a house.",
+   "section": "aluminum"
+  },
+  {
+   "id": "IHnNKhUPkSI",
+   "url": "https://www.youtube.com/watch?v=IHnNKhUPkSI",
+   "title": "When to Install Aluminum, Copper or Stainless Steel on a Roof in Florida",
+   "why": "Which metal belongs on which house, and why proximity to salt water decides it.",
+   "section": "aluminum"
+  },
+  {
+   "id": "670QE0CZQGE",
+   "url": "https://www.youtube.com/watch?v=670QE0CZQGE",
+   "title": "Snap Lock vs Mechanically Seamed Standing Seam: What's the REAL Difference?",
+   "why": "The uplift numbers in the table above, read directly off the manufacturer's published approvals.",
+   "section": "uplift"
+  }
+ ],
+ "clip_spacing": [
+  {
+   "spacing": "12 in O.C.",
+   "clips_per_20ft": 20
+  },
+  {
+   "spacing": "8 in O.C.",
+   "clips_per_20ft": 30
+  },
+  {
+   "spacing": "6 in O.C.",
+   "clips_per_20ft": 40
+  }
+ ],
+ "uplift_thesis": "More clips is not the same thing as a stronger roof. A metal roof resists wind as a complete tested assembly -- panel profile, seam, clip, fastener and deck together -- and the number that measures it is the tested design pressure in PSF. Tightening clip spacing adds attachment points, but the assembly with the most clips below is not the one with the highest tested pressure.",
+ "panel_types": [
+  {
+   "panel": "26 ga steel — snap lock",
+   "attachment": "screwed through the flange, 12 in spacing",
+   "psf": 116,
+   "mph": 212,
+   "hvhz": true,
+   "note": "The panel most quotes mean by \"standing seam\". Held together only by the snap; nothing is bent."
+  },
+  {
+   "panel": "24 ga steel — mechanically seamed",
+   "attachment": "concealed clips, 8 in spacing",
+   "psf": 199,
+   "mph": 279,
+   "hvhz": true,
+   "note": "Heavier gauge, seamed rather than snapped."
+  },
+  {
+   "panel": ".032 aluminum, 16 in — mechanically seamed",
+   "attachment": "concealed clips, 8 in spacing",
+   "psf": 214,
+   "mph": 290,
+   "hvhz": true,
+   "note": "The coastal answer: near the best uplift number here AND the only material class warrantied at any distance from salt water."
+  }
+ ]
 }

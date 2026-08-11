@@ -353,7 +353,11 @@
 				}
 				map.fitBounds(bounds.pad(0.5));
 
-				var cards = ZONES.materials.map(function (m) {
+				// Each material is computed ONCE and rendered twice: as a one-line verdict in the
+				// sticky summary column and as a full provision table in the detail column. Deriving
+				// both from the same `verdictFor` call is what stops the two columns from ever
+				// disagreeing about the same address.
+				var matViews = ZONES.materials.map(function (m) {
 					var v = verdictFor(m, meters);
 					// Second verdict only when an unconfirmed reach is nearer AND it would actually
 					// change the answer — otherwise it is noise on the page.
@@ -373,14 +377,28 @@
 							'</td>' + (differs ? '<td>' + alt + '</td>' : '') +
 							'<td class="note">' + esc(r.note) + '</td></tr>';
 					}).join('');
-					return '<div class="verdict"><h2>' + esc(m.name) + ' — <span class="' + v.cls + '">' +
-						v.label + '</span>' +
-						(differs ? ' <span class="note">(if that canal is tidal: <span class="' +
-							vInf.cls + '">' + vInf.label + '</span>)</span>' : '') +
-						'</h2><p class="note" style="margin-bottom:8px">' + esc(m.blurb) +
-						'</p><table><tr><th>Manufacturer</th><th>At your distance</th>' +
-						(differs ? '<th>If tidal</th>' : '') +
-						'<th>Provision</th></tr>' + rows + '</table></div>';
+					return {
+						name: m.name,
+						cls: v.cls,
+						label: v.label,
+						infCls: differs ? vInf.cls : null,
+						infLabel: differs ? vInf.label : null,
+						html: '<div class="verdict"><h2>' + esc(m.name) + ' — <span class="' + v.cls + '">' +
+							v.label + '</span>' +
+							(differs ? ' <span class="note">(if that canal is tidal: <span class="' +
+								vInf.cls + '">' + vInf.label + '</span>)</span>' : '') +
+							'</h2><p class="note" style="margin-bottom:8px">' + esc(m.blurb) +
+							'</p><table><tr><th>Manufacturer</th><th>At your distance</th>' +
+							(differs ? '<th>If tidal</th>' : '') +
+							'<th>Provision</th></tr>' + rows + '</table></div>'
+					};
+				});
+				var cards = matViews.map(function (x) { return x.html; }).join('');
+				var summaryRows = matViews.map(function (x) {
+					return '<li><span class="perkins-mwc-sum-mat">' + esc(x.name) + '</span>' +
+						'<span class="' + x.cls + '">' + x.label + '</span>' +
+						(x.infCls ? '<span class="note">if tidal: <span class="' + x.infCls + '">' +
+							x.infLabel + '</span></span>' : '') + '</li>';
 				}).join('');
 
 				// What the measurement rests on, in plain words, plus the second reading when the
@@ -431,17 +449,27 @@
 						' ft. Worth a look on site before choosing the material.</div>';
 				}
 
+				// Two columns: the ANSWER on the left, the evidence for it on the right. The left
+				// column sticks, so the distance and the per-material verdict a visitor came for stay
+				// on screen while they scroll the provision tables that justify them. Below 860px the
+				// grid collapses to one column and the summary simply leads, unpinned.
 				result.innerHTML =
-					'<div class="verdict"><h2>' + esc(g.formatted_address) + '</h2>' +
+					'<div class="perkins-mwc-cols">' +
+					'<aside class="perkins-mwc-col-summary"><div class="verdict">' +
+					'<h2>' + esc(g.formatted_address) + '</h2>' +
 					'<p class="dist">' + distLine + '</p>' +
+					'<ul class="perkins-mwc-summary">' + summaryRows + '</ul>' +
+					'<a class="cta" href="' + esc(CFG.contactUrl) + '" target="_blank" rel="noopener">' +
+					'Get a free quote with the right material for your home →</a>' +
+					'</div></aside>' +
+					'<div class="perkins-mwc-col-detail">' +
 					(ZONES.banner ? '<div class="advisory">' + ZONES.banner + '</div>' : '') +
 					infBlock +
 					'<div class="advisory">On a canal or waterway that connects to the ocean or Intracoastal? ' +
 					'Manufacturers treat tidal canals as salt water — if your home is canal-front, use the ' +
-					'waterfront (most protective) recommendation regardless of the distance shown.</div></div>' +
+					'waterfront (most protective) recommendation regardless of the distance shown.</div>' +
 					cards +
-					'<a class="cta" href="' + esc(CFG.contactUrl) + '" target="_blank" rel="noopener">' +
-					'Get a free quote with the right material for your home →</a>';
+					'</div></div>';
 				status.innerHTML = '';
 			})
 			.catch(function (e) {

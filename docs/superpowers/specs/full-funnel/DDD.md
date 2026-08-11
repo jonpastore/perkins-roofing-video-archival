@@ -148,7 +148,7 @@ Future extraction seams are called out per bounded context below. Nothing is mic
 
 **Mapping to current code.**
 - `app/models.py`: `MiniSeries`, `SocialPost`, `Article`, `Cluster`, `ScheduledContent`, `EmailTemplate`, `CommentDraft` — all this context.
-- `core/`: `clip_select.py`, `captions.py`, `caption_output.py`, `reframe.py`, `clip_fx.py`, `music_mix.py`, `broll.py`, `speech_cleanup.py`, `audio_filter.py`, `publish_planner.py`, `publish_dispatch.py`, `social.py`, `content_safety.py`, `avatar_script.py`, `article_plan.py`, `article_prompt.py`, `seo.py`, `serp_analysis.py`, `jsonld.py`, `scheduler.py`, `render_spec.py`, `vad.py`, `comments.py`, `email_proof.py`.
+- `core/`: `clip_select.py`, `captions.py`, `caption_output.py`, `reframe.py`, `clip_fx.py`, `music_mix.py`, `broll.py`, `speech_cleanup.py`, `audio_enhance.py`, `publish_planner.py`, `publish_dispatch.py`, `social.py`, `content_safety.py`, `avatar_script.py`, `article_plan.py`, `article_prompt.py`, `seo.py`, `serp_analysis.py`, `jsonld.py`, `scheduler.py`, `render_spec.py`, `vad.py`, `comments.py`, `email_proof.py`.
 - `adapters/`: distribution adapters (`meta_ig.py`, `tiktok.py`, `youtube_comments.py`, etc.), safety adapter (`safety.py`), avatar adapters (HeyGen/ElevenLabs mocks).
 - Gap: `PlatformConfig` (in `app/models.py`) is used as a catch-all for platform-wide settings. Post-F0, per-tenant Marketing config (brand kit, seed %, caption prompts, social creds) moves to `Tenant.settings JSONB` + Secret Manager. The current flat `PlatformConfig` is a monolith-era artifact that F5 replaces with tenant-scoped config.
 

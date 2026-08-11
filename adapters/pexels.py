@@ -7,8 +7,8 @@ API key: PEXELS_API_KEY env var.  When unset all functions return None + log.
 Free tier: 200 req/hr, attribution required (shown in Clip Studio UI).
 Docs: https://www.pexels.com/api/documentation/#videos-search
 
-File boundary: this adapter is NEW (not the scaffold in adapters/broll_providers.py
-which only does search).  This adapter adds the download step.
+File boundary: this adapter searches AND downloads.  It superseded a search-only scaffold
+(adapters/broll_providers.py), which was deleted once nothing imported it.
 """
 from __future__ import annotations
 

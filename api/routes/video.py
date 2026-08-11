@@ -11,7 +11,7 @@ import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
@@ -172,6 +172,7 @@ def generate_description(
     from core.video_description import (  # noqa: PLC0415
         DescriptionError,
         clean,
+        enforce,
         render_prompt,
         transcript_text,
     )
@@ -205,10 +206,14 @@ def generate_description(
         logger.exception("Description generation failed for %s", video_id)
         raise HTTPException(status_code=502, detail=f"description generation failed: {exc}") from exc
 
+    # Clean strips the model's wrapper; enforce holds the result to the prompt's OWN rules (a
+    # hard 5-hashtag ceiling, no "Hook:"/"Hashtags:" scaffolding) and reports what it could not fix.
+    # Writing the prompt's rules down was never the same as checking that a generation followed them.
     try:
-        description = clean(raw)
+        checked = enforce(clean(raw))
     except DescriptionError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    description = checked.text
 
     from app.config import settings  # noqa: PLC0415
 
@@ -218,9 +223,11 @@ def generate_description(
     db.commit()
 
     logger.info(
-        "Description generated for %s by %s (%d transcript chars%s)",
+        "Description generated for %s by %s (%d transcript chars%s)%s%s",
         video_id, claims.get("email", "unknown"), rendered.transcript_chars,
         ", truncated" if rendered.truncated else "",
+        f"; fixed: {'; '.join(checked.fixes)}" if checked.fixes else "",
+        f"; PROBLEMS: {'; '.join(checked.problems)}" if checked.problems else "",
     )
     return {
         "video_id": video_id,
@@ -229,6 +236,58 @@ def generate_description(
         "model": video.description_model,
         "transcript_chars": rendered.transcript_chars,
         "truncated": rendered.truncated,
+        # Surfaced, not just logged: the reviewer editing this caption is the one who can act on it.
+        "fixes": list(checked.fixes),
+        "problems": list(checked.problems),
+    }
+
+
+class DescriptionPatch(BaseModel):
+    # Captions are short; the cap is a trust-boundary sanity bound, not a product rule.
+    description: str = Field(max_length=20000)
+
+
+@router.patch("/{video_id}/description")
+def save_description(
+    video_id: str,
+    body: DescriptionPatch,
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
+    """Save a hand-edited description onto the video.
+
+    ``description_model`` becomes ``"edited"`` rather than keeping the model that first wrote
+    it: the column exists so a future "regenerate everything the old model produced" sweep can
+    find its own output, and that sweep must not silently destroy a caption a human rewrote.
+
+    The text is stored verbatim (only outer whitespace trimmed) — ``core.video_description.clean``
+    exists to tidy LLM output, and applying it to a human edit would rewrite what the reviewer
+    deliberately typed.
+    """
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    description = body.description.strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="description is empty")
+
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+
+    video.description = description
+    video.description_generated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    video.description_model = "edited"
+    db.commit()
+
+    logger.info(
+        "Description edited for %s by %s (%d chars)",
+        video_id, claims.get("email", "unknown"), len(description),
+    )
+    return {
+        "video_id": video_id,
+        "description": description,
+        "generated_at": video.description_generated_at.isoformat(),
+        "model": video.description_model,
     }
 
 
