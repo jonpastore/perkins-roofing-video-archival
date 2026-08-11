@@ -11,18 +11,34 @@ import urllib.request
 
 from core import metering
 
+#: HTTP statuses worth another attempt: 429 rate limit, 503 unavailable, 504 timeout. The
+#: google-genai SDK reports these as APIError.code rather than as the distinct google.api_core
+#: exception classes the old vertexai SDK raised.
+_RETRY_CODES = frozenset({429, 503, 504})
+
 
 def _with_retry(fn, *, tries=6, base=2.0):
     """Exponential backoff on Vertex rate-limit/transient errors — required for the 841-video
-    embed batch, which would otherwise turn 429s into silently-skipped videos."""
+    embed batch, which would otherwise turn 429s into silently-skipped videos.
+
+    Both exception families are caught on purpose. google-genai raises ``google.genai.errors``
+    types, but google.api_core exceptions still surface from the underlying auth/transport layer,
+    and catching only the new ones would quietly turn a retryable 429 into a failed batch — the
+    exact failure this function exists to prevent.
+    """
     from google.api_core import exceptions as gexc
+    from google.genai import errors as genai_errors
     for i in range(tries):
         try:
             return fn()
+        except genai_errors.APIError as exc:
+            if getattr(exc, "code", None) not in _RETRY_CODES or i == tries - 1:
+                raise
+            time.sleep(base ** i)  # 1,2,4,8,16s
         except (gexc.ResourceExhausted, gexc.ServiceUnavailable, gexc.DeadlineExceeded):
             if i == tries - 1:
                 raise
-            time.sleep(base ** i)  # 1,2,4,8,16s
+            time.sleep(base ** i)
 
 
 class VertexLLM:
@@ -36,15 +52,22 @@ class VertexLLM:
         self._embed_dim = embed_dim
         self._model = None
 
-    def _ensure_chat(self):
+    def _client(self):
+        """One google-genai client, created lazily and reused.
+
+        Replaces `vertexai.init()` + `GenerativeModel`, removed from the SDK on 2026-06-24. The
+        model name moves from construction time to each call, which is why `_chat_model` is passed
+        per request below rather than baked into an object here.
+        """
         if self._model is None:
-            import vertexai
-            from vertexai.generative_models import GenerativeModel
-            vertexai.init(project=self._project, location=self._location)
-            self._model = GenerativeModel(self._chat_model)
+            from google import genai
+            self._model = genai.Client(
+                vertexai=True, project=self._project, location=self._location
+            )
+        return self._model
 
     def chat(self, prompt, want_json=False, response_schema=None):
-        self._ensure_chat()
+        client = self._client()
         cfg = {}
         if want_json or response_schema:
             cfg["response_mime_type"] = "application/json"
@@ -52,7 +75,8 @@ class VertexLLM:
             # Controlled generation — Gemini is constrained to valid JSON matching the schema,
             # eliminating the intermittent unescaped-newline parse failures on long article content.
             cfg["response_schema"] = response_schema
-        response = _with_retry(lambda: self._model.generate_content(prompt, generation_config=cfg))
+        response = _with_retry(lambda: client.models.generate_content(
+            model=self._chat_model, contents=prompt, config=cfg or None))
         # Emit token usage to the per-tenant metering counter (no-op outside a tenant context).
         # Prefer the SDK's usage_metadata when available; fall back to a character-based estimate
         # (~4 chars/token) so the counter is always non-zero after a real LLM call.
@@ -73,17 +97,30 @@ class VertexLLM:
         return response.text
 
     def embed(self, texts, batch=100):
-        import vertexai
-        from vertexai.language_models import TextEmbeddingModel
-        vertexai.init(project=self._project, location=self._location)
-        model = TextEmbeddingModel.from_pretrained(self._embed_model)
+        """Embed texts at `embed_dim` dimensions, in batches.
+
+        ⚠️ `output_dimensionality` is NOT optional here. The stored corpus is 3072-dim; letting the
+        model return its default width would produce vectors that insert without error and simply
+        retrieve worse forever. It is checked below rather than trusted, because that failure has
+        no symptom at write time.
+        """
+        client = self._client()
         texts = list(texts)
         out = []
         for i in range(0, len(texts), batch):  # bound request size; retry each batch on 429
             chunk = texts[i:i + batch]
-            embs = _with_retry(
-                lambda c=chunk: model.get_embeddings(c, output_dimensionality=self._embed_dim))
-            out.extend(e.values for e in embs)
+            resp = _with_retry(lambda c=chunk: client.models.embed_content(
+                model=self._embed_model,
+                contents=c,
+                config={"output_dimensionality": self._embed_dim},
+            ))
+            for e in resp.embeddings:
+                if len(e.values) != self._embed_dim:
+                    raise RuntimeError(
+                        f"Vertex returned {len(e.values)}-dim embeddings, expected "
+                        f"{self._embed_dim} — these would corrupt the vector corpus silently."
+                    )
+                out.append(e.values)
         return out
 
 
