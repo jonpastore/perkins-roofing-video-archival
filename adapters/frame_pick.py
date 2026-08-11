@@ -42,14 +42,14 @@ def resolve_candidates(video_id: str, duration: float | None = None) -> list[dic
 
 def _vision_pick(images: list[bytes], keyword: str) -> int:
     """Index of the best frame per Gemini vision. Raises on any failure."""
-    import vertexai
-    from vertexai.generative_models import GenerationConfig, GenerativeModel, Part
+    from google import genai
+    from google.genai import types
 
     project = os.getenv("GOOGLE_CLOUD_PROJECT")
     if not project:
         raise RuntimeError("GOOGLE_CLOUD_PROJECT unset")
-    vertexai.init(project=project, location=os.getenv("GCP_REGION", "us-central1"))
-    model = GenerativeModel(os.getenv("LLM_MODEL", "gemini-2.5-flash"))
+    client = genai.Client(
+        vertexai=True, project=project, location=os.getenv("GCP_REGION", "us-central1"))
     # Tim, 2026-07-28: the picks "look identical" — near-duplicate garage stills. The old prompt
     # invited exactly that by listing "the speaker mid-demonstration" as a subject on equal footing
     # with the roof. A hero image for a roofing article should show a ROOF. Ranked preference, so
@@ -69,9 +69,11 @@ def _vision_pick(images: list[bytes], keyword: str) -> int:
         '"reason": "<one sentence naming which preference tier it met>"}',
     ]
     for img in images:
-        parts.append(Part.from_data(img, mime_type="image/jpeg"))
-    resp = model.generate_content(
-        parts, generation_config=GenerationConfig(response_mime_type="application/json"))
+        parts.append(types.Part.from_bytes(data=img, mime_type="image/jpeg"))
+    resp = client.models.generate_content(
+        model=os.getenv("LLM_MODEL", "gemini-2.5-flash"),
+        contents=parts,
+        config=types.GenerateContentConfig(response_mime_type="application/json"))
     idx = int(json.loads(resp.text)["index"])
     if not 0 <= idx < len(images):
         raise ValueError(f"vision pick out of range: {idx}")
