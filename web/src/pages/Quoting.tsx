@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch, listBranches, type BranchRow } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, PillButton, SectionLabel } from "../ui";
 import { errText } from "../lib/errors";
+import { looksComplete, parseAddress } from "../lib/address";
 import { installSeriesFor, suggestedDayCells } from "../lib/quoteDays";
 import {
   buildProjectQuoteBody,
@@ -382,13 +383,32 @@ function PropertyForm({
   const [zip, setZip] = useState("");
   const [county, setCounty] = useState("");
   const [codeZone, setCodeZone] = useState("FBC");
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
+
+  // Paste a whole address into Street and it fans out into the other fields. Estimators paste
+  // "1234 SW 5th St, Miami, FL 33169" from an email and then retype it five times.
+  // Only fields the parser is confident about are filled, and only when they are empty or the
+  // paste replaces the whole street — a paste must not quietly overwrite typed corrections.
+  function handleAddressPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData("text");
+    if (!looksComplete(text)) return;   // a plain street line pastes normally
+    e.preventDefault();
+    const p = parseAddress(text);
+    const filled: string[] = [];
+    setStreet(p.street); filled.push("street");
+    if (p.city) { setCity(p.city); filled.push("city"); }
+    if (p.state) { setState(p.state); filled.push("state"); }
+    if (p.zip) { setZip(p.zip); filled.push("ZIP"); }
+    setPasteNote(`Filled ${filled.join(", ")} from the pasted address. Check the code zone.`);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <FieldLabel>Street *</FieldLabel>
-          <input value={street} onChange={(e) => setStreet(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="123 Main St" />
+          <input value={street} onChange={(e) => setStreet(e.target.value)} onPaste={handleAddressPaste} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="123 Main St — or paste the whole address" />
+          {pasteNote && <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>{pasteNote}</div>}
         </div>
         <div>
           <FieldLabel>City</FieldLabel>
@@ -681,7 +701,11 @@ export function Quoting() {
   // feature that moved the day model most: 83% -> 90% of Tim's homes within a day of his own
   // booked days. Feeds the day model only; it never touches a rate.
   const [quoteAccessDifficult, setQuoteAccessDifficult] = useState(false);
-  const [quoteWaterfront, setQuoteWaterfront] = useState(false);
+  // Jon, 2026-08-11: both of these are INCLUDE-by-default and excluded by unticking, so an
+  // estimator drops a scope item deliberately rather than forgetting to add one. Perkins is a
+  // South Florida coastal roofer — the coastal package is the norm here, not the exception.
+  const [quoteWaterfront, setQuoteWaterfront] = useState(true);
+  const [quoteIncludeGutters, setQuoteIncludeGutters] = useState(true);
   // Mixed roofs: 9 of the 30 homes Tim sent have a flat section, up to 34% of the roof, and it was
   // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
   const [quoteFlatSquares, setQuoteFlatSquares] = useState("");
@@ -959,7 +983,11 @@ export function Quoting() {
       }
       const created: Customer = await r.json();
       setCustomers((prev) => [...prev, created].sort((a, b) => a.display_name.localeCompare(b.display_name)));
-      setShowNewCustomer(false);
+      // Open what was just created. Adding it to the list and leaving nothing selected meant
+      // hunting for a customer whose name you had typed a second earlier (Jon, 2026-08-11).
+      // openCustomer, not a bare setSelectedCustomer: it also clears the previous customer's
+      // measurements and quote result, which would otherwise show under the new name.
+      openCustomer(created);
     } catch (e: unknown) {
       setCustomerFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1222,15 +1250,18 @@ export function Quoting() {
       stucco_metal_lf: Number(quoteStuccoMetalLf || 0),
       penetrations: Number(quotePenetrations || 0),
       ridge_vent_lf: Number(quoteRidgeVentLf || 0),
+      // Excluding gutters zeroes every gutter input rather than relying on the fields being
+      // blank: a quantity typed before the box was unticked would otherwise still be priced,
+      // and the estimator would have no way to see that from the form.
       gutter_style: quoteGutterStyle,
-      gutter_lf: Number(quoteGutterLf || 0),
-      gutter_two_story: quoteGutterTwoStory,
-      gutter_elbows: Number(quoteGutterElbows || 0),
-      gutter_removal_lf: Number(quoteGutterRemovalLf || 0),
-      downspout_lf: Number(quoteDownspoutLf || 0),
-      leaf_guard: quoteLeafGuard,
-      leaderheads_res: Number(quoteLeaderheadsRes || 0),
-      leaderheads_comm: Number(quoteLeaderheadsComm || 0),
+      gutter_lf: quoteIncludeGutters ? Number(quoteGutterLf || 0) : 0,
+      gutter_two_story: quoteIncludeGutters && quoteGutterTwoStory,
+      gutter_elbows: quoteIncludeGutters ? Number(quoteGutterElbows || 0) : 0,
+      gutter_removal_lf: quoteIncludeGutters ? Number(quoteGutterRemovalLf || 0) : 0,
+      downspout_lf: quoteIncludeGutters ? Number(quoteDownspoutLf || 0) : 0,
+      leaf_guard: quoteIncludeGutters ? quoteLeafGuard : "none",
+      leaderheads_res: quoteIncludeGutters ? Number(quoteLeaderheadsRes || 0) : 0,
+      leaderheads_comm: quoteIncludeGutters ? Number(quoteLeaderheadsComm || 0) : 0,
       // Only keys the active config actually prices for this zone — the engine ignores unknown
       // keys silently, so sending a stale one would drop the item with no warning.
       extra_line_items: quoteExtraLineItems.filter((k) => k in (rates?.line_items ?? {})),
@@ -2257,10 +2288,12 @@ export function Quoting() {
                     checked={quoteWaterfront}
                     onChange={(e) => setQuoteWaterfront(e.target.checked)}
                   />
-                  Quote the Coastal package
+                  Include the Coastal package
                 </label>
                 <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
-                  Tidal and brackish canals count, not just the ocean and Intracoastal.
+                  {quoteWaterfront
+                    ? "Included by default. Untick for an inland address well away from salt water."
+                    : "EXCLUDED. Tidal and brackish canals count as salt water, not just the ocean and Intracoastal."}
                 </div>
               </div>
               {!isLowSlopeRoofType && (
@@ -2477,8 +2510,22 @@ export function Quoting() {
             </div>
 
             <div style={{ marginTop: 14 }}>
-              <SectionLabel>Gutters</SectionLabel>
-              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 90px 110px", gap: 10, alignItems: "end", marginTop: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                <SectionLabel>Gutters</SectionLabel>
+                <EstimateCheckbox
+                  checked={quoteIncludeGutters}
+                  onChange={setQuoteIncludeGutters}
+                  label="Include gutters"
+                  title="Unticked, no gutter line is priced — every quantity below is sent as zero."
+                />
+              </div>
+              {!quoteIncludeGutters && (
+                <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
+                  Excluded from this estimate. Quantities are kept so re-ticking restores them.
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 90px 110px", gap: 10, alignItems: "end", marginTop: 6,
+                            opacity: quoteIncludeGutters ? 1 : 0.45, pointerEvents: quoteIncludeGutters ? "auto" : "none" }}>
                 <div>
                   <FieldLabel>Style</FieldLabel>
                   <select
@@ -2498,7 +2545,8 @@ export function Quoting() {
                 <div><FieldLabel>Removal LF</FieldLabel><input type="number" min="0" step="1" value={quoteGutterRemovalLf} onChange={(e) => setQuoteGutterRemovalLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
                 <div><FieldLabel>Downspout LF (4×5)</FieldLabel><input type="number" min="0" step="1" value={quoteDownspoutLf} onChange={(e) => setQuoteDownspoutLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               </div>
-              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 110px 130px", gap: 10, alignItems: "end" }}>
+              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 110px 130px", gap: 10, alignItems: "end",
+                            opacity: quoteIncludeGutters ? 1 : 0.45, pointerEvents: quoteIncludeGutters ? "auto" : "none" }}>
                 <div>
                   <FieldLabel>Leaf guard</FieldLabel>
                   <select value={quoteLeafGuard} onChange={(e) => setQuoteLeafGuard(e.target.value as "none" | "std" | "upgraded")} style={selectStyle}>
@@ -2510,12 +2558,12 @@ export function Quoting() {
                 <div><FieldLabel>Leaderheads (res)</FieldLabel><input type="number" min="0" step="1" value={quoteLeaderheadsRes} onChange={(e) => setQuoteLeaderheadsRes(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
                 <div><FieldLabel>Leaderheads (comm)</FieldLabel><input type="number" min="0" step="1" value={quoteLeaderheadsComm} onChange={(e) => setQuoteLeaderheadsComm(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               </div>
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 8, opacity: quoteIncludeGutters ? 1 : 0.45 }}>
                 <EstimateCheckbox
                   checked={quoteGutterTwoStory}
                   onChange={setQuoteGutterTwoStory}
                   label="2-story (uplift applies)"
-                  disabled={!TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle)}
+                  disabled={!quoteIncludeGutters || !TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle)}
                   title={TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle) ? undefined : "no 2-story rate configured for this style"}
                 />
               </div>
