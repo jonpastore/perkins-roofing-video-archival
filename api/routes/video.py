@@ -69,23 +69,38 @@ def clean_label(text: str) -> str:
     return " ".join(cleaned.split())
 
 
-def _series_to_dict(s: MiniSeries, duration: float | None = None) -> dict:
+def _series_to_dict(s: MiniSeries, video: "Video | None" = None) -> dict:
+    """One proposal as the approval queue sees it.
+
+    Takes the VIDEO, not a duration, so every field sourced from it arrives together. The stored
+    description rides along for a reason: without it the queue could WRITE a description and never
+    READ one back — the reviewer generates, sees the text, reloads, and the card offers "Generate
+    description" again as though none existed, so they regenerate, burn another Vertex call and
+    silently overwrite. Passing the row (rather than an optional extra argument three of the four
+    call sites would forget) is what makes that impossible to reintroduce.
+    """
     return {
         "id": s.id,
         "video_id": s.video_id,
         "title": s.title,
         "parts": s.parts_json or [],
         "approved": s.approved,
-        "duration": duration,
+        "duration": getattr(video, "duration", None),
+        "description": getattr(video, "description", None),
+        "description_generated_at": (
+            video.description_generated_at.isoformat()
+            if video is not None and video.description_generated_at else None
+        ),
+        "description_model": getattr(video, "description_model", None),
     }
 
 
-def _durations_for(db, video_ids: list[str]) -> dict[str, float | None]:
-    """Map video_id -> source video duration (seconds) for the given ids."""
+def _videos_for(db, video_ids: list[str]) -> dict:
+    """Map video_id -> Video row for the given ids (one query, not one per proposal)."""
     if not video_ids:
         return {}
-    rows = db.query(Video.id, Video.duration).filter(Video.id.in_(set(video_ids))).all()
-    return {vid: dur for vid, dur in rows}
+    rows = db.query(Video).filter(Video.id.in_(set(video_ids))).all()
+    return {v.id: v for v in rows}
 
 
 def _build_series_label(series: list[MiniSeries]) -> dict[int, str]:
@@ -127,8 +142,8 @@ def list_proposals(
 ):
     """Return all pending MiniSeries (approved==0)."""
     rows = db.query(MiniSeries).filter(MiniSeries.approved == 0).all()
-    durations = _durations_for(db, [r.video_id for r in rows])
-    return [_series_to_dict(r, durations.get(r.video_id)) for r in rows]
+    videos = _videos_for(db, [r.video_id for r in rows])
+    return [_series_to_dict(r, videos.get(r.video_id)) for r in rows]
 
 
 @router.post("/{video_id}/description")
@@ -270,7 +285,7 @@ def get_series(
     row = db.get(MiniSeries, series_id)
     if row is None:
         raise HTTPException(status_code=404, detail="series not found")
-    return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
+    return _series_to_dict(row, _videos_for(db, [row.video_id]).get(row.video_id))
 
 
 @router.post("/{series_id}/repropose")
@@ -307,7 +322,7 @@ def repropose_series(
     row.approved = 0
     db.flush()
     db.refresh(row)
-    return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
+    return _series_to_dict(row, _videos_for(db, [row.video_id]).get(row.video_id))
 
 
 @router.post("/{series_id}/approve")
@@ -326,4 +341,4 @@ def approve_series(
     row.approved = 1
     db.flush()
     db.refresh(row)
-    return _series_to_dict(row, _durations_for(db, [row.video_id]).get(row.video_id))
+    return _series_to_dict(row, _videos_for(db, [row.video_id]).get(row.video_id))
