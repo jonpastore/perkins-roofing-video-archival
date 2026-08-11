@@ -5,7 +5,7 @@ bundle `/assets/index-CPfttX26.js`. Zero open PRs, clean tree.** Live pricing co
 **v31**, miami **v32**, naples **v31**. Migrations through **0055**, applied. GCP spend budget
 **live** ($200/mo, thresholds 0.5/0.8/0.9/0.95) — this project had none at all before today.
 
-Follows `CONTINUATION-2026-08-02-night.md` (a backlog audit). This session executed what that
+Follows `docs/continuations/CONTINUATION-2026-08-02-night.md` (a backlog audit). This session executed what that
 audit found. Six tasks closed. **The most useful output is not a feature — see §0.**
 
 ---
