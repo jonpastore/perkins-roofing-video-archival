@@ -440,6 +440,29 @@ resource "google_storage_bucket_iam_member" "api_reels_reader" {
   member = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
+# POST /clips/upload-brand-video WRITES brand/{intro,outro}_video.mp4 into this bucket, and the
+# API service account had read access only — so the endpoint returned 502 "GCS upload failed" on
+# every attempt since it shipped. Josh hit it 2026-08-11; BRAND_INTRO_VIDEO/BRAND_OUTRO_VIDEO had
+# never been set and gs://…-reels/brand/ was empty, so it had never once succeeded. Not drift: the
+# feature was built without the grant it needs.
+#
+# objectAdmin, not objectCreator, because the endpoint OVERWRITES a fixed key on every upload and
+# replacing an existing object needs delete. Scoped by IAM condition to the `brand/` prefix so the
+# API still cannot touch the rendered reels this bucket exists to hold — the same least-privilege
+# reasoning as speech_media_writer above, which takes objectCreator precisely so it cannot
+# overwrite the archives.
+resource "google_storage_bucket_iam_member" "api_reels_brand_writer" {
+  bucket = google_storage_bucket.reels.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.api_run_sa.email}"
+
+  condition {
+    title       = "brand_objects_only"
+    description = "Only the brand intro/outro videos and scene images, never the rendered reels"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.reels.name}/objects/brand/\")"
+  }
+}
+
 # Speech-to-Text v2 BatchRecognize reads its input object as the Speech SERVICE AGENT
 # (service-<projnum>@gcp-sa-speech), not as jobs-sa. The ingest job transcribes the archived
 # MP4s in place, so grant that agent read access to the media bucket. Without this, batch STT

@@ -262,6 +262,12 @@ def upload_brand_scene(
         # Use sniffed content_type — never trust the client header.
         blob.upload_from_filename(tmp_path, content_type=sniffed_type)
     except Exception as exc:  # noqa: BLE001
+        # LOG IT, do not just put it in the response body. This handler swallowed a plain
+        # 403 — the API service account had READ-ONLY access to the reels bucket — into a
+        # 502 whose detail only ever reached the uploader's browser. Cloud Run showed a 502
+        # with no traceback, no stderr and a healthy container, which reads like an
+        # infrastructure blip rather than a permission that was never granted at all.
+        logger.exception("Upload to gs://%s/%s failed", bucket_name, object_key)
         raise HTTPException(status_code=502, detail=f"GCS upload failed: {exc}") from exc
     finally:
         try:
@@ -367,6 +373,12 @@ def upload_brand_video(
         blob = client.bucket(bucket_name).blob(object_key)
         blob.upload_from_filename(tmp_path, content_type="video/mp4")
     except Exception as exc:  # noqa: BLE001
+        # LOG IT, do not just put it in the response body. This handler swallowed a plain
+        # 403 — the API service account had READ-ONLY access to the reels bucket — into a
+        # 502 whose detail only ever reached the uploader's browser. Cloud Run showed a 502
+        # with no traceback, no stderr and a healthy container, which reads like an
+        # infrastructure blip rather than a permission that was never granted at all.
+        logger.exception("Upload to gs://%s/%s failed", bucket_name, object_key)
         raise HTTPException(status_code=502, detail=f"GCS upload failed: {exc}") from exc
     finally:
         try:
