@@ -14,6 +14,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from api.auth import get_db_session, require_role
 from app.models import Measurement
@@ -24,6 +25,13 @@ router = APIRouter(prefix="/measurements", tags=["measurements"])
 
 #: A Roofr report is a handful of pages. The cap is a trust boundary, not a product rule.
 _MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+#: Bounds on the DECOMPRESSED work, which the byte cap does not constrain: text is far cheaper to
+#: generate than to store, so a small file can expand enormously. pypdf's own ZLIB ceiling is
+#: per-stream and does not bound the total across pages. A real Roofr report is ~5.5k chars, so
+#: 200k is ~36x headroom and still rejects a bomb in about a second.
+_MAX_PAGES = 60
+_MAX_TEXT_CHARS = 200_000
 
 
 def _extract_pdf_text(data: bytes) -> str:
@@ -40,7 +48,16 @@ def _extract_pdf_text(data: bytes) -> str:
         reader = PdfReader(BytesIO(data))
         if reader.is_encrypted:
             raise HTTPException(422, "PDF is encrypted; upload an unlocked copy")
-        pages = [(page.extract_text() or "") for page in reader.pages]
+        if len(reader.pages) > _MAX_PAGES:
+            raise HTTPException(
+                422, f"PDF has {len(reader.pages)} pages; a measurement report is under {_MAX_PAGES}")
+        pages, total = [], 0
+        for page in reader.pages:
+            chunk = page.extract_text() or ""
+            total += len(chunk)
+            if total > _MAX_TEXT_CHARS:
+                raise HTTPException(422, "PDF text is far larger than a measurement report")
+            pages.append(chunk)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -152,7 +169,12 @@ async def parse_roofr_report(
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"file is larger than {_MAX_UPLOAD_BYTES // (1024 * 1024)} MiB")
 
-    text = _extract_pdf_text(data)
+    # Off the event loop. This endpoint is `async def` (it must await file.read()), so calling
+    # pypdf directly ran the extraction ON the loop — with uvicorn started without --workers
+    # (Dockerfile) that is ONE loop for the whole API, and max_instance_count is 4. Measured: a
+    # 44 KB crafted PDF yields 32,000,003 characters and blocks for 40.5 s. A trickle of those
+    # wedges the platform for every user, not just the uploader.
+    text = await run_in_threadpool(_extract_pdf_text, data)
     if not is_roofr_report(text):
         # A non-Roofr PDF parses to a dict of nulls, which would prefill an empty form and read
         # as "the report had no measurements in it".

@@ -110,14 +110,33 @@ def test_every_video_section_is_one_the_renderer_emits(src):
 
 def test_uplift_figures_carry_their_source():
     """These are the MANUFACTURER's published approval numbers. Publishing them unattributed on a
-    licensed roofer's site is the liability `core.grounding` exists to prevent."""
-    assert "Josh Kaufman" in GUIDE["_sources"]["uplift"]
-    assert "MANUFACTURER" in GUIDE["_sources"]["uplift"]
+    licensed roofer's site is the liability `core.grounding` exists to prevent.
+
+    Attribution must NOT name a person or an internal document: `_sources.uplift` renders verbatim
+    on the public page (perkins-metal-warranty.php:256). It briefly carried a staff member's name,
+    the title and date of an internal proposal, and Perkins' per-square upgrade price.
+    """
+    src = GUIDE["_sources"]["uplift"]
+    assert "MANUFACTURER" in src
+    assert "reference sheet" in src.lower()
+    assert "corroborated" in src.lower()
     assert "670QE0CZQGE" in GUIDE["_sources"]["panel_types"]
     for row in GUIDE["uplift"]:
         assert row["psf"] > 0
     for row in GUIDE["panel_types"]:
         assert row["psf"] > 0 and row["mph"] > 0
+
+
+def test_no_internal_pricing_or_named_documents_reach_the_public_page():
+    """Everything in guide.json that the shortcode renders is customer-facing by definition.
+
+    Guards the leak directly: an internal per-square upcharge and a pointer to one identifiable
+    customer's proposal shipped to a marketing page as part of a provenance note.
+    """
+    import json as _json
+    rendered = _json.dumps({k: v for k, v in GUIDE.items() if not k.startswith("_note")})
+    for leak in ("per SQ", "Kanak", "Metal and Flat Re-Roof", "$45"):
+        assert leak not in rendered, f"internal detail on a public page: {leak!r}"
 
 
 def test_snap_lock_is_the_weakest_row():

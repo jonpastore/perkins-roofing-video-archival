@@ -1,7 +1,7 @@
 {
  "_note": "Content for the [metal_roof_guide] shortcode. Warranty provisions are NOT duplicated here — the guide renders them from zones.json, which the checker already uses, so the two can never disagree. The 218.8 psf / 12 in O.C. pairing is confirmed by Perkins' own proposal text. uplift[] is the 1.5 in mechanical-seam system comparison from Josh's sheet; panel_types[] is the older snap-lock vs mechanically-seamed vs aluminum comparison.",
  "_sources": {
-  "uplift": "Perkins Roofing metal clip-spacing reference sheet (Josh Kaufman, 2026-08-11). Tested design pressures are each MANUFACTURER's published approval figure, not Perkins test data. CORROBORATED 2026-08-11 by Perkins' own proposal language (Tim Kanak, 'Metal and Flat Re-Roof', 5/26/2026): \"Panel fabricated by Metal Alliance (US Steel) for a -218.8psf at 12\\\" clip spacing. Increase clip spacing to 6\\\" for an additional $45.00 per SQ.\" This SETTLES the conflict noted in panel_types: 218.8 psf belongs to 12 in O.C., not 6 in.",
+  "uplift": "Perkins Roofing metal clip-spacing reference sheet (2026-08-11). Tested design pressures are each MANUFACTURER's published approval figure, not Perkins test data. The 218.8 psf / 12 in O.C. pairing is corroborated by Perkins' own 2026 proposal specification for this system.",
   "panel_types": "Metal Alliance published product approvals (metalalliance.com), read off on camera in https://www.youtube.com/watch?v=670QE0CZQGE at 11:00-17:00. These are the MANUFACTURER's tested approval numbers, not Perkins test data.",
   "mph_conversion": "Equivalent design wind speed as computed in that same video from the design pressure; it is a derived figure for comparison between panels, not a code rating."
  },
@@ -13,7 +13,7 @@
    "clips_per_20ft": 20,
    "psf": 218.8,
    "specified": true,
-   "note": "The system Perkins specifies. The highest tested pressure here, using the FEWEST clips of the three. Tighter 6 in spacing is available as an upgrade (+$45.00 per square) and does not raise the tested pressure."
+   "note": "The system Perkins specifies. The highest tested pressure here, using the FEWEST clips of the three. Tighter spacing is available on request and does not raise the tested pressure."
   },
   {
    "manufacturer": "Gulf Coast",

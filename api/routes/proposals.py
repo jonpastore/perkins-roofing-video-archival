@@ -1087,13 +1087,25 @@ def _freeze_calc_breakdown(snapshot: dict | None) -> dict | None:
     rows are customer-safe by construction. The audience is stored beside them: the whole point is
     that a customer-mode proposal never re-renders with the internal build-up.
     """
-    if not snapshot or snapshot.get("include_calc_breakdown") is not True:
+    if not snapshot:
         return snapshot
     snap = dict(snapshot)
+    # Strip the internal trace UNCONDITIONALLY, before the breakdown branch. The estimate form now
+    # sends debug=true on every request, so `estimate_result` arrives carrying calculation_trace
+    # and per-line `explain` — which hold profit_scale and the pm_incentive table. This snapshot is
+    # returned by GET /quoting/proposals/{id}, gated on `quoting_view`, which `sales` HOLDS while
+    # not holding estimating_manage. The audit row already had this rule (_audit_payload); the
+    # proposal row never inherited it, and it lands in the DB permanently.
+    from api.routes.estimator import _audit_payload  # noqa: PLC0415 — one definition of the rule
+    snap["estimate_result"] = _audit_payload(snap.get("estimate_result") or {})
+    if snap.get("include_calc_breakdown") is not True:
+        return snap
     audience = snap.get("calc_audience") or "internal"
     if audience not in ("internal", "customer"):
         raise HTTPException(422, f"calc_audience must be 'internal' or 'customer', got {audience!r}")
-    result = snap.get("estimate_result") or {}
+    # calc_lines come from the RAW result (pre-strip) — the rows are the whole point of the
+    # breakdown, and calc_lines_from_estimate already emits customer-safe text.
+    result = (snapshot or {}).get("estimate_result") or {}
     # The debug flag is gated on estimating_manage, so a sales user's quote arrives with no
     # `explain` on any line. calc_lines_from_estimate would still emit rows — every formula
     # reading "fixed amount" — which is a build-up section that builds up nothing. Fail closed on

@@ -112,3 +112,52 @@ def test_no_token_is_401(pdf_text):
     r = client.post("/measurements/parse-roofr",
                     files={"file": ("report.pdf", b"%PDF", "application/pdf")})
     assert r.status_code == 401
+
+
+def test_a_text_bomb_is_rejected_rather_than_burning_the_instance(monkeypatch):
+    """A ~44 KB crafted PDF extracted 32,000,003 characters and blocked for 40.5 s.
+
+    The endpoint is `async def` (it awaits file.read()), so calling pypdf directly ran that ON the
+    event loop — and uvicorn starts without --workers, so it is ONE loop for the whole API with
+    max_instance_count 4. A trickle of these wedged the platform for every user. The extraction
+    now runs in a threadpool AND is bounded, because off-the-loop alone still burns an instance.
+    """
+    import zlib
+
+    from api.routes.measurements import _MAX_PAGES, _MAX_TEXT_CHARS, _extract_pdf_text
+
+    chunk = b"BT /F1 8 Tf 10 10 Td (" + b"A" * 4000 + b") Tj ET\n"
+    comp = zlib.compress(chunk * 2000, 9)
+    n = 2
+    objs = {1: b"<< /Type /Catalog /Pages 2 0 R >>",
+            2: f"<< /Type /Pages /Count {n} /Kids [{' '.join(f'{4+i} 0 R' for i in range(n))}] >>".encode(),
+            3: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"}
+    for i in range(n):
+        objs[4 + i] = (f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources "
+                       f"<< /Font << /F1 3 0 R >> >> /Contents {4+n+i} 0 R >>").encode()
+        objs[4 + n + i] = (f"<< /Length {len(comp)} /Filter /FlateDecode >>\nstream\n".encode()
+                           + comp + b"\nendstream")
+    out, off = bytearray(b"%PDF-1.4\n"), {}
+    for k in sorted(objs):
+        off[k] = len(out)
+        out += f"{k} 0 obj\n".encode() + objs[k] + b"\nendobj\n"
+    x, m = len(out), max(objs) + 1
+    out += f"xref\n0 {m}\n0000000000 65535 f \n".encode()
+    for k in range(1, m):
+        out += f"{off[k]:010d} 00000 n \n".encode()
+    out += f"trailer\n<< /Size {m} /Root 1 0 R >>\nstartxref\n{x}\n%%EOF\n".encode()
+
+    assert len(bytes(out)) < 100_000, "the point is that the FILE is small"
+    with pytest.raises(Exception) as exc:
+        _extract_pdf_text(bytes(out))
+    assert getattr(exc.value, "status_code", None) == 422
+    assert _MAX_TEXT_CHARS <= 200_000 and _MAX_PAGES <= 60
+
+
+def test_the_extraction_runs_off_the_event_loop():
+    """`async def` + a synchronous pypdf call is what made one upload everyone's outage."""
+    import inspect
+
+    import api.routes.measurements as m
+    src = inspect.getsource(m.parse_roofr_report)
+    assert "run_in_threadpool(_extract_pdf_text" in src, "PDF work must not run on the event loop"
