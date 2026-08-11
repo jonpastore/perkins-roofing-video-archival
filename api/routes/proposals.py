@@ -118,12 +118,28 @@ def _load_tc_context(db: Session) -> dict:
     from app.models import ContractFaqEntry, TcVersion  # noqa: PLC0415
     from core.tc_ai_prompts import get_tc_ai_prompts_block  # noqa: PLC0415
 
-    latest = (
+    # "Latest" must mean the latest version that HAS terms in it. A TcVersion row with no
+    # content_gcs is a placeholder someone opened, not publishable terms — and selecting it
+    # loaded an empty string, so every proposal printed "Terms and conditions to be attached."
+    # while include_terms was true on both sides and nothing errored. (Prod, 2026-08-11:
+    # `v0.1-DRAFT` effective 2026-08-01 with a NULL content_gcs was shadowing the real
+    # perkins-josh-2026-07-11 terms.) A contract that silently ships without its T&C is a
+    # contract defect, so the empty row is skipped rather than trusted for being newest.
+    ordered = (
         db.query(TcVersion)
         .order_by(TcVersion.effective_at.desc(), TcVersion.id.desc())
-        .first()
+        .all()
     )
+    latest = next((v for v in ordered if (v.content_gcs or "").strip()), None)
+    if ordered and latest is not ordered[0]:
+        _log.warning(
+            "T&C version %r (id=%s) has no content_gcs; falling back to %r for proposal terms",
+            ordered[0].version_tag, ordered[0].id,
+            getattr(latest, "version_tag", None),
+        )
     tc_text = _load_tc_text_for_version(latest) if latest is not None else ""
+    if not tc_text:
+        _log.error("No T&C text resolved — proposals will render without their terms.")
     rows = (
         db.query(ContractFaqEntry)
         .filter(ContractFaqEntry.status == "approved")
@@ -1804,6 +1820,10 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         # and a note that reaches the AI reviewer but not the customer's document is the defect
         # this closes. Same precedence as there, so the two never disagree about which one wins.
         notes=snap.get("notes") or snap.get("customer_notes"),
+        # The estimate form has been sending this on every proposal with no reader on this side.
+        # Both spellings for the same reason `notes` takes two: snapshots already in the DB were
+        # written with scope_of_work_text, and an older one must render the same way.
+        scope_of_work=snap.get("scope_of_work_text") or snap.get("scope_of_work"),
     )
 
     try:

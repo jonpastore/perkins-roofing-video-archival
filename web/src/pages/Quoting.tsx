@@ -885,18 +885,35 @@ export function Quoting() {
     return roofTypeLabels[key] ?? roofTypes.find((r) => r.value === key)?.label ?? key.replace(/_/g, " ");
   }
 
-  function tierTotalsForQuote(q: QuoteResult): { good: number; better: number; best: number } {
+  function tierTotalsForQuote(q: QuoteResult): {
+    good: { total: number; label: string };
+    better: { total: number; label: string };
+    best: { total: number; label: string };
+  } {
     // good/better/best snapshot compat, derived from the real package_options menu:
     // good=PROTECTOR (engine total), better=PREFERRED, best=highest-total PREMIUM* tier
     // (falls back to PREFERRED's total when the system has no PREMIUM tier).
+    //
+    // The LABEL travels with the total. The proposal used to print "Good / Standard materials"
+    // against a five-figure number, which names nothing a customer can compare or a salesperson
+    // can defend — the package menu already carries "Perkins Protector", "Perkins Preferred",
+    // "Perkins Premium (Caribbean)", and those are the products being sold.
     const options = q.package_options ?? [];
-    const protector = options.find((o) => o.key === "PROTECTOR")?.total ?? q.project_total;
-    const preferred = options.find((o) => o.key === "PREFERRED")?.total ?? protector;
+    const pick = (key: string, fallbackTotal: number, fallbackLabel: string) => {
+      const o = options.find((x) => x.key === key);
+      return o ? { total: o.total, label: o.label || fallbackLabel } : { total: fallbackTotal, label: fallbackLabel };
+    };
+    const good = pick("PROTECTOR", q.project_total, "Perkins Protector");
+    const better = pick("PREFERRED", good.total, good.label);
     const premiumOptions = options.filter((o) => o.key.startsWith("PREMIUM"));
-    const premium = premiumOptions.length
-      ? Math.max(...premiumOptions.map((o) => o.total))
-      : preferred;
-    return { good: protector, better: preferred, best: premium };
+    const best = premiumOptions.length
+      ? premiumOptions.reduce((a, b) => (b.total > a.total ? b : a))
+      : null;
+    return {
+      good,
+      better,
+      best: best ? { total: best.total, label: best.label || "Perkins Premium" } : better,
+    };
   }
 
   function loadCustomers(searchTerm = "") {
@@ -1262,6 +1279,15 @@ export function Quoting() {
       leaf_guard: quoteIncludeGutters ? quoteLeafGuard : "none",
       leaderheads_res: quoteIncludeGutters ? Number(quoteLeaderheadsRes || 0) : 0,
       leaderheads_comm: quoteIncludeGutters ? Number(quoteLeaderheadsComm || 0) : 0,
+      // Ask for the per-line formula trace. The whole "How this price was built" chain existed —
+      // the engine emits `explain`, _freeze_calc_breakdown renders rows from it, the template has
+      // the section, the proposal form has the checkbox — and NOTHING ever set this flag, so
+      // `explain` was always absent, _freeze_calc_breakdown always failed closed, and ticking the
+      // box silently unticked itself. Sent unconditionally rather than tied to the checkbox so a
+      // reviewer can turn the breakdown on without re-running the estimate; the server gates it on
+      // estimating_manage (a sales user simply gets no trace) and strips it before the audit row
+      // is written, so this cannot widen who sees profit_scale or office burn.
+      debug: true,
       // Only keys the active config actually prices for this zone — the engine ignores unknown
       // keys silently, so sending a stale one would drop the item with no warning.
       extra_line_items: quoteExtraLineItems.filter((k) => k in (rates?.line_items ?? {})),
@@ -1683,8 +1709,8 @@ export function Quoting() {
     setCreatingProposal(true);
     setProposalError(null);
 
-    const { good: goodTotal, better: betterTotal, best: bestTotal } = tierTotalsForQuote(quoteResult);
-    const selectedTotal = recommendedTier === "best" ? bestTotal : recommendedTier === "better" ? betterTotal : goodTotal;
+    const tiers = tierTotalsForQuote(quoteResult);
+    const selectedTotal = tiers[recommendedTier].total;
     const snapshot = {
       estimate_id: quoteResult.estimate_id ?? null,
       estimate_version: quoteResult.estimate_version ?? null,
@@ -1697,10 +1723,13 @@ export function Quoting() {
       code_zone: quoteResult.region,
       roof_type: quoteResult.roof_type,
       num_squares: quoteResult.num_squares,
+      // `label` is the PACKAGE the customer is buying; `tier` keeps the good/better/best rank the
+      // snapshot schema and the accept page are built around. "Good — Standard materials" against
+      // a five-figure price named nothing anyone could compare.
       tiers: {
-        good: { label: "Good", description: "Standard materials", total: goodTotal },
-        better: { label: "Better", description: "Enhanced materials", total: betterTotal },
-        best: { label: "Best", description: "Premium materials", total: bestTotal },
+        good: { label: tiers.good.label, description: "Good", tier: "good", total: tiers.good.total },
+        better: { label: tiers.better.label, description: "Better", tier: "better", total: tiers.better.total },
+        best: { label: tiers.best.label, description: "Best", tier: "best", total: tiers.best.total },
       },
       package_options: quoteResult.package_options ?? [],
       discounts: quoteResult.discounts ?? [],
@@ -1914,19 +1943,43 @@ export function Quoting() {
         {/* Contacts */}
         <Card style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Contacts</div>
+            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
+              Additional contacts <span style={{ fontWeight: 500, color: BRAND.sub, fontSize: 12 }}>(optional)</span>
+            </div>
             {!showNewContact && (
               <Button variant="ghost" onClick={() => setShowNewContact(true)} style={{ fontSize: 12 }}>+ Add contact</Button>
             )}
           </div>
+          {/* The proposal is emailed to the CUSTOMER's own address (api/routes/proposals.py sends
+              to customer.email), so this list is for extra people — a spouse, a property manager,
+              a GC. It used to be titled "Contacts" and say "Add one before sending a proposal",
+              which read as a missing requirement on a customer whose email and phone were already
+              on file right above it. Showing the primary here beats copying it into a second
+              table nothing sends to. */}
           {contactError && <ErrorMsg>Error: {contactError}</ErrorMsg>}
           {showNewContact && (
             <div style={{ marginBottom: 16, padding: 16, background: BRAND.bg, borderRadius: 8 }}>
               <ContactForm onSave={handleAddContact} onCancel={() => setShowNewContact(false)} saving={savingContact} />
             </div>
           )}
+          {(selectedCustomer?.email || selectedCustomer?.phone) && (
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", fontSize: 13,
+                          padding: "6px 0", borderBottom: contacts.length ? `1px solid ${BRAND.border}` : "none" }}>
+              <span style={{ fontWeight: 600, color: BRAND.navyText, minWidth: 140 }}>
+                {selectedCustomer.display_name}
+              </span>
+              <Badge tone="blue">Primary — proposals go here</Badge>
+              {selectedCustomer.email && <span style={{ color: BRAND.sub }}>{selectedCustomer.email}</span>}
+              {selectedCustomer.phone && <span style={{ color: BRAND.sub }}>{selectedCustomer.phone}</span>}
+            </div>
+          )}
           {contacts.length === 0 ? (
-            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No contacts yet. Add one before sending a proposal.</p>
+            !selectedCustomer?.email && !selectedCustomer?.phone ? (
+              <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>
+                This customer has no email or phone. Add one on the customer record, or add a
+                contact here, before sending a proposal.
+              </p>
+            ) : null
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {contacts.map((c) => (
