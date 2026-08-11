@@ -1277,3 +1277,50 @@ def rates(
         "roof_types": [],
         "note": "No active config seeded for this branch. Activate a config version first.",
     }
+
+
+class SaltWaterRequest(BaseModel):
+    """Either coordinates or an address. Address is geocoded with the Squares/Maps key."""
+    address: Optional[str] = Field(default=None, max_length=300)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+
+
+@router.post("/salt-water")
+def salt_water_check(
+    body: SaltWaterRequest,
+    claims=Depends(require_role("estimating_view")),
+):
+    """How close is this property to salt water, and what does that do to a metal warranty.
+
+    Answers from the SAME assets the public warranty checker uses, through core.salt_water — one
+    implementation, so an estimate and the customer-facing tool can never disagree about an
+    address. `waterfront` is what the estimate form ticks: true inside the widest setback any
+    manufacturer applies to a material Perkins sells.
+
+    Coordinates win when supplied; an address is geocoded. Returns 404 when the address cannot be
+    resolved, and a null distance (not an error) when the address is simply outside the mapped
+    South Florida tidal coverage — "we do not know" is a different answer from "no salt water".
+    """
+    from core.salt_water import check  # noqa: PLC0415
+
+    lat, lon, resolved = body.latitude, body.longitude, body.address
+    if lat is None or lon is None:
+        if not (body.address or "").strip():
+            raise HTTPException(422, "supply an address or latitude/longitude")
+        from api.routes.squares import _api_key, _geocode  # noqa: PLC0415
+        lat, lon, resolved = _geocode(body.address.strip(), _api_key())
+
+    r = check(lat, lon)
+    return {
+        "address": resolved,
+        "latitude": lat,
+        "longitude": lon,
+        "distance_ft": r.distance_ft,
+        "waterfront": r.waterfront,
+        "confidence": r.confidence,
+        "water_name": r.water_name,
+        "materials": r.materials,
+        "warranty_terms": r.warranty_terms,
+        "note": r.note,
+    }

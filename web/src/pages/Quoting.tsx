@@ -49,6 +49,22 @@ interface Property {
   gcs_pdf_prefix: string | null;
 }
 
+// POST /estimator/salt-water — the same measurement and the same per-manufacturer setbacks the
+// public warranty checker shows a homeowner, so an estimate cannot disagree with it.
+interface SaltWaterResult {
+  address: string | null;
+  distance_ft: number | null;      // null = outside the mapped South Florida tidal coverage
+  waterfront: boolean;
+  water_name: string | null;
+  note: string;
+  materials: Array<{
+    name: string;
+    state: "ok" | "cond" | "void";
+    manufacturers: Array<{ manufacturer: string; state: string; phrase: string; note: string }>;
+  }>;
+  warranty_terms: Array<{ issuer: string; years: number; covers: string; condition: string }>;
+}
+
 interface CustomerDetail extends Customer {
   contacts: Contact[];
   properties: Property[];
@@ -758,11 +774,17 @@ export function Quoting() {
   // feature that moved the day model most: 83% -> 90% of Tim's homes within a day of his own
   // booked days. Feeds the day model only; it never touches a rate.
   const [quoteAccessDifficult, setQuoteAccessDifficult] = useState(false);
-  // Jon, 2026-08-11: both of these are INCLUDE-by-default and excluded by unticking, so an
-  // estimator drops a scope item deliberately rather than forgetting to add one. Perkins is a
-  // South Florida coastal roofer — the coastal package is the norm here, not the exception.
-  const [quoteWaterfront, setQuoteWaterfront] = useState(true);
+  // Gutters are INCLUDE-by-default so an estimator drops the line deliberately rather than
+  // forgetting to add it.
+  //
+  // Waterfront is NOT defaulted on (Jon, 2026-08-11, reversing the earlier call). It is decided
+  // by the ADDRESS instead: `saltWater` below measures the property against the same tidal layer
+  // the warranty checker uses and ticks this when the house is genuinely near salt water. A blanket
+  // default would have quoted the Coastal package on inland jobs and relied on someone noticing.
+  const [quoteWaterfront, setQuoteWaterfront] = useState(false);
   const [quoteIncludeGutters, setQuoteIncludeGutters] = useState(true);
+  const [saltWater, setSaltWater] = useState<SaltWaterResult | null>(null);
+  const [saltWaterBusy, setSaltWaterBusy] = useState(false);
   // Mixed roofs: 9 of the 30 homes Tim sent have a flat section, up to 34% of the roof, and it was
   // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
   const [quoteFlatSquares, setQuoteFlatSquares] = useState("");
@@ -1160,6 +1182,35 @@ export function Quoting() {
     const prop = selectedCustomer?.properties?.find((p) => p.id === id);
     if (prop?.code_zone?.toUpperCase().includes("HVHZ")) setQuoteRegion("HVHZ");
     else if (prop) setQuoteRegion("FBC");
+    if (prop) void checkSaltWater(prop);
+  }
+
+  // Measure the property against the same tidal layer the public warranty checker uses, and let
+  // the ANSWER tick the Coastal package rather than a blanket default (Jon, 2026-08-11).
+  //
+  // It only ever ticks the box ON. A quote where the estimator deliberately unticked Coastal must
+  // not have it silently restored, and this runs on every property selection.
+  async function checkSaltWater(prop: Property) {
+    const address = [prop.street, prop.city, prop.state, prop.zip].filter(Boolean).join(", ");
+    if (!address.trim()) return;
+    setSaltWater(null);
+    setSaltWaterBusy(true);
+    try {
+      const r = await apiFetch("/estimator/salt-water", {
+        method: "POST",
+        body: JSON.stringify({ address }),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      const data: SaltWaterResult = await r.json();
+      setSaltWater(data);
+      if (data.waterfront) setQuoteWaterfront(true);
+    } catch {
+      // Non-fatal: the estimator still ticks Coastal by hand. A failed lookup must never block a
+      // quote, and it must never silently read as "not waterfront".
+      setSaltWater(null);
+    } finally {
+      setSaltWaterBusy(false);
+    }
   }
 
   async function handleAddProperty(data: Partial<Property>) {
@@ -1820,6 +1871,18 @@ export function Quoting() {
       include_calc_breakdown: includeCalcBreakdown,
       calc_audience: calcAudience,
       ...(scopeOfWork.trim() ? { scope_of_work_text: scopeOfWork.trim() } : {}),
+      // Metal proposals carry the address's own warranty picture, frozen at create time. It is
+      // the one warranty fact a competing quote does not have: at this house two "metal roofs"
+      // can have completely different coverage, and the difference is the brand's salt-water
+      // setback, not the metal.
+      ...(quoteRoofType.includes("metal") && saltWater && saltWater.distance_ft !== null
+        ? { metal_warranty: {
+              distance_ft: saltWater.distance_ft.toLocaleString(),
+              water_name: saltWater.water_name,
+              materials: saltWater.materials,
+              warranty_terms: saltWater.warranty_terms,
+          } }
+        : {}),
     };
 
     try {
@@ -1877,6 +1940,18 @@ export function Quoting() {
       floors: repairResult.floors ?? { min_profit_pct: 0.13, min_profit_plus_oh_pct: 0.33 },
       estimator_version: "1.0.0",
       ...(scopeOfWork.trim() ? { scope_of_work_text: scopeOfWork.trim() } : {}),
+      // Metal proposals carry the address's own warranty picture, frozen at create time. It is
+      // the one warranty fact a competing quote does not have: at this house two "metal roofs"
+      // can have completely different coverage, and the difference is the brand's salt-water
+      // setback, not the metal.
+      ...(repairRoofType.includes("metal") && saltWater && saltWater.distance_ft !== null
+        ? { metal_warranty: {
+              distance_ft: saltWater.distance_ft.toLocaleString(),
+              water_name: saltWater.water_name,
+              materials: saltWater.materials,
+              warranty_terms: saltWater.warranty_terms,
+          } }
+        : {}),
     };
 
     try {
@@ -2418,10 +2493,34 @@ export function Quoting() {
                   />
                   Include the Coastal package
                 </label>
+                {/* The address decides this, measured against the same tidal layer the public
+                    warranty checker uses. Shown with the DISTANCE and the affected materials so
+                    the estimator can see why, and override it. */}
                 <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
-                  {quoteWaterfront
-                    ? "Included by default. Untick for an inland address well away from salt water."
-                    : "EXCLUDED. Tidal and brackish canals count as salt water, not just the ocean and Intracoastal."}
+                  {saltWaterBusy && "Checking distance to salt water…"}
+                  {!saltWaterBusy && saltWater && saltWater.distance_ft !== null && (
+                    <>
+                      <strong style={{ color: saltWater.waterfront ? BRAND.red : BRAND.navyText }}>
+                        {saltWater.distance_ft.toLocaleString()} ft to salt water
+                        {saltWater.water_name ? ` (${saltWater.water_name})` : ""}
+                      </strong>
+                      {" — "}
+                      {saltWater.waterfront
+                        ? "inside a manufacturer's setback, so Coastal was ticked automatically."
+                        : "outside every published setback."}
+                      {saltWater.materials.filter((m) => m.state !== "ok").length > 0 && (
+                        <div style={{ marginTop: 3 }}>
+                          Affected: {saltWater.materials.filter((m) => m.state !== "ok")
+                            .map((m) => `${m.name} (${m.state === "void" ? "VOID" : "conditions"})`)
+                            .join("; ")}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {!saltWaterBusy && saltWater && saltWater.distance_ft === null &&
+                    "No mapped salt water near this address (tidal water is mapped for South Florida only)."}
+                  {!saltWaterBusy && !saltWater &&
+                    "Tidal and brackish canals count as salt water, not just the ocean and Intracoastal."}
                 </div>
               </div>
               {!isLowSlopeRoofType && (

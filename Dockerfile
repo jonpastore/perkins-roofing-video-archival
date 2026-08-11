@@ -45,6 +45,11 @@ COPY jobs ./jobs
 COPY scripts ./scripts
 COPY app ./app
 COPY assets ./assets
+# The coastline / tidal / zones assets core.salt_water reads. Same path as the repo so the module
+# needs no environment-specific lookup — and without this COPY the estimator's salt-water check
+# would import fine, deploy fine, and 500 on the first call with the file simply not there.
+# ~24 MB; loaded lazily into numpy (~20 MB resident) on first use, not at import.
+COPY wp-plugin/perkins-metal-warranty/assets ./wp-plugin/perkins-metal-warranty/assets
 
 ENV PORT=8080 PERKINS_ENV=prod
 
