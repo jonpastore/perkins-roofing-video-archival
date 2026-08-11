@@ -160,6 +160,21 @@ revision, not what is serving. `status.latestReadyRevisionName` is the field tha
 description`, `parse-roofr`, `Include gutters` all present. (This repo has shipped a stale
 deploy with every check green before — see the 08-03 entry in README.)
 
+**Second deploy (PR #49)** — image `8f7d43e`, revision **api-00251-g28**, 100% traffic.
+`POST /estimator/salt-water` smoke-tested three ways against prod:
+
+| check | result |
+|---|---|
+| by coordinates (cold) | 200 in 2.8 s — **77.3 ft**, ICWW ABOVE ROYAL PALM BRIDGE, steel `void`, aluminium `cond` |
+| warm query (Golden Gate) | 200 in **0.3 s**, 38,051.7 ft, not waterfront |
+| by address (geocoded) | 200, 77.3 ft — the prod Maps key resolves |
+| warranty terms | Perkins 10, Metal Alliance 25 + 40, Polyglass 20 |
+
+The 2.8 s cold call is the proof that the `COPY wp-plugin/.../assets` line landed: without it the
+first call is a 500, not a slow success. Frontend redeployed and the live bundle grepped for
+`estimator/salt-water`, `metal_warranty`, `warranty_terms` — all present. Plugin **1.7.1** on
+staging, serving `checker.css?ver=1.7.1` with the corrected uplift source.
+
 **Warranty plugin 1.7.0** — installed on staging and driven in a real browser at
 188 Lone Pine Dr: **77 ft**, summary column `position: sticky`, side by side (summary ends
 470px, detail starts 486px), 4 per-material verdicts beside 4 detail cards, and the summary is
