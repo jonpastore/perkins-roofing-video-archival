@@ -156,3 +156,31 @@ def test_a_word_containing_a_hash_is_not_a_hashtag():
 def test_scaffolding_only_output_raises_rather_than_storing_it():
     with pytest.raises(DescriptionError):
         enforce("Hashtags:")
+
+
+def test_trimming_does_not_strand_the_separator_punctuation():
+    """A comma-separated tag run trimmed to "#a, #b, ." posts that stray punctuation verbatim."""
+    out = enforce("Roof talk.\n\n#a, #b, #c, #d, #e, #f.")
+    assert out.text.endswith("#e.")
+    assert ", ." not in out.text and " ." not in out.text
+
+
+def test_ordinary_punctuation_is_untouched_when_nothing_is_trimmed():
+    text = "Sentence one. Sentence two! Really? Yes; ok.\n\n#a #b #c"
+    assert enforce(text).text == text
+
+
+def test_a_url_fragment_is_not_a_hashtag_and_is_not_truncated():
+    """`(?<![\\w#])` allowed "https://…/#contact" to count as a tag, so a caption with five real
+    tags plus a booking link had the LINK trimmed as the sixth — publishing a broken URL."""
+    out = enforce("Great work.\n\n#roofing #metal #florida #jupiter #perkins #storm\n\n"
+                  "Book: https://perkinsroofing.com/#contact")
+    assert out.text.endswith("https://perkinsroofing.com/#contact")
+    assert len(re.findall(r"(?:(?<=\s)|^)#\w+", out.text)) == MAX_HASHTAGS
+
+
+def test_a_url_earlier_in_the_caption_does_not_consume_a_real_hashtag():
+    text = "See https://perkinsroofing.com/#contact for a quote.\n\n#a #b #c #d #e"
+    out = enforce(text)
+    assert out.text == text
+    assert out.fixes == ()

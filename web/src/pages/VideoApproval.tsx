@@ -81,6 +81,12 @@ function ProposalCard({
       : null
   );
   const [descErr, setDescErr] = useState<string | null>(null);
+  // What the post-generation pass changed, and what it could not fix. The API has returned
+  // these since the pass shipped and nothing rendered them — so a caption the model padded to
+  // eight hashtags, or one that opened "Here is your caption", reached the reviewer with no
+  // indication either had happened.
+  const [descFixes, setDescFixes] = useState<string[]>([]);
+  const [descProblems, setDescProblems] = useState<string[]>([]);
 
   const dirty = description !== null && draft !== description;
 
@@ -113,6 +119,8 @@ function ProposalCard({
         `${d.model} · ${d.transcript_chars.toLocaleString()} transcript chars` +
         (d.truncated ? " (truncated)" : "")
       );
+      setDescFixes(d.fixes ?? []);
+      setDescProblems(d.problems ?? []);
     } catch (e: unknown) {
       setDescErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -136,6 +144,9 @@ function ProposalCard({
       setDraft(d.description);
       setDescModel(d.model);
       setDescMeta(`${d.model} · ${new Date(d.generated_at).toLocaleString()}`);
+      // The human just rewrote it; notes about the generated version no longer apply.
+      setDescFixes([]);
+      setDescProblems([]);
     } catch (e: unknown) {
       setDescErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -282,6 +293,16 @@ function ProposalCard({
               <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 3 }}>
                 {dirty ? "Unsaved edits" : "Saved description"}{descMeta ? ` — ${descMeta}` : ""}
               </div>
+              {descProblems.length > 0 && (
+                <div style={{ fontSize: 12, color: BRAND.red, marginBottom: 4 }}>
+                  ⚠ {descProblems.join("; ")} — check before posting.
+                </div>
+              )}
+              {descFixes.length > 0 && (
+                <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 4 }}>
+                  Auto-corrected: {descFixes.join("; ")}.
+                </div>
+              )}
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}

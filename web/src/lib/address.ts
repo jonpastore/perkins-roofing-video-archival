@@ -15,9 +15,25 @@ export interface ParsedAddress {
   zip: string;
 }
 
-const STATE_ZIP = /^([A-Za-z]{2})\.?\s+(\d{5})(?:-(\d{4}))?$/;
+// A trailing "<state> <zip>", where <state> may be the two-letter code OR a spelled-out name.
+// Spelled out matters: "…, Jupiter, Florida 33477" used to fall through every branch and land
+// whole in the CITY field, which then fed the geocoder — the exact "wrong city is worse than an
+// empty one" failure this file is written to avoid.
+const STATE_ZIP = /^([A-Za-z][A-Za-z .]*?)\.?\s+(\d{5})(?:-(\d{4}))?$/;
 const ZIP_ONLY = /^(\d{5})(?:-(\d{4}))?$/;
 const STATE_ONLY = /^([A-Za-z]{2})\.?$/;
+// Perkins works one state. Anything else spelled out is still recognised as "not a city" — the
+// ZIP is taken and `state` left blank rather than guessing at an abbreviation.
+const STATE_NAMES: Record<string, string> = { florida: "FL" };
+// "…, FL 33477, Palm Beach County" — a county is not a city and must not become one.
+const COUNTY = /\bcounty$/i;
+
+/** Two-letter code as-is; a known spelled-out name mapped; anything else -> "" (never a guess). */
+function normaliseState(raw: string): string {
+  const s = raw.trim().replace(/\.$/, "");
+  if (/^[A-Za-z]{2}$/.test(s)) return s.toUpperCase();
+  return STATE_NAMES[s.toLowerCase()] ?? "";
+}
 
 /** True when the text looks like a whole address rather than just a street line. */
 export function looksComplete(text: string): boolean {
@@ -32,8 +48,9 @@ export function parseAddress(raw: string): ParsedAddress {
   if (!text) return empty;
 
   let parts = text.split(",").map((p) => p.trim()).filter(Boolean);
-  // A trailing country is noise for a Florida roofer.
+  // A trailing country is noise for a Florida roofer, and so is a county.
   if (parts.length && /^(usa|us|united states)$/i.test(parts[parts.length - 1])) parts.pop();
+  if (parts.length > 1 && COUNTY.test(parts[parts.length - 1])) parts.pop();
   if (!parts.length) return empty;
 
   // No commas at all: the whole thing is a street line. Pull a trailing "FL 33169" if present,
@@ -48,9 +65,9 @@ export function parseAddress(raw: string): ParsedAddress {
   const out: ParsedAddress = { ...empty };
   const last = parts[parts.length - 1];
 
-  let stateZip = STATE_ZIP.exec(last);
+  const stateZip = STATE_ZIP.exec(last);
   if (stateZip) {
-    out.state = stateZip[1].toUpperCase();
+    out.state = normaliseState(stateZip[1]);
     out.zip = stateZip[2];
     parts.pop();
   } else if (ZIP_ONLY.test(last)) {
@@ -59,11 +76,11 @@ export function parseAddress(raw: string): ParsedAddress {
     // "..., Miami, FL, 33169" — state was its own field before the ZIP.
     const maybeState = parts[parts.length - 1];
     if (maybeState && STATE_ONLY.test(maybeState)) {
-      out.state = maybeState.toUpperCase().replace(".", "");
+      out.state = normaliseState(maybeState);
       parts.pop();
     }
-  } else if (STATE_ONLY.test(last)) {
-    out.state = last.toUpperCase().replace(".", "");
+  } else if (STATE_ONLY.test(last) || STATE_NAMES[last.toLowerCase()]) {
+    out.state = normaliseState(last);
     parts.pop();
   }
 

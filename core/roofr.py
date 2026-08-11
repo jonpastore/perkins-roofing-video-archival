@@ -30,20 +30,30 @@ _LF_FIELDS = {
 }
 
 
+#: Roofr prints thousands separators once a roof is big enough ("1,240ft", "1,250 sq ft"), and
+#: EVERY numeric field here can carry one. Parsing them in one place is the point: the first cut
+#: of this module stripped commas for the area but not for the others, so a two-storey report over
+#: 1,000 sq ft raised ValueError straight out of an API handler (500 on upload), and a roof with
+#: 1,000+ ft of eaves silently parsed as None.
+def _to_float(raw: str | None) -> float | None:
+    return None if raw is None else float(raw.replace(",", ""))
+
+
 def parse_feet(text: str, label: str) -> float | None:
     """'Hips: 134ft 10in' -> 134.83. None when the label is absent."""
-    m = re.search(rf"{label}:?\s*(\d+(?:\.\d+)?)\s*ft(?:\s*(\d+(?:\.\d+)?)\s*in)?", text, re.I)
+    m = re.search(
+        rf"{label}:?\s*([\d,]+(?:\.\d+)?)\s*ft(?:\s*([\d,]+(?:\.\d+)?)\s*in)?", text, re.I)
     if not m:
         return None
-    feet = float(m.group(1))
+    feet = _to_float(m.group(1))
     if m.group(2):
-        feet += float(m.group(2)) / 12
+        feet += _to_float(m.group(2)) / 12
     return round(feet, 2)
 
 
 def _num(text: str, pattern: str) -> float | None:
     m = re.search(pattern, text, re.I)
-    return float(m.group(1)) if m else None
+    return _to_float(m.group(1)) if m else None
 
 
 def parse_report(text: str) -> dict[str, Any]:
@@ -53,13 +63,12 @@ def parse_report(text: str) -> dict[str, Any]:
     area in sqft. Converting here means the one place that knows the report's units is the one
     place that reads the report.
     """
-    # Thousands separators appear on larger roofs, so the comma is stripped before float().
     m = re.search(r"Total roof area:?\s*([\d,]+(?:\.\d+)?)\s*sq\s*ft", text, re.I)
-    area_sqft = float(m.group(1).replace(",", "")) if m else None
+    area_sqft = _to_float(m.group(1)) if m else None
 
     def _sqft(label: str) -> float | None:
         m2 = re.search(rf"{label}:?\s*([\d,]+(?:\.\d+)?)\s*sq\s*ft", text, re.I)
-        return float(m2.group(1).replace(",", "")) if m2 else None
+        return _to_float(m2.group(1)) if m2 else None
 
     # Roofr states total = pitched + flat. Capturing only the total left the split ambiguous
     # (migration 0046), and the flat area is priced by a different calculator entirely — a flat

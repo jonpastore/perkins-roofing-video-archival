@@ -94,7 +94,32 @@ class VertexLLM:
             metering.add("llm_tokens", int(total))
         except Exception:  # noqa: BLE001 — metering must never break the adapter
             pass
-        return response.text
+
+        # ⚠️ CONTRACT: this returns a STRING or raises. Never None.
+        #
+        # The removed vertexai SDK raised ValueError("Content has no parts") when a candidate
+        # carried no text — a safety block, a RECITATION stop, or MAX_TOKENS with nothing emitted.
+        # google-genai returns None instead (types.GenerateContentResponse._get_text). Callers were
+        # written against the old contract: app/llm.py does `txt.find("{")` on the result, so a
+        # blocked response would surface as `AttributeError: 'NoneType' object has no attribute
+        # 'find'` from inside the JSON extractor, across ~35 call sites (articles, FAQ, clip
+        # selection, claim verification). Fail loudly and attributably instead.
+        text = response.text
+        if text is None:
+            finish = prompt_feedback = None
+            try:
+                cands = getattr(response, "candidates", None) or []
+                if cands:
+                    finish = getattr(cands[0], "finish_reason", None)
+                prompt_feedback = getattr(response, "prompt_feedback", None)
+            except Exception:  # noqa: BLE001 — diagnostics must not mask the real failure
+                pass
+            raise RuntimeError(
+                "Vertex returned a response with no text "
+                f"(finish_reason={finish!r}, prompt_feedback={prompt_feedback!r}). "
+                "Usually a safety block, a recitation stop, or MAX_TOKENS with nothing emitted."
+            )
+        return text
 
     def embed(self, texts, batch=100):
         """Embed texts at `embed_dim` dimensions, in batches.

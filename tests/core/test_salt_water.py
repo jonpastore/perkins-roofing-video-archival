@@ -85,3 +85,38 @@ def test_a_point_with_no_mapped_water_says_so_rather_than_claiming_safety():
     assert r.distance_ft is None
     assert r.waterfront is False
     assert "only" in r.note.lower() or "no mapped" in r.note.lower()
+
+
+def test_a_cold_instance_loads_the_layer_once_under_concurrency():
+    """`lru_cache` memoises the RESULT but does not lock the COMPUTATION.
+
+    FastAPI runs sync endpoints in a threadpool, so simultaneous requests to a cold instance each
+    parsed the 22 MB layer independently. Measured before the lock: 4 concurrent first-calls, 8
+    parses, 801 MB peak against Cloud Run's 1 GiB — a handful more requests OOMs the instance and
+    Cloud Run kills it mid-quote. This is a memory-safety gate, not a performance nicety.
+    """
+    import threading
+
+    import core.salt_water as sw
+
+    calls = []
+    original = sw._load_segments
+
+    def counting(path, keep):
+        calls.append(path.name)
+        return original(path, keep)
+
+    sw._load_segments = counting
+    sw._build_layers.cache_clear()
+    try:
+        threads = [threading.Thread(target=lambda: sw.check(26.8560414, -80.0764616))
+                   for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        sw._load_segments = original
+
+    # Two assets (coastline + tidal), parsed once between them however many threads raced.
+    assert len(calls) == 2, f"layer parsed {len(calls)} times — every extra parse is ~200 MB"

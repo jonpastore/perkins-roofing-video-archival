@@ -91,3 +91,26 @@ def test_a_pdf_that_is_not_a_roofr_report_is_rejected():
     had no measurements in it'."""
     assert is_roofr_report(REPORT)
     assert not is_roofr_report("INVOICE\nAmount due: $4,730\nThank you for your business")
+
+
+def test_thousands_separators_parse_in_every_numeric_field():
+    """A separator crashed the upload endpoint, not just degraded it.
+
+    "Two story area: 1,250 sq ft" raised ValueError out of an unguarded API handler (500 on any
+    two-storey report over 1,000 sq ft), and "Eaves: 1,240ft" silently parsed as None on any roof
+    with 1,000+ ft of a run. Roofr prints separators on every numeric field once a roof is big
+    enough, so they are handled in one place now.
+    """
+    r = parse_report(
+        "Total roof area: 3,450 sq ft\n"
+        "Pitched roof area: 2,200 sq ft\n"
+        "Flat roof area: 1,250 sq ft\n"
+        "Two story area: 1,250 sq ft\n"
+        "Predominant pitch: 5/12\n"
+        "Eaves: 1,240ft 6in\n"
+    )
+    assert r["total_sq"] == 34.5
+    assert r["pitched_sq"] == 22.0
+    assert r["flat_sq"] == 12.5
+    assert r["two_story_sq"] == 12.5
+    assert r["eaves_lf"] == 1240.5

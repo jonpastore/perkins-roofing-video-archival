@@ -39,6 +39,25 @@ describe("parseAddress", () => {
     expect(parseAddress("123 Main St")).toEqual({ street: "123 Main St", city: "", state: "", zip: "" });
   });
 
+  it("handles a spelled-out state instead of dumping it in the city", () => {
+    // "Florida 33477" used to land whole in `city` and then feed the geocoder.
+    expect(parseAddress("123 Main St, Jupiter, Florida 33477")).toEqual({
+      street: "123 Main St", city: "Jupiter", state: "FL", zip: "33477",
+    });
+  });
+
+  it("drops a trailing county rather than treating it as the city", () => {
+    expect(parseAddress("123 Main St, Jupiter, FL 33477, Palm Beach County")).toEqual({
+      street: "123 Main St", city: "Jupiter", state: "FL", zip: "33477",
+    });
+  });
+
+  it("leaves state blank for an unknown spelled-out state, never a guess", () => {
+    expect(parseAddress("9 Elm St, Springfield, Massachusetts 01103")).toEqual({
+      street: "9 Elm St", city: "Springfield", state: "", zip: "01103",
+    });
+  });
+
   it("returns empty fields for empty input rather than throwing", () => {
     expect(parseAddress("")).toEqual({ street: "", city: "", state: "", zip: "" });
     expect(parseAddress("   ")).toEqual({ street: "", city: "", state: "", zip: "" });

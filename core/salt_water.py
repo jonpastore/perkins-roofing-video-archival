@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -37,9 +38,14 @@ VERDICT_MOVING = frozenset({"measured", "tagged", "mapped", "coast"})
 
 FT_PER_M = 3.28084
 
-#: Distance under which an estimate should quote the Coastal package. This is the widest setback
-#: any manufacturer in zones.json applies to a MATERIAL Perkins actually sells (Englert's ½ mile),
-#: so the flag turns on wherever any brand's coverage is affected rather than at one brand's line.
+#: Distance under which an estimate should quote the Coastal package: the widest distance at which
+#: any manufacturer VOIDS a warranty outright (Englert / PAC-CLAD, ½ mile).
+#:
+#: It is deliberately NOT the widest provision of any kind. ZAM® conditions coverage out to
+#: 5,280 ft, but a rinse-and-keep-records condition is not a reason to reprice a job a mile
+#: inland. So between 2,640 and 5,280 ft a material can carry CONDITIONS while this flag is
+#: false — which is correct, and is why callers must describe the verdicts from `materials`
+#: rather than inferring "nothing applies here" from `waterfront` being false.
 COASTAL_TRIGGER_FT = 2640.0
 
 
@@ -76,9 +82,26 @@ def _load_segments(path: Path, keep: frozenset[str] | None) -> tuple:
     return (np.array(ax), np.array(ay), np.array(cx), np.array(cy), conf, name)
 
 
-@lru_cache(maxsize=1)
+#: Serialises the FIRST load. `lru_cache` memoises the result but does NOT lock the computation,
+#: and FastAPI runs sync endpoints in a threadpool — so N simultaneous requests to a cold instance
+#: each parsed the 22 MB layer independently. Measured: 4 concurrent first-calls peaked at 801 MB
+#: against Cloud Run's 1 GiB limit; a handful more OOMs the instance. With the lock, one thread
+#: parses and the rest wait for the cached result.
+_LOAD_LOCK = threading.Lock()
+
+
 def _layers() -> dict[str, Any]:
-    """Coastline + verdict-moving tidal water + the manufacturer setbacks. Cached per process."""
+    """Coastline + verdict-moving tidal water + the manufacturer setbacks. Cached per process.
+
+    The lock is held around a cache HIT too, which is a dict lookup — the distance maths runs in
+    `check()`, outside it, so this serialises nothing that matters.
+    """
+    with _LOAD_LOCK:
+        return _build_layers()
+
+
+@lru_cache(maxsize=1)
+def _build_layers() -> dict[str, Any]:
     coast = _load_segments(ASSET_DIR / "coastline.geojson", None)
     tidal = _load_segments(ASSET_DIR / "tidal.geojson", VERDICT_MOVING)
     zones = json.loads((ASSET_DIR / "zones.json").read_text())
@@ -94,8 +117,17 @@ def _nearest(lat: float, lon: float, segs) -> tuple[float, str, str | None]:
     # Local equirectangular metres — exact enough at these distances and far cheaper than haversine.
     kx = 111320.0 * math.cos(math.radians(lat))
     ky = 110540.0
-    near = (np.abs(ax - lon) <= 0.3) & (np.abs(ay - lat) <= 0.3)
-    idx = np.flatnonzero(near)
+    # EXPANDING window, 0.6° doubling to 6°, exactly as checker.js:146 does. A fixed 0.3° box
+    # answered "no mapped salt water" for addresses the public tool measures — Clewiston and
+    # Orlando both returned None — and 0.3° is narrower than the widest single segment in the
+    # layer (0.438°, in the Lower Keys), which the prefilter tests by vertex A alone. Both layers
+    # are statewide, so the "South Florida only" story was wrong as well as the number.
+    for window in (0.6, 1.2, 2.4, 4.8, 6.0):
+        idx = np.flatnonzero((np.abs(ax - lon) <= window) & (np.abs(ay - lat) <= window))
+        if idx.size:
+            break
+    else:
+        return float("inf"), "", None
     if idx.size == 0:
         return float("inf"), "", None
     axs, ays, cxs, cys = ax[idx], ay[idx], cx[idx], cy[idx]

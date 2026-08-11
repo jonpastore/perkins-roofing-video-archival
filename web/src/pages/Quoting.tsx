@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, apiFetchMultipart, listBranches, type BranchRow } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, PillButton, SectionLabel } from "../ui";
 import { errText } from "../lib/errors";
@@ -560,7 +560,12 @@ function MeasurementForm({
       const r = await apiFetchMultipart("/measurements/parse-roofr", { method: "POST", body: fd });
       if (!r.ok) throw new Error(await errText(r));
       const { measurement: m, extras, provenance_note } = await r.json();
-      const set = (v: number | null, fn: (s: string) => void) => { if (v !== null && v !== undefined) fn(String(v)); };
+      // Absent must mean CLEARED, not "keep the last roof's number". core/roofr.py returns None
+      // for a field the report does not carry (a roof with no valleys, a missing Wall flashing
+      // line); leaving the old value in place silently attributes report A's measurement to
+      // property B, under a banner reading "Filled from the report".
+      const set = (v: number | null, fn: (s: string) => void) =>
+        fn(v === null || v === undefined ? "" : String(v));
       set(m.total_sq, setTotalSq);
       set(m.pitched_sq, setPitchedSq);
       set(m.flat_sq, setFlatSq);
@@ -785,6 +790,9 @@ export function Quoting() {
   const [quoteIncludeGutters, setQuoteIncludeGutters] = useState(true);
   const [saltWater, setSaltWater] = useState<SaltWaterResult | null>(null);
   const [saltWaterBusy, setSaltWaterBusy] = useState(false);
+  //: Monotonic request id, so a slow lookup for a property the estimator has already left cannot
+  //: write its answer over the current one. See checkSaltWater.
+  const saltWaterSeq = useRef(0);
   // Mixed roofs: 9 of the 30 homes Tim sent have a flat section, up to 34% of the roof, and it was
   // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
   const [quoteFlatSquares, setQuoteFlatSquares] = useState("");
@@ -1088,7 +1096,13 @@ export function Quoting() {
         if (props.length > 0) {
           setSelectedPropertyId(props[0].id);
           setQuoteRegion(props[0].code_zone?.toUpperCase().includes("HVHZ") ? "HVHZ" : "FBC");
-        } else setSelectedPropertyId(null);
+          // The auto-selected property needs the same lookup a clicked one gets, or the previous
+          // customer's distance stays on screen and can be frozen onto THIS customer's proposal.
+          void checkSaltWater(props[0]);
+        } else {
+          setSelectedPropertyId(null);
+          setSaltWater(null);
+        }
       })
       .catch((e: unknown) => setCustomerDetailError(e instanceof Error ? e.message : String(e)))
       .finally(() => setCustomerDetailLoading(false));
@@ -1140,6 +1154,9 @@ export function Quoting() {
 
   function openCustomer(c: Customer) {
     setView("customer_detail");
+    // Belongs with the other cross-customer resets below: a stale distance here would print on
+    // the NEXT customer's metal proposal, frozen at create time and permanent on that contract.
+    setSaltWater(null);
     setShowNewCustomer(false);
     setMeasurements([]);
     setSelectedMeasurement(null);
@@ -1199,8 +1216,12 @@ export function Quoting() {
   // not have it silently restored, and this runs on every property selection.
   async function checkSaltWater(prop: Property) {
     const address = [prop.street, prop.city, prop.state, prop.zip].filter(Boolean).join(", ");
+    setSaltWater(null);          // BEFORE the guard: no address must mean no answer, not a stale one
     if (!address.trim()) return;
-    setSaltWater(null);
+    // Only the NEWEST lookup may write. Clicking a waterfront property then an inland one used to
+    // let the first response land last and tick the Coastal package on the inland quote — a
+    // silent price change, from a request the estimator had already moved on from.
+    const seq = ++saltWaterSeq.current;
     setSaltWaterBusy(true);
     try {
       const r = await apiFetch("/estimator/salt-water", {
@@ -1209,14 +1230,20 @@ export function Quoting() {
       });
       if (!r.ok) throw new Error(await errText(r));
       const data: SaltWaterResult = await r.json();
+      if (seq !== saltWaterSeq.current) return;      // superseded — drop it
       setSaltWater(data);
-      if (data.waterfront) setQuoteWaterfront(true);
+      // Follow the ANSWER in both directions. Ticking only ON left Coastal checked when the
+      // estimator moved from a waterfront property to an inland one on the same customer: the
+      // panel correctly read "outside every published setback" while the quote still carried the
+      // package. A manual untick was a decision about a DIFFERENT property, so it is not
+      // preserved across a property change.
+      setQuoteWaterfront(data.waterfront);
     } catch {
       // Non-fatal: the estimator still ticks Coastal by hand. A failed lookup must never block a
       // quote, and it must never silently read as "not waterfront".
-      setSaltWater(null);
+      if (seq === saltWaterSeq.current) setSaltWater(null);
     } finally {
-      setSaltWaterBusy(false);
+      if (seq === saltWaterSeq.current) setSaltWaterBusy(false);
     }
   }
 
@@ -1235,6 +1262,7 @@ export function Quoting() {
       const prop: Property = await r.json();
       setSelectedCustomer((prev) => prev ? { ...prev, properties: [...(prev.properties ?? []), prop] } : prev);
       setSelectedPropertyId(prop.id);
+      void checkSaltWater(prop);
       setShowNewProperty(false);
     } catch (e: unknown) {
       setPropertyError(e instanceof Error ? e.message : String(e));
@@ -2512,9 +2540,15 @@ export function Quoting() {
                         {saltWater.water_name ? ` (${saltWater.water_name})` : ""}
                       </strong>
                       {" — "}
+                      {/* Describe what the VERDICTS say, not what the flag says. Between 2,640
+                          and 5,280 ft the Coastal flag is correctly false while ZAM® still
+                          carries conditions, and keying this off `waterfront` printed "outside
+                          every published setback" directly above a list of affected materials. */}
                       {saltWater.waterfront
-                        ? "inside a manufacturer's setback, so Coastal was ticked automatically."
-                        : "outside every published setback."}
+                        ? "inside a manufacturer's void setback, so Coastal was ticked automatically."
+                        : saltWater.materials.some((m) => m.state !== "ok")
+                          ? "outside every void setback, but some coverage is conditioned here — see below."
+                          : "outside every published setback."}
                       {saltWater.materials.filter((m) => m.state !== "ok").length > 0 && (
                         <div style={{ marginTop: 3 }}>
                           Affected: {saltWater.materials.filter((m) => m.state !== "ok")
@@ -3377,7 +3411,7 @@ export function Quoting() {
                   {props.length > 1 && (
                     <div style={{ marginBottom: 12 }}>
                       <FieldLabel>Property for proposal</FieldLabel>
-                      <select value={selectedPropertyId ?? ""} onChange={(e) => setSelectedPropertyId(Number(e.target.value))} style={selectStyle}>
+                      <select value={selectedPropertyId ?? ""} onChange={(e) => handleSelectProperty(Number(e.target.value))} style={selectStyle}>
                         {props.map((p) => <option key={p.id} value={p.id}>{p.street}, {p.city}</option>)}
                       </select>
                     </div>
@@ -3553,7 +3587,7 @@ export function Quoting() {
               {props.length > 1 && (
                 <div style={{ marginTop: 14, marginBottom: 12 }}>
                   <FieldLabel>Property for proposal</FieldLabel>
-                  <select value={selectedPropertyId ?? ""} onChange={(e) => setSelectedPropertyId(Number(e.target.value))} style={selectStyle}>
+                  <select value={selectedPropertyId ?? ""} onChange={(e) => handleSelectProperty(Number(e.target.value))} style={selectStyle}>
                     {props.map((p) => <option key={p.id} value={p.id}>{p.street}, {p.city}</option>)}
                   </select>
                 </div>

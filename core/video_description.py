@@ -102,8 +102,15 @@ def render_prompt(template: str | None, *, title: str | None, duration, transcri
                     truncated=len(transcript) > MAX_TRANSCRIPT_CHARS)
 
 
-#: A hashtag: # followed by word characters, not mid-word (so "C#" or a URL fragment is not one).
-_HASHTAG_RE = re.compile(r"(?<![\w#])#\w+")
+#: A hashtag: # at the START of a token, followed by word characters.
+#:
+#: The lookbehind must reject ANY non-space, not just word characters. `(?<![\w#])` let
+#: "https://perkinsroofing.com/#contact" count as a hashtag — "/" is not a word char — so a
+#: caption with five tags plus a booking link had the link counted toward the cap and then
+#: TRUNCATED to "…perkinsroofing.com/" when the fragment was trimmed as the sixth tag. With the
+#: URL earlier in the text it inverted and ate a genuine hashtag instead. Requiring whitespace or
+#: start-of-string before the # covers "C#", "a#b" and every URL fragment in one rule.
+_HASHTAG_RE = re.compile(r"(?:(?<=\s)|^)#\w+")
 
 #: Structural labels the prompt's OUTPUT RULE forbids — the model emitting its own scaffolding
 #: ("Hook:", "Hashtags:") instead of the finished caption.
@@ -160,6 +167,14 @@ def enforce(text: str, *, max_hashtags: int = MAX_HASHTAGS) -> Checked:
             idx = out.rfind(extra)
             if idx != -1:
                 out = out[:idx] + out[idx + len(extra):]
+        # Take the separator and spacing that belonged to the removed tag with it. A
+        # comma-separated run ("#a, #b, #c.") otherwise trims to "#a, #b, ." — and that stranded
+        # punctuation is what gets posted.
+        out = re.sub(r"[ \t]*,(?=[ \t]*(?:[.,]|$))", "", out, flags=re.M)  # orphaned separator comma
+        out = re.sub(r"(?m)^[ \t]*[,;]+[ \t]*", "", out)          # line now starting with a comma
+        # Only where a tag was removed — running this over the whole caption silently reflowed
+        # the author's prose, and only when a trim happened to occur.
+        out = re.sub(r"(#\w+)[ \t]+([.!?,;])", r"\1\2", out)      # space stranded after a tag
         fixes.append(f"trimmed {len(tags) - max_hashtags} hashtag(s) over the limit of {max_hashtags}")
     elif not tags:
         problems.append("no hashtags — the prompt asks every caption to end with about 5")
