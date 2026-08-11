@@ -138,6 +138,10 @@ EDITABLE_KEYS: dict[str, str] = {
     "BRAND_INTRO_VIDEO": "Brand intro video GCS path (gs://… or empty to use generated title card)",
     "BRAND_OUTRO_VIDEO": "Brand outro video GCS path (gs://… or empty to use generated closing card)",
     "EMAIL_HTML_HEADER": "Global email header HTML (prepended to every outgoing email body)",
+    "VIDEO_DESCRIPTION_PROMPT": (
+        "Prompt used to generate descriptions for videos awaiting approval "
+        "(placeholders: {title}, {transcript}, {duration})"
+    ),
     "SEARCH_INDEXING_ENABLED": (
         "Auto-submit new/published articles to IndexNow + Google Indexing API (true | false)"
     ),

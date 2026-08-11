@@ -57,6 +57,27 @@ function ProposalCard({
   const [approved, setApproved] = useState(false);
   // Raw text while editing an hh:mm:ss field (keeps typing fluid); cleared on blur.
   const [timeEdits, setTimeEdits] = useState<Record<string, string>>({});
+  // Which source video is currently minting a download URL (null = none in flight).
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadErr, setDownloadErr] = useState<string | null>(null);
+
+  // Download the SOURCE video behind a proposal. The signed URL is minted per click rather than
+  // rendered into an href: it is short-lived, so a link built at page load is already stale by the
+  // time a reviewer works down the queue. Same endpoint and flow the Archive page uses.
+  async function download(videoId: string) {
+    setDownloading(videoId);
+    setDownloadErr(null);
+    try {
+      const r = await apiFetch(`/archive/${videoId}/download`);
+      if (!r.ok) throw new Error(await errText(r));
+      const { download_url } = await r.json();
+      window.open(download_url, "_blank", "noopener,noreferrer");
+    } catch (e: unknown) {
+      setDownloadErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   function updatePart(index: number, field: keyof Part, value: string | number) {
     setParts((prev) =>
@@ -124,14 +145,37 @@ function ProposalCard({
               {hms(proposal.duration)}
             </span>
           </h3>
-          <a
-            href={ytLink(proposal.video_id, 0)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ fontSize: 13, color: BRAND.red, textDecoration: "none", fontWeight: 600 }}
-          >
-            ▶ Watch source video on YouTube
-          </a>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <a
+              href={ytLink(proposal.video_id, 0)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 13, color: BRAND.red, textDecoration: "none", fontWeight: 600 }}
+            >
+              ▶ Watch source video on YouTube
+            </a>
+            <button
+              type="button"
+              onClick={() => download(proposal.video_id)}
+              disabled={downloading === proposal.video_id}
+              title="Download the archived source MP4"
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: "inherit",
+                color: downloading === proposal.video_id ? BRAND.sub : BRAND.navyText,
+                cursor: downloading === proposal.video_id ? "wait" : "pointer",
+              }}
+            >
+              {downloading === proposal.video_id ? "⬇ Preparing…" : "⬇ Download source video"}
+            </button>
+          </div>
+          {downloadErr && (
+            <div style={{ fontSize: 12, color: BRAND.red, marginTop: 4 }}>{downloadErr}</div>
+          )}
         </div>
         {approved && <Badge tone="green">Approved</Badge>}
       </div>
@@ -176,6 +220,28 @@ function ProposalCard({
               {part.video_id && part.video_id !== proposal.video_id && (
                 <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 3 }}>
                   Source: {part.video_title || part.video_id}
+                  {/* Topic-driven series pull parts from OTHER videos, and the header button only
+                      downloads the proposal's own source — without this those files are
+                      unreachable from this page. */}
+                  <button
+                    type="button"
+                    onClick={() => download(part.video_id as string)}
+                    disabled={downloading === part.video_id}
+                    title="Download this part's archived source MP4"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      marginLeft: 8,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                      color: downloading === part.video_id ? BRAND.sub : BRAND.navyText,
+                      cursor: downloading === part.video_id ? "wait" : "pointer",
+                    }}
+                  >
+                    {downloading === part.video_id ? "⬇ …" : "⬇ Download"}
+                  </button>
                 </div>
               )}
             </div>
