@@ -67,7 +67,12 @@ function ProposalCard({
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadErr, setDownloadErr] = useState<string | null>(null);
   const [describing, setDescribing] = useState(false);
+  const [savingDesc, setSavingDesc] = useState(false);
+  // `description` is what the server has; `draft` is what is in the textarea. They diverge only
+  // while an edit is unsaved, which is exactly the state the reload guard below watches for.
   const [description, setDescription] = useState<string | null>(proposal.description ?? null);
+  const [draft, setDraft] = useState<string>(proposal.description ?? "");
+  const [descModel, setDescModel] = useState<string | null>(proposal.description_model ?? null);
   const [descMeta, setDescMeta] = useState<string | null>(
     proposal.description
       ? [proposal.description_model, proposal.description_generated_at
@@ -77,9 +82,24 @@ function ProposalCard({
   );
   const [descErr, setDescErr] = useState<string | null>(null);
 
+  const dirty = description !== null && draft !== description;
+
+  // An unsaved caption is typed work, and the browser is the only thing that can stop a reload
+  // from discarding it.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   // Generate a description from the transcript via the backend (Vertex) and persist it on the
-  // video. The text shown here is what was STORED, not a preview — regenerating overwrites.
+  // video. The text shown here is what was STORED, not a preview — regenerating overwrites, so
+  // an unsaved edit or a previously hand-written caption gets a confirm first.
   async function describe() {
+    if (dirty && !window.confirm("Regenerate will discard your unsaved edits. Continue?")) return;
+    if (!dirty && descModel === "edited" &&
+        !window.confirm("This caption was written by hand. Regenerating overwrites it. Continue?")) return;
     setDescribing(true);
     setDescErr(null);
     try {
@@ -87,6 +107,8 @@ function ProposalCard({
       if (!r.ok) throw new Error(await errText(r));
       const d = await r.json();
       setDescription(d.description);
+      setDraft(d.description);
+      setDescModel(d.model);
       setDescMeta(
         `${d.model} · ${d.transcript_chars.toLocaleString()} transcript chars` +
         (d.truncated ? " (truncated)" : "")
@@ -95,6 +117,29 @@ function ProposalCard({
       setDescErr(e instanceof Error ? e.message : String(e));
     } finally {
       setDescribing(false);
+    }
+  }
+
+  // Persist a hand-edited caption. The server flags it `description_model = "edited"` so a later
+  // "regenerate everything model X wrote" sweep leaves human text alone.
+  async function saveDescription() {
+    setSavingDesc(true);
+    setDescErr(null);
+    try {
+      const r = await apiFetch(`/video/${proposal.video_id}/description`, {
+        method: "PATCH",
+        body: JSON.stringify({ description: draft }),
+      });
+      if (!r.ok) throw new Error(await errText(r));
+      const d = await r.json();
+      setDescription(d.description);
+      setDraft(d.description);
+      setDescModel(d.model);
+      setDescMeta(`${d.model} · ${new Date(d.generated_at).toLocaleString()}`);
+    } catch (e: unknown) {
+      setDescErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingDesc(false);
     }
   }
 
@@ -232,26 +277,43 @@ function ProposalCard({
             <div style={{ fontSize: 12, color: BRAND.red, marginTop: 4 }}>{downloadErr}</div>
           )}
           {descErr && <div style={{ fontSize: 12, color: BRAND.red, marginTop: 4 }}>{descErr}</div>}
-          {description && (
-            <div style={{ marginTop: 10 }}>
-              {/* Read-only: this is what was SAVED to the video, not a draft. Showing it in an
-                  editable box would imply edits persist, and they do not. */}
+          {description !== null && (
+            <div style={{ marginTop: 10, maxWidth: 720 }}>
               <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 3 }}>
-                Saved description{descMeta ? ` — ${descMeta}` : ""}
+                {dirty ? "Unsaved edits" : "Saved description"}{descMeta ? ` — ${descMeta}` : ""}
               </div>
-              <div
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={8}
+                spellCheck
                 style={{
-                  whiteSpace: "pre-wrap",
+                  ...inputStyle,
+                  width: "100%",
+                  boxSizing: "border-box",
                   fontSize: 13,
                   lineHeight: 1.5,
+                  fontFamily: "inherit",
+                  resize: "vertical",
                   background: BRAND.bg,
-                  border: `1px solid ${BRAND.border}`,
-                  borderRadius: 6,
-                  padding: "8px 10px",
-                  maxWidth: 720,
                 }}
-              >
-                {description}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
+                <Button onClick={saveDescription} disabled={!dirty || savingDesc}>
+                  {savingDesc ? "Saving…" : "Save description"}
+                </Button>
+                {dirty && !savingDesc && (
+                  <button
+                    type="button"
+                    onClick={() => setDraft(description)}
+                    style={{
+                      background: "none", border: "none", padding: 0, fontSize: 13,
+                      fontWeight: 600, fontFamily: "inherit", color: BRAND.sub, cursor: "pointer",
+                    }}
+                  >
+                    Discard edits
+                  </button>
+                )}
               </div>
             </div>
           )}

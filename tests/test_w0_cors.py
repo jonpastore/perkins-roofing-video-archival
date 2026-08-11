@@ -430,6 +430,19 @@ class TestCORSMiddlewareIntegration:
         r = self.client.options("/ping", headers=headers)
         assert r.status_code == 204
 
+    def test_preflight_allows_every_method_the_app_routes(self):
+        """The allow-list must cover every verb the API actually exposes.
+
+        PATCH was missing while two PATCH routes shipped — the browser preflight rejected them
+        and no server-side test could see it, because the middleware never reads the route table.
+        """
+        headers = {"origin": "https://app.tenant1.com", "host": "app.tenant1.com",
+                   "access-control-request-method": "PATCH"}
+        allowed = self.client.options("/ping", headers=headers).headers.get(
+            "access-control-allow-methods", "")
+        for verb in ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+            assert verb in allowed, f"{verb} missing from Access-Control-Allow-Methods"
+
     def test_preflight_vary_origin(self):
         headers = {"origin": "https://app.tenant1.com", "host": "app.tenant1.com",
                    "access-control-request-method": "GET"}

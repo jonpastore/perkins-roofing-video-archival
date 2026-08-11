@@ -145,7 +145,7 @@ def _is_allowed(origin: str, host_tenant: int | None, origins: list[dict]) -> bo
     return False
 
 
-_ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS"
+_ALLOWED_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 _ALLOWED_HEADERS = "Authorization, Content-Type"
 _MAX_AGE = "600"
 

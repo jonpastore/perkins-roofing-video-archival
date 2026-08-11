@@ -10,7 +10,12 @@ without a deploy.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+
+#: Hard ceiling on hashtags in a generated caption. Josh's prompt asks for "approximately 5";
+#: "approximately" is not a thing a model obeys, so the number is also enforced after the fact.
+MAX_HASHTAGS = 5
 
 #: Transcripts run to tens of thousands of words on a long video and the description only needs the
 #: substance. Gemini would accept far more, but every token is billed on a button a reviewer may
@@ -95,6 +100,81 @@ def render_prompt(template: str | None, *, title: str | None, duration, transcri
         out = f"{out}\n\nTranscript:\n{trimmed}"
     return Rendered(prompt=out, transcript_chars=len(trimmed),
                     truncated=len(transcript) > MAX_TRANSCRIPT_CHARS)
+
+
+#: A hashtag: # followed by word characters, not mid-word (so "C#" or a URL fragment is not one).
+_HASHTAG_RE = re.compile(r"(?<![\w#])#\w+")
+
+#: Structural labels the prompt's OUTPUT RULE forbids — the model emitting its own scaffolding
+#: ("Hook:", "Hashtags:") instead of the finished caption.
+_LABEL_RE = re.compile(r"^\s*(hashtags?|hook|caption|body|final caption)\s*:\s*", re.IGNORECASE)
+
+#: Chat filler that must never reach a social post. Checked, not stripped: if the model is talking
+#: to the reviewer mid-caption, the text needs a human's eye, not a regex.
+_CHATTER = (
+    "here is your caption", "here's your caption", "here is the caption",
+    "let me know if", "would you like", "i hope this helps",
+)
+
+
+@dataclass(frozen=True)
+class Checked:
+    """A caption after the post-generation pass. `fixes` were applied; `problems` were not."""
+    text: str
+    fixes: tuple[str, ...]
+    problems: tuple[str, ...]
+
+
+def enforce(text: str, *, max_hashtags: int = MAX_HASHTAGS) -> Checked:
+    """Hold generated output to the prompt's own rules.
+
+    The prompt states the rules; nothing until now checked that a given generation followed them.
+    Two of them are mechanical, so they are enforced rather than hoped for:
+
+      * **at most `max_hashtags` hashtags** — extras are dropped, earliest kept. The model treats
+        "approximately 5" as a suggestion and regularly returns eight.
+      * **no structural labels** ("Hook:", "Hashtags:") — the OUTPUT RULE forbids them and they
+        are unambiguous scaffolding, so they are stripped.
+
+    What is NOT auto-fixed is reported instead: assistant chatter aimed at the reviewer, and a
+    caption with no hashtags at all. Rewriting those means guessing at intent, and a silent guess
+    on a caption bound for Perkins' Instagram is worse than a flag the reviewer can act on.
+    """
+    fixes: list[str] = []
+    problems: list[str] = []
+
+    lines, stripped_labels = [], 0
+    for line in text.splitlines():
+        new = _LABEL_RE.sub("", line)
+        if new != line:
+            stripped_labels += 1
+        lines.append(new)
+    out = "\n".join(lines)
+    if stripped_labels:
+        fixes.append(f"removed {stripped_labels} structural label(s) the output rule forbids")
+
+    tags = _HASHTAG_RE.findall(out)
+    if len(tags) > max_hashtags:
+        # Drop from the END so the model's own ordering (most relevant first) survives.
+        for extra in reversed(tags[max_hashtags:]):
+            idx = out.rfind(extra)
+            if idx != -1:
+                out = out[:idx] + out[idx + len(extra):]
+        fixes.append(f"trimmed {len(tags) - max_hashtags} hashtag(s) over the limit of {max_hashtags}")
+    elif not tags:
+        problems.append("no hashtags — the prompt asks every caption to end with about 5")
+
+    lowered = out.lower()
+    for phrase in _CHATTER:
+        if phrase in lowered:
+            problems.append(f"reads like a reply to the operator, not a caption: {phrase!r}")
+
+    # Trailing whitespace left by removed tags/labels, and any blank run they opened up.
+    out = re.sub(r"[ \t]+(\n|$)", r"\1", out)
+    out = re.sub(r"\n{3,}", "\n\n", out).strip()
+    if not out:
+        raise DescriptionError("Nothing left after validation — the model returned only scaffolding.")
+    return Checked(text=out, fixes=tuple(fixes), problems=tuple(problems))
 
 
 def clean(text: str | None) -> str:

@@ -17,7 +17,7 @@ os.environ["DB_URL"] = f"sqlite:///{_tmp.name}"
 
 from api.auth import set_verifier  # noqa: E402
 from api.routes.video import router  # noqa: E402
-from app.models import Base, MiniSeries, SessionLocal, engine  # noqa: E402
+from app.models import Base, MiniSeries, SessionLocal, Video, engine  # noqa: E402
 
 Base.metadata.create_all(engine)
 
@@ -28,9 +28,10 @@ Base.metadata.create_all(engine)
 
 @pytest.fixture(autouse=True)
 def clean_db():
-    """Wipe mini_series between tests."""
+    """Wipe mini_series and videos between tests."""
     with SessionLocal() as db:
         db.query(MiniSeries).delete()
+        db.query(Video).delete()
         db.commit()
     yield
 
@@ -206,3 +207,90 @@ def test_approve_401_no_token(seeded_series):
     client = _make_client("admin")
     resp = client.post(f"/video/{seeded_series}/approve", json={})
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PATCH /video/{video_id}/description — hand edits
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def seeded_video():
+    """A video carrying a GENERATED description, as the approval queue would show it."""
+    with SessionLocal() as db:
+        db.add(Video(
+            id="vid_abc",
+            title="Roof Repair Tips",
+            description="machine wrote this",
+            description_model="gemini-2.5-pro",
+        ))
+        db.commit()
+    return "vid_abc"
+
+
+def test_patch_description_round_trips(seeded_video):
+    """The edit must come back from the DB — a write nothing reads back is the recurring defect."""
+    client = _make_client("admin")
+    resp = client.patch(
+        f"/video/{seeded_video}/description",
+        json={"description": "  Josh wrote this by hand.  "},
+        headers={"Authorization": "Bearer tok"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["description"] == "Josh wrote this by hand."
+
+    with SessionLocal() as db:
+        assert db.get(Video, seeded_video).description == "Josh wrote this by hand."
+
+    # ...and the proposal queue serves the edit, not the generated text it replaced.
+    with SessionLocal() as db:
+        db.add(MiniSeries(video_id=seeded_video, title="S", parts_json=[], approved=0))
+        db.commit()
+    listed = client.get("/video/proposals", headers={"Authorization": "Bearer tok"}).json()
+    assert listed[0]["description"] == "Josh wrote this by hand."
+
+
+def test_patch_description_flags_model_edited(seeded_video):
+    """A hand edit must stop looking like model output, or a regenerate sweep eats it."""
+    client = _make_client("admin")
+    resp = client.patch(
+        f"/video/{seeded_video}/description",
+        json={"description": "hand written"},
+        headers={"Authorization": "Bearer tok"},
+    )
+    assert resp.json()["model"] == "edited"
+    with SessionLocal() as db:
+        row = db.get(Video, seeded_video)
+        assert row.description_model == "edited"
+        assert row.description_generated_at is not None
+
+
+def test_patch_description_rejects_empty(seeded_video):
+    client = _make_client("admin")
+    resp = client.patch(
+        f"/video/{seeded_video}/description",
+        json={"description": "   "},
+        headers={"Authorization": "Bearer tok"},
+    )
+    assert resp.status_code == 400
+    with SessionLocal() as db:
+        assert db.get(Video, seeded_video).description == "machine wrote this"
+
+
+def test_patch_description_404_unknown():
+    client = _make_client("admin")
+    resp = client.patch(
+        "/video/nope/description",
+        json={"description": "x"},
+        headers={"Authorization": "Bearer tok"},
+    )
+    assert resp.status_code == 404
+
+
+def test_patch_description_403_sales(seeded_video):
+    client = _make_client("sales")
+    resp = client.patch(
+        f"/video/{seeded_video}/description",
+        json={"description": "x"},
+        headers={"Authorization": "Bearer tok"},
+    )
+    assert resp.status_code == 403
