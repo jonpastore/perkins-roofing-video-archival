@@ -77,6 +77,11 @@ class Video(Base):
     comments_crawled_at = Column(DateTime)
     unavailable_since = Column(DateTime, nullable=True)
     hidden_at = Column(DateTime, nullable=True)
+    # Generated from the transcript via VIDEO_DESCRIPTION_PROMPT (migration 0056). `_model` is kept
+    # so a description written by an older model can be found and regenerated.
+    description = Column(Text, nullable=True)
+    description_generated_at = Column(DateTime, nullable=True)
+    description_model = Column(String, nullable=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_videos_tenant_id", "tenant_id"),)
 
