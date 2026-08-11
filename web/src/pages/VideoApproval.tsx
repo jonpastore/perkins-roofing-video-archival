@@ -60,6 +60,31 @@ function ProposalCard({
   // Which source video is currently minting a download URL (null = none in flight).
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadErr, setDownloadErr] = useState<string | null>(null);
+  const [describing, setDescribing] = useState(false);
+  const [description, setDescription] = useState<string | null>(null);
+  const [descMeta, setDescMeta] = useState<string | null>(null);
+  const [descErr, setDescErr] = useState<string | null>(null);
+
+  // Generate a description from the transcript via the backend (Vertex) and persist it on the
+  // video. The text shown here is what was STORED, not a preview — regenerating overwrites.
+  async function describe() {
+    setDescribing(true);
+    setDescErr(null);
+    try {
+      const r = await apiFetch(`/video/${proposal.video_id}/description`, { method: "POST" });
+      if (!r.ok) throw new Error(await errText(r));
+      const d = await r.json();
+      setDescription(d.description);
+      setDescMeta(
+        `${d.model} · ${d.transcript_chars.toLocaleString()} transcript chars` +
+        (d.truncated ? " (truncated)" : "")
+      );
+    } catch (e: unknown) {
+      setDescErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDescribing(false);
+    }
+  }
 
   // Download the SOURCE video behind a proposal. The signed URL is minted per click rather than
   // rendered into an href: it is short-lived, so a link built at page load is already stale by the
@@ -172,9 +197,51 @@ function ProposalCard({
             >
               {downloading === proposal.video_id ? "⬇ Preparing…" : "⬇ Download source video"}
             </button>
+            <button
+              type="button"
+              onClick={describe}
+              disabled={describing}
+              title="Generate a description from the transcript and save it to this video"
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: "inherit",
+                color: describing ? BRAND.sub : BRAND.navyText,
+                cursor: describing ? "wait" : "pointer",
+              }}
+            >
+              {describing ? "✎ Generating…" : description ? "✎ Regenerate description" : "✎ Generate description"}
+            </button>
           </div>
           {downloadErr && (
             <div style={{ fontSize: 12, color: BRAND.red, marginTop: 4 }}>{downloadErr}</div>
+          )}
+          {descErr && <div style={{ fontSize: 12, color: BRAND.red, marginTop: 4 }}>{descErr}</div>}
+          {description && (
+            <div style={{ marginTop: 10 }}>
+              {/* Read-only: this is what was SAVED to the video, not a draft. Showing it in an
+                  editable box would imply edits persist, and they do not. */}
+              <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 3 }}>
+                Saved description{descMeta ? ` — ${descMeta}` : ""}
+              </div>
+              <div
+                style={{
+                  whiteSpace: "pre-wrap",
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                  background: BRAND.bg,
+                  border: `1px solid ${BRAND.border}`,
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                  maxWidth: 720,
+                }}
+              >
+                {description}
+              </div>
+            </div>
           )}
         </div>
         {approved && <Badge tone="green">Approved</Badge>}

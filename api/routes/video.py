@@ -7,6 +7,7 @@ Role requirements (from core.authz):
   - approve_video  → admin only (sales is denied; admin passes via the "*" wildcard)
   - manage_series  → admin only
 """
+import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from app.models import MiniSeries, Video
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/video", tags=["video"])
 
@@ -126,6 +129,92 @@ def list_proposals(
     rows = db.query(MiniSeries).filter(MiniSeries.approved == 0).all()
     durations = _durations_for(db, [r.video_id for r in rows])
     return [_series_to_dict(r, durations.get(r.video_id)) for r in rows]
+
+
+@router.post("/{video_id}/description")
+def generate_description(
+    video_id: str,
+    claims=Depends(require_role("approve_video")),
+    db: Session = Depends(get_db_session),
+):
+    """Generate a description for a video from its transcript and STORE it on the video.
+
+    Reads the operator's VIDEO_DESCRIPTION_PROMPT from platform_config (Admin Config -> Platform
+    Settings), renders it against the transcript already in `segments`, and calls the configured
+    LLM — Vertex in prod, per LLM_BACKEND.
+
+    The result is persisted to videos.description rather than returned and forgotten, so a
+    reviewer who generates on Monday still has it on Tuesday and a later publish step can read it.
+    Regenerating overwrites: the prompt is the thing being iterated on, so the newest run wins.
+
+    Returns 400 when the video has no transcript yet — that is a state the reviewer can act on
+    (wait for ingestion), not a server error.
+    """
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from app.llm import chat  # noqa: PLC0415
+    from app.models import PlatformConfig, PlatformSessionLocal, Segment  # noqa: PLC0415
+    from core.video_description import (  # noqa: PLC0415
+        DescriptionError,
+        clean,
+        render_prompt,
+        transcript_text,
+    )
+
+    video = db.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+
+    segments = db.query(Segment).filter(Segment.video_id == video_id).order_by(Segment.start).all()
+
+    # The prompt is PLATFORM-level config (no tenant_id), so it needs the platform session and
+    # scope flag — the tenant-scoped `db` cannot see that table's rows.
+    with PlatformSessionLocal() as pdb:
+        pdb.info["platform_scope"] = True
+        row = pdb.get(PlatformConfig, "VIDEO_DESCRIPTION_PROMPT")
+        template = (row.value if row else "") or ""
+
+    try:
+        rendered = render_prompt(
+            template,
+            title=video.title,
+            duration=video.duration,
+            transcript=transcript_text(segments),
+        )
+    except DescriptionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        raw = chat(rendered.prompt, want_json=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Description generation failed for %s", video_id)
+        raise HTTPException(status_code=502, detail=f"description generation failed: {exc}") from exc
+
+    try:
+        description = clean(raw)
+    except DescriptionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    from app.config import settings  # noqa: PLC0415
+
+    video.description = description
+    video.description_generated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    video.description_model = getattr(settings, "LLM_MODEL", None) or "unknown"
+    db.commit()
+
+    logger.info(
+        "Description generated for %s by %s (%d transcript chars%s)",
+        video_id, claims.get("email", "unknown"), rendered.transcript_chars,
+        ", truncated" if rendered.truncated else "",
+    )
+    return {
+        "video_id": video_id,
+        "description": description,
+        "generated_at": video.description_generated_at.isoformat(),
+        "model": video.description_model,
+        "transcript_chars": rendered.transcript_chars,
+        "truncated": rendered.truncated,
+    }
 
 
 class ProposeTopicSeriesRequest(BaseModel):
