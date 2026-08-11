@@ -177,7 +177,10 @@ export function Proposals() {
   const [statusCounts, setStatusCounts] = useState<Partial<Record<ProposalStatus, number>>>({});
   const [proposalPage, setProposalPage] = useState(1);
   const proposalPageSize = 100;
-  const [loading, setLoading] = useState(false);
+  // Starts TRUE: the page always fetches on mount, and starting false rendered one frame of
+  // "No proposals yet. Build a quote in the Quoting tab" before the request came back — an empty
+  // state that reads as an answer, on a tab that has proposals in it.
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Embedded create drawer

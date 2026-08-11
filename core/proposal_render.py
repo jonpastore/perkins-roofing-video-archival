@@ -70,6 +70,15 @@ class ProposalRenderContext:
     #: and never printed on the thing the customer signs. Escaped by the sandboxed autoescape env
     #: like every other ctx value; it is operator-supplied text, not template source.
     notes: str | None = field(default=None)
+    #: The estimator's scope of work (quote_snapshot.scope_of_work_text) — what the crew will
+    #: actually do, edited per job from the config template in the estimate form.
+    #:
+    #: The form has captured this and sent it on every proposal since the field existed, and
+    #: NOTHING read it: no context field, no template block. So the estimator wrote a scope, the
+    #: proposal went out without it, and the only visible symptom was a customer document that
+    #: described the price but never the work. (Jon, 2026-08-11: "the scope of work is not
+    #: showing on the proposal".)
+    scope_of_work: str | None = field(default=None)
     # "How this price was built" — the per-line formula trace the engine already produces for
     # debug=true. Off by default: it is internal build-up, not customer-facing boilerplate. Turned
     # on when the reader needs to check our arithmetic against their own sheet rather than take a
@@ -170,6 +179,7 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
         },
         "accept_url": ctx.accept_url,
         "notes": ctx.notes or "",
+        "scope_of_work": ctx.scope_of_work or "",
         "structures": ctx.structures or [],
         "calc": {
             "include": ctx.include_calc_breakdown,
@@ -405,6 +415,13 @@ DEFAULT_TEMPLATE_HTML = """\
   <h2>Scope of Work</h2>
   {% else %}
   <h2 class="page-break-1">Scope of Work</h2>
+  {% endif %}
+  {# The estimator's written scope, above the priced cards: it describes the JOB, while the cards
+     below break out what each part of it costs. #}
+  {% if scope_of_work %}
+  <div class="scope">
+    <div class="scope-body"><p class="spec">{{ scope_of_work }}</p></div>
+  </div>
   {% endif %}
   {% if quote.line_items %}
     {% for item in quote.line_items %}

@@ -890,3 +890,46 @@ class TestJobNotes:
         assert ctx.notes is None
         before = render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx)
         assert "Notes for This Job" not in before
+
+
+# ---------------------------------------------------------------------------
+# Scope of work on the CUSTOMER document
+# ---------------------------------------------------------------------------
+# The estimate form has sent `quote_snapshot.scope_of_work_text` since the field existed and NO
+# renderer read it — no context field, no template block. The estimator wrote what the crew would
+# do, and the customer received a document that priced the job without ever describing it.
+
+class TestScopeOfWork:
+    def test_scope_renders_on_the_document(self):
+        html = render_proposal_html(
+            DEFAULT_TEMPLATE_HTML,
+            _minimal_context(scope_of_work="Tear off to deck.\nInstall underlayment.\nNew tile."))
+        assert "Tear off to deck." in html
+        assert "New tile." in html
+
+    def test_scope_text_sits_under_the_scope_heading_not_in_a_second_section(self):
+        """The document already has a Scope of Work heading over the priced cards. The written
+        scope belongs under it — a second heading with the same name reads as a different
+        section."""
+        html = render_proposal_html(
+            DEFAULT_TEMPLATE_HTML, _minimal_context(scope_of_work="Tear off to deck."))
+        assert html.count(">Scope of Work</h2>") == 1
+        assert html.index(">Scope of Work</h2>") < html.index("Tear off to deck.")
+
+    def test_nothing_extra_renders_without_a_scope(self):
+        for value in ("", None):
+            html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(scope_of_work=value))
+            assert html.count(">Scope of Work</h2>") == 1, repr(value)
+
+    def test_scope_is_html_escaped(self):
+        html = render_proposal_html(
+            DEFAULT_TEMPLATE_HTML,
+            _minimal_context(scope_of_work='<script>alert("xss")</script>'))
+        assert "<script>alert" not in html
+        assert "&lt;script&gt;" in html
+
+    def test_scope_defaults_to_absent_so_old_snapshots_are_unchanged(self):
+        ctx = _minimal_context()
+        assert ctx.scope_of_work is None
+        assert render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx) == render_proposal_html(
+            DEFAULT_TEMPLATE_HTML, _minimal_context())

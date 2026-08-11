@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { apiFetch, listBranches, type BranchRow } from "../api";
+import { apiFetch, apiFetchMultipart, listBranches, type BranchRow } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, PillButton, SectionLabel } from "../ui";
 import { errText } from "../lib/errors";
+import { looksComplete, parseAddress } from "../lib/address";
 import { installSeriesFor, suggestedDayCells } from "../lib/quoteDays";
 import {
   buildProjectQuoteBody,
@@ -382,13 +383,32 @@ function PropertyForm({
   const [zip, setZip] = useState("");
   const [county, setCounty] = useState("");
   const [codeZone, setCodeZone] = useState("FBC");
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
+
+  // Paste a whole address into Street and it fans out into the other fields. Estimators paste
+  // "1234 SW 5th St, Miami, FL 33169" from an email and then retype it five times.
+  // Only fields the parser is confident about are filled, and only when they are empty or the
+  // paste replaces the whole street — a paste must not quietly overwrite typed corrections.
+  function handleAddressPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData("text");
+    if (!looksComplete(text)) return;   // a plain street line pastes normally
+    e.preventDefault();
+    const p = parseAddress(text);
+    const filled: string[] = [];
+    setStreet(p.street); filled.push("street");
+    if (p.city) { setCity(p.city); filled.push("city"); }
+    if (p.state) { setState(p.state); filled.push("state"); }
+    if (p.zip) { setZip(p.zip); filled.push("ZIP"); }
+    setPasteNote(`Filled ${filled.join(", ")} from the pasted address. Check the code zone.`);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <FieldLabel>Street *</FieldLabel>
-          <input value={street} onChange={(e) => setStreet(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="123 Main St" />
+          <input value={street} onChange={(e) => setStreet(e.target.value)} onPaste={handleAddressPaste} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="123 Main St — or paste the whole address" />
+          {pasteNote && <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>{pasteNote}</div>}
         </div>
         <div>
           <FieldLabel>City</FieldLabel>
@@ -499,14 +519,71 @@ function MeasurementForm({
   const [wallFlashingsLf, setWallFlashingsLf] = useState("");
   const [pitchPrimary, setPitchPrimary] = useState("");
   const [provenanceNote, setProvenanceNote] = useState("");
+  const [roofrBusy, setRoofrBusy] = useState(false);
+  const [roofrError, setRoofrError] = useState<string | null>(null);
+  const [roofrNote, setRoofrNote] = useState<string | null>(null);
 
   function num(s: string): number | null {
     const v = parseFloat(s);
     return isNaN(v) ? null : v;
   }
 
+  // Upload a Roofr report and PREFILL the form from it. Deliberately not an auto-save: the
+  // estimator sees every parsed number in the fields they already know before anything is
+  // stored, so a bad parse is caught here rather than under a quote.
+  async function handleRoofrUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";                       // so the same file can be re-picked after a failure
+    if (!file) return;
+    setRoofrBusy(true);
+    setRoofrError(null);
+    setRoofrNote(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await apiFetchMultipart("/measurements/parse-roofr", { method: "POST", body: fd });
+      if (!r.ok) throw new Error(await errText(r));
+      const { measurement: m, extras, provenance_note } = await r.json();
+      const set = (v: number | null, fn: (s: string) => void) => { if (v !== null && v !== undefined) fn(String(v)); };
+      set(m.total_sq, setTotalSq);
+      set(m.pitched_sq, setPitchedSq);
+      set(m.flat_sq, setFlatSq);
+      set(m.hips_lf, setHipsLf);
+      set(m.ridges_lf, setRidgesLf);
+      set(m.valleys_lf, setValleysLf);
+      set(m.rakes_lf, setRakesLf);
+      set(m.eaves_lf, setEavesLf);
+      set(m.wall_flashings_lf, setWallFlashingsLf);
+      set(m.pitch_primary, setPitchPrimary);
+      setProvenanceNote(provenance_note || "");
+      setRoofrNote(
+        `Filled from the report — ${m.total_sq} sq total` +
+        (m.flat_sq ? ` (${m.pitched_sq} pitched + ${m.flat_sq} flat)` : "") +
+        (extras?.facets ? `, ${extras.facets} facets` : "") +
+        (extras?.two_story_sq ? `, ${extras.two_story_sq} sq two-story` : "") +
+        ". Check them, then Save."
+      );
+    } catch (err: unknown) {
+      setRoofrError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRoofrBusy(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ padding: "10px 12px", background: BRAND.bg, borderRadius: 8, border: `1px dashed ${BRAND.border}` }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13, cursor: roofrBusy ? "wait" : "pointer" }}>
+          <strong style={{ color: BRAND.navyText }}>{roofrBusy ? "Reading report…" : "Upload a Roofr report"}</strong>
+          <span style={{ color: BRAND.sub, fontSize: 12 }}>PDF — fills the fields below; nothing is saved until you press Save.</span>
+          <input type="file" accept="application/pdf,.pdf" disabled={roofrBusy} onChange={handleRoofrUpload} style={{ display: "none" }} />
+          <span style={{ border: `1px solid ${BRAND.border}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, background: "#fff" }}>
+            Choose PDF
+          </span>
+        </label>
+        {roofrError && <div style={{ fontSize: 12, color: BRAND.red, marginTop: 6 }}>{roofrError}</div>}
+        {roofrNote && <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 6 }}>{roofrNote}</div>}
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
         <div>
           <FieldLabel>Total Squares</FieldLabel>
@@ -681,7 +758,11 @@ export function Quoting() {
   // feature that moved the day model most: 83% -> 90% of Tim's homes within a day of his own
   // booked days. Feeds the day model only; it never touches a rate.
   const [quoteAccessDifficult, setQuoteAccessDifficult] = useState(false);
-  const [quoteWaterfront, setQuoteWaterfront] = useState(false);
+  // Jon, 2026-08-11: both of these are INCLUDE-by-default and excluded by unticking, so an
+  // estimator drops a scope item deliberately rather than forgetting to add one. Perkins is a
+  // South Florida coastal roofer — the coastal package is the norm here, not the exception.
+  const [quoteWaterfront, setQuoteWaterfront] = useState(true);
+  const [quoteIncludeGutters, setQuoteIncludeGutters] = useState(true);
   // Mixed roofs: 9 of the 30 homes Tim sent have a flat section, up to 34% of the roof, and it was
   // simply not being quoted. His own sheet carries "Squares (Flat)" next to the sloped count.
   const [quoteFlatSquares, setQuoteFlatSquares] = useState("");
@@ -791,7 +872,7 @@ export function Quoting() {
   const [jobMode, setJobMode] = useState<"reroof" | "repair">("reroof");
 
   // Repair quote (time-based — alternative to full replacement, Zoom 2026-07-20 [37:04]/[45:31])
-  const [repairRoofType, setRepairRoofType] = useState<"shingle" | "tile" | "metal" | "flat">("shingle");
+  const [repairRoofType, setRepairRoofType] = useState<string>("shingle");
   const [repairDays, setRepairDays] = useState("");
   const [repairCrewSize, setRepairCrewSize] = useState<1 | 2>(1);
   const [repairMaterialCost, setRepairMaterialCost] = useState("");
@@ -851,6 +932,24 @@ export function Quoting() {
     { value: "dimensional_shingle", label: "Dimensional Shingle" },
     { value: "standing_seam_metal", label: "Standing Seam Metal" },
   ];
+  // Repair categories come from config, so a category Tim adds shows up without a deploy — the
+  // same reason RepairQuoteRequest.roof_type is a str and not a Literal.
+  const repairRoofTypes = rates?.repair?.roof_types?.length
+    ? rates.repair.roof_types
+    : ["shingle", "tile", "metal", "flat"];
+  const repairRoofTypeLabels: Record<string, string> = {
+    shingle: "Shingle",
+    tile: "Tile",
+    metal: "Metal — profile unknown",
+    metal_standing_seam: "Metal — standing seam",
+    metal_5v_crimp: "Metal — 5V crimp",
+    metal_corrugated: "Metal — corrugated",
+    metal_tile: "Metal — metal tile",
+    flat: "Flat",
+  };
+  function labelRepairRoofType(key: string): string {
+    return repairRoofTypeLabels[key] ?? key.replace(/_/g, " ");
+  }
   const lowSlopeTypes = rates?.low_slope_roof_types ?? [];
   const roofTypes = rates?.roof_types?.length
     ? rates.roof_types.map((value) => ({ value, label: roofTypeLabels[value] ?? value.replace(/_/g, " ") }))
@@ -861,18 +960,35 @@ export function Quoting() {
     return roofTypeLabels[key] ?? roofTypes.find((r) => r.value === key)?.label ?? key.replace(/_/g, " ");
   }
 
-  function tierTotalsForQuote(q: QuoteResult): { good: number; better: number; best: number } {
+  function tierTotalsForQuote(q: QuoteResult): {
+    good: { total: number; label: string };
+    better: { total: number; label: string };
+    best: { total: number; label: string };
+  } {
     // good/better/best snapshot compat, derived from the real package_options menu:
     // good=PROTECTOR (engine total), better=PREFERRED, best=highest-total PREMIUM* tier
     // (falls back to PREFERRED's total when the system has no PREMIUM tier).
+    //
+    // The LABEL travels with the total. The proposal used to print "Good / Standard materials"
+    // against a five-figure number, which names nothing a customer can compare or a salesperson
+    // can defend — the package menu already carries "Perkins Protector", "Perkins Preferred",
+    // "Perkins Premium (Caribbean)", and those are the products being sold.
     const options = q.package_options ?? [];
-    const protector = options.find((o) => o.key === "PROTECTOR")?.total ?? q.project_total;
-    const preferred = options.find((o) => o.key === "PREFERRED")?.total ?? protector;
+    const pick = (key: string, fallbackTotal: number, fallbackLabel: string) => {
+      const o = options.find((x) => x.key === key);
+      return o ? { total: o.total, label: o.label || fallbackLabel } : { total: fallbackTotal, label: fallbackLabel };
+    };
+    const good = pick("PROTECTOR", q.project_total, "Perkins Protector");
+    const better = pick("PREFERRED", good.total, good.label);
     const premiumOptions = options.filter((o) => o.key.startsWith("PREMIUM"));
-    const premium = premiumOptions.length
-      ? Math.max(...premiumOptions.map((o) => o.total))
-      : preferred;
-    return { good: protector, better: preferred, best: premium };
+    const best = premiumOptions.length
+      ? premiumOptions.reduce((a, b) => (b.total > a.total ? b : a))
+      : null;
+    return {
+      good,
+      better,
+      best: best ? { total: best.total, label: best.label || "Perkins Premium" } : better,
+    };
   }
 
   function loadCustomers(searchTerm = "") {
@@ -959,7 +1075,11 @@ export function Quoting() {
       }
       const created: Customer = await r.json();
       setCustomers((prev) => [...prev, created].sort((a, b) => a.display_name.localeCompare(b.display_name)));
-      setShowNewCustomer(false);
+      // Open what was just created. Adding it to the list and leaving nothing selected meant
+      // hunting for a customer whose name you had typed a second earlier (Jon, 2026-08-11).
+      // openCustomer, not a bare setSelectedCustomer: it also clears the previous customer's
+      // measurements and quote result, which would otherwise show under the new name.
+      openCustomer(created);
     } catch (e: unknown) {
       setCustomerFormError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1222,15 +1342,27 @@ export function Quoting() {
       stucco_metal_lf: Number(quoteStuccoMetalLf || 0),
       penetrations: Number(quotePenetrations || 0),
       ridge_vent_lf: Number(quoteRidgeVentLf || 0),
+      // Excluding gutters zeroes every gutter input rather than relying on the fields being
+      // blank: a quantity typed before the box was unticked would otherwise still be priced,
+      // and the estimator would have no way to see that from the form.
       gutter_style: quoteGutterStyle,
-      gutter_lf: Number(quoteGutterLf || 0),
-      gutter_two_story: quoteGutterTwoStory,
-      gutter_elbows: Number(quoteGutterElbows || 0),
-      gutter_removal_lf: Number(quoteGutterRemovalLf || 0),
-      downspout_lf: Number(quoteDownspoutLf || 0),
-      leaf_guard: quoteLeafGuard,
-      leaderheads_res: Number(quoteLeaderheadsRes || 0),
-      leaderheads_comm: Number(quoteLeaderheadsComm || 0),
+      gutter_lf: quoteIncludeGutters ? Number(quoteGutterLf || 0) : 0,
+      gutter_two_story: quoteIncludeGutters && quoteGutterTwoStory,
+      gutter_elbows: quoteIncludeGutters ? Number(quoteGutterElbows || 0) : 0,
+      gutter_removal_lf: quoteIncludeGutters ? Number(quoteGutterRemovalLf || 0) : 0,
+      downspout_lf: quoteIncludeGutters ? Number(quoteDownspoutLf || 0) : 0,
+      leaf_guard: quoteIncludeGutters ? quoteLeafGuard : "none",
+      leaderheads_res: quoteIncludeGutters ? Number(quoteLeaderheadsRes || 0) : 0,
+      leaderheads_comm: quoteIncludeGutters ? Number(quoteLeaderheadsComm || 0) : 0,
+      // Ask for the per-line formula trace. The whole "How this price was built" chain existed —
+      // the engine emits `explain`, _freeze_calc_breakdown renders rows from it, the template has
+      // the section, the proposal form has the checkbox — and NOTHING ever set this flag, so
+      // `explain` was always absent, _freeze_calc_breakdown always failed closed, and ticking the
+      // box silently unticked itself. Sent unconditionally rather than tied to the checkbox so a
+      // reviewer can turn the breakdown on without re-running the estimate; the server gates it on
+      // estimating_manage (a sales user simply gets no trace) and strips it before the audit row
+      // is written, so this cannot widen who sees profit_scale or office burn.
+      debug: true,
       // Only keys the active config actually prices for this zone — the engine ignores unknown
       // keys silently, so sending a stale one would drop the item with no warning.
       extra_line_items: quoteExtraLineItems.filter((k) => k in (rates?.line_items ?? {})),
@@ -1652,8 +1784,8 @@ export function Quoting() {
     setCreatingProposal(true);
     setProposalError(null);
 
-    const { good: goodTotal, better: betterTotal, best: bestTotal } = tierTotalsForQuote(quoteResult);
-    const selectedTotal = recommendedTier === "best" ? bestTotal : recommendedTier === "better" ? betterTotal : goodTotal;
+    const tiers = tierTotalsForQuote(quoteResult);
+    const selectedTotal = tiers[recommendedTier].total;
     const snapshot = {
       estimate_id: quoteResult.estimate_id ?? null,
       estimate_version: quoteResult.estimate_version ?? null,
@@ -1666,10 +1798,13 @@ export function Quoting() {
       code_zone: quoteResult.region,
       roof_type: quoteResult.roof_type,
       num_squares: quoteResult.num_squares,
+      // `label` is the PACKAGE the customer is buying; `tier` keeps the good/better/best rank the
+      // snapshot schema and the accept page are built around. "Good — Standard materials" against
+      // a five-figure price named nothing anyone could compare.
       tiers: {
-        good: { label: "Good", description: "Standard materials", total: goodTotal },
-        better: { label: "Better", description: "Enhanced materials", total: betterTotal },
-        best: { label: "Best", description: "Premium materials", total: bestTotal },
+        good: { label: tiers.good.label, description: "Good", tier: "good", total: tiers.good.total },
+        better: { label: tiers.better.label, description: "Better", tier: "better", total: tiers.better.total },
+        best: { label: tiers.best.label, description: "Best", tier: "best", total: tiers.best.total },
       },
       package_options: quoteResult.package_options ?? [],
       discounts: quoteResult.discounts ?? [],
@@ -1883,19 +2018,43 @@ export function Quoting() {
         {/* Contacts */}
         <Card style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>Contacts</div>
+            <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
+              Additional contacts <span style={{ fontWeight: 500, color: BRAND.sub, fontSize: 12 }}>(optional)</span>
+            </div>
             {!showNewContact && (
               <Button variant="ghost" onClick={() => setShowNewContact(true)} style={{ fontSize: 12 }}>+ Add contact</Button>
             )}
           </div>
+          {/* The proposal is emailed to the CUSTOMER's own address (api/routes/proposals.py sends
+              to customer.email), so this list is for extra people — a spouse, a property manager,
+              a GC. It used to be titled "Contacts" and say "Add one before sending a proposal",
+              which read as a missing requirement on a customer whose email and phone were already
+              on file right above it. Showing the primary here beats copying it into a second
+              table nothing sends to. */}
           {contactError && <ErrorMsg>Error: {contactError}</ErrorMsg>}
           {showNewContact && (
             <div style={{ marginBottom: 16, padding: 16, background: BRAND.bg, borderRadius: 8 }}>
               <ContactForm onSave={handleAddContact} onCancel={() => setShowNewContact(false)} saving={savingContact} />
             </div>
           )}
+          {(selectedCustomer?.email || selectedCustomer?.phone) && (
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", fontSize: 13,
+                          padding: "6px 0", borderBottom: contacts.length ? `1px solid ${BRAND.border}` : "none" }}>
+              <span style={{ fontWeight: 600, color: BRAND.navyText, minWidth: 140 }}>
+                {selectedCustomer.display_name}
+              </span>
+              <Badge tone="blue">Primary — proposals go here</Badge>
+              {selectedCustomer.email && <span style={{ color: BRAND.sub }}>{selectedCustomer.email}</span>}
+              {selectedCustomer.phone && <span style={{ color: BRAND.sub }}>{selectedCustomer.phone}</span>}
+            </div>
+          )}
           {contacts.length === 0 ? (
-            <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>No contacts yet. Add one before sending a proposal.</p>
+            !selectedCustomer?.email && !selectedCustomer?.phone ? (
+              <p style={{ color: BRAND.sub, fontSize: 13, margin: 0 }}>
+                This customer has no email or phone. Add one on the customer record, or add a
+                contact here, before sending a proposal.
+              </p>
+            ) : null
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {contacts.map((c) => (
@@ -2257,10 +2416,12 @@ export function Quoting() {
                     checked={quoteWaterfront}
                     onChange={(e) => setQuoteWaterfront(e.target.checked)}
                   />
-                  Quote the Coastal package
+                  Include the Coastal package
                 </label>
                 <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
-                  Tidal and brackish canals count, not just the ocean and Intracoastal.
+                  {quoteWaterfront
+                    ? "Included by default. Untick for an inland address well away from salt water."
+                    : "EXCLUDED. Tidal and brackish canals count as salt water, not just the ocean and Intracoastal."}
                 </div>
               </div>
               {!isLowSlopeRoofType && (
@@ -2477,8 +2638,22 @@ export function Quoting() {
             </div>
 
             <div style={{ marginTop: 14 }}>
-              <SectionLabel>Gutters</SectionLabel>
-              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 90px 110px", gap: 10, alignItems: "end", marginTop: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                <SectionLabel>Gutters</SectionLabel>
+                <EstimateCheckbox
+                  checked={quoteIncludeGutters}
+                  onChange={setQuoteIncludeGutters}
+                  label="Include gutters"
+                  title="Unticked, no gutter line is priced — every quantity below is sent as zero."
+                />
+              </div>
+              {!quoteIncludeGutters && (
+                <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
+                  Excluded from this estimate. Quantities are kept so re-ticking restores them.
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 90px 110px", gap: 10, alignItems: "end", marginTop: 6,
+                            opacity: quoteIncludeGutters ? 1 : 0.45, pointerEvents: quoteIncludeGutters ? "auto" : "none" }}>
                 <div>
                   <FieldLabel>Style</FieldLabel>
                   <select
@@ -2498,7 +2673,8 @@ export function Quoting() {
                 <div><FieldLabel>Removal LF</FieldLabel><input type="number" min="0" step="1" value={quoteGutterRemovalLf} onChange={(e) => setQuoteGutterRemovalLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
                 <div><FieldLabel>Downspout LF (4×5)</FieldLabel><input type="number" min="0" step="1" value={quoteDownspoutLf} onChange={(e) => setQuoteDownspoutLf(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               </div>
-              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 110px 130px", gap: 10, alignItems: "end" }}>
+              <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 110px 130px", gap: 10, alignItems: "end",
+                            opacity: quoteIncludeGutters ? 1 : 0.45, pointerEvents: quoteIncludeGutters ? "auto" : "none" }}>
                 <div>
                   <FieldLabel>Leaf guard</FieldLabel>
                   <select value={quoteLeafGuard} onChange={(e) => setQuoteLeafGuard(e.target.value as "none" | "std" | "upgraded")} style={selectStyle}>
@@ -2510,12 +2686,12 @@ export function Quoting() {
                 <div><FieldLabel>Leaderheads (res)</FieldLabel><input type="number" min="0" step="1" value={quoteLeaderheadsRes} onChange={(e) => setQuoteLeaderheadsRes(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
                 <div><FieldLabel>Leaderheads (comm)</FieldLabel><input type="number" min="0" step="1" value={quoteLeaderheadsComm} onChange={(e) => setQuoteLeaderheadsComm(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
               </div>
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 8, opacity: quoteIncludeGutters ? 1 : 0.45 }}>
                 <EstimateCheckbox
                   checked={quoteGutterTwoStory}
                   onChange={setQuoteGutterTwoStory}
                   label="2-story (uplift applies)"
-                  disabled={!TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle)}
+                  disabled={!quoteIncludeGutters || !TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle)}
                   title={TWO_STORY_GUTTER_STYLES.has(quoteGutterStyle) ? undefined : "no 2-story rate configured for this style"}
                 />
               </div>
@@ -3189,13 +3365,18 @@ export function Quoting() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
             <div>
               <FieldLabel>Roof type</FieldLabel>
+              {/* Driven by config (repair.roof_types), which is what the API validates against —
+                  NOT by EXISTING_ROOF_OPTIONS. That list is the demo/tear-off selector for
+                  replacements, where each entry carries a priced demo rate, so metal profiles
+                  added for repair categorisation must not leak into it. Sharing the list is why
+                  repair only ever offered a generic "Metal". */}
               <select
                 value={repairRoofType}
-                onChange={(e) => setRepairRoofType(e.target.value as "shingle" | "tile" | "metal" | "flat")}
+                onChange={(e) => setRepairRoofType(e.target.value)}
                 style={selectStyle}
               >
-                {EXISTING_ROOF_OPTIONS.filter((o) => o.value !== "none").map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                {repairRoofTypes.map((value) => (
+                  <option key={value} value={value}>{labelRepairRoofType(value)}</option>
                 ))}
               </select>
             </div>
