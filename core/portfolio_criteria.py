@@ -29,7 +29,13 @@ from core.pii import find_pii, person_name_risk
 BLOCKING = ("blocker", "major")
 
 _IMG_ALT_RE = re.compile(r'<img[^>]*\balt="([^"]*)"', re.I)
-_MIN_IMAGES = 4
+# Jon, 2026-08-11, answering Wendy's 10-20 range: 20 is the HARD MAX, 1 is the hard floor.
+# The floor is deliberately permissive — a real project with one good photo should publish rather
+# than be blocked — while the ceiling is Wendy's rule and is enforced strictly. Her stated 10 is
+# an editorial target, not a gate; gating on it would have blocked Building 77 (9 tagged photos),
+# the very fixture chosen to demo this.
+_MIN_IMAGES = 1
+_MAX_IMAGES = 20
 _MIN_WORDS = 120
 
 
@@ -122,8 +128,10 @@ def check_project(
 
     # ── Quality — majors ──────────────────────────────────────────────────
     alts = [a.strip().lower() for a in _IMG_ALT_RE.findall(content_html or "")]
-    add("gallery_size", f"At least {_MIN_IMAGES} curated images", len(photos) >= _MIN_IMAGES,
+    add("gallery_size", f"At least {_MIN_IMAGES} curated image(s)", len(photos) >= _MIN_IMAGES,
         "major", f"{len(photos)} selected")
+    add("gallery_max", f"No more than {_MAX_IMAGES} curated images", len(photos) <= _MAX_IMAGES,
+        "major", f"{len(photos)} selected, max {_MAX_IMAGES}")
     add("alt_present", "Every image has alt text", all(alts) and len(alts) == len(photos),
         "major", f"{sum(1 for a in alts if not a)} missing")
     add("alt_unique", "No alt text reused between images",

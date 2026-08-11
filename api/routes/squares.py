@@ -79,8 +79,28 @@ def _geocode(address: str, api_key: str) -> tuple[float, float, str]:
     if status != "OK":
         raise HTTPException(502, f"Geocoding API returned status {status!r}")
 
-    loc = data["results"][0]["geometry"]["location"]
-    formatted = data["results"][0].get("formatted_address", address)
+    # ⚠️ Refuse anything that is not a specific property. Google answers HTTP 200 / status OK with
+    # `partial_match` and an APPROXIMATE city CENTROID for an address it cannot place — a
+    # new-construction lot, a rural route number. That answer is confident and wrong, and both
+    # callers act on the coordinates:
+    #   * /squares/measure asks the Solar API for a building at that point;
+    #   * /estimator/salt-water measures distance to salt water, and the estimate form ticks the
+    #     Coastal package from it. An inland new-build that centroids near Biscayne Bay silently
+    #     ADDS the package; a genuine waterfront build that centroids inland silently OMITS it and
+    #     ships a warranty table asserting coverage the manufacturer would deny.
+    # A named 404 the estimator can act on beats a plausible coordinate nobody checks.
+    top = data["results"][0]
+    location_type = (top.get("geometry") or {}).get("location_type")
+    if top.get("partial_match") or location_type not in ("ROOFTOP", "RANGE_INTERPOLATED"):
+        raise HTTPException(
+            404,
+            f"Address did not resolve to a specific property (match={location_type!r}"
+            f"{', partial' if top.get('partial_match') else ''}): {address!r}. "
+            "Check the address, or enter coordinates.",
+        )
+
+    loc = top["geometry"]["location"]
+    formatted = top.get("formatted_address", address)
     return float(loc["lat"]), float(loc["lng"]), formatted
 
 

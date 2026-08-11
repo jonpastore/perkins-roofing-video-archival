@@ -87,3 +87,51 @@ def test_coordinates_win_over_an_address(monkeypatch):
 def test_sales_can_read_it(role, expect):
     """estimating_view, not manage: a salesperson building a quote needs this answer."""
     assert _post(LONE_PINE, role=role).status_code == expect
+
+
+def test_a_city_centroid_is_refused_rather_than_priced(monkeypatch):
+    """Google answers HTTP 200 / status OK with an APPROXIMATE centroid for an address it cannot
+    place — a new-construction lot, a rural route. The estimate form ticks the Coastal package
+    from these coordinates, so a confident-but-wrong answer silently adds or omits cost.
+    """
+    from unittest.mock import MagicMock
+
+    import api.routes.squares as sq
+
+    def _resp(payload):
+        m = MagicMock()
+        m.json.return_value = payload
+        m.raise_for_status.return_value = None
+        return m
+
+    centroid = {"status": "OK", "results": [{
+        "geometry": {"location": {"lat": 25.77, "lng": -80.19}, "location_type": "APPROXIMATE"},
+        "formatted_address": "Miami, FL, USA"}]}
+    monkeypatch.setattr(sq.http_requests, "get", lambda *a, **k: _resp(centroid))
+    monkeypatch.setattr(sq, "_api_key", lambda: "test-key")
+
+    r = _post({"address": "123 Nonexistent Way, Miami, FL"})
+    assert r.status_code == 404
+    assert "specific property" in r.json()["detail"]
+
+
+def test_a_rooftop_match_is_accepted(monkeypatch):
+    from unittest.mock import MagicMock
+
+    import api.routes.squares as sq
+
+    def _resp(payload):
+        m = MagicMock()
+        m.json.return_value = payload
+        m.raise_for_status.return_value = None
+        return m
+
+    rooftop = {"status": "OK", "results": [{
+        "geometry": {"location": {"lat": 26.8560414, "lng": -80.0764616},
+                     "location_type": "ROOFTOP"},
+        "formatted_address": "188 Lone Pine Dr, Palm Beach Gardens, FL"}]}
+    monkeypatch.setattr(sq.http_requests, "get", lambda *a, **k: _resp(rooftop))
+    monkeypatch.setattr(sq, "_api_key", lambda: "test-key")
+
+    d = _post({"address": "188 Lone Pine Dr, Palm Beach Gardens, FL"}).json()
+    assert d["waterfront"] is True

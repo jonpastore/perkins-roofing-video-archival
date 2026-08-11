@@ -118,10 +118,26 @@ def test_duplicate_alt_text_fails():
     assert "alt_unique" in _keys(failing(c))
 
 
-def test_too_few_images_fails_but_does_not_block_on_privacy():
-    c = _good(selections=[{"kind": "photo", "id": "p1", "alt": "one"}])
+def test_an_empty_gallery_fails_but_does_not_block_on_privacy():
+    """Jon, 2026-08-11: the floor is 1, not Wendy's editorial target of 10.
+
+    Gating on 10 would have blocked Building 77 — the fixture Wendy tagged to demo this — at 9
+    photos. A thin gallery is an editorial problem; only zero images is a defect.
+    """
+    c = _good(selections=[])
     assert "gallery_size" in _keys(failing(c))
     assert not blockers(c), "a thin gallery is a quality problem, not a privacy one"
+
+
+def test_a_single_image_project_publishes():
+    c = _good(selections=[{"kind": "photo", "id": "p1", "alt": "one"}])
+    assert "gallery_size" not in _keys(failing(c))
+
+
+def test_more_than_twenty_images_fails():
+    """20 is Wendy's HARD max, unlike the floor."""
+    c = _good(selections=[{"kind": "photo", "id": f"p{i}", "alt": f"alt {i}"} for i in range(21)])
+    assert "gallery_max" in _keys(failing(c))
 
 
 def test_a_thin_body_fails():

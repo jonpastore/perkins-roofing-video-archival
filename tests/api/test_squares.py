@@ -75,7 +75,11 @@ GEOCODE_RESP = {
     "results": [
         {
             "formatted_address": "123 Main St, Miami, FL 33101, USA",
-            "geometry": {"location": {"lat": 25.7617, "lng": -80.1918}},
+            # location_type is REQUIRED by _geocode's confidence gate: a real Google response
+            # always carries it, and anything short of ROOFTOP/RANGE_INTERPOLATED is a centroid
+            # that must not be priced. A fixture without it was not a realistic success payload.
+            "geometry": {"location": {"lat": 25.7617, "lng": -80.1918},
+                         "location_type": "ROOFTOP"},
         }
     ],
 }
