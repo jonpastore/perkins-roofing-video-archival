@@ -8,6 +8,7 @@ param when quote_snapshot["include_lumber_chart"] is True, and omit it otherwise
 from __future__ import annotations
 
 import uuid
+from io import BytesIO
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -87,3 +88,28 @@ def test_include_lumber_chart_absent_defaults_to_omitted(monkeypatch):
     render_and_cache_proposal_pdf(s, row)
 
     assert captured["attachment_pdf_bytes"] is None
+
+
+def test_the_bundled_asset_is_tims_lumber_schedule():
+    """Not just "a PDF" — the right one.
+
+    Verified 2026-08-11 against the source: Tim Kanak, subject "Lumber Chart", 2026-07-20
+    17:43:06Z, attachment `Lumber Schedule.pdf`, md5 68156a2ebfca1dcd0f3b3dec22c4e3e5 —
+    byte-identical to the copy in assets/. It is the ONLY lumber schedule in the mailbox, so
+    there is no newer revision to prefer.
+
+    This goes on every proposal by default now, so a wrong or truncated file is a wrong document
+    in a customer's hands. `_lumber_schedule_pdf_bytes` returns None and only logs when the file
+    is missing, which means the proposal would simply ship without it and nobody would notice.
+    """
+    import pypdf
+
+    data = _lumber_schedule_pdf_bytes()
+    text = "\n".join(
+        (page.extract_text() or "") for page in pypdf.PdfReader(BytesIO(data)).pages
+    )
+    collapsed = " ".join(text.split())
+    assert "LUMBER SCHEDULE" in collapsed
+    # The pricing basis, which is what makes the sheet meaningful rather than decorative.
+    assert "1-story" in collapsed and "6/12" in collapsed
+    assert "2-Story" in collapsed

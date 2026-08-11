@@ -911,7 +911,14 @@ export function Quoting() {
 
   // Scope of work (Zoom 2026-07-20 [42:06]/[44:12]) — shared by both modes.
   const [scopeOfWork, setScopeOfWork] = useState("");
-  const [includeLumberChart, setIncludeLumberChart] = useState(false);
+  // Included by default (Jon, 2026-08-11). The schedule is what a customer needs to price the
+  // carpentry that turns up once the deck is open, so it belongs on every proposal unless a
+  // reason is found to leave it off — the estimator unticks it, rather than remembering to add it.
+  //
+  // Only the DEFAULT for new proposals moves. `snap.get("include_lumber_chart")` still means
+  // "off" when absent, so re-rendering a proposal sent before today reproduces what the customer
+  // actually received rather than growing an attachment it never had.
+  const [includeLumberChart, setIncludeLumberChart] = useState(true);
   // T&C + contract FAQ default ON — they were always printed before these toggles existed.
   const [includeTerms, setIncludeTerms] = useState(true);
   const [includeContractFaq, setIncludeContractFaq] = useState(true);
