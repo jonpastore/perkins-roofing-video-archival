@@ -194,6 +194,19 @@ def _run_ytdlp(cmd: list[str], video_id: str) -> None:
 
     configs = load_configs()
     if not configs:
+        # SAY SO. Degrading to direct egress is deliberate — a missing bundle must not take down a
+        # job that may not need the proxy — but it was silent, and silence is the problem: this is
+        # the exact path YouTube bot-blocks from datacenter IPs, and losing the tunnel (env var
+        # dropped, secret emptied, job renamed out of the mount condition in deploy.sh) would look
+        # like ordinary yt-dlp failures rather than "the VPN is gone". Measured 2026-08-08: 5 of 6
+        # exits were bot-blocked and the download only landed on the 6th, so unproxied is not a
+        # slightly-worse path, it is the failing one.
+        log.warning(
+            "yt-dlp: NO EGRESS TUNNEL — downloading %s on the direct (datacenter) IP. "
+            "WIREGUARD_CONFIGS_FILE=%r. YouTube bot-blocks this path; if downloads start failing "
+            "with 'Sign in to confirm you're not a bot', this line is why.",
+            video_id, os.getenv("WIREGUARD_CONFIGS_FILE", ""),
+        )
         proc = subprocess.run(cmd, capture_output=True, timeout=900)  # noqa: S603
         if proc.returncode != 0:
             raise _ytdlp_error(proc, video_id)

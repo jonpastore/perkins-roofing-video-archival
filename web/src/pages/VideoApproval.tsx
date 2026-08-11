@@ -20,6 +20,12 @@ interface Proposal {
   parts: Part[];
   approved: number;
   duration: number | null;
+  // Persisted on the source video. Present on load so a description generated yesterday is
+  // visible today — otherwise the card offers "Generate" again and the reviewer silently
+  // regenerates over one that already existed.
+  description?: string | null;
+  description_generated_at?: string | null;
+  description_model?: string | null;
 }
 
 // ytLink is imported from ui — guards NaN/null and omits ?t= when start is not finite.
@@ -61,8 +67,14 @@ function ProposalCard({
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadErr, setDownloadErr] = useState<string | null>(null);
   const [describing, setDescribing] = useState(false);
-  const [description, setDescription] = useState<string | null>(null);
-  const [descMeta, setDescMeta] = useState<string | null>(null);
+  const [description, setDescription] = useState<string | null>(proposal.description ?? null);
+  const [descMeta, setDescMeta] = useState<string | null>(
+    proposal.description
+      ? [proposal.description_model, proposal.description_generated_at
+          ? new Date(proposal.description_generated_at).toLocaleString()
+          : null].filter(Boolean).join(" · ") || null
+      : null
+  );
   const [descErr, setDescErr] = useState<string | null>(null);
 
   // Generate a description from the transcript via the backend (Vertex) and persist it on the
