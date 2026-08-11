@@ -74,10 +74,8 @@ addresses, **Roofr report upload**, repair metal profiles, Contacts relabelled.
    either copy of the number. Note in `guide.json`.
 3. **Waterfront now defaults ON**, so every new estimate quotes the Coastal package unless
    unticked. Jon asked for this explicitly; flagging because it moves price.
-4. **Warranty plugin 1.7.0 is BUILT BUT NOT INSTALLED** — zip at
-   `/tmp/perkins-metal-warranty-1.7.0.zip` (verified: 1.7.0 files + a `.gz` matching its source).
-   Install with `scripts/wp_install_plugin.py`. The two-column results layout has NOT been seen in
-   a browser yet — that is the one thing this session did not exercise live.
+4. ~~Warranty plugin 1.7.0 built but not installed~~ — **installed on staging and verified in a
+   real browser** (see §3). Nothing outstanding.
 
 ### Still blocked on Jon (carried from the morning, unchanged)
 - The email to Tim + marco + josh with the NHD analysis and the C-8 open item is **unsent**.
@@ -88,14 +86,45 @@ addresses, **Roofr report upload**, repair metal profiles, Contacts relabelled.
 
 ---
 
-## §3 VERIFICATION RUN
+## §3 DEPLOYED AND VERIFIED ON THE RUNNING SYSTEM
 
 ```
-pytest tests            green (exit 0), skips only
+pytest tests            green (exit 0). 5 skips, ALL with stated reasons: 1 golden fixture that
+                        needs Tim's own number for a 498 sq TPO job (a deliberate refusal to
+                        invent one) + 4 live-Knowify smokes behind KNOWIFY_MCP_LIVE=1.
 check_tidal_layer.py    all pins pass
 mutate_tidal_gates.py   9/9 gates catch their mutation
 npm run build           clean
 ```
+
+**API** — `platform:dacc919`, revision **api-00248-lh7**, 100% traffic. Smoke-tested against prod:
+
+| check | result |
+|---|---|
+| `PATCH /video/{id}/description` | **200**, `model = "edited"`, and the edit reads back through `/video/proposals` |
+| CORS preflight | `GET, POST, PUT, **PATCH**, DELETE, OPTIONS` |
+| `POST /measurements/parse-roofr` | live and validating (422 on no file, not 404) |
+| `/estimator/rates` repair types | the four metal profiles are served |
+| regenerate a description | **exactly 5 hashtags**, `fixes: []`, `problems: []` |
+
+⚠️ **The first smoke run returned 405 and the OLD CORS header.** Traffic was still on
+`api-00247-vwm` — I had read `spec.template...image`, which is the template for the NEXT
+revision, not what is serving. `status.latestReadyRevisionName` is the field that answers
+"what is actually running". Re-verified after `deploy.sh` exited.
+
+**Frontend** — deployed, and the LIVE bundle was fetched and grepped rather than trusted:
+`Include the Coastal package`, `Additional contacts`, `Upload a Roofr report`, `Save
+description`, `parse-roofr`, `Include gutters` all present. (This repo has shipped a stale
+deploy with every check green before — see the 08-03 entry in README.)
+
+**Warranty plugin 1.7.0** — installed on staging and driven in a real browser at
+188 Lone Pine Dr: **77 ft**, summary column `position: sticky`, side by side (summary ends
+470px, detail starts 486px), 4 per-material verdicts beside 4 detail cards, and the summary is
+still on screen after a 900px scroll — which is the entire point of the layout.
+
+⚠️ Mid-check the tool appeared BROKEN on staging: `no gz`, then `Unexpected token '<'`. That was
+GoDaddy **429**-ing me after my own repeated multi-MB asset fetches, not a defect — every asset
+serves 200 at the right size when requested once. Worth knowing before diagnosing it as a bug.
 
 `mutate_tidal_gates.py` initially reported **8/9** — `m_version_drift` matched the literal
 `'1.6.1'`, so bumping the plugin to 1.7.0 turned that mutation into a silent no-op and reported a
@@ -110,7 +139,6 @@ gate.
 - **USPS address validation.** The paste-parser ships and works; validating the parsed address
   against USPS needs a USPS Web Tools / USPS APIs credential nobody has registered yet. Say the
   word and it is a small endpoint behind that key.
-- **Browser check of the two-column warranty results** (see §2.4).
 - `core/reframe.py` `speaker_mediapipe` is still unimplemented (§4 gap 7, morning session).
 
 ---
