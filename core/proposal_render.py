@@ -79,6 +79,15 @@ class ProposalRenderContext:
     #: described the price but never the work. (Jon, 2026-08-11: "the scope of work is not
     #: showing on the proposal".)
     scope_of_work: str | None = field(default=None)
+    #: Metal-roof warranty at THIS address (quote_snapshot.metal_warranty), from
+    #: `core.salt_water` — the same measurement and the same published setbacks the public
+    #: warranty checker shows a homeowner.
+    #:
+    #: Only meaningful on a metal proposal, and only when the address resolved. It is the one
+    #: warranty fact a competitor's quote does not carry: two "metal roofs" at the same house can
+    #: have completely different coverage, and the difference is the brand's distance-to-salt-water
+    #: rule, not the metal. Absent = section does not render.
+    metal_warranty: dict[str, Any] | None = field(default=None)
     # "How this price was built" — the per-line formula trace the engine already produces for
     # debug=true. Off by default: it is internal build-up, not customer-facing boilerplate. Turned
     # on when the reader needs to check our arithmetic against their own sheet rather than take a
@@ -180,6 +189,7 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
         "accept_url": ctx.accept_url,
         "notes": ctx.notes or "",
         "scope_of_work": ctx.scope_of_work or "",
+        "metal_warranty": ctx.metal_warranty or None,
         "structures": ctx.structures or [],
         "calc": {
             "include": ctx.include_calc_breakdown,
@@ -471,6 +481,50 @@ DEFAULT_TEMPLATE_HTML = """\
     {% endif %}
     {% if deposit.instructions %}<p>{{ deposit.instructions }}</p>{% endif %}
   </div>
+
+  {% if metal_warranty %}
+  <div class="scope">
+    <h2>Metal Roof Warranty at This Address</h2>
+    <div class="scope-body">
+      <p class="spec"><strong>{{ metal_warranty.distance_ft }} ft to salt water{% if metal_warranty.water_name %} ({{ metal_warranty.water_name }}){% endif %}.</strong>
+      Manufacturers void or condition their metal warranties by distance from salt or brackish
+      water, and the distance that matters is to the nearest tidal water &mdash; a canal behind the
+      house counts, not just the ocean. Two quotes for &ldquo;a metal roof&rdquo; can carry
+      completely different coverage here.</p>
+      <table>
+        <thead><tr><th>Material</th><th>At this address</th></tr></thead>
+        <tbody>
+        {% for m in metal_warranty.materials %}
+          <tr>
+            <td>{{ m.name }}</td>
+            <td class="{{ m.state }}">
+              {% for mf in m.manufacturers %}{{ mf.manufacturer }} &mdash; {{ mf.phrase }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if metal_warranty.warranty_terms %}
+      <p class="spec"><strong>What you are covered by on this roof:</strong></p>
+      <table>
+        <thead><tr><th>Issued by</th><th>Term</th><th>Covers</th></tr></thead>
+        <tbody>
+        {% for t in metal_warranty.warranty_terms %}
+          <tr>
+            <td>{{ t.issuer }}</td>
+            <td class="amt">{{ t.years }} years</td>
+            <td>{{ t.covers }}{% if t.condition %} &mdash; {{ t.condition }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      <p class="spec">Distances are measured to mapped tidal and brackish water. This summarises
+      each manufacturer&rsquo;s published provisions; final eligibility is governed by their current
+      written warranty for the specific product and site.</p>
+    </div>
+  </div>
+  {% endif %}
 
   {% if notes %}
   <div class="scope">

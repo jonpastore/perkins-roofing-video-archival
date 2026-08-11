@@ -1824,6 +1824,11 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         # Both spellings for the same reason `notes` takes two: snapshots already in the DB were
         # written with scope_of_work_text, and an older one must render the same way.
         scope_of_work=snap.get("scope_of_work_text") or snap.get("scope_of_work"),
+        # Frozen at create time like calc_lines, and for the same reason: this is what the
+        # customer was told about their address, not a value to recompute against a layer that
+        # may have moved. Absent on non-metal proposals and on any snapshot written before this
+        # existed, and the section simply does not render.
+        metal_warranty=snap.get("metal_warranty") or None,
     )
 
     try:

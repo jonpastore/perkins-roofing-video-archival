@@ -933,3 +933,68 @@ class TestScopeOfWork:
         assert ctx.scope_of_work is None
         assert render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx) == render_proposal_html(
             DEFAULT_TEMPLATE_HTML, _minimal_context())
+
+
+# ---------------------------------------------------------------------------
+# Metal-roof warranty at the property's own address
+# ---------------------------------------------------------------------------
+# Two "metal roofs" quoted on the same house can carry completely different coverage, and the
+# difference is the brand's distance-to-salt-water rule rather than the metal. That is the one
+# warranty fact a competing quote does not have, so it belongs on the document.
+
+_MW = {
+    "distance_ft": "77",
+    "water_name": "ICWW ABOVE ROYAL PALM BRIDGE",
+    "materials": [
+        {"name": "Kynar/PVDF-painted steel (Galvalume / AZ50)", "state": "void",
+         "manufacturers": [{"manufacturer": "Metal Alliance", "state": "void",
+                            "phrase": "No warranty within 1,500 ft", "note": ""}]},
+        {"name": "Aluminum (Kynar/PVDF or Tedlar coated)", "state": "cond",
+         "manufacturers": [{"manufacturer": "Metal Alliance", "state": "cond",
+                            "phrase": "Covered, with conditions inside 1,500 ft", "note": ""}]},
+    ],
+    "warranty_terms": [
+        {"issuer": "Metal Alliance", "years": 25, "covers": "substrate corrosion", "condition": ""},
+        {"issuer": "Metal Alliance", "years": 40, "covers": "Kynar 500 finish", "condition": ""},
+    ],
+}
+
+
+class TestMetalWarrantySection:
+    def test_it_renders_the_distance_and_every_manufacturer(self):
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(metal_warranty=_MW))
+        assert "Metal Roof Warranty at This Address" in html
+        assert "77 ft to salt water" in html
+        assert "ICWW ABOVE ROYAL PALM BRIDGE" in html
+        assert "No warranty within 1,500 ft" in html
+        assert "Covered, with conditions inside 1,500 ft" in html
+
+    def test_steel_and_aluminium_are_visibly_different(self):
+        """If both read the same, the section has stopped saying the thing it exists to say."""
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(metal_warranty=_MW))
+        assert 'class="void"' in html
+        assert 'class="cond"' in html
+
+    def test_absent_on_a_non_metal_proposal(self):
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context())
+        assert "Metal Roof Warranty at This Address" not in html
+
+    def test_defaults_to_absent_so_older_snapshots_are_unchanged(self):
+        ctx = _minimal_context()
+        assert ctx.metal_warranty is None
+        assert render_proposal_html(DEFAULT_TEMPLATE_HTML, ctx) == render_proposal_html(
+            DEFAULT_TEMPLATE_HTML, _minimal_context())
+
+    def test_the_warranty_terms_perkins_actually_sells_are_printed(self):
+        """Quoted from Tim's own proposal (5/26/2026): 25 yr substrate corrosion, 40 yr Kynar.
+        The selling point is that this address gets a real warranty from a named manufacturer,
+        which the distance table alone does not say."""
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(metal_warranty=_MW))
+        assert "25 years" in html and "substrate corrosion" in html
+        assert "40 years" in html and "Kynar 500 finish" in html
+
+    def test_manufacturer_text_is_html_escaped(self):
+        bad = {**_MW, "water_name": '<script>alert("x")</script>'}
+        html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(metal_warranty=bad))
+        assert "<script>alert" not in html
+        assert "&lt;script&gt;" in html
