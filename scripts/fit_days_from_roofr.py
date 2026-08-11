@@ -32,28 +32,29 @@ FEATURES = ["squares", "pitch", "hips", "valleys", "ridges", "eaves", "rakes", "
             "facets", "two_story_sq"]
 
 
-def _ft(text: str, label: str) -> float:
-    """Parse 'Label: 134ft 10in' → feet."""
-    m = re.search(rf"{label}:?\s*(\d+)\s*ft(?:\s*(\d+)\s*in)?", text, re.I)
-    if not m:
-        return 0.0
-    return float(m.group(1)) + (float(m.group(2)) / 12 if m.group(2) else 0.0)
-
-
 def parse_roofr(path: Path) -> dict:
+    """Feature row for one home, from `core.roofr` — the same parser the upload endpoint uses.
+
+    The regexes used to live here. They moved to core so the estimating side (POST
+    /measurements/parse-roofr) reads a Roofr report the same way this fit does; two copies would
+    have drifted, and the one that drifted silently would be the one under a customer quote.
+
+    None becomes 0.0 on the way out: for a regression, an absent feature genuinely is a zero
+    term. core.roofr keeps the distinction because for a MEASUREMENT it matters.
+    """
+    from core.roofr import parse_report  # noqa: PLC0415
+
     t = "\n".join((p.extract_text() or "") for p in pypdf.PdfReader(str(path)).pages)
-    pitch = re.search(r"Predominant pitch:?\s*(\d+)\s*/\s*12", t, re.I)
-    facets = re.search(r"(\d+)\s*facets", t, re.I)
-    two = re.search(r"story area:?\s*(\d+)\s*sqft", t, re.I)
-    area = re.search(r"Total roof area:?\s*(\d+)\s*sqft", t, re.I)
+    r = parse_report(t)
+    z = lambda v: float(v or 0.0)  # noqa: E731
     return {
-        "area_sqft": float(area.group(1)) if area else 0.0,
-        "pitch": float(pitch.group(1)) if pitch else 0.0,
-        "hips": _ft(t, "Hips"), "valleys": _ft(t, "Valleys"), "ridges": _ft(t, "Ridges"),
-        "eaves": _ft(t, "Eaves"), "rakes": _ft(t, "Rakes"),
-        "wall_flash": _ft(t, "Wall flashing"),
-        "facets": float(facets.group(1)) if facets else 0.0,
-        "two_story_sq": (float(two.group(1)) / 100) if two else 0.0,
+        "area_sqft": z(r["area_sqft"]),
+        "pitch": z(r["pitch_primary"]),
+        "hips": z(r["hips_lf"]), "valleys": z(r["valleys_lf"]), "ridges": z(r["ridges_lf"]),
+        "eaves": z(r["eaves_lf"]), "rakes": z(r["rakes_lf"]),
+        "wall_flash": z(r["wall_flashings_lf"]),
+        "facets": z(r["facets"]),
+        "two_story_sq": z(r["two_story_sq"]),
     }
 
 

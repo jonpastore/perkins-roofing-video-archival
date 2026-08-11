@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiFetch, listBranches, type BranchRow } from "../api";
+import { apiFetch, apiFetchMultipart, listBranches, type BranchRow } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, Badge, InitialsAvatar, PillButton, SectionLabel } from "../ui";
 import { errText } from "../lib/errors";
 import { looksComplete, parseAddress } from "../lib/address";
@@ -519,14 +519,71 @@ function MeasurementForm({
   const [wallFlashingsLf, setWallFlashingsLf] = useState("");
   const [pitchPrimary, setPitchPrimary] = useState("");
   const [provenanceNote, setProvenanceNote] = useState("");
+  const [roofrBusy, setRoofrBusy] = useState(false);
+  const [roofrError, setRoofrError] = useState<string | null>(null);
+  const [roofrNote, setRoofrNote] = useState<string | null>(null);
 
   function num(s: string): number | null {
     const v = parseFloat(s);
     return isNaN(v) ? null : v;
   }
 
+  // Upload a Roofr report and PREFILL the form from it. Deliberately not an auto-save: the
+  // estimator sees every parsed number in the fields they already know before anything is
+  // stored, so a bad parse is caught here rather than under a quote.
+  async function handleRoofrUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";                       // so the same file can be re-picked after a failure
+    if (!file) return;
+    setRoofrBusy(true);
+    setRoofrError(null);
+    setRoofrNote(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await apiFetchMultipart("/measurements/parse-roofr", { method: "POST", body: fd });
+      if (!r.ok) throw new Error(await errText(r));
+      const { measurement: m, extras, provenance_note } = await r.json();
+      const set = (v: number | null, fn: (s: string) => void) => { if (v !== null && v !== undefined) fn(String(v)); };
+      set(m.total_sq, setTotalSq);
+      set(m.pitched_sq, setPitchedSq);
+      set(m.flat_sq, setFlatSq);
+      set(m.hips_lf, setHipsLf);
+      set(m.ridges_lf, setRidgesLf);
+      set(m.valleys_lf, setValleysLf);
+      set(m.rakes_lf, setRakesLf);
+      set(m.eaves_lf, setEavesLf);
+      set(m.wall_flashings_lf, setWallFlashingsLf);
+      set(m.pitch_primary, setPitchPrimary);
+      setProvenanceNote(provenance_note || "");
+      setRoofrNote(
+        `Filled from the report — ${m.total_sq} sq total` +
+        (m.flat_sq ? ` (${m.pitched_sq} pitched + ${m.flat_sq} flat)` : "") +
+        (extras?.facets ? `, ${extras.facets} facets` : "") +
+        (extras?.two_story_sq ? `, ${extras.two_story_sq} sq two-story` : "") +
+        ". Check them, then Save."
+      );
+    } catch (err: unknown) {
+      setRoofrError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRoofrBusy(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ padding: "10px 12px", background: BRAND.bg, borderRadius: 8, border: `1px dashed ${BRAND.border}` }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 13, cursor: roofrBusy ? "wait" : "pointer" }}>
+          <strong style={{ color: BRAND.navyText }}>{roofrBusy ? "Reading report…" : "Upload a Roofr report"}</strong>
+          <span style={{ color: BRAND.sub, fontSize: 12 }}>PDF — fills the fields below; nothing is saved until you press Save.</span>
+          <input type="file" accept="application/pdf,.pdf" disabled={roofrBusy} onChange={handleRoofrUpload} style={{ display: "none" }} />
+          <span style={{ border: `1px solid ${BRAND.border}`, borderRadius: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, background: "#fff" }}>
+            Choose PDF
+          </span>
+        </label>
+        {roofrError && <div style={{ fontSize: 12, color: BRAND.red, marginTop: 6 }}>{roofrError}</div>}
+        {roofrNote && <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 6 }}>{roofrNote}</div>}
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
         <div>
           <FieldLabel>Total Squares</FieldLabel>
@@ -815,7 +872,7 @@ export function Quoting() {
   const [jobMode, setJobMode] = useState<"reroof" | "repair">("reroof");
 
   // Repair quote (time-based — alternative to full replacement, Zoom 2026-07-20 [37:04]/[45:31])
-  const [repairRoofType, setRepairRoofType] = useState<"shingle" | "tile" | "metal" | "flat">("shingle");
+  const [repairRoofType, setRepairRoofType] = useState<string>("shingle");
   const [repairDays, setRepairDays] = useState("");
   const [repairCrewSize, setRepairCrewSize] = useState<1 | 2>(1);
   const [repairMaterialCost, setRepairMaterialCost] = useState("");
@@ -875,6 +932,24 @@ export function Quoting() {
     { value: "dimensional_shingle", label: "Dimensional Shingle" },
     { value: "standing_seam_metal", label: "Standing Seam Metal" },
   ];
+  // Repair categories come from config, so a category Tim adds shows up without a deploy — the
+  // same reason RepairQuoteRequest.roof_type is a str and not a Literal.
+  const repairRoofTypes = rates?.repair?.roof_types?.length
+    ? rates.repair.roof_types
+    : ["shingle", "tile", "metal", "flat"];
+  const repairRoofTypeLabels: Record<string, string> = {
+    shingle: "Shingle",
+    tile: "Tile",
+    metal: "Metal — profile unknown",
+    metal_standing_seam: "Metal — standing seam",
+    metal_5v_crimp: "Metal — 5V crimp",
+    metal_corrugated: "Metal — corrugated",
+    metal_tile: "Metal — metal tile",
+    flat: "Flat",
+  };
+  function labelRepairRoofType(key: string): string {
+    return repairRoofTypeLabels[key] ?? key.replace(/_/g, " ");
+  }
   const lowSlopeTypes = rates?.low_slope_roof_types ?? [];
   const roofTypes = rates?.roof_types?.length
     ? rates.roof_types.map((value) => ({ value, label: roofTypeLabels[value] ?? value.replace(/_/g, " ") }))
@@ -3290,13 +3365,18 @@ export function Quoting() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
             <div>
               <FieldLabel>Roof type</FieldLabel>
+              {/* Driven by config (repair.roof_types), which is what the API validates against —
+                  NOT by EXISTING_ROOF_OPTIONS. That list is the demo/tear-off selector for
+                  replacements, where each entry carries a priced demo rate, so metal profiles
+                  added for repair categorisation must not leak into it. Sharing the list is why
+                  repair only ever offered a generic "Metal". */}
               <select
                 value={repairRoofType}
-                onChange={(e) => setRepairRoofType(e.target.value as "shingle" | "tile" | "metal" | "flat")}
+                onChange={(e) => setRepairRoofType(e.target.value)}
                 style={selectStyle}
               >
-                {EXISTING_ROOF_OPTIONS.filter((o) => o.value !== "none").map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                {repairRoofTypes.map((value) => (
+                  <option key={value} value={value}>{labelRepairRoofType(value)}</option>
                 ))}
               </select>
             </div>

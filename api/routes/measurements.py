@@ -6,17 +6,49 @@ Endpoints:
 
 Authz: estimating_view for GET, estimating_manage for POST.
 """
+import logging
 from datetime import datetime, timezone
+from io import BytesIO
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from app.models import Measurement
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/measurements", tags=["measurements"])
+
+#: A Roofr report is a handful of pages. The cap is a trust boundary, not a product rule.
+_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+
+
+def _extract_pdf_text(data: bytes) -> str:
+    """Text out of an uploaded PDF via pypdf (no OCR).
+
+    Fails loudly on encrypted or image-only PDFs: a scanned report extracts to nothing, and
+    silently returning an empty parse would look like a report with no measurements in it.
+    """
+    try:
+        from pypdf import PdfReader  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover - installed in app/requirements
+        raise HTTPException(500, "PDF extraction dependency pypdf is not installed") from exc
+    try:
+        reader = PdfReader(BytesIO(data))
+        if reader.is_encrypted:
+            raise HTTPException(422, "PDF is encrypted; upload an unlocked copy")
+        pages = [(page.extract_text() or "") for page in reader.pages]
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(422, f"Could not read the PDF: {type(exc).__name__}") from exc
+    text = "\n".join(pages).strip()
+    if not text:
+        raise HTTPException(422, "No text in the PDF — it may be a scan or image-only export")
+    return text
 
 
 class MeasurementCreateRequest(BaseModel):
@@ -96,6 +128,52 @@ def create_measurement(
     db.flush()
     db.refresh(row)
     return _row_to_dict(row)
+
+
+@router.post("/parse-roofr")
+async def parse_roofr_report(
+    file: UploadFile = File(...),
+    claims=Depends(require_role("estimating_manage")),
+):
+    """Read a Roofr measurement PDF and return the fields it contains. Saves NOTHING.
+
+    The estimator uploads the report, the form prefills, and they press Save — so a bad parse is
+    visible and correctable before it becomes a measurement anything prices against. Auto-saving
+    would put unreviewed numbers straight under a quote.
+
+    Parsing lives in core.roofr, shared with scripts/fit_days_from_roofr.py, so there is one
+    definition of what a Roofr report says rather than an estimating copy that drifts.
+    """
+    from core.roofr import is_roofr_report, parse_report  # noqa: PLC0415
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(422, "empty upload")
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"file is larger than {_MAX_UPLOAD_BYTES // (1024 * 1024)} MiB")
+
+    text = _extract_pdf_text(data)
+    if not is_roofr_report(text):
+        # A non-Roofr PDF parses to a dict of nulls, which would prefill an empty form and read
+        # as "the report had no measurements in it".
+        raise HTTPException(422, "This does not look like a Roofr measurement report.")
+
+    parsed = parse_report(text)
+    if parsed.get("total_sq") is None:
+        raise HTTPException(422, "No total roof area found in the report — check the PDF.")
+
+    logger.info("Roofr report parsed for %s: %s sq", claims.get("email", "unknown"),
+                parsed.get("total_sq"))
+    return {
+        "filename": file.filename,
+        "measurement": {k: parsed.get(k) for k in (
+            "total_sq", "pitched_sq", "flat_sq", "hips_lf", "ridges_lf", "valleys_lf",
+            "rakes_lf", "eaves_lf", "wall_flashings_lf", "pitch_primary",
+        )},
+        # Not Measurement columns; shown to the estimator as complexity context.
+        "extras": {k: parsed.get(k) for k in ("facets", "two_story_sq", "area_sqft")},
+        "provenance_note": f"Parsed from Roofr report {file.filename!r}",
+    }
 
 
 @router.get("")
