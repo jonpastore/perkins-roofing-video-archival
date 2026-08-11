@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -106,9 +107,18 @@ def m_unmemoise_gmaps(js: str) -> str:
 
 
 def m_version_drift(php: str) -> str:
-    """Bump the constant, forget the header — exactly what shipped as 1.6.0."""
-    return php.replace("define( 'PERKINS_MWC_VERSION', '1.6.1' );",
-                       "define( 'PERKINS_MWC_VERSION', '9.9.9' );")
+    """Bump the constant, forget the header — exactly what shipped as 1.6.0.
+
+    Matched by pattern, not by the literal version: pinning the string here meant that bumping the
+    plugin turned this mutation into a silent no-op, and a mutation that changes nothing reports
+    its gate as decorative when the gate is fine. (It did, at 1.7.0.)
+    """
+    out, n = re.subn(r"(define\(\s*'PERKINS_MWC_VERSION',\s*')[^']+(')",
+                     r"\g<1>9.9.9\g<2>", php)
+    if n != 1:
+        raise SystemExit("m_version_drift matched the version constant "
+                         f"{n} times, expected exactly 1 — the mutation is not doing anything.")
+    return out
 
 
 MUTATIONS = [

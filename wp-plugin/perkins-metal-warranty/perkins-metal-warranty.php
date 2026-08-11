@@ -12,7 +12,7 @@
  *              [metal_roof_guide] shortcode — the educational page: the manufacturer warranty
  *              comparison rendered from the SAME zones.json the checker uses, plus published
  *              wind-uplift approvals and the aluminum-roof example videos.
- * Version:     1.6.1
+ * Version:     1.7.0
  * Author:      DeGenito
  *
  * SETUP (one manual step): the geocoder uses the Google Maps JavaScript API. Its browser key is
@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PERKINS_MWC_VERSION', '1.6.1' );
+define( 'PERKINS_MWC_VERSION', '1.7.0' );
 define( 'PERKINS_MWC_URL', plugin_dir_url( __FILE__ ) );
 
 // Default browser key (referrer-restricted). Overridable in Settings so a per-site key can be used
@@ -209,6 +209,56 @@ function perkins_mwc_guide_shortcode() {
 
 		<?php if ( ! empty( $guide['uplift'] ) ) : ?>
 		<section class="perkins-mwg-section">
+			<h2>More clips is not a stronger roof</h2>
+			<p><?php echo esc_html( $guide['uplift_thesis'] ?? '' ); ?></p>
+
+			<?php // RESULTS beside DETAIL: the tested pressure is the answer, the assembly is why. ?>
+			<?php foreach ( $guide['uplift'] as $u ) : ?>
+				<div class="perkins-mwg-uplift<?php echo ! empty( $u['specified'] ) ? ' is-specified' : ''; ?>">
+					<div class="perkins-mwg-uplift-result">
+						<span class="perkins-mwg-psf">&minus;<?php echo esc_html( $u['psf'] ); ?></span>
+						<span class="perkins-mwg-psf-unit">PSF tested</span>
+					</div>
+					<div class="perkins-mwg-uplift-detail">
+						<h3><?php echo esc_html( $u['manufacturer'] ); ?>
+							<?php if ( ! empty( $u['specified'] ) ) : ?>
+								<span class="ok">Specified by Perkins</span>
+							<?php endif; ?>
+						</h3>
+						<p class="perkins-mwg-blurb"><?php echo esc_html( $u['system'] ); ?> &middot;
+							<?php echo esc_html( $u['attachment'] ); ?>
+							<?php if ( ! empty( $u['clips_per_20ft'] ) ) : ?>
+								&middot; <?php echo (int) $u['clips_per_20ft']; ?> clips on a 20 ft panel
+							<?php endif; ?>
+						</p>
+						<p class="perkins-mwg-blurb"><?php echo esc_html( $u['note'] ); ?></p>
+					</div>
+				</div>
+			<?php endforeach; ?>
+
+			<?php if ( ! empty( $guide['clip_spacing'] ) ) : ?>
+				<h3>What clip spacing actually costs</h3>
+				<table class="perkins-mwg-table">
+					<thead><tr><th>Clip spacing</th><th>Clips on a 20 ft panel</th></tr></thead>
+					<tbody>
+					<?php foreach ( $guide['clip_spacing'] as $c ) : ?>
+						<tr>
+							<td><?php echo esc_html( $c['spacing'] ); ?></td>
+							<td><?php echo (int) $c['clips_per_20ft']; ?></td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+				<p class="perkins-mwg-note">A tighter clip pattern adds attachment points. It is not what
+					the pressure rating measures &mdash; the assembly above with the fewest clips carries
+					the highest tested pressure.</p>
+			<?php endif; ?>
+			<p class="perkins-mwg-note"><?php echo esc_html( $guide['_sources']['uplift'] ?? '' ); ?></p>
+		</section>
+		<?php endif; ?>
+
+		<?php if ( ! empty( $guide['panel_types'] ) ) : ?>
+		<section class="perkins-mwg-section">
 			<h2>Wind uplift: not all standing seam is the same roof</h2>
 			<p>&ldquo;Standing seam&rdquo; on a quote can mean a <strong>snap lock</strong> panel that
 				clips together, or a <strong>mechanically seamed</strong> panel that is bent closed over
@@ -222,22 +272,22 @@ function perkins_mwc_guide_shortcode() {
 					</tr>
 				</thead>
 				<tbody>
-				<?php foreach ( $guide['uplift'] as $u ) : ?>
+				<?php foreach ( $guide['panel_types'] as $t ) : ?>
 					<tr>
-						<td><strong><?php echo esc_html( $u['panel'] ); ?></strong>
-							<?php if ( ! empty( $u['hvhz'] ) ) : ?>
+						<td><strong><?php echo esc_html( $t['panel'] ); ?></strong>
+							<?php if ( ! empty( $t['hvhz'] ) ) : ?>
 								<span class="ok">HVHZ approved</span>
 							<?php endif; ?>
 						</td>
-						<td><?php echo esc_html( $u['attachment'] ); ?></td>
-						<td><?php echo esc_html( $u['psf'] ); ?> psf</td>
-						<td><?php echo esc_html( $u['mph'] ); ?> mph</td>
-						<td><?php echo esc_html( $u['note'] ); ?></td>
+						<td><?php echo esc_html( $t['attachment'] ); ?></td>
+						<td><?php echo esc_html( $t['psf'] ); ?> psf</td>
+						<td><?php echo esc_html( $t['mph'] ); ?> mph</td>
+						<td><?php echo esc_html( $t['note'] ); ?></td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
 			</table>
-			<p class="perkins-mwg-note"><?php echo esc_html( $guide['_sources']['uplift'] ?? '' ); ?></p>
+			<p class="perkins-mwg-note"><?php echo esc_html( $guide['_sources']['panel_types'] ?? '' ); ?></p>
 			<?php echo perkins_mwc_video_list( $videos['uplift'] ?? [] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped — escaped inside ?>
 		</section>
 		<?php endif; ?>
@@ -257,6 +307,8 @@ function perkins_mwc_guide_shortcode() {
 		<p class="perkins-mwg-cta">
 			<a href="<?php echo esc_url( perkins_mwc_contact_url() ); ?>">Talk to Perkins Roofing about your address</a>
 		</p>
+		<p class="perkins-mwg-note">Perkins Roofing Corp. &middot; Est. 1980 &middot; State certified
+			roofing contractor CCC1331944.</p>
 	</div>
 	<?php
 	return ob_get_clean();

@@ -46,6 +46,24 @@
 	display: inline-block; margin-top: 8px; background: var(--navy); color: #fff; font-weight: 700;
 	text-decoration: none; padding: 12px 22px; border-radius: 10px;
 }
+/* Results: the verdict on the left, the evidence on the right. `sticky` keeps the distance and
+   the per-material answer on screen while the provision tables scroll past them. One column below
+   860px, where there is no room for two and nothing needs pinning. */
+.perkins-mwc-cols { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+.perkins-mwc-col-summary { position: sticky; top: 16px; }
+.perkins-mwc-col-detail { min-width: 0; }
+@media (max-width: 860px) {
+	.perkins-mwc-cols { grid-template-columns: minmax(0, 1fr); }
+	.perkins-mwc-col-summary { position: static; }
+}
+.perkins-mwc .perkins-mwc-summary { list-style: none; margin: 12px 0 4px; padding: 0; }
+.perkins-mwc .perkins-mwc-summary li {
+	display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;
+	padding: 7px 0; border-top: 1px solid #eef0f3; font-size: 14px;
+}
+.perkins-mwc .perkins-mwc-sum-mat { flex: 1; min-width: 110px; font-weight: 600; }
+/* Wide provision tables scroll inside their own card; the page must not scroll sideways. */
+.perkins-mwc .verdict table { display: block; overflow-x: auto; }
 .perkins-mwc .perkins-mwc-foot { font-size: 12px; color: var(--sub); padding: 18px 0 8px; line-height: 1.6; }
 .perkins-mwc .err { color: #b42318; font-size: 14px; margin: 8px 0; }
 .perkins-mwc .spin { color: var(--sub); font-size: 14px; margin: 8px 0; }
@@ -59,6 +77,23 @@
 .perkins-mwg-note { font-size: 12px; color: var(--sub); line-height: 1.6; margin: 10px 0 0; }
 /* Wide provision tables must scroll inside their own box; the page body must not scroll sideways. */
 .perkins-mwg-table { display: block; overflow-x: auto; white-space: normal; }
+/* Uplift comparison: tested pressure (the result) beside the assembly (why). Same two-column idea
+   as the checker verdict — the number a reader came for is never the thing that scrolls away. */
+.perkins-mwg-uplift {
+	display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center;
+	border: 1px solid #d0d5dd; border-radius: 12px; padding: 14px 16px; margin: 0 0 10px;
+}
+.perkins-mwg-uplift.is-specified { border-color: var(--red); border-width: 2px; }
+.perkins-mwg-uplift-result { text-align: center; }
+.perkins-mwg-psf { display: block; font-size: 30px; font-weight: 800; line-height: 1.1; color: var(--navy); }
+.perkins-mwg-uplift.is-specified .perkins-mwg-psf { color: var(--red); }
+.perkins-mwg-psf-unit { font-size: 11px; color: var(--sub); text-transform: uppercase; letter-spacing: .4px; }
+.perkins-mwg-uplift-detail h3 { margin: 0 0 4px; font-size: 16px; }
+.perkins-mwg-uplift-detail p { margin: 0 0 4px; }
+@media (max-width: 600px) {
+	.perkins-mwg-uplift { grid-template-columns: minmax(0, 1fr); text-align: left; }
+	.perkins-mwg-uplift-result { text-align: left; }
+}
 .perkins-mwg-videos { margin: 14px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.7; }
 .perkins-mwg-videos a { font-weight: 700; }
 .perkins-mwg-cta { margin: 8px 0 0; }
