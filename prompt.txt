@@ -1,106 +1,68 @@
-Read CONTINUATION-2026-08-12.md first — especially §1 (what I got wrong and how), §5 (the
-research behind this task) and §7 (things that will bite you). Then run this with autopilot.
+Read CONTINUATION-2026-08-12-pm.md first. It has the full state. Its §1 has the A/B numbers,
+§4 is your task list, §5 is the unresolved question that decides whether Phase 2 ships.
 
-GOAL: two features that OpusClip either does badly or does not do at all, on the pipeline we
-already have. NO GPU. NO new infrastructure. Both phases end with an A/B artifact Jon can judge
-by eye and ear WITHOUT reading code — that is the actual deliverable, not the diff.
+CONTEXT IN ONE LINE: two features are BUILT AND WIRED but UNCOMMITTED and UNVERIFIED — the full
+test suite and the R2 review were still running when the last session ended.
 
-Work Phase 1 to completion and verification before starting Phase 2.
-
-═══════════════════════════════════════════════════════════════════════════════
-PHASE 1 — WIND NOISE
-═══════════════════════════════════════════════════════════════════════════════
-
-WHAT EXISTS (do not rebuild it — verify each claim before you touch anything):
-  core/audio_enhance.py       build_enhance_filter / build_enhance_cmd
-                              afftdn=nf=-25 + acompressor + loudnorm(-14 LUFS)
-  core/render_spec.py:268     audio_enhance: bool = False
-  jobs/render_job.py:366      applies it, non-fatal on exception
-  api/routes/clips.py:874     exposes it
-
-THE GAP: that afftdn value is tuned by its own comment for "HVAC/room noise" — indoor and
-stationary. Tim shoots outdoors on a phone. Wind is LOW-FREQUENCY and NON-STATIONARY; nothing
-in the chain high-passes, and afftdn adapts poorly to it.
-
-DO:
-  1. Add a `wind: bool = False` option to build_enhance_filter/build_enhance_cmd that prepends a
-     high-pass and adjusts the denoiser for outdoor use, e.g.
-         highpass=f=90, afftdn=nf=-20, acompressor=..., loudnorm=...
-     Tune the exact values against the real clip in step 4 — do not just accept these numbers.
-  2. The DEFAULT PATH MUST STAY BYTE-IDENTICAL. Add a test asserting the wind=False filter
-     string is exactly what it is today, so this cannot regress existing renders.
-  3. Thread `wind` through render_spec -> render_job -> api/routes/clips.py, mirroring exactly
-     how `audio_enhance` already flows. Grep the READER, not the key — this repo's recurring
-     defect is config with no reader (see CLAUDE.md and §1).
-  4. Find a REAL Tim clip with wind. Check the archived GCS MP4s / existing videos in the DB
-     first; if nothing suitable exists, say so and ask rather than fabricating a test file.
-
-DELIBERATELY NOT DOING: DeepFilterNet3. It is a new dependency plus model weights. Both reviewers
-said high-pass + low-end cleanup is the bulk of the win on wind specifically. If step 4 proves it
-insufficient, STOP and report — do not add the dependency unilaterally.
-
-A/B ARTIFACT (required):
-  - Two playable files from the SAME source clip: `wind_before.mp4` and `wind_after.mp4`
-  - Put them somewhere Jon can open them, and print the paths
-  - Measured, not asserted: integrated LUFS before/after (ffmpeg loudnorm print_format=json),
-    and a one-line description of what changed in the low end
-  - Say plainly if it does NOT sound better. A negative result is a real result.
+  Phase 1  core/audio_enhance.py    new `wind` option (highpass=f=90 + softer afftdn)
+  Phase 2  core/video_redact.py     NEW — pixelates operator-marked PII regions
+           plus wiring in core/render_spec.py, jobs/render_job.py, api/routes/clips.py
 
 ═══════════════════════════════════════════════════════════════════════════════
-PHASE 2 — ADDRESS / PII REDACTION
+DO THESE IN ORDER
 ═══════════════════════════════════════════════════════════════════════════════
 
-WHY: OpusClip has no PII redaction at all (verified both engines). Tim films clients' houses;
-street numbers are visible. CompanyCam already burns GPS into photo pixels — same instinct.
+1. VERIFY THE SUITE. Capture the exit code to a file BEFORE any pipe and read it back — a
+   task-notification saying "exit code 0" reports the WRAPPER's exit, not pytest's, and that
+   mistake cost a full cycle earlier today:
 
-WHAT EXISTS: nothing visual. core/censor.py mutes AUDIO for flagged words.
-core/photo_privacy.py CROPS stills. Neither blurs video.
+     .venv/bin/python -m pytest tests -p no:warnings > /tmp/s.log 2>&1; echo "EXIT=$?" > /tmp/s.exit
 
-READ core/photo_privacy.py FIRST for this project's privacy doctrine:
-  "The stamp is CUT, not blurred. A blur is a guess about how much entropy is left in the
-   pixels; a crop removes them."
-That is why Phase 2 is an OPERATOR-MARKED region, not OCR auto-detection: an operator-confirmed
-box is not a guess.
+   pyproject sets addopts="-q". Do NOT pass -q again or the summary line disappears and a green
+   run looks truncated.
 
-DO:
-  1. New core/video_redact.py — PURE, no I/O, no subprocess (same split as core/audio_enhance.py).
-     A function turning redaction regions into an ffmpeg filter string:
-         regions: [{x, y, w, h, t0, t1}, ...]  ->  filter using enable='between(t,t0,t1)'
-     PIXELATE, not inpaint, and not a soft blur. A visible redaction is legally defensible;
-     inpainting alters the footage and costs GPU-minutes per video-minute.
-  2. Validate inputs at the boundary: negative/zero w/h, t1 <= t0, regions outside frame bounds,
-     empty list. This is a privacy path — do not simplify the validation away.
-  3. Wire it the same way audio_enhance is wired: render_spec field -> render_job -> clips API.
-  4. Tests in core/ (R1 applies): filter-string assertions plus ONE behavioural check that
-     actually runs ffmpeg on a small generated clip and confirms the pixels in the region changed
-     and the pixels outside it did not.
+2. RUN R2 (architect + critic) on the five files above. The previous review was launched and never
+   read. Fix every HIGH/CRITICAL before committing. R2 caught a CRITICAL in the CompanyCam work
+   earlier today that would have emptied every gallery, so do not skip it.
 
-DEFERRED, do not build: OCR auto-detection (PaddleOCR/EasyOCR + tracking). Phase 2 proves the
-render path; auto-detect comes later once we know the real shot patterns.
+3. ANSWER §5 — THE QUESTION THAT MATTERS MOST.
 
-A/B ARTIFACT (required):
-  - `redact_before.mp4` and `redact_after.mp4` from the same clip, with a house number or address
-    visibly pixelated in the after and nothing else changed
-  - Print the paths. A still frame from each (PNG) is also fine and probably easier to eyeball.
+   render_job applies redaction EARLY, then speech_cleanup / reframe / captions / fuse run after.
+   `reframe` crops and repositions the frame. The mosaic is burned in at fixed SOURCE-frame pixel
+   coordinates.
+
+   Prove, by rendering end-to-end with reframe=True AND a redact region and looking at the output:
+     - does the mosaic still cover the PII after reframing?
+     - can reframe pan/scale such that the PII re-enters frame from outside the redacted box?
+
+   A redaction a later stage undoes is WORSE than no redaction, because the operator believes it
+   worked. If it is broken, the fix is to apply redaction LAST (after reframe) or to transform the
+   region coordinates through the same crop.
+
+   Also unresolved: redact_regions are source-frame pixels, and nothing records what resolution the
+   operator marked against. build_redact_cmd already accepts frame_w/frame_h — consider storing
+   them with the regions so a mismatched preview size is caught rather than silently misplacing
+   every box. (That exact mistake happened by hand last session; validation caught it only because
+   the true dimensions were passed.)
+
+4. COMMIT — two separate commits, Phase 1 then Phase 2. Trailer: `No-Task: <reason>` alone on its
+   line, plus:
+     Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 
 ═══════════════════════════════════════════════════════════════════════════════
 RULES
 ═══════════════════════════════════════════════════════════════════════════════
 
-- Full test suite green before you claim done: `.venv/bin/python -m pytest tests -p no:warnings`
-  Capture EXIT=$? to a file BEFORE any pipe and read it back. A task-notification saying
-  "exit code 0" reports the WRAPPER's exit, not pytest's — that mistake happened today (§1).
-  NOTE: pyproject sets addopts="-q"; do NOT pass -q again or the summary line vanishes (§7).
-- ruff clean on every file you touch.
-- R2: architect + critic review both phases before marking done. Fix all HIGH/CRITICAL.
-  R2 caught a CRITICAL in today's CompanyCam work that would have emptied every gallery.
-- Commit each phase separately. Trailer: `No-Task: <reason>` alone on its line, plus
-  Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-- DO NOT deploy. DO NOT touch the metal warranty page (awaiting Tim's reply).
-- DO NOT release the 7 `held` scheduled_content rows — that is Jon's call.
-- Label every finding you report as VERIFIED FROM DOCUMENT or INFERENCE. Do not merge the two.
-- If a phase turns out to be a bad idea once you see the real footage, SAY SO and stop. A
-  reasoned "this does not help" is worth more than a shipped feature that does nothing.
+- DO NOT deploy.
+- DO NOT touch the metal warranty page — awaiting Tim/Marco/Josh's reply.
+- DO NOT release the 7 `held` scheduled_content rows — Jon's call.
+- ./ab-review/ is gitignored demo media. Do not commit it. Do not delete it — Jon may not have
+  reviewed it yet.
+- Label every finding VERIFIED FROM DOCUMENT or INFERENCE. Do not merge the two. Five corrections
+  in one session yesterday all came from stating an inference with the confidence of a fact.
+- If Phase 2 turns out to be unsafe because of §5, SAY SO and stop rather than shipping it. A
+  reasoned "this does not work yet" is worth more than a merged privacy feature that leaks.
 
-FINISH BY: printing the four artifact paths (2 audio, 2 video/stills) and a 5-line summary of
-what changed, so Jon can evaluate both A/Bs and then /clear.
+IF JON HAS ALREADY GIVEN A VERDICT ON THE A/B: apply it. If he said the wind difference is too
+small to matter, the next lever is DeepFilterNet3 as an adapter behind the same `wind` flag — but
+do not add that dependency without his go-ahead.

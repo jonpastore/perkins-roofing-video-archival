@@ -1,6 +1,6 @@
 # Continuation — 2026-08-11 (evening)
 
-Follows [CONTINUATION-2026-08-11-pm.md](CONTINUATION-2026-08-11-pm.md). That session shipped five
+Follows [CONTINUATION-2026-08-11-pm.md](docs/continuations/CONTINUATION-2026-08-11-pm.md). That session shipped five
 PRs; this one **reviewed them adversarially and found eleven real defects, three of them mine from
 the same day**, then applied Jon's answers to six open questions.
 
