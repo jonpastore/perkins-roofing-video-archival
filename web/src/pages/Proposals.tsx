@@ -79,6 +79,9 @@ interface ProposalRow {
   version_number: number;
   title: string;
   quote_snapshot: Record<string, unknown> | null;
+  // The build-up ROWS never cross the API — they print profit and this payload is readable by
+  // `sales`. The server sends only whether they exist, which is all the checkbox needs.
+  calc_breakdown_available?: boolean;
   selected_tier: string | null;
   selected_options: unknown[] | null;
   status: ProposalStatus;
@@ -227,6 +230,9 @@ export function Proposals() {
   // PDF loading (fetch → blob → objectURL so auth header is included)
   const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  // Ticked = "View PDF" renders the internal build-up instead of the customer document. Not
+  // persisted anywhere: it is a way of LOOKING at the proposal, not a property of it.
+  const [showPriceBuildUp, setShowPriceBuildUp] = useState(false);
 
   // Copy-to-clipboard feedback
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -567,11 +573,11 @@ export function Proposals() {
     }
   }
 
-  async function handleViewPdf(id: number) {
+  async function handleViewPdf(id: number, explain = false) {
     setPdfLoadingId(id);
     setPdfError(null);
     try {
-      const r = await apiFetch(`/quoting/proposals/${id}/pdf`);
+      const r = await apiFetch(`/quoting/proposals/${id}/pdf${explain ? "?explain=1" : ""}`);
       if (!r.ok) {
                 throw new Error(await errText(r));
       }
@@ -887,9 +893,22 @@ export function Proposals() {
                     {revisingId === p.id ? "Creating…" : "Create editable revision"}
                   </Button>
                 )}
-                <Button variant="ghost" onClick={() => handleViewPdf(p.id)} disabled={pdfLoadingId === p.id} style={{ fontSize: 13 }}>
+                <Button variant="ghost" onClick={() => handleViewPdf(p.id, showPriceBuildUp)} disabled={pdfLoadingId === p.id} style={{ fontSize: 13 }}>
                   {pdfLoadingId === p.id ? "Loading PDF…" : "View PDF"}
                 </Button>
+                {/* Next to the button that generates the PDF, because that is where you are
+                    standing when you want to check the math. The equivalent box on the Quoting
+                    page decides what the CUSTOMER's document says; this one only changes what
+                    this render shows you, and never touches the sent proposal. */}
+                {p.calc_breakdown_available && (
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12,
+                                  color: BRAND.sub, cursor: "pointer", alignSelf: "center" }}
+                         title="Print every formula with the actual numbers in it — days × daily rate, overhead build-up, profit. Staff only; this never changes the proposal the customer receives.">
+                    <input type="checkbox" checked={showPriceBuildUp}
+                           onChange={(e) => setShowPriceBuildUp(e.target.checked)} />
+                    Show how this price was built
+                  </label>
+                )}
               </div>
             </div>
 

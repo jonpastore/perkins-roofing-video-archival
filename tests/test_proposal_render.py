@@ -9,6 +9,9 @@ Tests cover:
 """
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 
 from core.proposal_render import (
@@ -789,6 +792,86 @@ def test_an_explicitly_null_audience_also_defaults_rather_than_erroring():
 
 
 # ---------------------------------------------------------------------------
+# The "Show how this price was built" box next to View PDF
+# ---------------------------------------------------------------------------
+# The reconciliation pass happens on the Proposals tab, AFTER the draft exists — by which point
+# `explain` has been stripped and cannot be recovered. So the internal rows are frozen at create
+# time regardless of what the sender opted into, which means they now sit in a snapshot that
+# `sales` can read. These pin both halves: they are always there, and they never come out.
+
+def test_the_internal_build_up_is_frozen_even_when_the_sender_did_not_opt_in():
+    """Otherwise the checkbox on the Proposals tab can only ever re-tick itself off.
+
+    The raw `explain` this derives from is stripped unconditionally at create time, so there is
+    exactly one moment at which these rows can be built. Miss it and the option is unreachable —
+    which is this repo's most-repeated defect, in its "writer never runs" form.
+    """
+    from api.routes.proposals import _freeze_calc_breakdown
+
+    snap = _freeze_calc_breakdown(_snap(include_calc_breakdown=False))
+
+    assert "calc_lines" not in snap, "the customer document must still be unaffected"
+    assert snap["calc_lines_internal"], "nothing left to render the explain view from"
+    assert any(ln["key"] == "profit" for ln in snap["calc_lines_internal"])
+
+
+def test_the_internal_build_up_never_crosses_the_json_api():
+    """It prints profit, and every proposal read is gated on `quoting_view` — which `sales` holds.
+
+    Dropped in the serializer rather than filtered per-role on purpose: a new read path cannot
+    leak by forgetting a check it does not have to make.
+    """
+    from api.routes.proposals import _proposal_row, _snapshot_without_internal_calc
+
+    snap = {"calc_lines_internal": [{"key": "profit", "amount": 9000.0}], "total": 43075.0}
+
+    public = _snapshot_without_internal_calc(snap)
+    assert "calc_lines_internal" not in public
+    assert public["total"] == 43075.0, "stripping must not eat the rest of the snapshot"
+    assert "calc_lines_internal" in snap, "the caller's dict must not be mutated"
+
+    row = SimpleNamespace(
+        id=1, tenant_id=1, customer_id=1, property_id=1, estimate_id=None, bid_project_id=None,
+        template_id=None, root_id=1, parent_id=None, version_number=1, title="t",
+        quote_snapshot=snap, selected_tier=None, selected_options=None, status="draft",
+        accept_token=None, accepted_by_name=None, accepted_at=None, consent_electronic=None,
+        signed_pdf_gcs=None, created_by=None, sent_at=None, created_at=None, updated_at=None,
+    )
+    out = _proposal_row(row)
+    assert "calc_lines_internal" not in out["quote_snapshot"]
+    assert out["calc_breakdown_available"] is True, "the SPA still needs to know it exists"
+    assert "profit" not in json.dumps(out), "the rows must not reach the wire by any route"
+
+
+def test_no_frozen_rows_means_the_checkbox_stays_hidden():
+    """A sales-created proposal has no derivation at all. Advertising the option would produce a
+    409 the interface never warned about."""
+    from api.routes.proposals import _proposal_row
+
+    row = SimpleNamespace(
+        id=1, tenant_id=1, customer_id=1, property_id=1, estimate_id=None, bid_project_id=None,
+        template_id=None, root_id=1, parent_id=None, version_number=1, title="t",
+        quote_snapshot={"total": 1.0}, selected_tier=None, selected_options=None, status="draft",
+        accept_token=None, accepted_by_name=None, accepted_at=None, consent_electronic=None,
+        signed_pdf_gcs=None, created_by=None, sent_at=None, created_at=None, updated_at=None,
+    )
+    assert _proposal_row(row)["calc_breakdown_available"] is False
+
+
+def test_a_revision_that_loses_its_derivation_drops_the_stale_rows():
+    """Carrying a previous version's build-up onto a quote that can no longer justify it would
+    print figures that do not add up to the price beside them."""
+    from api.routes.proposals import _freeze_calc_breakdown
+
+    bare = {"num_squares": 35.0,
+            "line_items_detail": [{"key": "base_cost_lm", "label": "Base", "amount": 100.0}]}
+    snap = _freeze_calc_breakdown(
+        _snap(estimate_result=bare) | {"calc_lines_internal": [{"key": "profit", "amount": 1.0}]}
+    )
+    assert "calc_lines_internal" not in snap
+
+
+# ---------------------------------------------------------------------------
 # Per-building addresses (#6) — Tim, 2026-08-02: "yes but they can share"
 # ---------------------------------------------------------------------------
 
@@ -998,3 +1081,86 @@ class TestMetalWarrantySection:
         html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context(metal_warranty=bad))
         assert "<script>alert" not in html
         assert "&lt;script&gt;" in html
+
+
+def test_editing_a_draft_does_not_delete_the_frozen_build_up():
+    """The read path strips the rows, so the SPA sends back a snapshot that is missing them.
+
+    Proposals.tsx:433 spreads `editingProposal.quote_snapshot` and PUTs it at :510; the notes
+    path does the same at :1006. Without the carry-forward, saving a note would silently delete
+    the build-up and the checkbox next to View PDF would vanish with nothing to explain it.
+    """
+    from api.routes.proposals import _carry_internal_calc, _snapshot_without_internal_calc
+
+    stored = {"total": 43075.0, "notes": "old", "calc_lines_internal": [{"key": "profit"}]}
+
+    # exactly what the SPA does: read (stripped), spread, change one field, PUT back
+    echoed = dict(_snapshot_without_internal_calc(stored)) | {"notes": "new"}
+    assert "calc_lines_internal" not in echoed, "precondition: the client never sees the rows"
+
+    merged = _carry_internal_calc(stored, echoed)
+    assert merged["calc_lines_internal"] == [{"key": "profit"}], "the build-up was deleted"
+    assert merged["notes"] == "new", "the caller's actual edit must still win"
+
+
+def test_carry_forward_does_not_resurrect_rows_on_a_snapshot_that_never_had_them():
+    from api.routes.proposals import _carry_internal_calc
+
+    assert _carry_internal_calc({"total": 1.0}, {"total": 2.0}) == {"total": 2.0}
+    assert _carry_internal_calc(None, {"total": 2.0}) == {"total": 2.0}
+    # no incoming snapshot at all -> the previous one is inherited whole
+    assert _carry_internal_calc({"calc_lines_internal": [1]}, None) == {"calc_lines_internal": [1]}
+
+
+def test_explain_actually_reaches_the_render_context(monkeypatch):
+    """The seam, not the branch: does ?explain=1 change what the RENDERER is handed?
+
+    "reachability is THE Perkins defect" — a flag that is read, stored and threaded but never
+    lands on the context would produce a PDF identical to the customer's, with the box ticked.
+    So capture the real ProposalRenderContext and assert on it.
+    """
+    import api.routes.proposals as P
+
+    internal = [{"key": "profit", "label": "Profit", "formula": "43075 x 0.21", "amount": 9045.75}]
+    customer = [{"key": "base_cost_lm", "label": "Base", "formula": "35 sq x $783.88",
+                 "amount": 27435.8}]
+    snap = {
+        "total": 43075.0, "tiers": {}, "deposit_policy": {},
+        "include_calc_breakdown": True, "calc_audience": "customer",
+        "calc_lines": customer, "calc_lines_internal": internal,
+    }
+    row = SimpleNamespace(id=7, customer_id=None, property_id=None, tenant_id=None,
+                          template_id=None, title="t", version_number=1, sent_at=None,
+                          accept_token="tok", quote_snapshot=snap)
+    db = SimpleNamespace(get=lambda *a, **k: None, flush=lambda: None)
+
+    seen = {}
+    monkeypatch.setattr(P, "render_proposal_html", lambda tpl, ctx: seen.setdefault("ctx", ctx) and "")
+    monkeypatch.setattr(P, "_load_tc_context", lambda _db: {})
+    monkeypatch.setattr(P, "_lumber_schedule_pdf_bytes", lambda: None)
+    import adapters.gotenberg as g
+    monkeypatch.setattr(g, "html_to_pdf", lambda html, attachment_pdf_bytes=None: b"%PDF-")
+    # Counted, not pytest.fail'd: the upload sits inside a try/except that logs and continues,
+    # so a raise from here would be swallowed and the guard would prove nothing.
+    #
+    # _media_bucket() and _proposal_pdf_key() must be stubbed too. They raise on this fake row,
+    # inside that same except, so without them the upload is unreachable either way and the
+    # assertion below passes whether or not the no-cache guard exists — verified by mutation:
+    # deleting `if explain: return pdf_bytes` did NOT fail this test until these two were added.
+    uploads: list = []
+    monkeypatch.setattr(P, "_media_bucket", lambda: "fake-bucket")
+    monkeypatch.setattr(P, "_proposal_pdf_key", lambda r: f"proposals/{r.id}.pdf")
+    monkeypatch.setattr(P, "_upload_gcs_bytes", lambda *a, **k: uploads.append(a))
+
+    P.render_and_cache_proposal_pdf(db, row, explain=True)
+    assert uploads == [], "explain was cached to GCS — the next reader of the plain PDF URL gets profit"
+    ctx = seen["ctx"]
+    assert ctx.include_calc_breakdown is True
+    assert ctx.calc_audience == "internal", "explain must override a customer-audience snapshot"
+    assert ctx.calc_lines == internal, "explain handed the renderer the CUSTOMER rows"
+
+    # ...and the ordinary render is unchanged by any of this.
+    seen.clear()
+    P.render_and_cache_proposal_pdf(db, row, explain=False)
+    assert seen["ctx"].calc_lines == customer
+    assert seen["ctx"].calc_audience == "customer"

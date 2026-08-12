@@ -54,7 +54,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from api.auth import get_db_session, require_role
+from api.auth import can, get_db_session, require_role
 from api.routes.quotes import (
     _CONTRACT_FIELDS,
     _DELIVERABLE_FIELDS,
@@ -471,6 +471,34 @@ def _lumber_schedule_pdf_bytes() -> bytes | None:
         return None
 
 
+def _snapshot_without_internal_calc(snap: dict | None) -> dict | None:
+    """Strip the internal build-up rows from a snapshot bound for the JSON API.
+
+    `calc_lines_internal` prints profit. Every proposal read is gated on `quoting_view`, which
+    `sales` holds while not holding `estimating_manage`, so the rows must not ride along in the
+    snapshot. None/absent are preserved as-is: callers distinguish "no snapshot" from "empty one".
+    """
+    if not snap or "calc_lines_internal" not in snap:
+        return snap
+    return {k: v for k, v in snap.items() if k != "calc_lines_internal"}
+
+
+def _carry_internal_calc(prev: dict | None, incoming: dict | None) -> dict | None:
+    """Return *incoming*, re-attaching *prev*'s frozen internal build-up when it lost it.
+
+    The read path strips `calc_lines_internal`, so any snapshot the SPA sends back is missing it
+    through no fault of the caller. Without this, editing a draft or asking for a revision would
+    silently delete the frozen rows and the "Show how this price was built" option would
+    disappear. Returns *prev* unchanged when there is no incoming snapshot.
+    """
+    if incoming is None:
+        return prev
+    preserved = (prev or {}).get("calc_lines_internal")
+    if not preserved or "calc_lines_internal" in incoming:
+        return incoming
+    return {**incoming, "calc_lines_internal": preserved}
+
+
 def _proposal_as_dict(row: Proposal) -> dict:
     """Convert ORM row → plain dict for core.proposal domain calls."""
     return {
@@ -614,7 +642,13 @@ def _proposal_row(row: Proposal, events: list | None = None) -> dict:
         "parent_id": row.parent_id,
         "version_number": row.version_number,
         "title": row.title,
-        "quote_snapshot": row.quote_snapshot,
+        # calc_lines_internal is dropped here rather than gated on the caller's role: this
+        # serializer feeds every proposal read, and the SPA only needs to know the breakdown
+        # EXISTS (to enable the checkbox next to View PDF), never the rows themselves. Shipping a
+        # boolean instead of role-filtering the payload means a new read path cannot leak profit
+        # by forgetting the filter. The rows leave only as a PDF, via ?explain=1.
+        "quote_snapshot": _snapshot_without_internal_calc(row.quote_snapshot),
+        "calc_breakdown_available": bool((row.quote_snapshot or {}).get("calc_lines_internal")),
         "selected_tier": row.selected_tier,
         "selected_options": row.selected_options,
         "status": row.status,
@@ -1098,6 +1132,31 @@ def _freeze_calc_breakdown(snapshot: dict | None) -> dict | None:
     # proposal row never inherited it, and it lands in the DB permanently.
     from api.routes.estimator import _audit_payload  # noqa: PLC0415 — one definition of the rule
     snap["estimate_result"] = _audit_payload(snap.get("estimate_result") or {})
+
+    # Freeze the INTERNAL build-up too, always — not only when the sender opted in. The
+    # reconciliation pass ("show me the formulas", to check our figures against Tim's) happens on
+    # the Proposals tab, next to View PDF, AFTER the draft already exists. By then the raw
+    # `explain` these rows derive from has been stripped by the line above and is unrecoverable,
+    # so a checkbox at that point could only ever silently re-tick itself off — the exact bug the
+    # `debug: true` comment in Quoting.tsx describes.
+    #
+    # These rows print profit and are NOT customer-safe. They never leave over the JSON API:
+    # _proposal_row drops the key, so the only reader is ?explain=1 on the PDF route, which is
+    # gated on estimating_manage. Frozen, not recomputed, for the same reason calc_lines is —
+    # this is what the customer was quoted, not a re-derivation against today's prices.
+    raw_result = (snapshot or {}).get("estimate_result") or {}
+    raw_detail = raw_result.get("line_items_detail") or []
+    if any(isinstance(li, dict) and li.get("explain") for li in raw_detail):
+        try:
+            snap["calc_lines_internal"] = calc_lines_from_estimate(raw_result, audience="internal")
+        except Exception as exc:
+            _log.warning("internal calc breakdown could not be frozen: %s", exc)
+            snap.pop("calc_lines_internal", None)
+    else:
+        # A sales user's quote arrives with no derivation at all. Drop any inherited rows rather
+        # than carrying a previous version's build-up onto a revision that cannot justify it.
+        snap.pop("calc_lines_internal", None)
+
     if snap.get("include_calc_breakdown") is not True:
         return snap
     audience = snap.get("calc_audience") or "internal"
@@ -1437,7 +1496,17 @@ def update_proposal(
     except ProjectSnapshotError as exc:
         raise HTTPException(422, str(exc)) from exc
 
-    for field, value in body.model_dump(exclude_none=True).items():
+    updates = body.model_dump(exclude_none=True)
+    # The SPA edits a draft by spreading the snapshot it READ and PUTting it back — but the read
+    # path strips calc_lines_internal, so a round-trip would silently delete the frozen build-up
+    # and the "Show how this price was built" box would vanish with no explanation. The rows are
+    # not the client's to send, so carry them forward here rather than asking the SPA to echo
+    # something it is deliberately never given.
+    if "quote_snapshot" in updates:
+        updates["quote_snapshot"] = _carry_internal_calc(row.quote_snapshot,
+                                                         updates["quote_snapshot"])
+
+    for field, value in updates.items():
         setattr(row, field, value)
     db.flush()
     db.refresh(row)
@@ -1594,8 +1663,10 @@ def revise_proposal(
         parent_id=new_fields["parent_id"],
         version_number=new_fields["version_number"],
         title=body.title if body.title is not None else prev.title,
-        quote_snapshot=(body.quote_snapshot if body.quote_snapshot is not None
-                        else prev.quote_snapshot),
+        # Same carry-forward as update_proposal: a client-supplied snapshot came from the read
+        # path, which strips calc_lines_internal, so taking it verbatim would drop the build-up
+        # on every revision. Only inherited when the caller did not supply its own rows.
+        quote_snapshot=_carry_internal_calc(prev.quote_snapshot, body.quote_snapshot),
         status="draft",
         accept_token=new_fields["accept_token"],
         created_by=email,
@@ -1762,8 +1833,14 @@ def delete_template(
 
 
 
-def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
-    """Render a native proposal PDF, upload it to GCS, stamp quote_snapshot, return bytes."""
+def render_and_cache_proposal_pdf(db: Session, row: Proposal, *, explain: bool = False) -> bytes:
+    """Render a native proposal PDF, upload it to GCS, stamp quote_snapshot, return bytes.
+
+    With *explain*, print the frozen INTERNAL build-up regardless of what the sender opted into,
+    and neither cache the result nor stamp the row: this is a staff reconciliation view, not the
+    document the customer received, and caching it would serve profit figures to the next reader
+    of the ordinary PDF URL. Callers must gate it on `estimating_manage` themselves.
+    """
     customer = db.get(Customer, row.customer_id)
     prop = db.get(Property, row.property_id)
     tenant_row = db.get(Tenant, row.tenant_id)
@@ -1820,9 +1897,10 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
         # acquire it on a later re-render. The ROWS are read from the snapshot, not recomputed —
         # they were frozen at send time, so re-rendering an old proposal reproduces what the
         # customer actually received even if prices or the audience default have moved since.
-        include_calc_breakdown=snap.get("include_calc_breakdown") is True,
-        calc_lines=snap.get("calc_lines") or None,
-        calc_audience=snap.get("calc_audience") or "internal",
+        include_calc_breakdown=(bool(snap.get("calc_lines_internal")) if explain
+                                else snap.get("include_calc_breakdown") is True),
+        calc_lines=(snap.get("calc_lines_internal") if explain else snap.get("calc_lines")) or None,
+        calc_audience="internal" if explain else (snap.get("calc_audience") or "internal"),
         # Multi-building bids: one row per ADDRESS. A building with no address of its own falls
         # back to the property this proposal is filed against, which is the ordinary case —
         # `structure_address` exists for the Evergrene gates that sit on a different road.
@@ -1869,6 +1947,12 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
     except Exception as exc:
         raise HTTPException(503, f"PDF generation failed: {exc}") from exc
 
+    # The explain view is never cached: the cache is keyed by proposal id alone, so storing it
+    # would hand the internal build-up to the next caller of the plain PDF URL — including a
+    # `sales` user, who can reach that route.
+    if explain:
+        return pdf_bytes
+
     try:
         gcs_uri = f"gs://{_media_bucket()}/{_proposal_pdf_key(row)}"
         _upload_gcs_bytes(gcs_uri, pdf_bytes, "application/pdf")
@@ -1887,13 +1971,20 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal) -> bytes:
 @router.get("/quoting/proposals/{proposal_id}/pdf")
 def get_proposal_pdf(
     proposal_id: int,
-    _claims=Depends(require_role("quoting_view")),
+    explain: bool = False,
+    claims=Depends(require_role("quoting_view")),
     db: Session = Depends(get_db_session),
 ):
     """Render the current proposal as PDF via Gotenberg and stream it.
 
+    With ``?explain=1``, print the frozen internal build-up — days x daily rate, overhead and
+    profit — for reconciling our figures against Tim's. Gated on `estimating_manage` on top of
+    the route's own `quoting_view`, and never served from or written to the cache.
+
     Returns 503 if GOTENBERG_URL is not configured.
     """
+    if explain and not can(claims.get("role"), "estimating_manage"):
+        raise HTTPException(403, "explain=1 requires estimating_manage")
     tenant_id = _tenant_id(db)
     row = db.execute(
         select(Proposal).where(
@@ -1906,10 +1997,14 @@ def get_proposal_pdf(
     snap = row.quote_snapshot or {}
 
     # Prefer original Knowify PDF bytes once archived, then cached rendered bytes.
-    for uri in (
+    # The explain view skips both: neither the archived Knowify original nor the cached render
+    # carries the build-up, so serving either would return a PDF with no breakdown and exit 200 —
+    # the box would look ticked and nothing would appear.
+    cache_candidates = () if explain else (
         ((snap.get("knowify_pdf") or {}).get("gcs_uri") if isinstance(snap.get("knowify_pdf"), dict) else None),
         snap.get("rendered_pdf_gcs") if snap.get("rendered_pdf_template_version") == _PDF_TEMPLATE_VERSION else None,
-    ):
+    )
+    for uri in cache_candidates:
         if isinstance(uri, str) and uri.startswith("gs://"):
             try:
                 return Response(
@@ -1924,12 +2019,23 @@ def get_proposal_pdf(
     if not gotenberg_url:
         raise HTTPException(503, "PDF rendering unavailable: GOTENBERG_URL is not configured")
 
-    pdf_bytes = render_and_cache_proposal_pdf(db, row)
+    if explain and not snap.get("calc_lines_internal"):
+        # Fail loud rather than streaming a PDF with no breakdown in it. Proposals created before
+        # this shipped, and any created by a user without estimating_manage, have no frozen
+        # derivation and none can be recovered — the raw trace was stripped at create time.
+        raise HTTPException(
+            409,
+            "This proposal has no frozen price build-up. Re-create the draft from the estimate "
+            "as a user holding estimating_manage.",
+        )
+
+    pdf_bytes = render_and_cache_proposal_pdf(db, row, explain=explain)
 
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="proposal-{proposal_id}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="proposal-{proposal_id}'
+                                        f'{"-explain" if explain else ""}.pdf"'},
     )
 
 
