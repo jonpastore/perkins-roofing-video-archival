@@ -380,6 +380,15 @@ def _apply_track_a_engines(
                         series_id, part_index, wind)
         except Exception as exc:  # noqa: BLE001
             logger.warning("audio_enhance skipped (non-fatal): %s", exc)
+    elif getattr(spec, "audio_wind", False):
+        # audio_wind only modifies the enhance chain, so without it the render silently ignores
+        # a flag the operator deliberately set. The UI disables the box in this state; this
+        # catches the hand-written PUT, which is the only other writer.
+        logger.warning(
+            "audio_wind is set but audio_enhance is off — the wind profile only modifies that "
+            "chain, so it has NO effect on this render: series=%d part=%d",
+            series_id, part_index,
+        )
 
     # ── PII redaction (operator-marked regions) ──────────────────────────────
     # Pixelates a street number / signage / on-screen client media. Applied early so
@@ -388,10 +397,11 @@ def _apply_track_a_engines(
     # asked to remove, so a failure here aborts the render.
     regions = list(getattr(spec, "redact_regions", []) or [])
     if regions:
-        from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+        from adapters.ffmpeg import (
+            probe,  # noqa: PLC0415
+            run_ffmpeg_cmd,  # noqa: PLC0415
+        )
         from core.video_redact import build_redact_cmd  # noqa: PLC0415
-
-        from adapters.ffmpeg import probe  # noqa: PLC0415
 
         # Pass the REAL frame size and clip duration. Without them the bounds and
         # timeline guards in core.video_redact are dead code: ffmpeg clamps an

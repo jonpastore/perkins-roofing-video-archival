@@ -186,3 +186,75 @@ class TestBuildEnhanceCmd:
     def test_invalid_lufs_propagates(self) -> None:
         with pytest.raises(ValueError, match="target_lufs"):
             ae.build_enhance_cmd("in.mp4", "out.mp4", target_lufs=5.0)
+
+
+# ---------------------------------------------------------------------------
+# Wind / outdoor profile
+# ---------------------------------------------------------------------------
+# core/audio_enhance.py's afftdn=-25 is tuned by its own comment for "HVAC/room
+# noise" — indoor and stationary. Tim shoots outdoors on a phone, where the
+# dominant noise is wind: low-frequency and non-stationary, which afftdn chases
+# rather than subtracts, and which nothing in the default chain high-passes.
+
+class TestWindProfile:
+    def test_default_chain_is_byte_identical(self):
+        """THE regression pin. This filter runs on every enhanced render, so a
+        silent change here alters output for clips already approved. If the wind
+        work ever leaks into the default path, this fails."""
+        from core.audio_enhance import build_enhance_filter
+
+        assert build_enhance_filter() == (
+            "afftdn=nf=-25,"
+            "acompressor=threshold=-18dB:ratio=4:attack=10:release=150:makeup=2dB,"
+            "loudnorm=I=-14.0:LRA=11:TP=-1.5"
+        )
+
+    def test_wind_prepends_a_highpass(self):
+        """The high-pass does the real work: wind energy sits below ~100 Hz, under
+        the fundamental of adult speech, so it comes out without touching voice."""
+        from core.audio_enhance import build_enhance_filter
+
+        out = build_enhance_filter(wind=True)
+        assert out.startswith("highpass=f=90,"), out
+
+    def test_wind_softens_the_denoiser(self):
+        """Gentler than indoor: over-denoising outdoor audio produces watery
+        artefacting that sounds worse than the wind it removed."""
+        from core.audio_enhance import build_enhance_filter
+
+        assert "afftdn=nf=-20" in build_enhance_filter(wind=True)
+        assert "afftdn=nf=-25" in build_enhance_filter(wind=False)
+
+    def test_highpass_comes_before_the_denoiser(self):
+        """Order is load-bearing. Denoising first makes afftdn build its noise
+        profile from the rumble we are about to discard."""
+        from core.audio_enhance import build_enhance_filter
+
+        out = build_enhance_filter(wind=True)
+        assert out.index("highpass") < out.index("afftdn")
+
+    def test_wind_still_high_passes_with_denoise_off(self):
+        """The two are independent knobs — turning the denoiser off must not
+        silently drop the wind treatment."""
+        from core.audio_enhance import build_enhance_filter
+
+        out = build_enhance_filter(wind=True, denoise=False)
+        assert "highpass=f=90" in out
+        assert "afftdn" not in out
+
+    def test_wind_reaches_the_command(self):
+        """Grep the READER, not the key — a flag the command builder ignores is
+        this repo's most-repeated defect."""
+        from core.audio_enhance import build_enhance_cmd
+
+        cmd = build_enhance_cmd("in.mp4", "out.mp4", wind=True)
+        assert "highpass=f=90" in cmd[cmd.index("-af") + 1]
+        assert "-c:v" in cmd and cmd[cmd.index("-c:v") + 1] == "copy"
+
+    def test_wind_still_validates_target_lufs(self):
+        import pytest as _pytest
+
+        from core.audio_enhance import build_enhance_filter
+
+        with _pytest.raises(ValueError):
+            build_enhance_filter(target_lufs=5.0, wind=True)
