@@ -212,36 +212,59 @@ the page leads with does not appear in Metal Alliance's NOA at all.
 
 **And two of the three approvals have expired**, including our own.
 
-## 5. The finding that matters most
+## 5. THE FINDING — the supplier sheet is an aggregation, and its rows are not comparable
 
-**Metal Alliance's own table disproves the clip-spacing argument.** Two rows, identical metal,
-identical substrate, identical clip spacing — only the panel width differs:
+Metal Alliance's statewide approval family is **FL30780** (Metal Alliance, Inc., 2120 SW Poma
+Dr, Palm City FL 34990), e.g. FL30780.13-R3 for 26ga 175SL AllSeam. It states the panels are
+*"Produced by Metal Alliance's Network of Approved Regional Manufacturers"* and that the
+approval *"applies only to metal supplied by Metal Alliance"* — so they supply the coil AND
+hold the approval, and regional fabricators roll under it. Archived:
+`docs/noa/FL30780_R3-metal-alliance-26ga-175SL.pdf`
+
+**FL38763.02 — "24ga 150MS on 15/32" plywood"** publishes the full clip ladder
+(`docs/noa/FL38763_R2-24ga-150MS-plywood.pdf`):
+
+| Clip spacing | 24" | 20" | 16" | 12" | 6" |
+|---|---|---|---|---|---|
+| Max allowable uplift (psf) | 86 | 106 | 126 | **146** | 176 |
+
+Two things fall out of that table, and together they are the answer.
+
+**(a) Uplift rises MONOTONICALLY as clips get tighter.** 24"→86 … 6"→176. Its endpoints match
+Miami-Dade NOA 21-0506.08 exactly (−86 @ 24", −176 @ 6"), so the NOA and the FL approval agree —
+the NOA simply publishes the two ends of the same ladder. **At 12" o.c. this panel is 146 psf.**
+
+This is the manufacturer's own approval, and it says in a single row of numbers that *more clips
+IS a stronger roof.* The page's thesis is contradicted by the primary document it rests on.
+
+**(b) The supplier summary sheet is internally impossible.** Checked mechanically across every
+steel row:
 
 ```
-.032" Alum   16" wide   8" clips   90° seam   →  213.5
-.032" Alum   20" wide   8" clips   90° seam   →  159.25
+24ga Steel, 16" wide, 15/32" plywood, 90° seam
+     6" clips → 176.0 psf
+     8" clips → 198.5 psf     ← LOOSER clips, HIGHER pressure
+    16" clips → 166.0 / 168.5 psf
+    24" clips →  86.0 psf
+
+24ga Steel, 20" wide
+     8" clips →  121.75 psf (90° seam)
+     8" clips →  189.25 psf (180° seam)
+    16" clips →   91.75 psf
 ```
 
-**34% of the pressure difference comes from panel width alone, at the same clip spacing.**
+A single assembly cannot get *weaker* when you add clips. And the sheet's 16" rows (166/168.5)
+contradict FL38763.02's 16" row (126) for the same nominal panel. So the sheet is a **catalogue
+of many different approvals** — different clips, fastener schedules, steel grades, test bases —
+flattened into one table. **Rows within it are not comparable to each other.**
 
-Compare that with what clip spacing actually buys, holding width constant:
+The warranty page picks two of those rows and compares them. That is the error, and it is
+upstream of every other problem in this document.
 
-```
-24ga Steel   16" wide   16" clips  →  168.5
-24ga Steel   16" wide    8" clips  →  198.5     (halving the spacing: +18%)
-```
-
-Our −218.8 row is a **16"** panel; the Gulf Coast −189.25 row is a **20"** panel. So the
-headline "fewest clips, highest pressure" is substantially explained by the narrower panel, not
-by the clip count — and the wider Gulf Coast panel needed a 180° seam to reach its number.
-
-The honest version of Perkins' argument is *"strength is the tested assembly, not the clip
-count"* — which is true, and which the data above supports. The current framing accidentally
-argues the opposite of its own thesis by treating clip spacing as the causal variable.
-
-Note also that **−189.25, −121.75 and −91.75 appear in BOTH** Gulf Coast's NOA 19-0814.04 and
-Metal Alliance's summary sheet (24ga steel, 20" wide rows). The two documents describe the same
-tested assemblies, so these are not independent competitor data points.
+**(c) The 26ga row stands alone.** In the entire steel set there is exactly ONE 26ga entry —
+16" wide, 12" clips, 218.8 psf — with no ladder, no corroborating row, and no approval located
+for it after searching Miami-Dade, the FL database, both vendor sites and two AI search engines.
+Every other pressure on the page has now been traced to a document. This one has not.
 
 ---
 
@@ -268,8 +291,29 @@ tested assemblies, so these are not independent competitor data points.
 
 ## 7. Bottom line for the page
 
-All three numbers are real and now traceable. The exposure is not fabrication — it is
-**condition and currency**: the Gulf Coast row omits the 180° seam and rests on an expired NOA,
-and the three rows are not a like-for-like comparison. Publishing Perkins-only (Option 1 in the
-2026-08-12 email) removes both problems and costs nothing, because the clip-spacing argument
-never depended on the competitor rows.
+The exposure is not that a number was invented. Every figure except one traces to a real
+document. The exposure is that **the comparison itself is not a valid comparison**, and the
+primary documents say the opposite of the headline:
+
+1. Metal Alliance's own FL approval ladder shows uplift **rising monotonically with clip
+   count** — 24"→86, 12"→146, 6"→176. "More clips is not a stronger roof" is refuted by our
+   own supplier's approval.
+2. At the 12" spacing the page advertises, the documented 24ga panel is **146 psf**, not 218.8.
+3. In HVHZ, our NOA needs **6" clips** to reach −176 — the tightest of the three products —
+   while Englert reaches −165 at **12"**.
+4. Two of the three NOAs are **expired**, including ours (07/08/26).
+5. The −218.8 has **no located approval** and sits in a summary table that is provably
+   internally inconsistent.
+
+Publishing Perkins-only (Option 1 in the 2026-08-12 email) removes the comparative-advertising
+exposure but NOT points 1-5, because the −218.8 headline is itself the unsupported figure.
+
+**Recommended: pull the uplift comparison from the page entirely** until Metal Alliance produces
+the approval behind 26ga @ 12" o.c., and until the NOA renewal is confirmed. The clips-per-panel
+argument can stand on the FL38763.02 ladder alone, honestly stated: *more clips do carry more
+load; what matters is the tested assembly.* That is defensible, sourced, and does not require
+naming a competitor.
+
+**Separately and more urgently than the webpage:** NOA 21-0506.08 lapsed 07/08/26. Any HVHZ job
+sold today citing it needs a current approval, and any proposal quoting −218.8 for a Miami-Dade
+or Broward roof is quoting a figure that is not in the HVHZ approval.
