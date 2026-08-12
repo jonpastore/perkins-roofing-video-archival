@@ -372,12 +372,41 @@ def _apply_track_a_engines(
             from core.audio_enhance import build_enhance_cmd  # noqa: PLC0415
 
             out = os.path.join(scratch, f"enhanced_{suffix}.mp4")
-            cmd = build_enhance_cmd(current, out)
+            wind = bool(getattr(spec, "audio_wind", False))
+            cmd = build_enhance_cmd(current, out, wind=wind)
             run_ffmpeg_cmd(cmd)
             current = out
-            logger.info("audio_enhance applied: series=%d part=%d", series_id, part_index)
+            logger.info("audio_enhance applied: series=%d part=%d wind=%s",
+                        series_id, part_index, wind)
         except Exception as exc:  # noqa: BLE001
             logger.warning("audio_enhance skipped (non-fatal): %s", exc)
+
+    # ── PII redaction (operator-marked regions) ──────────────────────────────
+    # Pixelates a street number / signage / on-screen client media. Applied early so
+    # every downstream engine — captions, reframe, thumbnails — sees redacted pixels.
+    # NOT non-fatal: a privacy step that fails silently would publish the PII it was
+    # asked to remove, so a failure here aborts the render.
+    regions = list(getattr(spec, "redact_regions", []) or [])
+    if regions:
+        from adapters.ffmpeg import run_ffmpeg_cmd  # noqa: PLC0415
+        from core.video_redact import build_redact_cmd  # noqa: PLC0415
+
+        from adapters.ffmpeg import probe  # noqa: PLC0415
+
+        # Pass the REAL frame size and clip duration. Without them the bounds and
+        # timeline guards in core.video_redact are dead code: ffmpeg clamps an
+        # out-of-frame crop and silently redacts nothing for an out-of-range time
+        # window, both while exiting 0 — so the log line below would claim success
+        # over unredacted PII.
+        meta = probe(current)
+        out = os.path.join(scratch, f"redacted_{suffix}.mp4")
+        run_ffmpeg_cmd(build_redact_cmd(
+            current, out, regions,
+            frame_w=meta.get("width"), frame_h=meta.get("height"),
+            clip_duration=meta.get("duration")))
+        current = out
+        logger.info("pii redaction applied: series=%d part=%d regions=%d",
+                    series_id, part_index, len(regions))
 
     # ── A6: speech_cleanup ────────────────────────────────────────────────────
     # Requires word-level timestamps from the transcript.  When not available

@@ -3,8 +3,9 @@
 Picks up from [CONTINUATION-2026-08-12.md](CONTINUATION-2026-08-12.md), which has the day's
 earlier work (publish queue, metal uplift, CompanyCam tags) and §1 "what I got wrong today".
 
-**⚠️ NOTHING IS COMMITTED. The full suite and the R2 critic review were still running when this
-was written.** First task on resume is §4.
+**⚠️ NOTHING IS COMMITTED.** R2 came back **REJECT** with two CRITICALs — both reproduced against
+real ffmpeg, neither caught by the 20 passing tests, one of them a silent PII leak. **Both are now
+fixed and mutation-verified** (§3). A full suite run was in flight at handoff. First task is §4.
 
 ---
 
@@ -18,7 +19,7 @@ Open these first. They are the point of the exercise.
 | `wind_01_before_current_default.mp4` | **what we ship today** (`audio_enhance=True`) |
 | `wind_02_after_wind_profile.mp4` | **new** (`audio_wind=True`) |
 | `redact_01_before.mp4` / `.png` | untouched |
-| `redact_02_after.mp4` / `.png` | client property photos pixelated |
+| `redact_02_after.mp4` / `.png` | **two** regions pixelated (tablet + logo) — regenerated after the N≥2 fix |
 
 ### Wind — measured
 
@@ -48,7 +49,8 @@ Same mechanism, real PII.
 Two things happened worth recording:
 - I passed the wrong frame size (1080 when the clip is 720) and the mosaic landed off-target. With
   the true dimensions **validation caught it**: *"region 0: extends to x=1030, past the 720px
-  frame."* The guard works, and it works because the caller passes real dimensions — see §5.
+  frame."* The guard works — but R2 then found `render_job` never passed those dimensions in
+  production, so the guard was dead code outside the tests. Now fixed (§3).
 - My first behavioural test compared raw ffmpeg stderr, which contains the filename and encode
   speed, so it failed for the wrong reason. Rewritten to measure **PSNR per quadrant**, then
   mutation-tested: making the overlay a no-op fails it.
@@ -97,51 +99,145 @@ that fails quietly publishes the thing it was asked to remove.
 
 ---
 
-## §3 — TEST STATUS AT TIME OF WRITING
+## §3 — R2 CAME BACK: REJECT, TWO CRITICALS, BOTH NOW FIXED
 
-- `tests/core/test_video_redact.py` — **20 passed**, incl. a PSNR behavioural test that was
-  mutation-verified
-- `tests/core/test_audio_enhance.py` — **43 passed** (7 new)
-- ruff clean on every touched file
-- ⚠️ **Full suite: NOT CONFIRMED.** Two runs were in flight. **Re-run it.**
-- ⚠️ **R2 critic review: NOT READ.** Launched, never returned before the session ended.
+The critic reproduced both against real ffmpeg. **Neither was caught by the 20 passing tests**,
+and one of them was a silent PII leak. Both are fixed and mutation-verified.
+
+### CRITICAL 1 — every 2-region render died
+
+`[v0]` was used as both the crop input and the overlay base. An ffmpeg **internal** link feeds
+exactly one input pad; `[0:v]` gets away with it only because an input-stream specifier may be
+duplicated. So N=1 worked and **every N≥2 graph was rejected**:
+
+```
+Stream specifier 'v0' in filtergraph description ... matches no streams
+```
+
+Two regions is the *ordinary* case — a house number and a plate, or one number in two shots.
+**Fixed** with `split` before the reuse. Mutation-verified: reverting reproduces the exact error.
+
+`test_multiple_regions_chain_so_all_of_them_apply` **passed the whole time** — it asserted
+substrings on a graph ffmpeg refused to run, and the only test that touched real ffmpeg used one
+region. This repo's recorded *tests-that-re-derive-the-protocol* pattern, again.
+
+### CRITICAL 2 — the silent one: out-of-range time window redacted nothing, reported success
+
+`enable='between(t,t0,t1)'` runs on the **clip-local** timeline — the clip is already cut before
+redaction. An operator scrubbing the *full source* video produces source-absolute timestamps that
+fall entirely outside the window. ffmpeg exits **0**, and `render_job` logs
+`pii redaction applied: regions=N` having redacted nothing.
+
+Reproduced: `t0=600` on a 4-second clip → rc=0, PSNR ~27 across the whole clip (re-encode loss
+only, no mosaic anywhere). Exactly the failure `RedactionError`'s docstring says this module
+exists to prevent. `core/censor.py` already shifts spans for this reason; redaction had no
+equivalent.
+
+**Fixed**: `clip_duration` is validated, and both timeline and coordinate-space contracts are now
+stated in `validate_regions`' docstring.
+
+### Also fixed
+- **`frame_w`/`frame_h` were never passed in production**, so the bounds guard was dead code and
+  only the tests exercised it. `render_job` now probes and passes width, height **and** duration.
+- Docstring said `-vf`; the graph carries labels and is only valid as `-filter_complex`.
+
+### Verified CLEAN by the reviewer — including my own worry
+🟢 **§5's question is answered: redaction SURVIVES the render.** The reviewer traced every stage —
+`_apply_track_a_engines` chains `current` through speech_cleanup → censor → reframe → captions →
+broll, `render_job:1004` rebinds `clip_path`, fuse consumes it, and the aspect/platform exports
+read `reel_path`. **Nothing re-derives from `src_path` after the cut.** Pixelation is destructive,
+so reframe's crop cannot restore detail — the mosaic travels with the pixels. **I was worried
+about the wrong thing.**
+
+Also clean: Phase 1's default path is byte-identical (no risk to existing renders); the `enable`
+escaping is correct; API wiring is complete; failure handling is fail-loud so a redaction crash
+cannot publish; out-of-frame regions clamp and still mosaic (not a leak); 0 and 1 region behave.
+
+### Known-remaining, NOT fixed
+🔴 **There is no marking UI.** `grep -rn redact_regions` hits only the five feature files —
+nothing produces a region. The module's doctrine is that an operator confirms the box, and no
+operator can. Today the only path is a hand-computed `PUT /clips/{id}/render_spec`. **Either build
+the frame-scrub tool or mark the field unreachable-by-design**, because it currently reads as
+shipped. (`reachability is THE Perkins defect` — here the reader exists and the writer does not.)
+
+🟡 `audio_wind: true` with `audio_enhance: false` is a silent no-op — worth one `logger.warning`.
+🟡 `DEFAULT_BLOCK = 16` is an absolute pixel count. On 4K footage a house number may still be
+legible under 16px blocks. **Unmeasured** — worth one test on real Perkins footage.
+🟡 `redact_regions` is unvalidated at the API boundary, so a malformed region is a render-time
+crash in a Cloud Run job rather than a 422.
+🟡 No audit trail that a clip *was* redacted, or with what regions. For a privacy control that is
+the record a client's lawyer would ask for.
 
 ---
 
 ## §4 — DO THIS FIRST ON RESUME
 
-1. **Re-run the full suite** and capture the code before any pipe:
+1. **Verify the suite.** A run was in flight at handoff. Capture the code before any pipe:
    `.venv/bin/python -m pytest tests -p no:warnings > /tmp/s.log 2>&1; echo "EXIT=$?" > /tmp/s.exit`
-   (`pyproject` sets `addopts="-q"` — do NOT add `-q` or the summary line vanishes.)
-2. **Re-run the R2 review** (architect + critic) on `core/video_redact.py`,
-   `core/audio_enhance.py`, `core/render_spec.py`, `jobs/render_job.py`, `api/routes/clips.py`.
-3. **Answer the open question in §5 before committing.** It is the one that decides whether Phase 2
-   is safe.
-4. Only then commit — Phase 1 and Phase 2 as separate commits.
+   (`pyproject` sets `addopts="-q"` — do NOT add `-q`.)
+2. **Re-run R2** on the post-fix code. The previous review was REJECT; the two CRITICALs are
+   fixed but the fixes have not themselves been reviewed.
+3. **Decide the marking-UI question above** — it is what makes Phase 2 real rather than latent.
+4. Then commit, Phase 1 and Phase 2 separately.
 
 ---
 
-## §5 — THE OPEN QUESTION I DID NOT RESOLVE
+## §5 — JON'S TWO QUESTIONS (2026-08-12, answered — one needs work)
 
-🔴 **Does a later render stage move the mosaic off the PII?**
+### A. The "show me the formulas" option ALREADY EXISTS — nothing to build
 
-`render_job` applies redaction early, then `speech_cleanup`, `reframe`, captions and `fuse` run
-afterwards. `reframe` **crops and repositions the frame**. The redaction is applied at fixed pixel
-coordinates in the *source* frame.
+Jon wants every formula and variable in the proposal output so he and Tim can reconcile the
+pricing once and for all. **That feature is already shipped.**
 
-If reframe crops to a 9:16 window, the mosaic moves with the pixels it covers — which is fine — but
-I did not verify that, and I did not verify that reframe cannot scale/pan such that the PII re-enters
-frame from outside the redacted box. **A redaction a later stage undoes is worse than none**, because
-the operator believes it worked.
+**Where:** Quoting → proposal options, directly under *"Include contract FAQ"*.
+Checkbox: **"Show how this price was built"** (`web/src/pages/Quoting.tsx:3445`).
+Ticking it reveals a radio pair:
 
-This was the main question put to the R2 reviewer. Resolve it before this ships. The cheap proof is
-an end-to-end render with `reframe=True` and a redact region, then eyeball the output.
+| Mode | Label | Use |
+|---|---|---|
+| **Internal** | *"days × daily rate, profit shown"* | **This is the one for the Tim reconciliation** |
+| Customer | *"one price per square, no margin shown"* | what a homeowner sees |
 
-Related, unverified: `redact_regions` coordinates are in **source-frame pixels**. Nothing yet
-records what resolution the operator marked them against. If the UI marks on a preview of a
-different size, every box is wrong — that is exactly the mistake I made by hand in §1, and it only
-surfaced because validation had the true frame size. **Consider storing `frame_w`/`frame_h`
-alongside the regions and passing them to `build_redact_cmd`, which already accepts them.**
+`core/proposal_render.py:669 calc_lines_from_estimate` substitutes ACTUAL VALUES into each
+formula, so the page reads `35 sq × $783.88` and `5 days tile × $745 + 3 days demo`, not an
+abstract expression. Internal mode prints every line plus overhead build-up and profit.
+
+**Two conditions that will otherwise waste an afternoon:**
+1. 🔴 **The user must hold `estimating_manage`.** The `debug=true` flag is gated on it
+   (`Quoting.tsx:1451` always sends it; the API strips `explain` for anyone without the role). A
+   `sales` user's proposal arrives with no `explain` on any line and the section then
+   **suppresses itself** — `proposals.py:1109` fails closed on the SOURCE carrying no
+   derivation, deliberately, rather than printing rows that build up nothing. So if the section
+   is missing from the PDF, check the role first.
+2. The rows are **frozen at create time**, not rebuilt at render (`_freeze_calc_breakdown`,
+   `proposals.py:1073`), so a proposal re-renders exactly as sent and cannot silently restate an
+   old quote when prices move. Re-create the draft after changing inputs.
+
+UI warns: *"This prints your profit. Only send it to Perkins staff."*
+
+### B. 🟡 The estimate-inputs panel is visually broken — DIAGNOSED, NOT FIXED
+
+Jon's screenshot: the three-column block renders badly. "WATERFRONT / SALT EXPOSED" wraps to
+three lines, "Include the Coastal package" wraps **one word per line**, the salt-water distance
+text stacks vertically down the column, and the "Roof cuts" / "Project kind" selects are squeezed
+to roughly half the width of their neighbours.
+
+**Cause (inference, not yet verified in a browser):** `web/src/pages/Quoting.tsx:2473`
+
+```js
+<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+```
+
+`1fr` is `minmax(auto, 1fr)`, so a grid item whose content has a large min-content width (the long
+bold "50,373.4 ft to salt water (CORAL GABLES CANAL (EAST))" string, and the long placeholder
+"e.g. 45 — hand-load, no truck access") refuses to shrink and steals width from its siblings.
+
+**Likely one-line fix:** `gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)"`,
+plus `minWidth: 0` on the offending child and a `title=` on the truncated placeholder. Check
+`:608` and `:2446` too — same pattern, same latent bug.
+
+**NOT DONE.** It is outside the two phases in flight and was raised at a handoff point. It wants a
+browser check, not a blind CSS edit.
 
 ---
 
