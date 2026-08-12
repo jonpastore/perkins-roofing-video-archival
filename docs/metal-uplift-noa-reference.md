@@ -12,6 +12,55 @@ Englert?"* on 2026-08-12.
 
 ---
 
+## 0. RESOLVED 2026-08-12 — the −218.8 figure is fully documented and current
+
+Queried the Florida BCIS product-approval database directly with a headless browser (the search
+is an ASP.NET form, not fetchable). Metal Alliance Inc. (vendor id 12519) holds **12 approvals
+under FBC 2023, all status "Approved."**
+
+**FL31653.03-R5 — "150MS 1.5" Mechanical Seam 26ga" — is the source of the 218.8.**
+Archived at `docs/noa/FL31653.03-R5-26ga-150MS-HVHZ.pdf`.
+
+| | verbatim from the approval |
+|---|---|
+| Allowable pressure | **−218.8 PSF** |
+| Fastener pattern | (2) #10 × 1" fasteners per **2" clip** |
+| Clip spacing | **12" o.c.** |
+| Panel seam | **90°** |
+| Factor of safety | **2 has been applied** |
+| Material | 26ga nominally 0.0185", **yield ≥ 50 ksi** |
+| Tested by | Intertek (TST-1527), report **J6368.26-450-44 R0** |
+| Standards | UL 580, UL 1897, TAS 125, TAS 100, ASTM E2140 |
+| HVHZ | *"approved for installation in **Miami-Dade & Broward** counties, and other jurisdictions which require HVHZ or NOA approvals"* |
+| Status | **Approved, expires 05/06/2029** |
+
+**So the warranty page's headline row is correct, current, and HVHZ-valid.** −218.8 PSF at
+12" o.c. is exactly what the approval says, for exactly the spacing claimed.
+
+### Corrections this forces to everything below
+
+- ❌ **"−218.8 is untraced / unsupported"** — WRONG. It is FL31653.03-R5. Withdrawn.
+- ❌ **"the 218.8 is not the HVHZ number"** — WRONG. The approval grants HVHZ explicitly for
+  Miami-Dade and Broward. Withdrawn.
+- ❌ **"our approval expired"** — misleading. NOA 21-0506.08 (the **24ga** panel) expired
+  07/08/26, but the **26ga** panel the page cites is covered by FL31653-R5, live to 2029.
+- ⚠️ **The metallurgy is now settled and it is NOT grade.** The 26ga is 0.0185" at **50 ksi**;
+  the 24ga is 0.024" at **62 ksi**. On Fy·t the 26ga is **0.62×** the 24ga — thinner AND lower
+  grade — yet rated 50% higher. That confirms the second reviewer's point: for a mechanically
+  seamed panel, uplift is **connection- and assembly-controlled**, not panel-yield-controlled.
+  The two numbers come from different assemblies and different test reports, which is normal.
+
+### What still stands
+
+- The three rows remain **different test bases** (Intertek TAS 125/UL 580 with FS=2 for Metal
+  Alliance; Miami-Dade NOAs for the other two), so a strict like-for-like ranking is still not
+  supportable — but on each product's own documented figures the page's ordering holds.
+- **Gulf Coast's NOA 19-0814.04 expired 10/02/24.** Citing a competitor from lapsed paperwork
+  is the one live exposure left.
+- Englert's NOA 25-0528.08 is current to 2030 at −165 @ 12" o.c.
+
+---
+
 ## 1. What the warranty page currently claims
 
 | Row | Clip spacing | Pressure | Product named |
@@ -331,40 +380,35 @@ allowable, safety factor, test standard).** Not from the steel.
 
 ---
 
-## 7. Bottom line for the page
+## 7. Bottom line for the page — REVISED after the BCIS lookup
 
-No number here was invented, and nothing suggests misconduct by any manufacturer. Every figure
-but one traces to a document. Two problems remain, both narrower than my first draft claimed:
+**The page's own row is fine.** −218.8 PSF at 12" o.c. is FL31653.03-R5, Approved, HVHZ-valid
+for Miami-Dade and Broward, live to 05/06/2029. Do not pull it, and do not tell Tim his number
+is wrong — it is right, and it is his strongest one.
 
-1. **The comparison is not a like-for-like comparison.** The rows differ in gauge, width, seam
-   type and (probably) clip model and test basis. Seam type ALONE moves this product 121.75 →
-   189.25 psf at identical width and spacing. Ranking three products off those rows is not
-   supportable.
-2. **The headline figure is untraced.** −218.8 @ 12" appears only on the supplier summary. The
-   documented 24ga assembly is **146 psf at 12" o.c.** (FL38763.02, corroborated by NOA
-   21-0506.08). The 26ga number may well be legitimate on Grade 80 steel — that is normal — but
-   we do not hold the document, and it is ~1.5× the approved 24ga value at the same spacing,
-   which both reviewers place in "verify before relying on it" territory.
+What is left is narrower than everything above suggested:
 
-Also true, and independent of any of the above:
+1. **Gulf Coast's row rests on an expired NOA** (19-0814.04, lapsed 10/02/24), and it omits
+   that their −189.25 needs a **180° double-lock seam** where ours is 90°. That is the real
+   comparative-advertising exposure.
+2. **Englert's row is understated in our favour and should say so.** Their −165 is at 12" o.c.
+   — the same spacing as our −218.8 — which makes the honest comparison *better* for Perkins,
+   not worse: same clip spacing, 33% more uplift.
+3. **The three rows use different test bases** (Intertek TAS 125/UL 580 with a factor of safety
+   of 2 for ours; Miami-Dade NOAs for theirs). Fine to publish, not fine to present as a
+   controlled experiment.
 
-3. In HVHZ our approval needs **6" clips** to reach −176, while Englert's current NOA reaches
-   −165 at **12"**.
-4. **Two of the three NOAs have expired**, including ours (07/08/26). Englert's runs to 2030.
+**Recommended:** keep the Perkins row exactly as it is. Either drop the Gulf Coast row (expired
+paperwork, undisclosed seam difference) or annotate it. Keep Englert and state the like-for-like
+version — *at the same 12" clip spacing, the assembly we install is approved to −218.8 PSF
+versus −165 PSF* — which is defensible, sourced, and stronger than the current framing.
 
-**Recommended: pull the uplift comparison from the page** until Metal Alliance produces the
-26ga test basis and confirms the NOA renewal. The clip argument can stand on FL38763.02 alone:
-*more clips carry more load; what matters is the tested assembly.* Sourced, defensible, no
-competitor named.
+The "more clips is not a stronger roof" line should still go. Within a single assembly more
+clips DO carry more load (FL38763.02's own ladder: 24"→86 … 6"→176). The correct claim is that
+**uplift is a property of the tested assembly, not of the clip count** — which is exactly what
+these three approvals demonstrate, since our thinner, lower-grade 26ga panel out-rates a
+thicker 62 ksi one.
 
-**More urgent than the webpage:** NOA 21-0506.08 lapsed 07/08/26, and any proposal quoting
-−218.8 for a Miami-Dade or Broward job is quoting a figure that is not in the HVHZ approval —
-that is a contract document, not marketing.
-
-### What to ask Metal Alliance (one email settles it)
-
-For the 26ga 150MSAllSeam, 16" wide, 12" o.c., 218.8 psf row:
-steel grade / minimum yield (Fy) and base metal thickness · clip part number and gauge ·
-fasteners per clip · seam type · **test standard** (TAS 125 / ASTM E1592 / UL) · safety factor
-used · **the FL approval or NOA number that row sits under** · and whether NOA 21-0506.08 has
-been renewed.
+**How to re-run this:** `scripts/bcis_lookup.py` drives the Florida BCIS search headlessly
+(the site is an ASP.NET postback form and cannot be fetched with curl). Metal Alliance is
+vendor id 12519.
