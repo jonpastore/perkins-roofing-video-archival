@@ -65,8 +65,24 @@ Full uplift table as published (E = 90° seam, F = 180° seam, B = with sealant)
 | **26ga Steel** | **16"** | **15/32" ply** | **12"** | **90°** | **218.8** |
 
 Our −218.8 row = the last line: **26ga steel, 16" wide, 12" clips, 90° seam**. This matches
-Tim's proposal language verbatim ("Metal Alliance (US Steel) for a −218.8psf at 12" clip
-spacing"), so our own row is well supported. ✅
+Tim's proposal language verbatim ("Panel fabricated by Metal Alliance (US Steel) for a
+−218.8psf at 12" clip spacing").
+
+⚠️ **But Metal Alliance does not hold the approval, and does not fabricate the panel.**
+Checked 2026-08-12 against their own site: Metal Alliance is a **coil and sheet supplier**
+(Palm City, FL) that markets *"access to over 70 Florida Building Code, Miami-Dade HVHZ and
+TDI product approvals on standing seam profiles"* — approvals held by the fabricators who roll
+panels from their coil. Their own 150MSAllSeam product page
+(<https://www.metalalliance.com/150msallseam-1-5-mechanical-seam-metal-roof-panel>) states
+"Florida Product, HVHZ, TDI" and "UL Listed" but names **no approval number, no holder, and no
+pressures**, and refers the reader to *"the panel manufacturer"* as a separate party.
+
+So the −218.8 traces to a **supplier's undated summary of third-party approvals**, not to an
+approval document. Of the three rows it is the one we can least readily produce paperwork for,
+and Tim's "fabricated by Metal Alliance" wording does not match how that company describes
+itself. Searched FL18316-R5 as a candidate (a 1.5" mechanical seam HVHZ evaluation) and ruled
+it out — that approval is **Sheffield Metals International**, and the document contains no
+mention of Metal Alliance, 150MS/AllSeam, or 218.8.
 
 ### Gulf Coast Supply & Manufacturing — VersaLoc
 
@@ -151,7 +167,7 @@ panel, the fabricator holds the approval.
 
 | # | Our claim | What the source says | Verdict |
 |---|---|---|---|
-| 1 | Metal Alliance −218.8 @ 12" | 26ga steel, 16" wide, 12" clips, **90° seam** | ✅ Supported |
+| 1 | Metal Alliance −218.8 @ 12" | 26ga steel, 16" wide, 12" clips, 90° seam — but from a **coil supplier's undated summary**, no approval number, and Metal Alliance neither fabricates the panel nor holds approvals | ⚠️ Figure traceable, **paperwork weakest of the three** |
 | 2 | Gulf Coast −189.25 @ 8" | NOA 19-0814.04: −189.25 @ 8" **but at a 180° seam** | ⚠️ Number right, condition missing, **NOA expired 10/02/24** |
 | 3 | Englert −165, "approved assembly" | NOA 25-0528.08: −165 psf **at 12" o.c., 6" clip, sealed lateral seams, perimeter/corner zone**; current to 2030 | ✅ Number right, conditions omitted |
 | 4 | "Three 1.5" **mechanical seam** systems" | Series 1300 IS mechanically seamed, 90° single lock. Tim's link was Series **1500**, a snap-lock — wrong product, not a wrong claim | ✅ Framing OK, link wrong |
@@ -169,7 +185,7 @@ panel, the fabricator holds the approval.
 | Seam | 90° single lock | **180° double lock** | 90° single lock |
 | Metal / width | 26ga steel, 16" | 24ga steel, 20" | steel, 6" clip |
 | Extra condition | — | — | sealed lateral seams; perimeter/corner |
-| Source | vendor summary sheet, **no approval no.** | NOA 19-0814.04, **expired 10/02/24** | NOA 25-0528.08, **current to 2030** |
+| Source | coil supplier summary, **no approval no., no date** | NOA 19-0814.04, **expired 10/02/24** | NOA 25-0528.08, **current to 2030** |
 
 Read across that table and the page's headline — *"highest tested pressure using the FEWEST
 clips"* — does not survive: **Englert reaches −165 at the same 12" spacing** we reach −218.8 at.
@@ -216,10 +232,13 @@ tested assemblies, so these are not independent competitor data points.
 
 ## 6. Still missing
 
-- **Metal Alliance has no approval number on record here.** The summary sheet ticks "FPA" and
-  "HVHZ" but names no FL number and no NOA, and carries no date. Our best-supported row is the
-  one with the weakest paperwork. Ask Metal Alliance for the FL approval number and NOA behind
-  the 26ga / 16" / 12" / 90° line.
+- **Metal Alliance approval number — still not found.** Searched their site, their product
+  page, the FL product-approval database and Miami-Dade. The summary sheet ticks "FPA" and
+  "HVHZ" but names no number and carries no date; the product page names none either. Because
+  Metal Alliance supplies COIL rather than fabricating panels, the approval is likely held by
+  the fabricator who rolled the panel for the job. **Ask Tim which fabricator rolled the
+  Perkins panels** — the approval will be in that company's name, not Metal Alliance's. Until
+  then our headline number is the one we can least substantiate on demand.
 - **Gulf Coast's current numbers.** Both NOAs their own website links are expired (06/05/24 and
   10/02/24). The live approval is FL34538.03-R3; its published pressures (59.75 @ 24",
   123.5 @ 6") do not include −189.25, so the current document may rate the assembly differently.
