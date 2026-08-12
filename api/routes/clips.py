@@ -872,6 +872,8 @@ class RenderSpecRequest(BaseModel):
     emoji_highlights: bool = False
     aspects: list[str] = []
     audio_enhance: bool = False
+    audio_wind: bool = False
+    redact_regions: list[dict] = []
 
 
 @router.get("/{series_id}/render_spec")
@@ -910,6 +912,19 @@ def save_render_spec_route(
         spec = ClipRenderSpec.model_validate(raw)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Validate redaction regions HERE rather than letting a malformed one surface as a traceback
+    # inside a Cloud Run render job, where the operator sees a failed render and no reason. Frame
+    # size and clip duration are not known at this point — render_job probes them and validates
+    # again with the real numbers — so this catches shape and sign errors only, which is exactly
+    # the class a hand-written PUT produces. There is no UI writer for this field (see
+    # core/render_spec.ClipRenderSpec.redact_regions), so the hand-written PUT is the ONLY writer.
+    if raw.get("redact_regions"):
+        from core.video_redact import RedactionError, validate_regions  # noqa: PLC0415
+        try:
+            validate_regions(raw["redact_regions"])
+        except RedactionError as exc:
+            raise HTTPException(status_code=422, detail=f"redact_regions: {exc}") from exc
 
     series = db.get(MiniSeries, series_id)
     if series is None or not series.approved:

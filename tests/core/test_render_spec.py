@@ -523,3 +523,54 @@ def test_fx_slide_no_longer_valid():
 def test_fx_dissolve_no_longer_valid():
     with pytest.raises(Exception):
         FxSpec(transition="dissolve")
+
+
+# ---------------------------------------------------------------------------
+# redact_regions is READ-ONLY IN PRACTICE (2026-08-12 decision)
+# ---------------------------------------------------------------------------
+# The render path consumes it, the API validates it, and NOTHING PRODUCES A REGION — there is no
+# box-drawing tool, because the frame an operator would have to draw on (cut, not yet rendered)
+# does not exist as an artifact. See the field's docstring for the full reasoning.
+#
+# These tests pin the decision so it stays a decision. If someone builds the marking tool, the
+# second one fails and they have to come here and delete the docstring on purpose, rather than
+# leaving a comment that says "unreachable" sitting above a field that is now reachable.
+
+def test_redact_regions_defaults_to_empty_and_does_not_share_state():
+    """Mutable default via Field(default_factory) — two specs must not share one list."""
+    from core.render_spec import ClipRenderSpec
+
+    a, b = ClipRenderSpec(), ClipRenderSpec()
+    assert a.redact_regions == [] and b.redact_regions == []
+    a.redact_regions.append({"x": 1})
+    assert b.redact_regions == [], "default_factory regressed to a shared mutable default"
+
+
+def test_the_unreachable_by_design_note_still_matches_reality():
+    """`grep -rn redact_regions` must keep hitting only the feature files.
+
+    "config with no reader reads as done" is a recorded failure mode in this repo; this is its
+    mirror image — a reader with no writer, which reads as shipped. The docstring is the mitigation
+    and this is what keeps the docstring honest.
+    """
+    import subprocess
+    from pathlib import Path
+
+    # The note lives as a `#:` comment, which pydantic does not expose, so read the source.
+    src = Path("core/render_spec.py").read_text()
+    assert "NOT REACHABLE FROM THE UI" in src, (
+        "the unreachable-by-design note was removed — if a marking UI now exists, delete this "
+        "test too; if it does not, put the note back"
+    )
+    assert "CLIP-LOCAL" in src, "the timeline contract must stay stated where the field is defined"
+
+    # And no UI file writes the field. web/ is the only place a writer could live.
+    hits = subprocess.run(
+        ["grep", "-rl", "redact_regions", "web/src"],
+        capture_output=True, text=True,
+    ).stdout.split()
+    assert hits == [], (
+        f"a UI writer for redact_regions now exists ({hits}) — that is good, but it must set "
+        "CLIP-LOCAL t0/t1 and SOURCE-FRAME x/y/w/h, or it silently ships unredacted PII. "
+        "Verify that, then update core/render_spec.py's note and delete this assertion."
+    )

@@ -244,7 +244,9 @@ class ClipRenderSpec(BaseModel):
       "fx":                {"transition": "cut", "color_grade": "none", "title_card": true},
       "emoji_highlights":  false,
       "aspects":           [],
-      "audio_enhance":     false
+      "audio_enhance":     false,
+      "audio_wind":        false,
+      "redact_regions":    []
     }
     """
 
@@ -266,6 +268,40 @@ class ClipRenderSpec(BaseModel):
     emoji_highlights: bool = False
     aspects: list[str] = Field(default_factory=list)
     audio_enhance: bool = False
+    #: Outdoor profile for audio_enhance — high-passes wind rumble before the
+    #: denoiser. No effect unless audio_enhance is also on. See core/audio_enhance.
+    audio_wind: bool = False
+    #: Operator-marked PII regions to pixelate: [{x,y,w,h,t0,t1}, ...]. Empty = no redaction.
+    #:
+    #: ⚠️ NOT REACHABLE FROM THE UI — DELIBERATELY, AS OF 2026-08-12. This field is READ-ONLY in
+    #: practice: the render path consumes it (jobs/render_job.py) and it is validated on the way
+    #: in (api/routes/clips.save_render_spec_route), but NOTHING PRODUCES A REGION. There is no
+    #: box-drawing tool. The only way to set one is a hand-computed
+    #: ``PUT /clips/{id}/render_spec``. Treat this as a working engine with no steering wheel,
+    #: not as a shipped feature.
+    #:
+    #: Why it was left that way rather than wired to a quick UI: the module's whole doctrine is
+    #: that a HUMAN confirms the box (see core/video_redact — a blur is a guess about how much
+    #: entropy is left in the pixels; an operator-confirmed box is not). Confirming a box needs a
+    #: frame to draw it on, and the frame it must be drawn on does not exist as an artifact:
+    #:
+    #:   * ``x/y/w/h`` are SOURCE-FRAME pixels and ``t0/t1`` are CLIP-LOCAL seconds — the clip is
+    #:     already cut when redaction runs. So the operator must scrub a video that is cut but
+    #:     not yet rendered.
+    #:   * ClipStudio has exactly two video states and neither is that one: the render options
+    #:     panel shows only BEFORE a render exists (nothing to scrub), and the preview player
+    #:     shows only AFTER (already rendered — too late, and reframed).
+    #:
+    #: Marking against the wrong one is not a cosmetic bug. Source-absolute timestamps produce a
+    #: window that never intersects the clip: ffmpeg exits 0, the job logs "pii redaction
+    #: applied", and unredacted PII publishes. That was CRITICAL 2 in the 2026-08-12 R2 review,
+    #: and it is exactly what a hastily-wired UI would reintroduce.
+    #:
+    #: To make this real, in order: (1) emit and store a cut-but-unrendered preview MP4 per part,
+    #: (2) draw the box against it and convert preview px → source px using the probed frame
+    #: size, (3) take t0/t1 from that preview's own currentTime, which is already clip-local.
+    #: Until (1) exists, a marking UI cannot be correct, so there is none.
+    redact_regions: list[dict] = Field(default_factory=list)
     platforms: list[str] = Field(default_factory=list)  # auto-schedule targets; empty = default
 
     @field_validator("platforms")
