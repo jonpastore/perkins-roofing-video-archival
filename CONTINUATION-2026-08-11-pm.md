@@ -1,6 +1,6 @@
 # Continuation — 2026-08-11 (pm)
 
-Picks up from [CONTINUATION-2026-08-11.md](CONTINUATION-2026-08-11.md). That session's P1–P5 are
+Picks up from [CONTINUATION-2026-08-11.md](docs/continuations/CONTINUATION-2026-08-11.md). That session's P1–P5 are
 done and merged, plus a punch list Jon added live during this one. **PRs #46, #47, #48 are merged
 to `main` (dacc919).**
 

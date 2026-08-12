@@ -1,98 +1,106 @@
-Resume perkins-roofing/video-archival.
+Read CONTINUATION-2026-08-12.md first — especially §1 (what I got wrong and how), §5 (the
+research behind this task) and §7 (things that will bite you). Then run this with autopilot.
 
-READ FIRST:
-    CONTINUATION-2026-08-11-eve.md     ← START HERE. §0 is state, §1 is the pattern, §4 is the plan.
-    CONTINUATION-2026-08-11-pm.md      the session before (5 PRs shipped + deployed)
-    docs/ENGINEERING_RULES.md          binding (R1 coverage, R2 dual review, R3 IaC, R4 drift)
+GOAL: two features that OpusClip either does badly or does not do at all, on the pipeline we
+already have. NO GPU. NO new infrastructure. Both phases end with an A/B artifact Jon can judge
+by eye and ear WITHOUT reading code — that is the actual deliverable, not the diff.
 
-STATE:
-    THREE COMMITS ARE UNPUSHED AND NOT DEPLOYED — 13366a8, 4988fa7, ae949d3. They are green
-    (pytest exit 0 captured directly, 0 FAILED, 5 skips with stated reasons). Prod runs the
-    earlier state (revision api-00254-nvk). Nothing below is live until you push + deploy.
+Work Phase 1 to completion and verification before starting Phase 2.
 
-    ⚠️ JON'S WORKING TREE HAS SIX UNCOMMITTED FILES — core/article_criteria.py,
-    core/article_repair.py, jobs/article_job.py, scripts/backfill_wendy_compliance.py,
-    tests/core/test_article_{criteria,repair}.py. That is his in-progress Wendy "Related links
-    x3" fix. LEAVE THEM ALONE. Last session I swept four of them into a commit with
-    `git add -u core/` and had to reset and recommit to extract them. NEVER stage by directory
-    in this repo — always name files explicitly.
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 1 — WIND NOISE
+═══════════════════════════════════════════════════════════════════════════════
 
-DO THIS, IN ORDER — §4 of the continuation has the detail:
+WHAT EXISTS (do not rebuild it — verify each claim before you touch anything):
+  core/audio_enhance.py       build_enhance_filter / build_enhance_cmd
+                              afftdn=nf=-25 + acompressor + loudnorm(-14 LUFS)
+  core/render_spec.py:268     audio_enhance: bool = False
+  jobs/render_job.py:366      applies it, non-fatal on exception
+  api/routes/clips.py:874     exposes it
 
-P1. ASK JON WHETHER TO PUSH + DEPLOY the three commits. They fix, among others, a HIGH that lets
-    one upload stall the WHOLE API (a 44 KB PDF blocked the event loop for 40.5 s), a CRITICAL
-    that printed Perkins' internal "$45.00 per SQ" upcharge on the PUBLIC warranty page, and a
-    HIGH where the debug trace persisted into quote_snapshot that `sales` can read. Deploy
-    commands are in §6. deploy.sh REFUSES a dirty tree, so use a clean worktree of origin/main.
+THE GAP: that afftdn value is tuned by its own comment for "HVAC/room noise" — indoor and
+stationary. Tim shoots outdoors on a phone. Wind is LOW-FREQUENCY and NON-STATIONARY; nothing
+in the chain high-passes, and afftdn adapts poorly to it.
 
-P2. THE Q1 EMAIL IS DRAFTED AND UNSENT in Jon's Outlook (created via the gmail-enhanced MCP with
-    account=jon@degenito.ai — the o365 MCP's refresh token is EXPIRED, 90-day inactivity). It
-    asks Tim/Marco/Josh for the FL approval / NOA numbers and test conditions behind the Gulf
-    Coast and Englert uplift rows, or agreement to publish Perkins-only. Ask Jon whether to send.
+DO:
+  1. Add a `wind: bool = False` option to build_enhance_filter/build_enhance_cmd that prepends a
+     high-pass and adjusts the denoiser for outdoor use, e.g.
+         highpass=f=90, afftdn=nf=-20, acompressor=..., loudnorm=...
+     Tune the exact values against the real clip in step 4 — do not just accept these numbers.
+  2. The DEFAULT PATH MUST STAY BYTE-IDENTICAL. Add a test asserting the wind=False filter
+     string is exactly what it is today, so this cannot regress existing renders.
+  3. Thread `wind` through render_spec -> render_job -> api/routes/clips.py, mirroring exactly
+     how `audio_enhance` already flows. Grep the READER, not the key — this repo's recurring
+     defect is config with no reader (see CLAUDE.md and §1).
+  4. Find a REAL Tim clip with wind. Check the archived GCS MP4s / existing videos in the DB
+     first; if nothing suitable exists, say so and ask rather than fabricating a test file.
 
-P3. PHASE 1 OF THE PROJECT-PAGES PIPELINE — wire the tag reads. Independent of every open
-    question and unblocks the Building 77 demo.
-      - adapters/companycam.py:91 reads `raw.get("tags")`, A KEY ABSENT FROM EVERY PAYLOAD, and
-        core/companycam/mirror.py:61 writes the resulting []. That mirror column has ALWAYS been
-        empty and nothing reads it. Fetch with ?tag_ids[]= instead.
-      - Restrict api/routes/portfolio.py::_available_media to Projects-tagged photos and
-        ProjectsVideo-tagged videos, sorted captured_at DESC (newest first — Wendy wants the
-        gallery to read final -> start).
-      - Put the tag ids in config, not literals.
-      - Acceptance: Building 77 returns exactly 9 photos + 2 videos, not 312 and 10. Cross-check
-        every returned id against /v2/photos/{id}/tags.
+DELIBERATELY NOT DOING: DeepFilterNet3. It is a new dependency plus model weights. Both reviewers
+said high-pass + low-end cleanup is the bulk of the win on wind specifically. If step 4 proves it
+insufficient, STOP and report — do not add the dependency unilaterally.
 
-P4. Q3 PUBLISHER REWORK (~1 day) — Jon decided KEEP the nine /portfolio/ pages, so
-    adapters/wordpress.publish_portfolio_post must post PAGES under parent 2358 instead of the
-    avada_portfolio CPT it writes today. HOLD until Wendy replies to the Q1 email, in case her
-    answer moves the target again.
+A/B ARTIFACT (required):
+  - Two playable files from the SAME source clip: `wind_before.mp4` and `wind_after.mp4`
+  - Put them somewhere Jon can open them, and print the paths
+  - Measured, not asserted: integrated LUFS before/after (ffmpeg loudnorm print_format=json),
+    and a one-line description of what changed in the low end
+  - Say plainly if it does NOT sound better. A negative result is a real result.
 
-P5. Q4 MULTI-VIDEO SCHEMA — Jon decided up to 4 videos per project. The project record has a
-    single `youtube_url` field; it needs a proper relation, and VideoObject follows.
+═══════════════════════════════════════════════════════════════════════════════
+PHASE 2 — ADDRESS / PII REDACTION
+═══════════════════════════════════════════════════════════════════════════════
 
-⚠️ BEFORE ANY PROJECT PAGE PUBLISHES: CompanyCam BURNS GPS INTO THE PIXELS. Jon's Q6 answer is
-    "we have permission for all properties, but mask the property — neighborhood or town/city,
-    never the exact address." The TEXT side is already right (city-slug links,
-    portfolio_facts._address_number_risk refuses street numbers, person-name titles blocked).
-    The PIXEL side is the gap — confirm the sanitiser covers the burned-in stamp.
+WHY: OpusClip has no PII redaction at all (verified both engines). Tim films clients' houses;
+street numbers are visible. CompanyCam already burns GPS into photo pixels — same instinct.
 
-~70% OF THE PROJECT PIPELINE ALREADY EXISTS. Do not rebuild it. core/portfolio_{content,criteria,
-critique,facts,media,projects}.py, core/companycam/, api/routes/portfolio.py,
-adapters/wordpress.publish_portfolio_post, scripts/portfolio_*.py. Per-image alt uniqueness,
-service+location linking, FAQPage/VideoObject scoping, the publish gate mirroring
-article_criteria, permission blockers and GPS sanitisation are all already built.
+WHAT EXISTS: nothing visual. core/censor.py mutes AUDIO for flagged words.
+core/photo_privacy.py CROPS stills. Neither blurs video.
 
-THE PATTERN THAT KEPT BITING (§1) — EVIDENCE THAT CANNOT ANSWER THE QUESTION. Three times last
-session I checked something with a method that could not have detected the failure, and reported
-the conclusion confidently:
-    - "CompanyCam tag filtering is broken" — I ran ?tag_ids[]=...&per_page=5 and saw 5 rows with
-      tags:[]. per_page=5 returns 5 either way and tags are not inlined. I never compared against
-      the unfiltered count. The filter WORKS: 100 -> 9.
-    - "suite green, exit 0" — I read the exit code of `pytest | tail`, which is TAIL's.
-    - "Jon's files are untouched" — I never checked; git add -u had taken them.
-CHECK THE THING THAT WOULD CHANGE IF YOU WERE WRONG. Compare filtered against unfiltered. Capture
-$? before the pipe. git log --name-only after committing.
+READ core/photo_privacy.py FIRST for this project's privacy doctrine:
+  "The stamp is CUT, not blurred. A blur is a guess about how much entropy is left in the
+   pixels; a crop removes them."
+That is why Phase 2 is an OPERATOR-MARKED region, not OCR auto-detection: an operator-confirmed
+box is not a guess.
 
-GOTCHAS:
-    ⚠️ CompanyCam: ONLY the plural bracketed `?tag_ids[]=` filters. `?tag_id=`, `?tags[]=`,
-      `?tag=` are SILENTLY IGNORED and return unfiltered results. Projects tag id 26926152,
-      ProjectsVideo 26926154, Building 77 project id 79260538.
-    ⚠️ Graph mail: use $search="...", NEVER $filter=from/emailAddress/address eq '...'.
-    ⚠️ `npm run build` is the gate, NOT `tsc --noEmit`.
-    ⚠️ tidal.geojson.gz is GITIGNORED and must be regenerated before zipping the plugin.
-    ⚠️ DB sessions: session.info["tenant_id"] = 1 REQUIRED before the first query (RLS), or
-      session.info["platform_scope"] = True for platform_config.
-    ⚠️ ADC is stale — cloud-sql-proxy needs --gcloud-auth.
-    ⚠️ deploy.sh REFUSES a dirty tree (R3-ENFORCE) and Jon's tree is dirty — deploy from
-      `git worktree add --detach /tmp/deploy-wt origin/main` + `cp .env`, then remove it.
-    ⚠️ scripts/apply_migrations_adc.py replays from 0013 and ignores DB_URL.
+DO:
+  1. New core/video_redact.py — PURE, no I/O, no subprocess (same split as core/audio_enhance.py).
+     A function turning redaction regions into an ffmpeg filter string:
+         regions: [{x, y, w, h, t0, t1}, ...]  ->  filter using enable='between(t,t0,t1)'
+     PIXELATE, not inpaint, and not a soft blur. A visible redaction is legally defensible;
+     inpainting alters the footage and costs GPU-minutes per video-minute.
+  2. Validate inputs at the boundary: negative/zero w/h, t1 <= t0, regions outside frame bounds,
+     empty list. This is a privacy path — do not simplify the validation away.
+  3. Wire it the same way audio_enhance is wired: render_spec field -> render_job -> clips API.
+  4. Tests in core/ (R1 applies): filter-string assertions plus ONE behavioural check that
+     actually runs ffmpeg on a small generated clip and confirms the pixels in the region changed
+     and the pixels outside it did not.
 
-COMMITS:
-    The hook requires `Refs #N <pct>%`, `Closes #N`, or `No-Task: <reason>` ALONE on its line —
-    trailing prose breaks the regex and the commit is rejected.
+DEFERRED, do not build: OCR auto-detection (PaddleOCR/EasyOCR + tracking). Phase 2 proves the
+render path; auto-detect comes later once we know the real shot patterns.
 
-VERIFY BEFORE CLAIMING DONE:
-    .venv/bin/python -m pytest tests -q -p no:warnings > /tmp/suite.log 2>&1; echo "EXIT=$?"
-    grep -cE "^FAILED|^ERROR" /tmp/suite.log        # expect 0 — do NOT read a piped exit code
-    .venv/bin/python scripts/check_tidal_layer.py   # pins; non-zero on failure
-    .venv/bin/python scripts/mutate_tidal_gates.py  # 9/9 gates must catch their mutation
+A/B ARTIFACT (required):
+  - `redact_before.mp4` and `redact_after.mp4` from the same clip, with a house number or address
+    visibly pixelated in the after and nothing else changed
+  - Print the paths. A still frame from each (PNG) is also fine and probably easier to eyeball.
+
+═══════════════════════════════════════════════════════════════════════════════
+RULES
+═══════════════════════════════════════════════════════════════════════════════
+
+- Full test suite green before you claim done: `.venv/bin/python -m pytest tests -p no:warnings`
+  Capture EXIT=$? to a file BEFORE any pipe and read it back. A task-notification saying
+  "exit code 0" reports the WRAPPER's exit, not pytest's — that mistake happened today (§1).
+  NOTE: pyproject sets addopts="-q"; do NOT pass -q again or the summary line vanishes (§7).
+- ruff clean on every file you touch.
+- R2: architect + critic review both phases before marking done. Fix all HIGH/CRITICAL.
+  R2 caught a CRITICAL in today's CompanyCam work that would have emptied every gallery.
+- Commit each phase separately. Trailer: `No-Task: <reason>` alone on its line, plus
+  Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+- DO NOT deploy. DO NOT touch the metal warranty page (awaiting Tim's reply).
+- DO NOT release the 7 `held` scheduled_content rows — that is Jon's call.
+- Label every finding you report as VERIFIED FROM DOCUMENT or INFERENCE. Do not merge the two.
+- If a phase turns out to be a bad idea once you see the real footage, SAY SO and stop. A
+  reasoned "this does not help" is worth more than a shipped feature that does nothing.
+
+FINISH BY: printing the four artifact paths (2 audio, 2 video/stills) and a 5-line summary of
+what changed, so Jon can evaluate both A/Bs and then /clear.
