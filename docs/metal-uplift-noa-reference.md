@@ -278,24 +278,56 @@ safety factor) before anyone relies on it. It is the one figure on the page stil
 
 ---
 
-## 6. Still missing
+## 6. Searched their site and docs — the answers are not published there
 
-- **Metal Alliance approval number — still not found.** Searched their site, their product
-  page, the FL product-approval database and Miami-Dade. The summary sheet ticks "FPA" and
-  "HVHZ" but names no number and carries no date; the product page names none either. Because
-  Metal Alliance supplies COIL rather than fabricating panels, the approval is likely held by
-  the fabricator who rolled the panel for the job. **Ask Tim which fabricator rolled the
-  Perkins panels** — the approval will be in that company's name, not Metal Alliance's. Until
-  then our headline number is the one we can least substantiate on demand.
-- **Gulf Coast's current numbers.** Both NOAs their own website links are expired (06/05/24 and
-  10/02/24). The live approval is FL34538.03-R3; its published pressures (59.75 @ 24",
-  123.5 @ 6") do not include −189.25, so the current document may rate the assembly differently.
-  Pull FL34538.03-R3 in full before republishing −189.25.
-- **Englert Series 1300 clip spacing.** NOA 25-0528.08 lists −165 psf but the summary does not
-  break pressure down by spacing, which is why our row says "approved assembly". Fine as-is, but
-  the full NOA PDF would let us state the condition.
-- **Which VersaLoc configuration Josh's sheet meant.** Gulf Coast has at least two NOAs with
-  different pressures at the same 8" spacing (−159.25 and −189.25). We are quoting the higher.
+Crawled metalalliance.com 2026-08-12: all 5 live product/approval pages and **all 14 PDFs they
+publish** (7 profile approval-summary sheets, the 49-page 150MSAllSeam Installation Guide, and
+the rest).
+
+**VERIFIED — not one of the 14 PDFs contains a single FL approval number or NOA number.** The
+only "FL" string in any of them is the Palm City zip code. Every summary sheet carries the same
+footer: *"best effort to summarize current FL Product Approvals and TDI listings and is subject
+to change without notice. For the most up to date information, visit the Florida Building
+Commission…"* The Installation Guide likewise defers: pressures *"can be found in the applicable
+product approval"*, and it lists the material only as *"22, 24 and 26-gauge steel, .032, .040
+aluminum"* with no grade or yield.
+
+Perplexity searched floridabuilding.org and Miami-Dade for the 26ga 150MS sub-approval and the
+NOA renewal: **NOT FOUND** on both, twice.
+
+So the open questions **cannot be answered from public vendor material.** They need either the
+FL BCIS database queried directly by product, or Metal Alliance asked.
+
+### But one question DID get answered, and it matters
+
+Perplexity surfaced, and I verified verbatim in NOA 21-0506.08:
+
+> **"Min. Yield Strength: 62 ksi."**  (24ga, 0.024")
+
+That undercuts the metallurgical explanation both reviewers originally offered (26ga Grade 80
+vs 24ga Grade 50), because this 24ga is **not** Grade 50:
+
+```
+24ga  0.024"  x 62 ksi = 1.488
+26ga  0.0179" x 80 ksi = 1.432   -> 0.96x — about 4% BELOW the 24ga
+Fy needed on 26ga to explain the claimed +50% : ~125 ksi
+```
+
+ASTM A653/A792 structural roofing coil tops out at **Grade 80**. ~125 ksi is not a standard
+roofing coil. **So steel grade does not explain the 1.5× gap for this pair.**
+
+### And the deeper correction: Fy·t was the wrong lens anyway
+
+Per the second review: for a mechanically seamed standing seam panel under uplift, capacity is
+**system- and connection-controlled**, not panel-yield-controlled. The governing limit states
+are clip anchorage / fastener pull-out from the plywood, seam or clip-hook disengagement, and
+panel buckling between clips. Dropping 24ga→26ga hurts bending stiffness (∝ t³) far more than a
+grade bump can buy back.
+
+So neither "thinner is weaker" (my first claim) nor "higher grade explains it" (the reviewers'
+correction) is the right frame. **A 1.5× difference has to come from a different assembly —
+clip model, fastener schedule, deck, seam type — or a different rating basis (ultimate vs
+allowable, safety factor, test standard).** Not from the steel.
 
 ---
 
