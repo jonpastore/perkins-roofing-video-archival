@@ -1,107 +1,98 @@
 Resume perkins-roofing/video-archival.
 
 READ FIRST:
-    CONTINUATION-2026-08-11.md         ← START HERE. §0 is the pattern; §5 is the plan; §3 is blocked-on-Jon.
-    CONTINUATION-2026-08-04.md         the session before (overhead on days per branch)
+    CONTINUATION-2026-08-11-eve.md     ← START HERE. §0 is state, §1 is the pattern, §4 is the plan.
+    CONTINUATION-2026-08-11-pm.md      the session before (5 PRs shipped + deployed)
     docs/ENGINEERING_RULES.md          binding (R1 coverage, R2 dual review, R3 IaC, R4 drift)
-    docs/WARRANTY_TOOL_TIDAL_LAYER.md  the tidal layer, its gates, and why each exists
 
-STATE: everything through PR #44 is merged and DEPLOYED and verified.
-    API a32de84 (revision api-00245-lqt), frontend live, warranty plugin 1.6.1 on staging.
-    Full suite green (exit 0); 3 skips, all environmental or a deliberate refusal to invent
-    Tim's numbers. Jon's working tree has UNRELATED article/Wendy changes in it — leave them
-    alone; deploy from a clean worktree (§6) because deploy.sh refuses a dirty tree.
+STATE:
+    THREE COMMITS ARE UNPUSHED AND NOT DEPLOYED — 13366a8, 4988fa7, ae949d3. They are green
+    (pytest exit 0 captured directly, 0 FAILED, 5 skips with stated reasons). Prod runs the
+    earlier state (revision api-00254-nvk). Nothing below is live until you push + deploy.
 
-DO THIS, IN ORDER — §5 of the continuation has the detail and the reasoning:
+    ⚠️ JON'S WORKING TREE HAS SIX UNCOMMITTED FILES — core/article_criteria.py,
+    core/article_repair.py, jobs/article_job.py, scripts/backfill_wendy_compliance.py,
+    tests/core/test_article_{criteria,repair}.py. That is his in-progress Wendy "Related links
+    x3" fix. LEAVE THEM ALONE. Last session I swept four of them into a commit with
+    `git add -u core/` and had to reset and recommit to extract them. NEVER stage by directory
+    in this repo — always name files explicitly.
 
-P1. MAKE THE VIDEO DESCRIPTION EDITABLE. Josh asked for "auto-generated, allowing us to review
-    and EDIT it before posting" and I shipped it read-only. He is blocked on this today.
-      - add PATCH /video/{video_id}/description (role approve_video) taking {description}
-      - set description_model = "edited" on a manual save, so a human-written caption is
-        distinguishable from a generated one — otherwise a future "regenerate everything the
-        old model wrote" silently destroys hand edits
-      - VideoApproval.tsx: read-only <div> -> <textarea> + Save, dirty-tracked so a reload
-        cannot silently discard; keep Regenerate but warn before overwriting an edited caption
-      - test the PATCH round-trip AND the model-flag flip
+DO THIS, IN ORDER — §4 of the continuation has the detail:
 
-P2. LOAD JOSH'S MASTER PROMPT into VIDEO_DESCRIPTION_PROMPT (currently EMPTY, so the generic
-    DEFAULT_PROMPT fallback is what runs). 10,962 bytes, 18 sections, from his 2026-08-11 13:41
-    email "Social media prompt + Metal Roof Clip Spacing Sheet". IT IS ALREADY IN THE REPO at
-    docs/josh-social-caption-master-prompt-2026-08-11.txt (no need to re-fetch mail). It contains NO {transcript} placeholder — render_prompt appends the
-    transcript in that case by design, so it works as-is. Generate one description afterwards and
-    READ IT: his prompt targets Instagram/Facebook captions, a different register from today's
-    default, so confirm the output is what Perkins actually wants to post.
+P1. ASK JON WHETHER TO PUSH + DEPLOY the three commits. They fix, among others, a HIGH that lets
+    one upload stall the WHOLE API (a 44 KB PDF blocked the event loop for 40.5 s), a CRITICAL
+    that printed Perkins' internal "$45.00 per SQ" upcharge on the PUBLIC warranty page, and a
+    HIGH where the debug trace persisted into quote_snapshot that `sales` can read. Deploy
+    commands are in §6. deploy.sh REFUSES a dirty tree, so use a clean worktree of origin/main.
 
-P3. REBUILD THE WARRANTY PAGE from Josh's clip-spacing reference data
-    (source image saved at docs/perkins-metal-clip-spacing-2026-08-11.png) — use the DATA, not the
-    marketing artwork (Jon: "use the images and text as you fit to best display its reference
-    data, not a style guide"). Two-column layout Jon asked for: RESULTS column (the verdict the
-    visitor came for) beside a DETAIL column (the facts that justify it), so the important
-    numbers stay visible while scrolling. Keep the summary. Replace placeholder uplift values:
-        Metal Alliance  1.5" mechanical seam  12" O.C. clips  -218.8 PSF
-        Gulf Coast      Versaloc 1.5"          8" O.C. clips  -189.25 PSF
-        Englert         Series 1300 1.5"       approved assy  -165 PSF
-        clips on a 20' panel: 12" O.C. -> 20, 8" -> 30, 6" -> 40
-        thesis: more clips != stronger roof; strength is the TESTED ASSEMBLY (PSF). CCC1331944.
-    wp-plugin/perkins-metal-warranty/assets/guide.json already holds uplift[] with
-    panel/attachment/psf/mph/hvhz/note — that is the shape to fill.
+P2. THE Q1 EMAIL IS DRAFTED AND UNSENT in Jon's Outlook (created via the gmail-enhanced MCP with
+    account=jon@degenito.ai — the o365 MCP's refresh token is EXPIRED, 90-day inactivity). It
+    asks Tim/Marco/Josh for the FL approval / NOA numbers and test conditions behind the Gulf
+    Coast and Englert uplift rows, or agreement to publish Perkins-only. Ask Jon whether to send.
 
-P4. VERTEX SDK MIGRATION — ITS OWN PR, do not ride it along with anything else. The stated
-    removal date (2026-06-24) has ALREADY PASSED and adapters/llm.py still imports
-    vertexai.generative_models / vertexai.language_models. google-genai 2.10.0 is already
-    installed. New surface: genai.Client(vertexai=True, project, location) ->
-    client.models.generate_content(...) / client.models.embed_content(...).
-    TWO TRAPS, verify both before merging:
-      - VertexLLM.chat reads response.usage_metadata for the per-tenant token meter; the new
-        SDK's response shape differs and a silently-zero meter is worse than a crash
-      - embeddings are embed_dim=3072; a wrong output_dimensionality mismatches the vector
-        corpus SILENTLY (retrieval degrades, nothing fails)
+P3. PHASE 1 OF THE PROJECT-PAGES PIPELINE — wire the tag reads. Independent of every open
+    question and unblocks the Building 77 demo.
+      - adapters/companycam.py:91 reads `raw.get("tags")`, A KEY ABSENT FROM EVERY PAYLOAD, and
+        core/companycam/mirror.py:61 writes the resulting []. That mirror column has ALWAYS been
+        empty and nothing reads it. Fetch with ?tag_ids[]= instead.
+      - Restrict api/routes/portfolio.py::_available_media to Projects-tagged photos and
+        ProjectsVideo-tagged videos, sorted captured_at DESC (newest first — Wendy wants the
+        gallery to read final -> start).
+      - Put the tag ids in config, not literals.
+      - Acceptance: Building 77 returns exactly 9 photos + 2 videos, not 312 and 10. Cross-check
+        every returned id against /v2/photos/{id}/tags.
 
-P5. HOUSEKEEPING (deletion over addition). adapters/broll_providers.py has ZERO importers —
-    delete it. adapters/media_cleanup.clean_audio has NO callers — wire it into render_job or
-    remove it. Decide, don't leave it.
+P4. Q3 PUBLISHER REWORK (~1 day) — Jon decided KEEP the nine /portfolio/ pages, so
+    adapters/wordpress.publish_portfolio_post must post PAGES under parent 2358 instead of the
+    avada_portfolio CPT it writes today. HOLD until Wendy replies to the Q1 email, in case her
+    answer moves the target again.
 
-BLOCKED ON JON — ask, do not guess (§3):
-    - the email to Tim + marco + josh with the NHD analysis and the C-8 open item is UNSENT.
-      Tim's 2026-08-06 message DOES carry Screenshot 2026-08-06 at 7.42.43 AM.png (986 KB) and a
-      1.4 MB JPEG — read those first; one is the address Jon meant. I twice said there was no
-      attachment because I used Graph $filter instead of $search. That was wrong.
-    - Josh must RETRY the brand-video upload. The IAM binding is verified present but was never
-      executed (impersonating api-run-sa needs Token Creator; Policy Troubleshooter is disabled).
-      If it fails now the logs finally say why — logger.exception was added to both GCS handlers.
-    - C-8 canal, North Miami: two gauges 122 m apart, NE 135 ST reads 465 uS/cm (fresh) and
-      UPSTREAM OF S-28 reads 20,450. The fresh one wins on channel distance so a house at the
-      S-28 end reads 2,812 ft -> warranty-safe. Is the salt line in the right place?
+P5. Q4 MULTI-VIDEO SCHEMA — Jon decided up to 4 videos per project. The project record has a
+    single `youtube_url` field; it needs a proper relation, and VideoObject follows.
 
-THE PATTERN THAT KEEPS BITING (§0) — five defects this session, one shape: the write path
-worked and NOTHING READ IT BACK. A config key with no reader, a description stored but never
-returned, an endpoint whose service account could not write, a VPN fallback with no log line.
-VERIFY BY EXERCISING THE RUNNING SYSTEM: call the endpoint, read the row back, check the PROD
-job config, grep the READER not the key. And never verify a thing against its own upstream
-source — the review that blessed the previous tidal fix checked it against OSM, which is where
-the layer's data comes from, so it agreed with itself.
+⚠️ BEFORE ANY PROJECT PAGE PUBLISHES: CompanyCam BURNS GPS INTO THE PIXELS. Jon's Q6 answer is
+    "we have permission for all properties, but mask the property — neighborhood or town/city,
+    never the exact address." The TEXT side is already right (city-slug links,
+    portfolio_facts._address_number_risk refuses street numbers, person-name titles blocked).
+    The PIXEL side is the gap — confirm the sanitiser covers the burned-in stamp.
+
+~70% OF THE PROJECT PIPELINE ALREADY EXISTS. Do not rebuild it. core/portfolio_{content,criteria,
+critique,facts,media,projects}.py, core/companycam/, api/routes/portfolio.py,
+adapters/wordpress.publish_portfolio_post, scripts/portfolio_*.py. Per-image alt uniqueness,
+service+location linking, FAQPage/VideoObject scoping, the publish gate mirroring
+article_criteria, permission blockers and GPS sanitisation are all already built.
+
+THE PATTERN THAT KEPT BITING (§1) — EVIDENCE THAT CANNOT ANSWER THE QUESTION. Three times last
+session I checked something with a method that could not have detected the failure, and reported
+the conclusion confidently:
+    - "CompanyCam tag filtering is broken" — I ran ?tag_ids[]=...&per_page=5 and saw 5 rows with
+      tags:[]. per_page=5 returns 5 either way and tags are not inlined. I never compared against
+      the unfiltered count. The filter WORKS: 100 -> 9.
+    - "suite green, exit 0" — I read the exit code of `pytest | tail`, which is TAIL's.
+    - "Jon's files are untouched" — I never checked; git add -u had taken them.
+CHECK THE THING THAT WOULD CHANGE IF YOU WERE WRONG. Compare filtered against unfiltered. Capture
+$? before the pipe. git log --name-only after committing.
 
 GOTCHAS:
-    ⚠️ Graph mail: use $search="...", NEVER $filter=from/emailAddress/address eq '...' — the
-      filter is case-sensitive and silently returns 0 for messages that exist.
+    ⚠️ CompanyCam: ONLY the plural bracketed `?tag_ids[]=` filters. `?tag_id=`, `?tags[]=`,
+      `?tag=` are SILENTLY IGNORED and return unfiltered results. Projects tag id 26926152,
+      ProjectsVideo 26926154, Building 77 project id 79260538.
+    ⚠️ Graph mail: use $search="...", NEVER $filter=from/emailAddress/address eq '...'.
     ⚠️ `npm run build` is the gate, NOT `tsc --noEmit`.
-    ⚠️ tidal.geojson.gz is GITIGNORED and must be regenerated before zipping the plugin;
-      checker.js prefers it because the WP host sends no content-encoding (22 MB vs 2.88 MB,
-      measured 38-93 s vs 4-10 s against the live host).
-    ⚠️ DB sessions: session.info["tenant_id"] = 1 is REQUIRED before the first query (RLS), or
+    ⚠️ tidal.geojson.gz is GITIGNORED and must be regenerated before zipping the plugin.
+    ⚠️ DB sessions: session.info["tenant_id"] = 1 REQUIRED before the first query (RLS), or
       session.info["platform_scope"] = True for platform_config.
-    ⚠️ ADC is stale — cloud-sql-proxy needs --gcloud-auth to borrow the CLI account.
-    ⚠️ deploy.sh REFUSES a dirty tree (R3-ENFORCE). Jon's tree is dirty with unrelated work, so
-      deploy from `git worktree add --detach /tmp/deploy-wt main` + `cp .env`, then remove it.
-    ⚠️ scripts/apply_migrations_adc.py replays from 0013 and ignores DB_URL — apply single
-      migrations directly instead (psycopg runs a multi-statement script in ONE execute; do not
-      split on ';', the comments contain semicolons).
+    ⚠️ ADC is stale — cloud-sql-proxy needs --gcloud-auth.
+    ⚠️ deploy.sh REFUSES a dirty tree (R3-ENFORCE) and Jon's tree is dirty — deploy from
+      `git worktree add --detach /tmp/deploy-wt origin/main` + `cp .env`, then remove it.
+    ⚠️ scripts/apply_migrations_adc.py replays from 0013 and ignores DB_URL.
 
 COMMITS:
     The hook requires `Refs #N <pct>%`, `Closes #N`, or `No-Task: <reason>` ALONE on its line —
     trailing prose breaks the regex and the commit is rejected.
 
 VERIFY BEFORE CLAIMING DONE:
-    .venv/bin/python -m pytest tests -q -p no:warnings        # full suite, ~15 min
-    .venv/bin/python scripts/check_tidal_layer.py             # pins; non-zero on failure
-    .venv/bin/python scripts/mutate_tidal_gates.py            # 9/9 gates must catch their mutation
+    .venv/bin/python -m pytest tests -q -p no:warnings > /tmp/suite.log 2>&1; echo "EXIT=$?"
+    grep -cE "^FAILED|^ERROR" /tmp/suite.log        # expect 0 — do NOT read a piped exit code
+    .venv/bin/python scripts/check_tidal_layer.py   # pins; non-zero on failure
+    .venv/bin/python scripts/mutate_tidal_gates.py  # 9/9 gates must catch their mutation
