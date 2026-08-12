@@ -1,6 +1,6 @@
 # 2026-08-12 — the publish queue was a dead end, and the uplift number was right all along
 
-Picks up from [CONTINUATION-2026-08-11-eve.md](CONTINUATION-2026-08-11-eve.md).
+Picks up from [CONTINUATION-2026-08-11-eve.md](docs/continuations/CONTINUATION-2026-08-11-eve.md).
 
 **Everything from that session shipped.** Prod is on `api-00259-c4s` (`:955e9a5`), migrations 0057
 and 0058 applied, 5,668 tests green. Six commits pushed today, all deployed.
