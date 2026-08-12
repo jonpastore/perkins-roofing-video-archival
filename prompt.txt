@@ -2,10 +2,10 @@ Read CONTINUATION-2026-08-12-pm.md first. It has the full state. Its §1 has the
 §3 has the R2 outcome and what remains, §4 is your task list, §5 has Jon's two open
 questions (the calc-breakdown answer, and a UI bug that is diagnosed but NOT fixed).
 
-CONTEXT IN ONE LINE: two features are BUILT AND WIRED but UNCOMMITTED. R2 returned REJECT with two
+CONTEXT IN ONE LINE: two features are BUILT, WIRED, COMMITTED and GREEN. R2 returned REJECT with two
 CRITICALs (a filtergraph that broke every 2-region render, and an out-of-range time window that
 redacted nothing while reporting success). BOTH ARE FIXED AND MUTATION-VERIFIED — see §3. What is
-left is re-verification, not rework.
+left is re-review of the fixes, the marking UI, and a UI bug — not rework of the features.
 
   Phase 1  core/audio_enhance.py    new `wind` option (highpass=f=90 + softer afftdn)
   Phase 2  core/video_redact.py     NEW — pixelates operator-marked PII regions
@@ -15,14 +15,12 @@ left is re-verification, not rework.
 DO THESE IN ORDER
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. VERIFY THE SUITE. Capture the exit code to a file BEFORE any pipe and read it back — a
-   task-notification saying "exit code 0" reports the WRAPPER's exit, not pytest's, and that
-   mistake cost a full cycle earlier today:
+1. NOTHING TO VERIFY ON THE SUITE — it is green (5,702 passed, 5 skipped, exit 0 captured before
+   any pipe) and everything through 566fccc is committed and pushed. Start at step 2.
 
-     .venv/bin/python -m pytest tests -p no:warnings > /tmp/s.log 2>&1; echo "EXIT=$?" > /tmp/s.exit
-
-   pyproject sets addopts="-q". Do NOT pass -q again or the summary line disappears and a green
-   run looks truncated.
+   For later runs: capture the exit code to a file BEFORE any pipe. A task-notification saying
+   "exit code 0" reports the WRAPPER's exit, not pytest's. And pyproject sets addopts="-q" — do
+   NOT pass -q again or the summary line disappears and a green run looks truncated.
 
 2. RE-RUN R2 on the POST-FIX code. The two CRITICALs are fixed but the FIXES have not themselves
    been reviewed. Pay attention to the `split`-based filtergraph and the new clip_duration guard.

@@ -3,9 +3,13 @@
 Picks up from [CONTINUATION-2026-08-12.md](CONTINUATION-2026-08-12.md), which has the day's
 earlier work (publish queue, metal uplift, CompanyCam tags) and §1 "what I got wrong today".
 
-**⚠️ NOTHING IS COMMITTED.** R2 came back **REJECT** with two CRITICALs — both reproduced against
-real ffmpeg, neither caught by the 20 passing tests, one of them a silent PII leak. **Both are now
-fixed and mutation-verified** (§3). A full suite run was in flight at handoff. First task is §4.
+**STATUS: committed, suite green, R2 findings fixed.** R2 returned **REJECT** with two CRITICALs —
+both reproduced against real ffmpeg, neither caught by the 20 passing tests, one of them a silent
+PII leak. Both are fixed and mutation-verified (§3), and the post-fix suite is **green: 5,702
+passed, 5 skipped, exit 0** captured before any pipe.
+
+**What is NOT done: the fixes have not themselves been reviewed, and there is still no way for an
+operator to mark a region** (§3, "Known-remaining"). Start at §4.
 
 ---
 
@@ -172,13 +176,13 @@ the record a client's lawyer would ask for.
 
 ## §4 — DO THIS FIRST ON RESUME
 
-1. **Verify the suite.** A run was in flight at handoff. Capture the code before any pipe:
-   `.venv/bin/python -m pytest tests -p no:warnings > /tmp/s.log 2>&1; echo "EXIT=$?" > /tmp/s.exit`
-   (`pyproject` sets `addopts="-q"` — do NOT add `-q`.)
-2. **Re-run R2** on the post-fix code. The previous review was REJECT; the two CRITICALs are
-   fixed but the fixes have not themselves been reviewed.
-3. **Decide the marking-UI question above** — it is what makes Phase 2 real rather than latent.
-4. Then commit, Phase 1 and Phase 2 separately.
+1. **Re-run R2** on the post-fix code. The previous review was REJECT; the two CRITICALs are
+   fixed and the suite is green, but **the fixes have not themselves been reviewed**. Focus on
+   the `split`-based filtergraph and the new `clip_duration` guard.
+2. **Decide the marking-UI question** (§3, "Known-remaining") — it is what makes Phase 2 real
+   rather than latent. Build the frame-scrub tool, or mark the field unreachable-by-design.
+3. **Fix the estimate-inputs grid** (§5B) — small, separate commit, verify in a browser.
+4. Everything through 566fccc is committed and pushed. Suite green at 5,702 passed.
 
 ---
 
