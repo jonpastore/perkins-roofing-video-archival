@@ -605,7 +605,7 @@ function MeasurementForm({
         {roofrError && <div style={{ fontSize: 12, color: BRAND.red, marginTop: 6 }}>{roofrError}</div>}
         {roofrNote && <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 6 }}>{roofrNote}</div>}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
         <div>
           <FieldLabel>Total Squares</FieldLabel>
           <input type="number" min="0" step="0.5" value={totalSq} onChange={(e) => setTotalSq(e.target.value)} style={{ ...inputStyle, width: "100%", fontSize: 13 }} placeholder="e.g. 28.5" />
@@ -2443,7 +2443,7 @@ export function Quoting() {
               )}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
               <div>
                 <FieldLabel>Region</FieldLabel>
                 <select value={quoteRegion} onChange={(e) => setQuoteRegion(e.target.value as "FBC" | "HVHZ")} style={selectStyle}>
@@ -2470,7 +2470,12 @@ export function Quoting() {
               </div>
             </div>
 
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+            {/* minmax(0, 1fr), not 1fr: bare `1fr` is minmax(auto, 1fr), so a cell whose content
+                has a wide min-content — the long "50,373.4 ft to salt water (CORAL GABLES CANAL
+                (EAST))" string, or an <input> with its default 20ch intrinsic width — refuses to
+                shrink and steals width from its siblings, which is what wrapped "Include the
+                Coastal package" one word per line. */}
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
               <div>
                 <FieldLabel>Recommended tier</FieldLabel>
                 <select value={recommendedTier} onChange={(e) => setRecommendedTier(e.target.value as "good" | "better" | "best")} style={selectStyle}>
@@ -2493,7 +2498,8 @@ export function Quoting() {
                   value={quoteRoofCutsPerSq}
                   onChange={(e) => setQuoteRoofCutsPerSq(e.target.value)}
                   placeholder="e.g. 45 — hand-load, no truck access"
-                  style={inputStyle}
+                  title="Cuts / access $ per sq — overrides the Roof cuts pick. e.g. 45 for hand-load, no truck access"
+                  style={{ ...inputStyle, width: "100%" }}
                 />
               </div>
               <div>
@@ -2502,7 +2508,8 @@ export function Quoting() {
                   value={quoteAccessibilityFlat}
                   onChange={(e) => setQuoteAccessibilityFlat(e.target.value)}
                   placeholder="e.g. 1800 — quoted hand-load / delivery"
-                  style={inputStyle}
+                  title="Accessibility $ (flat) — e.g. 1800 for a quoted hand-load / delivery"
+                  style={{ ...inputStyle, width: "100%" }}
                 />
                 <div style={{ fontSize: 11, color: BRAND.sub, marginTop: 4 }}>
                   Tim, 7/27: there is no set price — enter what the delivery company or sub
@@ -2587,7 +2594,7 @@ export function Quoting() {
                     value={quoteFlatSquares}
                     onChange={(e) => setQuoteFlatSquares(e.target.value)}
                     placeholder="0 — leave blank if none"
-                    style={inputStyle}
+                    style={{ ...inputStyle, width: "100%" }}
                   />
                 </div>
               )}
