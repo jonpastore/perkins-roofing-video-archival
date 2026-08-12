@@ -58,10 +58,14 @@ def upsert_photo(session: Session, photo: dict[str, Any]) -> bool:
         captured_at=captured_at,
         lat=photo.get("lat"),
         lon=photo.get("lon"),
-        tags=photo.get("tags") or [],
         raw=photo.get("raw") or {},
         content_hash=chash,
     )
+    # `tags` is deliberately NOT written here. It is owned solely by set_publish_tags(), fed by
+    # an account-wide tag pass. Neither the sync job nor the webhook knows a photo's tags, so
+    # letting either write the column would mean one of them overwriting the other with [] —
+    # silently dropping a photo out of a published gallery. Absent from `values` = untouched
+    # on update, and the column default ([]) applies on insert.
 
     if dialect == "postgresql":
         from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -150,6 +154,7 @@ def upsert_video(session: Session, video: dict[str, Any]) -> bool:
         raw=video.get("raw") or {},
         content_hash=chash,
     )
+    # `tags` is owned by set_publish_tags() — same contract as upsert_photo.
 
     if dialect == "postgresql":
         from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -198,6 +203,53 @@ def upsert_video(session: Session, video: dict[str, Any]) -> bool:
     session.flush()
     log.debug("companycam mirror: video=%s status=updated", video_id)
     return True
+
+
+def set_publish_tags(session: Session, kind: str, tagged_ids: set[str], tag_id: str) -> dict:
+    """Make the mirror's publish tags match an account-wide tag fetch, for one media kind.
+
+    The SINGLE writer of `tags` (see upsert_photo). Two statements, both idempotent:
+    stamp `[tag_id]` on every mirrored row in `tagged_ids`, and clear any row that still
+    carries `tag_id` but is no longer in the set — so untagging in CompanyCam actually
+    reaches the gallery instead of leaving a photo published forever.
+
+    Deliberately NOT keyed on the sync job's incremental `needs_media` gate. That gate keys
+    off the PROJECT's CompanyCam `updated_at`, which never moves again once a roof is
+    finished — so anything gated by it could never reach the completed jobs the portfolio is
+    built from, and a photo tagged today would never appear. This runs every time.
+
+    `kind` is "photo" or "video". Returns {"tagged": n, "cleared": n} — the operator's only
+    evidence the pass did anything, so it is counted rather than assumed.
+    """
+    from app.models import CompanyCamPhoto, CompanyCamVideo  # noqa: PLC0415
+
+    if kind not in ("photo", "video"):
+        raise ValueError(f"kind must be 'photo' or 'video'; got {kind!r}")
+
+    model = CompanyCamPhoto if kind == "photo" else CompanyCamVideo
+    id_col = model.companycam_photo_id if kind == "photo" else model.companycam_video_id
+    tenant_id: int = session.info.get("tenant_id", 1)
+    wanted = {str(i) for i in tagged_ids}
+
+    tagged = cleared = 0
+    # Only rows we mirror can be tagged; a tagged id we have never synced is simply not here
+    # yet and will be picked up once its project syncs.
+    rows = session.execute(
+        select(model).where(model.tenant_id == tenant_id)
+    ).scalars().all()
+    for row in rows:
+        current = [str(t) for t in (row.tags or [])]
+        should = str(getattr(row, id_col.key)) in wanted
+        if should and current != [tag_id]:
+            row.tags = [tag_id]
+            tagged += 1
+        elif not should and tag_id in current:
+            row.tags = [t for t in current if t != tag_id]
+            cleared += 1
+    session.flush()
+    log.info("companycam tags: kind=%s tag=%s tagged=%d cleared=%d seen=%d",
+             kind, tag_id, tagged, cleared, len(wanted))
+    return {"tagged": tagged, "cleared": cleared}
 
 
 def _epoch_to_dt(value: Any) -> datetime | None:

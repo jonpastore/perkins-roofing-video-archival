@@ -1,0 +1,30 @@
+-- CompanyCam tag ids on mirrored VIDEOS, so the public project gallery can be restricted to
+-- the clips a crew actually marked for publication.
+--
+-- companycam_photos has carried a `tags` column since 0043; companycam_videos never did, so
+-- there was no way to express "only ProjectsVideo-tagged clips" against the mirror. The photo
+-- column, meanwhile, has been empty for every row ever written: adapters/companycam.py read
+-- `raw.get("tags")` and a CompanyCam photo payload has no `tags` key, so the mirror stored []
+-- 156k times. Tags now come from a second, tag-filtered fetch (`?tag_ids[]=`) — the only query
+-- form CompanyCam actually honours; `tag_id=`, `tags[]=` and `tag=` return the UNFILTERED list.
+--
+-- Backfilled by the next jobs/companycam_sync.py run. The tag pass is ACCOUNT-WIDE
+-- (core/companycam/mirror.py::set_publish_tags, fed by an unfiltered-by-project
+-- ?tag_ids[]= fetch) and runs on every execution, gated by nothing.
+--
+-- It deliberately does NOT sit inside the per-project crawl. That crawl is incremental — it
+-- skips any project whose CompanyCam updated_at has not moved — and a finished roof's
+-- timestamp never moves again, so a tag pass behind that gate could never reach the completed
+-- jobs the portfolio is built from (all ~3,684 projects were synced in July) and a photo
+-- tagged today would never appear. That failure is silent: green job, empty gallery.
+-- tests/core/test_companycam_tag_filter.py::test_the_tag_pass_runs_even_when_every_project_is_skipped
+-- pins it.
+--
+-- No UPDATE ... SET media_synced_at = NULL here on purpose: scripts/apply_migrations_adc.py
+-- has no ledger and replays every migration from 0013, so an unguarded reset would force a
+-- full ~14,700-request re-crawl every time anyone applies migrations.
+--
+-- Until the first post-deploy run the column is [] and a gallery reads empty rather than
+-- offering 312 untagged photos — the safe direction.
+
+ALTER TABLE companycam_videos ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;

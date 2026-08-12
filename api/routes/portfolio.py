@@ -141,18 +141,38 @@ def _permissions(row) -> dict[str, bool]:
 
 
 def _available_media(db: Session, cc_project_id: str | None, perms: dict[str, bool]) -> dict:
-    """Mirrored CompanyCam media for this project, filtered to what may be published."""
+    """Mirrored CompanyCam media for this project, filtered to what may be published.
+
+    Only media a crew TAGGED for publication is offered — "Projects" for photos,
+    "ProjectsVideo" for clips. A project's mirror holds everything the crew shot, including
+    tear-off, damage and progress frames that were never meant for a public gallery
+    (Building 77: 9 of 312 photos and 2 of 22 videos carry the tags).
+
+    Newest capture FIRST: Wendy wants the gallery to read finished roof -> job start.
+
+    The tag test runs in Python rather than SQL because `tags` is JSON and the containment
+    operators differ between Postgres and the SQLite test dialect; one project's media is a
+    few hundred rows, already fetched by project_id.
+    """
+    from adapters.companycam import projects_tag_id, projects_video_tag_id  # noqa: PLC0415
     from app.models import CompanyCamPhoto, CompanyCamVideo  # noqa: PLC0415
 
     if not cc_project_id:
         return {"photos": [], "videos": []}
+
+    photo_tag, video_tag = projects_tag_id(), projects_video_tag_id()
+
+    def _tagged(row, tag: str) -> bool:
+        return tag in [str(t) for t in (row.tags or [])]
 
     photos = [
         {"companycam_photo_id": p.companycam_photo_id, "url": p.url,
          "captured_at": p.captured_at.isoformat() if p.captured_at else None}
         for p in db.query(CompanyCamPhoto)
         .filter(CompanyCamPhoto.project_id == str(cc_project_id))
-        .order_by(CompanyCamPhoto.captured_at.asc()).all()
+        .order_by(CompanyCamPhoto.captured_at.desc().nullslast(),
+                  CompanyCamPhoto.id.desc()).all()
+        if _tagged(p, photo_tag)
     ]
     videos = [
         {"companycam_video_id": v.companycam_video_id, "url": v.url,
@@ -160,7 +180,9 @@ def _available_media(db: Session, cc_project_id: str | None, perms: dict[str, bo
          "captured_at": v.captured_at.isoformat() if v.captured_at else None}
         for v in db.query(CompanyCamVideo)
         .filter(CompanyCamVideo.project_id == str(cc_project_id))
-        .order_by(CompanyCamVideo.captured_at.asc()).all()
+        .order_by(CompanyCamVideo.captured_at.desc().nullslast(),
+                  CompanyCamVideo.id.desc()).all()
+        if _tagged(v, video_tag)
     ]
     return publishable_media(
         photos, videos,

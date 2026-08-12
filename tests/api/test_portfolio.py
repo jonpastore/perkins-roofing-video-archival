@@ -7,6 +7,7 @@ network call ever leaves the test.
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from adapters.companycam import projects_tag_id
 from api.auth import set_verifier
 from api.routes.portfolio import router
 from app.models import (
@@ -66,7 +67,7 @@ def _publishable(slug=FIRST_SLUG):
         for i in range(4):
             db.add(CompanyCamPhoto(tenant_id=1, companycam_photo_id=f"gp{i}",
                                    project_id=CC_PROJECT, url=f"http://cdn/gp{i}.jpg",
-                                   tags=[], raw={}, content_hash=f"gh{i}"))
+                                   tags=[projects_tag_id()], raw={}, content_hash=f"gh{i}"))
         db.add(KnowifyRawRecord(tenant_id=1, entity="projects", knowify_id="GP1",
                                 is_present=True, content_hash="ga",
                                 payload={"Id": "GP1", "ClientId": "GC1",

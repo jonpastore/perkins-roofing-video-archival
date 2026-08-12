@@ -1399,6 +1399,10 @@ class CompanyCamPhoto(Base, TenantMixin):
     captured_at         = Column(DateTime, nullable=True)
     lat                 = Column(Float, nullable=True)
     lon                 = Column(Float, nullable=True)
+    #: PUBLISH tags only — the ids in adapters.companycam.projects_tag_id that this photo was
+    #: confirmed to carry, NOT the photo's full tag list. A photo payload has no `tags` key at
+    #: all, so these come from a second tag-filtered fetch; anything else the crew tagged is
+    #: invisible here. Empty means "not marked for the public gallery" (or never re-synced).
     tags                = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
     raw                 = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
     content_hash        = Column(String(64), nullable=False)
@@ -1430,6 +1434,8 @@ class CompanyCamVideo(Base, TenantMixin):
     lon                 = Column(Float, nullable=True)
     status              = Column(String(50), nullable=True)
     internal            = Column(Boolean, nullable=False, default=True)
+    #: PUBLISH tags only — same contract as CompanyCamPhoto.tags (migration 0057).
+    tags                = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
     raw                 = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
     content_hash        = Column(String(64), nullable=False)
     created_at          = Column(DateTime, nullable=False, default=_utcnow)

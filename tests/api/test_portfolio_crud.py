@@ -14,6 +14,7 @@ _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp.close()
 os.environ.setdefault("DB_URL", f"sqlite:///{_tmp.name}")
 
+from adapters.companycam import projects_tag_id  # noqa: E402
 from api.auth import set_verifier  # noqa: E402
 from api.routes.portfolio import router  # noqa: E402
 from app.models import (  # noqa: E402
@@ -151,7 +152,7 @@ def _curate(slug, alt="Olsen Condo roof view", n=4, video=False):
         for i in range(n):
             db.add(CompanyCamPhoto(tenant_id=1, companycam_photo_id=f"ph{i}",
                                    project_id=CC_PROJECT, url=f"http://cdn/ph{i}.jpg",
-                                   tags=[], raw={}, content_hash=f"h{i}"))
+                                   tags=[projects_tag_id()], raw={}, content_hash=f"h{i}"))
         db.query(PortfolioCuration).filter(PortfolioCuration.slug == slug).delete()
         db.add(PortfolioCuration(
             tenant_id=1, slug=slug, companycam_project_id=CC_PROJECT,

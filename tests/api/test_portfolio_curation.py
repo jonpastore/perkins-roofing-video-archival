@@ -15,6 +15,7 @@ _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp.close()
 os.environ.setdefault("DB_URL", f"sqlite:///{_tmp.name}")
 
+from adapters.companycam import projects_tag_id, projects_video_tag_id  # noqa: E402
 from api.auth import set_verifier  # noqa: E402
 from api.routes.portfolio import router  # noqa: E402
 from app.models import (  # noqa: E402
@@ -42,12 +43,14 @@ def seed():
         for i in range(4):
             db.add(CompanyCamPhoto(tenant_id=1, companycam_photo_id=f"ph{i}",
                                    project_id=CC_PROJECT, url=f"http://cdn/ph{i}.jpg",
-                                   tags=[], raw={}, content_hash=f"h{i}"))
+                                   tags=[projects_tag_id()], raw={}, content_hash=f"h{i}"))
         db.add(CompanyCamVideo(tenant_id=1, companycam_video_id="vid_ok", project_id=CC_PROJECT,
-                               url="http://cdn/v.m3u8", internal=False, raw={}, content_hash="hv"))
+                               url="http://cdn/v.m3u8", internal=False, raw={},
+                               tags=[projects_video_tag_id()], content_hash="hv"))
         db.add(CompanyCamVideo(tenant_id=1, companycam_video_id="vid_internal",
                                project_id=CC_PROJECT, url="http://cdn/vi.m3u8",
-                               internal=True, raw={}, content_hash="hvi"))
+                               internal=True, raw={}, tags=[projects_video_tag_id()],
+                               content_hash="hvi"))
         db.commit()
     yield
 
@@ -82,6 +85,67 @@ def test_permission_reveals_photos_but_never_internal_video():
     assert len(body["available"]["photos"]) == 4
     ids = [v["companycam_video_id"] for v in body["available"]["videos"]]
     assert ids == ["vid_ok"], "internal video must never be offered for curation"
+
+
+def test_only_publish_tagged_media_is_offered_for_curation():
+    """Building 77 mirrors 312 photos and 22 videos; 9 and 2 carry the publish tags. The
+    gallery must offer the tagged subset — a crew's tear-off and damage frames are in the
+    same project and were never meant to be public.
+
+    Asserts against media that IS mirrored and IS permitted but is NOT tagged, which is the
+    only thing that would change if the tag filter were dropped."""
+    from app.models import CompanyCamPhoto, CompanyCamVideo, SessionLocal
+
+    with SessionLocal() as db:
+        db.add(CompanyCamPhoto(tenant_id=1, companycam_photo_id="untagged_ph",
+                               project_id=CC_PROJECT, url="http://cdn/teardown.jpg",
+                               tags=[], raw={}, content_hash="h_untagged"))
+        db.add(CompanyCamPhoto(tenant_id=1, companycam_photo_id="other_tag_ph",
+                               project_id=CC_PROJECT, url="http://cdn/other.jpg",
+                               tags=["99999"], raw={}, content_hash="h_other"))
+        db.add(CompanyCamVideo(tenant_id=1, companycam_video_id="untagged_vid",
+                               project_id=CC_PROJECT, url="http://cdn/raw.m3u8",
+                               internal=False, tags=[], raw={}, content_hash="hv_untagged"))
+        db.commit()
+
+    c = _client()
+    body = c.put(f"/portfolio/{SLUG}/curation", headers=_auth(), json={
+        "permission_property": True, "permission_photos": True, "permission_video": True,
+        "selections": [],
+    }).json()
+
+    photo_ids = [p["companycam_photo_id"] for p in body["available"]["photos"]]
+    assert "untagged_ph" not in photo_ids, "an untagged photo must never be offered"
+    assert "other_tag_ph" not in photo_ids, "a DIFFERENT tag must not open the gallery"
+    assert len(photo_ids) == 4, photo_ids
+
+    video_ids = [v["companycam_video_id"] for v in body["available"]["videos"]]
+    assert "untagged_vid" not in video_ids
+    assert video_ids == ["vid_ok"]
+
+
+def test_the_gallery_reads_newest_first():
+    """Wendy wants the gallery to read finished roof -> job start, so captured_at DESC."""
+    from datetime import datetime
+
+    from app.models import CompanyCamPhoto, SessionLocal
+
+    with SessionLocal() as db:
+        db.query(CompanyCamPhoto).delete()
+        for i, day in enumerate((3, 1, 2)):  # deliberately out of order
+            db.add(CompanyCamPhoto(
+                tenant_id=1, companycam_photo_id=f"ord{day}", project_id=CC_PROJECT,
+                url=f"http://cdn/ord{day}.jpg", tags=[projects_tag_id()], raw={},
+                captured_at=datetime(2026, 8, day), content_hash=f"ho{i}"))
+        db.commit()
+
+    body = _client().put(f"/portfolio/{SLUG}/curation", headers=_auth(), json={
+        "permission_property": True, "permission_photos": True, "permission_video": False,
+        "selections": [],
+    }).json()
+
+    assert [p["companycam_photo_id"] for p in body["available"]["photos"]] == \
+        ["ord3", "ord2", "ord1"]
 
 
 def test_saving_a_selection_round_trips_and_scores():

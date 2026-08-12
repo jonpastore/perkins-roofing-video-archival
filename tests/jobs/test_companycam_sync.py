@@ -25,6 +25,21 @@ def db():
         session.close()
 
 
+@pytest.fixture(autouse=True)
+def _tag_pass(monkeypatch):
+    """Neutralise the account-wide publish-tag pass for the crawl tests below.
+
+    The pass is real behaviour and is asserted directly in
+    tests/core/test_companycam_tag_filter.py; here it would only add network doubles and an
+    error count to tests that are about the per-project crawl.
+    """
+    monkeypatch.setattr(sync.companycam, "known_tag_ids",
+                        lambda: {sync.companycam.projects_tag_id(),
+                                 sync.companycam.projects_video_tag_id()})
+    monkeypatch.setattr(sync.companycam, "list_tagged_photos", lambda tag_ids: [])
+    monkeypatch.setattr(sync.companycam, "list_tagged_videos", lambda tag_ids: [])
+
+
 def _photo(pid):
     return {"companycam_photo_id": pid, "project_id": "p1", "url": f"http://x/{pid}.jpg",
             "captured_at": None, "lat": None, "lon": None, "tags": [], "raw": {}}
@@ -38,8 +53,9 @@ def _video(vid, internal=False):
 
 def test_sync_mirrors_photos_and_videos(db, monkeypatch):
     monkeypatch.setattr(sync.companycam, "list_projects", lambda: [{"id": "p1"}])
-    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid: [_photo("ph1"), _photo("ph2")])
-    monkeypatch.setattr(sync.companycam, "list_videos", lambda pid: [_video("v1")])
+    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid, tag_ids=None:
+                        [_photo("ph1"), _photo("ph2")])
+    monkeypatch.setattr(sync.companycam, "list_videos", lambda pid, tag_ids=None: [_video("v1")])
 
     counts = sync._sync_tenant(db, 1)
     db.flush()
@@ -51,13 +67,14 @@ def test_sync_mirrors_photos_and_videos(db, monkeypatch):
     assert db.query(CompanyCamVideo).count() == 1
 
 
+
 def test_a_failing_video_endpoint_still_mirrors_that_project_s_photos(db, monkeypatch):
     """One resource failing must not cost us the other — they are independent endpoints."""
-    def boom(_pid):
+    def boom(_pid, tag_ids=None):
         raise RuntimeError("companycam 500")
 
     monkeypatch.setattr(sync.companycam, "list_projects", lambda: [{"id": "p1"}])
-    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid: [_photo("ph1")])
+    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid, tag_ids=None: [_photo("ph1")])
     monkeypatch.setattr(sync.companycam, "list_videos", boom)
 
     counts = sync._sync_tenant(db, 1)
@@ -72,9 +89,9 @@ def test_a_failing_video_endpoint_still_mirrors_that_project_s_photos(db, monkey
 def test_internal_video_is_mirrored_but_flagged(db, monkeypatch):
     """Internal media is stored (we need to know it exists) and marked unpublishable."""
     monkeypatch.setattr(sync.companycam, "list_projects", lambda: [{"id": "p1"}])
-    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid: [])
-    monkeypatch.setattr(sync.companycam, "list_videos",
-                        lambda pid: [_video("pub"), _video("priv", internal=True)])
+    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid, tag_ids=None: [])
+    monkeypatch.setattr(sync.companycam, "list_videos", lambda pid, tag_ids=None:
+                        [_video("pub"), _video("priv", internal=True)])
 
     sync._sync_tenant(db, 1)
     db.flush()
@@ -103,12 +120,16 @@ def _project(pid="p1", updated_at=1_700_000_000):
 def _wire(monkeypatch, projects, photos=(), videos=(), calls=None):
     monkeypatch.setattr(sync.companycam, "list_projects", lambda: list(projects))
 
-    def _photos(pid):
+    def _photos(pid, tag_ids=None):
+        if tag_ids:
+            return []           # nothing tagged for publication in these fixtures
         if calls is not None:
             calls.append(("photos", pid))
         return list(photos)
 
-    def _videos(pid):
+    def _videos(pid, tag_ids=None):
+        if tag_ids:
+            return []
         if calls is not None:
             calls.append(("videos", pid))
         return list(videos)
@@ -149,11 +170,11 @@ def test_a_touched_project_is_refetched(db, monkeypatch):
 def test_a_partial_pull_is_retried_rather_than_remembered_as_complete(db, monkeypatch):
     """If videos failed, the project must NOT be stamped synced — otherwise the missing half
     is invisible forever, since updated_at will not move just because our fetch failed."""
-    def boom(_pid):
+    def boom(_pid, tag_ids=None):
         raise RuntimeError("companycam 500")
 
     monkeypatch.setattr(sync.companycam, "list_projects", lambda: [_project()])
-    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid: [_photo("ph1")])
+    monkeypatch.setattr(sync.companycam, "list_photos", lambda pid, tag_ids=None: [_photo("ph1")])
     monkeypatch.setattr(sync.companycam, "list_videos", boom)
     first = sync._sync_tenant(db, 1)
     assert first["errors"] == 1

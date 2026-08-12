@@ -126,6 +126,13 @@ EDITABLE_KEYS: dict[str, str] = {
     "TRANSCRIPT_POLICY": "Transcript policy (caption_first | stt_only)",
     "ABSTAIN_THRESHOLD": "Abstain threshold (0–1 float)",
     "WP_URL": "WordPress site URL",
+    # Deleting and recreating a tag in CompanyCam's UI mints a NEW id. Without these being
+    # editable, fixing that needs a redeploy — and until it is fixed every gallery is empty.
+    # Flip to "true" ONLY when Rank Math is gone — see core.jsonld.RANK_MATH_OWNED. With Rank
+    # Math live, both would emit Article/Organization/Person/WebSite/WebPage/BreadcrumbList.
+    "PUBLISH_FULL_GRAPH": "Publish the FULL schema @graph (true) or only the Rank Math complement (false)",
+    "COMPANYCAM_PROJECTS_TAG_ID": "CompanyCam tag id marking a PHOTO for the public project gallery",
+    "COMPANYCAM_PROJECTS_VIDEO_TAG_ID": "CompanyCam tag id marking a VIDEO for the public project gallery",
     "PROD_DOMAIN": "Production site domain (canonical URL base)",
     "MAX_VIDEOS_PER_RUN": "Max videos per ingestion run",
     "PIPELINE_VERSION": "Pipeline version tag",

@@ -23,6 +23,7 @@ import adapters.companycam as companycam
 from app.models import SessionLocal
 from core.companycam.mirror import (
     mark_media_synced,
+    set_publish_tags,
     upsert_photo,
     upsert_project,
     upsert_video,
@@ -41,6 +42,62 @@ def _single_flight():
     return single_flight(SessionLocal, _LOCK_KEY)
 
 
+def _sync_publish_tags(db, counts: dict) -> None:
+    """Account-wide publish-tag pass. Runs EVERY time, gated by nothing.
+
+    Deliberately separate from the per-project crawl above. That crawl is incremental — it
+    skips any project whose CompanyCam `updated_at` has not moved — and a finished roof's
+    timestamp never moves again. A tag pass gated by it could therefore never reach the
+    completed jobs the portfolio is built from (they were all synced in July), and a photo
+    tagged today would never appear in a gallery. Both failures would be silent: green job,
+    empty gallery.
+
+    Cost is two paginated account-wide fetches. Measured 2026-08-12: 42 tagged photos and 10
+    tagged videos across the whole account, so ~4 requests — versus ~7,400 for a per-project
+    fan-out that still could not do the job.
+
+    Fails CLOSED: an unrecognised tag id makes CompanyCam return the UNFILTERED list (verified
+    — `tag_ids[]=1`, `=999999999` and `=abc` each return everything), which would mark every
+    photo on the account publishable, tear-off frames and burned-in GPS included. So the ids
+    are validated against the account first and nothing is written unless both are real.
+    """
+    photo_tag = companycam.projects_tag_id()
+    video_tag = companycam.projects_video_tag_id()
+    try:
+        known = companycam.known_tag_ids()
+    except Exception as exc:  # noqa: BLE001
+        log.error("companycam tags: cannot list account tags, skipping the tag pass "
+                  "error=%s: %s", type(exc).__name__, str(exc)[:300])
+        counts["errors"] += 1
+        return
+
+    missing = [t for t in (photo_tag, video_tag) if t not in known]
+    if missing:
+        log.error(
+            "companycam tags: configured tag id(s) %s are not on the account — refusing to "
+            "write tags, because an unknown id returns UNFILTERED media and would publish "
+            "every photo. Set COMPANYCAM_PROJECTS_TAG_ID / COMPANYCAM_PROJECTS_VIDEO_TAG_ID "
+            "in Admin Config -> Platform Settings to a current tag id.", missing)
+        counts["errors"] += 1
+        return
+
+    for kind, fetch, tag_id, id_key, key in (
+        ("photo", companycam.list_tagged_photos, photo_tag, "companycam_photo_id", "photos"),
+        ("video", companycam.list_tagged_videos, video_tag, "companycam_video_id", "videos"),
+    ):
+        try:
+            tagged_ids = {m[id_key] for m in fetch([tag_id])}
+        except Exception as exc:  # noqa: BLE001
+            log.error("companycam tags: %s fetch failed error=%s: %s",
+                      kind, type(exc).__name__, str(exc)[:300])
+            counts["errors"] += 1
+            continue
+        result = set_publish_tags(db, kind, tagged_ids, tag_id)
+        counts[f"{key}_tagged"] = result["tagged"]
+        counts[f"{key}_untagged"] = result["cleared"]
+        db.commit()
+
+
 def _sync_tenant(db, tenant_id: int) -> dict:
     """Pull every project's photos AND videos and upsert them for one tenant.
 
@@ -48,7 +105,8 @@ def _sync_tenant(db, tenant_id: int) -> dict:
     endpoint — doesn't abort the rest.
     """
     counts = {"projects": 0, "projects_skipped": 0, "photos_seen": 0, "photos_written": 0,
-              "videos_seen": 0, "videos_written": 0, "errors": 0}
+              "videos_seen": 0, "videos_written": 0, "photos_tagged": 0, "videos_tagged": 0,
+              "photos_untagged": 0, "videos_untagged": 0, "errors": 0}
     try:
         projects = companycam.list_projects()
     except Exception as exc:  # noqa: BLE001
@@ -109,12 +167,17 @@ def _sync_tenant(db, tenant_id: int) -> dict:
         # failure, and the next run resumes from what landed.
         db.commit()
 
+    # AFTER the crawl, so media mirrored in this same run gets tagged in this same run.
+    _sync_publish_tags(db, counts)
+
     log.info(
         "companycam sync: tenant=%d projects=%d skipped_unchanged=%d photos_seen=%d "
-        "photos_written=%d videos_seen=%d videos_written=%d errors=%d",
+        "photos_written=%d videos_seen=%d videos_written=%d photos_tagged=%d "
+        "photos_untagged=%d videos_tagged=%d videos_untagged=%d errors=%d",
         tenant_id, counts["projects"], counts["projects_skipped"], counts["photos_seen"],
         counts["photos_written"], counts["videos_seen"], counts["videos_written"],
-        counts["errors"],
+        counts["photos_tagged"], counts["photos_untagged"], counts["videos_tagged"],
+        counts["videos_untagged"], counts["errors"],
     )
     return counts
 
