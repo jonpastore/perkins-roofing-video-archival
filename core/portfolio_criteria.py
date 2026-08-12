@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from core.jsonld import COMPLEMENT_TYPES
 from core.photo_privacy import unsanitized_media
 from core.pii import find_pii, person_name_risk
 
@@ -68,6 +69,7 @@ def check_project(
     scope_lines: Iterable[str] = (),
     jsonld: Iterable[dict] = (),
     permissions: dict[str, bool] | None = None,
+    full_graph: bool = False,
 ) -> list[Criterion]:
     """Every criterion, in the order a reviewer cares about: privacy, permission, then quality."""
     perms = permissions or {}
@@ -144,13 +146,32 @@ def check_project(
         "no contract scope matched — the page is generic" if not scope else f"{len(scope)} lines")
 
     # ── Advisory — minors ─────────────────────────────────────────────────
+    # A full-graph document is ONE node carrying @graph; score the nodes inside it, or the
+    # whole check reads "schema present: None" and the scoping gate sees nothing.
     types = {n.get("@type") for n in nodes}
+    if len(nodes) == 1 and nodes[0].get("@graph"):
+        types = {n.get("@type") for n in nodes[0]["@graph"]}
     add("schema_present", "JSON-LD built (FAQPage / ImageObject / VideoObject)", bool(types),
         "minor", ", ".join(sorted(t for t in types if t)))
-    add("schema_scoped", "No schema type Rank Math already owns",
-        not (types - {"FAQPage", "ImageObject", "VideoObject"}), "minor",
-        f"stray: {sorted(types - {'FAQPage', 'ImageObject', 'VideoObject'})}"
-        if types - {"FAQPage", "ImageObject", "VideoObject"} else "")
+    # While Rank Math is live our schema must contain NOTHING it owns; once it is gone the
+    # ownership flips and the full graph is REQUIRED. Same flag the builder gates on, so a
+    # half-migrated site fails the check instead of shipping duplicate Organization nodes.
+    if full_graph:
+        # The business node's @type is the LocalBusiness SUBTYPE ("RoofingContractor"), not
+        # the literal "Organization" — checking for the latter would fail on a correct graph.
+        required = {
+            "business identity": bool(
+                types & {"Organization", "LocalBusiness", "RoofingContractor"}),
+            "WebSite": "WebSite" in types,
+            "WebPage": "WebPage" in types,
+        }
+        missing = sorted(k for k, ok in required.items() if not ok)
+        add("schema_scoped", "Full graph carries the types Rank Math used to own",
+            not missing, "minor", f"missing: {missing}" if missing else "")
+    else:
+        stray = types - COMPLEMENT_TYPES
+        add("schema_scoped", "No schema type Rank Math already owns",
+            not stray, "minor", f"stray: {sorted(stray)}" if stray else "")
     add("has_video", "Project video included", bool(videos), "minor")
     return out
 

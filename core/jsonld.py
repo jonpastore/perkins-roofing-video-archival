@@ -139,7 +139,84 @@ def build_organization(org: dict) -> dict:
         node["openingHours"] = org["opening_hours"]
     if org.get("same_as"):
         node["sameAs"] = org["same_as"]
+    # Fields the live Rank Math graph publishes today. Omitting any of them on a migration
+    # away from Rank Math is a silent downgrade of an entity Google has already indexed.
+    if org.get("geo"):
+        node["geo"] = {"@type": "GeoCoordinates", **org["geo"]}
+        lat, lon = org["geo"].get("latitude"), org["geo"].get("longitude")
+        if lat and lon:
+            node["hasMap"] = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
+    if org.get("alternate_name"):
+        node["alternateName"] = org["alternate_name"]
+    if org.get("price_range"):
+        node["priceRange"] = org["price_range"]
+    if org.get("description"):
+        node["description"] = org["description"]
+    if org.get("license"):
+        # Not emitted by Rank Math — a real gain on migration. A FL roofing licence is the
+        # single strongest trust signal this business has.
+        node["hasCredential"] = {
+            "@type": "EducationalOccupationalCredential",
+            "credentialCategory": "license",
+            "identifier": org["license"],
+        }
     return {k: v for k, v in node.items() if v is not None}
+
+
+def build_website(org: dict, *, site_url: str, site_name: str) -> dict:
+    """The WebSite node, publisher-linked to the Organization.
+
+    Rank Math emits this on every page; nothing in this codebase did before, so a migration
+    would have dropped it entirely.
+    """
+    node = {
+        "@type": "WebSite",
+        "@id": f"{site_url.rstrip('/')}/#website",
+        "url": site_url,
+        "name": site_name,
+        "publisher": {"@id": org["id"]},
+        "inLanguage": "en-US",
+    }
+    if org.get("alternate_name"):
+        node["alternateName"] = org["alternate_name"]
+    return node
+
+
+def build_webpage(
+    url: str,
+    name: str,
+    *,
+    site_url: str,
+    description: str | None = None,
+    date_published: str | None = None,
+    date_modified: str | None = None,
+    breadcrumb_id: str | None = None,
+    primary_image: str | None = None,
+) -> dict:
+    """The per-URL WebPage node, linked to the WebSite and its BreadcrumbList.
+
+    ``isPartOf`` + ``breadcrumb`` are what tie a page into the site graph; without them the
+    per-page nodes float free and Google treats each page as an island.
+    """
+    node = {
+        "@type": "WebPage",
+        "@id": f"{url}#webpage",
+        "url": url,
+        "name": name,
+        "isPartOf": {"@id": f"{site_url.rstrip('/')}/#website"},
+        "inLanguage": "en-US",
+    }
+    if description:
+        node["description"] = description
+    if date_published:
+        node["datePublished"] = date_published
+    if date_modified:
+        node["dateModified"] = date_modified
+    if breadcrumb_id:
+        node["breadcrumb"] = {"@id": breadcrumb_id}
+    if primary_image:
+        node["primaryImageOfPage"] = {"@type": "ImageObject", "url": primary_image}
+    return node
 
 
 def build_person(person: dict) -> dict:
@@ -202,3 +279,105 @@ def build_article(
     if date_modified:
         node["dateModified"] = date_modified
     return node
+
+
+# ---------------------------------------------------------------------------
+# The FULL @graph — for life after Rank Math
+# ---------------------------------------------------------------------------
+#
+# Everything above this line was, until now, half-wired: build_faq_page and
+# build_video_object had callers, while build_article, build_organization, build_person and
+# build_breadcrumb_list had NONE anywhere in the codebase. That was not an oversight — the
+# per-page schema we inject is deliberately scoped to the two node types Rank Math does not
+# emit, because emitting Article/Organization/Person/BreadcrumbList alongside it would
+# duplicate what Rank Math already puts on every page.
+#
+# Measured on the live site 2026-08-12:
+#   staging article  -> 2 blocks: Rank Math's @graph, plus OUR FAQPage + VideoObject. No overlap.
+#   prod article     -> 1 block:  Rank Math only (those posts carry no _perkins_jsonld meta).
+#   the 9 project pages -> 0 blocks. No structured data at all, from anyone.
+#
+# So the day Rank Math goes away, every page silently loses BlogPosting/Article, Organization
+# (NAP + geo + hours + sameAs), Person, WebSite, WebPage and BreadcrumbList. build_full_graph
+# is what replaces it, and PUBLISH_FULL_GRAPH is what keeps it off until that day — running
+# both at once is the duplication this scoping exists to avoid.
+
+#: Node types Rank Math owns. While it is live, our injected schema must contain NONE of
+#: these; once it is gone, ours must contain ALL of them. Both criteria checkers gate on this.
+RANK_MATH_OWNED = frozenset({
+    "Article", "BlogPosting", "Organization", "LocalBusiness", "RoofingContractor",
+    "Person", "WebSite", "WebPage", "BreadcrumbList", "ListItem",
+})
+
+#: What we inject while Rank Math is live (the complement).
+COMPLEMENT_TYPES = frozenset({"FAQPage", "ImageObject", "VideoObject"})
+
+
+def build_full_graph(
+    *,
+    org: dict,
+    author: dict,
+    site_url: str,
+    site_name: str,
+    page_url: str,
+    page_name: str,
+    description: str,
+    breadcrumbs: list[dict],
+    date_published: str | None = None,
+    date_modified: str | None = None,
+    article: bool = True,
+    extra_nodes: list[dict] | None = None,
+) -> dict:
+    """Assemble the single ``@graph`` document that replaces Rank Math's.
+
+    One document with cross-referenced ``@id``s, not a pile of standalone nodes: that is
+    Google's stated preference and it is what the live site already ships, so the migration
+    keeps the same shape rather than inventing a new one.
+
+    ``extra_nodes`` carries the FAQPage / ImageObject / VideoObject we already build, so the
+    complement we emit today becomes part of the full graph tomorrow instead of a second
+    <script> block competing with it.
+    """
+    breadcrumb = build_breadcrumb_list(breadcrumbs) if breadcrumbs else None
+    breadcrumb_id = f"{page_url}#breadcrumb" if breadcrumb else None
+    if breadcrumb:
+        breadcrumb.pop("@context", None)
+        breadcrumb["@id"] = breadcrumb_id
+
+    organization = build_organization(org)
+    organization.pop("@context", None)
+
+    person = build_person(author)
+
+    webpage = build_webpage(
+        page_url, page_name, site_url=site_url, description=description,
+        date_published=date_published, date_modified=date_modified,
+        breadcrumb_id=breadcrumb_id,
+    )
+
+    graph: list[dict] = [organization, build_website(org, site_url=site_url, site_name=site_name),
+                         person, webpage]
+    if breadcrumb:
+        graph.append(breadcrumb)
+
+    if article:
+        node = build_article(
+            headline=page_name, description=description, author_name=author["name"],
+            date_published=date_published or "", url=page_url,
+            author={"@id": author["id"]}, publisher_id=org["id"],
+            date_modified=date_modified,
+        )
+        node.pop("@context", None)
+        # BlogPosting is what the live site uses for posts; keep the same subtype so the
+        # migration is invisible to anything already consuming it.
+        node["@type"] = "BlogPosting"
+        node["isPartOf"] = {"@id": webpage["@id"]}
+        node["mainEntityOfPage"] = {"@id": webpage["@id"]}
+        graph.append(node)
+
+    for extra in (extra_nodes or []):
+        node = dict(extra)
+        node.pop("@context", None)
+        graph.append(node)
+
+    return {"@context": "https://schema.org", "@graph": graph}

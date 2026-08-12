@@ -267,6 +267,7 @@ def build_project_jsonld(
     *,
     organization_id: str | None = None,
     faq: Iterable[dict] | None = None,
+    full_graph: dict | None = None,
 ) -> list[dict]:
     """FAQPage + ImageObject per curated photo + VideoObject per curated (embedded) video.
 
@@ -275,6 +276,15 @@ def build_project_jsonld(
 
     ``organization_id`` references the single canonical NAP node when the site has one, so the
     media is attributed without duplicating business identity.
+
+    ``full_graph`` inverts that scoping for life after Rank Math. Pass the kwargs for
+    ``core.jsonld.build_full_graph`` (site_url, page_url, …) and the media nodes built here
+    are folded into ONE ``@graph`` alongside Organization/Person/WebSite/WebPage/BreadcrumbList
+    instead of shipping alone — because once Rank Math is gone nothing else emits those, and
+    the nine live project pages already carry no structured data at all (measured 2026-08-12:
+    zero ld+json blocks on all of them). Gated by
+    ``adapters.wordpress.publish_full_graph()``; running both at once is the duplication the
+    default scoping exists to prevent.
     """
     from core.jsonld import build_faq_page  # noqa: PLC0415
 
@@ -327,5 +337,12 @@ def build_project_jsonld(
             if place:
                 node["contentLocation"] = place
             nodes.append(node)
+
+    if full_graph:
+        from core.jsonld import build_full_graph  # noqa: PLC0415
+        # ONE document, not a list of loose nodes: the media becomes extra_nodes inside the
+        # same @graph, so the complement we ship today is exactly what folds into the full
+        # graph tomorrow rather than a second competing <script> block.
+        return [build_full_graph(extra_nodes=nodes, **full_graph)]
 
     return nodes

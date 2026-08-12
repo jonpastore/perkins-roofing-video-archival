@@ -56,6 +56,30 @@ def resolved_wp_url() -> str:
     return ""
 
 
+def publish_full_graph() -> bool:
+    """Should we publish the FULL schema @graph, or only the Rank Math complement?
+
+    OFF by default, and it must stay off while Rank Math is installed — it emits
+    Article/Organization/Person/WebSite/WebPage/BreadcrumbList for every page, and ours would
+    duplicate all six. Measured on the live site 2026-08-12: Rank Math's block plus our
+    FAQPage+VideoObject block currently share ZERO node types, which is the whole design.
+
+    Turn this ON as part of retiring Rank Math (or moving off WordPress), NOT before —
+    core.jsonld.RANK_MATH_OWNED lists exactly what flips ownership. The criteria checkers gate
+    on the same flag, so a mismatch is caught before publish rather than in Search Console.
+    """
+    try:
+        from app.models import PlatformConfig, PlatformSessionLocal  # noqa: PLC0415
+        with PlatformSessionLocal() as pdb:
+            pdb.info["platform_scope"] = True
+            row = pdb.get(PlatformConfig, "PUBLISH_FULL_GRAPH")
+            if row and (row.value or "").strip():
+                return row.value.strip().lower() == "true"
+    except Exception:  # noqa: BLE001 — never break a publish on a config lookup
+        pass
+    return os.getenv("PUBLISH_FULL_GRAPH", "false").strip().lower() == "true"
+
+
 def _base_url() -> str:
     return resolved_wp_url()
 

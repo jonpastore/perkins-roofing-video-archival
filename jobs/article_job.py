@@ -189,7 +189,7 @@ def _compliance_gate(fields: dict, ctx: dict, keyword: str, db,
             fields.get("content_md", ""), fields.get("meta", ""),
             fields.get("jsonld_json") or [], fields.get("faq_json") or [],
             {**ctx, "title": fields.get("title", ""), "slug": fields.get("slug", "")},
-            keyword, known)
+            keyword, known, full_graph=_full_graph_enabled())
 
     comp = _run()
     for _ in range(_COMPLIANCE_MAX_ITERS):
@@ -1312,7 +1312,37 @@ def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
     for vo in (fields.get("_video_jsonld") or []):
         jsonld.append(vo)
 
+    # Life after Rank Math. The scoping above is a COMPLEMENT — it is correct only while Rank
+    # Math is emitting Article/Organization/Person/WebSite/WebPage/BreadcrumbList itself. When
+    # it stops, nothing emits them at all and every article silently loses six node types, so
+    # the flag folds our two into the full graph instead. OFF by default; both must never run
+    # at once. See adapters.wordpress.publish_full_graph and core.jsonld.RANK_MATH_OWNED.
+    if _full_graph_enabled():
+        from core.brand_identity import AUTHOR, ORGANIZATION  # noqa: PLC0415
+        from core.jsonld import build_full_graph  # noqa: PLC0415
+
+        site = (ORGANIZATION.get("url") or "").rstrip("/")
+        slug = (fields.get("slug") or "").strip("/")
+        page_url = f"{site}/{slug}/" if slug else f"{site}/"
+        return [build_full_graph(
+            org=ORGANIZATION, author=AUTHOR, site_url=site, site_name=ORGANIZATION["name"],
+            page_url=page_url, page_name=fields.get("title") or "",
+            description=fields.get("meta") or "",
+            breadcrumbs=[{"name": "Home", "url": f"{site}/"},
+                         {"name": fields.get("title") or "", "url": page_url}],
+            date_published=(fields.get("published_at") or "") or None,
+            extra_nodes=jsonld,
+        )]
     return jsonld
+
+
+def _full_graph_enabled() -> bool:
+    """Read through to the WordPress adapter so article and project pages cannot disagree."""
+    try:
+        from adapters.wordpress import publish_full_graph  # noqa: PLC0415
+        return publish_full_graph()
+    except Exception:  # noqa: BLE001 — a config lookup must never fail a generation run
+        return False
 
 
 def _clamp_meta(meta: str, title: str, content_md: str, keyword: str = "") -> str:

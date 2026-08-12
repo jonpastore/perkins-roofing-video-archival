@@ -30,9 +30,27 @@ ORGANIZATION: dict = {
     "email": "hello@perkinsroofing.net",
     "street": "575 NW 152nd St",
     "city": "Miami",
-    "region": "FL",
+    # "Florida", not "FL" — matches the value the live site has been publishing for years.
+    # Two spellings of the same region across a migration reads as two businesses.
+    "region": "Florida",
     "postal_code": "33169",
     "country": "US",
+    # Everything below was READ OFF the live Rank Math graph on 2026-08-12 rather than
+    # invented, so that dropping Rank Math does not silently change the entity Google has
+    # already indexed. Coordinates especially: a guessed lat/lon is a different business.
+    "geo": {"latitude": "25.91445", "longitude": "-80.209071"},
+    "alternate_name": "Perkins Construction",
+    "price_range": "$$$",
+    "description": (
+        "Perkins Roofing Corp. is a licensed and insured roofing and construction company "
+        "based in South Florida, serving residential and commercial clients across "
+        "Miami-Dade, Broward, Palm Beach, Martin, St. Lucie, and Monroe counties. The "
+        "company specializes in roof repair, roof replacement, maintenance, inspections, and "
+        "new roof installations across tile, shingle, metal, and flat roofing systems. "
+        "Through its construction division, Perkins also provides general contracting "
+        "services including concrete restoration, structural carpentry, waterproofing, and "
+        "exterior improvements."
+    ),
     "area_served": [
         "Miami-Dade County", "Broward County", "Palm Beach County",
         "Martin County", "St. Lucie County", "Monroe County",
@@ -45,6 +63,8 @@ ORGANIZATION: dict = {
         "https://www.linkedin.com/company/perkins-roofing-corp",
         "https://www.tiktok.com/@perkinsroofingcorp",
         "https://maps.app.goo.gl/CtHpswior56K4Nb59",
+        # Second listing — live Rank Math publishes both; dropping one loses an entity link.
+        "https://maps.app.goo.gl/J7cfATwLTJGn8DFu6",
     ],
     "license": "CCC1331944",                  # FL roofing contractor license (site + BBB)
 }

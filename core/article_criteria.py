@@ -104,6 +104,7 @@ def check_compliance(
     ctx: dict,
     keyword: str,
     known_video_ids: set,
+    full_graph: bool = False,
 ) -> list[Criterion]:
     """Every Wendy criterion. Order = roughly the order the reader/Wendy cares about."""
     c = content or ""
@@ -133,9 +134,28 @@ def check_compliance(
     add("videoobject_only_embedded", "One VideoObject per EMBEDDED video (never for links)",
         n_vo <= n_embeds, True,
         f"{n_vo} VideoObject vs {n_embeds} embedded player(s)" if n_vo > n_embeds else "")
-    stray = types - {"FAQPage", "VideoObject"}
-    add("schema_scoped", "Only FAQPage+VideoObject (no Rank Math dup)", not stray, True,
-        f"stray schema types: {stray}" if stray else "")
+    # While Rank Math is live our schema must contain NOTHING it owns (Article, Organization,
+    # Person, WebSite, WebPage, BreadcrumbList — measured on the live graph 2026-08-12). Once
+    # it is gone the ownership FLIPS and those become required, because nothing else emits
+    # them. Same flag the builder gates on (adapters.wordpress.publish_full_graph), so a
+    # half-migrated site fails here instead of shipping duplicate Organization nodes.
+    if full_graph:
+        graph_types = types
+        if len(list(jsonld or [])) == 1 and (jsonld[0] or {}).get("@graph"):
+            graph_types = {n.get("@type") for n in jsonld[0]["@graph"]}
+        required = {
+            "business identity": bool(
+                graph_types & {"Organization", "LocalBusiness", "RoofingContractor"}),
+            "WebSite": "WebSite" in graph_types,
+            "WebPage": "WebPage" in graph_types,
+        }
+        missing = sorted(k for k, ok in required.items() if not ok)
+        add("schema_scoped", "Full graph carries the types Rank Math used to own",
+            not missing, True, f"missing: {missing}" if missing else "")
+    else:
+        stray = types - {"FAQPage", "VideoObject"}
+        add("schema_scoped", "Only FAQPage+VideoObject (no Rank Math dup)", not stray, True,
+            f"stray schema types: {stray}" if stray else "")
 
     # ── Video ─────────────────────────────────────────────────────────────
     add("video_embed", "Embedded YouTube player", bool(_VIDEO_EMBED_RE.search(c)),
