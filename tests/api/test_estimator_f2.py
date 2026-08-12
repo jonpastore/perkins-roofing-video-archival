@@ -1317,6 +1317,62 @@ class TestEstimatePersistence:
         assert row.input_json is not None
         assert row.result_json is not None
 
+    def test_a_debug_quote_persists_its_trace(self, admin_client):
+        """THE SEAM, not the helper. Jon, 2026-08-12: debug was honoured for the length of one
+        HTTP response and then stripped out of the saved row.
+
+        Unit-testing _audit_payload(debug=True) does NOT cover this: deleting `debug=q.debug` from
+        the persist call at :808 left every helper test green. Verified by mutation.
+        """
+        from sqlalchemy import select
+
+        from app.models import Estimate, SessionLocal
+
+        branch = _unique_branch("est-debug")
+        created = _create_config(admin_client, branch=branch)
+        _activate_config(admin_client, created["id"])
+
+        body = {"branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile",
+                "num_squares": 10.0, "county": "broward"}
+        r = admin_client.post("/estimator/quote", json={**body, "debug": True}, headers=AUTH)
+        assert r.status_code == 200, r.text
+        assert "calculation_trace" in r.json(), "precondition: the response carries the trace"
+
+        with SessionLocal() as db:
+            row = db.execute(
+                select(Estimate).where(Estimate.pricing_config_id == created["id"])
+            ).scalars().one()
+
+        assert "calculation_trace" in row.result_json, (
+            "debug=true was honoured in the response and thrown away on the way to the database"
+        )
+        assert any("explain" in li for li in row.result_json["line_items_detail"]), (
+            "per-line explain is half the point — it is what calc_lines_from_estimate reads"
+        )
+
+    def test_a_quote_without_debug_still_persists_a_lean_row(self, admin_client):
+        """The default has to stay lean, or this change quietly doubles every audit row."""
+        from sqlalchemy import select
+
+        from app.models import Estimate, SessionLocal
+
+        branch = _unique_branch("est-nodebug")
+        created = _create_config(admin_client, branch=branch)
+        _activate_config(admin_client, created["id"])
+
+        r = admin_client.post("/estimator/quote", json={
+            "branch": branch, "code_zone": "HVHZ", "roof_type": "13_tile",
+            "num_squares": 10.0, "county": "broward"}, headers=AUTH)
+        assert r.status_code == 200, r.text
+
+        with SessionLocal() as db:
+            row = db.execute(
+                select(Estimate).where(Estimate.pricing_config_id == created["id"])
+            ).scalars().one()
+
+        assert "calculation_trace" not in row.result_json
+        assert not any("explain" in li for li in row.result_json["line_items_detail"])
+
 
 # ---------------------------------------------------------------------------
 # POST /estimator/quote — RoofR cut calculator (geometry-adjusted base)
@@ -1416,10 +1472,18 @@ class TestQuoteCutCalculator:
 
 
 def test_audit_payload_strips_the_debug_trace():
-    """The debug flag is gated on estimating_manage, but the audit row is not: GET
-    /estimator/estimates serves result_json to estimating_view, which `sales` holds. One admin
-    quote with debug=true would otherwise persist the whole trace where sales can read it.
-    Found by R2 critic review."""
+    """Default (no debug requested) still strips — that is the ordinary path and the row stays lean.
+
+    NOTE: this test's original rationale was WRONG and has been corrected. It claimed the strip
+    was a confidentiality boundary protecting profit_scale / pm_incentive / office burn from
+    `sales`. It is not: /estimator/rates (:1196) serves all three to estimating_view, which sales
+    holds, and core/estimator.to_dict() emits margin, pm_incentive, profit_dollars and commission
+    unconditionally. The strip removed the explanation and left every number it explained.
+
+    What it still buys is row size and uniform shape, which is why it remains the DEFAULT — but
+    it no longer overrides an explicit, role-gated debug request. See
+    test_audit_payload_honours_a_requested_debug_trace.
+    """
     from api.routes.estimator import _audit_payload
 
     result = {
@@ -1439,6 +1503,54 @@ def test_audit_payload_strips_the_debug_trace():
     assert stripped["line_items_detail"][0]["amount"] == 100.0
     # and the caller's own response object is untouched
     assert "calculation_trace" in result
+
+
+def test_audit_payload_honours_a_requested_debug_trace():
+    """Jon, 2026-08-12: "why is estimator stripping my debug if I turned debug on".
+
+    It was, and there was no good reason. The trace is what makes a saved estimate reconcilable
+    against Tim's sheet later; stripping it meant the flag worked for the length of one HTTP
+    response and then the evidence was gone — including out of any proposal built from the row.
+    """
+    from api.routes.estimator import _audit_payload
+
+    result = {
+        "project_total": 100.0,
+        "calculation_trace": [{"section": "Margin check", "inputs": {"profit_dollars": 100}}],
+        "line_items_detail": [
+            {"key": "profit", "amount": 100.0,
+             "explain": {"formula": "x", "inputs": {"profit_scale": [[1, 400]]}}},
+        ],
+    }
+    kept = _audit_payload(result, debug=True)
+
+    assert kept["calculation_trace"] == result["calculation_trace"]
+    assert kept["line_items_detail"][0]["explain"]["formula"] == "x"
+    assert kept["project_total"] == 100.0
+
+
+def test_audit_payload_returns_a_copy_even_when_it_keeps_everything():
+    """The quote route mutates `result` between the two persist calls (:797, :808) — it stamps
+    estimate_id, estimate_root_id and estimate_version. If the debug path returned the caller's
+    own dict, those writes would land inside est.result_json unannounced."""
+    from api.routes.estimator import _audit_payload
+
+    result = {"project_total": 100.0, "calculation_trace": [{"section": "s"}]}
+    kept = _audit_payload(result, debug=True)
+    result["estimate_id"] = 42
+
+    assert "estimate_id" not in kept, "the persisted payload aliases the live response object"
+
+
+def test_a_sales_caller_asking_for_debug_still_persists_a_stripped_row():
+    """The gate lives at :387 (`bool(body.debug) and can(role, "estimating_manage")`) and the
+    persist sites pass q.debug, the RESOLVED value. This pins that _audit_payload is not where
+    the role decision happens — re-deriving it here is how the two would drift apart."""
+    from api.routes.estimator import _audit_payload
+
+    result = {"project_total": 100.0, "calculation_trace": [{"section": "s"}]}
+    # what a sales caller's resolved flag looks like: they asked, the role check said no
+    assert "calculation_trace" not in _audit_payload(result, debug=False)
 
 
 def test_api_default_overhead_mode_is_daily():

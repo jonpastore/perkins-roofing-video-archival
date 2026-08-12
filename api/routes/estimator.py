@@ -79,19 +79,39 @@ router = APIRouter(prefix="/estimator", tags=["estimator"])
 LOW_SLOPE_ROOF_TYPES = frozenset({"tpo", "coatings", "silicone", "bur"})
 
 
-def _audit_payload(result: dict) -> dict:
-    """Strip the debug trace before an estimate is persisted.
+def _audit_payload(result: dict, *, debug: bool = False) -> dict:
+    """Strip the debug trace before an estimate is persisted — unless *debug* was requested.
 
-    The `debug` flag is gated on estimating_manage at request time, but the audit row is not:
-    GET /estimator/estimates returns result_json verbatim to anyone with estimating_view, which
-    `sales` holds. One admin quote with debug=true would otherwise write the whole trace —
-    profit_scale, the pm_incentive table, office burn, scaled daily rates — into a row every
-    sales user can read, defeating the gate it sits next to.
+    HONOURS THE FLAG (2026-08-12). This used to strip unconditionally, so a manager who asked for
+    debug got the trace in the response and then found it gone from the saved row, and from any
+    proposal built off it. The reason given was confidentiality, and THAT REASON DOES NOT SURVIVE
+    CHECKING:
 
-    The trace is an ephemeral response artefact anyway; reproduction is served by
-    pricing_config_hash, which is stored alongside. Keeping it out also stops audit rows having
-    caller-role-dependent shape at ~2x the JSONB size.
+      * `GET /estimator/rates` (:1196) is gated on **estimating_view** — the role `sales` holds —
+        and returns `profit_scale`, `pm_incentive`, `overhead` and `base_cost_lm` in the clear.
+        Those are the exact fields the old docstring named as the things worth hiding.
+      * `core/estimator.py to_dict()` emits `margin` (profit_dollars, oh_dollars, eligible_base),
+        `pm_incentive`, `profit_dollars`, `profit_pct` and `commission` UNCONDITIONALLY. Only
+        `calculation_trace` and per-line `explain` are gated on debug at all.
+
+    So the strip was removing the EXPLANATION while leaving every NUMBER it explains, for an
+    audience that could already read both. It bought no confidentiality; it only made the feature
+    not work.
+
+    *debug* must be the RESOLVED flag (`q.debug`), not the raw request field. It is already
+    ``bool(body.debug) and can(role, "estimating_manage")`` (:387), so a `sales` caller who sends
+    debug=true still gets a stripped row — the gate lives there, once, rather than being
+    re-derived here where it could drift.
+
+    What the strip still buys, and why it remains the default: row size (~2x JSONB) and uniform
+    audit-row shape. Callers with no request context — notably
+    `api/routes/proposals._freeze_calc_breakdown` — pass nothing and keep the old behaviour.
     """
+    if debug:
+        # Copy, never the caller's own dict: the quote route mutates `result` (estimate_id,
+        # estimate_root_id, estimate_version) between the two calls at :775 and :786, and aliasing
+        # it into est.result_json would let those writes land in the ORM object unannounced.
+        return dict(result)
     stripped = {k: v for k, v in result.items() if k != "calculation_trace"}
     detail = stripped.get("line_items_detail")
     if isinstance(detail, list):
@@ -772,7 +792,9 @@ def quote(
         # customer-facing document, from a row that priced fine.
         input_json={**body.model_dump(), "num_squares": q.num_squares,
                     "flat_squares": q.flat_squares, "slope_type": q.slope_type},
-        result_json=_audit_payload(result),
+        # q.debug, not body.debug: already role-gated at :387, so a sales caller
+        # asking for debug still persists a stripped row.
+        result_json=_audit_payload(result, debug=q.debug),
         created_by=claims.get("email") or "unknown",
     )
     db.add(est)
@@ -783,7 +805,7 @@ def quote(
     result["estimate_id"] = est.id
     result["estimate_root_id"] = est.root_id
     result["estimate_version"] = est.version_number
-    est.result_json = _audit_payload(result)
+    est.result_json = _audit_payload(result, debug=q.debug)
     db.flush()
 
     return result
