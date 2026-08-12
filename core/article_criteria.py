@@ -171,11 +171,18 @@ def check_compliance(
     # Wendy, 2026-07-28: "There is duplication on the related links." Two different keywords can
     # match the SAME service page, and the builder only checked the existing body, so both were
     # appended — /metal-roofing-company/ and /tile-roofing-company/ each shipped twice.
-    rl = _RELATED_BLOCK_RE.search(c)
-    rl_hrefs = [h.rstrip("/").lower() for h in _HREF_RE.findall(rl.group(0))] if rl else []
+    rl_blocks = _RELATED_BLOCK_RE.findall(c)
+    rl_hrefs = [h.replace(BASE_URL, "").rstrip("/").lower()
+                for b in rl_blocks for h in _HREF_RE.findall(b)]
     rl_dupes = {h for h in rl_hrefs if rl_hrefs.count(h) > 1}
     add("related_links_unique", "No duplicate links in the related-links block",
         not rl_dupes, True, f"duplicated: {sorted(rl_dupes)}" if rl_dupes else "")
+    # Wendy, 2026-08-04: "the bottom links for Related are repeated 3 times." The check above
+    # only ever looked INSIDE the first block, so three whole blocks were invisible to it —
+    # 183 of 183 generated articles shipped 2-4 of them. Count the blocks themselves.
+    add("related_links_single_block", "Exactly one related-links block",
+        len(rl_blocks) <= 1, True,
+        f"{len(rl_blocks)} related-links blocks" if len(rl_blocks) > 1 else "")
 
     # ── Structure ─────────────────────────────────────────────────────────
     # REVERSED 2026-07-28. This used to REQUIRE an anchor TOC in the body. Wendy: "The Table of

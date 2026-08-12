@@ -1,6 +1,6 @@
 """core.article_criteria — the authoritative Wendy compliance checklist."""
 
-from core.article_criteria import check_compliance, failing, is_compliant
+from core.article_criteria import check_compliance, failing
 
 VID = "BnsaVtCb0GU"  # a real 11-char id we mark as known/grounded
 KNOWN = {VID}
@@ -178,6 +178,21 @@ def test_duplicate_related_links_are_rejected():
         '<a href="https://perkinsroofing.net/metal-roofing-company/">metal roofers</a>', 1)
     assert "related_links_unique" in _keys_failing(content=dupe)
     assert "related_links_unique" not in _keys_failing()
+
+
+def test_repeated_related_blocks_are_rejected():
+    """Wendy, 2026-08-04: "the bottom links for Related are repeated 3 times." The dupe check
+    above only ever read the FIRST block, so whole repeated blocks passed the gate — measured
+    2026-08-05, on all 183 generated articles. A relative repeat is the same link, too."""
+    thrice = _GOOD + (
+        '<p class="related-links">Related: '
+        '<a href="/metal-roofing-company/">metal roofing services</a></p>'
+        '<p class="related-links">Related: '
+        '<a href="/metal-roofing-company/">metal roofing services</a></p>')
+    failing = _keys_failing(content=thrice)
+    assert "related_links_single_block" in failing
+    assert "related_links_unique" in failing      # absolute + relative = the same page
+    assert "related_links_single_block" not in _keys_failing()
 
 
 def test_retired_youtube_channel_url_is_rejected():

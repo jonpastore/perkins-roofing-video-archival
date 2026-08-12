@@ -264,13 +264,17 @@ def _dedupe_link_segments(segments: list[str]) -> list[str]:
     """Keep the first segment per href. Wendy, 2026-07-28: "There is duplication on the related
     links" — the 26-gauge post shipped /metal-roofing-company/ and /tile-roofing-company/ twice
     each in one block, because two different keywords can match the SAME service page."""
+    from core.internal_links import BASE_URL  # noqa: PLC0415
     seen: set[str] = set()
     out: list[str] = []
     for seg in segments:
         if "<a " not in seg:
             continue
         m = re.search(r'href="([^"]+)"', seg)
-        key = (m.group(1).rstrip("/").lower() if m else seg.strip())
+        # Absolute and relative forms of the SAME page are one link: jobs.article_job writes
+        # /metal-roofing-company/ and _append_service_links writes the BASE_URL form, and
+        # _relativize_internal_links then makes them textually identical anyway.
+        key = (m.group(1).replace(BASE_URL, "").rstrip("/").lower() or "/") if m else seg.strip()
         if key in seen:
             continue
         seen.add(key)
@@ -278,13 +282,45 @@ def _dedupe_link_segments(segments: list[str]) -> list[str]:
     return out
 
 
+_REL_BLOCK_RE = re.compile(r'<p class="related-links">Related: (.*?)</p>', re.IGNORECASE | re.DOTALL)
+
+
+def merge_related_block(content: str, links: list[str]) -> str:
+    """Add `links` to the article's related-links block, creating it only when absent.
+
+    An article gets ONE such block. Three passes append related links — two calls to
+    jobs.article_job._ensure_internal_links (generate step 7b and the compliance/publish
+    re-pass) plus _append_service_links here — and each used a different guard, so each
+    could fire on content the others had already written. _relativize_internal_links then
+    rewrote the absolute hrefs to relative, erasing the very string _append_service_links
+    used to detect its own output, so a second repair pass appended a third time.
+    Measured 2026-08-05: 183 of 183 generated articles on staging carried 2-4 blocks
+    (Wendy: "the bottom links for Related are repeated 3 times").
+    """
+    if not links:
+        return content
+    m = _REL_BLOCK_RE.search(content or "")
+    if not m:
+        return f'{content}\n<p class="related-links">Related: {" | ".join(links)}</p>'
+    segments = _dedupe_link_segments(
+        [s.strip() for s in m.group(1).split("|")] + list(links))
+    block = f'<p class="related-links">Related: {" | ".join(segments)}</p>'
+    return content[:m.start()] + block + content[m.end():]
+
+
 def _tidy_related_links(content: str) -> str:
-    content = re.sub(
-        r'(<p class="related-links">Related: )(.*?)(</p>)',
-        lambda m: m.group(1) + " | ".join(
-            _dedupe_link_segments([s.strip() for s in m.group(2).split("|")])
-        ) + m.group(3),
-        content, flags=re.DOTALL)
+    """Dedupe within the block, collapse multiple blocks into the first, drop it if empty."""
+    blocks = list(_REL_BLOCK_RE.finditer(content or ""))
+    if blocks:
+        segments = _dedupe_link_segments(
+            [s.strip() for b in blocks for s in b.group(1).split("|")])
+        # Rebuild back-to-front so earlier spans stay valid; the first block keeps its position.
+        for b in reversed(blocks[1:]):
+            content = content[:b.start()] + content[b.end():]
+        first = blocks[0]
+        content = (content[:first.start()]
+                   + f'<p class="related-links">Related: {" | ".join(segments)}</p>'
+                   + content[first.end():])
     return re.sub(r'<p class="related-links">Related: ?</p>\n?', "", content)
 
 
@@ -453,7 +489,9 @@ def _append_service_links(content: str, keyword: str) -> tuple[str, list[str], l
     if f"{BASE_URL}/" in content:
         return content, fixes, issues
 
-    text = re.sub(r"<[^>]+>", " ", content or "")
+    # Match on the prose only. A block this pass already wrote is not new content to match
+    # against — counting its own anchor text would keep growing the link list every re-run.
+    text = re.sub(r"<[^>]+>", " ", _REL_BLOCK_RE.sub("", content or ""))
     matches = matching_service_links(f"{keyword} {text}")
     if not matches:
         issues.append({
@@ -464,9 +502,10 @@ def _append_service_links(content: str, keyword: str) -> tuple[str, list[str], l
         return content, fixes, issues
 
     links = [f'<a href="{m["url"]}">{m["anchor"]}</a>' for m in matches]
-    block = f'<p class="related-links">Related: {" | ".join(links)}</p>'
-    fixes.append(f"appended {len(links)} service link(s)")
-    return f"{content}\n{block}", fixes, issues
+    out = merge_related_block(content, links)
+    if out != content:
+        fixes.append(f"appended {len(links)} service link(s)")
+    return out, fixes, issues
 
 
 def _wp_field_issues(category_id: int | None, has_featured_image: bool | None) -> list[dict]:

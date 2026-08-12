@@ -118,9 +118,11 @@ def main() -> None:
             stats["bare_table"] += 1
         if "UChJZpBYXOuR0j1EHJugv5hg" in before:
             stats["legacy_yt_url"] += 1
-        m = _REL_RE.search(before)
-        if m:
-            h = [x.rstrip("/").lower() for x in _HREF_RE.findall(m.group(0))]
+        blocks = _REL_RE.findall(before)
+        if len(blocks) > 1:
+            stats["multi_related_blocks"] += 1     # Wendy, 2026-08-04: "repeated 3 times"
+        if blocks:
+            h = [x.rstrip("/").lower() for x in _HREF_RE.findall(blocks[0])]
             if len(h) != len(set(h)):
                 stats["dupe_related"] += 1
         n_old = sum(1 for n in (before_jl if isinstance(before_jl, list) else [])

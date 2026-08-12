@@ -1311,6 +1311,7 @@ def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
     # when video grounding was used).
     for vo in (fields.get("_video_jsonld") or []):
         jsonld.append(vo)
+
     return jsonld
 
 
@@ -1799,8 +1800,11 @@ def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
     if not links:
         return content_md
 
-    block = f'<p class="related-links">Related: {" | ".join(links)}</p>'
-    return f"{content_md}\n{block}"
+    # ONE block per article, always merged into the existing one — this function runs twice
+    # per article (generate step 7b and _reapply_fixable_ensures) and core.article_repair
+    # appends to the same block from a third place. See merge_related_block.
+    from core.article_repair import merge_related_block  # noqa: PLC0415
+    return merge_related_block(content_md, links)
 
 
 def _ensure_article_image(content_md: str, keyword: str) -> str:

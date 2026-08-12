@@ -11,10 +11,10 @@ from core.article_repair import (
     RepairResult,
     _append_service_links,
     _embedded_known_ids,
-    _referenced_known_ids,
     _fuzzy_match_id,
     _image_allowed,
     _iso_duration,
+    _referenced_known_ids,
     _repair_dead_hosts,
     _repair_images,
     _repair_relative_links,
@@ -237,6 +237,38 @@ def test_tidy_related_links_drops_empty_block():
     out = _tidy_related_links(content)
     assert "related-links" not in out
     assert "after" in out
+
+
+def test_tidy_related_links_collapses_multiple_blocks():
+    """Wendy, 2026-08-04: "the bottom links for Related are repeated 3 times."
+    The absolute and relative forms of one page are the SAME link, not two."""
+    content = (
+        '<p>body</p>\n'
+        '<p class="related-links">Related: <a href="/metal-roofing-company/">metal</a></p>\n'
+        '<p class="related-links">Related: <a href="/metal-roofing-company/">metal</a></p>\n'
+        '<p class="related-links">Related: '
+        '<a href="https://perkinsroofing.net/metal-roofing-company/">metal</a> | '
+        '<a href="/flat-roofs/">flat</a></p>'
+    )
+    out = _tidy_related_links(content)
+    assert out.count('class="related-links"') == 1
+    assert out.count("/metal-roofing-company/") == 1
+    assert "/flat-roofs/" in out
+    assert out.index("<p>body</p>") < out.index("related-links")
+
+
+def test_ensure_and_append_never_produce_a_second_block():
+    """The real pipeline order: generate ensure -> repair append -> relativize, three times.
+    Each pass used a different guard, and relativize erased the string the repair pass
+    detected itself by, so the block was appended once per cycle."""
+    from jobs.article_job import _ensure_internal_links, _relativize_internal_links
+
+    content = "<h1>Metal roof maintenance</h1><p>Metal roofing and tile roofing wear.</p>"
+    for _ in range(3):
+        content = _ensure_internal_links(content, "metal roof maintenance", {"role": "pillar"})
+        content, _f, _i = _append_service_links(content, "metal roof maintenance")
+        content = _relativize_internal_links(content)
+    assert content.count('class="related-links"') == 1
 
 
 def test_repair_relative_links_valid_slug_untouched():
