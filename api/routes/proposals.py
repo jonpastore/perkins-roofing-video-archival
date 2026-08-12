@@ -496,6 +496,21 @@ def _carry_internal_calc(prev: dict | None, incoming: dict | None) -> dict | Non
     preserved = (prev or {}).get("calc_lines_internal")
     if not preserved or "calc_lines_internal" in incoming:
         return incoming
+
+    # ...but ONLY while the price those rows explain has not moved. `_freeze_calc_breakdown` runs
+    # at CREATE ONLY (:1215, :1371) — never on this path — so nothing here rebuilds them, and the
+    # SPA's edit path re-quotes and sends a new total, tiers and estimate_result
+    # (Proposals.tsx:449-495). Carrying blindly prints the OLD build-up under the NEW total, in
+    # the one document whose entire purpose is that its numbers reconcile.
+    #
+    # Dropped rather than recomputed because the derivation is gone: `explain` was stripped at
+    # create time and the incoming estimate_result has been through the same strip. Dropping hides
+    # the checkbox (calc_breakdown_available goes false), which is the honest outcome — a missing
+    # breakdown asks a question, a stale one answers it wrongly.
+    if (incoming.get("total") != (prev or {}).get("total")
+            or incoming.get("estimate_result") != (prev or {}).get("estimate_result")):
+        return incoming
+
     return {**incoming, "calc_lines_internal": preserved}
 
 

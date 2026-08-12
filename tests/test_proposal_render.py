@@ -1194,3 +1194,30 @@ def test_the_public_accept_page_cannot_leak_the_internal_build_up():
     )
     assert "INTERNAL" not in blob, "tier line_items are internal pricing"
     assert out["tiers"]["good"]["total"] == 1.0, "and it must still pass the things it is for"
+
+
+def test_a_re_priced_draft_does_not_keep_the_old_build_up():
+    """R2 follow-up (HIGH): the explain PDF must never print a build-up for a different price.
+
+    _freeze_calc_breakdown runs at CREATE ONLY, so nothing rebuilds the rows on an edit, while
+    Proposals.tsx:449-495 re-quotes and PUTs a new total/tiers/estimate_result. Carrying the old
+    rows across that produced a $43,075 derivation under a $38,000 document — in the one report
+    whose whole purpose is that the numbers reconcile against Tim's.
+    """
+    from api.routes.proposals import _carry_internal_calc
+
+    rows = [{"key": "profit", "amount": 9045.75}]
+    prev = {"total": 43075.0, "estimate_result": {"project_total": 43075.0},
+            "calc_lines_internal": rows}
+
+    # price moved -> the rows are dropped, and the checkbox hides itself
+    repriced = {"total": 38000.0, "estimate_result": {"project_total": 38000.0}}
+    assert "calc_lines_internal" not in _carry_internal_calc(prev, repriced)
+
+    # the estimate was re-run even though the headline total landed the same -> still dropped
+    requoted = {"total": 43075.0, "estimate_result": {"project_total": 43075.0, "days": 9}}
+    assert "calc_lines_internal" not in _carry_internal_calc(prev, requoted)
+
+    # a genuine non-pricing edit (notes, title) keeps them — otherwise the feature evaporates
+    renamed = {"total": 43075.0, "estimate_result": {"project_total": 43075.0}, "notes": "hi"}
+    assert _carry_internal_calc(prev, renamed)["calc_lines_internal"] == rows
