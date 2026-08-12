@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import adapters.search_indexing as search_indexing
 import adapters.wordpress as wordpress
 from app.models import Article, ScheduledContent, SessionLocal
-from core.scheduler import due
+from core.scheduler import CLAIMABLE, PROMOTE_MAX_ATTEMPTS, due
 from core.search_indexing import urls_for_articles
 
 
@@ -38,7 +38,8 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
             # concurrent run sees 0 rows affected and skips. Portable across PG and SQLite.
             claimed = (
                 db.query(ScheduledContent)
-                .filter(ScheduledContent.id == r.id, ScheduledContent.status == "scheduled")
+                .filter(ScheduledContent.id == r.id,
+                        ScheduledContent.status.in_(CLAIMABLE))
                 .update({"status": "promoting"}, synchronize_session=False)
             )
             db.commit()
@@ -71,13 +72,23 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
             db.add(r)
             db.commit()
             promoted += 1
+            if r.attempts:
+                print(f"[promote] scheduled_content {r.id} published after "
+                      f"{r.attempts} earlier failure(s)")
         except Exception as e:  # noqa: BLE001
             db.rollback()
             r.status = "error"
+            # COUNT the failure. Without this `error` is terminal and one transient WordPress
+            # 403 parks the article forever on a job that still reports success — which is
+            # exactly what happened to 277 rows between 2026-07-27 and 08-07. The next run
+            # retries until PROMOTE_MAX_ATTEMPTS, then leaves it alone.
+            r.attempts = (r.attempts or 0) + 1
             db.add(r)
             db.commit()
             errored += 1
-            print(f"[error] scheduled_content {r.id}: {str(e)[:120]}")
+            give_up = r.attempts >= PROMOTE_MAX_ATTEMPTS
+            print(f"[error] scheduled_content {r.id} attempt {r.attempts}"
+                  f"{'/GIVING UP' if give_up else ''}: {str(e)[:120]}")
     return {"promoted": promoted, "errored": errored}
 
 

@@ -70,12 +70,16 @@ def _fix_jsonld(jsonld, content: str):
     return kept
 
 
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write (otherwise print and exit)")
     ap.add_argument("--repush", action="store_true",
                     help="also push updated bodies to WordPress for ALREADY-PUBLISHED articles")
     ap.add_argument("--limit", type=int, default=0, help="cap rows processed (0 = all)")
+    ap.add_argument("--repush-scheduled", action="store_true",
+                    help="also push bodies for articles still awaiting publication, keeping "
+                         "their current WP status (they publish the stale body otherwise)")
     ap.add_argument("--repush-limit", type=int, default=0,
                     help="cap the repush (0 = all) — use 1 to smoke-test one live post first")
     args = ap.parse_args()
@@ -158,33 +162,66 @@ def main() -> None:
         # Every PUBLISHED row, not just the ones this run changed. Fixing the rows and pushing
         # them are separate steps, and the backfill is idempotent — so on the run where you
         # actually push, `changed` is already empty and keying off it would push nothing.
-        targets = [a for a in rows
-                   if (a.status or "") == "published" and getattr(a, "wp_post_id", None)]
+        # --repush-scheduled also pushes rows still waiting to publish. Their WP bodies are
+        # just as stale as the live ones, and jobs/promote_job only flips the STATUS — it
+        # never sends the body. So promoting them without this publishes the very defect the
+        # backfill just fixed, on every one of them. Those rows are pushed with status=None,
+        # which leaves WordPress's own status untouched — see the update() call below.
+        want = ("published", "scheduled") if args.repush_scheduled else ("published",)
+        targets = [
+            {"slug": a.slug, "wp_post_id": a.wp_post_id, "title": a.title,
+             "meta": a.meta, "jsonld": list(a.jsonld_json or []),
+             "content_md": a.content_md or "", "status": a.status or "",
+             "focus_keyword": getattr(a, "focus_keyword", None)}
+            for a in rows
+            if (a.status or "") in want and getattr(a, "wp_post_id", None)
+        ]
         if args.repush_limit:
             targets = targets[:args.repush_limit]
-        print(f"\nrepushing {len(targets)} published articles to {resolved_wp_url()} …")
+
+        # DETACH from the database before the network phase. Pushing ~470 posts takes ~15
+        # minutes, and holding the session open across it leaves an idle transaction that
+        # prod kills at 5 minutes (idle_in_transaction_session_timeout) — every push then
+        # succeeds and the script still exits 1 on teardown, which reads exactly like a failed
+        # backfill. Measured 2026-08-12: 473 pushed, 0 failed, exit 1. Same rule as
+        # jobs/companycam_sync: commit before any network call.
+        base = resolved_wp_url()
+        s.close()
+
+        print(f"\nrepushing {len(targets)} articles to {base} …")
         pushed = failed = 0
         for a in targets:
             try:
-                body, _ = split_featured_image(a.content_md or "")
+                body, _ = split_featured_image(a["content_md"])
                 # status MUST be passed explicitly: adapters.wordpress.update defaults it to
                 # "draft", so omitting it would UNPUBLISH every live article this touches.
                 # title/meta are required too — omitting them would blank the post.
+                # Hard-coding "publish" is right for a live article and catastrophic for one
+                # that is not — it would publish every scheduled draft the moment its body was
+                # fixed. For anything not already published, send status=None: adapters.
+                # wordpress.update then omits the field entirely and WordPress leaves the
+                # status alone. That is also the ONLY safe option for a post in "future" —
+                # per that function's own docstring, sending "future" without a `date`
+                # publishes it immediately.
+                wp_status = "publish" if a["status"] == "published" else None
                 update(
-                    a.wp_post_id,
-                    title=a.title or a.slug,
+                    a["wp_post_id"],
+                    title=a["title"] or a["slug"],
                     html=_markdown_to_html(body),
-                    meta_description=a.meta or "",
-                    jsonld=a.jsonld_json or [],
-                    status="publish",
-                    focus_keyword=getattr(a, "focus_keyword", None),
+                    meta_description=a["meta"] or "",
+                    jsonld=a["jsonld"],
+                    status=wp_status,
+                    focus_keyword=a["focus_keyword"],
                 )
                 pushed += 1
-                print(f"  ok {a.slug}")
+                print(f"  ok {a['slug']}")
             except Exception as exc:                      # noqa: BLE001
                 failed += 1
-                print(f"  repush FAILED {a.slug}: {exc}", file=sys.stderr)
-        print(f"repushed {pushed} published articles ({failed} failed)")
+                print(f"  repush FAILED {a['slug']}: {exc}", file=sys.stderr)
+        print(f"repushed {pushed} articles ({failed} failed)")
+        if failed:
+            sys.exit(1)
+        return
     else:
         n_pub = sum(1 for a in changed if (a.status or "") == "published")
         if n_pub:

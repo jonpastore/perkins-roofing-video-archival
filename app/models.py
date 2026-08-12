@@ -272,6 +272,10 @@ class ScheduledContent(Base):
     publish_at = Column(DateTime)
     status = Column(String, default="scheduled")
     target = Column(String)
+    #: Failed promotion attempts (migration 0058). `error` used to be terminal — nothing could
+    #: ever pick the row up again — which parked 277 articles in prod on a transient WordPress
+    #: 401/403. Promotion now retries an errored row until this reaches PROMOTE_MAX_ATTEMPTS.
+    attempts = Column(Integer, nullable=False, default=0, server_default="0")
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_scheduled_content_tenant_status", "tenant_id", "status"),)
 
