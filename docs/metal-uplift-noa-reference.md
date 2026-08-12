@@ -68,21 +68,33 @@ Our −218.8 row = the last line: **26ga steel, 16" wide, 12" clips, 90° seam**
 Tim's proposal language verbatim ("Panel fabricated by Metal Alliance (US Steel) for a
 −218.8psf at 12" clip spacing").
 
-⚠️ **But Metal Alliance does not hold the approval, and does not fabricate the panel.**
-Checked 2026-08-12 against their own site: Metal Alliance is a **coil and sheet supplier**
-(Palm City, FL) that markets *"access to over 70 Florida Building Code, Miami-Dade HVHZ and
-TDI product approvals on standing seam profiles"* — approvals held by the fabricators who roll
-panels from their coil. Their own 150MSAllSeam product page
-(<https://www.metalalliance.com/150msallseam-1-5-mechanical-seam-metal-roof-panel>) states
-"Florida Product, HVHZ, TDI" and "UL Listed" but names **no approval number, no holder, and no
-pressures**, and refers the reader to *"the panel manufacturer"* as a separate party.
+🚨 **Metal Alliance DOES hold a Miami-Dade NOA — and it does not say −218.8.**
 
-So the −218.8 traces to a **supplier's undated summary of third-party approvals**, not to an
-approval document. Of the three rows it is the one we can least readily produce paperwork for,
-and Tim's "fabricated by Metal Alliance" wording does not match how that company describes
-itself. Searched FL18316-R5 as a candidate (a 1.5" mechanical seam HVHZ evaluation) and ruled
-it out — that approval is **Sheffield Metals International**, and the document contains no
-mention of Metal Alliance, 150MS/AllSeam, or 218.8.
+**NOA 21-0506.08**, applicant **Metal Alliance, Inc.**, description *"150 MSALLSEAM Steel Panel
+over Wood"*. Approved 07/08/21, **EXPIRED 07/08/26** (five weeks before this was written).
+Archived at `docs/noa/noa-21050608-metal-alliance-150MSALLSEAM.pdf`.
+<https://www.miamidade.gov/building/library/productcontrol/noa/21050608.pdf>
+
+**TABLE A, verbatim — this is the HVHZ approval for our own panel:**
+
+| Roof area | Field | Perimeter and corner |
+|---|---|---|
+| Maximum design pressure | **−86 psf** | **−176 psf** |
+| Maximum clip spacing | 24" o.c. | **6" o.c.** |
+
+Seam: *"seamed with a single lock (90º) seam."* The document contains **no 218.8 anywhere.**
+
+So under Miami-Dade HVHZ, the Metal Alliance 150MSAllSeam is approved to **−176 psf and only at
+6" clip spacing** — the TIGHTEST spacing of the three systems, for a pressure LOWER than Gulf
+Coast's −189.25 and barely above Englert's −165 at 12". The −218.8 on the supplier summary
+sheet is not the HVHZ number; it must come from a separate non-HVHZ Florida evaluation, which
+would not govern a Miami-Dade or Broward job.
+
+Metal Alliance also markets *"access to over 70"* FBC/HVHZ/TDI approvals held by others, and
+its 150MSAllSeam product page names no number and points at "the panel manufacturer" — so both
+things are true: they hold this NOA, and the summary sheet aggregates approvals beyond it.
+(FL18316-R5 was chased and ruled out — that is Sheffield Metals International, no mention of
+Metal Alliance, 150MS/AllSeam or 218.8.)
 
 ### Gulf Coast Supply & Manufacturing — VersaLoc
 
@@ -167,35 +179,38 @@ panel, the fabricator holds the approval.
 
 | # | Our claim | What the source says | Verdict |
 |---|---|---|---|
-| 1 | Metal Alliance −218.8 @ 12" | 26ga steel, 16" wide, 12" clips, 90° seam — but from a **coil supplier's undated summary**, no approval number, and Metal Alliance neither fabricates the panel nor holds approvals | ⚠️ Figure traceable, **paperwork weakest of the three** |
+| 1 | Metal Alliance −218.8 @ 12" | Appears ONLY on an undated supplier summary. Metal Alliance's own HVHZ approval, **NOA 21-0506.08**, says **−176 psf at 6" o.c.** and contains no 218.8 | ❌ **Not the HVHZ number. NOA expired 07/08/26** |
 | 2 | Gulf Coast −189.25 @ 8" | NOA 19-0814.04: −189.25 @ 8" **but at a 180° seam** | ⚠️ Number right, condition missing, **NOA expired 10/02/24** |
 | 3 | Englert −165, "approved assembly" | NOA 25-0528.08: −165 psf **at 12" o.c., 6" clip, sealed lateral seams, perimeter/corner zone**; current to 2030 | ✅ Number right, conditions omitted |
 | 4 | "Three 1.5" **mechanical seam** systems" | Series 1300 IS mechanically seamed, 90° single lock. Tim's link was Series **1500**, a snap-lock — wrong product, not a wrong claim | ✅ Framing OK, link wrong |
-| 5 | Metal Alliance wins on the **fewest clips** | Englert's −165 is at **12" o.c. — the same spacing as our −218.8** | ❌ The headline claim is false |
-| 6 | Comparison implies like-for-like | Rows differ in **gauge (26 vs 24), width (16" vs 20") and seam (90° vs 180°)** — not just clip spacing | ❌ Not apples to apples |
+| 5 | Metal Alliance wins on the **fewest clips** | Its NOA needs **6" o.c.** — the TIGHTEST of the three. Englert reaches −165 at **12"** | ❌ **Backwards** |
+| 6 | Comparison implies like-for-like | Rows differ in gauge, width and seam type — not just clip spacing | ❌ Not apples to apples |
+| 7 | (unstated) all three are current | **Two of three NOAs are expired** — ours 07/08/26, Gulf Coast's 10/02/24. Only Englert's is live | ❌ Currency problem |
 
 ---
 
-## 4. The three rows, normalised
+## 4. The three rows at their own APPROVED HVHZ conditions
+
+This is the table that matters for a Miami-Dade or Broward job, built only from the NOAs:
 
 | | Metal Alliance | Gulf Coast VersaLoc | Englert 1300 |
 |---|---|---|---|
-| Pressure | **−218.8** | −189.25 | −165.00 |
-| Clip spacing | **12" o.c.** | 8" o.c. | **12" o.c.** |
-| Seam | 90° single lock | **180° double lock** | 90° single lock |
-| Metal / width | 26ga steel, 16" | 24ga steel, 20" | steel, 6" clip |
-| Extra condition | — | — | sealed lateral seams; perimeter/corner |
-| Source | coil supplier summary, **no approval no., no date** | NOA 19-0814.04, **expired 10/02/24** | NOA 25-0528.08, **current to 2030** |
+| NOA | 21-0506.08 | 19-0814.04 | **25-0528.08** |
+| Max design pressure | −176 psf | **−189.25 psf** | −165.00 psf |
+| At clip spacing | **6" o.c.** | 8" o.c. | **12" o.c.** |
+| Seam | 90° single lock | 180° double lock | 90° single lock |
+| Status | **EXPIRED 07/08/26** | **EXPIRED 10/02/24** | **current to 06/26/30** |
 
-Read across that table and the page's headline — *"highest tested pressure using the FEWEST
-clips"* — does not survive: **Englert reaches −165 at the same 12" spacing** we reach −218.8 at.
-Only Gulf Coast uses tighter clips, and it also uses the stronger 180° seam.
+Read that against the page's headline — *"highest tested pressure using the FEWEST clips"*:
 
-The defensible claim on this data is **"at the same 12" clip spacing, the Metal Alliance
-assembly tests 33% higher than the Englert assembly"** — narrower, stronger, and it happens to
-be true. It is a better argument than the one currently on the page.
+- Metal Alliance needs the **tightest** clip spacing of the three (6" o.c.), not the loosest.
+- Its approved HVHZ pressure (−176) is **lower than Gulf Coast's** (−189.25).
+- **Englert reaches −165 at 12" o.c.** — double the spacing Metal Alliance needs.
 
----
+On the manufacturers' own HVHZ approvals the claim is exactly backwards. The −218.8 @ 12" that
+the page leads with does not appear in Metal Alliance's NOA at all.
+
+**And two of the three approvals have expired**, including our own.
 
 ## 5. The finding that matters most
 
