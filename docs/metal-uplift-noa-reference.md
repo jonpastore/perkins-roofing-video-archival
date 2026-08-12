@@ -179,7 +179,7 @@ panel, the fabricator holds the approval.
 
 | # | Our claim | What the source says | Verdict |
 |---|---|---|---|
-| 1 | Metal Alliance −218.8 @ 12" | Appears ONLY on an undated supplier summary. Metal Alliance's own HVHZ approval, **NOA 21-0506.08**, says **−176 psf at 6" o.c.** and contains no 218.8 | ❌ **Not the HVHZ number. NOA expired 07/08/26** |
+| 1 | Metal Alliance −218.8 @ 12" | Appears only on the supplier summary. The HVHZ approval (NOA 21-0506.08) and FL38763.02 give **146 psf at 12" o.c.** for the documented 24ga assembly. The 26ga figure may be legitimate on higher-grade steel but is **untraced** | ⚠️ **Not the HVHZ number; source document needed. NOA expired 07/08/26** |
 | 2 | Gulf Coast −189.25 @ 8" | NOA 19-0814.04: −189.25 @ 8" **but at a 180° seam** | ⚠️ Number right, condition missing, **NOA expired 10/02/24** |
 | 3 | Englert −165, "approved assembly" | NOA 25-0528.08: −165 psf **at 12" o.c., 6" clip, sealed lateral seams, perimeter/corner zone**; current to 2030 | ✅ Number right, conditions omitted |
 | 4 | "Three 1.5" **mechanical seam** systems" | Series 1300 IS mechanically seamed, 90° single lock. Tim's link was Series **1500**, a snap-lock — wrong product, not a wrong claim | ✅ Framing OK, link wrong |
@@ -212,59 +212,69 @@ the page leads with does not appear in Metal Alliance's NOA at all.
 
 **And two of the three approvals have expired**, including our own.
 
-## 5. THE FINDING — the supplier sheet is an aggregation, and its rows are not comparable
+## 5. THE FINDING — the summary sheet is not a comparable series
 
-Metal Alliance's statewide approval family is **FL30780** (Metal Alliance, Inc., 2120 SW Poma
-Dr, Palm City FL 34990), e.g. FL30780.13-R3 for 26ga 175SL AllSeam. It states the panels are
-*"Produced by Metal Alliance's Network of Approved Regional Manufacturers"* and that the
-approval *"applies only to metal supplied by Metal Alliance"* — so they supply the coil AND
-hold the approval, and regional fabricators roll under it. Archived:
-`docs/noa/FL30780_R3-metal-alliance-26ga-175SL.pdf`
+⚠️ **This section was rewritten 2026-08-12 after adversarial review by two independent
+engineering reviewers (Grok 4.5 and GPT-5.6). Both found my first version OVERSTATED. The
+earlier wording — "physically impossible", "proves", "implausible and suspicious" — is
+withdrawn. It would not have survived a manufacturer's engineer producing mill certs.**
 
-**FL38763.02 — "24ga 150MS on 15/32" plywood"** publishes the full clip ladder
-(`docs/noa/FL38763_R2-24ga-150MS-plywood.pdf`):
+### What is solidly established
+
+Metal Alliance's statewide family is **FL30780** (Metal Alliance, Inc., Palm City FL) —
+*"Produced by Metal Alliance's Network of Approved Regional Manufacturers… applies only to
+metal supplied by Metal Alliance."* They supply the coil AND hold approvals; regional
+fabricators roll under it.
+
+**FL38763.02 — "24ga 150MS on 15/32" plywood"** publishes a full clip ladder:
 
 | Clip spacing | 24" | 20" | 16" | 12" | 6" |
 |---|---|---|---|---|---|
 | Max allowable uplift (psf) | 86 | 106 | 126 | **146** | 176 |
 
-Two things fall out of that table, and together they are the answer.
+It is monotonic, and its endpoints match Miami-Dade NOA 21-0506.08 exactly (−86 @ 24",
+−176 @ 6"). **The FL approval and the NOA corroborate each other.** For this documented 24ga
+assembly, **12" o.c. is 146 psf.**
 
-**(a) Uplift rises MONOTONICALLY as clips get tighter.** 24"→86 … 6"→176. Its endpoints match
-Miami-Dade NOA 21-0506.08 exactly (−86 @ 24", −176 @ 6"), so the NOA and the FL approval agree —
-the NOA simply publishes the two ends of the same ladder. **At 12" o.c. this panel is 146 psf.**
+### What is a warning, NOT a proof
 
-This is the manufacturer's own approval, and it says in a single row of numbers that *more clips
-IS a stronger roof.* The page's thesis is contradicted by the primary document it rests on.
+The summary sheet's 24ga/16"/90° rows read 176 psf at 6" clips but 198.5 psf at 8" clips, and
+166/168.5 at 16" where FL38763.02 says 126.
 
-**(b) The supplier summary sheet is internally impossible.** Checked mechanically across every
-steel row:
+Tighter clips giving a *lower* number, under nominally identical labels, is **inconsistent with
+a single governed assembly** — but it does not prove misconduct or even error. Legitimate
+causes, per both reviewers:
+
+- different clip model/height/gauge, or a different number of fasteners per clip
+- 90° single lock vs 180° double lock (on this very sheet that swing is **121.75 → 189.25**,
+  ~55%, at identical width and spacing)
+- different test standard — TAS 125 vs ASTM E1592 vs UL 580/1897 — mixed on one page
+- different safety factor converting ultimate to allowable (2.0 vs 1.67), or ultimate vs
+  allowable reported side by side
+- test scatter where peaks rather than governed allowables are published
+- field vs perimeter/corner pressure zone
+
+**Correct statement:** the sheet aggregates rows on differing bases, so its rows are **not
+interchangeable and not a comparable series**. Trace any row to its test report before use.
+
+### The 26ga row — my earlier reasoning was WRONG
+
+I called 218.8 psf on 26ga "implausible because 26ga is thinner than 24ga." **That is not
+sound metallurgy.** Roofing coil is commonly ASTM A653 **Grade 80 (80 ksi) in 26ga** and Grade
+50 in 24ga, and strength-controlled capacity scales roughly with Fy·t:
 
 ```
-24ga Steel, 16" wide, 15/32" plywood, 90° seam
-     6" clips → 176.0 psf
-     8" clips → 198.5 psf     ← LOOSER clips, HIGHER pressure
-    16" clips → 166.0 / 168.5 psf
-    24" clips →  86.0 psf
-
-24ga Steel, 20" wide
-     8" clips →  121.75 psf (90° seam)
-     8" clips →  189.25 psf (180° seam)
-    16" clips →   91.75 psf
+24ga × 50 ksi  ≈  0.0236 × 50  ≈  1.18
+26ga × 80 ksi  ≈  0.0179 × 80  ≈  1.43   ← thinner panel, higher capacity
 ```
 
-A single assembly cannot get *weaker* when you add clips. And the sheet's 16" rows (166/168.5)
-contradict FL38763.02's 16" row (126) for the same nominal panel. So the sheet is a **catalogue
-of many different approvals** — different clips, fastener schedules, steel grades, test bases —
-flattened into one table. **Rows within it are not comparable to each other.**
+A thinner, higher-grade panel out-rating a thicker, lower-grade one is **normal in the
+industry, not a red flag.** Gauge alone does not determine uplift.
 
-The warranty page picks two of those rows and compares them. That is the error, and it is
-upstream of every other problem in this document.
-
-**(c) The 26ga row stands alone.** In the entire steel set there is exactly ONE 26ga entry —
-16" wide, 12" clips, 218.8 psf — with no ladder, no corroborating row, and no approval located
-for it after searching Miami-Dade, the FL database, both vendor sites and two AI search engines.
-Every other pressure on the page has now been traced to a document. This one has not.
+What remains fair: 218.8 @ 12" is ~1.5× the approved 24ga value at the same spacing. Both
+reviewers put a 50% advantage in the *"verify carefully"* band — not the *"nonsense"* band.
+It needs its source document (steel grade, clip P/N, fastener schedule, seam, test standard,
+safety factor) before anyone relies on it. It is the one figure on the page still untraced.
 
 ---
 
@@ -291,29 +301,38 @@ Every other pressure on the page has now been traced to a document. This one has
 
 ## 7. Bottom line for the page
 
-The exposure is not that a number was invented. Every figure except one traces to a real
-document. The exposure is that **the comparison itself is not a valid comparison**, and the
-primary documents say the opposite of the headline:
+No number here was invented, and nothing suggests misconduct by any manufacturer. Every figure
+but one traces to a document. Two problems remain, both narrower than my first draft claimed:
 
-1. Metal Alliance's own FL approval ladder shows uplift **rising monotonically with clip
-   count** — 24"→86, 12"→146, 6"→176. "More clips is not a stronger roof" is refuted by our
-   own supplier's approval.
-2. At the 12" spacing the page advertises, the documented 24ga panel is **146 psf**, not 218.8.
-3. In HVHZ, our NOA needs **6" clips** to reach −176 — the tightest of the three products —
-   while Englert reaches −165 at **12"**.
-4. Two of the three NOAs are **expired**, including ours (07/08/26).
-5. The −218.8 has **no located approval** and sits in a summary table that is provably
-   internally inconsistent.
+1. **The comparison is not a like-for-like comparison.** The rows differ in gauge, width, seam
+   type and (probably) clip model and test basis. Seam type ALONE moves this product 121.75 →
+   189.25 psf at identical width and spacing. Ranking three products off those rows is not
+   supportable.
+2. **The headline figure is untraced.** −218.8 @ 12" appears only on the supplier summary. The
+   documented 24ga assembly is **146 psf at 12" o.c.** (FL38763.02, corroborated by NOA
+   21-0506.08). The 26ga number may well be legitimate on Grade 80 steel — that is normal — but
+   we do not hold the document, and it is ~1.5× the approved 24ga value at the same spacing,
+   which both reviewers place in "verify before relying on it" territory.
 
-Publishing Perkins-only (Option 1 in the 2026-08-12 email) removes the comparative-advertising
-exposure but NOT points 1-5, because the −218.8 headline is itself the unsupported figure.
+Also true, and independent of any of the above:
 
-**Recommended: pull the uplift comparison from the page entirely** until Metal Alliance produces
-the approval behind 26ga @ 12" o.c., and until the NOA renewal is confirmed. The clips-per-panel
-argument can stand on the FL38763.02 ladder alone, honestly stated: *more clips do carry more
-load; what matters is the tested assembly.* That is defensible, sourced, and does not require
-naming a competitor.
+3. In HVHZ our approval needs **6" clips** to reach −176, while Englert's current NOA reaches
+   −165 at **12"**.
+4. **Two of the three NOAs have expired**, including ours (07/08/26). Englert's runs to 2030.
 
-**Separately and more urgently than the webpage:** NOA 21-0506.08 lapsed 07/08/26. Any HVHZ job
-sold today citing it needs a current approval, and any proposal quoting −218.8 for a Miami-Dade
-or Broward roof is quoting a figure that is not in the HVHZ approval.
+**Recommended: pull the uplift comparison from the page** until Metal Alliance produces the
+26ga test basis and confirms the NOA renewal. The clip argument can stand on FL38763.02 alone:
+*more clips carry more load; what matters is the tested assembly.* Sourced, defensible, no
+competitor named.
+
+**More urgent than the webpage:** NOA 21-0506.08 lapsed 07/08/26, and any proposal quoting
+−218.8 for a Miami-Dade or Broward job is quoting a figure that is not in the HVHZ approval —
+that is a contract document, not marketing.
+
+### What to ask Metal Alliance (one email settles it)
+
+For the 26ga 150MSAllSeam, 16" wide, 12" o.c., 218.8 psf row:
+steel grade / minimum yield (Fy) and base metal thickness · clip part number and gauge ·
+fasteners per clip · seam type · **test standard** (TAS 125 / ASTM E1592 / UL) · safety factor
+used · **the FL approval or NOA number that row sits under** · and whether NOA 21-0506.08 has
+been renewed.
