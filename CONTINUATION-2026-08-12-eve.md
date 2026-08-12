@@ -11,12 +11,20 @@ a browser. Jon's "the debug option is not obvious" ask is built.**
 
 ## §1 — R2 RE-RUN: HOW IT ACTUALLY WENT (read this before trusting §2)
 
-⚠️ **Both R2 subagents — `architect` and `critic` — were spawned and NEVER REPORTED.** Three
-escalating requests each, including "reply with anything you have, partial is fine". No response.
-So **this session's R2 is not a two-agent review**; it is direct execution evidence gathered
-first-hand. That is a weaker process than R2 requires (ENGINEERING_RULES R2) and a stronger form
-of evidence than a review opinion. Both halves of that sentence are true and the next session
-should decide whether to re-run the panel before considering the wave closed.
+⚠️ **Both R2 subagents — `architect` and `critic` — were spawned and NEVER REPORTED.** Six
+escalating requests each. They emitted only `idle_notification` objects, never prose. **The
+failure is systemic to those two agent types in this session, not a fluke** — and the fix is
+simply to use a different one: a `general-purpose` agent, given the identical brief, returned a
+full review in four minutes.
+
+**That review found a HIGH defect I had already committed** (§4a). So the lesson is not "the
+panel is optional because execution evidence is better" — my execution evidence was real and
+still missed this, because it tested the redaction engine and the bug was in the proposal write
+path. **When an agent type goes quiet, re-spawn on a different type; do not substitute your own
+verification and call the review done.**
+
+The redaction findings below stand on direct execution evidence gathered first-hand, which is
+stronger than a review opinion for the things it covers — and narrower than an R2 panel.
 
 What was verified, and how:
 
@@ -174,6 +182,36 @@ swallows upload failures, so the upload was unreachable either way and the test 
 It only became real after stubbing `_media_bucket` and `_proposal_pdf_key`. *A green assertion on
 an unreachable line is this repo's recurring test failure, in a new costume.*
 
+### §4a — WHAT THE LATE R2 CAUGHT (fixed in `eced8b0`)
+
+🔴 **HIGH, and mine.** `_freeze_calc_breakdown` runs at **create only** (`:1215`, `:1371`) — not on
+`update_proposal`, not on revise. So nothing rebuilt the rows on an edit, while the SPA's edit path
+**re-quotes and PUTs a new `total`/`tiers`/`estimate_result`** (`Proposals.tsx:449-495`). The
+carry-forward I added in §4 then re-attached the old rows regardless.
+
+Repro: create from a $43,075 estimate → edit the total to $38,000 → tick the box → the explain PDF
+prints the **$43,075 derivation under a $38,000 document**. Line items that do not add up to the
+price beside them, in the one report whose entire purpose is that they do.
+
+Fixed by dropping the rows when `total` or `estimate_result` moved. Dropped, not recomputed — the
+derivation is genuinely gone. Dropping hides the checkbox, which is honest: *a missing breakdown
+asks a question, a stale one answers it wrongly.*
+
+**Two more from the same review — verified, PRE-EXISTING, deliberately NOT fixed:**
+
+1. 🔴 **HIGH — profit is already on the wire.** `api/routes/estimator.py:95` strips only
+   `calculation_trace` and per-line `explain`. `core/estimator.py:818` emits
+   `"profit_dollars": round(self.profit_dollars, 2)`, and `Proposals.tsx:442` reads it back out of
+   the stored snapshot — which proves it survives the read path. **A `sales` user can
+   `GET /quoting/proposals/{id}` and read `.quote_snapshot.estimate_result.profit_dollars` today.**
+   This weakens §4's whole rationale: I hardened the FORMULAS while the NUMBER was already
+   readable. Not fixed because it predates this work and the SPA uses `oldProfit` to hold margin
+   flat across a revision, so changing it is **Jon's call, not a silent edit**.
+2. 🟡 **MEDIUM — retention.** `Proposal` is in `AUDITED_MODELS` (`core/audit_orm.py:31`) and
+   `api/audit_mw.py:73` deliberately bypasses `redact` for `changes` to keep the trail
+   revert-capable, so `calc_lines_internal` is kept in `audit_log` permanently. Not a role break
+   (that read needs `manage_config`), and narrowing it would break revert.
+
 ---
 
 ## §5 — STATE
@@ -186,13 +224,15 @@ Commits this session, in order:
 | `f713388` | `feat(audio)` — Phase 1 wind profile + the ClipStudio checkbox that can set it |
 | `6b8776c` | `feat(redact)` — Phase 2 API-boundary validation + the unreachable-by-design decision |
 | `35f4b7c` | `feat(quoting)` — "Show how this price was built" next to View PDF (§4) |
+| `37239ef` | `test(proposals)` — pins the public accept page as an allowlist (snapshot-leak audit) |
+| `eced8b0` | `fix(quoting)` — **the HIGH the late R2 caught**: stale build-up under a new price (§4a) |
 
 ⚠️ The archive rename (`CONTINUATION-2026-08-11-eve.md` → `docs/continuations/`) was staged by
 `git mv` before the first feature commit and got swept into **`f713388`**, whose message does not
 mention it. Content-identical 100% rename, no edits — but if you go looking for it in the docs
 commit, it is not there.
 
-Suite at every commit: **5,711 passed, 5 skipped, exit 0**, captured to a file before any pipe on
+Suite at the final commit: **5,713 passed, 5 skipped, exit 0**, captured to a file before any pipe on
 a clean collection. `./ab-review/` untouched and still gitignored.
 
 Rules honoured: no deploy, no metal-warranty page edits, no release of the 7 `held`
@@ -200,11 +240,15 @@ Rules honoured: no deploy, no metal-warranty page edits, no release of the 7 `he
 
 ### Do this first on resume
 
-1. **Decide whether to re-run the R2 panel** (§1) — the agents never reported, so the two-agent
-   requirement of ENGINEERING_RULES R2 was not met even though the findings were verified by
-   execution.
+1. 🔴 **Jon's call on `profit_dollars`** (§4a.1) — a `sales` user can read the profit on any
+   proposal today, and it is not something to change quietly because the SPA's revision maths
+   depends on it. This is the highest-value open decision in this doc.
 2. **Look at an explain PDF in a live environment** (§4) — the only part of Jon's ask that has not
-   been seen working end to end.
+   been seen working end to end. Gotenberg is not running locally.
+3. **The R2 panel is now partially satisfied** (§1): a `general-purpose` agent reviewed the
+   proposal work and found the HIGH in §4a. **The redaction work has still had no second pair of
+   eyes** beyond my own execution evidence — re-spawn on `general-purpose`, not `architect`
+   or `critic`.
 3. **Jon's ear on the A/B wind files** in `./ab-review/` — still the gate on Phase 1 shipping.
    If the 2.8 dB is too small to matter, the next lever is DeepFilterNet3 behind the same `wind`
    flag, and that dependency needs his go-ahead.
