@@ -1164,3 +1164,33 @@ def test_explain_actually_reaches_the_render_context(monkeypatch):
     P.render_and_cache_proposal_pdf(db, row, explain=False)
     assert seen["ctx"].calc_lines == customer
     assert seen["ctx"].calc_audience == "customer"
+
+
+def test_the_public_accept_page_cannot_leak_the_internal_build_up():
+    """The other route that returns a snapshot. It is an allowlist — keep it one.
+
+    _proposal_row strips calc_lines_internal by name; _public_snapshot_projection is safe for a
+    different reason (it names what it lets THROUGH). That difference matters: if this ever became
+    a denylist, adding a new internal key would leak it to an unauthenticated accept-page visitor,
+    and nothing would fail. This pins the shape, not just today's keys.
+    """
+    from api.routes.proposals import _public_snapshot_projection
+
+    out = _public_snapshot_projection({
+        "tiers": {"good": {"label": "Good", "total": 1.0, "line_items": ["INTERNAL"]}},
+        "calc_lines_internal": [{"key": "profit", "amount": 9045.75}],
+        "calc_lines": [{"key": "base_cost_lm"}],
+        "floors": {"min_profit_pct": 0.13},
+        "pricing_config_hash": "deadbeef",
+        "totally_new_internal_key_added_next_year": {"profit_scale": 1.4},
+    })
+
+    blob = json.dumps(out)
+    assert "calc_lines_internal" not in out and "9045.75" not in blob
+    assert "profit_scale" not in blob, "a new internal key reached the public accept page"
+    assert "totally_new_internal_key_added_next_year" not in out, (
+        "_public_snapshot_projection stopped being an allowlist — an unknown key passed through, "
+        "so every internal field added from now on leaks to an unauthenticated visitor"
+    )
+    assert "INTERNAL" not in blob, "tier line_items are internal pricing"
+    assert out["tiers"]["good"]["total"] == 1.0, "and it must still pass the things it is for"
