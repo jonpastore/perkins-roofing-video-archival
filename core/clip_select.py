@@ -173,7 +173,23 @@ _DEFAULT_TITLE_PROMPT = (
     "{rules}\n"
     "Hashtags: specific to the clip content; you may include {core_tags} when relevant. "
     "No emoji in the title. No invented product names, prices, or claims not in the clip.\n"
-    'Return STRICT JSON only: {{"title": str, "hashtags": [str], "description": str}}\n\n'
+    # v5 gating fields. Until 2026-08-13 core/caption_output.py's gate had NO production caller —
+    # SUSPECT_TRANSCRIPT, UNUSABLE_TRANSCRIPT, MISSING_LICENSE and status="withheld" blocked
+    # exactly zero publishes — because the model was never asked for them. Asking is the whole
+    # fix; jobs/social_job refuses to publish anything the gate blocks.
+    "\nSAFETY. Judge whether this clip can be published at all, and say so:\n"
+    '  status: "ok" to publish, or "withheld" if it must not be published.\n'
+    "  flags: any that apply, else []. Use ONLY these names:\n"
+    "    SUSPECT_TRANSCRIPT   the transcript looks garbled/mis-transcribed enough that a caption\n"
+    "                         built on it could state something the speaker did not say\n"
+    "    UNUSABLE_TRANSCRIPT  too little intelligible content to caption honestly\n"
+    "    MISSING_LICENSE      the clip leans on third-party media/music you cannot confirm\n"
+    "    NO_TECH_FACT         no verifiable roofing fact — thin, promotional filler\n"
+    "    INSURANCE_TRIM       touches insurance claims//coverage, which needs a human read\n"
+    "Withhold rather than guess. A withheld clip costs one post; a wrong claim about a roof\n"
+    "costs more.\n"
+    'Return STRICT JSON only: {{"title": str, "hashtags": [str], "description": str, '
+    '"status": "ok"|"withheld", "flags": [str]}}\n\n'
     "Clip title: {title}\n"
     "Clip transcript/summary:\n{text}"
 )
@@ -218,10 +234,19 @@ def parse_title_output(raw: str | None) -> dict | None:
     if isinstance(tags, str):
         tags = tags.split()
     hashtags = [t if str(t).startswith("#") else f"#{t}" for t in tags if str(t).strip()]
+    # status/flags feed core.caption_output.gate_caption_flags in jobs/social_job. Defaults are
+    # PERMISSIVE on purpose: an older prompt (or Josh's plain-text template via `prompts`) returns
+    # neither, and defaulting those to "withheld" would block every caption the moment this
+    # shipped. The gate still fails closed on a parse_error, which is the case that matters.
+    flags = parsed.get("flags") or []
+    if isinstance(flags, str):
+        flags = [flags]
     return {
         "title": title,
         "hashtags": hashtags,
         "description": str(parsed.get("description") or "").strip(),
+        "status": str(parsed.get("status") or "ok").strip().lower(),
+        "flags": [str(f).strip() for f in flags if str(f).strip()],
     }
 
 

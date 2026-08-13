@@ -276,6 +276,14 @@ class ScheduledContent(Base):
     #: ever pick the row up again — which parked 277 articles in prod on a transient WordPress
     #: 401/403. Promotion now retries an errored row until this reaches PROMOTE_MAX_ATTEMPTS.
     attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    #: When the in-flight claim was taken (migration 0059). Stamped alongside status='promoting'
+    #: (promote_job) and 'publishing' (social_job). Those two states are NOT in
+    #: core.scheduler.CLAIMABLE, so before this a process KILLED while holding a claim — a Cloud
+    #: Run revision swap, an OOM, a request timeout — left the row invisible to every future run
+    #: with `attempts` never incremented, while the surviving job reported success. The exception
+    #: paths already released the claim; only process death did not, and a status column cannot
+    #: tell "a live sibling holds this" from "a dead run held this". NULL = not claimed.
+    claimed_at = Column(DateTime, nullable=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_scheduled_content_tenant_status", "tenant_id", "status"),)
 

@@ -9,8 +9,19 @@ from datetime import datetime, timezone
 import adapters.search_indexing as search_indexing
 import adapters.wordpress as wordpress
 from app.models import Article, ScheduledContent, SessionLocal
-from core.scheduler import CLAIMABLE, PROMOTE_MAX_ATTEMPTS, due
+from core.scheduler import (
+    CLAIMABLE,
+    IN_FLIGHT_RELEASE,
+    PROMOTE_MAX_ATTEMPTS,
+    due,
+    stale_claims,
+)
 from core.search_indexing import urls_for_articles
+
+
+def _utcnow():
+    """Naive UTC, matching how publish_at and every other timestamp is stored here."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _submit_for_indexing(slug: str) -> None:
@@ -30,6 +41,23 @@ def _submit_for_indexing(slug: str) -> None:
 def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
     """Per-tenant promotion body. Called by for_each_tenant via run()."""
     rows = db.query(ScheduledContent).all()
+
+    # Reap claims left behind by a process that DIED holding one (migration 0059). The `except`
+    # below covers exceptions; it cannot cover a Cloud Run revision swap, an OOM, or the request
+    # timing out — and 'promoting'/'publishing' are not in CLAIMABLE, so such a row is invisible
+    # to every future run with `attempts` never incremented, while the job reports success.
+    # Only elapsed time can tell a dead holder from a live sibling, hence claimed_at.
+    for stale in stale_claims(rows, now):
+        released = IN_FLIGHT_RELEASE[stale.status]
+        print(f"[reap] scheduled_content {stale.id} was stuck in {stale.status!r} "
+              f"(claimed_at={stale.claimed_at}) — releasing to {released!r}")
+        stale.status = released
+        stale.attempts = (stale.attempts or 0) + 1
+        stale.claimed_at = None
+        db.add(stale)
+    db.commit()
+    rows = db.query(ScheduledContent).all()
+
     promoted, errored = 0, 0
     for r in due(rows, now):
         try:
@@ -60,7 +88,8 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
                 db.query(ScheduledContent)
                 .filter(ScheduledContent.id == r.id,
                         ScheduledContent.status.in_(CLAIMABLE))
-                .update({"status": "promoting"}, synchronize_session=False)
+                .update({"status": "promoting", "claimed_at": _utcnow()},
+                        synchronize_session=False)
             )
             db.commit()
             if not claimed:
@@ -68,6 +97,7 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
 
             if r.kind == "reel":
                 r.status = "awaiting_social"
+                r.claimed_at = None
                 db.add(r)
                 db.commit()
                 print(
@@ -89,6 +119,7 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
                 article.status = "published"
                 db.add(article)
             r.status = "published"
+            r.claimed_at = None
             db.add(r)
             db.commit()
             promoted += 1
@@ -98,6 +129,7 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
         except Exception as e:  # noqa: BLE001
             db.rollback()
             r.status = "error"
+            r.claimed_at = None
             # COUNT the failure. Without this `error` is terminal and one transient WordPress
             # 403 parks the article forever on a job that still reports success — which is
             # exactly what happened to 277 rows between 2026-07-27 and 08-07. The next run

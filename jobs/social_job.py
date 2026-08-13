@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 
 from sqlalchemy.exc import IntegrityError
 
@@ -130,6 +131,29 @@ def _copy_for_part(part: dict, clip_title: str) -> dict:
     )
 
 
+def _publish_verdict(part: dict, platform: str) -> tuple[str, str]:
+    """(decision, reason) from core.caption_output's v5 gate for this platform's copy.
+
+    THIS IS THE CALLER THAT DID NOT EXIST. core/caption_output.py's gate had no production caller
+    until 2026-08-13, so status="withheld", SUSPECT_TRANSCRIPT, UNUSABLE_TRANSCRIPT and
+    MISSING_LICENSE blocked exactly zero publishes while the module's own docstring claimed it was
+    "wired to the publish path". The model is now asked for those fields
+    (core.clip_select._DEFAULT_TITLE_PROMPT) and this is where the answer is honoured.
+
+    No copy at all -> OK. The fallback chain publishes the series title with the channel's core
+    hashtags, which is the pre-existing behaviour and carries no model-authored claim to screen.
+    """
+    from core.caption_output import OK, gate_caption_flags  # noqa: PLC0415
+
+    per_platform = (part.get("copy") or {}).get(_COPY_PLATFORM.get(platform, platform))
+    if not per_platform:
+        return OK, ""
+    return gate_caption_flags(
+        per_platform.get("flags") or [],
+        status=per_platform.get("status") or "ok",
+    )
+
+
 def _caption_for(platform: str, part: dict, fallback_title: str) -> str:
     """Caption for ONE platform, held to that platform's hashtag count.
 
@@ -194,7 +218,11 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         ScheduledContent.id == sched.id,
                         ScheduledContent.status == "awaiting_social",
                     )
-                    .update({"status": "publishing"}, synchronize_session=False)
+                    .update(
+                        {"status": "publishing",
+                         "claimed_at": datetime.now(timezone.utc).replace(tzinfo=None)},
+                        synchronize_session=False,
+                    )
                 )
                 db.commit()
                 if not did_claim:
@@ -316,6 +344,28 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         all_done = False
                         continue
 
+                    # Content gate BEFORE the publisher is even constructed.
+                    from core.caption_output import BLOCKED, REVIEW  # noqa: PLC0415
+                    _verdict, _why = _publish_verdict(_part, platform)
+                    if _verdict == BLOCKED:
+                        logger.error(
+                            "social_job: BLOCKED by the caption gate series=%d part=%d "
+                            "platform=%s: %s — not publishing",
+                            post.series_id, post.part, platform, _why or "withheld",
+                        )
+                        skipped += 1
+                        all_done = False
+                        continue
+                    if _verdict == REVIEW:
+                        # Publishes, but says so. REVIEW is "a human should look", and there is no
+                        # review queue yet — silently treating it as OK would be the same lie the
+                        # unreachable gate told.
+                        logger.warning(
+                            "social_job: caption flagged for review series=%d part=%d "
+                            "platform=%s: %s — publishing anyway (no review queue yet)",
+                            post.series_id, post.part, platform, _why,
+                        )
+
                     try:
                         pub = _publisher(platform, creds, tenant_id)
                         external_id = pub.publish(
@@ -416,6 +466,7 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         sc = db.get(ScheduledContent, sched.id)
                         if sc is not None and sc.status == "publishing":
                             sc.status = "awaiting_social"
+                            sc.claimed_at = None
                             db.add(sc)
                             db.commit()
                     except Exception:  # noqa: BLE001

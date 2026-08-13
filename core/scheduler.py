@@ -1,6 +1,6 @@
 """Pure scheduling logic — select which scheduled_content rows are due for promotion.
 Shared by articles and reels; the Cloud Scheduler cron calls the promoter which uses this."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 def _as_naive_utc(dt):
@@ -27,6 +27,41 @@ PROMOTE_MAX_ATTEMPTS = 5
 #: deliberately distinct from 'error', so "we chose not to publish this" is never mistaken for
 #: "this failed", and flipping it back to 'scheduled' is all it takes to release.
 CLAIMABLE = ("scheduled", "error")
+
+#: In-flight states, and what each releases BACK to when a claim is reaped.
+#: Neither is in CLAIMABLE — that is the point of a claim — so a row left in one by a process
+#: that died is invisible forever. See migration 0059.
+IN_FLIGHT_RELEASE: dict[str, str] = {
+    "promoting": "error",           # promote_job's own except path uses 'error' too
+    "publishing": "awaiting_social",  # social_job's finally reverts to this
+}
+
+#: How long a claim may be held before it is assumed dead. Comfortably above both the promote
+#: cron's 15-minute period and any real publish, so a LIVE sibling is never stolen from.
+STALE_CLAIM_MINUTES = 30
+
+
+def stale_claims(rows, now, *, minutes: int = STALE_CLAIM_MINUTES):
+    """Rows whose in-flight claim is old enough to be presumed dead.
+
+    A row is stale when it is in an in-flight state AND (claimed_at is older than *minutes*, OR
+    claimed_at is NULL). NULL counts because rows stranded BEFORE migration 0059 have no stamp —
+    without that clause the very rows this exists to rescue would be skipped forever.
+
+    Deliberately conservative: only time can distinguish a dead holder from a live one, so the
+    threshold is well past any plausible runtime rather than tight.
+    """
+    now = _as_naive_utc(now)
+    cutoff = now - timedelta(minutes=minutes)
+    out = []
+    for r in rows:
+        status = getattr(r, "status", None) if not isinstance(r, dict) else r.get("status")
+        if status not in IN_FLIGHT_RELEASE:
+            continue
+        claimed = getattr(r, "claimed_at", None) if not isinstance(r, dict) else r.get("claimed_at")
+        if claimed is None or _as_naive_utc(claimed) <= cutoff:
+            out.append(r)
+    return out
 
 
 def due(rows, now):

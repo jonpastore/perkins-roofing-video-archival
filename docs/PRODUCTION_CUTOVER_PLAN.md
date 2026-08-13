@@ -81,6 +81,24 @@ the article/content platform from staging (`https://1228404.us6.myftpupload.com`
       boundary rule, Verea/Other field-tile costs, and the 3-5 storey / 6+ crane adders
       (**blank in his sheet too**). Gutter hangers + the $14.70 upgraded downspout and copper K
       $50/$70 are still open from his 7/17 list.
+- [ ] 🔴 **PROFIT / MARGIN IS READABLE BY `quoting_view` AND `estimating_view`** — the roles
+      `sales` holds. Accepted by Jon on 2026-08-12 *for now* ("only high level people are
+      looking"); it must be closed before anyone outside that group touches the tool.
+      **Three separate exposures, and only ONE of them involves the debug flag** — so turning the
+      debug option off does NOT close this:
+      1. `estimate_result.profit_dollars` — emitted by `core/estimator.to_dict()` on EVERY quote,
+         no flag involved; `api/routes/estimator._audit_payload` strips only `calculation_trace`
+         and per-line `explain`. Read via `GET /quoting/proposals/{id}`.
+      2. `calc_lines` at the **internal** audience — `_freeze_calc_breakdown` stores those rows
+         under the unstripped key, so ticking "Show how this price was built → Internal" writes
+         profit rows that `_snapshot_without_internal_calc` does not remove.
+      3. The debug trace persisted by `e7f4177`, served by `GET /estimator/estimates` to
+         `estimating_view`. Harmless only because `/estimator/rates` already serves the same
+         config fields to that role — so closing this one means closing `/rates` too, or it
+         achieves nothing.
+      **Proposed fix:** strip on READ in the serializer, the same shape as
+      `_snapshot_without_internal_calc` (already shipped, tested, with a tripwire test). ~30 lines,
+      no migration. Full reasoning: `docs/AUDIT-OPEN-DECISIONS-2026-08-13.md` §7.
 - [ ] **A published barrel-tile price** — or confirmation that barrel tile is always
       engine-priced. The single `tile` catalog entry at $1,100/sq is below barrel tile's
       $1,435/sq base cost, so `proposal_gen` now refuses it (422).

@@ -199,7 +199,8 @@ def test_the_publish_loop_generates_caches_and_uses_per_platform_copy(monkeypatc
     _creds(monkeypatch)
     monkeypatch.setattr(
         llm, "chat",
-        lambda *a, **k: '{"title": "Hemmed valley", "hashtags": ["#v1","#v2","#v3","#v4","#v5","#v6"], "description": "d"}',
+        lambda *a, **k: ('{"title": "Hemmed valley", "hashtags": '
+                         '["#v1","#v2","#v3","#v4","#v5","#v6"], "description": "d"}'),
     )
     monkeypatch.setattr(SJ, "signed_get_url", lambda *a, **k: "https://signed.invalid/v.mp4",
                         raising=False)
@@ -241,3 +242,107 @@ def test_the_publish_loop_generates_caches_and_uses_per_platform_copy(monkeypatc
     s.close()
     assert cached, "copy was generated but never persisted — it regenerates every run"
     assert cached["instagram"]["title"] == "Hemmed valley"
+
+
+# ---------------------------------------------------------------------------
+# The caption content gate now has a caller (audit item 3, 2026-08-13)
+# ---------------------------------------------------------------------------
+# core/caption_output.py's gate had NO production caller while its docstring claimed it was
+# "wired to the publish path". status="withheld", SUSPECT_TRANSCRIPT, UNUSABLE_TRANSCRIPT and
+# MISSING_LICENSE blocked exactly zero publishes.
+
+def test_a_withheld_caption_is_blocked():
+    from core.caption_output import BLOCKED
+    from jobs.social_job import _publish_verdict
+
+    part = {"copy": {"tiktok": {"title": "T", "hashtags": ["#a"], "status": "withheld",
+                                "flags": []}}}
+    assert _publish_verdict(part, "tiktok")[0] == BLOCKED
+
+
+def test_a_block_class_flag_is_blocked():
+    from core.caption_output import BLOCKED
+    from jobs.social_job import _publish_verdict
+
+    for flag in ("SUSPECT_TRANSCRIPT", "UNUSABLE_TRANSCRIPT"):
+        part = {"copy": {"tiktok": {"title": "T", "status": "ok", "flags": [flag]}}}
+        assert _publish_verdict(part, "tiktok")[0] == BLOCKED, flag
+
+
+def test_missing_license_does_NOT_block_by_default_and_that_is_a_live_question():
+    """gate_caption_flags takes require_license=False by default, so MISSING_LICENSE currently
+    passes. That is the module author's chosen default and this wiring does not override it.
+
+    ⚠️ OPEN DECISION for Jon: these posts go to public Instagram/TikTok, and the render spec can
+    pull third-party music and b-roll, so an unconfirmed licence is a real copyright-strike risk.
+    Flipping require_license=True in jobs.social_job._publish_verdict is a ONE-WORD change — but
+    it is a legal/content policy, not an engineering call, so it was not made unilaterally. This
+    test documents the current behaviour so a future flip is deliberate and visible.
+    """
+    from core.caption_output import OK
+    from jobs.social_job import _publish_verdict
+
+    part = {"copy": {"tiktok": {"title": "T", "status": "ok", "flags": ["MISSING_LICENSE"]}}}
+    assert _publish_verdict(part, "tiktok")[0] == OK
+
+
+def test_a_review_flag_still_publishes_but_is_not_silent():
+    from core.caption_output import REVIEW
+    from jobs.social_job import _publish_verdict
+
+    part = {"copy": {"tiktok": {"title": "T", "status": "ok", "flags": ["NO_TECH_FACT"]}}}
+    verdict, why = _publish_verdict(part, "tiktok")
+    assert verdict == REVIEW and why
+
+
+def test_clean_copy_and_absent_copy_both_pass():
+    from core.caption_output import OK
+    from jobs.social_job import _publish_verdict
+
+    clean = {"copy": {"tiktok": {"title": "T", "status": "ok", "flags": []}}}
+    assert _publish_verdict(clean, "tiktok")[0] == OK
+    # No copy at all -> the fallback chain publishes series title + CORE_HASHTAGS, which carries
+    # no model-authored claim to screen. Must not be blocked or nothing would ever publish.
+    assert _publish_verdict({}, "tiktok")[0] == OK
+
+
+def test_the_publish_loop_actually_refuses_a_blocked_caption(monkeypatch):
+    """THE SEAM. A gate nothing calls is exactly the defect this fixes, so assert the PUBLISHER
+    is never reached — not merely that the verdict function returns BLOCKED."""
+    import app.llm as llm
+    from app.models import MiniSeries, SocialPost
+
+    _creds(monkeypatch)
+    monkeypatch.setattr(
+        llm, "chat",
+        lambda *a, **k: '{"title":"T","hashtags":["#a"],"description":"d",'
+                        '"status":"withheld","flags":["UNUSABLE_TRANSCRIPT"]}',
+    )
+    monkeypatch.setattr("adapters.storage.signed_get_url", lambda *a, **k: "https://x.invalid/v.mp4")
+
+    published = []
+
+    class _Pub:
+        def publish(self, video_url, caption, idempotency_key):
+            published.append(caption)
+            return "ext-1"
+
+    monkeypatch.setattr(SJ, "_publisher", lambda *a, **k: _Pub())
+
+    s = SessionLocal()
+    series = MiniSeries(video_id="vid-blocked", title="S",
+                        parts_json=[{"title": "P1", "start": 0.0, "end": 30.0, "hook": "h"}],
+                        approved=1)
+    s.add(series)
+    s.flush()
+    post = SocialPost(series_id=series.id, part=0, platform="instagram",
+                      gcs_url="gs://b/k.mp4", status="rendered")
+    s.add(post)
+    s.flush()
+    _seed_reel(s, str(post.id))
+    s.commit()
+    s.close()
+
+    SJ.run()
+
+    assert published == [], "a withheld caption reached the publisher"

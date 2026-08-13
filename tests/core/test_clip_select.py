@@ -315,7 +315,22 @@ def test_build_title_prompt_default_mentions_platform_and_core_tags():
 def test_parse_title_output_handles_fenced_json_and_str_hashtags():
     raw = '```json\n{"title": "T", "hashtags": "#a #b", "description": "d"}\n```'
     parsed = parse_title_output(raw)
-    assert parsed == {"title": "T", "hashtags": ["#a", "#b"], "description": "d"}
+    # status/flags were added 2026-08-13 so core.caption_output's gate finally has something to
+    # gate on. A prompt that predates them (or Josh's plain-text template via `prompts`) returns
+    # neither, and the defaults must stay PERMISSIVE — defaulting to "withheld" would have blocked
+    # every caption the moment the gate was wired.
+    assert parsed == {"title": "T", "hashtags": ["#a", "#b"], "description": "d",
+                      "status": "ok", "flags": []}
+
+
+def test_parse_title_output_carries_the_gating_fields_when_present():
+    """The gate is only as good as the fields reaching it — jobs.social_job._publish_verdict
+    reads exactly these two."""
+    raw = ('{"title": "T", "hashtags": ["#a"], "description": "d", '
+           '"status": "withheld", "flags": ["UNUSABLE_TRANSCRIPT"]}')
+    parsed = parse_title_output(raw)
+    assert parsed["status"] == "withheld"
+    assert parsed["flags"] == ["UNUSABLE_TRANSCRIPT"]
 
 
 def test_parse_title_output_rejects_junk():

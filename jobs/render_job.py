@@ -51,6 +51,31 @@ _DEFAULT_PLATFORM = "instagram,tiktok"
 # platform_config "REEL_CLOSING_TEXT" key is not set.
 _CLOSING_TEXT_DEFAULT = "Perkins Roofing"
 
+# ---------------------------------------------------------------------------
+# Per-PART render lock
+# ---------------------------------------------------------------------------
+# Render was the only heavy job with no single-flight, while ingest_worker (8274123),
+# knowify_sync (8274124), knowify tokens (8274125) and companycam_sync (8274126) all have one.
+# It is also externally triggerable via POST /clips/{id}/render with no dedupe, so an operator
+# double-clicking Render — or clicking during the sweep — started two executions that BOTH passed
+# the gcs_url idempotency check (nothing is written until the upload finishes), both pulled a
+# ~2 GB source into memory-backed /tmp, and both spent ~an hour. The loser then violated
+# uq_social_series_part_platform and its entire render was discarded.
+#
+# Keyed on (series_id, part_index), NOT process-wide: wrapping run() would serialise every render
+# in the fleet, which is a throughput regression, not a fix. The lock is a Postgres SESSION
+# advisory lock, so a crashed render releases it automatically — the property jobs/promote_job
+# has to engineer around with claimed_at because a status column cannot do this.
+#
+# The base is offset far from the job keys above so a series/part can never collide with one.
+_RENDER_LOCK_BASE = 8300000
+_RENDER_LOCK_SPAN = 10_000  # parts per series before keys would wrap
+
+
+def _render_lock_key(series_id: int, part_index: int) -> int:
+    """Stable advisory-lock key for one (series, part). Distinct from every job-level key."""
+    return _RENDER_LOCK_BASE + (int(series_id) * _RENDER_LOCK_SPAN) + int(part_index)
+
 
 def _closing_text() -> str:
     """Return the configured reel closing brand text.
@@ -913,6 +938,37 @@ def render_part(
         ValueError: if the clip duration exceeds 300 s (editorial-intent guard).
         IndexError: if part_index is out of range for the series' parts_json.
     """
+    from app.models import SessionLocal  # noqa: PLC0415
+    from core.single_flight import single_flight  # noqa: PLC0415
+
+    # ── 0. Per-part single-flight ────────────────────────────────────────────
+    # BEFORE the idempotency check below, because that check cannot help here: nothing is written
+    # until the upload finishes, so two concurrent renders of the same part both see "not rendered
+    # yet" and both proceed. Held for the whole render; released automatically if this process
+    # dies, because it is a Postgres session advisory lock.
+    with single_flight(SessionLocal, _render_lock_key(series_id, part_index)) as _got_lock:
+        if not _got_lock:
+            logger.info(
+                "render_part skipped (already rendering): series=%d part=%d", series_id, part_index
+            )
+            return {"skipped": True, "reason": "already_rendering",
+                    "series_id": series_id, "part_index": part_index}
+        return _render_part_locked(
+            series_id, part_index, title_img=title_img, closing_img=closing_img,
+            work_dir=work_dir, tenant_id=tenant_id,
+        )
+
+
+def _render_part_locked(
+    series_id: int,
+    part_index: int,
+    *,
+    title_img: str | None = None,
+    closing_img: str | None = None,
+    work_dir: str | None = None,
+    tenant_id: int | None = None,
+) -> dict:
+    """render_part's body, with the per-part advisory lock already held."""
     from app.models import MiniSeries, ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
 
     db = SessionLocal()
@@ -1284,18 +1340,6 @@ def _run_for_tenant(
     return {"rendered": rendered_count, "skipped": skipped_count, "errored": errored_count}
 
 
-# ⚠️ NO SINGLE-FLIGHT GUARD, unlike every other heavy job (ingest_worker, knowify_sync and
-# companycam_sync all wrap their body in `with _single_flight() as ok:`). Render is also
-# externally triggerable per series via POST /clips/{id}/render with no dedupe, so an operator
-# double-clicking Render — or clicking during the sweep — starts two executions that both pass
-# the gcs_url idempotency check, both pull a ~2 GB source into memory-backed /tmp, and both burn
-# an hour; the loser then violates uq_social_series_part_platform and its whole render is
-# discarded. ScheduledContent is inserted unconditionally rather than get-or-create, so an
-# interleaving can also leave two promote rows for one reel.
-#
-# Not added blind: core.single_flight's lock is process-wide, so wrapping run() would serialise
-# ALL renders rather than deduplicating one series — a throughput change nobody asked for. The
-# right shape keys the lock on series_id. Left for a deliberate change, not a late patch.
 def run(limit: int | None = None, *, series_id: int | None = None) -> dict:
     """Iterate active tenants and render approved MiniSeries parts for each.
 
