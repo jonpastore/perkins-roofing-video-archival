@@ -13,15 +13,15 @@ a browser. Jon's "the debug option is not obvious" ask is built.**
 
 ⚠️ **Both R2 subagents — `architect` and `critic` — were spawned and NEVER REPORTED.** Six
 escalating requests each. They emitted only `idle_notification` objects, never prose. **The
-failure is systemic to those two agent types in this session, not a fluke** — and the fix is
-simply to use a different one: a `general-purpose` agent, given the identical brief, returned a
-full review in four minutes.
+failure is FOREGROUND vs BACKGROUND, not the agent type** — see §4d. A `general-purpose` agent
+given the identical brief in the FOREGROUND returned a full review in four minutes; the same type
+in the background idled out exactly like these two.
 
 **That review found a HIGH defect I had already committed** (§4a). So the lesson is not "the
 panel is optional because execution evidence is better" — my execution evidence was real and
 still missed this, because it tested the redaction engine and the bug was in the proposal write
-path. **When an agent type goes quiet, re-spawn on a different type; do not substitute your own
-verification and call the review done.**
+path. **Re-spawn in the foreground; do not substitute your own verification and call the review
+done.**
 
 The redaction findings below stand on direct execution evidence gathered first-hand, which is
 stronger than a review opinion for the things it covers — and narrower than an R2 panel.
@@ -214,6 +214,69 @@ asks a question, a stale one answers it wrongly.*
 
 ---
 
+## §4b — JON: "why is estimator stripping my debug if I turned debug on" (`e7f4177`)
+
+**He was right, and the stated reason for the strip is false.**
+
+The response never lost the trace (`:811` returns the full `result`); only the **persisted** row was
+stripped. So debug worked for one HTTP response and the evidence was then gone — out of the saved
+estimate and out of any proposal built from it.
+
+`_audit_payload`'s docstring claimed it protected `profit_scale`, `pm_incentive`, office burn and
+daily rates from `sales`. **Verified field by field, everything it named is already served to that
+exact role:**
+
+| what `calculation_trace` / `explain` embeds | already exposed by |
+|---|---|
+| `profit_scale` | `/rates:profit_scale` — gated `estimating_view` |
+| `pm_incentive` | `/rates`, **and** `to_dict()` unconditionally |
+| `office_daily_overhead`, `office_men` | `/rates` (`:54`, `:55`) |
+| `{series}_rate` daily overhead | `/rates:daily_overhead_rates` (`:50`) |
+| `profit_dollars`, `oh_dollars`, `eligible_base`, `commission` | `to_dict()` **unconditionally** |
+
+Only `calculation_trace` and per-line `explain` are debug-gated at all. **The strip removed the
+explanation and left every number it explained.** The file already said as much at `:384` — "NOT a
+confidentiality boundary" — three hundred lines from the docstring asserting the opposite.
+
+Fixed: `_audit_payload(result, *, debug=False)`, with the quote route passing **`q.debug`** — the
+role-gated value from `:387`, so a `sales` caller sending `debug=true` still persists a stripped
+row. Default `False` keeps context-free callers (notably `_freeze_calc_breakdown`) unchanged.
+
+⚠️ The first test pass was inadequate in the now-familiar way: helper-level tests left
+`debug=q.debug` **deletable at the persist site with everything green**. The test that bites POSTs a
+real quote and reads the row back out of the database.
+
+### §4c — CAN `_freeze_calc_breakdown` NOW BE DELETED? **NO — KEEP IT**
+
+The obvious follow-on: if the trace persists, why freeze a copy? Three independent reasons, each
+verified:
+
+1. **Project proposals have no estimate to read.** `proposals.py:1383` sets `estimate_id=None` **on
+   purpose** ("a project covers N estimates and pointing at one would be the same category error"),
+   while still calling the freeze at `:1386`. Every multi-building proposal would lose its
+   breakdown outright.
+2. **The link moves forward on edit.** `Proposals.tsx:471` relinks to the NEW estimate and PUTs it
+   at `:510`, so the proposal points at the newest estimate, not the one it was **sent** with.
+   Reading through `estimate_id` would show revised numbers on an old document — the exact defect
+   `eced8b0` just fixed from the other direction.
+3. **A `sales`-run quote has no derivation at all** (`estimator.py:387` gates debug on the role), so
+   there would be nothing to read back for precisely the users who lack `estimating_manage`.
+
+The freeze is also the *narrower* door: `_proposal_row` strips the rows and the explain PDF needs
+`estimating_manage`, whereas `GET /estimator/estimates` (`estimator.py:1203`) serves `result_json`
+to `estimating_view`.
+
+### §4d — THE AGENT LESSON, WHICH COST REAL TIME TODAY
+
+**Background subagents in this session return `idle_notification` objects and their prose never
+arrives. Foreground ones (`run_in_background: false`) return their report as the tool result.**
+Eight agents idled out across four spawns — `architect`, `critic` and `code-reviewer` types AND
+`general-purpose` — while every foreground `general-purpose` agent returned a full review in under
+a minute, including the one that found the HIGH in §4a and the one that settled §4c.
+
+It is **not the agent type**, as I wrote earlier in this file. It is foreground vs background. If a
+review matters, run it in the foreground.
+
 ## §5 — STATE
 
 Commits this session, in order:
@@ -226,6 +289,7 @@ Commits this session, in order:
 | `35f4b7c` | `feat(quoting)` — "Show how this price was built" next to View PDF (§4) |
 | `37239ef` | `test(proposals)` — pins the public accept page as an allowlist (snapshot-leak audit) |
 | `eced8b0` | `fix(quoting)` — **the HIGH the late R2 caught**: stale build-up under a new price (§4a) |
+| `e7f4177` | `fix(estimator)` — **honour debug=true when persisting** (§4b), Jon's request |
 
 ⚠️ The archive rename (`CONTINUATION-2026-08-11-eve.md` → `docs/continuations/`) was staged by
 `git mv` before the first feature commit and got swept into **`f713388`**, whose message does not
@@ -245,10 +309,8 @@ Rules honoured: no deploy, no metal-warranty page edits, no release of the 7 `he
    depends on it. This is the highest-value open decision in this doc.
 2. **Look at an explain PDF in a live environment** (§4) — the only part of Jon's ask that has not
    been seen working end to end. Gotenberg is not running locally.
-3. **The R2 panel is now partially satisfied** (§1): a `general-purpose` agent reviewed the
-   proposal work and found the HIGH in §4a. **The redaction work has still had no second pair of
-   eyes** beyond my own execution evidence — re-spawn on `general-purpose`, not `architect`
-   or `critic`.
+3. **The redaction work has still had no second pair of eyes** beyond my own execution evidence.
+   Re-spawn a reviewer **in the foreground** (§4d) — that is the whole trick, and it is cheap.
 3. **Jon's ear on the A/B wind files** in `./ab-review/` — still the gate on Phase 1 shipping.
    If the 2.8 dB is too small to matter, the next lever is DeepFilterNet3 behind the same `wind`
    flag, and that dependency needs his go-ahead.
