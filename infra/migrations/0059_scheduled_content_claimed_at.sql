@@ -36,10 +36,24 @@ CREATE INDEX IF NOT EXISTS ix_scheduled_content_stale_claims
     ON scheduled_content (status, claimed_at)
     WHERE status IN ('promoting', 'publishing');
 
--- One-time recovery: release any row already stranded by this bug before the reaper existed.
--- attempts is incremented so a row that has been wedging repeatedly still converges on the
--- PROMOTE_MAX_ATTEMPTS give-up rule rather than retrying forever.
+-- Recovery: release rows already stranded by this bug before the reaper existed.
+--
+-- ⚠️ THE claimed_at GUARD IS LOAD-BEARING AND IS NOT DECORATION. This runner has NO LEDGER — it
+-- re-executes every migration from 0013 on EVERY run (see scripts/apply_migrations_adc.py). An
+-- unguarded `WHERE status IN ('promoting','publishing')` would therefore fire again on every
+-- future migration run and release claims that a LIVE job is holding right then, causing exactly
+-- the double-publish the claim exists to prevent. The docstring in that script names this failure
+-- mode explicitly ("an UPDATE without a WHERE guard re-asserts its original value on every run").
+--
+-- With the guard the statement is replay-safe and matches core.scheduler.stale_claims: only a
+-- claim older than the staleness threshold — or one with no stamp at all, i.e. stranded before
+-- this migration existed — is released. A claim taken seconds ago is untouched.
+--
+-- attempts is incremented so a row that keeps wedging still converges on PROMOTE_MAX_ATTEMPTS
+-- rather than retrying forever.
 UPDATE scheduled_content
    SET status   = CASE WHEN status = 'publishing' THEN 'awaiting_social' ELSE 'error' END,
-       attempts = COALESCE(attempts, 0) + 1
- WHERE status IN ('promoting', 'publishing');
+       attempts = COALESCE(attempts, 0) + 1,
+       claimed_at = NULL
+ WHERE status IN ('promoting', 'publishing')
+   AND (claimed_at IS NULL OR claimed_at < (now() AT TIME ZONE 'utc') - interval '30 minutes');
