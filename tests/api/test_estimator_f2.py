@@ -1747,3 +1747,38 @@ def test_each_low_slope_input_is_actually_forwarded_to_the_engine(field_name):
         f"QuoteRequest declares {field_name!r} but _quote_input_from_request never reads it, "
         "so it parses and is discarded."
     )
+
+
+def test_the_engines_own_explain_inputs_reconcile_on_a_mixed_roof():
+    """The TRACE must be right, not just the rendered proposal.
+
+    core.proposal_render derives a basis defensively, so the PDF looked correct even while the
+    engine's explain said "30 squares" for a line priced on 10. That trace is now PERSISTED
+    (e7f4177) and served by GET /estimator/estimates, so a wrong `squares` input is wrong data on
+    the wire regardless of how the document renders. Reverting the engine-side fix alone does not
+    fail the proposal tests — this is the test that covers it.
+    """
+    import json
+    from pathlib import Path
+
+    from core.estimator import QuoteInput, estimate
+    from core.pricing_config import load_config
+
+    cfg = load_config(json.loads(
+        Path("infra/fixtures/pricing_config_exhibit_b.json").read_text()))
+    res = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=30.0,
+                                   flat_squares=10.0, flat_roof_type="tpo_adhered", debug=True))
+
+    checked = 0
+    for li in res["line_items_detail"]:
+        inputs = (li.get("explain") or {}).get("inputs") or {}
+        per_sq, squares = inputs.get("per_sq"), inputs.get("squares")
+        if per_sq is None or not squares:
+            continue
+        checked += 1
+        amount = float(li["amount"])
+        assert abs(float(squares) * float(per_sq) - amount) <= 0.01 + float(squares) * 0.005, (
+            f"{li['key']}: explain says {squares} x {per_sq} = {float(squares) * float(per_sq):,.2f} "
+            f"but the line's amount is {amount:,.2f}"
+        )
+    assert checked >= 3, f"expected several per-square lines to check, saw {checked}"

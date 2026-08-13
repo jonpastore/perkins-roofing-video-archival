@@ -586,3 +586,45 @@ def test_the_unreachable_by_design_note_still_matches_reality():
         "set CLIP-LOCAL t0/t1 and SOURCE-FRAME x/y/w/h or it silently ships unredacted PII. "
         "Verify that, then update core/render_spec.py's note and delete this assertion."
     )
+
+
+def test_render_spec_request_accepts_every_spec_field():
+    """The PUT body model hand-mirrors ClipRenderSpec, and a missing field FAILS SILENTLY.
+
+    Pydantic drops undeclared keys, so an omission is not a 422 — the operator's value is replaced
+    by the default and persisted as if they had chosen it. That is how focus_x (crop centre) and
+    platforms (publish targets) were both inert: the SPA wrote them, render_job read them, and the
+    request model in between simply did not carry them.
+
+    This is the repo's signature defect in its purest form — a correct thing nothing could reach,
+    with a passing test suite over the gap. Add a field to ClipRenderSpec and this tells you to
+    add it to RenderSpecRequest too.
+    """
+    from api.routes.clips import RenderSpecRequest
+    from core.render_spec import ClipRenderSpec
+
+    spec_fields = set(ClipRenderSpec.model_fields)
+    body_fields = set(RenderSpecRequest.model_fields)
+
+    missing = spec_fields - body_fields
+    assert not missing, (
+        f"PUT /clips/{{id}}/render_spec cannot carry {sorted(missing)} — the SPA can set them and "
+        "the render job reads them, but pydantic drops them here and the operator's choice is "
+        "silently replaced by the default. Add them to RenderSpecRequest."
+    )
+
+
+def test_a_put_round_trip_preserves_focus_and_platforms():
+    """The behavioural half: prove the values SURVIVE, not just that the fields exist."""
+    from api.routes.clips import RenderSpecRequest
+    from core.render_spec import ClipRenderSpec
+
+    body = RenderSpecRequest.model_validate(
+        {"focus_x": 0.85, "platforms": ["instagram"], "reframe": True}
+    )
+    spec = ClipRenderSpec.model_validate(body.model_dump())
+
+    assert spec.focus_x == 0.85, "the crop-centre slider is inert again"
+    assert spec.platforms == ["instagram"], (
+        "an operator who picked Instagram only would get the default fan-out"
+    )

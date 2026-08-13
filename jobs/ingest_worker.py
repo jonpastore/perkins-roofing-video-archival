@@ -70,8 +70,45 @@ def _pending_video_ids(s, limit=None):
     return [row[0] for row in q.all()]
 
 
+def _ingest_enabled(db, tenant_id: int) -> bool:
+    """Honour kb.ingest_enabled from tenants.settings.
+
+    The setting has existed since provisioning (core/provision.py) and the KB config screen
+    promises the operator "No new videos will be fetched until re-enabled" — but NOTHING read it,
+    so unticking the box did nothing and the cron kept ingesting. A UI assertion over an empty
+    gap is this repo's signature defect; here the writer existed and the reader did not.
+
+    Fails OPEN on any error, and defaults True: ingest is the pipeline everything downstream
+    depends on, so a malformed settings blob must not silently halt the catalogue. The operator's
+    explicit False is the only thing that stops it.
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+
+    from core.tenant_settings import TenantSettings  # noqa: PLC0415
+
+    try:
+        row = db.execute(
+            text("SELECT settings FROM tenants WHERE id = :tid"), {"tid": tenant_id}
+        ).fetchone()
+        if row is None:
+            return True
+        raw = row.settings if hasattr(row, "settings") else row[0]
+        if not isinstance(raw, dict):
+            return True
+        ts = TenantSettings.load(raw)
+        if ts.kb is None:
+            return True
+        return bool(ts.kb.ingest_enabled)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] ingest_enabled lookup failed for tenant {tenant_id}, assuming enabled: {exc}")
+        return True
+
+
 def _run_for_tenant(db, tenant_id: int, limit=None) -> dict:
     """Per-tenant ingest body. Called by for_each_tenant via run()."""
+    if not _ingest_enabled(db, tenant_id):
+        print(f"[skip] tenant {tenant_id}: kb.ingest_enabled is false")
+        return {"ingested": 0, "errored": 0, "total": 0, "skipped": "ingest_enabled=false"}
     vids = _pending_video_ids(db, limit)
     ingested, errored = 0, 0
     for vid in vids:

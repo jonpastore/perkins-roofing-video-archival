@@ -666,6 +666,41 @@ _CUSTOMER_FOLD_LABEL = "Labour, materials and overhead"
 _CUSTOMER_FOLD_FORMULA = "everything required to install this roof"
 
 
+def _reconciles(squares: Any, per_sq: Any, amount: float) -> bool:
+    """Does `squares x per_sq` equal `amount` within the rounding the display itself introduces?
+
+    Tolerance SCALES with the quantity and is not a flat epsilon. `per_sq` is rounded to 2dp for
+    display while `amount` comes from the unrounded rate, so the printed product drifts by up to
+    half a cent per square: 35 x $783.88 shows $27,435.80 against a true $27,435.76. A flat 2c
+    bound rejected that real, correct row and printed "fixed amount" instead.
+    """
+    try:
+        q, p = float(squares), float(per_sq)
+    except (TypeError, ValueError):
+        return False
+    return abs(q * p - amount) <= 0.01 + abs(q) * 0.005
+
+
+def _basis_that_reconciles(per_sq: Any, amount: float) -> float | None:
+    """The square count for which `count x per_sq == amount`, or None if there isn't a clean one.
+
+    None is a real answer and the caller must honour it by printing NO multiplication. The profit
+    floor is the case that forces this: on a small job the floor raises profit to $2,500 while
+    per_sq stays at the pre-floor $227.27, so no square count makes the sentence true. Falling
+    back to the sloped count printed "8 squares x $227.27" beside $2,500 — off by $682, in the
+    table whose only job is to reconcile. A row that says nothing beats a row that says something
+    false.
+    """
+    try:
+        p = float(per_sq)
+    except (TypeError, ValueError):
+        return None
+    if not p:
+        return None
+    derived = amount / p
+    return round(derived, 2) if _reconciles(round(derived, 2), p, amount) else None
+
+
 def calc_lines_from_estimate(
     result: dict[str, Any], *, audience: str = "internal",
 ) -> list[dict[str, Any]]:
@@ -716,10 +751,14 @@ def calc_lines_from_estimate(
             # Overhead is the one line Tim insists is time-driven, so show the DAYS rather than
             # collapsing to a per-square figure that hides them.
             formula = " + ".join(day_parts)
-        elif per_sq is not None and squares:
+        elif per_sq is not None and squares and _reconciles(squares, per_sq, amount):
             formula = f"{squares:g} squares x ${float(per_sq):,.2f}"
-        elif li.get("per_sq"):
-            formula = f"{result.get('num_squares', 0):g} squares x ${float(li['per_sq']):,.2f}"
+        elif li.get("per_sq") and _basis_that_reconciles(li["per_sq"], amount) is not None:
+            # Basis derived from THIS line, never from result["num_squares"] (the SLOPED count).
+            # A mixed-roof profit line is priced on sloped+flat and printed "30 squares x $100.00"
+            # against $4,000 — 40 squares' worth.
+            _p = float(li["per_sq"])
+            formula = f"{_basis_that_reconciles(_p, amount):g} squares x ${_p:,.2f}"
         else:
             # Config-key names leak internals into a customer document; keep the first clause only.
             # Internal annotations ("NOTE: ...", config key names, pending-Tim asides) must not

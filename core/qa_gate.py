@@ -121,6 +121,13 @@ def seo_hard_failures(
 ) -> list[str]:
     """Return list of HARD Rank Math check keys that are currently failing.
 
+    ⚠️ NO PRODUCTION CALLER (verified 2026-08-13). jobs/article_job.py imports only
+    `is_duplicate` and `verdict` from this module, so a hard Rank Math failure blocks nothing.
+    The only thing asserting otherwise was a TEST CLASS NAME — tests/core/test_seo.py's
+    "Tests for core.qa_gate.seo_hard_failures() integration" — which describes an integration
+    that does not exist. Wiring it would start blocking article publishes, which is a content
+    decision, so it is left disconnected DELIBERATELY rather than by omission.
+
     Hard checks are those that Rank Math marks as required for a passing score
     (keyword placement, density, links, slug length). Soft checks (image alt,
     sentiment word, power word, number in title) are omitted — they should be

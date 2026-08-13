@@ -893,9 +893,25 @@ def _cloud_run_bearer_token() -> str:
 
 
 class RenderSpecRequest(BaseModel):
-    """Body for PUT /clips/{series_id}/render_spec."""
+    """Body for PUT /clips/{series_id}/render_spec.
+
+    ⚠️ THIS HAND-MIRRORS core.render_spec.ClipRenderSpec AND HAS DRIFTED BEFORE. Pydantic drops
+    keys the model does not declare, so a field missing here is not a validation error — the
+    operator's value is silently replaced by the default and persisted. `focus_x` and `platforms`
+    were both missing: the crop-centre slider did nothing, and an operator who ticked Instagram
+    only still got the default instagram+tiktok fan-out, because an empty list falls through to
+    _DEFAULT_PLATFORM in render_job.
+
+    test_render_spec_request_accepts_every_spec_field pins the parity. Add a field to
+    ClipRenderSpec and that test tells you to add it here too.
+    """
     reframe: bool = False
     speaker_tracking: bool = False
+    #: 0=left, 1=right. Read by render_job's crop_filter_9x16 when not speaker-tracking.
+    focus_x: float = 0.5
+    #: Auto-schedule targets; empty = _DEFAULT_PLATFORM. Validated against {instagram, tiktok}
+    #: by ClipRenderSpec, which is what actually enforces it.
+    platforms: list[str] = []
     captions: dict = {}
     speech_cleanup: bool = False
     broll: dict = {}

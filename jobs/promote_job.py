@@ -36,6 +36,26 @@ def _run_for_tenant(db, tenant_id: int, now=None) -> dict:
             # Atomically claim the row so two overlapping cron runs can't both promote it
             # (double-publish guard). The conditional UPDATE is row-locked by the DB; a
             # concurrent run sees 0 rows affected and skips. Portable across PG and SQLite.
+            # ⚠️ KNOWN GAP, NOT FIXED HERE — "promoting" is an ORPHAN STATE on process death.
+            # core.scheduler.CLAIMABLE is ("scheduled", "error"), so nothing ever picks a row
+            # back up out of "promoting": one writer (below), no reader, no reaper, no release.
+            # The `except` further down covers EXCEPTIONS (it sets status="error" and increments
+            # attempts), so the exposed case is the process dying between this claim's commit and
+            # the final one — OOM, a Cloud Run revision swap, or the /internal/promote request
+            # outliving its timeout. The row then becomes invisible to every future run with
+            # attempts never incremented, and the job still reports success. That is the
+            # 277-stranded-rows incident (see core/scheduler.py) one state further along.
+            #
+            # Not fixed in place because both viable fixes are bigger than a patch and one of them
+            # is a schema change to a live table:
+            #   (a) add a `claimed_at` column and reap stale claims — correct, needs a migration,
+            #       and this repo's migration runner has a known ledger defect;
+            #   (b) claim by setting "error" + incrementing attempts BEFORE the work, so a death
+            #       leaves the row claimable and bounded by PROMOTE_MAX_ATTEMPTS — no migration,
+            #       but it changes the meaning of `attempts` and the "published after N earlier
+            #       failure(s)" line, i.e. a state-machine change on the publish path.
+            # Deciding between them is Jon's call. Until then: a row stuck in "promoting" is
+            # stranded and must be reset by hand.
             claimed = (
                 db.query(ScheduledContent)
                 .filter(ScheduledContent.id == r.id,

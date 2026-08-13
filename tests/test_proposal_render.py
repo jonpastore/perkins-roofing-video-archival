@@ -1221,3 +1221,67 @@ def test_a_re_priced_draft_does_not_keep_the_old_build_up():
     # a genuine non-pricing edit (notes, title) keeps them — otherwise the feature evaporates
     renamed = {"total": 43075.0, "estimate_result": {"project_total": 43075.0}, "notes": "hi"}
     assert _carry_internal_calc(prev, renamed)["calc_lines_internal"] == rows
+
+
+# ---------------------------------------------------------------------------
+# THE INVARIANT: a build-up must add up (critic audit, 2026-08-13)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("audience", ["internal", "customer"])
+@pytest.mark.parametrize(
+    "sloped,flat",
+    [(30.0, 10.0), (35.0, 0.0), (12.0, 40.0), (8.0, 3.0), (50.0, 25.0)],
+)
+def test_every_per_square_formula_equals_the_amount_beside_it(sloped, flat, audience):
+    """`N squares x $R` must actually equal the amount printed next to it.
+
+    It did not on any MIXED sloped+flat roof. `_explain` was handed the SLOPED count for every
+    line, so the flat rows printed the sloped quantity ("30 squares x $485.00" against $4,850 —
+    30 x 485 is $14,550) and profit, priced on sloped+flat, printed the sloped count too
+    ("30 squares x $100.00" against $4,000). Amounts and the project total were always correct;
+    only the working shown to the reader was wrong.
+
+    That is the worst place in the product for it. The engine's own comment notes mixed roofs are
+    a large share of the sold book, and this table exists so Tim can check a price against his
+    sheet — a row that does not reconcile discredits the whole document.
+
+    Asserted as an INVARIANT over several roof shapes rather than as fixed numbers, because the
+    specific figures are config-driven and the property is what matters.
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    from core.estimator import QuoteInput, estimate
+    from core.pricing_config import load_config
+    from core.proposal_render import calc_lines_from_estimate
+
+    cfg = load_config(json.loads(
+        Path("infra/fixtures/pricing_config_exhibit_b.json").read_text()
+    ))
+    q = QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=sloped,
+                   flat_squares=flat,
+                   flat_roof_type="tpo_adhered" if flat else None, debug=True)
+    result = estimate(cfg, q)
+
+    checked = 0
+    for line in calc_lines_from_estimate(result, audience=audience):
+        m = re.fullmatch(r"([\d.,]+) squares x \$([\d.,]+)", line["formula"])
+        if not m:
+            continue
+        checked += 1
+        qty = float(m.group(1).replace(",", ""))
+        rate = float(m.group(2).replace(",", ""))
+        amount = float(line["amount_display"].replace("$", "").replace(",", ""))
+        # Same scaled tolerance the renderer uses: per_sq is shown to 2dp, so the printed
+        # product drifts up to half a cent per square against the unrounded amount.
+        assert abs(qty * rate - amount) <= 0.01 + qty * 0.005, (
+            f"[{audience}] {line['key']}: printed '{line['formula']}' = "
+            f"${qty * rate:,.2f} but the amount beside it is ${amount:,.2f}"
+        )
+    # The customer view folds every sloped per-square row into one "everything required to
+    # install this roof" line, so a pure-sloped job legitimately has NOTHING to check here.
+    # Internal always keeps its rows, so that is where the guard belongs — without it a bug that
+    # emitted no per-square formulas at all would pass silently.
+    if audience == "internal":
+        assert checked, "no per-square rows found — the assertion above proved nothing"

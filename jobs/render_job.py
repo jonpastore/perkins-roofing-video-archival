@@ -1284,6 +1284,18 @@ def _run_for_tenant(
     return {"rendered": rendered_count, "skipped": skipped_count, "errored": errored_count}
 
 
+# ⚠️ NO SINGLE-FLIGHT GUARD, unlike every other heavy job (ingest_worker, knowify_sync and
+# companycam_sync all wrap their body in `with _single_flight() as ok:`). Render is also
+# externally triggerable per series via POST /clips/{id}/render with no dedupe, so an operator
+# double-clicking Render — or clicking during the sweep — starts two executions that both pass
+# the gcs_url idempotency check, both pull a ~2 GB source into memory-backed /tmp, and both burn
+# an hour; the loser then violates uq_social_series_part_platform and its whole render is
+# discarded. ScheduledContent is inserted unconditionally rather than get-or-create, so an
+# interleaving can also leave two promote rows for one reel.
+#
+# Not added blind: core.single_flight's lock is process-wide, so wrapping run() would serialise
+# ALL renders rather than deduplicating one series — a throughput change nobody asked for. The
+# right shape keys the lock on series_id. Left for a deliberate change, not a late patch.
 def run(limit: int | None = None, *, series_id: int | None = None) -> dict:
     """Iterate active tenants and render approved MiniSeries parts for each.
 

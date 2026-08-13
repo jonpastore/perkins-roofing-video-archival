@@ -66,8 +66,17 @@ def _tag_id(key: str, default: str) -> str:
             row = db.get(PlatformConfig, key)
             if row and (row.value or "").strip():
                 return row.value.strip()
-    except Exception:  # noqa: BLE001 — config lookup must never break a media fetch
-        pass
+    except Exception as exc:  # noqa: BLE001 — config lookup must never break a media fetch
+        # LOG IT. Falling through is right (a config blip must not break a media fetch), but doing
+        # it silently is not: the override exists precisely because recreating a tag in CompanyCam
+        # mints a NEW id, so the hard-coded default below can be stale. When that happens the sync
+        # filters on a tag that matches nothing, CompanyCam returns 200 with an empty set, the job
+        # logs its usual success line, and the public gallery quietly stops updating.
+        log.warning(
+            "companycam: %s lookup failed, falling back to env/default %r — if the tag was "
+            "recreated in CompanyCam this id is stale and the sync will match nothing: %s",
+            key, default, exc,
+        )
     return os.getenv(key, default).strip()
 
 

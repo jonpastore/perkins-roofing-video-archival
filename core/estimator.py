@@ -685,9 +685,26 @@ def _explain(li: "LineItem", sq: float) -> dict:
     if li.explain:
         return {**li.explain, "result": round(li.amount, 2)}
     if li.per_sq is not None:
+        # Derive the basis from the line itself instead of trusting the caller's `sq`.
+        #
+        # `sq` is the SLOPED square count. On a mixed sloped+flat roof the flat lines are priced
+        # on flat_squares and profit on the combined total, so printing `sq` for them stated
+        # arithmetic that contradicted the amount beside it — "30 squares x $485.00 = $4,850"
+        # when 30 x 485 is 14,550 and the real basis was 10. The amounts and the project total
+        # were always right; only the working shown to the reader was wrong, which is the worst
+        # possible defect in a build-up whose entire purpose is that it reconciles.
+        #
+        # amount = per_sq x basis is precisely what this formula CLAIMS, so if it does not hold
+        # for `sq` then `sq` is the wrong basis by definition. Derive it, and fall back to `sq`
+        # only when the division is unavailable or does not land on a clean quantity.
+        basis = sq
+        if li.per_sq:
+            derived = li.amount / li.per_sq
+            if abs(derived - round(derived, 2)) < 1e-6:
+                basis = round(derived, 2)
         return {
             "formula": "per_sq x squares",
-            "inputs": {"per_sq": round(li.per_sq, 2), "squares": sq},
+            "inputs": {"per_sq": round(li.per_sq, 2), "squares": basis},
             "result": round(li.amount, 2),
         }
     return {"formula": "fixed amount", "inputs": {}, "result": round(li.amount, 2)}

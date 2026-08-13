@@ -281,8 +281,17 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                                     "social_job: cached copy for series=%d part=%d platforms=%s",
                                     post.series_id, post.part, sorted(copy),
                                 )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    # Falling back is correct — a reel must still ship rather than be blocked on
+                    # copy resolution — but doing it SILENTLY is how bug #343 (posts with no
+                    # hashtags at all) went unnoticed. The reel goes out with a generic title and
+                    # the three fixed CORE_HASHTAGS; say so, or nobody ever learns the real copy
+                    # was never resolved.
+                    logger.warning(
+                        "social_job: copy resolution failed series=%d part=%d — publishing with "
+                        "the generic title and core hashtags instead: %s",
+                        post.series_id, post.part, exc,
+                    )
                 _title = _title or f"Perkins Roofing Part {post.part + 1}"
                 idempotency_key = f"series-{post.series_id}-part-{post.part}"
 
@@ -445,5 +454,11 @@ if __name__ == "__main__":
     import sys
 
     logging.basicConfig(level=logging.INFO)
-    print(json.dumps(run(), indent=2))
-    sys.exit(0)
+    totals = run()
+    print(json.dumps(totals, indent=2))
+    # EXIT NON-ZERO WHEN PUBLISHES FAILED. This was a hard-coded sys.exit(0) printed directly
+    # under {"errored": N} — every Instagram and TikTok publish in a run could fail and the Cloud
+    # Run Job execution still went green. A job that reports success while losing the customer's
+    # posts is the same shape as the stale-deploy incident: nothing red anywhere to notice.
+    # jobs/archive_job.py already exits 1 on failure; this brings the publishing job in line.
+    sys.exit(1 if totals.get("errored") else 0)

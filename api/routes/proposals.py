@@ -2285,7 +2285,13 @@ Review &amp; Accept Proposal</a></p>
         )
         return not resend_adapter.is_blocked_message_id(msg_id)
     except Exception as exc:
-        _log.warning("accept-link email failed for token %s: %s", accept_token, exc)
+        # NEVER log accept_token. It is the SOLE authentication for GET /p/{token} (customer
+        # name, address, pricing) and POST /p/{token}/accept, which signs a contract — so a token
+        # in Cloud Logging lets anyone with log-read access accept a contract in the customer's
+        # name, and log readers are a wider group than tenant users.
+        _log.warning(
+            "accept-link email failed for %r (tenant %s): %s", proposal_title, tenant_id, exc
+        )
         return False
 
 
@@ -2296,6 +2302,27 @@ def _lookup_proposal_by_token(db, token: str) -> Proposal | None:
 
 
 def _client_ip(request: Request) -> str:
+    """Client IP for the e-signature record: the LEFTMOST X-Forwarded-For entry.
+
+    Leftmost because the evidentiary value of an ESIGN record is the SIGNER's address, not the
+    load balancer's — that is the deliberate contract pinned by
+    TestESignIP::test_client_ip_uses_x_forwarded_for_leftmost.
+
+    ⚠️ KNOWN AND UNRESOLVED (deepsec scan, 2026-08-13): every hop APPENDS to this header, so the
+    leftmost entry is whatever the client sent. If our ingress does not overwrite or strip a
+    client-supplied X-Forwarded-For, a signer can prepend any address and the IP recorded against
+    their signature is their own choosing — in a dispute, the evidence is attacker-authored.
+    Cloud Run appends the address Google observed rather than replacing the header, which points
+    at leftmost being forgeable here, but that depends on the ingress configuration and was NOT
+    verified against this deployment.
+
+    NOT changed on that inference. Taking the trailing hop instead would record the load
+    balancer for every legitimate signer, which breaks the record in the ordinary case to harden
+    it in the adversarial one — a bad trade to make on a guess. Resolve by confirming what the
+    ingress does with a client-supplied header, then either keep this with a note in the T&C or
+    record observed-and-claimed separately (which needs a column, not a reinterpretation of this
+    one).
+    """
     xff = request.headers.get("x-forwarded-for")
     if xff:
         return xff.split(",")[0].strip()

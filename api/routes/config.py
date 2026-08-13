@@ -173,6 +173,36 @@ ALLOWED_SECRET_IDS: frozenset[str] = frozenset([
     "whisper-token",
 ])
 
+# ---------------------------------------------------------------------------
+# DEPLOYMENT-WIDE secrets: listable, NOT writable through this route.
+# ---------------------------------------------------------------------------
+# `manage_config` is satisfied by `admin`, and `admin` is a PER-TENANT role — granted from
+# tenant_default_admins for the caller's own tenant. These three secrets are not per-tenant:
+# they belong to the whole deployment, so a tenant-2 admin rotating one is a privilege
+# escalation out of their tenant, not a configuration change.
+#
+#   internal-secret         mounted by scripts/deploy.sh and compared per request in api/app.py,
+#                           so overwriting it hands the attacker every /internal/* cron endpoint
+#                           and simultaneously breaks Cloud Scheduler, which still sends the old
+#                           value.
+#   db-password             Terraform-managed; a new version bricks every instance that starts
+#                           afterwards. Full outage, from an ordinary tenant admin account.
+#   google-idp-client-secret  the identity provider's own credential.
+#
+# api/routes/connections.py already reasons this through for its own rotation form — "an
+# arbitrary secret_id from the client would be a privilege hole (rotating internal-secret,
+# db-password, ...)" — and allowlists only harmless integration secrets. This route's allowlist
+# was written from infra/main.tf's secret_ids instead, so it inherited the dangerous ones: a key
+# shaped by its SOURCE rather than by who is allowed to write it.
+#
+# They stay in ALLOWED_SECRET_IDS so GET /config/secrets still reports their status; writes are
+# refused below. Rotation is a deploy/Terraform operation, which is where it already lives.
+PLATFORM_ONLY_SECRET_IDS: frozenset[str] = frozenset([
+    "internal-secret",
+    "db-password",
+    "google-idp-client-secret",
+])
+
 # Subset of ALLOWED_SECRET_IDS that we expect to be provisioned in GCP.
 # Secrets NOT in this set (social/IG/TikTok) are shown as "not provisioned yet".
 _PROVISIONED_SECRET_IDS: frozenset[str] = frozenset([
@@ -430,6 +460,17 @@ def upsert_secret(entry: SecretEntry, claims=Depends(require_role("manage_config
         raise HTTPException(
             status_code=422,
             detail=f"Secret {entry.key!r} is not in the allowed secret list.",
+        )
+    if entry.key in PLATFORM_ONLY_SECRET_IDS:
+        # 403, not 422: the key is real and the caller is authenticated — they are simply not
+        # entitled. See PLATFORM_ONLY_SECRET_IDS for why a per-tenant admin must not rotate a
+        # deployment-wide credential.
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Secret {entry.key!r} is deployment-wide, not per-tenant, and cannot be "
+                "rotated through the API. Rotate it via Terraform / the deploy pipeline."
+            ),
         )
     if not entry.value:
         raise HTTPException(status_code=422, detail="Secret value must not be empty.")
