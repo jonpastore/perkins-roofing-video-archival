@@ -277,6 +277,58 @@ a minute, including the one that found the HIGH in §4a and the one that settled
 It is **not the agent type**, as I wrote earlier in this file. It is foreground vs background. If a
 review matters, run it in the foreground.
 
+## §6 — 4-AGENT AUDIT (2026-08-13, `b480627`)
+
+Architect + critic + code-reviewer + security-reviewer over the whole codebase, run FOREGROUND
+(§4d — background agents return nothing). 19 findings, every one re-verified by hand. Fixed 10,
+documented 8, reverted 1.
+
+### The two that matter
+
+🔴 **CRITICAL — privilege escalation out of a tenant.** `PUT /config/secrets` is gated on
+`manage_config`, satisfied by `admin`, which is granted **per tenant**. `ALLOWED_SECRET_IDS` was
+copied from `infra/main.tf` and so included `internal-secret`, `db-password`,
+`google-idp-client-secret`. A tenant-2 admin rotating `internal-secret` owns every `/internal/*`
+cron endpoint (and breaks Cloud Scheduler, which keeps sending the old value); against
+`db-password` it bricks every new instance. `connections.py` already refuses exactly this for its
+own form. **Now 403.**
+
+🔴 **HIGH — the price build-up did not add up.** On any mixed sloped+flat roof the flat rows and
+profit printed the SLOPED square count: "30 squares × $485.00" beside $4,850. Amounts and totals
+were always right; only the working shown to the reader was wrong — in the document whose whole
+purpose is that Tim can check it, and which went out as a sample email that same day (pure tile,
+so it looked fine). Fixed at both layers by deriving the basis from the line: `amount = per_sq ×
+basis` is what the sentence claims, so a count that fails it is wrong by definition.
+
+### The lesson worth keeping
+
+**The invariant test found more than the reviewer did.** Asserting "every `N squares × $R` equals
+the amount beside it" across five roof shapes and both audiences immediately surfaced two further
+cases the critic never reported, and a 4¢ rounding gap that made my first tolerance too tight.
+*Assert the property, not the reported example.*
+
+**And one finding was wrong.** The scan called the e-signature IP spoofable; I changed it, and
+`TestESignIP::test_client_ip_uses_x_forwarded_for_leftmost` failed. That test encodes a deliberate
+contract — record the SIGNER's address, not the proxy's — and taking the trailing hop would record
+the load balancer for every legitimate signer. The concern is real but turns on whether the
+ingress overwrites a client-supplied header, which was never verified here. **Reverted.** Three
+times in two days a finding did not survive contact with the code; verifying each by hand paid for
+itself every time.
+
+### Needs a decision from Jon (documented in place, not patched)
+
+1. 🔴 **`"promoting"` is an orphan state** — one writer, no reader, no reaper. Process death
+   between the claim and the final commit strands a row forever with `attempts` never
+   incremented: the 277-stranded-rows incident one state further along. Fix is either a
+   `claimed_at` column (migration; the runner has a known ledger defect) or claim-as-error
+   (changes what `attempts` means on the publish path).
+2. 🟡 **`render_job` has no single-flight** and is externally triggerable per series; a
+   double-click starts two hour-long 2 GB renders that collide. `single_flight`'s lock is
+   process-wide, so it needs a per-series key rather than a wrapper.
+3. 🟡 `caption_output` gates nothing (no caller; parses a prompt contract the live path does not
+   use) · `seo_hard_failures` blocks nothing · `abstain_threshold` is shadowed by an env var at
+   2× the value and is marked **do-not-connect**.
+
 ## §5 — STATE
 
 Commits this session, in order:
