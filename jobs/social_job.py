@@ -102,10 +102,63 @@ def _gcs_key_from_url(gcs_url: str) -> tuple[str, str]:
     return bucket, key
 
 
+#: generate_titles speaks "youtube"; the publish target and PLATFORM_PRESETS say "youtube_shorts".
+#: One alias table rather than two vocabularies that drift — this repo's most-repeated defect is a
+#: key shaped by its source instead of by what it varies over.
+_COPY_PLATFORM = {"youtube_shorts": "youtube", "youtube": "youtube"}
+
+
+def _copy_for_part(part: dict, clip_title: str) -> dict:
+    """Per-platform copy for one part: {platform: {title, hashtags, description}}.
+
+    Generated on FIRST PUBLISH and cached into parts_json, not at save time — the save endpoint is
+    an interactive request and three LLM calls per part would hang it, and copy is only worth
+    paying for on parts that actually ship.
+
+    Grounding is the part's title and hook. ponytail: the transcript for [start,end] would ground
+    it better, but that is a query this job does not otherwise need; revisit if the copy reads thin.
+    """
+    from core.clip_select import generate_titles  # noqa: PLC0415
+
+    def _gen(prompt: str) -> str:
+        from app.llm import chat  # noqa: PLC0415
+        return chat(prompt, want_json=False)
+
+    return generate_titles(
+        {"title": clip_title, "text": part.get("hook") or clip_title},
+        gen_fn=_gen,
+    )
+
+
+def _caption_for(platform: str, part: dict, fallback_title: str) -> str:
+    """Caption for ONE platform, held to that platform's hashtag count.
+
+    Was built once and reused for every target, so per-platform copy could not reach a platform
+    even once something generated it. TikTok wants 5 tags and LinkedIn 2; one caption cannot be
+    both.
+    """
+    from core.clip_select import CORE_HASHTAGS  # noqa: PLC0415
+    from core.platform_specs import PLATFORM_PRESETS  # noqa: PLC0415
+    from core.social import build_caption  # noqa: PLC0415
+
+    per_platform = (part.get("copy") or {}).get(_COPY_PLATFORM.get(platform, platform)) or {}
+    title = per_platform.get("title") or part.get("title") or fallback_title
+    tags = per_platform.get("hashtags") or part.get("hashtags") or CORE_HASHTAGS
+
+    # The ceiling, again in code rather than only in the prompt. generate_titles' prompt asks for
+    # the right number; parse_title_output does not enforce it, and TikTok rejects an overrun.
+    limit = (PLATFORM_PRESETS.get(platform) or {}).get("hashtag_count")
+    if limit and len(tags) > int(limit):
+        logger.info("social_job: trimmed %d hashtag(s) for %s", len(tags) - int(limit), platform)
+        tags = tags[:int(limit)]
+
+    return build_caption(title, tags)
+
+
 def _run_for_tenant(db, tenant_id: int) -> dict:
     """Per-tenant social publish body. Called by for_each_tenant via run()."""
     from app.models import MiniSeries, ScheduledContent, SessionLocal, SocialPost  # noqa: PLC0415
-    from core.social import already_posted, build_caption  # noqa: PLC0415
+    from core.social import already_posted  # noqa: PLC0415
 
     any_creds = any(creds_for(p, tenant_id) for p in _PLATFORM_CREDS)
     if not any_creds:
@@ -189,23 +242,48 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                 # when copy generation has run; otherwise the channel's core tags apply —
                 # an empty list here was bug #343 (posts shipped with no hashtags at all).
                 _title = ""
-                _tags: list[str] = []
+                _part: dict = {}
                 try:
                     series = db.get(MiniSeries, post.series_id)
                     if series is not None:
                         parts = series.parts_json or []
                         if post.part < len(parts):
-                            _title = parts[post.part].get("title") or series.title or ""
-                            _tags = parts[post.part].get("hashtags") or []
+                            _part = parts[post.part] or {}
+                            _title = _part.get("title") or series.title or ""
                         else:
                             _title = series.title or ""
+
+                        # Generate the per-platform copy ONCE and cache it. Until this existed,
+                        # generate_titles was never called anywhere outside tests while the comment
+                        # here claimed it wrote these hashtags — so every post shipped with the
+                        # three fixed CORE_HASHTAGS and the per-platform copy was unreachable.
+                        if _part and not _part.get("copy"):
+                            try:
+                                copy = _copy_for_part(_part, _title)
+                            except Exception as gen_exc:  # noqa: BLE001
+                                # Never block a publish on copy generation. The fallback chain
+                                # below still yields a valid caption.
+                                logger.warning(
+                                    "social_job: copy generation failed series=%d part=%d: %s",
+                                    post.series_id, post.part, gen_exc,
+                                )
+                                copy = {}
+                            if copy:
+                                # Reassign the whole list — SQLAlchemy does not track in-place
+                                # mutation of a JSON column, so mutating parts[i] in place would
+                                # be silently dropped at commit.
+                                new_parts = list(parts)
+                                new_parts[post.part] = {**_part, "copy": copy}
+                                series.parts_json = new_parts
+                                _part = new_parts[post.part]
+                                db.commit()
+                                logger.info(
+                                    "social_job: cached copy for series=%d part=%d platforms=%s",
+                                    post.series_id, post.part, sorted(copy),
+                                )
                 except Exception:  # noqa: BLE001
                     pass
-                from core.clip_select import CORE_HASHTAGS  # noqa: PLC0415
-                caption = build_caption(
-                    _title or f"Perkins Roofing Part {post.part + 1}",
-                    _tags or CORE_HASHTAGS,
-                )
+                _title = _title or f"Perkins Roofing Part {post.part + 1}"
                 idempotency_key = f"series-{post.series_id}-part-{post.part}"
 
                 all_done = True
@@ -233,7 +311,8 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
                         pub = _publisher(platform, creds, tenant_id)
                         external_id = pub.publish(
                             video_url=video_url,
-                            caption=caption,
+                            # Per platform, not one caption reused across all of them.
+                            caption=_caption_for(platform, _part, _title),
                             idempotency_key=idempotency_key,
                         )
                     except Exception as pub_exc:  # noqa: BLE001

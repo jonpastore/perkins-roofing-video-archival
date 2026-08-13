@@ -110,3 +110,134 @@ def test_tiktok_refresh_persists_rotated_token(monkeypatch):
     # the token into a secret nothing reads, and the next run would reuse a stale refresh_token.
     assert captured["put"] == ("tiktok", "default", "new-at", "new-rt")
     assert captured["tenant_id"] == 7
+
+
+# ---------------------------------------------------------------------------
+# Per-platform copy actually reaches the platform (Jon, 2026-08-12: "wire it up")
+# ---------------------------------------------------------------------------
+# core.clip_select.generate_titles was never called anywhere outside tests, while the comment in
+# this job said per-part hashtags "are written by" it. Nothing wrote them, so every post shipped
+# with the three fixed CORE_HASHTAGS and the per-platform copy was dead code.
+
+def test_caption_uses_the_platform_copy_when_present():
+    from jobs.social_job import _caption_for
+
+    part = {"title": "Fallback", "copy": {
+        "tiktok": {"title": "Valley done right", "hashtags": ["#a", "#b", "#c"]},
+        "instagram": {"title": "IG version", "hashtags": ["#x"]},
+    }}
+    tt = _caption_for("tiktok", part, "series")
+    ig = _caption_for("instagram", part, "series")
+
+    assert "Valley done right" in tt and "#a #b #c" in tt
+    assert "IG version" in ig and "#x" in ig
+    assert tt != ig, "one caption reused across platforms is the bug this fixes"
+
+
+def test_caption_is_capped_to_the_platform_hashtag_count():
+    """TikTok is strict. generate_titles' prompt asks for 5; nothing in parse_title_output
+    enforces it, so the ceiling has to live here too."""
+    from jobs.social_job import _caption_for
+
+    part = {"copy": {"tiktok": {"title": "T", "hashtags": [f"#t{i}" for i in range(9)]}}}
+    assert _caption_for("tiktok", part, "s").count("#") == 5
+
+
+def test_caption_falls_back_through_flat_tags_then_core_hashtags():
+    from core.clip_select import CORE_HASHTAGS
+    from jobs.social_job import _caption_for
+
+    # no copy, but flat per-part hashtags (the pre-existing shape)
+    flat = _caption_for("tiktok", {"title": "T", "hashtags": ["#flat"]}, "s")
+    assert "#flat" in flat
+
+    # nothing at all -> the channel's core tags, never an empty caption (bug #343)
+    bare = _caption_for("tiktok", {}, "Series Title")
+    assert "Series Title" in bare
+    for tag in CORE_HASHTAGS:
+        assert tag in bare
+
+
+def test_youtube_shorts_target_reads_the_youtube_copy_key():
+    """generate_titles emits "youtube"; the target and PLATFORM_PRESETS say "youtube_shorts".
+    Without the alias the copy silently falls through to CORE_HASHTAGS."""
+    from jobs.social_job import _caption_for
+
+    part = {"copy": {"youtube": {"title": "YT", "hashtags": ["#one", "#two"]}}}
+    assert "YT" in _caption_for("youtube_shorts", part, "s")
+
+
+def test_copy_generation_grounds_on_the_part_and_returns_per_platform(monkeypatch):
+    import app.llm as llm
+    from jobs.social_job import _copy_for_part
+
+    seen = []
+
+    def fake_chat(prompt, want_json=False):
+        seen.append(prompt)
+        return '{"title": "T", "hashtags": ["#a", "#b"], "description": "d"}'
+
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    out = _copy_for_part({"hook": "This valley was never hemmed"}, "Valley repair")
+
+    assert set(out) == {"youtube", "tiktok", "instagram"}
+    assert out["tiktok"]["hashtags"] == ["#a", "#b"]
+    assert any("This valley was never hemmed" in p for p in seen), "the hook must ground the copy"
+    assert any("Valley repair" in p for p in seen)
+
+
+def test_the_publish_loop_generates_caches_and_uses_per_platform_copy(monkeypatch):
+    """THE SEAM. Every test above passes with the wiring removed — I checked by mutation.
+
+    Drives a real row through _run_for_tenant and asserts three things the helpers cannot:
+    generate_titles is actually CALLED, its output is PERSISTED into parts_json, and the caption
+    handed to the publisher is the per-platform one.
+    """
+    import app.llm as llm
+    from app.models import MiniSeries, SocialPost
+
+    _creds(monkeypatch)
+    monkeypatch.setattr(
+        llm, "chat",
+        lambda *a, **k: '{"title": "Hemmed valley", "hashtags": ["#v1","#v2","#v3","#v4","#v5","#v6"], "description": "d"}',
+    )
+    monkeypatch.setattr(SJ, "signed_get_url", lambda *a, **k: "https://signed.invalid/v.mp4",
+                        raising=False)
+    monkeypatch.setattr("adapters.storage.signed_get_url", lambda *a, **k: "https://x.invalid/v.mp4")
+
+    captions: list[str] = []
+
+    class _Pub:
+        def publish(self, video_url, caption, idempotency_key):
+            captions.append(caption)
+            return "ext-1"
+
+    monkeypatch.setattr(SJ, "_publisher", lambda *a, **k: _Pub())
+
+    s = SessionLocal()
+    series = MiniSeries(video_id="vid-copy", title="Series",
+                        parts_json=[{"title": "P1", "start": 0.0, "end": 30.0,
+                                     "hook": "This valley was never hemmed"}],
+                        approved=1)
+    s.add(series)
+    s.flush()
+    post = SocialPost(series_id=series.id, part=0, platform="instagram",
+                      gcs_url="gs://b/k.mp4", status="rendered")
+    s.add(post)
+    s.flush()
+    _seed_reel(s, str(post.id))
+    s.commit()
+    series_id = series.id
+    s.close()
+
+    SJ.run()
+
+    assert captions, "nothing was published — the seam never ran"
+    assert "Hemmed valley" in captions[0], captions[0]
+    assert captions[0].count("#") == 4, f"instagram's limit is 4: {captions[0]!r}"
+
+    s = SessionLocal()
+    cached = (s.get(MiniSeries, series_id).parts_json or [{}])[0].get("copy")
+    s.close()
+    assert cached, "copy was generated but never persisted — it regenerates every run"
+    assert cached["instagram"]["title"] == "Hemmed valley"
