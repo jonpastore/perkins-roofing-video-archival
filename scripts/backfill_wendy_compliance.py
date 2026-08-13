@@ -12,14 +12,17 @@ opposite of what she now wants — so the back catalogue still carries all of it
     239  carry a bare <table> with no border
      90  carry an unlinked "Learn more:" paragraph
 
-The 262 scheduled ones matter most: `promote_job` publishes them from THIS content, so fixing the
-rows here fixes them before they ever go live. Already-published rows also need a WordPress
-re-push — this script reports them; pass --repush to send the updated body.
+The 262 scheduled ones matter most, and fixing the rows here is NOT enough for them: promote_job
+only flips the WordPress STATUS (`wordpress.update_status`) — it never sends the body. A corrected
+row with a stale WP body therefore publishes the very defect this script just repaired. Scheduled
+rows need --repush-scheduled; already-published rows need --repush. --apply alone touches only the
+database.
 
 Reuses the exact same pure functions the generator's ensures use, so the backfill and the gate
 cannot drift apart.
 
-Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/backfill_wendy_compliance.py [--apply] [--repush]
+Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/backfill_wendy_compliance.py \
+           [--apply] [--repush] [--repush-scheduled] [--repush-limit N]
 """
 from __future__ import annotations
 
