@@ -95,20 +95,33 @@ def test_overlapping_runs_are_refused(monkeypatch):
 
 
 def test_the_jobs_output_can_actually_REACH_cloud_logging():
-    """A daily scan whose findings are discarded has run and told nobody.
+    """The module must emit to STDOUT on its own, with nothing else configured.
 
-    Verified in prod 2026-08-13: the API service has no basicConfig, so the root logger sits at
-    WARNING and logger.info is dropped — a logger.warning from jobs/social_job appears in Cloud
-    Logging, a logger.info does not. These jobs run inside that service via /internal/*, and their
-    output IS the product, so the module logger pins its own level.
+    This is a subprocess with the root handlers stripped, because that is prod: the API service
+    calls no basicConfig, so the root logger has NO handlers and records fall to
+    logging.lastResort, which is WARNING-only.
+
+    ⚠️ IT IS A SUBPROCESS FOR A REASON. The first version of this test added its OWN capture
+    handler and therefore PASSED against the broken first fix — which set the logger level but
+    attached no handler, and produced literally nothing when triggered in prod. A test that
+    supplies the very thing under test proves nothing. The level decides whether a record is
+    CREATED; a handler decides whether anything is EMITTED, and only the second is visible to a
+    human.
     """
-    import logging
+    import subprocess
+    import sys
 
-    import jobs.daily_content_job as DC
-    import jobs.portfolio_scan_job as PS
-
-    for mod in (PS, DC):
-        assert mod.logger.getEffectiveLevel() <= logging.INFO, (
-            f"{mod.__name__} would emit nothing in prod — the API service's root logger is at "
-            "WARNING and this module's findings are its entire purpose"
+    for module in ("jobs.portfolio_scan_job", "jobs.daily_content_job"):
+        code = (
+            "import logging\n"
+            "root = logging.getLogger()\n"
+            "[root.removeHandler(h) for h in list(root.handlers)]\n"
+            f"import {module} as M\n"
+            "M.logger.info('CANARY-VISIBLE')\n"
+        )
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        assert "CANARY-VISIBLE" in r.stdout, (
+            f"{module} emits NOTHING to stdout with an empty root handler chain — which is "
+            f"exactly the API service. Its findings are its entire product.\n"
+            f"stdout={r.stdout!r}\nstderr={r.stderr[-400:]!r}"
         )

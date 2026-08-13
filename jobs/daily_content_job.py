@@ -25,19 +25,37 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 
 logger = logging.getLogger(__name__)
 
-# INFO is OFF by default in the API service — there is no basicConfig there, so the root logger
-# sits at WARNING and everything below it is discarded. These jobs run inside that service (via
-# /internal/*), and their OUTPUT IS THE PRODUCT: a daily scan whose findings never reach Cloud
-# Logging has run and told nobody, which is the same "correct thing nothing can reach" defect this
-# codebase keeps producing. Verified empirically: a logger.warning from jobs/social_job appears in
-# prod logs, a logger.info does not.
+# THIS JOB'S OUTPUT IS ITS PRODUCT, and by default none of it reached Cloud Logging.
 #
-# Set on THIS module's logger only, so the fix does not turn on INFO for every library in the
-# process. Records still propagate to uvicorn's root handler, which emits them.
-logger.setLevel(logging.INFO)
+# The API service calls no logging.basicConfig, so the ROOT LOGGER HAS NO HANDLERS AT ALL. A
+# record that reaches an empty handler chain falls through to logging.lastResort, which emits at
+# WARNING and above — so jobs/social_job's logger.warning appears in prod every 15 minutes while
+# every logger.info is silently dropped. Both verified against real prod logs.
+#
+# Setting the level alone was NOT enough (measured: the first attempt still produced nothing);
+# the level decides whether a RECORD is created, a handler decides whether anything is EMITTED.
+# So this attaches an explicit stdout handler, which is what Cloud Run captures.
+#
+# Scoped to this module's logger and propagate=False, so it neither turns on INFO for every
+# library in the container nor double-prints if the service later adds real logging config. The
+# _configured guard keeps a module re-import from stacking handlers.
+def _ensure_stdout_logging() -> None:
+    if getattr(logger, "_perkins_stdout_configured", False):
+        return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger._perkins_stdout_configured = True
+
+
+_ensure_stdout_logging()
 
 #: Clusters generated alongside the pillar. Small on purpose: one campaign a day is a publishing
 #: cadence, not a backfill, and every article costs tokens and a compliance loop.
