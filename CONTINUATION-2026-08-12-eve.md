@@ -315,7 +315,15 @@ ingress overwrites a client-supplied header, which was never verified here. **Re
 times in two days a finding did not survive contact with the code; verifying each by hand paid for
 itself every time.
 
-### Needs a decision from Jon (documented in place, not patched)
+### Needs a decision from Jon — **proposed resolutions written up**
+
+👉 **[docs/AUDIT-OPEN-DECISIONS-2026-08-13.md](docs/AUDIT-OPEN-DECISIONS-2026-08-13.md)** — every
+open finding with options, a recommendation, effort and risk. Summary of the recommendations:
+orphan state → `claimed_at` + reaper (and do `publishing` at the same time); render → per-series
+advisory lock, NOT the process-wide one; e-signature IP → **measure** the header before changing
+the parsing; caption gate → move the live path onto the v5 prompt *before* social creds land, while
+nothing publishes; `seo_hard_failures` → warn-only for two weeks, then decide; `abstain_threshold`
+→ delete the shadowed 0.35.
 
 1. 🔴 **`"promoting"` is an orphan state** — one writer, no reader, no reaper. Process death
    between the claim and the final commit strands a row forever with `attempts` never
