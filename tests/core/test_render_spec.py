@@ -564,13 +564,25 @@ def test_the_unreachable_by_design_note_still_matches_reality():
     )
     assert "CLIP-LOCAL" in src, "the timeline contract must stay stated where the field is defined"
 
-    # And no UI file writes the field. web/ is the only place a writer could live.
-    hits = subprocess.run(
-        ["grep", "-rl", "redact_regions", "web/src"],
+    # And no UI file ORIGINATES a region.
+    #
+    # ⚠️ READ THIS BEFORE TRUSTING THE ASSERTION. A name grep detects an AUTHOR, not a WRITER.
+    # ClipStudio already PUTs this field back today — handleSave sends the whole spec object,
+    # which carries whatever the GET returned, including keys it has no UI and no TS type for.
+    # This grep is blind to that by construction and always will be. It answers exactly one
+    # question: has someone added a box-drawing tool that NAMES the field? That is the question
+    # the docstring's claim depends on, so it is worth asserting — but it is not "nothing writes
+    # this", and a green run here is not evidence that regions are safe from the SPA.
+    # Comment lines are excluded, or this fails the moment someone EXPLAINS the field in the SPA —
+    # which happened immediately, in the ClipStudio comment describing this very round-trip.
+    raw = subprocess.run(
+        ["grep", "-rn", "redact_regions", "web/src"],
         capture_output=True, text=True,
-    ).stdout.split()
+    ).stdout.splitlines()
+    hits = [ln for ln in raw
+            if not ln.split(":", 2)[-1].lstrip().startswith(("//", "*", "/*"))]
     assert hits == [], (
-        f"a UI writer for redact_regions now exists ({hits}) — that is good, but it must set "
-        "CLIP-LOCAL t0/t1 and SOURCE-FRAME x/y/w/h, or it silently ships unredacted PII. "
+        f"a UI now names redact_regions ({hits}) — if that is a marking tool, good, but it must "
+        "set CLIP-LOCAL t0/t1 and SOURCE-FRAME x/y/w/h or it silently ships unredacted PII. "
         "Verify that, then update core/render_spec.py's note and delete this assertion."
     )

@@ -661,7 +661,15 @@ def _proposal_row(row: Proposal, events: list | None = None) -> dict:
         # serializer feeds every proposal read, and the SPA only needs to know the breakdown
         # EXISTS (to enable the checkbox next to View PDF), never the rows themselves. Shipping a
         # boolean instead of role-filtering the payload means a new read path cannot leak profit
-        # by forgetting the filter. The rows leave only as a PDF, via ?explain=1.
+        # by forgetting the filter.
+        #
+        # ⚠️ This strips `calc_lines_internal` ONLY. It is NOT a claim that no profit reaches a
+        # `quoting_view` caller — two other things already do, both known and both accepted by
+        # Jon on 2026-08-12 while the tool is being used by a small internal group to validate
+        # data: `estimate_result.profit_dollars`, and `calc_lines` itself when a sender ticked
+        # "Show how this price was built" with the INTERNAL audience (Quoting.tsx's radio), since
+        # _freeze_calc_breakdown stores those rows under the unstripped key. BOTH MUST BE CLOSED
+        # BEFORE PRODUCTION — see the pre-production gate in the 2026-08-12-eve continuation.
         "quote_snapshot": _snapshot_without_internal_calc(row.quote_snapshot),
         "calc_breakdown_available": bool((row.quote_snapshot or {}).get("calc_lines_internal")),
         "selected_tier": row.selected_tier,

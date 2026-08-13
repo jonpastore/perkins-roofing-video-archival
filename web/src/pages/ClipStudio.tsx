@@ -911,6 +911,13 @@ function RenderOptionsPanel({
   const [open, setOpen] = useState(false);
   const [spec, setSpec] = useState<ClipRenderSpec>(DEFAULT_SPEC);
   const [loading, setLoading] = useState(false);
+  // Save is BLOCKED until the GET lands. handleSave PUTs JSON.stringify(spec), and DEFAULT_SPEC
+  // does not carry every field the server stores — redact_regions is not even in this file's
+  // ClipRenderSpec type; it only exists on the object because loadSpec's response put it there.
+  // So a Save inside the fetch window would PUT a spec missing that key and the server would
+  // default it back to [], silently deleting an operator's PII regions. Same read-then-echo
+  // round-trip that deleted the frozen price build-up in proposals.py today.
+  const [specLoaded, setSpecLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -919,7 +926,7 @@ function RenderOptionsPanel({
     setLoading(true);
     apiFetch(`/clips/${seriesId}/render_spec`)
       .then((r) => r.ok ? r.json() : null)
-      .then((data: ClipRenderSpec | null) => { if (data) setSpec(data); })
+      .then((data: ClipRenderSpec | null) => { if (data) { setSpec(data); setSpecLoaded(true); } })
       .catch(() => {})
       .finally(() => setLoading(false));
   }
@@ -1048,7 +1055,15 @@ function RenderOptionsPanel({
                 <input
                   type="checkbox"
                   checked={spec.audio_enhance}
-                  onChange={(e) => setSpec({ ...spec, audio_enhance: e.target.checked })}
+                  // Clearing audio_wind here is what makes the disabled state below honest.
+                  // Without it, tick wind -> untick enhance leaves {audio_wind: true,
+                  // audio_enhance: false} in the payload: a flag the render silently ignores,
+                  // set from the UI, with the box greyed out so nobody can see or clear it.
+                  onChange={(e) => setSpec({
+                    ...spec,
+                    audio_enhance: e.target.checked,
+                    audio_wind: e.target.checked ? spec.audio_wind : false,
+                  })}
                   style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
                 />
                 <span style={{ fontSize: 12, color: BRAND.sub }}>Denoise + compress + loudnorm (EBU R128, -14 LUFS)</span>
@@ -1267,11 +1282,11 @@ function RenderOptionsPanel({
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
                 <Button
                   variant="ghost"
-                  disabled={saving}
+                  disabled={saving || !specLoaded}
                   onClick={handleSave}
                   style={{ padding: "5px 12px", fontSize: 13 }}
                 >
-                  {saving ? "Saving…" : "Save options"}
+                  {saving ? "Saving…" : !specLoaded ? "Loading…" : "Save options"}
                 </Button>
                 {msg && (
                   <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>

@@ -275,10 +275,17 @@ class ClipRenderSpec(BaseModel):
     #:
     #: ⚠️ NOT REACHABLE FROM THE UI — DELIBERATELY, AS OF 2026-08-12. This field is READ-ONLY in
     #: practice: the render path consumes it (jobs/render_job.py) and it is validated on the way
-    #: in (api/routes/clips.save_render_spec_route), but NOTHING PRODUCES A REGION. There is no
+    #: in (api/routes/clips.save_render_spec_route), but NOTHING ORIGINATES A REGION. There is no
     #: box-drawing tool. The only way to set one is a hand-computed
     #: ``PUT /clips/{id}/render_spec``. Treat this as a working engine with no steering wheel,
     #: not as a shipped feature.
+    #:
+    #: ⚠️ "No writer" is about ORIGINATION, not traffic. ClipStudio's render-options panel DOES
+    #: PUT this field back — `handleSave` sends the whole spec object, which carries whatever the
+    #: GET returned, including regions it has no UI for and no TypeScript field for. That is
+    #: round-trip echo, not authoring, and it is why grepping web/src for the field name finds
+    #: nothing while the SPA still writes it. It also made an early Save destructive until the
+    #: panel started blocking Save until its GET lands.
     #:
     #: Why it was left that way rather than wired to a quick UI: the module's whole doctrine is
     #: that a HUMAN confirms the box (see core/video_redact — a blur is a guess about how much

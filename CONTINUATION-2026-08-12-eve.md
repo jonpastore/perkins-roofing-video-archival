@@ -304,9 +304,25 @@ Rules honoured: no deploy, no metal-warranty page edits, no release of the 7 `he
 
 ### Do this first on resume
 
-1. 🔴 **Jon's call on `profit_dollars`** (§4a.1) — a `sales` user can read the profit on any
-   proposal today, and it is not something to change quietly because the SPA's revision maths
-   depends on it. This is the highest-value open decision in this doc.
+1. 🔴 **PRE-PRODUCTION GATE — profit is readable by `quoting_view`/`estimating_view` and that is
+   ACCEPTED FOR NOW.** Jon, 2026-08-12: *"profit dollar ok for now we will hide debug option when
+   we clear to production. right now we need to validate data and only high level people are
+   looking."* So this is a DEFERRAL, not a dismissal, and it is the thing most likely to be
+   forgotten. **Three separate exposures must all be closed before the tool reaches anyone
+   outside the current small internal group:**
+   - `estimate_result.profit_dollars` — `estimator.py:95` strips only `calculation_trace` and
+     per-line `explain`; `core/estimator.py:818` emits the number. Read via
+     `GET /quoting/proposals/{id}`.
+   - `calc_lines` with the **internal** audience — `_freeze_calc_breakdown` stores those rows
+     under the unstripped key, so ticking "Show how this price was built → Internal" writes profit
+     rows that `_snapshot_without_internal_calc` does NOT remove. Only `calc_lines_internal` is
+     stripped.
+   - the debug trace now persisted by `e7f4177`, served by `GET /estimator/estimates` to
+     `estimating_view`. Harmless *today* only because `/rates` already serves the same fields to
+     the same role — so closing this one means closing `/rates` too, or it achieves nothing.
+
+   ⚠️ Note the trap: hiding the debug OPTION does not hide the DATA. Two of the three above are
+   emitted with no debug flag involved at all.
 2. **Look at an explain PDF in a live environment** (§4) — the only part of Jon's ask that has not
    been seen working end to end. Gotenberg is not running locally.
 3. **The redaction work has still had no second pair of eyes** beyond my own execution evidence.

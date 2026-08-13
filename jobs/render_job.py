@@ -382,8 +382,13 @@ def _apply_track_a_engines(
             logger.warning("audio_enhance skipped (non-fatal): %s", exc)
     elif getattr(spec, "audio_wind", False):
         # audio_wind only modifies the enhance chain, so without it the render silently ignores
-        # a flag the operator deliberately set. The UI disables the box in this state; this
-        # catches the hand-written PUT, which is the only other writer.
+        # a flag the operator deliberately set.
+        #
+        # This is NOT only a hand-written-PUT case, as an earlier version of this comment claimed:
+        # ClipStudio greys the wind box out when Audio enhance is off but did not CLEAR it, so
+        # tick-wind-then-untick-enhance PUT this exact state from the UI with the box disabled so
+        # nobody could see or undo it. The UI now clears it; this stays as the backstop for any
+        # other writer, and for rows already saved in that state.
         logger.warning(
             "audio_wind is set but audio_enhance is off — the wind profile only modifies that "
             "chain, so it has NO effect on this render: series=%d part=%d",
