@@ -175,6 +175,43 @@ _LLM_FIXABLE = {"seo_ranking", "answer_first"}
 _COMPLIANCE_MAX_ITERS = 4
 
 
+def finalize_article(fields: dict, ctx: dict, keyword: str, db=None) -> None:
+    """THE deterministic finalize: every structural ensure, then the repair pass. In place.
+
+    One ordered list, one caller-visible entry point. There used to be FOUR orderings of these
+    same transforms — generate_article (repair BEFORE the ensures), generate_scored_article (an
+    85-line hand-inlined fork of the ensures, missing slug enforcement, _ensure_faq_headings,
+    _ensure_tel_links and _relativize_internal_links), scripts/reprocess_articles (correct), and
+    scripts/backfill_wendy_compliance (six hand-picked steps and no gate). They produced
+    different articles from the same input, and the divergences were invisible because no test
+    compared two orchestrators.
+
+    ORDER IS LOAD-BEARING, and almost none of it is enforced by anything but comments. The two
+    that bite hardest:
+      * ensures BEFORE repair. _reapply_fixable_ensures ends in _build_article_jsonld, which
+        rebuilds jsonld from faq_json + _video_jsonld ONLY and therefore WIPES the VideoObject
+        nodes _sync_video_jsonld writes. Repair has to follow to restore them.
+      * _ensure_internal_links BEFORE _relativize_internal_links (inside the ensures). Relativize
+        erases the absolute BASE_URL string _append_service_links guards on; that exact pair
+        produced the 2-4 related-links blocks on 183 of 183 articles.
+
+    Repair is fail-open by the same convention as _apply_repair's other callers: a repair error
+    ships the article unrepaired rather than blocking it. It is skipped entirely without a db,
+    which is what keeps this off the unstamped-SessionLocal failure class.
+    """
+    _reapply_fixable_ensures(fields, ctx, keyword, db=db)
+    if db is None:
+        return
+    try:
+        fields["content_md"], fields["jsonld_json"], issues = _apply_repair(
+            fields.get("content_md", ""), fields.get("jsonld_json") or [],
+            keyword, fields.get("meta", ""), db, ctx.get("pillar_slug"))
+        if issues:
+            fields.setdefault("qa_checks", []).extend(issues)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
+
+
 def _compliance_gate(fields: dict, ctx: dict, keyword: str, db,
                      llm=None) -> tuple[list[dict], bool]:
     """LOOP until THE Wendy compliance checklist (core.article_criteria) is fully
@@ -184,7 +221,22 @@ def _compliance_gate(fields: dict, ctx: dict, keyword: str, db,
     all-pass bool). A non-green return means the article is NOT publishable."""
     from core.article_criteria import check_compliance, failing  # noqa: PLC0415
 
-    known = _repair_inputs(db)["known_video_ids"] if db is not None else set()
+    _inputs = _repair_inputs(db) if db is not None else {}
+    known = _inputs.get("known_video_ids", set())
+
+    # RESOLVE THE PILLAR KEY ONCE, HERE, AND USE THE RESOLVED SLUG EVERYWHERE BELOW.
+    # ctx["pillar_slug"] is a topic KEY (metal-roof-maintenance), not an article slug
+    # (eight-tips-for-florida-metal-roofs). Three places disagreed about that:
+    # core.article_repair._append_pillar_link linked the RESOLVED slug, _ensure_internal_links
+    # linked the raw KEY (a dead link whenever the key is not itself an article), and the gate
+    # searched hrefs for the KEY. So repair wrote a correct link the gate could not see, and
+    # `pillar_link` failed forever while reporting fixable=True — burning every gate iteration
+    # then blocking the article. check_compliance matches by substring, so the resolved slug
+    # also satisfies the common case where the key IS contained in it.
+    _pmap = _inputs.get("pillar_map") or {}
+    _pkey = (ctx or {}).get("pillar_slug")
+    if _pkey and _pmap.get(_pkey):
+        ctx = {**ctx, "pillar_slug": _pmap[_pkey]}
 
     def _run():
         return check_compliance(
@@ -198,16 +250,8 @@ def _compliance_gate(fields: dict, ctx: dict, keyword: str, db,
         fails = failing(comp)
         if not fails:
             break
-        # 1. Deterministic pass: ensures rebuild FAQPage, so re-sync jsonld via repair
-        #    afterwards or the VideoObject repair adds gets dropped.
-        _reapply_fixable_ensures(fields, ctx, keyword, db=db)
-        if db is not None:
-            try:
-                fields["content_md"], fields["jsonld_json"], _ = _apply_repair(
-                    fields.get("content_md", ""), fields.get("jsonld_json") or [],
-                    keyword, fields.get("meta", ""), db, ctx.get("pillar_slug"))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("compliance-gate repair re-sync failed for %r: %s", keyword, exc)
+        # 1. The deterministic pass — the same finalize every other path uses.
+        finalize_article(fields, ctx, keyword, db=db)
         comp = _run()
         fails = failing(comp)
         if not fails:
@@ -947,30 +991,22 @@ def generate_article(
     # Append VideoObject entries for each grounded source video
     jsonld_list.extend(jsonld_video_list)
 
-    # ── 6b. Deterministic repair + QA pass (core.article_repair) ────────────
-    # Corrects/strips corrupted video ids, invented images, dead relative links,
-    # dead staging hosts, and resyncs VideoObject jsonld — before publish. Never
-    # blocks: repair issues are appended to qa_checks for visibility only, since
-    # the rot they flag was already fixed (see core.article_repair's docstring).
-    try:
-        with _stamped_session(tenant_id) as _repair_db:
-            content, jsonld_list, repair_issues = _apply_repair(
-                content, jsonld_list, keyword, article.get("metaDescription") or "", _repair_db, ctx.get("pillar_slug"))
-        qa_checks.extend(repair_issues)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
-
-    # ── 6c. Compliance gate — the SAME finalize + Wendy checklist the scored path runs.
-    #        generate_article historically skipped the structural ensures (TOC, internal
+    # ── 6b/6c. Finalize + compliance gate — the SAME finalize the scored path runs.
+    #        This used to run _apply_repair HERE, before the ensures, and then the ensures
+    #        separately below: repair-before-ensures on this path, ensures-before-repair on
+    #        every other. Two orderings of the same transforms produced different articles,
+    #        and one of them lost body copy (see _ensure_learn_more_links). It is now one
+    #        call. generate_article historically skipped the structural ensures (TOC, internal
     #        links, curated image, footer, …); apply them here and REFUSE to publish a
     #        non-compliant article live. One process, one standard (core.article_criteria).
     meta_out = article.get("metaDescription") or ""
     compliant, compliance = None, []
     try:
         _fields = {"content_md": content, "faq_json": faq, "title": title,
-                   "meta": meta_out, "slug": slug, "jsonld_json": jsonld_list}
+                   "meta": meta_out, "slug": slug, "jsonld_json": jsonld_list,
+                   "qa_checks": qa_checks}
         with _stamped_session(tenant_id) as _cg_db:
-            _reapply_fixable_ensures(_fields, ctx, keyword, db=_cg_db)
+            finalize_article(_fields, ctx, keyword, db=_cg_db)
             compliance, compliant = _compliance_gate(_fields, ctx, keyword, _cg_db, llm=llm)
         content, title = _fields["content_md"], _fields["title"]
         faq, jsonld_list, meta_out = _fields["faq_json"], _fields["jsonld_json"], _fields["meta"]
@@ -1717,6 +1753,13 @@ def _ensure_tel_links(content_md: str) -> str:
     return _repair_tel_hrefs(content_md or "")[0]
 
 
+# A relative href with no leading slash and no scheme — the form WordPress strips, so the
+# anchor reaches the reader as un-clickable text. Rootable in place; see _ensure_learn_more_links.
+_SLASHLESS_HREF_RE = re.compile(
+    r'(<a\s[^>]*href\s*=\s*)"(?!/|https?://|#|mailto:|tel:)([a-z0-9][a-z0-9-]*)/?"',
+    re.IGNORECASE)
+
+
 def _ensure_learn_more_links(content_md: str) -> str:
     """Drop any "Learn more:" paragraph that isn't actually a link.
 
@@ -1729,11 +1772,26 @@ def _ensure_learn_more_links(content_md: str) -> str:
     confidently wrong internal link is worse than no link — the related-links block already
     carries the real internal linking. If the model DID emit a proper <a>, the paragraph is kept
     untouched.
+
+    ROOTING COMES FIRST, and that is a correctness fix, not a tidy-up. A slashless
+    href="roof-repair-services" is a pointer that CAN be saved — core.article_repair.
+    _repair_relative_links roots it to /roof-repair-services/ — but _is_linked calls it dead
+    (WordPress strips it), so judging before rooting DELETED the whole paragraph. That made the
+    result depend on pass order: scripts/backfill_wendy_compliance ran anchor repair first and
+    kept the copy, the compliance gate ran this first and destroyed it. Same input, two
+    orchestrators, one silently losing body text. Rooting here removes the ordering dependency
+    instead of documenting it — and it is safe to root a slug that turns out not to exist,
+    because _repair_relative_links still unwraps a genuinely dead link afterwards. That pass
+    owns the "is this slug real" decision; this one must not pre-empt it by deleting the copy.
     """
     from core.article_criteria import _is_linked  # noqa: PLC0415
 
+    def _root(m: "re.Match") -> str:
+        return f'{m.group(1)}"/{m.group(2)}/"'
+
     def _sub(m: "re.Match") -> str:
-        return m.group(0) if _is_linked(m.group(0)) else ""
+        seg = _SLASHLESS_HREF_RE.sub(_root, m.group(0))
+        return seg if _is_linked(seg) else ""
     return _LEARN_MORE_P_RE.sub(_sub, content_md or "")
 
 
@@ -1756,12 +1814,21 @@ def _ensure_footer_link(content_md: str) -> str:
     Same pattern as _ensure_video_link/_ensure_article_image: deterministic and append-only,
     never invented. Idempotent — a second pass (e.g. a regen job re-running this on an already
     processed body) won't double the footer.
+
+    It also RETIRES the old channel-ID URL, because nothing else on a generate path did. The
+    gate's `subscribe_cta` criterion fails on the legacy URL and declares itself fixable=True,
+    but the only rewrite in the codebase was an inline .replace inside
+    scripts/backfill_wendy_compliance — so a freshly generated article carrying the old URL
+    burned every gate iteration and then blocked. The channel moved to the @handle; the
+    channel-ID form is retired, not an alternative spelling.
     """
-    if not content_md or _YOUTUBE_FOOTER_TEXT in content_md:
-        return content_md
-    from core.brand_identity import YOUTUBE_CHANNEL_URL  # noqa: PLC0415
+    from core.brand_identity import YOUTUBE_CHANNEL_URL, YOUTUBE_CHANNEL_URL_LEGACY  # noqa: PLC0415
+    c = (content_md or "").replace(YOUTUBE_CHANNEL_URL_LEGACY, YOUTUBE_CHANNEL_URL).replace(
+        "https://youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg", YOUTUBE_CHANNEL_URL)
+    if not c or _YOUTUBE_FOOTER_TEXT in c:
+        return c
     footer = f'<p>{_YOUTUBE_FOOTER_TEXT} <a href="{YOUTUBE_CHANNEL_URL}">{YOUTUBE_CHANNEL_URL}</a></p>'
-    return f"{content_md}\n{footer}"
+    return f"{c}\n{footer}"
 
 
 _ABS_INTERNAL_RE = re.compile(r'href="https?://(?:www\.)?perkinsroofing\.net(/[^"]*)"', re.IGNORECASE)
@@ -1775,8 +1842,17 @@ def _relativize_internal_links(content_md: str) -> str:
     reviewer to the PROD site, and they couple the body to one host. Relative paths resolve on
     whatever host serves the page (staging is a clone with the same pages; prod after cutover).
     External links (youtube, floridabuilding.org, manufacturers) are left untouched.
+
+    Also strips a /blog/ path segment, which is the ONLY fixer for the gate's `no_blog`
+    criterion. That criterion has always been marked fixable=True and nothing implemented it:
+    core.article_repair._repair_relative_links cannot even match an href with an internal
+    slash, so an article carrying /blog/roof-repair/ failed every gate iteration and then
+    blocked. It lives here rather than in the repair pass because this is an ENSURE — it runs
+    whether or not a db is available, and the gate checks no_blog on every path.
     """
-    return _ABS_INTERNAL_RE.sub(r'href="\1"', content_md or "")
+    from core.article_repair import BLOG_PATH_RE  # noqa: PLC0415
+    out = _ABS_INTERNAL_RE.sub(r'href="\1"', content_md or "")
+    return BLOG_PATH_RE.sub(r"\1/", out)
 
 
 def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
@@ -2585,57 +2661,19 @@ def generate_scored_article(
     # ── Final deterministic guarantees ──────────────────────────────────────
     # Applied AFTER the refine loop so the returned article provably passes every
     # fixable check regardless of LLM behaviour.
+    #
+    # This used to be ~85 lines of hand-inlined ensures — a FORK of
+    # _reapply_fixable_ensures that had drifted, silently omitting slug enforcement,
+    # _ensure_faq_headings, _ensure_tel_links and _relativize_internal_links. Those ran only
+    # if the compliance gate later found a failure, and the gate short-circuits its ensure
+    # pass when the article is already green. Net effect on the LIVE path (api/routes/topics
+    # calls this): rm_internal_link is satisfied by the single relative pillar link, so the
+    # absolute perkinsroofing.net service hrefs written by _append_service_links were never
+    # relativized and the gate stayed green on them.
 
-    # 1. Video link (video check)
-    fields["content_md"] = markdownish_to_html(
-        _ensure_video_link(fields.get("content_md", ""), keyword, db=db))
-
-    # 2. Meta description (meta_present + meta_len checks)
-    fields["meta"] = _clamp_meta(fields.get("meta", ""), fields.get("title", ""),
-                                 fields.get("content_md", ""), keyword)
-
-    # 3. FAQ (faq + faq_count checks): ensure ≥4 pairs
-    if not fields.get("faq_json"):
-        fields["faq_json"] = _fallback_faq(keyword, fields.get("content_md", ""))
-    elif len(fields["faq_json"]) < 4:
-        extra = _fallback_faq(keyword, fields.get("content_md", ""))
-        existing_qs = {f["q"].lower() for f in fields["faq_json"]}
-        for item in extra:
-            if item["q"].lower() not in existing_qs and len(fields["faq_json"]) < 4:
-                fields["faq_json"].append(item)
-
-    # 4. Title: keyword_in_title + title_len (30–65 chars), then rm_title_number.
-    #    Order matters: _ensure_title owns the 30-65 band and the keyword, so the number goes on
-    #    after and re-checks both rather than fighting it.
-    fields["title"] = _ensure_title(fields.get("title", ""), keyword)
-    fields["title"] = _ensure_title_number(fields["title"], keyword)
-
-    # 4b. rm_kw_in_img_alt — give the article its source video's thumbnail (a real, relevant
-    #     image), then caption it. Order matters: supply the image before captioning it.
-    fields["content_md"] = _ensure_article_image(fields.get("content_md", ""), keyword)
-    fields["content_md"] = _ensure_img_alt_keyword(fields.get("content_md", ""), keyword)
-
-    # 5. Headings: ensure ≥1 <h2> in content_md, and the keyword in a heading (rm_kw_in_heading)
-    fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
-    fields["content_md"] = _ensure_keyword_in_heading(fields.get("content_md", ""), keyword)
-
-    # 6. Answer-first lede: first ~200 plain-text chars must contain a sentence
-    fields["content_md"] = _ensure_answer_first(
-        fields.get("content_md", ""), keyword, fields.get("faq_json") or [])
-
-    # 6b. Keyword in the intro window (rm_kw_in_intro) — deterministic, so seo_ranking no longer
-    #     depends on the stochastic LLM re-refine landing the keyword early.
-    fields["content_md"] = _ensure_keyword_in_intro(fields.get("content_md", ""), keyword)
-
-    # 7. <h2 id="..."> anchors, then STRIP the visible TOC block. Wendy, 2026-07-28: the theme
-    #    builds the TOC in the sidebar from the H2s, so ours duplicated it in the content area.
-    #    ensure_toc still runs because it is what stamps the ids their sidebar links to.
-    from core.seo import ensure_toc  # noqa: PLC0415
-    fields["content_md"] = _strip_toc(ensure_toc(fields.get("content_md", "")))
-    fields["content_md"] = _ensure_learn_more_links(fields.get("content_md", ""))
-    fields["content_md"] = _ensure_table_borders(fields.get("content_md", ""))
-
-    # 7. Wordcount > 300: if still short after all fixes, attempt one more refine
+    # The emergency refine is an LLM step, not a transform, so it runs BEFORE the finalize —
+    # which then applies every ensure to whatever it returns. It used to sit in the middle of
+    # the inlined block and re-run two ensures by hand afterwards; those are now redundant.
     if _word_count_str(fields.get("content_md", "")) <= 300:
         logger.warning(
             "generate_scored_article %r: body still ≤300 words before final score; "
@@ -2643,37 +2681,14 @@ def generate_scored_article(
         # Same seam as the main loop: refine is fail-open and shortens, so go through the guard.
         fields = _refine_without_regressing_length(fields, keyword, llm=llm)
         fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
-        fields["content_md"] = _ensure_heading(fields.get("content_md", ""), keyword)
-        fields["content_md"] = _ensure_answer_first(
-            fields.get("content_md", ""), keyword, fields.get("faq_json") or [])
         if _word_count_str(fields.get("content_md", "")) <= 300:
             logger.error(
                 "generate_scored_article %r: body still ≤300 words after emergency refine; "
                 "wordcount check will fail — content may be incomplete", keyword)
 
-    # 7b. Internal links (REQUIRED): cluster -> pillar + 1-3 contextual services links.
-    #     Placed after the emergency-refine block for the same reason as the footer below.
-    fields["content_md"] = _ensure_internal_links(fields.get("content_md", ""), keyword, ctx)
-
-    # 8. Footer (REQUIRED on every article): YouTube subscribe CTA. Placed last, after the
-    #    emergency-refine block above (which can regenerate content_md wholesale), so nothing
-    #    downstream of this point can drop it.
-    fields["content_md"] = _ensure_footer_link(fields.get("content_md", ""))
-
-    jsonld = _build_article_jsonld(fields, ctx)
-
-    # ── Deterministic repair + QA pass (core.article_repair) ─────────────────
-    # Same stage as generate_article's batch path. Best-effort: only runs when a
-    # DB session is available — every current caller of generate_scored_article
-    # passes one; skipping otherwise (rather than opening an ad-hoc unstamped
-    # session) keeps this off the C1 unstamped-SessionLocal failure class.
-    if db is not None:
-        try:
-            fields["content_md"], jsonld, repair_issues = _apply_repair(
-                fields.get("content_md", ""), jsonld, keyword, fields.get("meta", ""), db, ctx.get("pillar_slug"))
-            fields.setdefault("qa_checks", []).extend(repair_issues)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("article_repair failed for %r, shipping unrepaired: %s", keyword, exc)
+    fields["content_md"] = markdownish_to_html(fields.get("content_md", ""))
+    finalize_article(fields, ctx, keyword, db=db)
+    jsonld = fields.get("jsonld_json") or []
 
     result = _score(fields, jsonld)
 

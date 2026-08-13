@@ -109,6 +109,13 @@ _NO_HREF_A_RE = re.compile(
     r'<a(?![a-z])(?![^>]*\b(?:href|id|name)\s*=)[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 
 _MYFTP_RE = re.compile(r'(href|src)="https?://[^/"]*\.myftpupload\.com(/[^"]*)?"', re.IGNORECASE)
+# Permalinks on this site are top-level; /blog/ is not a real path segment. The gate has always
+# had a `no_blog` criterion marked fixable=True, and NOTHING implemented the fix —
+# _repair_relative_links cannot match an href with an internal slash — so an article carrying
+# one failed the gate on every iteration and then blocked. Applied by
+# jobs.article_job._relativize_internal_links (an ENSURE, so it runs with or without a db);
+# the remaining slug is then judged by _repair_relative_links like any other internal link.
+BLOG_PATH_RE = re.compile(r'((?:href|src)=")(?:https?://[^/"]*)?/blog/', re.IGNORECASE)
 
 _VIDEO_URL_ID_RE = re.compile(r"v=([A-Za-z0-9_-]{11})")
 # Only an <iframe> is a playable embed. Google grants VideoObject schema to embedded video, not

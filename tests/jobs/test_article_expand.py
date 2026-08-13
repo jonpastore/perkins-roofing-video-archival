@@ -897,3 +897,72 @@ def test_ensure_video_link_does_not_stack_orphan_watch_headings(monkeypatch):
     assert out.count("Watch:") == 1, "the stripped embed must not leave its heading behind"
     out2 = _ensure_video_link(out, "roofing", db=_NothingIsKnown())
     assert out2.count("Watch:") == 1, "re-running must not stack a second heading"
+
+
+def test_finalize_article_is_idempotent_and_preserves_salvageable_copy():
+    """finalize(finalize(x)) == finalize(x), on a fixture carrying the things that broke.
+
+    This is the test that did not exist while FOUR orchestrators each defined their own order
+    for the same transforms: _reapply_fixable_ensures had one test (a slug assertion), and
+    nothing compared two orderings. It pins the invariants that were held only by comments —
+    ensures-before-repair, internal-links-before-relativize, and the anchor/learn-more order
+    that used to decide whether a paragraph survived.
+    """
+    from jobs.article_job import finalize_article
+
+    fields = {
+        "content_md": ('<h2>Metal roofing</h2>\n'
+                       '<p>Metal roofing and roof repair for South Florida homes.</p>\n'
+                       '<p>Learn more: <a href="roof-repair-services">Roof repair services</a></p>\n'
+                       '<table><tr><td>x</td></tr></table>\n'),
+        "faq_json": [{"q": f"Q{i}?", "a": "A."} for i in range(4)],
+        "title": "Metal Roofing Costs In South Florida Explained",
+        "meta": "x" * 130, "slug": "metal-roofing", "jsonld_json": [],
+    }
+    ctx = {"role": "cluster", "pillar_slug": None}
+
+    finalize_article(fields, ctx, "metal roofing", db=None)
+    once = dict(fields)
+    assert "Learn more:" in once["content_md"], (
+        "a slashless anchor is salvageable — rooting it must precede judging it dead, or the "
+        "whole paragraph is deleted and the result depends on pass order")
+
+    finalize_article(fields, ctx, "metal roofing", db=None)
+    assert fields["content_md"] == once["content_md"], "finalize must be idempotent"
+    assert fields["title"] == once["title"]
+    assert fields["slug"] == once["slug"]
+
+
+def test_gate_criteria_marked_fixable_actually_have_a_fixer():
+    """A criterion that says fixable=True and has no fixer is an infinite loop, not a check.
+
+    The compliance gate re-runs its deterministic pass up to _COMPLIANCE_MAX_ITERS times for a
+    failing fixable criterion, then blocks the article. Three shipped in that state: `no_blog`
+    (nothing stripped the segment — _repair_relative_links cannot match an href with an internal
+    slash), `subscribe_cta` (the retired channel-ID URL was rewritten only by an inline .replace
+    inside scripts/backfill_wendy_compliance, so nothing on a generate path touched it), and
+    `pillar_link` (repair linked the resolved slug while the gate searched for the topic key).
+    """
+    from core.article_criteria import check_compliance
+    from jobs.article_job import finalize_article
+
+    fields = {
+        "content_md": ('<h2>Metal roofing</h2>\n'
+                       '<p>Metal roofing and roof repair across South Florida.</p>\n'
+                       '<p>See <a href="/blog/tile-roofing-company/">tile roofing</a>.</p>\n'
+                       '<p>Subscribe: https://www.youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg</p>\n'),
+        "faq_json": [{"q": f"Q{i}?", "a": "A."} for i in range(4)],
+        "title": "Metal Roofing Costs In South Florida",
+        "meta": "x" * 130, "slug": "metal-roofing", "jsonld_json": [],
+    }
+    ctx = {"role": "cluster", "pillar_slug": None}
+    finalize_article(fields, ctx, "metal roofing", db=None)
+
+    crit = {c.key: c for c in check_compliance(
+        fields["content_md"], fields["meta"], fields["jsonld_json"], fields["faq_json"],
+        {**ctx, "title": fields["title"], "slug": fields["slug"]}, "metal roofing", set())}
+
+    assert crit["no_blog"].ok, "/blog/ must be stripped — permalinks are top-level"
+    assert "/blog/" not in fields["content_md"]
+    assert crit["subscribe_cta"].ok, "the retired channel-ID URL must be rewritten to the @handle"
+    assert "UChJZpBYXOuR0j1EHJugv5hg" not in fields["content_md"]
