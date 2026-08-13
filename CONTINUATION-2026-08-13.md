@@ -90,8 +90,22 @@ catalogue sat at 473 articles with nothing new.
 Both declared in Terraform (R3), applied deliberately **after** pushing to main — the 2026-08-03
 incident was applying while the declaring commit was still on a branch.
 
-🔴 **Neither has produced a successful run yet.** The scan returned 200 twice and emitted nothing
-(see §1). The fix is in `7c7f8e7`.
+✅ **`portfolio-scan-daily` NOW VERIFIED WORKING IN PROD** (third attempt, after `7c7f8e7`
+deployed). Real output in Cloud Logging:
+
+```
+portfolio_scan: tenant 1 — nothing ready today (13 candidate(s) blocked)
+portfolio_scan:    13 x no photos selected — the gallery would be empty
+portfolio_scan:     2 x no CompanyCam project linked
+```
+
+**That is also its first real finding: 13 portfolio candidates exist and EVERY ONE is blocked on
+photo curation.** Nobody has selected images for any of them. That is the actual bottleneck
+between Perkins and publishable project pages — and it is the human step the scan exists to
+surface, not something more code can clear.
+
+🔴 **`generate-daily-content` has still NEVER RUN** — it first fires at 09:10 CT. Evidence to look
+for is a DRAFT ARTICLE plus a `ScheduledContent` row, **not** a 200.
 
 ---
 
@@ -142,16 +156,17 @@ NOT built — the session ended first. Design intent:
 Commits today: `76e7068` (merge) → `b480627` (audit) → `573b37d`/`bd0a1ff` (docs) → `2e8c213`
 (migration guard) → `81e7da0` (crons) → `ac1eb52` (log level) → **`7c7f8e7` (stdout handler)**.
 
-- Prod verified serving **`ac1eb52`**; `7c7f8e7` was pushed but its deploy was **not confirmed**.
+- Prod verified serving **`21258f6`** (this handoff commit), so `7c7f8e7`'s stdout fix IS live and
+  the portfolio scan is confirmed working — see §4.
 - Working tree clean apart from untracked `fix.txt` (not mine, pre-existing).
 - Terraform plan **clean** (exit 0) after applying the two schedulers.
 
 ### DO THIS FIRST ON RESUME
 
-1. **Confirm `7c7f8e7` deployed**, then trigger `portfolio-scan-daily` and **read the log output**.
-   Nothing about these crons is proven until a line appears in Cloud Logging.
-2. **Check the 09:10 CT article run** — evidence is a draft article + a `ScheduledContent` row,
-   **not** a 200.
+1. **Check the 09:10 CT article run** — the ONLY unproven cron. Evidence is a draft article + a
+   `ScheduledContent` row, **not** a 200. (`portfolio-scan-daily` is already verified — §4.)
+2. **Act on the scan's first finding:** 13 portfolio candidates, all blocked on photo curation.
+   That is a person's afternoon in the curation view, not a code change.
 3. **Gulf Coast expired-NOA row** (§5) — a live claim sourced from lapsed paperwork.
 4. **The three safe cleanups Jon called out as unjustifiably deferred** (§8).
 

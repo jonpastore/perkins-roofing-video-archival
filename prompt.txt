@@ -20,7 +20,12 @@ DO THESE IN ORDER
    The served image tag must equal the commit you expect. Do NOT trust the workflow's exit code
    alone — verify the served image, and for the SPA verify the served bundle.
 
-2. PROVE THE CRONS ACTUALLY WORK. This is the real task and nothing about them is proven yet.
+2. PROVE THE ARTICLE CRON WORKS. portfolio-scan-daily is ALREADY VERIFIED in prod — it logged
+   "tenant 1 — nothing ready today (13 candidate(s) blocked)" on 2026-08-13. Its first real finding
+   is that ALL 13 portfolio candidates are blocked on photo curation: nobody has selected images.
+   That is a human task in the curation view, not a code change.
+
+   The article cron is the unproven one.
 
        gcloud scheduler jobs run portfolio-scan-daily --location=us-central1
        # wait ~45s, then:
