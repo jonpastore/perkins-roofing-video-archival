@@ -29,6 +29,17 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# INFO is OFF by default in the API service — there is no basicConfig there, so the root logger
+# sits at WARNING and everything below it is discarded. These jobs run inside that service (via
+# /internal/*), and their OUTPUT IS THE PRODUCT: a daily scan whose findings never reach Cloud
+# Logging has run and told nobody, which is the same "correct thing nothing can reach" defect this
+# codebase keeps producing. Verified empirically: a logger.warning from jobs/social_job appears in
+# prod logs, a logger.info does not.
+#
+# Set on THIS module's logger only, so the fix does not turn on INFO for every library in the
+# process. Records still propagate to uvicorn's root handler, which emits them.
+logger.setLevel(logging.INFO)
+
 #: Advisory-lock key — distinct from ingest/knowify/companycam/render/daily-article.
 _LOCK_KEY = 8274128
 

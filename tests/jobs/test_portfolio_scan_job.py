@@ -92,3 +92,23 @@ def test_overlapping_runs_are_refused(monkeypatch):
 
     monkeypatch.setattr("core.single_flight.single_flight", _denied)
     assert PS.run()["skipped"] == "already running"
+
+
+def test_the_jobs_output_can_actually_REACH_cloud_logging():
+    """A daily scan whose findings are discarded has run and told nobody.
+
+    Verified in prod 2026-08-13: the API service has no basicConfig, so the root logger sits at
+    WARNING and logger.info is dropped — a logger.warning from jobs/social_job appears in Cloud
+    Logging, a logger.info does not. These jobs run inside that service via /internal/*, and their
+    output IS the product, so the module logger pins its own level.
+    """
+    import logging
+
+    import jobs.daily_content_job as DC
+    import jobs.portfolio_scan_job as PS
+
+    for mod in (PS, DC):
+        assert mod.logger.getEffectiveLevel() <= logging.INFO, (
+            f"{mod.__name__} would emit nothing in prod — the API service's root logger is at "
+            "WARNING and this module's findings are its entire purpose"
+        )
