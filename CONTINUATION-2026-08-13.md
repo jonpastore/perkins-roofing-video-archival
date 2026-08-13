@@ -158,8 +158,36 @@ Commits today: `76e7068` (merge) → `b480627` (audit) → `573b37d`/`bd0a1ff` (
 
 - Prod verified serving **`21258f6`** (this handoff commit), so `7c7f8e7`'s stdout fix IS live and
   the portfolio scan is confirmed working — see §4.
-- Working tree clean apart from untracked `fix.txt` (not mine, pre-existing).
+- Working tree clean. `fix.txt` has been folded into this doc (below) and removed.
 - Terraform plan **clean** (exit 0) after applying the two schedulers.
+- **Git hygiene done 2026-08-13:** every branch was merged into `main` — 18 local + 41 origin
+  branches deleted, 4 stale worktrees (`/tmp/deploy-wt{,2,3}`, `.claude/worktrees/agent-afe2997e…`)
+  removed. Refs are now `main` + `origin/main` only. Nothing was lost; all 59 deleted refs are
+  recoverable from reflog or `git push origin <sha>:refs/heads/<name>`.
+
+### Carried over from `fix.txt` — the related-links backfill is NOT applied
+
+The *code* fix shipped (`merge_related_block` in `core/article_repair.py`, the gated
+`related_links_single_block` criterion, `_ensure_internal_links` merging instead of appending).
+**The data backfill did not.** Dry run only: **474 scanned, 465 would change,
+`multi_related_blocks` 463 — of which 273 are SCHEDULED and will publish broken.**
+
+Root cause, for whoever picks this up: three producers with non-equivalent guards, and
+`_relativize_internal_links` erases the `BASE_URL` string that `_append_service_links` uses to
+detect its own output — so every generate→repair→relativize cycle appends another block. The
+old gate missed it because it used `_RELATED_BLOCK_RE.search` (the *first* block only).
+
+Needs the proxy up, then `--apply`, then `--repush`. Smoke-test one live post first:
+
+```
+/home/jon/bin/cloud-sql-proxy video-archival-and-content-gen:us-central1:video-archival-and-content-gen-pg --port 5432 &
+DB_URL="postgresql+psycopg://app:$(gcloud secrets versions access latest --secret=db-password)@127.0.0.1:5432/perkins" \
+  PYTHONPATH=. .venv/bin/python scripts/backfill_wendy_compliance.py --apply --repush --repush-limit 1
+```
+
+Also from `fix.txt`, on Wendy's five items: **she was right and understated it** — 183/183
+generated articles carry 2–4 related-links blocks (she saw 3). Her other four are clean 183/183
+(legacy YouTube URL, in-content TOC, unlinked "Learn more", borderless tables).
 
 ### DO THIS FIRST ON RESUME
 
@@ -168,7 +196,9 @@ Commits today: `76e7068` (merge) → `b480627` (audit) → `573b37d`/`bd0a1ff` (
 2. **Act on the scan's first finding:** 13 portfolio candidates, all blocked on photo curation.
    That is a person's afternoon in the curation view, not a code change.
 3. **Gulf Coast expired-NOA row** (§5) — a live claim sourced from lapsed paperwork.
-4. **The three safe cleanups Jon called out as unjustifiably deferred** (§8).
+4. **Run the related-links backfill** (§7) — 273 SCHEDULED articles will publish broken until it
+   is applied. This is a clock, not a queue.
+5. **The three safe cleanups Jon called out as unjustifiably deferred** (§8).
 
 ---
 
