@@ -710,6 +710,65 @@ resource "google_cloud_scheduler_job" "promote_scheduled_content" {
   depends_on = [google_project_service.apis]
 }
 
+# Daily article generation. Nothing created content before this — the fourteen existing
+# schedulers only MOVE content that already exists, which is why the catalogue sat at 473
+# articles with nothing new (Jon, 2026-08-13: "we should be publishing daily").
+#
+# 09:10 America/Chicago: after run-ingest starts at 09:00, so a topic aggregated from this
+# morning's ingest is eligible the same day, and hours before anyone reviews drafts.
+# Generation is compliance-gated and publishes DRAFTS with a paced ScheduledContent go-live —
+# promote-scheduled-content does the releasing, so there is still exactly one publish path.
+resource "google_cloud_scheduler_job" "generate_daily_content" {
+  name      = "generate-daily-content"
+  region    = var.region
+  schedule  = "10 9 * * *"
+  time_zone = "America/Chicago"
+
+  # An article campaign loops against the compliance gate; the default 180s deadline would
+  # abandon the HTTP call mid-generation. The job holds an advisory lock, so an abandoned
+  # request cannot be double-started by the next day's run either way.
+  attempt_deadline = "1800s"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/daily-content"
+    http_method = "POST"
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Daily portfolio readiness scan. READ-ONLY BY DESIGN — it reports which projects could be built
+# and what blocks the rest; it never publishes. A portfolio page needs recorded client permission
+# (permission_property/photos/video, all defaulting to false) and human-selected photos, and
+# neither is something a cron may supply about a customer's house. See jobs/portfolio_scan_job.
+#
+# 07:30, after companycam-sync at 06:00 — so the scan reads media mirrored this morning.
+resource "google_cloud_scheduler_job" "portfolio_scan" {
+  name      = "portfolio-scan-daily"
+  region    = var.region
+  schedule  = "30 7 * * *"
+  time_zone = "America/Chicago"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/portfolio-scan"
+    http_method = "POST"
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_cloud_scheduler_job" "publish_awaiting_social" {
   name      = "publish-awaiting-social"
   region    = var.region

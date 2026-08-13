@@ -368,6 +368,31 @@ def social():
     return run()
 
 
+@app.post("/internal/daily-content", dependencies=[Depends(_require_internal)])
+def daily_content_cron():
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). Generates ONE article campaign.
+
+    Picks the highest-grounding topic that has no article yet, generates through the SAME
+    compliance-gated path the admin /topics flow uses, and pushes COMPLIANT articles to WordPress
+    as DRAFTS with a paced ScheduledContent go-live. /internal/promote does the releasing, so
+    there is still exactly one publish path.
+    """
+    from jobs.daily_content_job import run
+    return run()
+
+
+@app.post("/internal/portfolio-scan", dependencies=[Depends(_require_internal)])
+def portfolio_scan_cron():
+    """Cloud Scheduler target (guarded by INTERNAL_SECRET). READ-ONLY project readiness scan.
+
+    Reports which portfolio projects could be built today and what blocks the rest. It does NOT
+    publish: a page needs recorded client permission and human-selected photos, and neither is
+    something a cron may supply on a customer's house. See jobs/portfolio_scan_job.
+    """
+    from jobs.portfolio_scan_job import run
+    return run()
+
+
 @app.post("/internal/crawl-comments", dependencies=[Depends(_require_internal)])
 def crawl_comments_cron():
     """Cloud Scheduler target (guarded by INTERNAL_SECRET). Crawls YouTube comments for a
