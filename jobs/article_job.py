@@ -23,6 +23,8 @@ from contextlib import contextmanager
 from functools import lru_cache
 
 from core.article_prompt import system_prompt, template_prompt
+from core.article_repair import RELATED_BLOCK_RE as _RELATED_BLOCK_RE
+from core.article_repair import YT_ID_RE as _YT_ID_RE
 from core.json_repair import parse_model_json
 from core.jsonld import build_faq_page, build_video_object
 from core.numeric_grounding import check_numeric_claims
@@ -1405,7 +1407,7 @@ def _ensure_video_link(content_md: str, keyword: str, db=None) -> str:
     # grounded video. Only runs with a db (to validate ids against ingested videos).
     if db is not None:
         from app.models import Video  # noqa: PLC0415
-        from core.article_repair import _YT_ID_RE, _strip_video_id_refs  # noqa: PLC0415
+        from core.article_repair import _strip_video_id_refs  # noqa: PLC0415
         for vid in dict.fromkeys(_YT_ID_RE.findall(c)):
             try:
                 if db.get(Video, vid) is not None:
@@ -1592,8 +1594,10 @@ def _ensure_title_number(title: str, keyword: str) -> str:
     return title  # no room for the year; never truncate to make room
 
 
-_YT_ID_RE = re.compile(
-    r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([A-Za-z0-9_-]{6,})", re.IGNORECASE)
+# _YT_ID_RE is imported at the top of this module from core.article_repair, not redefined.
+# It used to be declared HERE — {6,} against a shorter host list (no thumbnail hosts) — while
+# _ensure_video_link separately imported core.article_repair's version, so the same name meant
+# two different patterns in one file depending on which line you were reading.
 
 
 _YOUTUBE_FOOTER_TEXT = "Subscribe to our YouTube channel for more!"
@@ -1804,8 +1808,7 @@ def _ensure_internal_links(content_md: str, keyword: str, ctx: dict) -> str:
     # Match against the article's own prose only — excluding a related-links block this
     # function already appended, so a second pass doesn't treat its own anchor text as new
     # content to match against (which would keep growing the link list every re-run).
-    body_for_matching = re.sub(r'<p class="related-links">.*?</p>', "", content_md,
-                               flags=re.IGNORECASE | re.DOTALL)
+    body_for_matching = _RELATED_BLOCK_RE.sub("", content_md)
     haystack = f"{keyword} {_strip_html(body_for_matching)}"
     # Dedupe by href, not just against content_md: two different keywords routinely match the
     # SAME service page, and the old guard only checked the existing body — so both matches were

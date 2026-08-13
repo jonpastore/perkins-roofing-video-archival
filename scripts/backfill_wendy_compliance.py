@@ -33,7 +33,10 @@ import sys
 from collections import Counter
 
 _HREF_RE = re.compile(r'href="([^"]+)"')
-_REL_RE = re.compile(r'<p class="related-links">.*?</p>', re.IGNORECASE | re.DOTALL)
+# Imported so this script counts blocks exactly as the gate and the fixer do. A local
+# re-spelling here is how a backfill reports "clean" on content the gate still rejects.
+from core.article_repair import RELATED_BLOCK_RE as _REL_RE  # noqa: E402
+
 _EMBED_RE = re.compile(r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)", re.IGNORECASE)
 
 

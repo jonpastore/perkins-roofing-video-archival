@@ -624,3 +624,77 @@ def test_append_pillar_link_warns_instead_of_fabricating_when_unresolvable():
 def test_append_pillar_link_noop_for_non_cluster():
     out = _repair("<p>Standalone.</p>", pillar_slug=None)
     assert not any("appended pillar link" in f for f in out.fixes)
+
+
+# ---------------------------------------------------------------------------
+# Composition regressions. Every defect these cover was invisible to the 563
+# single-pass tests that preceded them: each one lives BETWEEN two functions —
+# gate vs fixer, or pass N vs pass N+1 — not inside either.
+# ---------------------------------------------------------------------------
+
+
+def test_gate_and_fixer_share_one_pattern_object():
+    """The gate must not be able to see a defect the fixer cannot.
+
+    core.article_criteria used to spell out its own `<p class="related-links">.*?</p>` while
+    this module required a literal "Related: ". A block without the prefix was therefore
+    visible to the gate and invisible to every fixer, so `related_links_single_block` failed
+    forever while reporting fixable=True. Identity, not equality — a copied pattern drifts.
+    """
+    import core.article_criteria as gate
+    from core.article_repair import RELATED_BLOCK_RE, YT_ID_RE
+    assert gate._RELATED_BLOCK_RE is RELATED_BLOCK_RE
+    assert gate._YT_ID_RE is YT_ID_RE
+
+
+def test_related_block_without_the_related_prefix_is_merged_not_duplicated():
+    """A hand-edited block (wp-admin) has no "Related: " prefix. Repair must merge into it.
+
+    Before the fix this produced a SECOND block that no fixer could collapse, permanently
+    failing the gate.
+    """
+    from core.article_criteria import check_compliance
+
+    body = ('<h2 id="a">Roofing</h2><p>We handle roof repair for South Florida homes.</p>\n'
+            '<p class="related-links"><a href="/metal-roofing-company/">Metal roofing</a></p>\n')
+    out = _repair(body).content_md
+    assert out.count('class="related-links"') == 1, "prefix-less block must be merged, not duplicated"
+    # and the merge preserves the pre-existing link rather than dropping it
+    assert "/metal-roofing-company/" in out
+
+    crit = {c.key: c for c in check_compliance(
+        out, "x" * 130, [], [], {"role": "cluster", "title": "T", "slug": "s"},
+        "roof repair", KNOWN)}
+    assert crit["related_links_single_block"].ok
+
+
+def test_repair_video_ids_rewrites_the_url_not_the_prose():
+    """A corrupted id that also appears in body copy must not have the copy rewritten.
+
+    `content.replace(vid, match)` edited article text: "Order code dQw4w9WgXcX applies to all
+    metal panels" silently became the corrected id.
+    """
+    from core.article_repair import _repair_video_ids
+
+    corrupt = "gtbkLgg_G9X"          # one char off the known gtbkLgg_G9o
+    body = (f'<iframe src="https://www.youtube.com/embed/{corrupt}"></iframe>\n'
+            f'<p>Order code {corrupt} applies to all metal panels.</p>')
+    out, fixes, _ = _repair_video_ids(body, KNOWN)
+    assert "embed/gtbkLgg_G9o" in out, "the video URL must be corrected"
+    assert f"Order code {corrupt} applies" in out, "prose must be left alone"
+    assert fixes
+
+
+def test_strip_video_id_refs_removes_the_watch_heading_with_the_embed():
+    """jobs.article_job._ensure_video_link appends "<h2>Watch: …</h2>" AND an embed but guards
+    only on the iframe. Leaving an orphan heading blinded that guard, so the next pass appended
+    a second heading+embed — measured 1 -> 2 -> 3 empty "Watch:" sections over one player."""
+    from core.article_repair import _strip_video_id_refs
+
+    body = ('<p>intro</p>\n<h2>Watch: roof estimate</h2>\n'
+            '<div class="video-embed"><iframe src="https://www.youtube.com/embed/BADid00001">'
+            '</iframe></div>\n<p>rest</p>')
+    out = _strip_video_id_refs(body, "BADid00001")
+    assert "<iframe" not in out
+    assert "Watch:" not in out, "the heading must go with the embed it introduced"
+    assert "<p>intro</p>" in out and "<p>rest</p>" in out
