@@ -2,15 +2,16 @@ Read CONTINUATION-2026-08-13.md first. It has the full state. §7 is the resume 
 open challenge, §9 is what only he can unblock.
 
 CONTEXT IN ONE LINE: a 4-agent audit + Jon's four decisions are BUILT, COMMITTED, PUSHED, DEPLOYED
-and VERIFIED IN PROD. Two new daily crons are deployed but HAVE NEVER COMPLETED A SUCCESSFUL RUN.
-The suite is green at 5,789 passed / 5 skipped / exit 0.
+and VERIFIED IN PROD. Of the two new daily crons, portfolio-scan-daily is VERIFIED WORKING;
+generate-daily-content has never run (first fires 09:10 CT). Suite green at 5,789 / 5 skipped /
+exit 0.
 
 ═══════════════════════════════════════════════════════════════════════════════
 DO THESE IN ORDER
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. CONFIRM THE LAST DEPLOY LANDED. Commit 7c7f8e7 was pushed; its deploy was NOT confirmed before
-   shutdown.
+1. CONFIRM THE LAST DEPLOY LANDED. Prod was verified serving 21258f6 at shutdown; commits after
+   that (86a2d71, docs only) were pushed with their deploy unconfirmed.
 
        gh run list --branch main --limit 3 --json name,status,conclusion,headSha \
          --jq '.[] | "\(.name) \(.status)/\(.conclusion // "-") \(.headSha[0:7])"'
@@ -25,20 +26,10 @@ DO THESE IN ORDER
    is that ALL 13 portfolio candidates are blocked on photo curation: nobody has selected images.
    That is a human task in the curation view, not a code change.
 
-   The article cron is the unproven one.
-
-       gcloud scheduler jobs run portfolio-scan-daily --location=us-central1
-       # wait ~45s, then:
-       gcloud logging read 'textPayload:"portfolio_scan"' --limit=15 \
-         --format='value(textPayload)' --freshness=10m
-
-   ⚠️ THIS RETURNED 200 AND PRODUCED ZERO OUTPUT TWICE. The API service has no logging
-   basicConfig, so the root logger has NO HANDLERS and INFO records fall to logging.lastResort,
-   which is WARNING-only. 7c7f8e7 attaches an explicit stdout handler. A 200 is NOT evidence —
-   only a line in Cloud Logging is.
-
-   Then check the 09:10 America/Chicago article run. Evidence is a DRAFT ARTICLE plus a
-   ScheduledContent row, not a 200:
+   The article cron is the unproven one. Check the 09:10 America/Chicago run. Evidence is a DRAFT
+   ARTICLE plus a ScheduledContent row, NOT a 200 — the scan returned 200 twice while emitting
+   nothing at all, because the API service has no logging basicConfig and INFO records fell to
+   logging.lastResort (WARNING-only) until 7c7f8e7 attached an explicit stdout handler:
 
        SELECT status, count(*) FROM articles GROUP BY status;
        SELECT status, count(*) FROM scheduled_content GROUP BY status;

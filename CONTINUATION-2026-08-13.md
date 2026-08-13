@@ -3,8 +3,8 @@
 Picks up from [CONTINUATION-2026-08-12-eve.md](CONTINUATION-2026-08-12-eve.md).
 
 **STATUS: everything below is COMMITTED, PUSHED, DEPLOYED and VERIFIED IN PROD unless a line says
-otherwise. Suite green at 5,789 passed / 5 skipped / exit 0.** One commit (`7c7f8e7`) is pushed
-but its deploy had not been confirmed when the session ended — see §7.
+otherwise. Suite green at 5,789 passed / 5 skipped / exit 0.** Prod verified serving `21258f6`.
+`portfolio-scan-daily` is verified working (§4); `generate-daily-content` has not yet run.
 
 ---
 
@@ -22,8 +22,8 @@ All three were fixed by asserting the **observable outcome** (AST call nodes; a 
 the root handler chain emptied) rather than the mechanism believed to produce it.
 
 **The operational form of the same lesson:** a `200` from a cron endpoint means the handler
-returned, not that the job did anything a human will see. Both new crons returned 200 twice while
-producing nothing at all.
+returned, not that the job did anything a human will see. The portfolio scan returned 200 TWICE
+while emitting nothing at all; it only produced output on the third attempt, after the third fix.
 
 ---
 
@@ -72,7 +72,7 @@ Public IG/TikTok posts plus third-party music/b-roll is a real copyright-strike 
 
 ---
 
-## §4 — TWO NEW CRONS (deployed, NEVER YET COMPLETED A REAL RUN)
+## §4 — TWO NEW CRONS (scan VERIFIED; article cron not yet run)
 
 Nothing in this system created content — fourteen schedulers only MOVED it. That is why the
 catalogue sat at 473 articles with nothing new.
