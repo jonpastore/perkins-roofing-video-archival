@@ -183,10 +183,29 @@ jobs:
       # the same discipline as the image-tag check above.
       - name: Verify the SERVED bundle is the one just built
         if: steps.supersede.outputs.skip != 'true'
+        # POLLS, because `firebase deploy` returns before the CDN edge has the new release.
+        # On 2026-08-13 this ran 0.3s after the deploy step and failed on the previous bundle;
+        # the correct one was live moments later, so a real, complete deploy was reported red.
+        #
+        # That matters more than the red itself. This check exists because of the 2026-08-03
+        # stale-deploy incident, where prod silently ran one merge behind and every check stayed
+        # green. A check that cries wolf trains the next person to read red as "just propagation"
+        # and not look — which is exactly how the failure it guards against gets through.
+        #
+        # No cache-buster on the URL on purpose: this must measure what a REAL VISITOR gets,
+        # and a unique query string would ask a question no user asks.
         run: |
           want="$(basename "$(ls web/dist/assets/index-*.js | head -1)")"
-          got="$(curl -fsS https://video-archival-and-content-gen.web.app/ \
-                   | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1)"
-          echo "want=$want got=$got"
-          [ "$want" = "$got" ] \
-            || { echo "::error::hosting is serving '$got', expected '$want'"; exit 1; }
+          echo "want=$want"
+          for attempt in $(seq 1 20); do
+            got="$(curl -fsS https://video-archival-and-content-gen.web.app/ \
+                     | grep -oE 'index-[A-Za-z0-9_-]+\.js' | head -1 || true)"
+            if [ "$want" = "$got" ]; then
+              echo "serving $want (after ${attempt} attempt(s))"
+              exit 0
+            fi
+            echo "attempt ${attempt}: serving '${got:-<none>}', waiting for '$want'"
+            sleep 6
+          done
+          echo "::error::hosting still serving '${got:-<none>}' after ~2min, expected '$want' — past propagation, treat this as a genuinely stale deploy"
+          exit 1
