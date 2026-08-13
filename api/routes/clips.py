@@ -418,10 +418,42 @@ def _platform_guidance(platform: str | None) -> str:
     p = PLATFORM_PRESETS[platform]
     spec = PLATFORM_SPECS.get(platform)
     cap = f" Keep each clip under {spec.max_length_seconds}s." if spec else ""
+    # The hashtag count is EXACT, not "~". TikTok is strict about it, and "~5" is an instruction
+    # to approximate — a caption came back with 6 and that was the prompt being obeyed, not
+    # broken. The hook seconds keep their "~" because a hook is a judgement, not a count.
     return (
         f"\nTarget platform: {platform}. Tune for it — open with a ~{p['hook_seconds']}s hook, "
-        f"{p['caption_style']} captions, ~{p['hashtag_count']} hashtags, {p['text_cadence']} pacing.{cap}"
+        f"{p['caption_style']} captions, EXACTLY {p['hashtag_count']} hashtags "
+        f"(never more than {p['hashtag_count']} — a caption with one extra is wrong even if every "
+        f"hashtag is relevant), {p['text_cadence']} pacing.{cap}"
     )
+
+
+def _capped_caption(caption: str, platform: str | None) -> str:
+    """Hold a suggested caption to the platform's hashtag count.
+
+    A prompt is a request. Saying "EXACTLY 5" makes the model right more often; it does not make
+    it right always, and TikTok rejects a caption that overruns. core.video_description.enforce
+    already does this trim for the video-description surface — same rule, same code, rather than
+    a second implementation that can drift from it.
+
+    Never raises: a caption is advisory copy on a suggestion screen, so a validation failure must
+    not take the whole /clips/suggest call down with it. The uncapped text is returned instead and
+    the operator still sees something to edit.
+    """
+    limit = (PLATFORM_PRESETS.get(platform or "") or {}).get("hashtag_count")
+    if not caption or not limit:
+        return caption
+    try:
+        from core.video_description import enforce  # noqa: PLC0415
+
+        checked = enforce(caption, max_hashtags=int(limit))
+        if checked.fixes:
+            logger.info("suggest caption fixed for %s: %s", platform, "; ".join(checked.fixes))
+        return checked.text
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("caption cap skipped for %s: %s", platform, exc)
+        return caption
 
 
 def _build_suggest_prompt(
@@ -556,7 +588,7 @@ def _llm_suggestions(
                     "start": float(c["start"]),
                     "end": float(c["end"]),
                     "title": str(c.get("title", "")),
-                    "caption": str(c.get("caption", "")),
+                    "caption": _capped_caption(str(c.get("caption", "")), platform),
                     "hook": str(c.get("hook", "")),
                     "reason": str(c.get("reason", "")),
                     "summary": str(c.get("summary", "")),

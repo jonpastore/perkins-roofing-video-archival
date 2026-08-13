@@ -217,3 +217,94 @@ class TestRenderSpecRequestNewFields:
     def test_audio_enhance_accepted(self) -> None:
         req = RenderSpecRequest(audio_enhance=True)
         assert req.audio_enhance is True
+
+
+# ---------------------------------------------------------------------------
+# Hashtag count is ENFORCED, not requested (Jon, 2026-08-12)
+# ---------------------------------------------------------------------------
+# "did we add a review pass? or language to strictly adhere to the prompt requirements?"
+# The prompt said "~5 hashtags" — a literal tilde — and nothing checked the output, so a caption
+# came back with 6. TikTok is strict about the count.
+
+def test_suggest_prompt_asks_for_an_exact_hashtag_count_not_an_approximate_one():
+    from api.routes.clips import _platform_guidance
+
+    g = _platform_guidance("tiktok")
+    assert "EXACTLY 5 hashtags" in g, g
+    assert "~5 hashtags" not in g, "the tilde is what produced a 6-hashtag caption"
+
+
+def test_a_caption_over_the_platform_limit_is_trimmed():
+    """The review pass. A prompt is a request; this is the ceiling."""
+    from api.routes.clips import _capped_caption
+
+    six = "New roof day in Miami. #PerkinsRoofing #Roofing #MiamiRoofing #Tile #HVHZ #Storm"
+    out = _capped_caption(six, "tiktok")
+
+    assert out.count("#") == 5, out
+    assert "#PerkinsRoofing" in out, "earliest tags are the ones to keep"
+    assert "#Storm" not in out, "the overflow tag must be gone"
+
+
+def test_a_caption_within_the_limit_is_untouched():
+    from api.routes.clips import _capped_caption
+
+    ok = "New roof day in Miami. #PerkinsRoofing #Roofing #MiamiRoofing"
+    assert _capped_caption(ok, "tiktok") == ok
+
+
+def test_each_platform_gets_its_own_limit():
+    """linkedin is 2 and youtube_shorts is 3 — a single hard-coded 5 would be wrong for both."""
+    from api.routes.clips import _capped_caption
+
+    many = "Roof. #a #b #c #d #e #f"
+    assert _capped_caption(many, "linkedin").count("#") == 2
+    assert _capped_caption(many, "youtube_shorts").count("#") == 3
+
+
+def test_an_unknown_platform_and_an_empty_caption_are_passed_through():
+    """No platform means no count to enforce — must not blow up or invent a limit."""
+    from api.routes.clips import _capped_caption
+
+    many = "Roof. #a #b #c #d #e #f"
+    assert _capped_caption(many, None) == many
+    assert _capped_caption(many, "myspace") == many
+    assert _capped_caption("", "tiktok") == ""
+
+
+def test_the_cap_never_takes_down_the_suggest_call(monkeypatch):
+    """A caption is advisory copy on a suggestion screen. If validation raises, the operator
+    should still get their clips — the alternative is a 500 on the whole suggest."""
+    import core.video_description as vd
+
+    from api.routes.clips import _capped_caption
+
+    def boom(*a, **k):
+        raise RuntimeError("validator exploded")
+
+    monkeypatch.setattr(vd, "enforce", boom)
+    raw = "Roof. #a #b #c #d #e #f"
+    assert _capped_caption(raw, "tiktok") == raw
+
+
+def test_the_suggest_path_actually_applies_the_cap(monkeypatch):
+    """THE SEAM. Testing _capped_caption alone does not cover this: reverting the call site to a
+    plain str() left all of the tests above green. Verified by mutation — that is the whole reason
+    this test exists."""
+    import app.llm as llm
+
+    from api.routes.clips import _llm_suggestions
+
+    monkeypatch.setattr(llm, "chat", lambda *a, **k: {"clips": [{
+        "start": 0.0, "end": 30.0, "title": "Tile valley",
+        "caption": "New roof day. #PerkinsRoofing #Roofing #MiamiRoofing #Tile #HVHZ #Storm",
+        "hook": "h", "reason": "r", "summary": "s",
+        "virality": {"hook_strength": 20, "emotion": 20, "pacing": 20, "value": 20,
+                     "total": 80, "rationale": "x"},
+    }]})
+
+    out = _llm_suggestions("Vid", [], [], 1, platform="tiktok")
+
+    assert len(out) == 1
+    assert out[0]["caption"].count("#") == 5, out[0]["caption"]
+    assert "#Storm" not in out[0]["caption"]
