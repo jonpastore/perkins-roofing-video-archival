@@ -1,6 +1,6 @@
 # 2026-08-12 pm — wind cleanup and PII redaction built; A/B ready to judge
 
-Picks up from [CONTINUATION-2026-08-12.md](CONTINUATION-2026-08-12.md), which has the day's
+Picks up from [CONTINUATION-2026-08-12.md](docs/continuations/CONTINUATION-2026-08-12.md), which has the day's
 earlier work (publish queue, metal uplift, CompanyCam tags) and §1 "what I got wrong today".
 
 **STATUS: committed, suite green, R2 findings fixed.** R2 returned **REJECT** with two CRITICALs —

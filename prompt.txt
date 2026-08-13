@@ -1,78 +1,111 @@
-Read CONTINUATION-2026-08-12-pm.md first. It has the full state. Its §1 has the A/B numbers,
-§3 has the R2 outcome and what remains, §4 is your task list, §5 has Jon's two open
-questions (the calc-breakdown answer, and a UI bug that is diagnosed but NOT fixed).
+Read CONTINUATION-2026-08-13.md first. It has the full state. §7 is the resume list, §8 is Jon's
+open challenge, §9 is what only he can unblock.
 
-CONTEXT IN ONE LINE: two features are BUILT, WIRED, COMMITTED and GREEN. R2 returned REJECT with two
-CRITICALs (a filtergraph that broke every 2-region render, and an out-of-range time window that
-redacted nothing while reporting success). BOTH ARE FIXED AND MUTATION-VERIFIED — see §3. What is
-left is re-review of the fixes, the marking UI, and a UI bug — not rework of the features.
-
-  Phase 1  core/audio_enhance.py    new `wind` option (highpass=f=90 + softer afftdn)
-  Phase 2  core/video_redact.py     NEW — pixelates operator-marked PII regions
-           plus wiring in core/render_spec.py, jobs/render_job.py, api/routes/clips.py
+CONTEXT IN ONE LINE: a 4-agent audit + Jon's four decisions are BUILT, COMMITTED, PUSHED, DEPLOYED
+and VERIFIED IN PROD. Two new daily crons are deployed but HAVE NEVER COMPLETED A SUCCESSFUL RUN.
+The suite is green at 5,789 passed / 5 skipped / exit 0.
 
 ═══════════════════════════════════════════════════════════════════════════════
 DO THESE IN ORDER
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. NOTHING TO VERIFY ON THE SUITE — it is green (5,702 passed, 5 skipped, exit 0 captured before
-   any pipe) and everything through 566fccc is committed and pushed. Start at step 2.
+1. CONFIRM THE LAST DEPLOY LANDED. Commit 7c7f8e7 was pushed; its deploy was NOT confirmed before
+   shutdown.
 
-   For later runs: capture the exit code to a file BEFORE any pipe. A task-notification saying
-   "exit code 0" reports the WRAPPER's exit, not pytest's. And pyproject sets addopts="-q" — do
-   NOT pass -q again or the summary line disappears and a green run looks truncated.
+       gh run list --branch main --limit 3 --json name,status,conclusion,headSha \
+         --jq '.[] | "\(.name) \(.status)/\(.conclusion // "-") \(.headSha[0:7])"'
+       gcloud run services describe api --region us-central1 \
+         --format='value(spec.template.spec.containers[0].image)'
 
-2. RE-RUN R2 on the POST-FIX code. The two CRITICALs are fixed but the FIXES have not themselves
-   been reviewed. Pay attention to the `split`-based filtergraph and the new clip_duration guard.
+   The served image tag must equal the commit you expect. Do NOT trust the workflow's exit code
+   alone — verify the served image, and for the SPA verify the served bundle.
 
-3. DECIDE THE MARKING-UI QUESTION (§3, "Known-remaining").
+2. PROVE THE CRONS ACTUALLY WORK. This is the real task and nothing about them is proven yet.
 
-   `grep -rn redact_regions` hits ONLY the five feature files. Nothing produces a region — there is
-   no frame-scrub box tool, so no operator can confirm a box, which is the module's entire stated
-   doctrine. Today the only path is a hand-computed PUT to /clips/{id}/render_spec.
+       gcloud scheduler jobs run portfolio-scan-daily --location=us-central1
+       # wait ~45s, then:
+       gcloud logging read 'textPayload:"portfolio_scan"' --limit=15 \
+         --format='value(textPayload)' --freshness=10m
 
-   Either build the marking tool, or mark the field unreachable-by-design in render_spec.py so the
-   next reader does not take it as shipped. Do not leave it ambiguous — "config with no reader
-   reads as done" is a recorded failure mode in this repo, and this is its mirror image.
+   ⚠️ THIS RETURNED 200 AND PRODUCED ZERO OUTPUT TWICE. The API service has no logging
+   basicConfig, so the root logger has NO HANDLERS and INFO records fall to logging.lastResort,
+   which is WARNING-only. 7c7f8e7 attaches an explicit stdout handler. A 200 is NOT evidence —
+   only a line in Cloud Logging is.
 
-   NOTE: the question the last session worried about — whether reframe undoes the redaction — is
-   ANSWERED and CLEAN. The reviewer traced the whole chain; nothing re-derives from src_path after
-   the cut, and pixelation is destructive so a later crop cannot restore detail.
+   Then check the 09:10 America/Chicago article run. Evidence is a DRAFT ARTICLE plus a
+   ScheduledContent row, not a 200:
 
-4. THE ESTIMATE-INPUTS UI BUG (§5B) — separate, small, and worth doing while you are here.
-   Quoting.tsx:2473 uses `gridTemplateColumns: "1fr 1fr 1fr"`. `1fr` is `minmax(auto, 1fr)`, so a
-   long unbreakable string ("50,373.4 ft to salt water (CORAL GABLES CANAL (EAST))") forces
-   min-content width and squeezes its siblings — that is why "Include the Coastal package" wraps
-   one word per line in Jon's screenshot.
+       SELECT status, count(*) FROM articles GROUP BY status;
+       SELECT status, count(*) FROM scheduled_content GROUP BY status;
 
-   Likely fix is `minmax(0, 1fr)` x3 plus `minWidth: 0` on the child. CHECK IT IN A BROWSER, do
-   not just edit the CSS and declare it fixed — the whole point of the screenshot is that it looks
-   wrong, so the verification has to be visual. Lines :608 and :2446 carry the same pattern.
+   Baseline at shutdown: articles 473 published / 1 draft; scheduled_content 427 published /
+   7 held / 0 error.
 
-   Do this as its OWN commit, not folded into the render work.
+3. THE GULF COAST EXPIRED-NOA ROW (§5). The metal warranty page cites a competitor's −189.25 PSF
+   sourced from NOA 19-0814.04, which EXPIRED 10/02/24. docs/metal-uplift-noa-reference.md calls
+   this "the one live exposure left", and Jon's own email said he would drop unsupported rows
+   rather than publish them. Also: Tim's Englert link is Series 1500 while the page cites Series
+   1300 — different product, and the whole argument in that thread was that a design pressure
+   belongs to a specific tested assembly, not a brand.
 
-5. COMMIT — two separate commits, Phase 1 then Phase 2. Trailer: `No-Task: <reason>` alone on its
-   line, plus:
-     Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+   DO NOT edit the page without confirming with Jon which way he wants it (drop the rows, or
+   re-source them). Bring him the discrepancy, not a fix.
+
+4. THE THREE SAFE CLEANUPS Jon called out as unjustifiably deferred (§8). These need no further
+   permission — he asked why they were not already done:
+     a. core/qa_gate.seo_hard_failures → wire in WARN-ONLY mode (log, do not block) so the
+        block-vs-delete decision is made on real data. Cannot break anything.
+     b. Delete the shadowed core/tenant_settings abstain_threshold (0.35 against the calibrated
+        env value of 0.71). Do NOT wire the 0.35 — it would make the assistant answer where it
+        currently abstains.
+     c. Measure the e-signature X-Forwarded-For question: log the RAW header behind a flag for one
+        deploy, sign once from a browser and once with a forged XFF, compare, remove the log.
+        Cloudflare is NOT fronting the app (proxied = false everywhere), so this is decidable.
+        DO NOT change the parsing first — an existing test (TestESignIP) already caught that.
+
+5. BUILD THE WEEKLY DIGEST (§6). Jon asked for it and it was never built. A weekly email of user +
+   automated actions from audit_log and job outcomes, via /internal/weekly-digest + a Terraform
+   scheduler entry, sending through the existing Resend adapter (respects EMAIL_SEND_MODE).
+   The motivation matters: portfolio-scan-daily writes findings to Cloud Logging, and if nobody
+   reads Cloud Logging that job also runs and tells nobody.
+
+6. FINISH THE EMAIL SWEEP (§5). Only 2 of ~10 threads with Wendy/Tim/Josh/Marco were read.
+   gmail-enhanced works for jon@degenito.ai; the o365 connector's refresh token EXPIRED
+   (2026-04-23, 90 days inactivity) so mcp__o365__check_email fails until Jon re-auths.
+   Prefer gmail_summarize_thread over reading messages — full HTML bodies are very expensive.
+   No Zoom assets are reachable; ask Jon for a pointer if they matter.
 
 ═══════════════════════════════════════════════════════════════════════════════
 RULES
 ═══════════════════════════════════════════════════════════════════════════════
 
-- DO NOT deploy.
-- DO NOT touch the metal warranty page — awaiting Tim/Marco/Josh's reply.
-- DO NOT release the 7 `held` scheduled_content rows — Jon's call.
-- ./ab-review/ is gitignored demo media. Do not commit it. Do not delete it — Jon may not have
-  reviewed it yet.
-- Label every finding VERIFIED FROM DOCUMENT or INFERENCE. Do not merge the two. Five corrections
-  in one session yesterday all came from stating an inference with the confidence of a fact.
-- If Phase 2 turns out to be unsafe on re-review, SAY SO and stop rather than shipping it. A
-  reasoned "this does not work yet" is worth more than a merged privacy feature that leaks.
+- ASSERT THE OBSERVABLE OUTCOME, NOT THE MECHANISM. Three checks passed while measuring the wrong
+  thing this session: a grep that matched a comment, a test that matched its own docstring, and a
+  logging test that supplied its own handler. If a test provides the thing under test, it proves
+  nothing.
+- A 200 from a cron endpoint means the handler returned. It is not evidence the job did anything.
+- CAPTURE THE PYTEST EXIT CODE TO A FILE BEFORE ANY PIPE, and re-run the suite if the tree moved
+  mid-run. Two results were discarded this session for exactly that. pyproject sets addopts="-q";
+  do NOT pass -q again or the summary line disappears.
+- MIGRATIONS ARE MANUAL. scripts/deploy.sh has no migration step, and the runner has NO LEDGER —
+  it replays every migration from 0013 on EVERY run, so a new .sql must be idempotent AND safe to
+  re-run against live data. Apply BEFORE deploying code that reads a new column, and only after
+  the declaring commit is on main.
+- INFRA IS TERRAFORM (R3). The deploy's drift gate requires a clean plan, so
+  `cd infra && terraform apply` must run before the deploy goes green. It needs
+  TF_VAR_cloudflare_api_token — fetch it the way CI does:
+  `gcloud secrets versions access latest --secret=cloudflare-api-token`.
+- SUBAGENTS: background agents return NOTHING in this environment — 8 idled out across 4 spawns,
+  including general-purpose. FOREGROUND agents (run_in_background: false) return a full report in
+  minutes. If a review matters, run it in the foreground.
+- Do NOT release the 7 `held` scheduled_content rows — Jon's call.
+- ./ab-review/ is gitignored demo media. Do not commit it, do not delete it.
+- Label every finding VERIFIED FROM CODE or INFERENCE. Do not merge the two. Several agent
+  findings this session did not survive checking, and one existing test was RIGHT where the
+  security scan was wrong.
+- Commit trailer: `No-Task: <reason>` alone on its line, plus:
+    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 
-DO NOT rebuild the "show me the formulas" feature — it already exists and §5A documents exactly
-where it is and the two conditions (role `estimating_manage`, and rows frozen at create time). If
-Jon reports the section missing from a PDF, check the ROLE before touching any code.
-
-IF JON HAS ALREADY GIVEN A VERDICT ON THE A/B: apply it. If he said the wind difference is too
-small to matter, the next lever is DeepFilterNet3 as an adapter behind the same `wind` flag — but
-do not add that dependency without his go-ahead.
+DO NOT re-litigate the decisions in §3 — Jon made them and they are implemented. DO NOT auto-publish
+portfolio projects: publishing needs recorded client permission and human-selected photos of a
+customer's house, and that boundary is deliberate and test-pinned.
