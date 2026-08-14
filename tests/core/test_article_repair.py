@@ -698,3 +698,62 @@ def test_strip_video_id_refs_removes_the_watch_heading_with_the_embed():
     assert "<iframe" not in out
     assert "Watch:" not in out, "the heading must go with the embed it introduced"
     assert "<p>intro</p>" in out and "<p>rest</p>" in out
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage for the repair passes' edge cases (R1).
+# ---------------------------------------------------------------------------
+
+
+def test_tel_href_that_is_already_bare_digits_is_left_alone():
+    """Idempotency at the character level: a normalised tel: must not be rewritten again."""
+    from core.article_repair import _repair_tel_hrefs
+
+    out, fixes = _repair_tel_hrefs('<a href="tel:5615597663">561-559-ROOF</a>')
+    assert out == '<a href="tel:5615597663">561-559-ROOF</a>'
+    assert not fixes
+
+
+def test_tel_href_that_cannot_be_dialled_is_left_for_the_dead_anchor_pass():
+    """A tel: with too few digits is not repairable here — it must be LEFT, not mangled, so
+    the dead-anchor pass can unwrap it rather than shipping a broken dial link."""
+    from core.article_repair import _repair_tel_hrefs
+
+    out, fixes = _repair_tel_hrefs('<a href="tel:12">short</a>')
+    assert out == '<a href="tel:12">short</a>'
+    assert not fixes
+
+
+def test_merge_related_block_with_no_links_is_a_noop():
+    from core.article_repair import merge_related_block
+
+    assert merge_related_block("<p>body</p>", []) == "<p>body</p>"
+
+
+def test_repair_roots_a_slashless_link_to_a_real_slug():
+    """WordPress strips a slashless href, so the anchor publishes dead. Root it, don't drop it."""
+    out = _repair('<p><a href="roof-repair-services">Repair</a></p>',
+                  valid_slugs={"roof-repair-services"})
+    assert 'href="/roof-repair-services/"' in out.content_md
+
+
+def test_repair_rewrites_a_slashless_dead_link_through_the_pillar_map():
+    """Both halves at once: no leading slash AND a slug that only the pillar map can resolve."""
+    out = _repair('<p><a href="placeholder-x">Guide</a></p>',
+                  valid_slugs=set(), pillar_map={"placeholder-x": "real-pillar"})
+    assert 'href="/real-pillar/"' in out.content_md
+
+
+def test_repair_unwraps_an_anchor_with_no_href_keeping_the_words():
+    out = _repair("<p>Call <a>our team</a> today.</p>")
+    assert "<a" not in out.content_md
+    assert "our team" in out.content_md, "the words must survive; only the fake link goes"
+
+
+def test_aside_callouts_are_not_mistaken_for_anchors():
+    """(?![a-z]) in _NO_HREF_A_RE is load-bearing: without it "<a" also matches "<aside>", and
+    with DOTALL the .*?</a> would swallow body copy up to the next real </a>."""
+    body = '<aside class="callout"><p>Important note about roof repair.</p></aside>'
+    out = _repair(body)
+    assert "Important note about roof repair." in out.content_md
+    assert "<aside" in out.content_md

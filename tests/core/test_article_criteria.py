@@ -271,3 +271,65 @@ def test_featured_image_is_split_out_of_the_published_body():
     # No image -> unchanged content and no featured image set (never publish a mutated body).
     same, none_src = split_featured_image("<p>No image here.</p>")
     assert none_src is None and same == "<p>No image here.</p>"
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage: the full_graph flip and the small helpers (R1).
+# ---------------------------------------------------------------------------
+
+
+def _crit(content="<h2>H</h2><p>Roof repair in South Florida.</p>", **over):
+    from core.article_criteria import check_compliance
+    kw = over.pop("keyword", "roof repair")
+    args = {"meta": "M" * 130, "jsonld": [], "faq": [{"q": "Q?", "a": "A."}] * 4,
+            "ctx": {"role": "cluster", "title": "T", "slug": "s"}, "known_video_ids": set()}
+    args.update(over)
+    return {c.key: c for c in check_compliance(
+        content, args["meta"], args["jsonld"], args["faq"], args["ctx"], kw,
+        args["known_video_ids"], full_graph=args.get("full_graph", False))}
+
+
+def test_full_graph_mode_requires_the_types_rank_math_used_to_own():
+    """The ownership FLIPS once Rank Math is gone: Organization/WebSite/WebPage go from
+    forbidden duplicates to required, because nothing else emits them."""
+    missing = _crit(jsonld=[{"@type": "FAQPage"}], full_graph=True)["schema_scoped"]
+    assert not missing.ok
+    assert "business identity" in missing.detail and "WebSite" in missing.detail
+
+    ok = _crit(jsonld=[{"@type": "Organization"}, {"@type": "WebSite"}, {"@type": "WebPage"}],
+               full_graph=True)["schema_scoped"]
+    assert ok.ok
+
+
+def test_full_graph_reads_types_out_of_a_single_graph_wrapper():
+    """The builder may emit one node carrying @graph rather than a flat list."""
+    graph = [{"@graph": [{"@type": "Organization"}, {"@type": "WebSite"}, {"@type": "WebPage"}]}]
+    assert _crit(jsonld=graph, full_graph=True)["schema_scoped"].ok
+
+
+def test_non_full_graph_mode_rejects_types_rank_math_already_emits():
+    """While Rank Math is live, an Article node from us is a DUPLICATE on the live graph."""
+    c = _crit(jsonld=[{"@type": "FAQPage"}, {"@type": "Article"}])["schema_scoped"]
+    assert not c.ok and "Article" in c.detail
+
+
+def test_is_linked_accepts_a_markdown_link():
+    """content_md stores most pointers as markdown; the <a> form only appears after publish."""
+    from core.article_criteria import _is_linked
+
+    assert _is_linked("Learn more: [roof repair](/roof-repair-services/)")
+    assert not _is_linked("Learn more: roof repair")
+    # An <a> is NOT enough — WordPress strips a slashless href, so the reader gets bare text.
+    # That is exactly what the client reported: the source had anchors, the live page had none.
+    assert not _is_linked('Learn more: <a href="roof-repair-services">Repair</a>')
+    assert not _is_linked("Learn more: <a>Repair</a>")
+    assert _is_linked('Learn more: <a href="/roof-repair-services/">Repair</a>')
+
+
+def test_is_compliant_and_failing_agree():
+    from core.article_criteria import failing, is_compliant
+
+    crit = list(_crit().values())
+    assert is_compliant(crit) is (not failing(crit))
+    bad = [c for c in crit if not c.ok]
+    assert is_compliant([c for c in crit if c.ok]) or bad

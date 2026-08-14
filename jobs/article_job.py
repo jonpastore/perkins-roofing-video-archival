@@ -158,9 +158,19 @@ def _reapply_fixable_ensures(fields: dict, ctx: dict, keyword: str, db=None) -> 
     # needs to link to. _strip_toc then removes the VISIBLE block, which duplicated theirs.
     c = _strip_toc(ensure_toc(c))
     c = _ensure_tel_links(c)
+    # Anchor hygiene BEFORE the learn-more pass: that pass deletes a paragraph whose pointer
+    # looks dead, and a slashless href only looks dead until it is rooted.
+    c = _ensure_anchor_hygiene(c)
     c = _ensure_learn_more_links(c)
     c = _ensure_table_borders(c)
     c = _ensure_internal_links(c, keyword, ctx)
+    # Collapse any extra related-links blocks. merge_related_block merges into the FIRST block
+    # it finds but does not remove siblings, and _tidy_related_links lives in the REPAIR pass —
+    # which finalize skips when db is None. So a body arriving with two blocks failed
+    # `related_links_single_block` (fixable=True) with nothing on that path able to fix it.
+    from core.article_repair import _tidy_related_links  # noqa: PLC0415
+    c = _tidy_related_links(c)
+    c = _ensure_faq_question_headings(c, fields.get("faq_json") or [])
     c = _ensure_footer_link(c)
     c = _relativize_internal_links(c)
     fields["content_md"] = c
@@ -1754,10 +1764,33 @@ def _ensure_tel_links(content_md: str) -> str:
 
 
 # A relative href with no leading slash and no scheme — the form WordPress strips, so the
-# anchor reaches the reader as un-clickable text. Rootable in place; see _ensure_learn_more_links.
+# anchor reaches the reader as un-clickable text. Rootable in place.
 _SLASHLESS_HREF_RE = re.compile(
     r'(<a\s[^>]*href\s*=\s*)"(?!/|https?://|#|mailto:|tel:)([a-z0-9][a-z0-9-]*)/?"',
     re.IGNORECASE)
+
+
+def _ensure_anchor_hygiene(content_md: str) -> str:
+    """Root slashless hrefs and unwrap anchors with no href at all — WITHOUT a db.
+
+    The gate's `no_dead_anchors` is checked on every path and marked fixable=True, but its only
+    fixer lived in core.article_repair._repair_relative_links, which finalize skips entirely
+    when db is None. So an article carrying `<a>text</a>` failed a fixable criterion that
+    nothing on that path could satisfy — the same shape as no_blog and subscribe_cta.
+
+    Both halves here are decidable without knowing which slugs exist:
+      * an anchor with NO href is dead however you look at it — keep the words, drop the anchor;
+      * a slashless href is a link that CAN be saved, and rooting it is safe even if the slug
+        turns out not to exist, because _repair_relative_links still unwraps a genuinely dead
+        link when a db IS available. That pass owns the "is this slug real" decision; this one
+        must not pre-empt it by destroying the markup first.
+
+    Runs BEFORE _ensure_learn_more_links, whose _is_linked check would otherwise call a
+    salvageable slashless pointer dead and delete the whole paragraph.
+    """
+    from core.article_repair import _NO_HREF_A_RE  # noqa: PLC0415
+    out = _SLASHLESS_HREF_RE.sub(r'\1"/\2/"', content_md or "")
+    return _NO_HREF_A_RE.sub(r"\1", out)
 
 
 def _ensure_learn_more_links(content_md: str) -> str:
@@ -1786,11 +1819,8 @@ def _ensure_learn_more_links(content_md: str) -> str:
     """
     from core.article_criteria import _is_linked  # noqa: PLC0415
 
-    def _root(m: "re.Match") -> str:
-        return f'{m.group(1)}"/{m.group(2)}/"'
-
     def _sub(m: "re.Match") -> str:
-        seg = _SLASHLESS_HREF_RE.sub(_root, m.group(0))
+        seg = _ensure_anchor_hygiene(m.group(0))
         return seg if _is_linked(seg) else ""
     return _LEARN_MORE_P_RE.sub(_sub, content_md or "")
 
@@ -1806,6 +1836,40 @@ def _ensure_table_borders(content_md: str) -> str:
         r'<table class="perkins-table" '
         r'style="border-collapse:collapse;width:100%;border:1px solid #2A3C73"\1>',
         content_md or "")
+
+
+def _ensure_faq_question_headings(content_md: str, faq: list) -> str:
+    """Render the article's OWN FAQ into the body as <h3> questions when no question-phrased
+    heading exists — the deterministic fixer `question_heading` always claimed to have.
+
+    core.article_criteria promotes `aio_question_headings` from advisory to GATED on the stated
+    grounds that it is "deterministically satisfiable: the FAQ this article already carries
+    (faq_ge4) supplies real question headings, and _ensure_faq_headings renders them as <h3>".
+    That was false. _ensure_faq_headings only CONVERTS an FAQ already present in the body as a
+    legacy <dl>/<ul>; the pipeline puts faq_json into the JSON-LD (build_faq_page) and never
+    into content_md. So a normal article whose H2s happen to be statements failed a fixable
+    criterion that nothing could fix, burned every gate iteration, and then blocked.
+
+    Nothing is invented: these Q&A pairs are already part of the article and already published
+    in its FAQPage schema — this renders them where the reader and the extractors can see them.
+    Conservative by construction: no-op when a question heading already exists (the common
+    case, since the prompt asks for them) and no-op when there is no FAQ.
+    """
+    from core.seo import aio_signals  # noqa: PLC0415
+    if not content_md or not faq:
+        return content_md
+    sig = [s for s in aio_signals(content_md) if s["key"] == "aio_question_headings"]
+    if sig and sig[0]["pass"]:
+        return content_md
+    items = []
+    for pair in faq:
+        q, a = (pair or {}).get("q"), (pair or {}).get("a")
+        if q and a:
+            items.append(f"<h3>{q}</h3>\n<p>{a}</p>")
+    if not items:
+        return content_md
+    body = "\n".join(items)
+    return f'{content_md}\n<h2>Frequently asked questions</h2>\n{body}'
 
 
 def _ensure_footer_link(content_md: str) -> str:
