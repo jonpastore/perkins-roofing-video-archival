@@ -231,6 +231,56 @@ class TestPlatformAdminResolution:
         assert claims["role"] == "platform_admin"
         assert claims["tenant_id"] is None
 
+    def test_unverified_email_is_not_elevated_to_platform_admin(self, tmp_path):
+        """Same rule as tenant_default_admins: the table is an email match, not a proof
+        of inbox ownership. Unverified must not become platform_admin."""
+        from app.models import Base, PlatformAdmin
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        with Session() as db:
+            db.add(PlatformAdmin(email="staff@degenito.ai", granted_by="jon@degenito.ai"))
+            db.commit()
+
+        from api.auth import set_verifier, _verify_with_db
+        set_verifier(_make_verifier({
+            "email": "staff@degenito.ai", "email_verified": False, "role": "sales"}))
+
+        with Session() as db:
+            claims = _verify_with_db("Bearer fake", db)
+
+        assert claims["role"] != "platform_admin"
+        assert claims["role"] == "sales"
+
+    def test_firebase_tenant_claim_reaches_resolve(self, tmp_path):
+        """verify_token used to drop the firebase block. If it does again, every
+        GCIP user is tenant 1 regardless of tenant_gcip_map."""
+        from app.models import Base, Tenant, TenantGcipMap
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        with Session() as db:
+            db.add(Tenant(id=2, name="T2", slug="t2"))
+            db.add(TenantGcipMap(tenant_id=2, gcip_tenant="gcip-t2"))
+            db.commit()
+
+        from api.auth import set_verifier, _verify_with_db
+        set_verifier(_make_verifier({
+            "email": "user@t2.com", "email_verified": True, "role": "sales",
+            "firebase": {"tenant": "gcip-t2"},
+        }))
+
+        with Session() as db:
+            claims = _verify_with_db("Bearer fake", db)
+
+        assert claims["tenant_id"] == 2
+
     def test_regular_user_is_not_elevated_to_platform_admin(self, tmp_path):
         """Email not in platform_admins table → normal role flow."""
         from app.models import Base, PlatformAdmin, init_db

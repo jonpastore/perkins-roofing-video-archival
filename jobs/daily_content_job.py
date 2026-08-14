@@ -15,11 +15,15 @@ and schedules a paced go-live via ScheduledContent, so the existing promote cron
 releasing. That keeps ONE publish path (the one with 427 successful releases behind it) rather
 than adding a second, and it means a bad run leaves drafts rather than live pages.
 
-SELECTION. The highest-grounding ungenerated topic wins: aggregated_topics ordered by total
-seconds of source video, skipping anything already generated. Grounding depth is the right
-ranking because this pipeline's failure mode is invention — core/article_grounding exists because
-articles were once ~90% invented — so the topic with the most real transcript behind it is the
-one most likely to survive the gate.
+SELECTION. The highest-grounding ungenerated topic wins: content_graph topic labels ordered by
+total seconds of source video, skipping anything already generated. Grounding depth is the
+right ranking because this pipeline's failure mode is invention — core/article_grounding exists
+because articles were once ~90% invented — so the topic with the most real transcript behind it
+is the one most likely to survive the gate.
+
+Reads content_graph live. aggregated_topics is a snapshot nothing refreshes, so ranking from
+it would pick yesterday's catalogue forever. The Topics UI still falls back to the same live
+scan when that table is empty.
 """
 from __future__ import annotations
 
@@ -95,26 +99,49 @@ def next_topic(db) -> dict | None:
     characteristic failure is inventing content, and the compliance gate rejects what it cannot
     ground. Ranking by num_videos instead would favour a topic mentioned briefly in many clips
     over one covered in depth.
+
+    Source is content_graph, not aggregated_topics. The aggregate table is a snapshot
+    nothing currently refreshes; a cron that ranked it would keep picking from a stale
+    catalogue after every ingest.
     """
     from api.routes.articles import _slugify  # noqa: PLC0415
-    from app.models import AggregatedTopic  # noqa: PLC0415
+    from app.models import GraphNode, Video  # noqa: PLC0415
 
     done = _generated_slugs(db)
-    best = None
-    for row in db.query(AggregatedTopic).all():
-        label = (row.canonical_label or "").strip()
-        if not label or _slugify(label) in done:
+    groups: dict[str, dict] = {}
+    for row in db.query(GraphNode).filter(GraphNode.kind == "topics").all():
+        label = (row.label or "").strip()
+        if not label:
             continue
-        if best is None or (row.total_seconds or 0) > (best.total_seconds or 0):
-            best = row
-    if best is None:
+        key = label.casefold()
+        bucket = groups.setdefault(key, {"label": label, "video_ids": set()})
+        if row.video_id:
+            bucket["video_ids"].add(row.video_id)
+
+    if not groups:
         return None
-    return {
-        "label": best.canonical_label,
-        "slug": _slugify(best.canonical_label),
-        "num_videos": best.num_videos,
-        "total_seconds": best.total_seconds,
-    }
+
+    video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
+    duration_map: dict[str, float] = {}
+    if video_ids:
+        for video in db.query(Video).filter(Video.id.in_(list(video_ids))).all():
+            duration_map[video.id] = video.duration or 0.0
+
+    best = None
+    for g in groups.values():
+        slug = _slugify(g["label"])
+        if slug in done:
+            continue
+        seconds = sum(duration_map.get(vid, 0.0) for vid in g["video_ids"])
+        candidate = {
+            "label": g["label"],
+            "slug": slug,
+            "num_videos": len(g["video_ids"]),
+            "total_seconds": seconds,
+        }
+        if best is None or seconds > best["total_seconds"]:
+            best = candidate
+    return best
 
 
 def _clusters_for(topic_label: str, db) -> list[str]:

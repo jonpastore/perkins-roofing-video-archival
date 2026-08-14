@@ -121,12 +121,10 @@ reinterpreting `accepted_ip`, so historical records keep their meaning.
 
 ---
 
-## 4. 🟡 `core/caption_output.py` gates nothing — an unreachable content-safety check
+## 4. 🟡 `core/caption_output.py` gates nothing — an unreachable content-safety check ✅ DONE
 
-**Today.** `parse_caption_output` / `gate_caption` / `gate_caption_flags` have **no production
-caller**. `status="withheld"`, `parse_error`, `SUSPECT_TRANSCRIPT`, `UNUSABLE_TRANSCRIPT` and
-`MISSING_LICENSE` block exactly zero publishes. The module docstring claimed it was "wired to the
-publish path", which read as completed work for however long it stood (now corrected).
+Wired 2026-08-13 (`social_job._publish_verdict`). MISSING_LICENSE blocks as of 2026-08-14
+(`require_license=True` on the publish path) — decided before social credentials land.
 
 It parses the **social-caption-v5** JSON contract. The live path is
 `social_job._caption_for → clip_select.parse_title_output`, whose prompt returns
@@ -198,19 +196,10 @@ corrected**. Either way the 0.35 must go — it is a trap for the next reader.
 
 ---
 
-## 7. 🔴 Pre-production gate — profit readable by `quoting_view` / `estimating_view`
+## 7. 🔴 Pre-production gate — profit readable by `quoting_view` / `estimating_view` ✅ DONE 2026-08-14
 
-Already accepted by Jon on 2026-08-12 ("ok for now… only high level people are looking"), recorded
-in the resume list. Restated here because it must not ship as-is:
-
-- `estimate_result.profit_dollars` — emitted with **no debug flag involved**
-- `calc_lines` at the **internal** audience — stored under the unstripped key
-- the debug trace now persisted, served by `GET /estimator/estimates` to `estimating_view`
-
-⚠️ **Hiding the debug OPTION does not hide the DATA.** Two of the three are emitted regardless.
-The real fix is either strip-on-read for non-`estimating_manage` callers, or a separate
-`estimate_internal` table. **Proposed: strip in the serializer** — the same shape as
-`_snapshot_without_internal_calc`, which is already proven and has a test.
+Closed: `api.routes.estimator._public_estimate` strips profit/margin/commission and internal
+calc_lines on every read unless the caller holds `estimating_manage`. Persist is unchanged.
 
 ---
 

@@ -471,6 +471,16 @@ def _lumber_schedule_pdf_bytes() -> bytes | None:
         return None
 
 
+def _public_snapshot(snap: dict | None, claims: dict | None = None) -> dict | None:
+    """Proposal snapshot on the wire: no internal calc, no profit unless estimating_manage."""
+    from api.routes.estimator import _public_estimate  # noqa: PLC0415
+
+    base = _snapshot_without_internal_calc(snap)
+    if base is None:
+        return None
+    return _public_estimate(base, claims or {})
+
+
 def _snapshot_without_internal_calc(snap: dict | None) -> dict | None:
     """Strip the internal build-up rows from a snapshot bound for the JSON API.
 
@@ -642,7 +652,7 @@ def _event_row(ev: ProposalEvent) -> dict:
     }
 
 
-def _proposal_row(row: Proposal, events: list | None = None) -> dict:
+def _proposal_row(row: Proposal, events: list | None = None, claims: dict | None = None) -> dict:
     d = {
         "id": row.id,
         "tenant_id": row.tenant_id,
@@ -663,14 +673,10 @@ def _proposal_row(row: Proposal, events: list | None = None) -> dict:
         # boolean instead of role-filtering the payload means a new read path cannot leak profit
         # by forgetting the filter.
         #
-        # ⚠️ This strips `calc_lines_internal` ONLY. It is NOT a claim that no profit reaches a
-        # `quoting_view` caller — two other things already do, both known and both accepted by
-        # Jon on 2026-08-12 while the tool is being used by a small internal group to validate
-        # data: `estimate_result.profit_dollars`, and `calc_lines` itself when a sender ticked
-        # "Show how this price was built" with the INTERNAL audience (Quoting.tsx's radio), since
-        # _freeze_calc_breakdown stores those rows under the unstripped key. BOTH MUST BE CLOSED
-        # BEFORE PRODUCTION — see the pre-production gate in the 2026-08-12-eve continuation.
-        "quote_snapshot": _snapshot_without_internal_calc(row.quote_snapshot),
+        # calc_lines_internal is always dropped. Profit dollars / margin / internal
+        # calc_lines are dropped unless the caller holds estimating_manage — see
+        # api.routes.estimator._public_estimate.
+        "quote_snapshot": _public_snapshot(row.quote_snapshot, claims),
         "calc_breakdown_available": bool((row.quote_snapshot or {}).get("calc_lines_internal")),
         "selected_tier": row.selected_tier,
         "selected_options": row.selected_options,
@@ -1091,7 +1097,7 @@ def list_proposals(
     page: Optional[int] = Query(None, ge=1),
     skip: int = 0,
     limit: int = Query(50, ge=1, le=200),
-    _claims=Depends(require_role("quoting_view")),
+    claims=Depends(require_role("quoting_view")),
     db: Session = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(db)
@@ -1119,7 +1125,7 @@ def list_proposals(
 
     out = []
     for row, cname, street, city, state in results:
-        d = _proposal_row(row)
+        d = _proposal_row(row, claims=claims)
         d["customer_name"] = cname
         d["property_address"] = f"{street}, {city} {state}" if street else None
         d["amount"] = _proposal_amount(row)
@@ -1244,7 +1250,7 @@ def create_proposal(
     db.add(row)
     db.flush()
     db.refresh(row)
-    return _proposal_row(row)
+    return _proposal_row(row, claims=claims)
 
 
 class ProposalFromProjectCreate(BaseModel):
@@ -1400,7 +1406,7 @@ def create_proposal_from_project(
     db.add(row)
     db.flush()
     db.refresh(row)
-    return _proposal_row(row)
+    return _proposal_row(row, claims=claims)
 
 
 @router.post("/quoting/proposals/from-quote/{contract_id}")
@@ -1422,7 +1428,7 @@ def create_proposal_from_quote(
     quote = _load_knowify_quote(db, contract_id)
     existing = _existing_knowify_import(db, tenant_id, contract_id)
     if existing is not None:
-        return _proposal_row(existing)
+        return _proposal_row(existing, claims=claims)
 
     customer_id = _resolve_import_customer_id(
         db,
@@ -1461,13 +1467,13 @@ def create_proposal_from_quote(
     db.add(row)
     db.flush()
     db.refresh(row)
-    return _proposal_row(row)
+    return _proposal_row(row, claims=claims)
 
 
 @router.get("/quoting/proposals/{proposal_id}")
 def get_proposal(
     proposal_id: int,
-    _claims=Depends(require_role("quoting_view")),
+    claims=Depends(require_role("quoting_view")),
     db: Session = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(db)
@@ -1484,14 +1490,14 @@ def get_proposal(
         .where(ProposalEvent.proposal_id == proposal_id)
         .order_by(ProposalEvent.occurred_at)
     ).scalars().all()
-    return _proposal_row(row, events=events)
+    return _proposal_row(row, events=events, claims=claims)
 
 
 @router.put("/quoting/proposals/{proposal_id}")
 def update_proposal(
     proposal_id: int,
     body: ProposalUpdate,
-    _claims=Depends(require_role("quoting_create")),
+    claims=Depends(require_role("quoting_create")),
     db: Session = Depends(get_db_session),
 ):
     tenant_id = _tenant_id(db)
@@ -1533,7 +1539,7 @@ def update_proposal(
         setattr(row, field, value)
     db.flush()
     db.refresh(row)
-    return _proposal_row(row)
+    return _proposal_row(row, claims=claims)
 
 
 @router.post("/quoting/proposals/{proposal_id}/send")
@@ -1638,7 +1644,7 @@ def send_proposal(
         email_sent = False
         _log.warning("send_proposal: customer has no email for proposal %s", proposal_id)
 
-    result = _proposal_row(row)
+    result = _proposal_row(row, claims=claims)
     if not email_sent:
         result["email_sent"] = False
     if review_warning:
@@ -1704,13 +1710,13 @@ def revise_proposal(
 
     db.flush()
     db.refresh(new_row)
-    return _proposal_row(new_row)
+    return _proposal_row(new_row, claims=claims)
 
 
 @router.get("/quoting/proposals/{proposal_id}/chain")
 def get_proposal_chain(
     proposal_id: int,
-    _claims=Depends(require_role("quoting_view")),
+    claims=Depends(require_role("quoting_view")),
     db: Session = Depends(get_db_session),
 ):
     """Return all versions sharing the same root_id, ordered by version_number."""
@@ -1735,7 +1741,7 @@ def get_proposal_chain(
     ).scalars().all()
     if not rows:
         rows = [anchor]
-    return [_proposal_row(r) for r in rows]
+    return [_proposal_row(r, claims=claims) for r in rows]
 
 
 # ---------------------------------------------------------------------------

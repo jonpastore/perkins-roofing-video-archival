@@ -1,25 +1,30 @@
 #!/usr/bin/env bash
 # Apply DB schema migrations from git (R3: infra as code, git -> apply, never the reverse).
-# Runs every infra/migrations/*.sql in filename order against Cloud SQL. Migrations are
-# idempotent (CREATE/ALTER ... IF NOT EXISTS), so re-running is safe.
+# Runs pending infra/migrations/*.sql in filename order. Already-applied files are skipped
+# via schema_migrations. GOOGLE_CLOUD_PROJECT is required when DB_URL is not set — there
+# is no implicit prod default.
 #
 # Requires: the Cloud SQL Auth Proxy listening on 127.0.0.1:5432 (or set DB_URL yourself),
 # and application-default credentials able to read the db-password secret.
-#   Usage: scripts/apply_migrations.sh
+#   Usage: GOOGLE_CLOUD_PROJECT=... scripts/apply_migrations.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PROJECT="${GOOGLE_CLOUD_PROJECT:-video-archival-and-content-gen}"
-
 if [[ -z "${DB_URL:-}" ]]; then
-  PW="$(gcloud secrets versions access latest --secret=db-password --project "$PROJECT")"
+  if [[ -z "${GOOGLE_CLOUD_PROJECT:-}" ]]; then
+    echo "GOOGLE_CLOUD_PROJECT is required — refusing to default to prod." >&2
+    exit 1
+  fi
+  PW="$(gcloud secrets versions access latest --secret=db-password --project "$GOOGLE_CLOUD_PROJECT")"
   DB_URL="postgresql+psycopg://app:${PW}@127.0.0.1:5432/perkins"
 fi
 
 echo "== Applying migrations from infra/migrations =="
-DB_URL="$DB_URL" .venv/bin/python - "$@" <<'PY'
-import glob, os, re
+DB_URL="$DB_URL" PYTHONPATH="scripts${PYTHONPATH:+:$PYTHONPATH}" .venv/bin/python - "$@" <<'PY'
+import glob, os, re, sys
 from sqlalchemy import create_engine, text
+
+from migration_ledger import LEDGER_DDL, decide, file_checksum
 
 # Create the base tables FIRST (the ORM owns them; no migration issues their CREATE TABLE).
 # Without this, the ALTER-only migrations (0001 ALTER chunks, 0002/0008/0009 ALTER videos)
@@ -34,13 +39,26 @@ _m.init_db()
 _COMMENT = re.compile(r"--.*$", re.MULTILINE)
 
 engine = create_engine(os.environ["DB_URL"])
+with engine.begin() as c:
+    c.execute(text(LEDGER_DDL))
+    applied = {row[0]: row[1] for row in c.execute(text(
+        "SELECT filename, checksum FROM schema_migrations"))}
 files = sorted(glob.glob("infra/migrations/*.sql"))
 for f in files:
+    name = os.path.basename(f)
+    checksum = file_checksum(f)
+    if decide(name, checksum, applied) == "skip":
+        print(f"  skip {name} (already applied)")
+        continue
     body = _COMMENT.sub("", open(f).read())
     with engine.begin() as c:
         for stmt in (s.strip() for s in body.split(";")):
             if stmt:
                 c.execute(text(stmt))
+        c.execute(
+            text("INSERT INTO schema_migrations (filename, checksum) VALUES (:f, :c)"),
+            {"f": name, "c": checksum},
+        )
     print(f"  applied {f}")
 print("== migrations complete ==")
 PY

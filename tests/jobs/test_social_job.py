@@ -247,9 +247,7 @@ def test_the_publish_loop_generates_caches_and_uses_per_platform_copy(monkeypatc
 # ---------------------------------------------------------------------------
 # The caption content gate now has a caller (audit item 3, 2026-08-13)
 # ---------------------------------------------------------------------------
-# core/caption_output.py's gate had NO production caller while its docstring claimed it was
-# "wired to the publish path". status="withheld", SUSPECT_TRANSCRIPT, UNUSABLE_TRANSCRIPT and
-# MISSING_LICENSE blocked exactly zero publishes.
+# The caption gate is on the publish path. withheld / block-class flags / MISSING_LICENSE refuse.
 
 def test_a_withheld_caption_is_blocked():
     from core.caption_output import BLOCKED
@@ -269,21 +267,14 @@ def test_a_block_class_flag_is_blocked():
         assert _publish_verdict(part, "tiktok")[0] == BLOCKED, flag
 
 
-def test_missing_license_does_NOT_block_by_default_and_that_is_a_live_question():
-    """gate_caption_flags takes require_license=False by default, so MISSING_LICENSE currently
-    passes. That is the module author's chosen default and this wiring does not override it.
-
-    ⚠️ OPEN DECISION for Jon: these posts go to public Instagram/TikTok, and the render spec can
-    pull third-party music and b-roll, so an unconfirmed licence is a real copyright-strike risk.
-    Flipping require_license=True in jobs.social_job._publish_verdict is a ONE-WORD change — but
-    it is a legal/content policy, not an engineering call, so it was not made unilaterally. This
-    test documents the current behaviour so a future flip is deliberate and visible.
-    """
-    from core.caption_output import OK
+def test_missing_license_blocks_before_social_creds_land():
+    """Public IG/TikTok + third-party music/b-roll is a copyright-strike risk.
+    Decided closed (require_license=True) before credentials make this path live."""
+    from core.caption_output import BLOCKED
     from jobs.social_job import _publish_verdict
 
     part = {"copy": {"tiktok": {"title": "T", "status": "ok", "flags": ["MISSING_LICENSE"]}}}
-    assert _publish_verdict(part, "tiktok")[0] == OK
+    assert _publish_verdict(part, "tiktok")[0] == BLOCKED
 
 
 def test_a_review_flag_still_publishes_but_is_not_silent():

@@ -8,24 +8,10 @@ Legacy fallback is the v3 line format (FLAGS: / CAPTION: / HASHTAGS:).
 parse-error marker). `gate_caption` / `gate_caption_flags` turn status + flags into a publish
 decision per the v5 gating rules. Pure, no I/O.
 
-⚠️ NOTHING IN PRODUCTION CALLS THIS (verified 2026-08-13: `grep -rn 'caption_output|gate_caption'`
-hits only this module and tests/core/test_caption_output.py). The previous version of this line
-said "the caller wires it to the publish path alongside the Track E content-safety gate" — there
-is no such caller, and that sentence read as a completed wiring for however long it stood.
-
-SO THE GATE GATES NOTHING TODAY. `status="withheld"`, `parse_error`, SUSPECT_TRANSCRIPT,
-UNUSABLE_TRANSCRIPT and MISSING_LICENSE all currently block exactly zero publishes.
-
-Why it is not simply wired in: this parses the **social-caption-v5 prompt's** JSON contract
-(status/flags/hook_structure/...). The live caption path does not use that prompt — it is
-jobs/social_job._caption_for -> core.clip_select.parse_title_output, whose model returns
-{title, hashtags, description} with no status and no flags. Feeding one to the other would gate on
-fields that are never present, i.e. it would fail-closed on everything or pass everything
-depending on the default. Making this real means moving the caption path onto the v5 prompt, which
-is a content decision, not a refactor.
-
-Until then treat this module as READY BUT UNCONNECTED, and do not read a passing test suite here
-as evidence that captions are being screened.
+Called from jobs.social_job._publish_verdict. `status="withheld"`, `parse_error`,
+SUSPECT_TRANSCRIPT, UNUSABLE_TRANSCRIPT and MISSING_LICENSE all block. MISSING_LICENSE is
+required on the publish path (`require_license=True`) — public IG/TikTok plus third-party
+music/b-roll is a copyright-strike risk, decided before social credentials land.
 """
 from __future__ import annotations
 

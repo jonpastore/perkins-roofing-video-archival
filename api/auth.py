@@ -160,9 +160,13 @@ def _verify_with_db(authorization: str, db_session) -> dict:
     email_lower = email.lower() if email else ""
     email_verified = claims.get("email_verified", False)
 
-    # Check platform_admins table first — short-circuits role resolution
+    # Check platform_admins table first — short-circuits role resolution.
+    # email_verified is required here the same way effective_role requires it
+    # for tenant_default_admins: verify_id_token proves the token is ours, not
+    # that the email is theirs. An unverified inbox matching the table would
+    # otherwise become platform_admin across every tenant.
     platform_emails = _platform_admin_emails(db_session)
-    if email_lower and email_lower in platform_emails:
+    if email_lower and email_verified and email_lower in platform_emails:
         claims["role"] = "platform_admin"
         claims["tenant_id"] = None  # platform_admin has no tenant context without impersonation
         return claims

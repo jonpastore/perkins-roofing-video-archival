@@ -1697,3 +1697,45 @@ def test_two_day_cells_price_the_same_as_the_three_series_the_model_derives(cfg:
     three = estimate(c2, QuoteInput(**base))["project_total"]
     two = estimate(c2, QuoteInput(**base, daily_series=collapsed))["project_total"]
     assert three == two, f"two cells priced {two} against the model's {three}"
+
+
+def test_mixed_daily_overhead_is_charged_once(cfg: PricingConfig):
+    """Daily overhead is a whole-job line. Mixed + daily is the DEFAULT quote path
+    (API overhead_mode='daily') and QuoteInput defaults to per_sq, so every existing
+    mixed money test missed a double charge: _build_sloped billed the day total, then
+    CARRIES_OVER copied the same daily total back in as flat_overhead.
+
+    Invariant: sum of every overhead line == compute_daily_overhead once.
+    """
+    from core.estimator import DailyOverheadSeries, compute_daily_overhead
+
+    raw = dict(cfg.raw)
+    raw["overhead_basis"] = "branch"
+    raw["office_daily_overhead"] = 1470
+    raw["concurrent_crews"] = 1.0
+    raw["daily_overhead_day_model"] = {
+        **raw["daily_overhead_day_model"],
+        "series": {**raw["daily_overhead_day_model"]["series"],
+                   "low_slope": {"setup": 0.389, "rate": 0.0851}},
+        "flat_series": {"series": "low_slope"},
+    }
+    raw["daily_overhead_rates"] = {**raw["daily_overhead_rates"], "low_slope": 1050.0}
+    c2 = load_config(raw)
+
+    r = estimate(c2, QuoteInput(
+        roof_type="13_tile", num_squares=20.0, flat_squares=6.0,
+        flat_roof_type="polyglass_sav_sap", slope_type="sloped",
+        code_zone="HVHZ", existing_roof="tile", overhead_mode="daily"))
+    assert r.get("overhead_basis_used") == "daily", r.get("warnings")
+    series = [DailyOverheadSeries(series=s["series"], days=s["days"]) for s in r["daily_series"]]
+    expected, _ = compute_daily_overhead(c2, series, 20.0)
+
+    oh_lines = [li for li in r["line_items_detail"] if "overhead" in li["key"]]
+    charged = sum(li["amount"] for li in oh_lines)
+    assert abs(charged - expected) < 0.01, (
+        f"mixed+daily charged ${charged:,.2f} against one-shot ${expected:,.2f}; "
+        f"lines={[(li['key'], li['amount']) for li in oh_lines]}"
+    )
+    assert all(li["key"] != "flat_overhead" for li in oh_lines), (
+        "daily overhead is whole-job; the flat section must not carry its own OH line"
+    )

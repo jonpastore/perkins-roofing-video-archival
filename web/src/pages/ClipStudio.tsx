@@ -4,6 +4,7 @@ import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, S
 import { NavContext } from "../App";
 import { ClipStudioHelp } from "../components/ClipStudioHelp";
 import { errText } from "../lib/errors";
+import { seriesTitle } from "../lib/clipTitles";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,28 +72,7 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-/** Mirror of core.miniseries.clean_title: strip emojis, hashtags, leading junk. */
-function cleanTitle(text: string): string {
-  // Remove emoji ranges
-  let s = text.replace(/[☀-➿ἰ0-ᾯF︀-️←-⇿⬀-⯿]/gu, "");
-  // Remove hashtag tokens
-  s = s.replace(/(?:^|\s)#\w+/g, " ");
-  // Strip leading/trailing junk
-  s = s.replace(/^[\s#@*•\-–—|]+/, "").replace(/[\s#@*•\-–—|]+$/, "");
-  // Collapse whitespace
-  return s.replace(/\s+/g, " ").trim();
-}
-
-/** Produce a concise clip-series title: clean + truncate at word boundary ≤50 chars. */
-function seriesTitle(videoTitle: string): string {
-  const cleaned = cleanTitle(videoTitle);
-  if (!cleaned) return "Clips";
-  const MAX = 50;
-  const truncated = cleaned.length > MAX
-    ? cleaned.slice(0, MAX).replace(/\s+\S*$/, "").trim()
-    : cleaned;
-  return `${truncated} — Clips`;
-}
+// cleanTitle / seriesTitle live in lib/clipTitles.ts
 
 // ── Virality score badge ──────────────────────────────────────────────────────
 

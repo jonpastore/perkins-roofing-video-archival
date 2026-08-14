@@ -216,18 +216,12 @@ export interface SocialAccountStatus {
 
 export interface MarketingSettings {
   brand?: BrandKit;
-  caption_prompt_version?: string;
-  publish_cadence_days?: number;
-  seed_pct?: number;
-  royalty_free_music_catalog?: string;
   social_accounts?: Record<string, SocialAccountStatus>;
   safety_denylist?: string[];
 }
 
 export interface KbSettings {
   ingest_enabled?: boolean;
-  abstain_threshold?: number;
-  faq_policy?: "auto" | "manual";
   channel_sources?: string[];
 }
 

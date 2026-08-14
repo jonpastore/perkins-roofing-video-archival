@@ -12,51 +12,82 @@ import jobs.daily_content_job as DC
 
 class _Q:
     def __init__(self, rows): self._rows = rows
+    def filter(self, *a, **k): return self
     def all(self): return self._rows
 
 
 class _DB:
-    """Answers query(AggregatedTopic) and query(Article.slug, Article.pillar_slug)."""
-    def __init__(self, topics, articles): self._t, self._a = topics, articles
+    """Answers query(GraphNode), query(Video), and query(Article.slug, Article.pillar_slug)."""
+    def __init__(self, nodes, videos, articles):
+        self._n, self._v, self._a = nodes, videos, articles
 
     def query(self, *cols):
         first = getattr(cols[0], "__name__", "")
-        return _Q(self._t if first == "AggregatedTopic" else self._a)
+        if first == "GraphNode":
+            return _Q(self._n)
+        if first == "Video":
+            return _Q(self._v)
+        return _Q(self._a)
 
 
-def _topic(label, seconds, videos=3):
-    return SimpleNamespace(canonical_label=label, total_seconds=seconds, num_videos=videos)
+def _node(label, video_id):
+    return SimpleNamespace(kind="topics", label=label, video_id=video_id)
+
+
+def _video(vid, duration):
+    return SimpleNamespace(id=vid, duration=duration)
+
+
+def _graph(label, seconds, n_videos=3):
+    """One topic mentioned on n_videos, each lasting seconds/n_videos so the TOTAL is seconds."""
+    per = seconds / n_videos
+    nodes, videos = [], []
+    for i in range(n_videos):
+        vid = f"{label}-{i}"
+        nodes.append(_node(label, vid))
+        videos.append(_video(vid, per))
+    return nodes, videos
 
 
 def test_picks_the_best_GROUNDED_topic_not_the_most_mentioned():
     """Ranked by total_seconds, not num_videos. This pipeline's characteristic failure is
     INVENTION (core/article_grounding exists because articles were once ~90% invented), and the
     gate rejects what it cannot ground — so depth of source beats breadth of mention."""
-    db = _DB([_topic("Shallow but everywhere", 60.0, videos=40),
-              _topic("Deeply covered", 900.0, videos=3)], [])
+    shallow_n, shallow_v = _graph("Shallow but everywhere", 60.0, n_videos=40)
+    deep_n, deep_v = _graph("Deeply covered", 900.0, n_videos=3)
+    db = _DB(shallow_n + deep_n, shallow_v + deep_v, [])
     assert DC.next_topic(db)["label"] == "Deeply covered"
 
 
+def test_reads_content_graph_not_the_stale_aggregate(monkeypatch):
+    """aggregated_topics is a snapshot nothing refreshes. If this job ranks from it,
+    a morning ingest never changes what tomorrow's cron picks."""
+    import inspect
+    assert "AggregatedTopic" not in inspect.getsource(DC.next_topic)
+
+
 def test_skips_topics_that_already_have_an_article():
-    db = _DB([_topic("Tile underlayment", 900.0)], [("tile-underlayment", None)])
+    nodes, videos = _graph("Tile underlayment", 900.0)
+    db = _DB(nodes, videos, [("tile-underlayment", None)])
     assert DC.next_topic(db) is None
 
 
 def test_skips_a_topic_that_exists_only_as_a_CLUSTER_parent():
     """_generated_slugs collects pillar_slug too — a topic with clusters under it is generated
     even if no article carries its own slug."""
-    db = _DB([_topic("Metal roofing", 900.0)], [("some-cluster", "metal-roofing")])
+    nodes, videos = _graph("Metal roofing", 900.0)
+    db = _DB(nodes, videos, [("some-cluster", "metal-roofing")])
     assert DC.next_topic(db) is None
 
 
 def test_exhausted_catalogue_returns_None_rather_than_inventing_a_topic():
-    assert DC.next_topic(_DB([], [])) is None
-    assert DC.next_topic(_DB([_topic("   ", 900.0)], [])) is None
+    assert DC.next_topic(_DB([], [], [])) is None
+    assert DC.next_topic(_DB([_node("   ", "v1")], [_video("v1", 900.0)], [])) is None
 
 
 def test_a_tenant_with_nothing_left_is_skipped_not_failed(monkeypatch):
     monkeypatch.setattr(DC, "next_topic", lambda db: None)
-    assert DC._run_for_tenant(_DB([], []), 1)["skipped"] == "no ungenerated topics"
+    assert DC._run_for_tenant(_DB([], [], []), 1)["skipped"] == "no ungenerated topics"
 
 
 def test_subtopic_failure_degrades_to_pillar_only_instead_of_losing_the_day(monkeypatch):
@@ -67,7 +98,7 @@ def test_subtopic_failure_degrades_to_pillar_only_instead_of_losing_the_day(monk
         raise RuntimeError("llm down")
 
     monkeypatch.setattr(T, "_derive_subtopics", _boom)
-    assert DC._clusters_for("Tile underlayment", _DB([], [])) == []
+    assert DC._clusters_for("Tile underlayment", _DB([], [], [])) == []
 
 
 def test_it_generates_GATED_and_as_a_DRAFT(monkeypatch):
@@ -86,7 +117,7 @@ def test_it_generates_GATED_and_as_a_DRAFT(monkeypatch):
         return {"report": {}}
 
     monkeypatch.setattr(B, "run_batch", _fake)
-    DC._run_for_tenant(_DB([], []), 1)
+    DC._run_for_tenant(_DB([], [], []), 1)
 
     assert seen["mode"] == "publish"
     assert seen["status"] == "draft", "must not bypass ScheduledContent and publish live"

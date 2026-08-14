@@ -2,29 +2,38 @@
 """Apply DB migrations to Cloud SQL via the Cloud SQL Python Connector (no Auth Proxy needed).
 
 Companion to apply_migrations.sh for hosts without the proxy binary. Authenticates via ADC
-(the gcloud user running it) and reads the db-password from Secret Manager. Runs every
-infra/migrations/*.sql at or after MIN_MIGRATION in filename order. All migrations are
-idempotent (CREATE/ALTER ... IF NOT EXISTS), so re-running is safe (R3: git -> apply).
+(the gcloud user running it) and reads the db-password from Secret Manager. Runs pending
+infra/migrations/*.sql at or after MIN_MIGRATION. Already-applied files are skipped via
+schema_migrations. GOOGLE_CLOUD_PROJECT is required — there is no implicit prod default.
 
 Usage:
-    .venv/bin/python scripts/apply_migrations_connector.py
-    MIN_MIGRATION=0001 .venv/bin/python scripts/apply_migrations_connector.py   # apply all
+    GOOGLE_CLOUD_PROJECT=... .venv/bin/python scripts/apply_migrations_connector.py
+    MIN_MIGRATION=0001 GOOGLE_CLOUD_PROJECT=... .venv/bin/python scripts/apply_migrations_connector.py
 """
 import glob
 import os
 import subprocess
+import sys
 
 from google.cloud.sql.connector import Connector
 
-PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "video-archival-and-content-gen")
-CONN = f"{PROJECT}:us-central1:{PROJECT}-pg"
 # 0001-0009 were applied long ago; default to the recent batch. Override via env to apply all.
 MIN_MIGRATION = os.environ.get("MIN_MIGRATION", "0010")
 
+sys.path.insert(0, os.path.dirname(__file__))
+from migration_ledger import (  # noqa: E402
+    LEDGER_DDL,
+    decide,
+    file_checksum,
+    record_applied,
+    require_project,
+)
 
-def _password() -> str:
+
+def _password(project: str) -> str:
     return subprocess.check_output(
-        ["gcloud", "secrets", "versions", "access", "latest", "--secret=db-password", "--project", PROJECT]
+        ["gcloud", "secrets", "versions", "access", "latest",
+         "--secret=db-password", "--project", project]
     ).decode().strip()
 
 
@@ -126,23 +135,33 @@ def _statements(sql: str):
 
 
 def main() -> None:
+    project = require_project()
+    conn_name = f"{project}:us-central1:{project}-pg"
     connector = Connector()
-    conn = connector.connect(CONN, "pg8000", user="app", password=_password(), db="perkins")
+    conn = connector.connect(conn_name, "pg8000", user="app", password=_password(project), db="perkins")
     cur = conn.cursor()
     # Tenant-scoped seeds (e.g. 0030's invoice-counter seed) run under FORCE ROW LEVEL
     # SECURITY as the NOBYPASSRLS `app` user, so set the tenant GUC to Perkins (tenant 1 —
     # the only tenant these migrations seed) or the WITH CHECK policy rejects the INSERT.
     cur.execute("SELECT set_config('app.tenant_id', '1', false)")
+    cur.execute(LEDGER_DDL)
     conn.commit()
+    cur.execute("SELECT filename, checksum FROM schema_migrations")
+    applied = {row[0]: row[1] for row in cur.fetchall()}
     try:
         for path in sorted(glob.glob("infra/migrations/*.sql")):
             name = os.path.basename(path)
             if name < f"{MIN_MIGRATION}":
                 continue
+            checksum = file_checksum(path)
+            if decide(name, checksum, applied) == "skip":
+                print(f"skip {name} (already applied)")
+                continue
             n = 0
             for stmt in _statements(open(path).read()):
                 cur.execute(stmt)
                 n += 1
+            record_applied(cur.execute, name, checksum)
             conn.commit()
             print(f"applied {name} ({n} statements)")
         # Verify the Track D columns the ORM depends on now exist.

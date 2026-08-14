@@ -1542,10 +1542,16 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
             )
         flat_q = replace(q, slope_type="low_slope", roof_type=flat_rt,
                          num_squares=q.flat_squares)
-        CARRIES_OVER = {"base_cost_lm", "overhead", "tear_off", "deck_type",
-                        "insulation", "tapered"}
+        # Daily overhead is already billed once as a whole-job line on the sloped
+        # side (every series, including the flat crew's days). Carrying the flat
+        # section's "overhead" on that path copies the same day total back in as
+        # flat_overhead — a silent 2x on the default quote path. Per-sq mode still
+        # carries the flat system's own $/sq overhead; the rates are different.
+        carries = {"base_cost_lm", "tear_off", "deck_type", "insulation", "tapered"}
+        if q.overhead_mode != "daily":
+            carries = carries | {"overhead"}
         for li in _build_low_slope(config, flat_q):
-            if li.key not in CARRIES_OVER:
+            if li.key not in carries:
                 continue
             flat_items.append(replace(li, key=f"flat_{li.key}", label=f"Flat roof — {li.label}"))
         per_sq_items = per_sq_items + flat_items
@@ -1630,12 +1636,17 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
             )
 
     if flat_items:
+        flat_contrib = (
+            "the flat section contributes its own base and tear-off only; overhead is the "
+            "whole-job day total"
+            if q.overhead_mode == "daily"
+            else "the flat section contributes its own base, overhead and tear-off only"
+        )
         warnings.append(
             f"mixed_roof_priced: {q.num_squares:g} sloped + {q.flat_squares:g} flat squares quoted "
             f"as ONE job. Profit, PM incentive and the profit floor band on the combined "
-            f"{total_sq:g} squares; the flat section contributes its own base, overhead and "
-            "tear-off only. Tim prices these together on his own sheet, but we have no sold mixed "
-            "roof to check the split against — review before sending."
+            f"{total_sq:g} squares; {flat_contrib}. Tim prices these together on his own sheet, "
+            "but we have no sold mixed roof to check the split against — review before sending."
         )
 
     # Tim's sheet, note behind the coating block: "Coating Prices Based on 25+ squares (Demo not

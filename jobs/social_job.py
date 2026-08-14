@@ -134,11 +134,9 @@ def _copy_for_part(part: dict, clip_title: str) -> dict:
 def _publish_verdict(part: dict, platform: str) -> tuple[str, str]:
     """(decision, reason) from core.caption_output's v5 gate for this platform's copy.
 
-    THIS IS THE CALLER THAT DID NOT EXIST. core/caption_output.py's gate had no production caller
-    until 2026-08-13, so status="withheld", SUSPECT_TRANSCRIPT, UNUSABLE_TRANSCRIPT and
-    MISSING_LICENSE blocked exactly zero publishes while the module's own docstring claimed it was
-    "wired to the publish path". The model is now asked for those fields
-    (core.clip_select._DEFAULT_TITLE_PROMPT) and this is where the answer is honoured.
+    The model is asked for status/flags (core.clip_select._DEFAULT_TITLE_PROMPT) and this is
+    where the answer is honoured. MISSING_LICENSE blocks (`require_license=True`): these posts
+    go to public Instagram/TikTok and the render spec can pull third-party music and b-roll.
 
     No copy at all -> OK. The fallback chain publishes the series title with the channel's core
     hashtags, which is the pre-existing behaviour and carries no model-authored claim to screen.
@@ -151,6 +149,7 @@ def _publish_verdict(part: dict, platform: str) -> tuple[str, str]:
     return gate_caption_flags(
         per_platform.get("flags") or [],
         status=per_platform.get("status") or "ok",
+        require_license=True,
     )
 
 

@@ -60,13 +60,10 @@ class KbSettings(BaseModel):
     #: writer and no reader, so the KB screen's "No new videos will be fetched until re-enabled"
     #: was a promise nothing kept.
     ingest_enabled: bool = True
-    #: ⚠️ NOT READ ANYWHERE (verified 2026-08-13). The live value is app.config.ABSTAIN_THRESHOLD
-    #: (env, default 0.71, "calibrated via app.eval, 94% sep"), read at app/answer.py:110 and :164.
-    #: Do NOT "fix" this by wiring the 0.35 below — it is half the calibrated threshold and would
-    #: make the assistant answer where it currently abstains, degrading grounding. Same shape as
-    #: the DEFAULT_ADMINS defect: a per-tenant field shadowed by one deployment-wide value.
-    #: Resolve by deciding which one is canonical and deleting the other, not by connecting this.
+    #: Shadowed by app.config.ABSTAIN_THRESHOLD (0.71). Not on the SPA — the 0.35 default
+    #: would make the assistant answer where it currently abstains. Do not wire this.
     abstain_threshold: float = 0.35
+    #: No reader. Removed from the SPA so the screen cannot promise a FAQ mode nothing keeps.
     faq_policy: str = "auto"
     channel_sources: list[str] = []
 
@@ -76,6 +73,7 @@ class MarketingSettings(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    #: The four knobs below have no reader. Removed from the SPA 2026-08-14.
     caption_prompt_version: str = "v5"
     publish_cadence_days: int = 7
     seed_pct: float = 0.20

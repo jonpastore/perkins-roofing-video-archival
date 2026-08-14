@@ -122,6 +122,52 @@ def _audit_payload(result: dict, *, debug: bool = False) -> dict:
     return stripped
 
 
+# Profit is an internal number. quoting_view / estimating_view (the roles sales holds)
+# must not read it on the wire. Strip on READ, same shape as
+# proposals._snapshot_without_internal_calc — persist stays intact so a manager
+# can still reconcile. ~30 lines; the three exposures this closes are listed in
+# docs/PRODUCTION_CUTOVER_PLAN.md §3.
+_PROFIT_KEYS = frozenset({
+    "profit_dollars", "profit_pct", "margin", "commission", "estimated_commission",
+    "profit_guidance",
+})
+
+
+def _without_profit(payload):
+    """Drop profit dollars / margin / commission from a response or snapshot."""
+    if not isinstance(payload, dict):
+        return payload
+    out = {}
+    for key, value in payload.items():
+        if key in _PROFIT_KEYS:
+            continue
+        if key == "line_items_detail" and isinstance(value, list):
+            out[key] = [
+                li for li in value
+                if not (isinstance(li, dict) and li.get("key") == "profit")
+            ]
+            continue
+        if key == "line_items" and isinstance(value, dict):
+            out[key] = {ik: iv for ik, iv in value.items() if ik != "profit"}
+            continue
+        if key == "calc_lines_internal":
+            continue
+        if key == "calc_lines" and payload.get("calc_audience") == "internal":
+            continue
+        if key in ("estimate_result", "quote_snapshot", "result_json") and isinstance(value, dict):
+            out[key] = _without_profit(value)
+            continue
+        out[key] = value
+    return out
+
+
+def _public_estimate(payload: dict, claims: dict) -> dict:
+    """The estimate a caller is allowed to see."""
+    if can(claims.get("role"), "estimating_manage"):
+        return payload
+    return _without_profit(payload)
+
+
 def _get_active_config_row(branch: str, db: Session) -> Optional[PricingConfig]:
     """Fetch the active PricingConfig row for (current tenant, branch), or None."""
     return db.execute(
@@ -808,7 +854,7 @@ def quote(
     est.result_json = _audit_payload(result, debug=q.debug)
     db.flush()
 
-    return result
+    return _public_estimate(result, claims)
 
 
 class BuildingInput(BaseModel):
@@ -1009,7 +1055,7 @@ def project_quote(
         "num_squares": round(BP.total_squares(built), 2),
     }
     if not body.persist:
-        return result
+        return _public_estimate(result, claims)
 
     project = BidProject(
         tenant_id=db.info["tenant_id"],
@@ -1086,13 +1132,13 @@ def project_quote(
 
     result["bid_project_id"] = project.id
     result["estimate_ids"] = estimate_ids
-    return result
+    return _public_estimate(result, claims)
 
 
 @router.post("/repair-quote")
 def repair_quote(
     body: RepairQuoteRequest,
-    _claims=Depends(require_role("estimating_view")),
+    claims=Depends(require_role("estimating_view")),
     db: Session = Depends(get_db_session),
 ):
     """Compute a time-based repair quote (days x daily labor rate + material cost).
@@ -1138,7 +1184,7 @@ def repair_quote(
         "min_profit_pct": config.raw["profit_floor_pct"],
         "min_profit_plus_oh_pct": config.raw["profit_plus_oh_floor_pct"],
     }
-    return result
+    return _public_estimate(result, claims)
 
 
 @router.post("/scope-of-work/rewrite")
@@ -1163,7 +1209,10 @@ def rewrite_scope_of_work(
     return {"text": text}
 
 
-def _estimate_row(row: Estimate) -> dict:
+def _estimate_row(row: Estimate, claims: dict | None = None) -> dict:
+    result_json = row.result_json or {}
+    if claims is not None:
+        result_json = _public_estimate(result_json, claims)
     return {
         "id": row.id,
         "pricing_config_id": row.pricing_config_id,
@@ -1182,7 +1231,7 @@ def _estimate_row(row: Estimate) -> dict:
         # Read back so a typo'd structure address is visible somewhere other than the rendered PDF.
         "structure_address": row.structure_address,
         "input_json": row.input_json or {},
-        "result_json": row.result_json or {},
+        "result_json": result_json,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "created_by": row.created_by,
     }
@@ -1200,7 +1249,7 @@ def _priced_low_slope_types(cfg: dict, zone: str) -> list[str]:
 def list_estimates(
     measurement_id: Optional[int] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
-    _claims=Depends(require_role("estimating_view")),
+    claims=Depends(require_role("estimating_view")),
     db: Session = Depends(get_db_session),
 ):
     rows = (
@@ -1212,7 +1261,7 @@ def list_estimates(
     )
     if measurement_id is not None:
         rows = [r for r in rows if (r.input_json or {}).get("measurement_id") == measurement_id]
-    return [_estimate_row(r) for r in rows]
+    return [_estimate_row(r, claims) for r in rows]
 
 
 @router.get("/rates")
