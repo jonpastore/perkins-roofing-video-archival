@@ -609,7 +609,6 @@ def test_jsonld_omits_video_when_ungrounded():
 # ── internal linking: cluster -> pillar + contextual services links ────────────────────────
 
 def test_internal_links_cluster_links_up_to_its_pillar(monkeypatch):
-    import jobs.article_job as job_mod
     from jobs.article_job import _ensure_internal_links
 
     ctx = {"role": "cluster", "pillar_slug": "metal-roofing-guide", "pillar_title": "Metal Roofing Guide"}
@@ -835,3 +834,135 @@ def test_relativize_internal_links_converts_prod_absolute_to_relative():
     assert "perkinsroofing.net" not in out
     assert 'href="/metal-roofing-company/"' in out and 'href="/flat-roofs/"' in out
     assert "youtu.be/x" in out and "floridabuilding.org" in out  # external untouched
+
+
+def test_repair_survives_a_relativize_round_trip():
+    """repair -> relativize -> repair must not grow a second related-links block.
+
+    THIS is the shape of the 2026-08 bug that shipped 2-4 blocks on 183 of 183 articles, and
+    nothing in the suite covered it: every test called one function once. The mechanism needs
+    all three steps — _append_service_links guarded on the absolute BASE_URL form, and
+    _relativize_internal_links then rewrote those hrefs to relative, erasing the very string
+    the guard matched on, so the next repair pass appended again.
+    """
+    from core.article_criteria import _RELATED_BLOCK_RE
+    from core.article_repair import repair_article
+    from jobs.article_job import _relativize_internal_links
+
+    kwargs = dict(known_video_ids=set(), video_meta={}, valid_slugs=set(), pillar_map={},
+                  keyword="metal roofing", meta_description="Perkins Roofing metal guide.")
+    body = ('<h2 id="a">Metal roofing</h2>\n'
+            '<p>We install metal roofing and handle roof repair across South Florida.</p>\n')
+
+    content = body
+    for _ in range(3):
+        content = repair_article(content, [], **kwargs).content_md
+        content = _relativize_internal_links(content)
+        assert len(_RELATED_BLOCK_RE.findall(content)) == 1, "exactly one block, every cycle"
+
+
+def test_ensure_video_link_does_not_stack_orphan_watch_headings(monkeypatch):
+    """The guard checks for an <iframe>, but the function appends a heading AND an embed.
+
+    The append path is only reached via RETRIEVAL, so this test must stub it — an earlier
+    version of this test asserted on a body whose retrieval call failed, which meant it passed
+    against the broken code and proved nothing.
+
+    Sequence: the embedded id is not a Video row -> _strip_video_id_refs removes the embed ->
+    the iframe guard now sees nothing -> retrieval appends a FRESH heading+embed. If the
+    stripped embed left its heading behind, the headings accumulate: measured 1 -> 2 -> 3
+    empty "Watch:" sections above a single player, each also minting a dead sidebar TOC entry.
+    """
+    import sys
+    import types
+
+    from jobs.article_job import _ensure_video_link
+
+    class _Chunk:
+        video_id, start = "gtbkLgg_G9o", 0
+
+    stub = types.ModuleType("app.retrieval")
+    stub.hybrid_search = lambda kw, k=1, db=None: {"chunks": [(_Chunk(), 1.0)]}
+    monkeypatch.setitem(sys.modules, "app.retrieval", stub)
+
+    class _NothingIsKnown:
+        def get(self, model, vid):
+            return None
+
+    body = ('<p>intro</p>\n<h2>Watch: roofing</h2>\n'
+            '<div class="video-embed"><iframe src="https://www.youtube.com/embed/Zo1e6eLZO4s">'
+            '</iframe></div>\n<p>rest</p>')
+
+    out = _ensure_video_link(body, "roofing", db=_NothingIsKnown())
+    assert out.count("Watch:") == 1, "the stripped embed must not leave its heading behind"
+    out2 = _ensure_video_link(out, "roofing", db=_NothingIsKnown())
+    assert out2.count("Watch:") == 1, "re-running must not stack a second heading"
+
+
+def test_finalize_article_is_idempotent_and_preserves_salvageable_copy():
+    """finalize(finalize(x)) == finalize(x), on a fixture carrying the things that broke.
+
+    This is the test that did not exist while FOUR orchestrators each defined their own order
+    for the same transforms: _reapply_fixable_ensures had one test (a slug assertion), and
+    nothing compared two orderings. It pins the invariants that were held only by comments —
+    ensures-before-repair, internal-links-before-relativize, and the anchor/learn-more order
+    that used to decide whether a paragraph survived.
+    """
+    from jobs.article_job import finalize_article
+
+    fields = {
+        "content_md": ('<h2>Metal roofing</h2>\n'
+                       '<p>Metal roofing and roof repair for South Florida homes.</p>\n'
+                       '<p>Learn more: <a href="roof-repair-services">Roof repair services</a></p>\n'
+                       '<table><tr><td>x</td></tr></table>\n'),
+        "faq_json": [{"q": f"Q{i}?", "a": "A."} for i in range(4)],
+        "title": "Metal Roofing Costs In South Florida Explained",
+        "meta": "x" * 130, "slug": "metal-roofing", "jsonld_json": [],
+    }
+    ctx = {"role": "cluster", "pillar_slug": None}
+
+    finalize_article(fields, ctx, "metal roofing", db=None)
+    once = dict(fields)
+    assert "Learn more:" in once["content_md"], (
+        "a slashless anchor is salvageable — rooting it must precede judging it dead, or the "
+        "whole paragraph is deleted and the result depends on pass order")
+
+    finalize_article(fields, ctx, "metal roofing", db=None)
+    assert fields["content_md"] == once["content_md"], "finalize must be idempotent"
+    assert fields["title"] == once["title"]
+    assert fields["slug"] == once["slug"]
+
+
+def test_gate_criteria_marked_fixable_actually_have_a_fixer():
+    """A criterion that says fixable=True and has no fixer is an infinite loop, not a check.
+
+    The compliance gate re-runs its deterministic pass up to _COMPLIANCE_MAX_ITERS times for a
+    failing fixable criterion, then blocks the article. Three shipped in that state: `no_blog`
+    (nothing stripped the segment — _repair_relative_links cannot match an href with an internal
+    slash), `subscribe_cta` (the retired channel-ID URL was rewritten only by an inline .replace
+    inside scripts/backfill_wendy_compliance, so nothing on a generate path touched it), and
+    `pillar_link` (repair linked the resolved slug while the gate searched for the topic key).
+    """
+    from core.article_criteria import check_compliance
+    from jobs.article_job import finalize_article
+
+    fields = {
+        "content_md": ('<h2>Metal roofing</h2>\n'
+                       '<p>Metal roofing and roof repair across South Florida.</p>\n'
+                       '<p>See <a href="/blog/tile-roofing-company/">tile roofing</a>.</p>\n'
+                       '<p>Subscribe: https://www.youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg</p>\n'),
+        "faq_json": [{"q": f"Q{i}?", "a": "A."} for i in range(4)],
+        "title": "Metal Roofing Costs In South Florida",
+        "meta": "x" * 130, "slug": "metal-roofing", "jsonld_json": [],
+    }
+    ctx = {"role": "cluster", "pillar_slug": None}
+    finalize_article(fields, ctx, "metal roofing", db=None)
+
+    crit = {c.key: c for c in check_compliance(
+        fields["content_md"], fields["meta"], fields["jsonld_json"], fields["faq_json"],
+        {**ctx, "title": fields["title"], "slug": fields["slug"]}, "metal roofing", set())}
+
+    assert crit["no_blog"].ok, "/blog/ must be stripped — permalinks are top-level"
+    assert "/blog/" not in fields["content_md"]
+    assert crit["subscribe_cta"].ok, "the retired channel-ID URL must be rewritten to the @handle"
+    assert "UChJZpBYXOuR0j1EHJugv5hg" not in fields["content_md"]

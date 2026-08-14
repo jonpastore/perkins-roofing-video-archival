@@ -18,8 +18,10 @@ row with a stale WP body therefore publishes the very defect this script just re
 rows need --repush-scheduled; already-published rows need --repush. --apply alone touches only the
 database.
 
-Reuses the exact same pure functions the generator's ensures use, so the backfill and the gate
-cannot drift apart.
+Runs jobs.article_job.finalize_article — THE shared deterministic finalize, the same one the
+generator and the compliance gate run — so the backfill and the gate cannot drift apart. That
+claim used to be here and was false: this script ran six hand-picked transforms in an order
+defined nowhere else, against the generator's twenty ensures plus eight repair passes.
 
 Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/backfill_wendy_compliance.py \
            [--apply] [--repush] [--repush-scheduled] [--repush-limit N]
@@ -27,50 +29,49 @@ Usage: DB_URL=... PYTHONPATH=. .venv/bin/python scripts/backfill_wendy_complianc
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from collections import Counter
 
 _HREF_RE = re.compile(r'href="([^"]+)"')
-_REL_RE = re.compile(r'<p class="related-links">.*?</p>', re.IGNORECASE | re.DOTALL)
-_EMBED_RE = re.compile(r"<iframe\b[^>]*\bsrc=[\"'][^\"']*(?:youtube\.com|youtu\.be)", re.IGNORECASE)
+# Imported so this script counts blocks exactly as the gate and the fixer do. A local
+# re-spelling here is how a backfill reports "clean" on content the gate still rejects.
+from core.article_repair import RELATED_BLOCK_RE as _REL_RE  # noqa: E402
 
 
-def _fix_content(content: str, valid_slugs=frozenset(), pillar_map=None) -> str:
-    """Every deterministic ensure Wendy's review added, in the generator's own order."""
-    from core.article_repair import (
-        _repair_relative_links,
-        _repair_tel_hrefs,
-        _tidy_related_links,
-    )
-    from core.brand_identity import YOUTUBE_CHANNEL_URL, YOUTUBE_CHANNEL_URL_LEGACY
-    from jobs.article_job import _ensure_learn_more_links, _ensure_table_borders, _strip_toc
-
-    # Anchors FIRST: a slashless href is stripped by WordPress, so the anchor arrives dead. Rooting
-    # or unwrapping it before the "Learn more" pass means a pointer that CAN be saved is kept
-    # rather than dropped for looking unlinked.
-    c, _ = _repair_tel_hrefs(content or "")
-    c, _ = _repair_relative_links(c, set(valid_slugs), dict(pillar_map or {}))
-    c = _ensure_table_borders(_ensure_learn_more_links(_strip_toc(c)))
-    c = _tidy_related_links(c)
-    # The channel moved to the @handle; the old channel-ID URL is retired, not merely alternative.
-    return c.replace(YOUTUBE_CHANNEL_URL_LEGACY, YOUTUBE_CHANNEL_URL).replace(
-        "https://youtube.com/channel/UChJZpBYXOuR0j1EHJugv5hg", YOUTUBE_CHANNEL_URL)
+def _kw_from(slug: str, focus_keyword: str | None) -> str:
+    """The article's focus keyword, or a phrase derived from the slug when it is NULL
+    (pre-gate backfill articles have none). Same derivation as scripts/reprocess_articles."""
+    return focus_keyword or re.sub(r"-\d{4}$", "", slug or "").replace("-", " ")
 
 
-def _fix_jsonld(jsonld, content: str):
-    """Drop VideoObject nodes with no matching embedded player (Google's rule)."""
-    nodes = jsonld if isinstance(jsonld, list) else json.loads(jsonld or "[]")
-    n_embeds = len(_EMBED_RE.findall(content or ""))
-    kept, seen_vo = [], 0
-    for n in nodes:
-        if isinstance(n, dict) and n.get("@type") == "VideoObject":
-            if seen_vo >= n_embeds:
-                continue
-            seen_vo += 1
-        kept.append(n)
-    return kept
+def _fix_article(row, db) -> tuple[str, list]:
+    """Run THE shared finalize over one row. Returns (content_md, jsonld).
+
+    This used to be a local six-step pipeline (_fix_content) plus a third hand-rolled copy of
+    the VideoObject rule (_fix_jsonld), in an order chosen here and nowhere else — while the
+    generator ran twenty ensures plus eight repair passes. The docstring above this script
+    claimed the two "cannot drift apart"; they had, comprehensively. Delegating to
+    jobs.article_job.finalize_article is what makes that claim true instead of aspirational.
+
+    NOTE the cost this buys: the shared finalize includes _ensure_video_link (retrieval) and
+    _ensure_article_image (Gemini frame pick), so a --apply run now does real I/O per article
+    rather than pure string work. That is the price of the backfill and the generator producing
+    the same article; run --limit first if you want to see the shape of the change.
+    """
+    from jobs.article_job import finalize_article
+
+    fields = {
+        "content_md": row.content_md or "",
+        "faq_json": list(row.faq_json or []),
+        "title": row.title or "",
+        "meta": row.meta or "",
+        "slug": row.slug,
+        "jsonld_json": list(row.jsonld_json or []),
+    }
+    ctx = {"role": getattr(row, "role", None), "pillar_slug": getattr(row, "pillar_slug", None)}
+    finalize_article(fields, ctx, _kw_from(row.slug, getattr(row, "focus_keyword", None)), db=db)
+    return fields["content_md"], fields["jsonld_json"]
 
 
 
@@ -97,14 +98,8 @@ def main() -> None:
         _TOC_BLOCK_RE,
         _is_linked,
     )
-    from core.internal_links import SERVICE_SLUGS
-    from jobs.article_job import _repair_inputs
-
     s = SessionLocal()
     s.info["tenant_id"] = 1
-    inputs = _repair_inputs(s)
-    valid_slugs = set(inputs["valid_slugs"]) | set(SERVICE_SLUGS)
-    pillar_map = inputs["pillar_map"]
     rows = s.execute(select(Article)).scalars().all()
     if args.limit:
         rows = rows[:args.limit]
@@ -112,8 +107,7 @@ def main() -> None:
     stats, changed = Counter(), []
     for a in rows:
         before, before_jl = a.content_md or "", a.jsonld_json
-        after = _fix_content(before, valid_slugs, pillar_map)
-        after_jl = _fix_jsonld(before_jl, after)
+        after, after_jl = _fix_article(a, s)
 
         if _TOC_BLOCK_RE.search(before):
             stats["toc_block"] += 1

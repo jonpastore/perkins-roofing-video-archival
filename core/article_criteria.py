@@ -12,13 +12,12 @@ Pure: regex + reuse of core.seo / core.internal_links. No I/O, no LLM.
 import re
 from dataclasses import dataclass
 
+from core.article_repair import RELATED_BLOCK_RE as _RELATED_BLOCK_RE
+from core.article_repair import YT_ID_RE as _YT_ID_RE
 from core.brand_identity import YOUTUBE_CHANNEL_URL, YOUTUBE_CHANNEL_URL_LEGACY
 from core.internal_links import BASE_URL, matching_service_links
 from core.seo import aio_signals, check_tier, rank_math_checks
 
-_YT_ID_RE = re.compile(
-    r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/|img\.youtube\.com/vi/|i\.ytimg\.com/vi/)"
-    r"([A-Za-z0-9_-]{11})", re.IGNORECASE)
 _HREF_RE = re.compile(r'href="([^"]*)"', re.IGNORECASE)
 _IMG_SRC_RE = re.compile(r'<img\b[^>]*\bsrc="([^"]+)"', re.IGNORECASE)
 _TITLE_CARD_RE = re.compile(r"/(?:hqdefault|maxresdefault|mqdefault|sddefault|default)\.jpg", re.IGNORECASE)
@@ -75,7 +74,9 @@ def _is_linked(segment: str) -> bool:
         return False
     return "<a " in segment.lower() or bool(re.search(r"\[[^\]]+\]\([^)]+\)", segment))
 _BARE_TABLE_RE = re.compile(r"<table(?![^>]*\bclass=)[^>]*>", re.IGNORECASE)
-_RELATED_BLOCK_RE = re.compile(r'<p class="related-links">.*?</p>', re.IGNORECASE | re.DOTALL)
+# _RELATED_BLOCK_RE and _YT_ID_RE are imported from core.article_repair at the top of this
+# module. They MUST be the same objects the fixer uses: this gate declaring a defect the
+# fixer cannot see is precisely how `related_links_single_block` became unsatisfiable.
 # Derived from the canonical constant so the two can't drift; www. is optional because both
 # forms resolve to the same channel and the LLM writes it either way.
 _HANDLE_RE = re.compile(

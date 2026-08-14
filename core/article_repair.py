@@ -14,6 +14,20 @@ hosts, (e) VideoObject jsonld sync, (f) service links, (g) TOC entries must
 target an <h2>, never an <h3>.
 
 Every pass is idempotent: repair_article(repair_article(x)) == repair_article(x).
+Covered by tests/core/test_article_repair.py::test_repair_article_is_idempotent and
+::test_repair_survives_relativize_round_trip — the second one matters most, because the
+2026-08 duplicate-related-links bug was invisible to single-pass tests: it only appeared
+when jobs.article_job._relativize_internal_links ran BETWEEN two repair passes and erased
+the BASE_URL substring a guard was matching on.
+
+THIS MODULE OWNS THE SHARED PATTERNS. RELATED_BLOCK_RE and YT_ID_RE are imported by
+core.article_criteria (the gate), jobs.article_job and scripts/backfill_wendy_compliance.
+They used to be spelled out separately in each of those, and the spellings DISAGREED —
+the gate matched any <p class="related-links">, this module required a literal "Related: ",
+so a block without that prefix was visible to the gate and invisible to every fixer. The
+gate then failed `related_links_single_block` forever while reporting fixable=True. One
+definition, imported, is the only thing that makes "the gate and the fix agree" structural
+rather than aspirational.
 """
 from __future__ import annotations
 
@@ -28,11 +42,18 @@ from core.jsonld import build_video_object
 # Deliberately NOT anchored to 11 chars — a corrupted id can be a different length
 # than the real one it was typo'd from (a wrong length is always corrupt, see
 # _repair_video_ids).
-_YT_ID_RE = re.compile(
+YT_ID_RE = re.compile(
     r"(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/|img\.youtube\.com/vi/|i\.ytimg\.com/vi/)"
     r"([A-Za-z0-9_-]+)",
     re.IGNORECASE,
 )
+# THE definition of "a YouTube id reference", imported by the gate and by jobs.article_job.
+# There were three, and they disagreed: the gate anchored to {11}, jobs.article_job used
+# {6,} against a SHORTER host list (no thumbnail hosts at all), and this one is unbounded.
+# Unbounded is the correct shared choice precisely because a corrupted id is often NOT 11
+# chars — anchoring makes the corruption invisible to whoever anchored, which is how a
+# malformed id could be stripped here and never seen by the gate.
+_YT_ID_RE = YT_ID_RE          # legacy alias; existing internal callers keep working
 
 _IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _IMG_SRC_RE = re.compile(r'src="([^"]+)"')
@@ -88,6 +109,13 @@ _NO_HREF_A_RE = re.compile(
     r'<a(?![a-z])(?![^>]*\b(?:href|id|name)\s*=)[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 
 _MYFTP_RE = re.compile(r'(href|src)="https?://[^/"]*\.myftpupload\.com(/[^"]*)?"', re.IGNORECASE)
+# Permalinks on this site are top-level; /blog/ is not a real path segment. The gate has always
+# had a `no_blog` criterion marked fixable=True, and NOTHING implemented the fix —
+# _repair_relative_links cannot match an href with an internal slash — so an article carrying
+# one failed the gate on every iteration and then blocked. Applied by
+# jobs.article_job._relativize_internal_links (an ENSURE, so it runs with or without a db);
+# the remaining slug is then judged by _repair_relative_links like any other internal link.
+BLOG_PATH_RE = re.compile(r'((?:href|src)=")(?:https?://[^/"]*)?/blog/', re.IGNORECASE)
 
 _VIDEO_URL_ID_RE = re.compile(r"v=([A-Za-z0-9_-]{11})")
 # Only an <iframe> is a playable embed. Google grants VideoObject schema to embedded video, not
@@ -149,10 +177,18 @@ def _strip_video_id_refs(content: str, vid: str) -> str:
     content = re.sub(
         rf'<a\b[^>]*href="[^"]*{v}[^"]*"[^>]*>(.*?)</a>', r"\1",
         content, flags=re.IGNORECASE | re.DOTALL)
+    # The optional leading <h2>Watch: …</h2> is what makes _ensure_video_link idempotent.
+    # That function appends heading AND embed together (jobs.article_job:1479) but guards
+    # only on the presence of an <iframe>. Stripping the embed and leaving the heading left
+    # the guard blind, so the next pass appended a second heading+embed — measured 1 -> 2 ->
+    # 3 empty "Watch:" sections stacked above one player, each also minting a dead sidebar
+    # TOC entry via core.seo.ensure_toc. Remove the pair, not half of it.
     content = re.sub(
+        rf'(?:<h2\b[^>]*>\s*Watch:.*?</h2>\s*)?'
         rf'<div class="video-embed"[^>]*>\s*<iframe\b[^>]*src="[^"]*{v}[^"]*"[^>]*>.*?</iframe>\s*</div>',
         "", content, flags=re.IGNORECASE | re.DOTALL)
     content = re.sub(
+        rf'(?:<h2\b[^>]*>\s*Watch:.*?</h2>\s*)?'
         rf'<iframe\b[^>]*src="[^"]*{v}[^"]*"[^>]*>.*?</iframe>',
         "", content, flags=re.IGNORECASE | re.DOTALL)
     content = re.sub(
@@ -171,7 +207,14 @@ def _repair_video_ids(content: str, known_ids: set[str]) -> tuple[str, list[str]
             continue
         match = _fuzzy_match_id(vid, known_ids)
         if match:
-            content = content.replace(vid, match)
+            # Rewrite the id only where it is a VIDEO REFERENCE, never everywhere it appears.
+            # A bare content.replace(vid, match) also edits body copy: a body containing
+            # "Order code dQw4w9WgXcX applies to all metal panels" had that sentence silently
+            # rewritten to the corrected id. Re-running YT_ID_RE and substituting inside the
+            # match keeps the blast radius to the URL that actually cites the video.
+            content = YT_ID_RE.sub(
+                lambda m: m.group(0).replace(vid, match) if m.group(1) == vid else m.group(0),
+                content)
             fixes.append(f"corrected corrupted video id {vid!r} -> {match!r}")
         else:
             content = _strip_video_id_refs(content, vid)
@@ -282,7 +325,17 @@ def _dedupe_link_segments(segments: list[str]) -> list[str]:
     return out
 
 
-_REL_BLOCK_RE = re.compile(r'<p class="related-links">Related: (.*?)</p>', re.IGNORECASE | re.DOTALL)
+# "Related: " is OPTIONAL, and that is the whole point. Requiring it made this pattern
+# blind to a block the GATE could see (core.article_criteria matched any
+# <p class="related-links">), so merge_related_block appended a SECOND block beside the one
+# it could not find, _tidy_related_links could not collapse them either, and
+# `related_links_single_block` then failed forever while declaring itself fixable=True.
+# A hand edit in wp-admin is all it takes to produce a block without the prefix.
+# Group 1 is the links payload; a legacy prefix-less block is normalised to the canonical
+# form on the first merge.
+RELATED_BLOCK_RE = re.compile(
+    r'<p class="related-links">(?:Related: )?(.*?)</p>', re.IGNORECASE | re.DOTALL)
+_REL_BLOCK_RE = RELATED_BLOCK_RE          # legacy alias; existing internal callers keep working
 
 
 def merge_related_block(content: str, links: list[str]) -> str:

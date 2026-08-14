@@ -624,3 +624,136 @@ def test_append_pillar_link_warns_instead_of_fabricating_when_unresolvable():
 def test_append_pillar_link_noop_for_non_cluster():
     out = _repair("<p>Standalone.</p>", pillar_slug=None)
     assert not any("appended pillar link" in f for f in out.fixes)
+
+
+# ---------------------------------------------------------------------------
+# Composition regressions. Every defect these cover was invisible to the 563
+# single-pass tests that preceded them: each one lives BETWEEN two functions —
+# gate vs fixer, or pass N vs pass N+1 — not inside either.
+# ---------------------------------------------------------------------------
+
+
+def test_gate_and_fixer_share_one_pattern_object():
+    """The gate must not be able to see a defect the fixer cannot.
+
+    core.article_criteria used to spell out its own `<p class="related-links">.*?</p>` while
+    this module required a literal "Related: ". A block without the prefix was therefore
+    visible to the gate and invisible to every fixer, so `related_links_single_block` failed
+    forever while reporting fixable=True. Identity, not equality — a copied pattern drifts.
+    """
+    import core.article_criteria as gate
+    from core.article_repair import RELATED_BLOCK_RE, YT_ID_RE
+    assert gate._RELATED_BLOCK_RE is RELATED_BLOCK_RE
+    assert gate._YT_ID_RE is YT_ID_RE
+
+
+def test_related_block_without_the_related_prefix_is_merged_not_duplicated():
+    """A hand-edited block (wp-admin) has no "Related: " prefix. Repair must merge into it.
+
+    Before the fix this produced a SECOND block that no fixer could collapse, permanently
+    failing the gate.
+    """
+    from core.article_criteria import check_compliance
+
+    body = ('<h2 id="a">Roofing</h2><p>We handle roof repair for South Florida homes.</p>\n'
+            '<p class="related-links"><a href="/metal-roofing-company/">Metal roofing</a></p>\n')
+    out = _repair(body).content_md
+    assert out.count('class="related-links"') == 1, "prefix-less block must be merged, not duplicated"
+    # and the merge preserves the pre-existing link rather than dropping it
+    assert "/metal-roofing-company/" in out
+
+    crit = {c.key: c for c in check_compliance(
+        out, "x" * 130, [], [], {"role": "cluster", "title": "T", "slug": "s"},
+        "roof repair", KNOWN)}
+    assert crit["related_links_single_block"].ok
+
+
+def test_repair_video_ids_rewrites_the_url_not_the_prose():
+    """A corrupted id that also appears in body copy must not have the copy rewritten.
+
+    `content.replace(vid, match)` edited article text: "Order code dQw4w9WgXcX applies to all
+    metal panels" silently became the corrected id.
+    """
+    from core.article_repair import _repair_video_ids
+
+    corrupt = "gtbkLgg_G9X"          # one char off the known gtbkLgg_G9o
+    body = (f'<iframe src="https://www.youtube.com/embed/{corrupt}"></iframe>\n'
+            f'<p>Order code {corrupt} applies to all metal panels.</p>')
+    out, fixes, _ = _repair_video_ids(body, KNOWN)
+    assert "embed/gtbkLgg_G9o" in out, "the video URL must be corrected"
+    assert f"Order code {corrupt} applies" in out, "prose must be left alone"
+    assert fixes
+
+
+def test_strip_video_id_refs_removes_the_watch_heading_with_the_embed():
+    """jobs.article_job._ensure_video_link appends "<h2>Watch: …</h2>" AND an embed but guards
+    only on the iframe. Leaving an orphan heading blinded that guard, so the next pass appended
+    a second heading+embed — measured 1 -> 2 -> 3 empty "Watch:" sections over one player."""
+    from core.article_repair import _strip_video_id_refs
+
+    body = ('<p>intro</p>\n<h2>Watch: roof estimate</h2>\n'
+            '<div class="video-embed"><iframe src="https://www.youtube.com/embed/BADid00001">'
+            '</iframe></div>\n<p>rest</p>')
+    out = _strip_video_id_refs(body, "BADid00001")
+    assert "<iframe" not in out
+    assert "Watch:" not in out, "the heading must go with the embed it introduced"
+    assert "<p>intro</p>" in out and "<p>rest</p>" in out
+
+
+# ---------------------------------------------------------------------------
+# Branch coverage for the repair passes' edge cases (R1).
+# ---------------------------------------------------------------------------
+
+
+def test_tel_href_that_is_already_bare_digits_is_left_alone():
+    """Idempotency at the character level: a normalised tel: must not be rewritten again."""
+    from core.article_repair import _repair_tel_hrefs
+
+    out, fixes = _repair_tel_hrefs('<a href="tel:5615597663">561-559-ROOF</a>')
+    assert out == '<a href="tel:5615597663">561-559-ROOF</a>'
+    assert not fixes
+
+
+def test_tel_href_that_cannot_be_dialled_is_left_for_the_dead_anchor_pass():
+    """A tel: with too few digits is not repairable here — it must be LEFT, not mangled, so
+    the dead-anchor pass can unwrap it rather than shipping a broken dial link."""
+    from core.article_repair import _repair_tel_hrefs
+
+    out, fixes = _repair_tel_hrefs('<a href="tel:12">short</a>')
+    assert out == '<a href="tel:12">short</a>'
+    assert not fixes
+
+
+def test_merge_related_block_with_no_links_is_a_noop():
+    from core.article_repair import merge_related_block
+
+    assert merge_related_block("<p>body</p>", []) == "<p>body</p>"
+
+
+def test_repair_roots_a_slashless_link_to_a_real_slug():
+    """WordPress strips a slashless href, so the anchor publishes dead. Root it, don't drop it."""
+    out = _repair('<p><a href="roof-repair-services">Repair</a></p>',
+                  valid_slugs={"roof-repair-services"})
+    assert 'href="/roof-repair-services/"' in out.content_md
+
+
+def test_repair_rewrites_a_slashless_dead_link_through_the_pillar_map():
+    """Both halves at once: no leading slash AND a slug that only the pillar map can resolve."""
+    out = _repair('<p><a href="placeholder-x">Guide</a></p>',
+                  valid_slugs=set(), pillar_map={"placeholder-x": "real-pillar"})
+    assert 'href="/real-pillar/"' in out.content_md
+
+
+def test_repair_unwraps_an_anchor_with_no_href_keeping_the_words():
+    out = _repair("<p>Call <a>our team</a> today.</p>")
+    assert "<a" not in out.content_md
+    assert "our team" in out.content_md, "the words must survive; only the fake link goes"
+
+
+def test_aside_callouts_are_not_mistaken_for_anchors():
+    """(?![a-z]) in _NO_HREF_A_RE is load-bearing: without it "<a" also matches "<aside>", and
+    with DOTALL the .*?</a> would swallow body copy up to the next real </a>."""
+    body = '<aside class="callout"><p>Important note about roof repair.</p></aside>'
+    out = _repair(body)
+    assert "Important note about roof repair." in out.content_md
+    assert "<aside" in out.content_md
