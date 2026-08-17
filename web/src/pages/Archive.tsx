@@ -72,6 +72,8 @@ interface Filters {
   social: TriState;
 }
 
+const PAGE_SIZE = 50;
+
 const DEFAULT_FILTERS: Filters = {
   q: "",
   min_length: "",
@@ -414,7 +416,10 @@ export function Archive() {
   const { navigate } = useContext(NavContext);
 
   const [videos, setVideos] = useState<ArchiveVideo[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -441,7 +446,7 @@ export function Archive() {
     try {
       const r = await apiFetch(`/archive/${video.id}/hide`, { method: "POST" });
       if (!r.ok) throw new Error(await errText(r));
-      fetchVideos(committed, includeHidden);
+      fetchVideos(committed, includeHidden, 0, false);
     } catch (e) {
       alert(`Hide failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -454,7 +459,7 @@ export function Archive() {
     try {
       const r = await apiFetch(`/archive/${video.id}/unhide`, { method: "POST" });
       if (!r.ok) throw new Error(await errText(r));
-      fetchVideos(committed, includeHidden);
+      fetchVideos(committed, includeHidden, 0, false);
     } catch (e) {
       alert(`Unhide failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -507,9 +512,12 @@ export function Archive() {
 
   // Debounce timer for text/number/date inputs
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fetchGen = useRef(0);
 
-  const fetchVideos = useCallback((f: Filters, withHidden?: boolean) => {
-    setLoading(true);
+  const fetchVideos = useCallback((f: Filters, withHidden?: boolean, pageOffset = 0, append = false) => {
+    const gen = ++fetchGen.current;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     setError(null);
     const params = new URLSearchParams();
     if (f.q) params.set("q", f.q);
@@ -521,22 +529,40 @@ export function Archive() {
     if (f.articles !== "all") params.set("articles", f.articles);
     if (f.social !== "all") params.set("social", f.social);
     if (withHidden) params.set("include_hidden", "true");
+    params.set("limit", String(PAGE_SIZE));
+    params.set("offset", String(pageOffset));
     apiFetch(`/archive/videos?${params}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(await errText(r));
-        return r.json();
+        const data: ArchiveVideo[] = await r.json();
+        const raw = r.headers.get("X-Total-Count");
+        const reported = raw != null && raw !== ""
+          ? Number(raw)
+          : pageOffset + data.length + (data.length === PAGE_SIZE ? 1 : 0);
+        return { data, reported };
       })
-      .then((data: ArchiveVideo[]) => {
-        setVideos(data);
-        setHiddenCount(data.filter((v) => v.hidden_at !== null).length);
+      .then(({ data, reported }) => {
+        if (gen !== fetchGen.current) return;
+        setTotal(reported);
+        setOffset(pageOffset);
+        setVideos((prev) => (append ? [...prev, ...data] : data));
+        const hiddenOnPage = data.filter((v) => v.hidden_at !== null).length;
+        setHiddenCount((prev) => (append ? prev + hiddenOnPage : hiddenOnPage));
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (gen !== fetchGen.current) return;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (gen !== fetchGen.current) return;
+        setLoading(false);
+        setLoadingMore(false);
+      });
   }, []);
 
   // Initial load (and re-load when filters or includeHidden changes)
   useEffect(() => {
-    fetchVideos(committed, includeHidden);
+    fetchVideos(committed, includeHidden, 0, false);
   }, [committed, includeHidden, fetchVideos]);
 
   // Patch a filter field; for toggle (TriState) fields commit immediately
@@ -594,7 +620,7 @@ export function Archive() {
       setBackfillResult(data);
       setBackfillState("done");
       // Refresh list after backfill
-      fetchVideos(committed, includeHidden);
+      fetchVideos(committed, includeHidden, 0, false);
     } catch (e) {
       alert(`Backfill failed: ${e instanceof Error ? e.message : String(e)}`);
       setBackfillState("idle");
@@ -611,7 +637,7 @@ export function Archive() {
       setKpiResult(data);
       setKpiState("done");
       // Refresh list to show updated KPI timestamps
-      fetchVideos(committed, includeHidden);
+      fetchVideos(committed, includeHidden, 0, false);
     } catch (e) {
       alert(`KPI poll failed: ${e instanceof Error ? e.message : String(e)}`);
       setKpiState("idle");
@@ -831,11 +857,45 @@ export function Archive() {
       </div>
 
       {/* States */}
-      {loading && <Loading />}
+      {loading && videos.length === 0 && (
+        <div style={{ marginBottom: 10, fontSize: 13, color: BRAND.sub }}>
+          Loading the video list…
+        </div>
+      )}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
-
-      {/* Table */}
       {!loading && !error && (
+        <div style={{ marginBottom: 10, fontSize: 13, color: BRAND.sub }}>
+          {total === 0
+            ? "No videos."
+            : `Showing ${videos.length.toLocaleString()} of ${total.toLocaleString()}`}
+        </div>
+      )}
+      {loading && videos.length === 0 && !error && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }} aria-hidden="true">
+          <thead>
+            <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600, width: "34%" }}>Title</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Duration</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Upload Date</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Usage</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>KPIs</th>
+              <th style={{ padding: "8px 12px", color: "#666", fontWeight: 600 }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 8 }, (_, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <td colSpan={6} style={{ padding: "12px" }}>
+                  <div style={{ height: 12, borderRadius: 4, background: "#e8edf2", width: `${70 - (i % 3) * 12}%` }} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* Table — stay visible while loading the next page */}
+      {!error && videos.length > 0 && (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>
             <tr style={{ borderBottom: "2px solid #eee", textAlign: "left" }}>
@@ -1126,6 +1186,18 @@ export function Archive() {
             ))}
           </tbody>
         </table>
+      )}
+      {!error && videos.length < total && (
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "center" }}>
+          <Button
+            variant="ghost"
+            onClick={() => fetchVideos(committed, includeHidden, offset + PAGE_SIZE, true)}
+            disabled={loadingMore || loading}
+            style={{ padding: "8px 18px", fontSize: 13 }}
+          >
+            {loadingMore ? <><Spinner small /> Loading more…</> : `Load more (${(total - videos.length).toLocaleString()} left)`}
+          </Button>
+        </div>
       )}
     </main>
   );

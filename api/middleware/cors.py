@@ -157,6 +157,7 @@ def _cors_headers(origin: str, allowed: bool) -> dict[str, str]:
         headers["Access-Control-Allow-Credentials"] = "true"
         headers["Access-Control-Allow-Methods"] = _ALLOWED_METHODS
         headers["Access-Control-Allow-Headers"] = _ALLOWED_HEADERS
+        headers["Access-Control-Expose-Headers"] = "X-Total-Count, X-Archive-Cache"
     return headers
 
 

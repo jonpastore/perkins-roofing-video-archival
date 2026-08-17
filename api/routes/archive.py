@@ -8,13 +8,21 @@ Role requirements (core.authz):
 """
 import re
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from app.models import Article, GraphNode, MiniSeries, SocialPost, Video
+from core.archive_list import (
+    TtlCache,
+    article_counts_for,
+    article_refers_to_video,
+    keep_generated,
+    list_cache_key,
+    page_slice,
+)
 from core.ratelimit import SingleFlightGuard
 from core.retrieval import link
 
@@ -28,6 +36,9 @@ _backfill_guard = SingleFlightGuard(cooldown_seconds=30)
 _poll_kpis_guard = SingleFlightGuard(cooldown_seconds=30)
 # check-new is read-only (no writes/LLM) — lock only, no cooldown.
 _check_new_guard = SingleFlightGuard(cooldown_seconds=0)
+# Catalog list is expensive (joins + article scan). 30s of stale rows is fine;
+# hide/rename/backfill/KPI poll bust the cache.
+_list_cache = TtlCache(ttl_seconds=30.0)
 
 
 def _video_to_dict(
@@ -67,6 +78,7 @@ def _video_to_dict(
 
 @router.get("/videos")
 def list_videos(
+    response: Response,
     q: str | None = None,
     archived_only: bool = False,
     include_hidden: bool = False,
@@ -77,10 +89,12 @@ def list_videos(
     clips: str = "all",
     articles: str = "all",
     social: str = "all",
+    limit: int | None = None,
+    offset: int = 0,
     _claims=Depends(require_role("search")),
     db: Session = Depends(get_db_session),
 ):
-    """Return all Video rows ordered by upload_date desc.
+    """Return Video rows ordered by upload_date desc.
 
     Optional filters:
       ?q=<title substring>        case-insensitive title search
@@ -94,6 +108,10 @@ def list_videos(
       ?clips=all|yes|no           filter by whether MiniSeries rows exist
       ?articles=all|yes|no        filter by whether articles reference this video
       ?social=all|yes|no          filter by whether SocialPost rows exist
+      ?limit=<n>                  page size (omit for the full filtered list)
+      ?offset=<n>                 page start (default 0)
+
+    X-Total-Count is the filtered list size (before limit/offset).
 
     Each row includes usage counts and KPI fields:
       topic_count, article_count, social_post_count
@@ -103,6 +121,25 @@ def list_videos(
       content_length (= duration as int seconds)
       unavailable_since, hidden_at
     """
+    cache_key = list_cache_key(_claims.get("tenant_id"), {
+        "q": q or "",
+        "archived_only": archived_only,
+        "include_hidden": include_hidden,
+        "min_length": min_length,
+        "max_length": max_length,
+        "uploaded_after": uploaded_after or "",
+        "uploaded_before": uploaded_before or "",
+        "clips": clips,
+        "articles": articles,
+        "social": social,
+    })
+    cached = _list_cache.get(cache_key)
+    if cached is not None:
+        page, total = page_slice(cached, limit, offset)
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Archive-Cache"] = "HIT"
+        return page
+
     query = db.query(Video)
     if not include_hidden:
         query = query.filter(Video.hidden_at.is_(None))
@@ -122,11 +159,13 @@ def list_videos(
     rows = query.order_by(Video.upload_date.desc()).all()
 
     if not rows:
+        _list_cache.set(cache_key, [])
+        response.headers["X-Total-Count"] = "0"
+        response.headers["X-Archive-Cache"] = "MISS"
         return []
 
     video_ids = [v.id for v in rows]
 
-    # topic counts: one query, group by video_id
     topic_counts: dict[str, int] = dict(
         db.query(GraphNode.video_id, func.count(GraphNode.id))
         .filter(GraphNode.video_id.in_(video_ids), GraphNode.kind == "topics")
@@ -134,17 +173,10 @@ def list_videos(
         .all()
     )
 
-    # article counts: per video_id, count articles whose content_md contains it
-    article_counts: dict[str, int] = {}
-    for vid in video_ids:
-        article_counts[vid] = (
-            db.query(func.count(Article.slug))
-            .filter(Article.content_md.contains(vid))
-            .scalar() or 0
-        )
+    article_rows = db.query(Article.source_video_ids, Article.content_md).all()
+    article_counts = article_counts_for(video_ids, article_rows)
 
-    # social post counts + presence: mini_series.video_id → social_posts.series_id
-    series_map: dict[str, list[int]] = {}  # video_id -> [series_id]
+    series_map: dict[str, list[int]] = {}
     for s in db.query(MiniSeries.id, MiniSeries.video_id).filter(MiniSeries.video_id.in_(video_ids)).all():
         series_map.setdefault(s.video_id, []).append(s.id)
     all_series_ids = [sid for sids in series_map.values() for sid in sids]
@@ -161,7 +193,6 @@ def list_videos(
         for vid, sids in series_map.items()
     }
 
-    # Derived booleans
     clips_generated_map: dict[str, bool] = {
         vid: bool(sids) for vid, sids in series_map.items()
     }
@@ -172,20 +203,13 @@ def list_videos(
         vid: cnt > 0 for vid, cnt in social_post_counts.items()
     }
 
-    # Apply boolean filters (post-query, derived from join results)
-    def _bool_filter(vid: str, param: str, generated_map: dict[str, bool]) -> bool:
-        if param == "all":
-            return True
-        val = generated_map.get(vid, False)
-        return val if param == "yes" else not val
-
     result = []
     for v in rows:
-        if not _bool_filter(v.id, clips, clips_generated_map):
+        if not keep_generated(clips, clips_generated_map.get(v.id, False)):
             continue
-        if not _bool_filter(v.id, articles, articles_generated_map):
+        if not keep_generated(articles, articles_generated_map.get(v.id, False)):
             continue
-        if not _bool_filter(v.id, social, social_generated_map):
+        if not keep_generated(social, social_generated_map.get(v.id, False)):
             continue
         result.append(
             _video_to_dict(
@@ -198,7 +222,11 @@ def list_videos(
                 social_generated=social_generated_map.get(v.id, False),
             )
         )
-    return result
+    _list_cache.set(cache_key, result)
+    page, total = page_slice(result, limit, offset)
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Archive-Cache"] = "MISS"
+    return page
 
 
 @router.get("/{video_id}/download")
@@ -267,8 +295,9 @@ def rename_video(
     if v is None:
         raise HTTPException(status_code=404, detail="video not found")
     v.title = title
-    db.flush()
+    db.commit()
     db.refresh(v)
+    _list_cache.clear()
     return {"id": v.id, "title": v.title}
 
 
@@ -351,7 +380,8 @@ def video_detail(
     """Return per-video detail: topics with timecoded deep links, article usage, and social posts.
 
     - topics:       content_graph rows (kind='topics') for this video, ordered by start.
-    - articles:     articles whose content_md contains the video_id string (usage detection).
+    - articles:     articles that list this video in source_video_ids, or
+                    (when that field is empty) whose content_md contains the id.
     - social_posts: social posts linked via mini_series.video_id → social_posts.series_id.
 
     Returns 404 if the video does not exist.
@@ -378,15 +408,11 @@ def video_detail(
         for t in topic_rows
     ]
 
-    # Articles — detect usage by scanning content_md for the video_id string
-    article_rows = (
-        db.query(Article)
-        .filter(Article.content_md.contains(video_id))
-        .all()
-    )
+    article_rows = db.query(Article).all()
     articles = [
         {"slug": a.slug, "title": a.title, "status": a.status}
         for a in article_rows
+        if article_refers_to_video(a.source_video_ids, a.content_md, video_id)
     ]
 
     # Social posts — join mini_series (video_id) → social_posts (series_id)
@@ -431,6 +457,7 @@ def backfill(
     try:
         import jobs.backfill_archive as _job  # lazy — avoids importing yt-dlp at startup
         result = _job.run()
+        _list_cache.clear()
         return {"added": result["added"], "checked": result["checked"]}
     except HTTPException:
         raise
@@ -474,7 +501,9 @@ def poll_kpis(
     _poll_kpis_guard.acquire_or_raise("poll-kpis")
     try:
         import jobs.poll_archive_kpis as _job  # lazy
-        return _job.run(limit=limit)
+        result = _job.run(limit=limit)
+        _list_cache.clear()
+        return result
     except HTTPException:
         raise
     finally:
@@ -501,8 +530,9 @@ def hide_video(
     if v is None:
         raise HTTPException(status_code=404, detail="video not found")
     v.hidden_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.flush()
+    db.commit()
     db.refresh(v)
+    _list_cache.clear()
     return _video_to_dict(v)
 
 
@@ -520,6 +550,7 @@ def unhide_video(
     if v is None:
         raise HTTPException(status_code=404, detail="video not found")
     v.hidden_at = None
-    db.flush()
+    db.commit()
     db.refresh(v)
+    _list_cache.clear()
     return _video_to_dict(v)

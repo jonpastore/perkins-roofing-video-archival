@@ -117,6 +117,11 @@ def test_scheduling_uses_platform_checkboxes_not_a_select():
     assert '"instagram"' in PLAT and '"tiktok"' in PLAT
 
 
+def test_clip_studio_picker_debounces_archive_search():
+    assert "committedSearch" in CLIP
+    assert "setTimeout(() => setCommittedSearch(search), 400)" in CLIP
+
+
 def test_archive_detail_and_actions():
     for needle in (
         "/archive/${video.id}/detail",
@@ -131,6 +136,12 @@ def test_archive_detail_and_actions():
         "Open in Clip Studio",
         "Review reel →",
         "include_hidden",
+        "PAGE_SIZE",
+        "X-Total-Count",
+        "Load more",
+        "Loading the video list…",
+        "Showing ",
+        "fetchGen",
     ):
         assert needle in ARCHIVE, needle
 

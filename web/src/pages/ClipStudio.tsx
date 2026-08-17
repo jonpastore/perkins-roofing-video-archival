@@ -195,16 +195,22 @@ interface VideoPickerProps {
 
 function VideoPicker({ onSelect, onVideosLoaded }: VideoPickerProps) {
   const [search, setSearch] = useState("");
+  const [committedSearch, setCommittedSearch] = useState("");
   const [videos, setVideos] = useState<ArchiveVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hideWithClips, setHideWithClips] = useState(false);
 
   useEffect(() => {
+    const t = setTimeout(() => setCommittedSearch(search), 400);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  useEffect(() => {
     setLoading(true);
     setError(null);
     const qs = new URLSearchParams();
-    if (search) qs.set("q", search);
+    if (committedSearch) qs.set("q", committedSearch);
     apiFetch(`/archive/videos?${qs}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(await errText(r));
@@ -216,7 +222,7 @@ function VideoPicker({ onSelect, onVideosLoaded }: VideoPickerProps) {
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [committedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const withClipsCount = videos.filter((v) => v.clips_generated).length;
   const displayed = hideWithClips ? videos.filter((v) => !v.clips_generated) : videos;

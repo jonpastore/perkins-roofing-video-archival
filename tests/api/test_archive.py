@@ -17,7 +17,7 @@ _tmp.close()
 os.environ.setdefault("DB_URL", f"sqlite:///{_tmp.name}")
 
 from api.auth import set_verifier  # noqa: E402
-from api.routes.archive import router  # noqa: E402
+from api.routes.archive import router, _list_cache  # noqa: E402
 from app.models import Base, SessionLocal, Video, engine  # noqa: E402
 
 Base.metadata.create_all(engine)
@@ -33,6 +33,7 @@ VIDEO_PENDING = "vid_pending"
 @pytest.fixture(autouse=True)
 def seed_db():
     """Wipe videos and insert two known rows before each test."""
+    _list_cache.clear()
     with SessionLocal() as db:
         db.query(Video).delete()
         db.add(Video(
@@ -141,6 +142,36 @@ def test_list_videos_youtube_url_present():
     resp = client.get("/archive/videos", headers={"Authorization": "Bearer tok"})
     data = {v["id"]: v for v in resp.json()}
     assert data[VIDEO_ARCHIVED]["youtube_url"] == "https://youtube.com/watch?v=abc"
+
+
+def test_list_videos_paginates_and_sets_total_header():
+    client = _make_client("admin")
+    first = client.get("/archive/videos?limit=1&offset=0", headers={"Authorization": "Bearer tok"})
+    assert first.status_code == 200
+    assert first.headers["X-Total-Count"] == "2"
+    assert first.headers["X-Archive-Cache"] == "MISS"
+    assert len(first.json()) == 1
+    second = client.get("/archive/videos?limit=1&offset=1", headers={"Authorization": "Bearer tok"})
+    assert second.status_code == 200
+    assert second.headers["X-Total-Count"] == "2"
+    assert second.headers["X-Archive-Cache"] == "HIT"
+    assert len(second.json()) == 1
+    assert first.json()[0]["id"] != second.json()[0]["id"]
+
+
+def test_hide_then_list_drops_the_row():
+    client = _make_client("admin")
+    hidden = client.post(
+        f"/archive/{VIDEO_ARCHIVED}/hide",
+        headers={"Authorization": "Bearer tok"},
+    )
+    assert hidden.status_code == 200
+    listed = client.get("/archive/videos", headers={"Authorization": "Bearer tok"})
+    assert listed.status_code == 200
+    assert listed.headers["X-Archive-Cache"] == "MISS"
+    ids = {v["id"] for v in listed.json()}
+    assert VIDEO_ARCHIVED not in ids
+    assert VIDEO_PENDING in ids
 
 
 # ---------------------------------------------------------------------------

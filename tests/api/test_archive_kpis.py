@@ -17,7 +17,7 @@ _tmp.close()
 os.environ.setdefault("DB_URL", f"sqlite:///{_tmp.name}")
 
 from api.auth import set_verifier  # noqa: E402
-from api.routes.archive import router, _backfill_guard, _poll_kpis_guard, _check_new_guard  # noqa: E402
+from api.routes.archive import router, _backfill_guard, _poll_kpis_guard, _check_new_guard, _list_cache  # noqa: E402
 from app.models import Base, SessionLocal, Video, MiniSeries, SocialPost, Article, engine  # noqa: E402
 
 Base.metadata.create_all(engine)
@@ -31,6 +31,7 @@ def reset_archive_guards():
     _backfill_guard._reset_for_testing()
     _poll_kpis_guard._reset_for_testing()
     _check_new_guard._reset_for_testing()
+    _list_cache.clear()
     yield
 
 # ---------------------------------------------------------------------------

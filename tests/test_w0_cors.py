@@ -443,6 +443,13 @@ class TestCORSMiddlewareIntegration:
         for verb in ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
             assert verb in allowed, f"{verb} missing from Access-Control-Allow-Methods"
 
+    def test_allowed_response_exposes_archive_total_count(self):
+        r = self.client.get("/ping", headers={"origin": "https://app.tenant1.com",
+                                               "host": "app.tenant1.com"})
+        exposed = r.headers.get("access-control-expose-headers", "")
+        assert "X-Total-Count" in exposed
+        assert "X-Archive-Cache" in exposed
+
     def test_preflight_vary_origin(self):
         headers = {"origin": "https://app.tenant1.com", "host": "app.tenant1.com",
                    "access-control-request-method": "GET"}
