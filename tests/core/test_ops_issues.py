@@ -53,7 +53,7 @@ def test_collect_issues_orders_errors_first():
     assert "scan.error:portfolio" in keys
     assert "ingest.stale:abc" in keys
     cam = next(i for i in issues if i["key"] == "job.failed:companycam-sync")
-    assert "varchar" in cam["fix"] or "TEXT" in cam["fix"]
+    assert "public_api/v1" in cam["fix"] or "OOM" in cam["fix"]
 
 
 def test_collect_issues_streams_only_is_silent():

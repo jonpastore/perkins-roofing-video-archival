@@ -6,6 +6,8 @@ Read `docs/ENGINEERING_RULES.md` — it is binding for every change in this repo
   PLUS a behavioral validation for new I/O (adapters/api/jobs are coverage-omitted).
 - **R11** Implemented features update spec/TRD/PRD/DDD/UIUX in the same change. Stale docs
   are a defect.
+- **R12** Prompted username/password is verified, then vaulted. Failed verify must not
+  overwrite Secret Manager `:latest`. `core/verified_secret.py`.
 - **R2** Every wave gets a deep review by BOTH the `architect` and `critic` agents (gaps,
   unwired/dead code, schema/migration mismatches, security, idempotency, cost). Fix all
   HIGH/critical findings before marking the wave done.

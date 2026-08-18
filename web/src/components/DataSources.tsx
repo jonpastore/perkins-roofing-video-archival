@@ -36,15 +36,39 @@ function labelFor(status: string | undefined): string {
   return status || "Unknown";
 }
 
+function needsLogin(id: string, status: string | undefined): boolean {
+  if (id === "companycam") return false;
+  return status === "broken" || status === "expiring" || status === "unconfigured";
+}
+
 export function DataSources({ manage = true }: { manage?: boolean }) {
   const [rows, setRows] = useState<Record<string, Connection>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    listConnections()
-      .then((list) => setRows(Object.fromEntries(list.map((c) => [c.integration, c]))))
-      .catch(() => undefined);
+    function refresh() {
+      listConnections()
+        .then((list) => {
+          const byId = Object.fromEntries(list.map((c) => [c.integration, c]));
+          setRows(byId);
+          const mustOpen = SOURCES.some((src) => {
+            const conn = byId[src.statusId ?? src.id] ?? byId[src.id];
+            return needsLogin(src.id, conn?.status);
+          });
+          if (mustOpen) setOpen(true);
+        })
+        .catch(() => undefined)
+        .finally(() => setLoaded(true));
+    }
+    refresh();
+    const onVis = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   async function connect(id: string) {
@@ -70,16 +94,48 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
     }
   }
 
+  const loginNeeded = SOURCES.filter((src) => {
+    const conn = rows[src.statusId ?? src.id] ?? rows[src.id];
+    return needsLogin(src.id, conn?.status);
+  });
+
   return (
     <Card style={{ marginBottom: 16 }}>
-      <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15, marginBottom: 4 }}>
-        Data sources
-      </div>
-      <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 12 }}>
-        Log in here for Knowify and YouTube. CompanyCam uses an application key, not OAuth.
-        Request login emails the operators if someone else has to complete a consent screen.
-      </div>
-      {SOURCES.map((src) => {
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          width: "100%",
+          background: "none",
+          border: 0,
+          padding: 0,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15, flex: 1 }}>
+          {open ? "▾" : "▸"} Data sources
+        </span>
+        {loaded && loginNeeded.length > 0 && (
+          <Badge tone="red">
+            {loginNeeded.length === 1
+              ? `${loginNeeded[0].label} needs login`
+              : `${loginNeeded.length} need login`}
+          </Badge>
+        )}
+        {loaded && loginNeeded.length === 0 && <Badge tone="green">Connected</Badge>}
+      </button>
+      {open && (
+        <div style={{ fontSize: 13, color: BRAND.sub, margin: "10px 0 12px" }}>
+          Log in here for Knowify and YouTube. CompanyCam uses an application key, not OAuth.
+          Request login emails the operators if someone else has to complete a consent screen.
+        </div>
+      )}
+      {open && SOURCES.map((src) => {
         const statusRow = rows[src.statusId ?? src.id] ?? rows[src.id];
         const oauthRow = rows[src.id] ?? statusRow;
         const conn = statusRow;
@@ -131,7 +187,7 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
           </div>
         );
       })}
-      {error && <ErrorMsg>{error}</ErrorMsg>}
+      {open && error && <ErrorMsg>{error}</ErrorMsg>}
     </Card>
   );
 }

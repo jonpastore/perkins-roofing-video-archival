@@ -55,6 +55,7 @@ def test_persist_knowify_writes_mcp_blob(monkeypatch):
 
     import core.knowify.tokens as T
     monkeypatch.setattr(T, "save_mcp_tokens", _save)
+    monkeypatch.setattr("core.connection_status.mark_healthy", lambda *a, **k: None)
     dso.persist_knowify_mcp(
         {"access_token": "a", "refresh_token": "r", "expires_in": 10}, "cid",
     )

@@ -153,6 +153,9 @@ class TestOAuthCallback:
             "adapters.distribution.oauth_store.SecretManagerOAuthStore", _FakeStore
         )
         monkeypatch.setattr("requests.post", lambda *a, **k: _TokenResp())
+        monkeypatch.setattr(
+            "core.youtube_creds.vault_refresh_after_verify", lambda *a, **k: True,
+        )
 
     def test_happy_path_stores_tokens_and_flips_healthy(self, monkeypatch):
         client = _make_client()
@@ -169,6 +172,22 @@ class TestOAuthCallback:
             row = (db.query(IntegrationStatus)
                    .filter(IntegrationStatus.integration == "youtube").first())
             assert row is not None and row.status == "healthy" and row.tenant_id == 1
+
+    def test_youtube_refresh_verify_fail_does_not_store(self, monkeypatch):
+        client = _make_client()
+        _, state, _ = _start(client)
+        _FakeStore.calls = []
+        monkeypatch.setattr(
+            "adapters.distribution.oauth_store.SecretManagerOAuthStore", _FakeStore
+        )
+        monkeypatch.setattr("requests.post", lambda *a, **k: _TokenResp())
+        monkeypatch.setattr(
+            "core.youtube_creds.vault_refresh_after_verify",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("wrong channel")),
+        )
+        r = client.get(f"/oauth/youtube/callback?code=abc&state={state}")
+        assert r.status_code == 400
+        assert _FakeStore.calls == []
 
     def test_replayed_state_403(self, monkeypatch):
         client = _make_client()
@@ -242,6 +261,11 @@ class TestReenterSecret:
             def add_secret_version(self, request):
                 calls["parent"] = request["parent"]
 
+        monkeypatch.setenv("WP_USER", "jon")
+        monkeypatch.setenv("WP_URL", "https://example.com")
+        monkeypatch.setattr(
+            "core.wordpress_creds.verify_app_password", lambda *a, **k: True,
+        )
         monkeypatch.setattr("api.routes.config._secret_manager_client", lambda: _FakeSM())
         monkeypatch.setattr("api.routes.config._gcp_project", lambda: "proj")
         # Seed a shared status row with last_checked set.
@@ -261,3 +285,73 @@ class TestReenterSecret:
             row = (db.query(IntegrationStatus)
                    .filter(IntegrationStatus.integration == "wordpress").first())
             assert row.last_checked is None
+
+    def test_wordpress_missing_env_does_not_write(self, monkeypatch):
+        calls = []
+
+        class _FakeSM:
+            def add_secret_version(self, request):
+                calls.append(request)
+
+        monkeypatch.delenv("WP_USER", raising=False)
+        monkeypatch.delenv("WP_URL", raising=False)
+        monkeypatch.setattr(
+            "adapters.wordpress.resolved_wp_url", lambda: "",
+        )
+        monkeypatch.setattr("api.routes.config._secret_manager_client", lambda: _FakeSM())
+        r = _make_client().post(
+            "/connections/wordpress/secret", json={"value": "x"}, headers=AUTH
+        )
+        assert r.status_code == 400
+        assert calls == []
+
+    def test_youtube_api_key_verify_failure_does_not_write(self, monkeypatch):
+        calls = []
+
+        class _FakeSM:
+            def add_secret_version(self, request):
+                calls.append(request)
+
+        monkeypatch.setattr("core.youtube_creds.verify_api_key", lambda *a, **k: False)
+        monkeypatch.setattr("api.routes.config._secret_manager_client", lambda: _FakeSM())
+        r = _make_client().post(
+            "/connections/youtube_api_key/secret", json={"value": "AIza-bad"}, headers=AUTH
+        )
+        assert r.status_code == 400
+        assert calls == []
+
+    def test_youtube_reply_verify_writes(self, monkeypatch):
+        calls = {}
+
+        class _FakeSM:
+            def add_secret_version(self, request):
+                calls["parent"] = request["parent"]
+
+        monkeypatch.setattr("core.youtube_creds.verify_refresh_token", lambda *a, **k: True)
+        monkeypatch.setattr("api.routes.config._secret_manager_client", lambda: _FakeSM())
+        monkeypatch.setattr("api.routes.config._gcp_project", lambda: "proj")
+        r = _make_client().post(
+            "/connections/youtube_reply/secret", json={"value": "rt"}, headers=AUTH
+        )
+        assert r.status_code == 200
+        assert calls["parent"] == "projects/proj/secrets/youtube-oauth-refresh-token"
+
+    def test_wordpress_verify_failure_does_not_write(self, monkeypatch):
+        calls = []
+
+        class _FakeSM:
+            def add_secret_version(self, request):
+                calls.append(request)
+
+        monkeypatch.setenv("WP_USER", "jon")
+        monkeypatch.setenv("WP_URL", "https://example.com")
+        monkeypatch.setattr(
+            "core.wordpress_creds.verify_app_password", lambda *a, **k: False,
+        )
+        monkeypatch.setattr("api.routes.config._secret_manager_client", lambda: _FakeSM())
+        monkeypatch.setattr("api.routes.config._gcp_project", lambda: "proj")
+        r = _make_client().post(
+            "/connections/wordpress/secret", json={"value": "bad"}, headers=AUTH
+        )
+        assert r.status_code == 400
+        assert calls == []

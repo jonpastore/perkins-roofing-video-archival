@@ -523,4 +523,5 @@ def test_mcp_refresh_only_returns_1_on_auth_error(monkeypatch):
         raise T.AuthError("dead")
 
     monkeypatch.setattr(T, "refresh_mcp", _boom)
+    monkeypatch.setattr("core.knowify.playwright_relogin.available", lambda: False)
     assert T.mcp_refresh_only() == 1

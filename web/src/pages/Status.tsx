@@ -1154,8 +1154,8 @@ export function Status() {
         Platform Status
       </PageTitle>
 
-      <ProductionReadinessBanner />
       <DataSources />
+      <ProductionReadinessBanner />
       <LongformQueue />
 
       {toast && (

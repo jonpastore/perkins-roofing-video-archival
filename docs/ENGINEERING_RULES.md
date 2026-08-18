@@ -157,6 +157,27 @@ Code is the source of truth. Docs that still describe the old world are a defect
 - New work is TDD against the TRD/DDD (R1). Do not invent a second requirements pile in
   chat, Jarvis notes, or continuation markdown.
 
+## R12 — Prompted credentials are verified, then vaulted (owner 2026-08-18)
+
+When a login is broken and we ask for a username/password (CLI `--prompt`, or an
+operator paste in this session):
+
+1. **Verify first** — a live call that proves the pair works (Knowify OAuth code,
+   WP `GET /users/me`, etc.).
+2. **Then** write Secret Manager (`update_after_verify` / `update_text_after_verify`).
+3. A failed verify must **not** overwrite `:latest`.
+4. Never log the password. Never commit it.
+
+`core/verified_secret.py` is the one helper.
+- Knowify: `python -m jobs.knowify_relogin --prompt` (OAuth success is the proof).
+- WordPress Application Password: `python -m jobs.wordpress_vault --prompt`
+  (`GET /wp-json/wp/v2/users/me`). Dashboard / Config paste of `wordpress-app-password`
+  uses the same verify-then-write. Never vault the wp-admin login password.
+- YouTube: `python -m jobs.youtube_relogin --prompt` (Playwright + `channels?mine=true`
+  must be the Perkins channel, then `youtube-oauth-refresh-token` + `youtube-login`).
+  API key: `--api-key` or Config/Connections paste — `channels.list` for the Perkins id.
+  Dashboard YouTube OAuth writes the refresh token only after the same channel check.
+
 ## Per-wave Definition of Done (checklist)
 - [ ] All wave tasks implemented — no unwired/dead code (architect-verified).
 - [ ] `pytest --cov=core --cov-fail-under=100` green (R1) + a behavioral validation for new I/O.

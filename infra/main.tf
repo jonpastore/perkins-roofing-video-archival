@@ -1339,6 +1339,11 @@ locals {
     "serper-api-key",
     "resend-api-key",
     "wordpress-app-password",
+    "youtube-login",             # Google account for YouTube Playwright relogin (JSON).
+    # Value out-of-band; written only after channels?mine=true is Perkins (R12).
+    "knowify-login",             # Knowify website email+password (JSON). Playwright
+    # relogin reads it when the MCP refresh token is dead. Value out-of-band;
+    # written only after a successful OAuth (core/verified_secret.py R12).
     "meta-app-secret",
     "meta-system-user-token",
     "tiktok-client-secret",

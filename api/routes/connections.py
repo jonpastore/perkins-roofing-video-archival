@@ -109,6 +109,7 @@ SECRET_TARGETS: dict[str, str] = {
     "pexels": "pexels-api-key",
     "serper": "serper-api-key",
     "youtube_api_key": "youtube-api-key",
+    "youtube_reply": "youtube-oauth-refresh-token",
     "companycam": "companycam-pat",
 }
 
@@ -232,6 +233,12 @@ def reenter_secret(
     value = body.value.strip()
     if not value:
         raise HTTPException(status_code=400, detail="empty secret value")
+    if integration == "wordpress":
+        _require_wordpress_verified(value)
+    elif integration == "youtube_api_key":
+        _require_youtube_api_key_verified(value)
+    elif integration == "youtube_reply":
+        _require_youtube_refresh_verified(value)
 
     from api.routes.config import _gcp_project, _secret_manager_client  # noqa: PLC0415
     try:
@@ -403,6 +410,8 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
     access_token = tokens.get("access_token") or ""
     if not access_token:
         raise HTTPException(status_code=502, detail="token exchange failed")
+    if platform == "youtube":
+        _persist_youtube_refresh(tokens.get("refresh_token") or "")
 
     try:
         from adapters.distribution.oauth_store import (  # noqa: PLC0415
@@ -422,6 +431,9 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
         raise HTTPException(status_code=502, detail="credential store write failed") from exc
 
     _mark_connected(platform, None if platform in DATA_SOURCES else parsed["tenant_id"])
+    if platform == "youtube":
+        # Data sources reads youtube_reply, not the tenant youtube OAuth row.
+        _mark_connected("youtube_reply", None)
 
     log.info("oauth_callback: %s connected", platform)
     return HTMLResponse(
@@ -496,24 +508,67 @@ def _oauth_finish_knowify(code: str, parsed: dict) -> HTMLResponse:
     )
 
 
-def _mark_connected(integration: str, tenant_id: int | None) -> None:
-    from app.models import IntegrationStatus  # noqa: PLC0415
+def _require_youtube_api_key_verified(key: str) -> None:
+    from core.youtube_creds import verify_api_key  # noqa: PLC0415
 
-    now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
-    db = _platform_db()
+    if not verify_api_key(key):
+        raise HTTPException(
+            status_code=400,
+            detail="YouTube API key did not verify — secret not updated",
+        )
+
+
+def _require_youtube_refresh_verified(refresh: str) -> None:
+    from core.youtube_creds import verify_refresh_token  # noqa: PLC0415
+
+    if not verify_refresh_token(refresh):
+        raise HTTPException(
+            status_code=400,
+            detail="YouTube token did not authorize the Perkins channel — secret not updated",
+        )
+
+
+def _persist_youtube_refresh(refresh: str) -> None:
+    from core.youtube_creds import vault_refresh_after_verify  # noqa: PLC0415
+
+    if not refresh:
+        raise HTTPException(
+            status_code=400,
+            detail="YouTube did not return a refresh token — secret not updated",
+        )
     try:
-        q = db.query(IntegrationStatus).filter(IntegrationStatus.integration == integration)
-        q = q.filter(IntegrationStatus.tenant_id.is_(None) if tenant_id is None
-                     else IntegrationStatus.tenant_id == tenant_id)
-        row = q.first()
-        if row is None:
-            row = IntegrationStatus(integration=integration, tenant_id=tenant_id)
-            db.add(row)
-        row.status = "healthy"
-        row.last_ok = now_dt
-        row.last_checked = now_dt
-        row.last_error = None
-        row.consecutive_failures = 0
-        db.commit()
-    finally:
-        db.close()
+        vault_refresh_after_verify(refresh)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="YouTube token did not authorize the Perkins channel — secret not updated",
+        ) from exc
+
+
+def _require_wordpress_verified(password: str) -> None:
+    """R12: never vault a WP Application Password that failed GET /users/me."""
+    from core.wordpress_creds import verify_app_password  # noqa: PLC0415
+
+    user = os.environ.get("WP_USER", "")
+    url = os.environ.get("WP_URL", "")
+    if not url:
+        try:
+            from adapters.wordpress import resolved_wp_url  # noqa: PLC0415
+            url = resolved_wp_url()
+        except Exception:  # noqa: BLE001
+            url = ""
+    if not user or not url:
+        raise HTTPException(
+            status_code=400,
+            detail="WP_USER and WP_URL are required to verify a WordPress password",
+        )
+    if not verify_app_password(user, password, wp_url=url):
+        raise HTTPException(
+            status_code=400,
+            detail="WordPress credentials did not verify — secret not updated",
+        )
+
+
+def _mark_connected(integration: str, tenant_id: int | None) -> None:
+    from core.connection_status import mark_healthy  # noqa: PLC0415
+    mark_healthy(integration, tenant_id)

@@ -85,7 +85,12 @@ class Video(Base):
     longform_reprocessed_at = Column(DateTime, nullable=True)
     longform_note = Column(Text, nullable=True)
     parent_video_id = Column(String, nullable=True)
-    derived_urls = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
+    derived_urls = Column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_videos_tenant_id", "tenant_id"),)
 

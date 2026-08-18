@@ -99,3 +99,5 @@ def persist_knowify_mcp(tokens: dict[str, Any], client_id: str) -> None:
     if not blob["accessToken"] or not blob["refreshToken"]:
         raise RuntimeError("Knowify token response missing access or refresh token")
     save_mcp_tokens(blob)
+    from core.connection_status import mark_healthy  # noqa: PLC0415
+    mark_healthy("knowify")

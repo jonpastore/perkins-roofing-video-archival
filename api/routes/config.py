@@ -494,6 +494,12 @@ def upsert_secret(entry: SecretEntry, claims=Depends(require_role("manage_config
         )
     if not entry.value:
         raise HTTPException(status_code=422, detail="Secret value must not be empty.")
+    if entry.key == "wordpress-app-password":
+        from api.routes.connections import _require_wordpress_verified  # noqa: PLC0415
+        _require_wordpress_verified(entry.value)
+    elif entry.key == "youtube-api-key":
+        from api.routes.connections import _require_youtube_api_key_verified  # noqa: PLC0415
+        _require_youtube_api_key_verified(entry.value)
 
     email = claims.get("email", "unknown")
     now = datetime.now(UTC).replace(tzinfo=None)

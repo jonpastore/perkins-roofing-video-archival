@@ -41,8 +41,9 @@ class _Node:
 
 def test_compute_skips_blank_topic_labels():
     class _Db:
-        def query(self, model):
-            name = getattr(model, "__name__", str(model))
+        def query(self, *cols):
+            model = cols[0]
+            name = getattr(model, "__name__", str(getattr(model, "class_", model)))
             if name == "GraphNode":
                 return _Q([_Node(""), _Node("Flat roof")])
             return _Q([])

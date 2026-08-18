@@ -10,13 +10,19 @@ def test_data_sources_panel_has_login_buttons():
     assert "YouTube" in src
     assert "Log in" in src
     assert "startOAuth" in src
+    assert "needsLogin" in src
+    assert "aria-expanded" in src
+    assert 'setOpen(true)' in src
+    assert "visibilitychange" in src
 
 
 def test_knowify_and_portfolio_mount_data_sources():
     assert "DataSources" in (ROOT / "pages" / "Knowify.tsx").read_text()
     assert "DataSources" in (ROOT / "pages" / "Portfolio.tsx").read_text()
     assert "DataSources" in (ROOT / "pages" / "MarketingConfig.tsx").read_text()
-    assert "DataSources" in (ROOT / "pages" / "Status.tsx").read_text()
+    status = (ROOT / "pages" / "Status.tsx").read_text()
+    assert "DataSources" in status
+    assert status.find("<DataSources") < status.find("<ProductionReadinessBanner")
 
 
 def test_job_switches_and_reminder_notice_mounted():

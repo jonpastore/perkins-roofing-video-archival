@@ -152,8 +152,9 @@ def posting_channel() -> dict | None:
 
 def reply_oauth_configured() -> bool:
     """True when the owner refresh token + OAuth client creds are all present."""
+    from core.youtube_creds import load_refresh_token  # noqa: PLC0415
     return bool(
-        os.environ.get("YOUTUBE_OAUTH_REFRESH_TOKEN")
+        load_refresh_token()
         and os.environ.get("OAUTH_CLIENT_ID")
         and os.environ.get("OAUTH_CLIENT_SECRET")
     )
@@ -161,7 +162,8 @@ def reply_oauth_configured() -> bool:
 
 def _owner_access_token() -> str:
     """Exchange the stored owner refresh token for a fresh access token."""
-    refresh = os.environ.get("YOUTUBE_OAUTH_REFRESH_TOKEN", "")
+    from core.youtube_creds import load_refresh_token  # noqa: PLC0415
+    refresh = load_refresh_token()
     client_id = os.environ.get("OAUTH_CLIENT_ID", "")
     client_secret = os.environ.get("OAUTH_CLIENT_SECRET", "")
     if not (refresh and client_id and client_secret):

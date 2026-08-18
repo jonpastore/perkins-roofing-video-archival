@@ -273,7 +273,8 @@ def test_get_secrets_unauthenticated():
 def test_put_secrets_admin_ok(admin_client):
     mock_client = _mock_sm_client()
     with patch("api.routes.config._secret_manager_client", return_value=mock_client), \
-         patch("api.routes.config._gcp_project", return_value="test-project"):
+         patch("api.routes.config._gcp_project", return_value="test-project"), \
+         patch("core.youtube_creds.verify_api_key", return_value=True):
         r = admin_client.put(
             "/config/secrets",
             json={"key": "youtube-api-key", "value": "AIza_test_key"},
@@ -318,10 +319,13 @@ def test_put_secrets_records_audit(admin_client):
     assert audit.updated_at is not None
 
 
-def test_put_secrets_audit_shows_in_get(admin_client):
+def test_put_secrets_audit_shows_in_get(admin_client, monkeypatch):
     mock_client = _mock_sm_client()
+    monkeypatch.setenv("WP_USER", "jon")
+    monkeypatch.setenv("WP_URL", "https://example.com")
     with patch("api.routes.config._secret_manager_client", return_value=mock_client), \
-         patch("api.routes.config._gcp_project", return_value="test-project"):
+         patch("api.routes.config._gcp_project", return_value="test-project"), \
+         patch("core.wordpress_creds.verify_app_password", return_value=True):
         admin_client.put(
             "/config/secrets",
             json={"key": "wp-app-password", "value": "pw"},
@@ -370,7 +374,8 @@ def test_put_secrets_gcp_error_returns_502(admin_client):
     broken_client = MagicMock()
     broken_client.add_secret_version.side_effect = Exception("GCP unavailable")
     with patch("api.routes.config._secret_manager_client", return_value=broken_client), \
-         patch("api.routes.config._gcp_project", return_value="test-project"):
+         patch("api.routes.config._gcp_project", return_value="test-project"), \
+         patch("core.youtube_creds.verify_api_key", return_value=True):
         r = admin_client.put(
             "/config/secrets",
             json={"key": "youtube-api-key", "value": "somekey"},
