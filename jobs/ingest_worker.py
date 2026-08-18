@@ -62,7 +62,11 @@ def _pending_video_ids(s, limit=None):
     )
     q = (
         s.query(Video.id)
-        .filter(~Video.id.in_(done), ~Video.id.in_(giveup))
+        .filter(
+            ~Video.id.in_(done),
+            ~Video.id.in_(giveup),
+            Video.parent_video_id.is_(None),
+        )
         .order_by(Video.id)
     )
     if limit:

@@ -863,9 +863,9 @@ function GcpSpendWidget() {
 }
 
 // ── Go-live checklist banner ──────────────────────────────────────────────────
-// Manual leftovers only. Wendy / staging WP / Rank Math / permalinks were
-// dropped 2026-08-18 — staging WP is down and we are replacing that stack.
-const GO_LIVE_DISMISSED_KEY = "perkins.goLiveChecklistDismissed.v2";
+// Non-WP leftovers only. Wendy / staging / Rank Math / permalinks / WP author
+// and the prod app-password row stay off this list — that stack is being replaced.
+const GO_LIVE_DISMISSED_KEY = "perkins.goLiveChecklistDismissed.v4";
 
 interface GoLiveItem {
   label: string;
@@ -901,7 +901,7 @@ function GoLiveChecklistBanner() {
     <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
         <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
-          Open items — {GO_LIVE_ITEMS.length}
+          Go-Live Checklist — {GO_LIVE_ITEMS.length} open
         </span>
         <button
           onClick={dismiss}
@@ -916,6 +916,98 @@ function GoLiveChecklistBanner() {
           <li key={item.label}>
             {item.label}
             <span style={{ marginLeft: 8 }}><Badge tone="amber">Manual</Badge></span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function fmtDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function LongformQueue() {
+  const [rows, setRows] = useState<Array<{
+    id: string;
+    title: string;
+    duration: number | null;
+    youtube_url: string | null;
+    longform_reprocessed_at: string | null;
+  }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    apiFetch("/archive/videos?min_length=600&unchopped=true&limit=200")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await errText(res));
+        return res.json();
+      })
+      .then((data) => setRows(Array.isArray(data) ? data : []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const open = rows;
+
+  async function markDone(id: string) {
+    setBusy(id);
+    const clipUrls = (urls[id] || "").split(/\s+/).map((s) => s.trim()).filter(Boolean);
+    try {
+      const res = await apiFetch(`/archive/${id}/longform-reprocessed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: "chopped", urls: clipUrls }),
+      });
+      if (!res.ok) throw new Error(await errText(res));
+      const updated = await res.json();
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...updated } : r)));
+    } catch {
+      /* badge stays */
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (loading) return null;
+  return (
+    <Card style={{ marginBottom: 16, padding: "14px 20px" }}>
+      <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15, marginBottom: 4 }}>
+        Long videos (≥10 min) — {open.length} not chopped
+      </div>
+      <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 10 }}>
+        After you upload the slices, paste their YouTube URLs here. Those clips will not
+        generate new articles, FAQs, or topic suggestions. We still cannot push to YouTube from this app.
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.7, maxHeight: 360, overflow: "auto" }}>
+        {open.slice(0, 20).map((r) => (
+          <li key={r.id} style={{ marginBottom: 10 }}>
+            {r.youtube_url ? (
+              <a href={r.youtube_url} target="_blank" rel="noreferrer" style={{ color: BRAND.navyText }}>
+                {r.title || r.id}
+              </a>
+            ) : (r.title || r.id)}
+            <span style={{ color: BRAND.sub, marginLeft: 8 }}>{fmtDuration(r.duration)}</span>
+            <div style={{ marginTop: 4 }}>
+              <textarea
+                placeholder="https://youtu.be/… (one clip URL per line)"
+                value={urls[r.id] || ""}
+                onChange={(e) => setUrls((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                style={{ ...inputStyle, width: "100%", minHeight: 52, fontSize: 12 }}
+              />
+              <button
+                onClick={() => markDone(r.id)}
+                disabled={busy === r.id}
+                style={{ marginTop: 4, fontSize: 12, cursor: "pointer" }}
+              >
+                {busy === r.id ? "Saving…" : "Mark chopped + join clips"}
+              </button>
+            </div>
           </li>
         ))}
       </ul>
@@ -1064,6 +1156,7 @@ export function Status() {
 
       <ProductionReadinessBanner />
       <DataSources />
+      <LongformQueue />
 
       {toast && (
         <div

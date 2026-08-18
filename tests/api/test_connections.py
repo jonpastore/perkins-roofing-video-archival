@@ -108,7 +108,11 @@ class TestOAuthStart:
         assert _make_client().get("/oauth/myspace/start", headers=AUTH).status_code == 404
 
     def test_companycam_oauth_removed(self):
-        assert _make_client().get("/oauth/companycam/start", headers=AUTH).status_code == 404
+        client = _make_client()
+        assert client.get("/oauth/companycam/start", headers=AUTH).status_code == 404
+        r = client.post("/connections/companycam/request-login", headers=AUTH)
+        assert r.status_code == 400
+        assert "application key" in r.json()["detail"]
 
     def test_unconfigured_platform_503(self, monkeypatch):
         monkeypatch.delenv("OAUTH_CLIENT_ID")

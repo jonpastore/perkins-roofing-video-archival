@@ -388,3 +388,33 @@ def test_poll_kpis_401_no_token():
     client = _make_client("admin")
     resp = client.post("/archive/poll-kpis")
     assert resp.status_code == 401
+
+
+def test_mark_longform_requires_clip_urls():
+    client = _make_client("admin")
+    resp = client.post(
+        f"/archive/{VID_LONG}/longform-reprocessed",
+        json={"note": "chopped"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+
+
+def test_mark_longform_reprocessed():
+    client = _make_client("admin")
+    resp = client.post(
+        f"/archive/{VID_LONG}/longform-reprocessed",
+        json={"note": "chopped", "urls": ["https://youtu.be/CLIPVIDEO01"]},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["longform_reprocessed_at"] is not None
+    assert body["longform_note"] == "chopped"
+    assert "CLIPVIDEO01" in "".join(body.get("derived_urls") or [])
+    listed = client.get("/archive/videos?min_length=600", headers=AUTH).json()
+    row = next(v for v in listed if v["id"] == VID_LONG)
+    assert row["longform_reprocessed_at"] is not None
+    unchopped = {v["id"] for v in client.get(
+        "/archive/videos?min_length=600&unchopped=true", headers=AUTH).json()}
+    assert VID_LONG not in unchopped

@@ -82,6 +82,10 @@ class Video(Base):
     description = Column(Text, nullable=True)
     description_generated_at = Column(DateTime, nullable=True)
     description_model = Column(String, nullable=True)
+    longform_reprocessed_at = Column(DateTime, nullable=True)
+    longform_note = Column(Text, nullable=True)
+    parent_video_id = Column(String, nullable=True)
+    derived_urls = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_videos_tenant_id", "tenant_id"),)
 

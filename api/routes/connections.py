@@ -196,6 +196,25 @@ class SecretBody(BaseModel):
     value: str
 
 
+@router.post("/connections/{integration}/request-login")
+def request_login(
+    integration: str,
+    claims: dict = Depends(require_role_db("manage_config")),
+):
+    """Email operators that this integration needs a dashboard login."""
+    from core.login_request import LOGIN_COPY, send_login_request  # noqa: PLC0415
+
+    if integration == "companycam":
+        raise HTTPException(
+            status_code=400,
+            detail="companycam uses an application key, not OAuth login",
+        )
+    if integration not in LOGIN_COPY:
+        raise HTTPException(status_code=404, detail=f"unknown integration {integration!r}")
+    ids = send_login_request(integration, tenant_id=claims.get("tenant_id"))
+    return {"ok": True, "sent": len(ids), "integration": integration}
+
+
 @router.post("/connections/{integration}/secret")
 def reenter_secret(
     integration: str,

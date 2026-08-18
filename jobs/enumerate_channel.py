@@ -76,12 +76,17 @@ def _run_for_tenant(db, tenant_id: int, channel_id=None, limit=None) -> dict:
     resolved_channel_id = channel_ids[0]
     entries, failed = list_channel(resolved_channel_id, limit=limit)
     rows = to_video_rows(entries)
+    from core.video_lineage import parent_index_from_db  # noqa: PLC0415
+    parents = parent_index_from_db(db)
     for r in rows:
         v = db.get(Video, r["id"]) or Video(id=r["id"])
         v.title = r["title"] or v.title
         if r["duration"] is not None:
             v.duration = r["duration"]
         v.url = r["url"]
+        parent = parents.get(r["id"])
+        if parent and not v.parent_video_id:
+            v.parent_video_id = parent
         db.add(v)
     db.commit()
     total = db.query(Video).count()

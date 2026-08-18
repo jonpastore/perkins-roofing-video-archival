@@ -80,12 +80,49 @@ def test_skips_a_topic_that_exists_only_as_a_CLUSTER_parent():
     assert DC.next_topic(db) is None
 
 
+def test_sliced_clips_are_not_new_source_material():
+    """A clip cut from a long original must not invent a second article topic."""
+    nodes = [_node("Same speech", "LONGVIDEO01"), _node("Same speech", "CLIPVIDEO01")]
+    videos = [
+        SimpleNamespace(id="LONGVIDEO01", duration=900.0, parent_video_id=None,
+                        derived_urls=["https://youtu.be/CLIPVIDEO01"]),
+        SimpleNamespace(id="CLIPVIDEO01", duration=180.0, parent_video_id="LONGVIDEO01",
+                        derived_urls=[]),
+    ]
+    picked = DC.next_topic(_DB(nodes, videos, []))
+    assert picked["label"] == "Same speech"
+    assert picked["num_videos"] == 1
+    assert picked["total_seconds"] == 900.0
+
+
+def test_a_topic_that_only_exists_on_sliced_clips_is_skipped():
+    nodes = [_node("Only the cut", "CLIPVIDEO01")]
+    videos = [
+        SimpleNamespace(id="CLIPVIDEO01", duration=180.0, parent_video_id="LONGVIDEO01",
+                        derived_urls=[]),
+    ]
+    assert DC.next_topic(_DB(nodes, videos, [])) is None
+
+
 def test_exhausted_catalogue_returns_None_rather_than_inventing_a_topic():
     assert DC.next_topic(_DB([], [], [])) is None
     assert DC.next_topic(_DB([_node("   ", "v1")], [_video("v1", 900.0)], [])) is None
 
 
+def test_extra_done_skips_an_otherwise_winning_topic():
+    nodes, videos = _graph("Already picked", 900.0)
+    assert DC.next_topic(_DB(nodes, videos, []), extra_done={"already-picked"}) is None
+
+
+def test_off_mode_does_not_generate(monkeypatch):
+    monkeypatch.setattr("core.content_cadence.cadence", lambda: {"mode": "off"})
+    assert DC._run_for_tenant(_DB([], [], []), 1)["skipped"] == "content gen off"
+
+
 def test_a_tenant_with_nothing_left_is_skipped_not_failed(monkeypatch):
+    monkeypatch.setattr("core.content_cadence.cadence", lambda: {
+        "mode": "dump", "dump_clusters": 2, "freshness_budget": 10,
+    })
     monkeypatch.setattr(DC, "next_topic", lambda db: None)
     assert DC._run_for_tenant(_DB([], [], []), 1)["skipped"] == "no ungenerated topics"
 
@@ -106,6 +143,9 @@ def test_it_generates_GATED_and_as_a_DRAFT(monkeypatch):
     generate ungated), and status='draft' means the EXISTING promote cron does the releasing —
     one publish path, not two."""
     seen = {}
+    monkeypatch.setattr("core.content_cadence.cadence", lambda: {
+        "mode": "dump", "dump_clusters": 2, "freshness_budget": 10,
+    })
     monkeypatch.setattr(DC, "next_topic", lambda db: {"label": "Tile underlayment", "slug": "t",
                                                       "num_videos": 3, "total_seconds": 900.0})
     monkeypatch.setattr(DC, "_clusters_for", lambda *a, **k: ["hip and ridge"])
@@ -119,8 +159,8 @@ def test_it_generates_GATED_and_as_a_DRAFT(monkeypatch):
     monkeypatch.setattr(B, "run_batch", _fake)
     DC._run_for_tenant(_DB([], [], []), 1)
 
-    assert seen["mode"] == "publish"
-    assert seen["status"] == "draft", "must not bypass ScheduledContent and publish live"
+    assert seen["mode"] == "persist"
+    assert seen["status"] == "draft", "persist writes drafts only; it must not schedule promote"
     assert seen["critique"] is True, "generating without the compliance gate is never acceptable"
     assert seen["campaigns"] == [{"pillar": "Tile underlayment", "clusters": ["hip and ridge"]}]
 

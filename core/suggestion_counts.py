@@ -27,6 +27,8 @@ def compute_suggestion_counts(db) -> dict[str, int]:
         SocialPost,
         Video,
     )
+    from core.video_lineage import derived_ids_from_db  # noqa: PLC0415
+    derived = derived_ids_from_db(db)
 
     topic_rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
     articles = db.query(Article).all()
@@ -34,7 +36,7 @@ def compute_suggestion_counts(db) -> dict[str, int]:
 
     topic_groups: dict[str, set] = {}
     for row in topic_rows:
-        if not row.label:
+        if not row.label or row.video_id in derived:
             continue
         topic_groups.setdefault(_normalize(row.label), set()).add(row.video_id)
 
@@ -71,6 +73,7 @@ def compute_suggestion_counts(db) -> dict[str, int]:
     faqs_count = sum(
         1 for row in faq_rows
         if row.video_id not in article_video_ids
+        and row.video_id not in derived
         and bool(to_question(row.label or "", row.detail or ""))
     )
 
@@ -83,6 +86,7 @@ def compute_suggestion_counts(db) -> dict[str, int]:
         if v.id in covered_video_ids
         and v.id not in article_video_ids
         and v.id not in series_video_ids
+        and v.id not in derived
     )
 
     return {

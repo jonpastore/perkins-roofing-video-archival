@@ -3,8 +3,13 @@
 Standing, non-negotiable rules for this project. Set by the owner 2026-07-04. Every wave and
 every change must satisfy these. CI enforces what it can; the rest is a manual per-wave gate.
 
-## R1 — Test coverage ≥ 97% (per wave)
-- `pytest --cov=core --cov-config=.coveragerc --cov-fail-under=97` must pass for every wave.
+## R1 — Test coverage 100% on `core/` (per wave)
+- `pytest --cov=core --cov-config=.coveragerc --cov-fail-under=100` must pass for every wave.
+  `.coveragerc` already uses `fail_under = 100` and `precision = 2` — do not “fix” a miss by
+  lowering the gate.
+- **TDD:** write the failing test from the TRD/DDD first (watch it fail), then the minimum
+  implementation. A feature that lands with tests written after the fact is a defect, not a
+  waiver.
 - The gate measures `core/` (pure logic). **Because adapters/api/jobs are coverage-omitted,
   every wave must ALSO add at least one behavioral/integration validation for new I/O code**
   (a `scripts/validate_*.py` hermetic check or a live smoke) — coverage % alone is not "done".
@@ -137,9 +142,25 @@ rate on real data).
   confident, wrong label. Losing a scope line costs detail; a mangled or leaked one costs trust.
 - Report both directions: what the rule changed AND what it deliberately left alone.
 
+## R11 — Implemented features must not leave the docs behind (owner 2026-08-18)
+
+Code is the source of truth. Docs that still describe the old world are a defect.
+
+- Every feature that exists in code has, in the **same change** (or the change that marks it
+  done): `docs/specs/<feature>.md`, `docs/plans/<feature>.md` if it was phased, and
+  `docs/requirements/<feature>-{trd,prd,ddd,uiux}.md`.
+- **Drift check is part of the implementation, not a follow-up.** If you change behavior, the
+  TRD/PRD/DDD/UIUX that still describe the previous behavior must be updated in that commit.
+  A green test suite with stale requirements is not done.
+- Status in those files is literal: `done` only when shipped and verified; `implemented-local`
+  when the tree has it but prod does not; `blocked` names the blocker.
+- New work is TDD against the TRD/DDD (R1). Do not invent a second requirements pile in
+  chat, Jarvis notes, or continuation markdown.
+
 ## Per-wave Definition of Done (checklist)
 - [ ] All wave tasks implemented — no unwired/dead code (architect-verified).
-- [ ] `pytest --cov=core --cov-fail-under=97` green (R1) + a behavioral validation for new I/O.
+- [ ] `pytest --cov=core --cov-fail-under=100` green (R1) + a behavioral validation for new I/O.
+- [ ] Spec/TRD/PRD/DDD/UIUX match the code (R11); no leftover “old world” requirements.
 - [ ] `ruff check core adapters api jobs` clean.
 - [ ] architect review: no unaddressed HIGH gaps (R2).
 - [ ] critic review: no unaddressed HIGH/critical issues (R2) — or an explicit

@@ -73,6 +73,12 @@ def _video_to_dict(
         "last_pulled_at": v.last_pulled_at.isoformat() if v.last_pulled_at else None,
         "unavailable_since": v.unavailable_since.isoformat() if v.unavailable_since else None,
         "hidden_at": v.hidden_at.isoformat() if v.hidden_at else None,
+        "longform_reprocessed_at": (
+            v.longform_reprocessed_at.isoformat() if v.longform_reprocessed_at else None
+        ),
+        "longform_note": v.longform_note,
+        "parent_video_id": v.parent_video_id,
+        "derived_urls": list(v.derived_urls or []),
     }
 
 
@@ -84,6 +90,7 @@ def list_videos(
     include_hidden: bool = False,
     min_length: int | None = None,
     max_length: int | None = None,
+    unchopped: bool = False,
     uploaded_after: str | None = None,
     uploaded_before: str | None = None,
     clips: str = "all",
@@ -103,6 +110,7 @@ def list_videos(
                                   (default: hidden rows are excluded)
       ?min_length=<seconds>       minimum duration (inclusive)
       ?max_length=<seconds>       maximum duration (inclusive)
+      ?unchopped=true             only rows with longform_reprocessed_at IS NULL
       ?uploaded_after=<ISO date>  upload_date >= date (YYYY-MM-DD)
       ?uploaded_before=<ISO date> upload_date <= date (YYYY-MM-DD)
       ?clips=all|yes|no           filter by whether MiniSeries rows exist
@@ -127,6 +135,7 @@ def list_videos(
         "include_hidden": include_hidden,
         "min_length": min_length,
         "max_length": max_length,
+        "unchopped": unchopped,
         "uploaded_after": uploaded_after or "",
         "uploaded_before": uploaded_before or "",
         "clips": clips,
@@ -149,6 +158,8 @@ def list_videos(
         query = query.filter(Video.title.ilike(f"%{q}%"))
     if min_length is not None:
         query = query.filter(Video.duration >= min_length)
+    if unchopped:
+        query = query.filter(Video.longform_reprocessed_at.is_(None))
     if max_length is not None:
         query = query.filter(Video.duration <= max_length)
     if uploaded_after:
@@ -513,6 +524,40 @@ def poll_kpis(
 # ---------------------------------------------------------------------------
 # Visibility: hide / unhide
 # ---------------------------------------------------------------------------
+
+class LongformBody(BaseModel):
+    note: str | None = None
+    urls: list[str] = []
+
+
+@router.post("/{video_id}/longform-reprocessed")
+def mark_longform_reprocessed(
+    video_id: str,
+    body: LongformBody = Body(default=LongformBody()),
+    _claims=Depends(require_role("manage_archive")),
+    db: Session = Depends(get_db_session),
+):
+    """Stamp a >10min source as already chopped so the work list skips it."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    from core.video_lineage import attach_derived_urls, ids_from_urls  # noqa: PLC0415
+    parsed = ids_from_urls(body.urls)
+    if not parsed:
+        raise HTTPException(
+            status_code=400,
+            detail="clip urls required — marking chopped without joins leaves slices as new source",
+        )
+    v.longform_reprocessed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    if body.note is not None:
+        v.longform_note = body.note
+    attach_derived_urls(v, body.urls, db)
+    db.commit()
+    db.refresh(v)
+    _list_cache.clear()
+    return _video_to_dict(v)
+
 
 @router.post("/{video_id}/hide")
 def hide_video(

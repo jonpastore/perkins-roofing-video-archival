@@ -399,6 +399,11 @@ export async function startOAuth(platform: string): Promise<string> {
   return data.auth_url as string;
 }
 
+export async function requestConnectionLogin(integration: string): Promise<void> {
+  const res = await apiFetch(`/connections/${integration}/request-login`, { method: "POST" });
+  if (!res.ok) throw new Error(await errText(res));
+}
+
 // ── F6: tenant provisioning + per-tenant SSO ─────────────────────────────────
 
 export interface Tenant {

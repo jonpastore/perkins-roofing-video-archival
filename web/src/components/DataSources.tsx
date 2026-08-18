@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listConnections, startOAuth, type Connection } from "../api";
+import { listConnections, requestConnectionLogin, startOAuth, type Connection } from "../api";
 import { BRAND, Badge, Button, Card, ErrorMsg } from "../ui";
 
 const SOURCES: { id: string; label: string; help: string; statusId?: string }[] = [
@@ -58,6 +58,18 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
     }
   }
 
+  async function requestLogin(id: string) {
+    setBusy(`mail-${id}`);
+    setError(null);
+    try {
+      await requestConnectionLogin(id);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : `Could not email a ${id} login request`);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <Card style={{ marginBottom: 16 }}>
       <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15, marginBottom: 4 }}>
@@ -65,6 +77,7 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
       </div>
       <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 12 }}>
         Log in here for Knowify and YouTube. CompanyCam uses an application key, not OAuth.
+        Request login emails the operators if someone else has to complete a consent screen.
       </div>
       {SOURCES.map((src) => {
         const statusRow = rows[src.statusId ?? src.id] ?? rows[src.id];
@@ -103,6 +116,16 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
                 onClick={() => connect(src.id)}
               >
                 {busy === src.id ? "Opening…" : status === "healthy" || status === "ok" ? "Reconnect" : "Log in"}
+              </Button>
+            )}
+            {manage && src.id !== "companycam" && (
+              <Button
+                variant="ghost"
+                style={{ fontSize: 12, padding: "5px 12px" }}
+                disabled={busy === `mail-${src.id}`}
+                onClick={() => requestLogin(src.statusId ?? src.id)}
+              >
+                {busy === `mail-${src.id}` ? "Sending…" : "Request login"}
               </Button>
             )}
           </div>

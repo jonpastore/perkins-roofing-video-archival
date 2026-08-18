@@ -2,8 +2,10 @@
 
 Read `docs/ENGINEERING_RULES.md` — it is binding for every change in this repo. Summary:
 
-- **R1** Test coverage ≥ 97% on `core/` per wave, PLUS a behavioral validation for new I/O
-  (adapters/api/jobs are coverage-omitted — a green % is not "done" on its own).
+- **R1** Test coverage 100% on `core/` per wave (`fail_under=100`), TDD from the TRD/DDD,
+  PLUS a behavioral validation for new I/O (adapters/api/jobs are coverage-omitted).
+- **R11** Implemented features update spec/TRD/PRD/DDD/UIUX in the same change. Stale docs
+  are a defect.
 - **R2** Every wave gets a deep review by BOTH the `architect` and `critic` agents (gaps,
   unwired/dead code, schema/migration mismatches, security, idempotency, cost). Fix all
   HIGH/critical findings before marking the wave done.

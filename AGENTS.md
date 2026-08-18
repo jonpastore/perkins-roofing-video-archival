@@ -6,8 +6,10 @@ This project follows the Morpheus engineering constitution (ADR-0004). Use the
 ## Workflow (spec-driven)
 1. Spec: `docs/specs/<feature>.md` (why/what, users, constraints, non-goals)
 2. Plan: `docs/plans/<feature>.md` (phased how/when)
-3. Requirements: `docs/requirements/<feature>-{trd,prd,ddd}.md`
-4. TDD: write tests from the TRD/DDD before/with implementation
+3. Requirements: `docs/requirements/<feature>-{trd,prd,ddd,uiux}.md`
+4. TDD: write tests from the TRD/DDD **before** implementation; watch them fail; then code
+5. After any behavior change, re-read those four requirement files and fix drift in the same commit
+6. `core/` coverage gate is 100% (`.coveragerc` `fail_under = 100`)
 
 ## Rules
 - Cyclomatic complexity <= 10 (documented waivers only)

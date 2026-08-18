@@ -196,6 +196,9 @@ def mine_faq(
     # Find node IDs already covered
     covered_ids = {row[0] for row in db.query(FaqEntry.source_node_id).all()}
 
+    from core.video_lineage import derived_ids_from_db  # noqa: PLC0415
+    derived = derived_ids_from_db(db)
+
     # Query uncovered claim/objection nodes with a timestamp
     candidates = (
         db.query(GraphNode)
@@ -203,6 +206,7 @@ def mine_faq(
             GraphNode.kind.in_(("claims", "objections")),
             GraphNode.start.isnot(None),
             ~GraphNode.id.in_(covered_ids) if covered_ids else True,
+            ~GraphNode.video_id.in_(derived) if derived else True,
         )
         .order_by(GraphNode.video_id, GraphNode.start)
         .limit(limit)
@@ -217,6 +221,7 @@ def mine_faq(
                 GraphNode.kind.in_(("claims", "objections")),
                 GraphNode.start.isnot(None),
                 ~GraphNode.id.in_(covered_ids) if covered_ids else True,
+                ~GraphNode.video_id.in_(derived) if derived else True,
             )
             .count()
         )

@@ -92,7 +92,7 @@ def _generated_slugs(db) -> set[str]:
     return out
 
 
-def next_topic(db) -> dict | None:
+def next_topic(db, extra_done: set[str] | None = None) -> dict | None:
     """The best ungenerated topic, or None when the catalogue is exhausted.
 
     Ranked by total_seconds — how much real transcript backs the topic — because this pipeline's
@@ -108,6 +108,8 @@ def next_topic(db) -> dict | None:
     from app.models import GraphNode, Video  # noqa: PLC0415
 
     done = _generated_slugs(db)
+    if extra_done:
+        done |= extra_done
     groups: dict[str, dict] = {}
     for row in db.query(GraphNode).filter(GraphNode.kind == "topics").all():
         label = (row.label or "").strip()
@@ -123,8 +125,12 @@ def next_topic(db) -> dict | None:
 
     video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
     duration_map: dict[str, float] = {}
+    derived: set[str] = set()
     if video_ids:
-        for video in db.query(Video).filter(Video.id.in_(list(video_ids))).all():
+        from core.video_lineage import derived_video_ids  # noqa: PLC0415
+        videos = db.query(Video).filter(Video.id.in_(list(video_ids))).all()
+        derived = derived_video_ids(videos)
+        for video in videos:
             duration_map[video.id] = video.duration or 0.0
 
     best = None
@@ -132,11 +138,14 @@ def next_topic(db) -> dict | None:
         slug = _slugify(g["label"])
         if slug in done:
             continue
-        seconds = sum(duration_map.get(vid, 0.0) for vid in g["video_ids"])
+        source_ids = {vid for vid in g["video_ids"] if vid not in derived}
+        if not source_ids:
+            continue
+        seconds = sum(duration_map.get(vid, 0.0) for vid in source_ids)
         candidate = {
             "label": g["label"],
             "slug": slug,
-            "num_videos": len(g["video_ids"]),
+            "num_videos": len(source_ids),
             "total_seconds": seconds,
         }
         if best is None or seconds > best["total_seconds"]:
@@ -161,32 +170,41 @@ def _clusters_for(topic_label: str, db) -> list[str]:
         return []
 
 
-def _run_for_tenant(db, tenant_id: int) -> dict:
-    """Generate one campaign for this tenant. Returns a summary dict."""
+def _run_dump(db, tenant_id: int, cfg: dict) -> dict:
+    """New pillars + supporting clusters. One campaign per call; the cron loops."""
     topic = next_topic(db)
     if topic is None:
         logger.info("daily_content: tenant %s has no ungenerated topics left", tenant_id)
         return {"tenant_id": tenant_id, "skipped": "no ungenerated topics"}
 
-    clusters = _clusters_for(topic["label"], db)
-    logger.info("daily_content: tenant %s topic=%r (%.0fs of source across %s videos) clusters=%s",
-                tenant_id, topic["label"], topic["total_seconds"] or 0,
-                topic["num_videos"], clusters)
+    n_clusters = int(cfg.get("dump_clusters") or CLUSTERS_PER_RUN)
+    clusters = _clusters_for(topic["label"], db)[:n_clusters]
+    logger.info("daily_content dump: tenant %s topic=%r clusters=%s",
+                tenant_id, topic["label"], clusters)
 
     from jobs.batch_article_job import run_batch  # noqa: PLC0415
 
     result = run_batch(
         [{"pillar": topic["label"], "clusters": clusters}],
-        workers=1,              # one campaign; concurrency here only fights the compliance loop
-        critique=True,          # the gate is the whole point — never generate ungated
-        mode="publish",         # push COMPLIANT articles to WP; non-compliant are skipped
-        status="draft",         # draft + ScheduledContent; promote-scheduled-content releases it
+        workers=1,
+        critique=True,
+        mode="persist",
+        status="draft",
         per_day=PER_DAY,
     )
-    report = result.get("report") or {}
-    logger.info("daily_content: tenant %s done topic=%r %s", tenant_id, topic["label"], report)
-    return {"tenant_id": tenant_id, "topic": topic["label"],
-            "clusters": clusters, "report": report}
+    return {"tenant_id": tenant_id, "mode": "dump", "topic": topic["label"],
+            "clusters": clusters, "report": result.get("report") or {}}
+
+
+def _run_for_tenant(db, tenant_id: int) -> dict:
+    """Generate according to CONTENT_GEN_MODE. Returns a summary dict."""
+    from core.content_cadence import cadence  # noqa: PLC0415
+
+    cfg = cadence()
+    mode = cfg["mode"]
+    if mode != "dump":
+        return {"tenant_id": tenant_id, "skipped": "content gen off"}
+    return _run_dump(db, tenant_id, cfg)
 
 
 def run() -> dict:

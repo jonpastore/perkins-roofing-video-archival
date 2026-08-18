@@ -159,6 +159,10 @@ EDITABLE_KEYS: dict[str, str] = {
     "PROPOSAL_REMINDERS_ENABLED": (
         "Send daily customer proposal reminder emails (true | false). Off until reviewed."
     ),
+    "CONTENT_GEN_MODE": (
+        "Article cron mode: off | dump (one new pillar campaign per tick, persist drafts only)."
+    ),
+    "CONTENT_DUMP_CLUSTERS": "Supporting articles per new pillar (default 2)",
 }
 
 # ---------------------------------------------------------------------------

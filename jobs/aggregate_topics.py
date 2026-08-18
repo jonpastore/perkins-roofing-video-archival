@@ -127,8 +127,10 @@ def _run_for_tenant(db, tenant_id: int, sim_threshold: float = _SIM_THRESHOLD) -
     label_counts: dict[str, int] = defaultdict(int)
     raw_label_map: dict[str, list[str]] = defaultdict(list)
     node_data: list[tuple[str, str, int]] = []
+    from core.video_lineage import derived_ids_from_db  # noqa: PLC0415
+    derived = derived_ids_from_db(db)
     for node_id, label, video_id in rows:
-        if not label:
+        if not label or video_id in derived:
             continue
         norm = label.strip().lower()
         label_counts[norm] += 1

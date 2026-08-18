@@ -243,12 +243,16 @@ def _list_topics_aggregated(db, sort: str, limit: Optional[int], offset: int, ge
         article_map = {ps: latest for ps, latest in rows_at if ps is not None}
 
     # (b) upload_date for all video_ids belonging to generated topics on this page.
+    from core.video_lineage import derived_ids_from_db  # noqa: PLC0415
+    derived = derived_ids_from_db(db)
     all_gen_video_ids: list[str] = []
     for it in page:
         if it["generated"]:
             agg_row = label_to_row.get(it["label"])
             if agg_row and agg_row.video_ids:
-                all_gen_video_ids.extend(agg_row.video_ids)
+                all_gen_video_ids.extend(
+                    vid for vid in agg_row.video_ids if vid not in derived
+                )
 
     upload_map: dict[str, str | None] = {}
     if all_gen_video_ids:
@@ -296,23 +300,28 @@ def _list_topics_live(db, sort: str, limit: Optional[int], offset: int, generate
     all_video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
     duration_map: dict[str, float] = {}
     upload_map: dict[str, str | None] = {}
+    derived: set[str] = set()
     if all_video_ids:
+        from core.video_lineage import derived_video_ids  # noqa: PLC0415
         vids = db.query(Video).filter(Video.id.in_(list(all_video_ids))).all()
+        derived = derived_video_ids(vids)
         duration_map = {v.id: (v.duration or 0.0) for v in vids}
         upload_map = {v.id: v.upload_date for v in vids}
 
-    items = [
-        {
+    items = []
+    for g in groups.values():
+        source_ids = {vid for vid in g["video_ids"] if vid not in derived}
+        if not source_ids:
+            continue
+        items.append({
             "label": g["label"],
-            "count": len(g["video_ids"]),
-            "num_videos": len(g["video_ids"]),
-            "total_content_length": sum(duration_map.get(v, 0.0) for v in g["video_ids"]),
+            "count": len(source_ids),
+            "num_videos": len(source_ids),
+            "total_content_length": sum(duration_map.get(v, 0.0) for v in source_ids),
             "sample": g["sample"],
             "generated": _slugify(g["label"]) in generated_slugs,
-            "_video_ids": g["video_ids"],
-        }
-        for g in groups.values()
-    ]
+            "_video_ids": source_ids,
+        })
 
     reverse = sort not in ("alpha", "priority")
     items.sort(key=_sort_key(sort), reverse=reverse)
@@ -396,6 +405,9 @@ def list_topic_videos(
                 if node.video_id not in video_starts or t < video_starts[node.video_id]:
                     video_starts[node.video_id] = t
 
+        from core.video_lineage import derived_ids_from_db  # noqa: PLC0415
+        derived = derived_ids_from_db(db)
+        member_video_ids = [vid for vid in member_video_ids if vid not in derived]
         vids = db.query(Video).filter(Video.id.in_(member_video_ids)).all()
         vid_map = {v.id: v for v in vids}
 
@@ -427,6 +439,11 @@ def list_topic_videos(
     if not video_starts:
         return []
 
+    from core.video_lineage import derived_ids_from_db  # noqa: PLC0415
+    derived = derived_ids_from_db(db)
+    video_starts = {vid: t for vid, t in video_starts.items() if vid not in derived}
+    if not video_starts:
+        return []
     vids = db.query(Video).filter(Video.id.in_(list(video_starts.keys()))).all()
     vid_map = {v.id: v for v in vids}
 

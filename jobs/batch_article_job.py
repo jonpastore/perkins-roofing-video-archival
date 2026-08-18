@@ -72,23 +72,17 @@ def _instrument_vertex():
 
     if getattr(llm_mod.VertexLLM, "_batch_instrumented", False):
         return
-    from adapters.llm import _with_retry
+    original = llm_mod.VertexLLM.chat
 
     def chat(self, prompt, want_json=False, response_schema=None):
-        self._ensure_chat()
-        cfg = {}
-        if want_json or response_schema:
-            cfg["response_mime_type"] = "application/json"
-        if response_schema:
-            cfg["response_schema"] = response_schema
-        resp = _with_retry(lambda: self._model.generate_content(prompt, generation_config=cfg))
-        u = getattr(resp, "usage_metadata", None)
         rec = getattr(_tls, "rec", None)
-        if u is not None and rec is not None:
-            rec["in"] += int(getattr(u, "prompt_token_count", 0) or 0)
-            rec["out"] += int(getattr(u, "candidates_token_count", 0) or 0)
+        if rec is not None:
             rec["calls"] += 1
-        return resp.text
+            rec["in"] += max(1, len(prompt) // 4)
+        text = original(self, prompt, want_json=want_json, response_schema=response_schema)
+        if rec is not None:
+            rec["out"] += max(1, len(text or "") // 4)
+        return text
 
     llm_mod.VertexLLM.chat = chat
     llm_mod.VertexLLM._batch_instrumented = True
@@ -252,6 +246,33 @@ def _publish_fields(fields: dict, ctx: dict, keyword: str, status: str) -> dict:
             "publish_at": publish_at.isoformat() if publish_at else None}
 
 
+def _persist_fields(fields: dict, ctx: dict, keyword: str, status: str) -> dict:
+    """Write a compliant article to the DB only. Used when WordPress is down or
+    the operator is priming the pump before a staging publish."""
+    from api.routes.articles import _slugify
+    from app.models import Article, SessionLocal
+
+    slug = fields.get("slug") or _slugify(fields.get("title") or keyword)
+    db = SessionLocal()
+    db.info["tenant_id"] = 1
+    try:
+        row = db.get(Article, slug) or Article(slug=slug, tenant_id=1)
+        row.title = fields.get("title") or keyword
+        row.meta = fields.get("meta") or ""
+        row.content_md = fields.get("content_md") or ""
+        row.faq_json = fields.get("faq_json")
+        row.jsonld_json = fields.get("jsonld_json")
+        row.focus_keyword = keyword
+        row.role = ctx.get("role")
+        row.pillar_slug = ctx.get("pillar_slug")
+        row.status = "draft"
+        db.add(row)
+        db.commit()
+    finally:
+        db.close()
+    return {"wp_post_id": None, "slug": slug, "publish_at": None}
+
+
 def _gen_one(keyword: str, role: str, pillar_slug: str | None, critique: bool,
              mode: str = "measure", status: str = "draft") -> dict:
     """Generate one article to criteria, and (in publish mode) publish it to WP
@@ -273,11 +294,12 @@ def _gen_one(keyword: str, role: str, pillar_slug: str | None, critique: bool,
         compliant = fields.get("compliant")
         compliance = fields.get("compliance") or []
         crit = _criteria({**fields, "keyword": keyword})
-        if mode == "publish":
+        if mode in ("publish", "persist"):
             if compliant:
-                published = _publish_fields(fields, ctx, keyword, status)
+                published = (_publish_fields if mode == "publish" else _persist_fields)(
+                    fields, ctx, keyword, status)
             else:
-                logger.error("NOT PUBLISHED (non-compliant) %r: %s", keyword,
+                logger.error("NOT SAVED (non-compliant) %r: %s", keyword,
                              [c["key"] for c in compliance if not c["ok"]])
         # Record the verdict either way — a refused article has to be findable and fixable,
         # and a passing one has to be able to CLEAR a stale failure from a previous run.
@@ -399,7 +421,7 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ap = argparse.ArgumentParser()
     ap.add_argument("plan", help="JSON: {campaigns:[{pillar, clusters[]}]}")
-    ap.add_argument("--mode", choices=["measure", "publish"], default="measure",
+    ap.add_argument("--mode", choices=["measure", "publish", "persist"], default="measure",
                     help="measure = generate to-criteria, no side effects; "
                          "publish = push each COMPLIANT article to WordPress")
     ap.add_argument("--status", choices=["draft", "publish"], default="draft",

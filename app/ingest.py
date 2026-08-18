@@ -40,6 +40,14 @@ def ingest_video(vid, meta=None, force=False, transcript=None, tenant_id=None):
     if tenant_id is not None:
         s.info["tenant_id"] = tenant_id  # strict-safe: stamp before first query
     v = s.get(Video, vid) or Video(id=vid, url=f"https://youtu.be/{vid}")
+    from core.video_lineage import parent_index_from_db  # noqa: PLC0415
+    parent = getattr(v, "parent_video_id", None) or parent_index_from_db(s).get(vid)
+    if parent and not force:
+        v.parent_video_id = parent
+        s.add(v)
+        s.commit()
+        s.close()
+        return {"skipped": "derived_from_longform", "video_id": vid, "parent_video_id": parent}
     if meta:
         v.title = meta.get("title", v.title); v.duration = meta.get("duration", v.duration)
         v.upload_date = meta.get("upload_date", v.upload_date)
