@@ -1478,14 +1478,15 @@ resource "google_monitoring_notification_channel" "cloud_warnings_email" {
   depends_on = [google_project_service.apis]
 }
 
-# Weekly digest / dashboard spend.unavailable — billing-account IAM, not a project role.
-# roles/billing.budgets.viewer is NOT grantable on a billing account (INVALID_ARGUMENT).
-# roles/billing.viewer is the least-privilege role that includes billing.budgets.get/list.
-resource "google_billing_account_iam_member" "api_budget_viewer" {
-  billing_account_id = var.billing_account
-  role               = "roles/billing.viewer"
-  member             = "serviceAccount:${google_service_account.api_run_sa.email}"
-}
+# api-run-sa needs roles/billing.viewer on the billing account for the Status spend
+# widget (billing.budgets.get/list). That binding is already live (granted 2026-08-17).
+# It is NOT a Terraform resource: ci-deployer cannot write billing-account IAM
+# (403), so declaring it here made every CI `terraform plan` exit 2 and blocked
+# deploy. Re-grant by hand if the SA is recreated:
+#   gcloud billing accounts add-iam-policy-binding $BILLING_ACCOUNT \
+#     --member=serviceAccount:api-run-sa@${PROJECT}.iam.gserviceaccount.com \
+#     --role=roles/billing.viewer
+
 
 # ---------------------------------------------------------------------------
 # Squares — Google Solar + Geocoding API key (migration 0024, 2026-07-10)
