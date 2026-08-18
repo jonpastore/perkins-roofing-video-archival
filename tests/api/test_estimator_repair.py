@@ -65,6 +65,7 @@ class TestRepairQuote:
         assert body["floors"] == {
             "min_profit_pct": REPAIR_CONFIG["profit_floor_pct"],
             "min_profit_plus_oh_pct": REPAIR_CONFIG["profit_plus_oh_floor_pct"],
+            "min_profit_dollars": 2500.0,
         }
 
     def test_repair_quote_two_man_crew(self, admin_client):

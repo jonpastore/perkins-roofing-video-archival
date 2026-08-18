@@ -757,7 +757,7 @@ function GcpSpendWidget() {
       {empty && !error && (
         <div
           style={{
-            background: BRAND.cream ?? "#f7f1e6",
+            background: "#f7f1e6",
             borderRadius: 10,
             padding: "16px 18px",
             margin: "4px 0 2px",

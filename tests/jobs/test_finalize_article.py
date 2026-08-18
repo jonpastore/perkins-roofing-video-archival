@@ -54,7 +54,9 @@ def _criteria(fields: dict, ctx: dict, known=frozenset()) -> dict:
 # _ensure_video_link/_ensure_article_image degrade rather than fabricate. Listing them here is a
 # deliberate, reviewed exemption — anything NOT on this list must be fixable offline.
 NEEDS_IO = {"video_embed", "curated_image", "videoobject_schema", "valid_video_ids",
-            "videoobject_only_embedded"}
+            "videoobject_only_embedded",
+            # Rank Math vs full-graph publish mode — not fixable offline without tenant/WP settings.
+            "schema_scoped"}
 
 # One body per fixable criterion, each FAILING that criterion on the way in.
 DEFECT_FIXTURES = {

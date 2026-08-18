@@ -18,6 +18,11 @@ logs/
 # Local tooling state
 .omc/
 .morpheus-ek/
+.grok/
+
+# Local business drafts — not product source
+DeGenito-Perkins-Partnership-Proposal-*.docx
+DeGenito-Perkins-Partnership-Proposal-*.pdf
 .claude/*
 # Project-scoped SKILLS are meant to be shared — they encode repo rules the whole team
 # (and every future session) should follow. Local settings under .claude/ stay ignored.
