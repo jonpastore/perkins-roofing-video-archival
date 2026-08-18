@@ -311,8 +311,9 @@ Sources: [X API Pricing 2026 — Postproxy](https://postproxy.dev/blog/x-api-pri
 
 ## 6. Pinterest (Should) — Pinterest API v5
 
-**Consumed by:** `adapters/distribution/pinterest.py` is currently a pure mock (no env
-vars wired yet).
+**Consumed by:** `adapters/distribution/pinterest.py` (`PinterestPublisher`) implements
+API v5 video Pin create (register media → S3 upload → poll → POST /v5/pins). Constructor
+creds: `access_token`, `board_id`. Not wired into `jobs/social_job.py` yet.
 
 ### Prerequisites
 - A Pinterest **business account** for Perkins (convert if it's currently personal).

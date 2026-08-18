@@ -16,7 +16,7 @@ class PlatformAdapter(Protocol):
     containing at minimum a ``post_id`` key.
     """
 
-    def publish(self, video_url: str, caption: str, token: str) -> dict:
+    def publish(self, *, video_url: str, caption: str, idempotency_key: str) -> str:
         """Publish *video_url* to the platform.
 
         Args:

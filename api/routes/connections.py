@@ -48,7 +48,10 @@ PROVIDERS: dict[str, dict] = {
     "youtube": {
         "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
         "token_url": "https://oauth2.googleapis.com/token",
-        "scopes": "https://www.googleapis.com/auth/youtube.force-ssl",
+        "scopes": (
+            "https://www.googleapis.com/auth/youtube.force-ssl "
+            "https://www.googleapis.com/auth/youtube.upload"
+        ),
         "client_id_env": "OAUTH_CLIENT_ID",
         "client_secret_env": "OAUTH_CLIENT_SECRET",
         # select_account: always show Google's account chooser so "switch account"

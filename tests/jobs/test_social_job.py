@@ -337,3 +337,67 @@ def test_the_publish_loop_actually_refuses_a_blocked_caption(monkeypatch):
     SJ.run()
 
     assert published == [], "a withheld caption reached the publisher"
+
+
+# ---------------------------------------------------------------------------
+# New distribution platforms are first-class (no ValueError) and skip without creds
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "platform,creds",
+    [
+        ("facebook", {"access_token": "t", "page_id": "p"}),
+        ("linkedin", {"access_token": "t", "author_urn": "urn:li:person:1"}),
+        ("x", {"access_token": "t"}),
+        ("pinterest", {"access_token": "t", "board_id": "b"}),
+        ("youtube_shorts", {"access_token": "t"}),
+    ],
+)
+def test_publisher_knows_distribution_platforms(platform, creds):
+    pub = SJ._publisher(platform, creds, tenant_id=1)
+    assert callable(getattr(pub, "publish", None))
+
+
+def test_unknown_platform_still_rejected():
+    with pytest.raises(ValueError, match="Unknown platform"):
+        SJ._publisher("myspace", {"access_token": "t"}, tenant_id=1)
+
+
+def test_new_platform_skipped_when_unconfigured(monkeypatch):
+    """Facebook (or any new target) without creds is a skip, not a ValueError."""
+    from app.models import SocialPost
+
+    _creds(monkeypatch)
+    for v in ("FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_TOKEN"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setattr(
+        "adapters.storage.signed_get_url", lambda *a, **k: "https://x.invalid/v.mp4"
+    )
+
+    s = SessionLocal()
+    post = SocialPost(
+        series_id=88001,
+        part=0,
+        platform="facebook",
+        gcs_url="gs://b/k.mp4",
+        status="rendered",
+    )
+    s.add(post)
+    s.flush()
+    s.add(
+        ScheduledContent(
+            kind="reel",
+            ref_id=str(post.id),
+            status="awaiting_social",
+            target="facebook",
+            publish_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=1),
+        )
+    )
+    s.commit()
+    s.close()
+
+    result = SJ.run()
+
+    assert result["errored"] == 0
+    assert result["published"] == 0
+    assert result["skipped"] >= 1

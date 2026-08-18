@@ -366,12 +366,16 @@ Authorization Code grant (required — Client Credentials flow cannot create pin
 
 **Token expiry:** Access tokens expire in **30 days** (2,592,000 seconds). Refresh tokens expire in **60 days** but are **indefinitely refreshable** — refresh before expiry to maintain uninterrupted access.
 
-**4. Video pin creation (multi-step)**
+**4. Video pin creation (multi-step)** — implemented in `adapters/distribution/pinterest.py`
+
+`PinterestPublisher(access_token=..., board_id=...)`. Creds keys: `{access_token, board_id}`.
+Image/link fallback is not used.
 
 Video upload is asynchronous:
-1. Upload the video file to Pinterest's media upload endpoint → receive a `media_id`
-2. Poll the media status until processing is complete
-3. Create the pin: `POST /v5/pins` with `board_id` and `media_source: { source_type: "video_id", cover_image_url: "...", media_id: "<media_id>" }`
+1. `POST /v5/media` `{media_type: video}` → `media_id` + `upload_url` + `upload_parameters`
+2. Multipart POST the video file to `upload_url` (Pinterest Media AWS bucket)
+3. Poll `GET /v5/media/{media_id}` until `status=succeeded`
+4. `POST /v5/pins` with `board_id` and `media_source: { source_type: "video_id", media_id, cover_image_url or cover_image_key_frame_time }`
 
 **5. Submitting for Standard (Trial → Standard review)**
 

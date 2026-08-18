@@ -9,14 +9,20 @@ Run:
     .venv/bin/python -m jobs.social_job
 
 Env vars required for live posting (not needed for a pre-creds dry run):
-    IG_USER_ID, META_SYSTEM_USER_TOKEN   — Instagram
-    TIKTOK_ACCESS_TOKEN, TIKTOK_OPEN_ID  — TikTok
+    IG_USER_ID, META_SYSTEM_USER_TOKEN                         — Instagram
+    TIKTOK_ACCESS_TOKEN, TIKTOK_OPEN_ID                        — TikTok
+    FACEBOOK_PAGE_ID, FACEBOOK_PAGE_TOKEN (or META_SYSTEM_USER_TOKEN) — Facebook
+    LINKEDIN_ACCESS_TOKEN, optional LINKEDIN_AUTHOR_URN        — LinkedIn
+    X_ACCESS_TOKEN                                             — X
+    PINTEREST_ACCESS_TOKEN, PINTEREST_BOARD_ID                 — Pinterest
+    YOUTUBE_ACCESS_TOKEN (or store platform "youtube")         — YouTube Shorts
 
 If any social credential env var is absent the job logs a warning and returns
 cleanly so it is safe to schedule before the Meta/TikTok app review lands.
 """
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 from datetime import datetime, timezone
@@ -30,6 +36,20 @@ logger = logging.getLogger(__name__)
 _PLATFORM_CREDS: dict[str, list[str]] = {
     "instagram": ["IG_USER_ID", "META_SYSTEM_USER_TOKEN"],
     "tiktok": ["TIKTOK_ACCESS_TOKEN", "TIKTOK_OPEN_ID"],
+    "facebook": ["FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_TOKEN"],
+    "linkedin": ["LINKEDIN_ACCESS_TOKEN"],
+    "x": ["X_ACCESS_TOKEN"],
+    "pinterest": ["PINTEREST_ACCESS_TOKEN", "PINTEREST_BOARD_ID"],
+    "youtube_shorts": ["YOUTUBE_ACCESS_TOKEN"],
+}
+
+# module, class, extra constructor keys beyond access_token
+_DIST_ADAPTERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "facebook": ("adapters.distribution.facebook", "FacebookPublisher", ("page_id",)),
+    "linkedin": ("adapters.distribution.linkedin", "LinkedInPublisher", ("author_urn",)),
+    "x": ("adapters.distribution.x", "XPublisher", ()),
+    "pinterest": ("adapters.distribution.pinterest", "PinterestPublisher", ("board_id",)),
+    "youtube_shorts": ("adapters.distribution.youtube_shorts", "YouTubeShortsPublisher", ()),
 }
 
 _SIGNED_URL_TTL = 3600  # seconds — enough for the platform to pull the video
@@ -81,7 +101,39 @@ def _publisher(platform: str, creds: dict, tenant_id: int):
                     "social_job: TikTok token refresh failed (%s) — using resolved token", exc,
                 )
         return TikTokPublisher(**kwargs)
+    spec = _DIST_ADAPTERS.get(platform)
+    if spec:
+        return _compat_dist_publisher(*spec[:2], creds, spec[2])
     raise ValueError(f"Unknown platform: {platform!r}")
+
+
+def _is_new_publisher(cls) -> bool:
+    """True when Adapter(access_token=..., **kw).publish(..., idempotency_key=) is native."""
+    try:
+        init_p = inspect.signature(cls.__init__).parameters
+        pub_p = inspect.signature(cls.publish).parameters
+    except (TypeError, ValueError):
+        return False
+    return "access_token" in init_p and "idempotency_key" in pub_p
+
+
+def _compat_dist_publisher(mod_path: str, cls_name: str, creds: dict, extra: tuple[str, ...]):
+    """Prefer native new constructors; wrap the old (video_url, caption, token) -> dict API."""
+    import importlib  # noqa: PLC0415
+
+    cls = getattr(importlib.import_module(mod_path), cls_name)
+    kwargs = {k: creds[k] for k in ("access_token",) + extra if creds.get(k)}
+    if _is_new_publisher(cls):
+        return cls(**kwargs)
+
+    class _Wrap:
+        def __init__(self, **k):
+            self.k = k
+
+        def publish(self, *, video_url, caption, idempotency_key):
+            return cls().publish(video_url, caption, self.k["access_token"])["post_id"]
+
+    return _Wrap(**kwargs)
 
 
 def _gcs_key_from_url(gcs_url: str) -> tuple[str, str]:

@@ -79,3 +79,6 @@ wp-plugin/perkins-metal-warranty/assets/tidal.geojson.gz
 
 # Local A/B review media (2026-08-12) — demo artifacts, not source
 ab-review/
+
+# Local CompanyCam HTML/SQLite scratch — not the portfolio pipeline
+scripts/generate_tagged_projects_local.py
