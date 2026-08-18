@@ -863,35 +863,21 @@ function GcpSpendWidget() {
 }
 
 // ── Go-live checklist banner ──────────────────────────────────────────────────
-// Static reminder of the article/content staging→prod cutover steps (source of
-// truth: docs/PRODUCTION_CUTOVER_PLAN.md §3). None of these are code-verifiable
-// (WP admin settings, plugin installs, human review) so this is a plain list —
-// no backend, no polling. Dismiss state is local-only (matches the discount-
-// presets pattern elsewhere in this app).
-const GO_LIVE_DISMISSED_KEY = "perkins.goLiveChecklistDismissed.v1";
+// Manual leftovers only. Wendy / staging WP / Rank Math / permalinks were
+// dropped 2026-08-18 — staging WP is down and we are replacing that stack.
+const GO_LIVE_DISMISSED_KEY = "perkins.goLiveChecklistDismissed.v2";
 
 interface GoLiveItem {
   label: string;
-  done?: boolean;
-  parked?: boolean;
-  href?: string;
 }
 
 const GO_LIVE_ITEMS: GoLiveItem[] = [
-  { label: "Staging↔prod WordPress parity confirmed (breadcrumbs etc.) — Owner: Wendy", parked: true },
-  { label: "Wendy reviews the 61 staging articles + confirms adherence criteria", parked: true },
-  { label: "PROD WP Application Password generated + vaulted (Secret Manager: wordpress-app-password) — Owner: Jon", parked: true },
-  { label: "perkins-jsonld mu-plugin installed + active on PRODUCTION (already on staging)", parked: true },
-  { label: "Rank Math on prod confirmed not duplicating our FAQ+Video schema nodes — Owner: Wendy", parked: true },
-  { label: "Permalinks set to \"Post name\" on prod", href: "https://perkinsroofing.net/wp-admin/options-permalink.php", parked: true },
   { label: "SEO submission creds provisioned IF enabling (IndexNow key + Google Indexing API service account) — toggle is OFF by default" },
-  { label: "WP_AUTHOR_ID=3 (Tim Kanak) confirmed stable on prod", parked: true },
   { label: "Remaining Tim pricing items confirmed (per-branch OH, gutter hangers, downspout $10.50, Verea field-tile, FBC low-slope deltas, T&C)" },
 ];
 
 function GoLiveChecklistBanner() {
   const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(GO_LIVE_DISMISSED_KEY) === "1");
-  const [showParked, setShowParked] = useState(false);
 
   function dismiss() {
     window.localStorage.setItem(GO_LIVE_DISMISSED_KEY, "1");
@@ -911,14 +897,11 @@ function GoLiveChecklistBanner() {
     );
   }
 
-  const openItems = GO_LIVE_ITEMS.filter((i) => !i.done && !i.parked);
-  const parkedItems = GO_LIVE_ITEMS.filter((i) => i.parked && !i.done);
-
   return (
     <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
         <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
-          Go-Live Checklist — {openItems.length} open
+          Open items — {GO_LIVE_ITEMS.length}
         </span>
         <button
           onClick={dismiss}
@@ -928,35 +911,14 @@ function GoLiveChecklistBanner() {
           &times;
         </button>
       </div>
-      <p style={{ margin: "0 0 10px", fontSize: 12, color: BRAND.sub }}>
-        From docs/PRODUCTION_CUTOVER_PLAN.md §3. Every unchecked item is a manual step — this list
-        cannot verify plugin installs, WP admin settings, or human review; it's a reminder only.
-      </p>
       <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: BRAND.ink, lineHeight: 1.9 }}>
-        {openItems.map((item, i) => (
-          <li key={i}>
-            {item.href ? <a href={item.href} target="_blank" rel="noreferrer">{item.label}</a> : item.label}
+        {GO_LIVE_ITEMS.map((item) => (
+          <li key={item.label}>
+            {item.label}
             <span style={{ marginLeft: 8 }}><Badge tone="amber">Manual</Badge></span>
           </li>
         ))}
       </ul>
-      {parkedItems.length > 0 && (
-        <div style={{ marginTop: 10 }}>
-          <button
-            onClick={() => setShowParked((v) => !v)}
-            style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 12, cursor: "pointer", padding: 0, fontWeight: 600 }}
-          >
-            {showParked ? "Hide parked WordPress / Wendy items" : `Parked — replacing WordPress (${parkedItems.length})`}
-          </button>
-          {showParked && (
-            <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 12, color: BRAND.sub, lineHeight: 1.7 }}>
-              {parkedItems.map((item, i) => (
-                <li key={i}>{item.label}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </Card>
   );
 }
