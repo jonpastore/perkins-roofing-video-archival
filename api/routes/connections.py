@@ -423,12 +423,12 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
 
 
 def _oauth_start_knowify(claims: dict) -> dict:
+    from app.models import OAuthStateNonce  # noqa: PLC0415
     from core.data_source_oauth import (  # noqa: PLC0415
         knowify_auth_url,
         pkce,
         register_knowify_client,
     )
-    from app.models import OAuthStateNonce  # noqa: PLC0415
 
     base = _redirect_base()
     if not base or not _hmac_keys():

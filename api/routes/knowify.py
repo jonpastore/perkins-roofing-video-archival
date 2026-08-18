@@ -267,8 +267,9 @@ def knowify_reconnect(
     claims=Depends(require_role(_ADMIN_ROLE)),
 ):
     """Start a Knowify browser login (DCR + PKCE → MCP token) or explain how."""
-    from api.routes.connections import _oauth_start_knowify  # noqa: PLC0415
     from fastapi import HTTPException  # noqa: PLC0415
+
+    from api.routes.connections import _oauth_start_knowify  # noqa: PLC0415
 
     try:
         bound = dict(claims) if isinstance(claims, dict) else {}
