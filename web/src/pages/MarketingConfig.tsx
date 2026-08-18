@@ -22,6 +22,7 @@ import {
   type MarketingSettings,
 } from "../api";
 import { errText } from "../lib/errors";
+import { DataSources } from "../components/DataSources";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -843,6 +844,10 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
           helpText="Used by the avatar TTS engine to clone the host voice."
         />
       </Card>
+
+      <div style={{ marginTop: 16 }}>
+        <DataSources manage={manage} />
+      </div>
 
       {/* Social accounts */}
       <Card style={{ marginTop: 16 }}>

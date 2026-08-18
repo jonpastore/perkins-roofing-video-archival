@@ -107,7 +107,32 @@ def run(now=None) -> dict:
         db.commit()
     finally:
         db.close()
-    return {"statuses": statuses, "nonces_swept": nonces_swept}
+    ops = _maybe_alert_ops()
+    return {"statuses": statuses, "nonces_swept": nonces_swept, "ops": ops}
+
+
+def _maybe_alert_ops() -> dict:
+    """Email Jon when a new YouTube/job error appears. Never raises into the probe sweep."""
+    try:
+        from app.models import SessionLocal  # noqa: PLC0415
+        from core.ops_issues import collect_issues, persist_and_diff, send_ops_alert  # noqa: PLC0415
+        from core.weekly_digest import collect_digest  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"import: {exc}"}
+    db = SessionLocal()
+    db.info["tenant_id"] = 1
+    try:
+        payload = collect_digest(db)
+        issues = payload.get("issues") or collect_issues(payload)
+        fresh = persist_and_diff(db, issues)
+        db.commit()
+        ids = send_ops_alert(fresh, tenant_id=1) if fresh else []
+        return {"ok": True, "issues": len(issues), "new": len(fresh), "sent": len(ids)}
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        return {"ok": False, "error": str(exc)[:200]}
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":

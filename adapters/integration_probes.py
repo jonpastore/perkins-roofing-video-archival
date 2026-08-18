@@ -80,7 +80,28 @@ def probe_resend() -> ProbeResult | None:
 
 
 def probe_knowify() -> ProbeResult | None:
-    """Reuse core.knowify.tokens.is_valid() against the current stored token. Never refresh."""
+    """Check the token the sync actually uses. Never refresh (single-use tokens)."""
+    import os  # noqa: PLC0415
+    if (os.getenv("KNOWIFY_PULL_MODE") or "rest").strip().lower() == "mcp":
+        return _probe_knowify_mcp()
+    return _probe_knowify_rest()
+
+
+def _probe_knowify_mcp() -> ProbeResult | None:
+    from core.knowify.tokens import _mcp_expired, load_mcp_tokens  # noqa: PLC0415
+
+    try:
+        tok = load_mcp_tokens()
+    except Exception as exc:  # noqa: BLE001
+        return ProbeResult(ok=False, error=str(exc))
+    if not isinstance(tok, dict) or not tok.get("accessToken"):
+        return None
+    if _mcp_expired(tok):
+        return ProbeResult(ok=False, hard_auth_failure=True, error="Knowify MCP token expired")
+    return ProbeResult(ok=True)
+
+
+def _probe_knowify_rest() -> ProbeResult | None:
     from core.knowify.tokens import is_valid, load_tokens  # noqa: PLC0415
 
     try:
@@ -88,9 +109,6 @@ def probe_knowify() -> ProbeResult | None:
     except Exception as exc:  # noqa: BLE001 — Secret Manager access failure, not a code bug
         return ProbeResult(ok=False, error=str(exc))
     if not isinstance(tok, dict) or not tok.get("access_token"):
-        # Placeholder / not-yet-configured token blob (no access_token) — treat as
-        # unconfigured, not broken: this integration was never set up, so it should
-        # not raise an outage alarm.
         return None
     try:
         ok = is_valid(tok)
@@ -101,7 +119,6 @@ def probe_knowify() -> ProbeResult | None:
     except urllib.error.URLError as exc:
         return ProbeResult(ok=False, error=str(exc.reason))
     except (KeyError, TypeError, ValueError) as exc:
-        # Malformed token shape — unusable but not a network/auth signal.
         return ProbeResult(ok=False, error=f"Knowify token malformed: {exc}")
     if not ok:
         return ProbeResult(ok=False, hard_auth_failure=True, error="Knowify token invalid (401 at /valid)")

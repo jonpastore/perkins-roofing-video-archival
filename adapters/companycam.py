@@ -45,7 +45,8 @@ class CompanyCamNotFound(RuntimeError):
 
 
 def configured() -> bool:
-    return bool(os.getenv("COMPANYCAM_PAT"))
+    from core.companycam.tokens import load_bearer  # noqa: PLC0415
+    return bool(load_bearer())
 
 
 # CompanyCam tag ids that mark media for the PUBLIC project pages: "Projects" for photos,
@@ -91,9 +92,10 @@ def projects_video_tag_id() -> str:
 
 
 def _pat() -> str:
-    pat = os.getenv("COMPANYCAM_PAT")
+    from core.companycam.tokens import load_bearer  # noqa: PLC0415
+    pat = load_bearer()
     if not pat:
-        raise RuntimeError("COMPANYCAM_PAT environment variable is not set")
+        raise RuntimeError("COMPANYCAM_PAT is not set (env or companycam-pat secret)")
     return pat
 
 

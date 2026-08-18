@@ -89,6 +89,11 @@ class TestListConnections:
         assert by_key["linkedin"]["oauth_configured"] is False  # no client env
         assert by_key["wordpress"]["secret_reenter"] is True
         assert by_key["wordpress"]["status"] == "unconfigured"
+        assert by_key["knowify"]["oauth"] is True
+        assert by_key["knowify"]["oauth_configured"] is True
+        assert by_key["companycam"]["oauth"] is True
+        assert by_key["companycam"]["secret_reenter"] is True
+        assert by_key["companycam"]["oauth_configured"] is False
 
     def test_sales_forbidden(self):
         assert _make_client("sales").get("/connections", headers=AUTH).status_code == 403
@@ -105,6 +110,16 @@ class TestOAuthStart:
     def test_unconfigured_platform_503(self, monkeypatch):
         monkeypatch.delenv("OAUTH_CLIENT_ID")
         assert _make_client().get("/oauth/youtube/start", headers=AUTH).status_code == 503
+
+    def test_knowify_start_uses_dcr(self, monkeypatch):
+        monkeypatch.setattr(
+            "core.data_source_oauth.register_knowify_client", lambda uri: "kid",
+        )
+        r = _make_client().get("/oauth/knowify/start", headers=AUTH)
+        assert r.status_code == 200, r.text
+        url = r.json()["auth_url"]
+        assert "developers-v2.knowify.com/oauth/auth" in url
+        assert "resource=" in url
 
     def test_start_mints_state_and_persists_nonce(self):
         auth_url, state, q = _start(_make_client())

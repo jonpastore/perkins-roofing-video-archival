@@ -25,6 +25,7 @@ from app.models import (
     SocialPost,
     Video,
 )
+from core.suggestion_counts import compute_suggestion_counts, to_question
 
 router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 
@@ -34,12 +35,7 @@ def _normalize(label: str) -> str:
 
 
 def _to_question(label: str, detail: str) -> str:
-    text = (label or "").strip() or (detail or "").strip()
-    if not text:
-        return ""
-    if text.endswith("?"):
-        return text
-    return text[0].upper() + text[1:] + "?"
+    return to_question(label, detail)
 
 
 @router.get("/counts")
@@ -47,140 +43,8 @@ def get_suggestion_counts(
     claims=Depends(require_role("view_status")),
     db: Session = Depends(get_db_session),
 ):
-    """Return cheap COUNT-only totals for each opportunity bucket.
-
-    Does NOT run the heavy suggestion computation — uses fast COUNT queries only.
-    Intended for sidebar badge display.
-
-    Returns:
-      article_topics   - total uncovered topics
-      reels            - total approved series with no schedule or social post
-      faqs             - total unbuilt FAQ items
-      unused_videos    - total unused videos with transcript/topic data
-    """
-    # --- article_topics count ---
-    topic_rows = (
-        db.query(GraphNode)
-        .filter(GraphNode.kind == "topics")
-        .all()
-    )
-    articles = db.query(Article).all()
-    article_titles_lower = {(a.title or "").strip().lower() for a in articles}
-
-    topic_groups: dict[str, set] = {}
-    for row in topic_rows:
-        if not row.label:
-            continue
-        key = _normalize(row.label)
-        topic_groups.setdefault(key, set()).add(row.video_id)
-
-    article_topics_count = sum(
-        1 for key in topic_groups if key not in article_titles_lower
-    )
-
-    # --- reels count ---
-    approved_ids = {
-        s.id for s in db.query(MiniSeries).filter(MiniSeries.approved == 1).all()
-    }
-    scheduled_ref_ids = {
-        sc.ref_id
-        for sc in db.query(ScheduledContent).filter(ScheduledContent.kind == "reel").all()
-        if sc.ref_id is not None
-    }
-    social_series_ids = {
-        row.series_id
-        for row in db.query(SocialPost.series_id).distinct().all()
-        if row.series_id is not None
-    }
-    reels_count = sum(
-        1 for sid in approved_ids
-        if str(sid) not in scheduled_ref_ids and sid not in social_series_ids
-    )
-
-    # --- faqs count ---
-    all_video_ids_in_db: set[str] = {row.id for row in db.query(Video.id).all()}
-    article_contents = [a.content_md or "" for a in articles]
-    article_video_ids: set[str] = set()
-    for vid_id in all_video_ids_in_db:
-        if any(vid_id in content for content in article_contents):
-            article_video_ids.add(vid_id)
-
-    faq_rows = (
-        db.query(GraphNode)
-        .filter(
-            GraphNode.kind.in_(("objections", "claims")),
-            GraphNode.start.isnot(None),
-        )
-        .all()
-    )
-    faqs_count = sum(
-        1 for row in faq_rows
-        if row.video_id not in article_video_ids
-        and bool(_to_question(row.label or "", row.detail or ""))
-    )
-
-    # --- unused_videos count ---
-    series_video_ids: set[str] = {
-        s.video_id for s in db.query(MiniSeries).all() if s.video_id
-    }
-    segment_video_ids: set[str] = {
-        row.video_id for row in db.query(Segment.video_id).distinct().all()
-    }
-    graph_video_ids: set[str] = {
-        row.video_id for row in db.query(GraphNode.video_id).distinct().all()
-    }
-    covered_video_ids = segment_video_ids | graph_video_ids
-    all_videos = db.query(Video).all()
-    unused_count = sum(
-        1 for v in all_videos
-        if v.id in covered_video_ids
-        and v.id not in article_video_ids
-        and v.id not in series_video_ids
-    )
-
-    # --- video approvals awaiting review (MiniSeries not yet approved) ---
-    pending_video_approvals = (
-        db.query(MiniSeries).filter(MiniSeries.approved == 0).count()
-    )
-
-    # --- articles scheduled for release (sidebar badge on Articles) ---
-    scheduled_articles = (
-        db.query(ScheduledContent)
-        .filter(
-            ScheduledContent.kind == "article",
-            ScheduledContent.status == "scheduled",
-        )
-        .count()
-    )
-
-    # --- all queued/scheduled content items (sidebar badge on Scheduling) ---
-    scheduled_content = (
-        db.query(ScheduledContent)
-        .filter(ScheduledContent.status.in_(("queued", "scheduled")))
-        .count()
-    )
-
-    # --- comment drafts awaiting action (needs a reply, not yet ready/dismissed) ---
-    from app.models import CommentDraft  # local import — avoids a heavy top-level dep
-    comment_drafts = (
-        db.query(CommentDraft)
-        .filter(
-            CommentDraft.needs_reply.is_(True),
-            CommentDraft.status.in_(("pending", "drafted")),
-        )
-        .count()
-    )
-
-    return {
-        "article_topics": article_topics_count,
-        "reels": reels_count,
-        "faqs": faqs_count,
-        "unused_videos": unused_count,
-        "pending_video_approvals": pending_video_approvals,
-        "scheduled_articles": scheduled_articles,
-        "scheduled_content": scheduled_content,
-        "comment_drafts": comment_drafts,
-    }
+    """Return the sidebar badge totals. Same function the weekly digest uses."""
+    return compute_suggestion_counts(db)
 
 
 @router.get("")

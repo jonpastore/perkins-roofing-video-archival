@@ -59,6 +59,7 @@ _TENANT_SCOPED_TABLES = [
     "jobs",
     "catalog_items",
     "tc_versions",
+    "scan_reports",
 ]
 
 # Defense-in-depth (deepsec M2): the DELETE/COUNT statements interpolate table

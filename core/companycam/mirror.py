@@ -19,6 +19,17 @@ from sqlalchemy.orm import Session
 log = logging.getLogger(__name__)
 
 
+_URL_MAX = 1000
+
+
+def _clip(value: Any, n: int = _URL_MAX) -> Any:
+    """Keep URL columns inside the current varchar(1000) until migration 0061 lands."""
+    if value is None:
+        return None
+    text = str(value)
+    return text if len(text) <= n else text[:n]
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -54,7 +65,7 @@ def upsert_photo(session: Session, photo: dict[str, Any]) -> bool:
         tenant_id=tenant_id,
         companycam_photo_id=photo_id,
         project_id=photo.get("project_id"),
-        url=photo.get("url"),
+        url=_clip(photo.get("url")),
         captured_at=captured_at,
         lat=photo.get("lat"),
         lon=photo.get("lon"),
@@ -144,8 +155,8 @@ def upsert_video(session: Session, video: dict[str, Any]) -> bool:
         tenant_id=tenant_id,
         companycam_video_id=video_id,
         project_id=video.get("project_id"),
-        url=video.get("url"),
-        thumbnail_url=video.get("thumbnail_url"),
+        url=_clip(video.get("url")),
+        thumbnail_url=_clip(video.get("thumbnail_url")),
         captured_at=captured_at,
         lat=video.get("lat"),
         lon=video.get("lon"),

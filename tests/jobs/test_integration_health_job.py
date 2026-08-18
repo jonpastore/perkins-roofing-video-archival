@@ -15,6 +15,11 @@ from core.integration_health import ProbeResult
 
 
 @pytest.fixture(autouse=True)
+def _skip_ops_alerts(monkeypatch):
+    monkeypatch.setattr(J, "_maybe_alert_ops", lambda: {"skipped": True})
+
+
+@pytest.fixture(autouse=True)
 def _fresh_db():
     """Wipe only the rows we touch.
 

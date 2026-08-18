@@ -98,7 +98,18 @@ def _run_for_tenant(db, tenant_id: int, limit: int | None = None) -> dict:
             logger.error("archive_job: error on %s: %s", video_id, exc)
             errored += 1
 
-    return {"archived": archived, "skipped": skipped, "errored": errored, "total": total}
+    result = {"archived": archived, "skipped": skipped, "errored": errored, "total": total}
+    _record_scan(db, tenant_id, result)
+    return result
+
+
+def _record_scan(db, tenant_id: int, payload: dict) -> None:
+    try:
+        from core.scan_report import record  # noqa: PLC0415
+        record(db, scan_type="youtube_archive", payload=payload, tenant_id=tenant_id)
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def run(limit: int | None = None) -> dict:

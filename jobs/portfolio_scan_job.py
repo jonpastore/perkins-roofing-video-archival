@@ -110,7 +110,10 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
         candidates = [p.as_record() for p in _projects(db)]
     except Exception as exc:  # noqa: BLE001
         logger.warning("portfolio_scan: could not list projects for tenant %s: %s", tenant_id, exc)
-        return {"tenant_id": tenant_id, "error": str(exc)[:200]}
+        err = {"error": str(exc)[:200]}
+        from core.scan_report import record  # noqa: PLC0415
+        record(db, scan_type="portfolio", payload=err, tenant_id=tenant_id)
+        return {"tenant_id": tenant_id, **err}
 
     curation = {r.slug: r for r in db.query(PortfolioCuration).all()}
     rows = [_readiness(c, curation.get(c.get("slug"))) for c in candidates]
@@ -137,12 +140,20 @@ def _run_for_tenant(db, tenant_id: int) -> dict:
     for reason, n in sorted(tally.items(), key=lambda kv: -kv[1]):
         logger.info("portfolio_scan:   %3d x %s", n, reason)
 
-    return {"tenant_id": tenant_id, "total": len(rows),
-            "ready": ready, "blocked_count": len(blocked), "blockers": tally}
+    summary = {
+        "total": len(rows),
+        "ready_count": len(ready),
+        "ready_slugs": [r["slug"] for r in ready[:20]],
+        "blocked_count": len(blocked),
+        "blockers": tally,
+    }
+    from core.scan_report import record  # noqa: PLC0415
+    record(db, scan_type="portfolio", payload=summary, tenant_id=tenant_id)
+    return {"tenant_id": tenant_id, **summary, "ready": ready}
 
 
 def run() -> dict:
-    """Cron entrypoint. Read-only: this job publishes nothing and writes nothing."""
+    """Cron entrypoint. Publishes nothing. Persists a scan_reports row per tenant for the digest."""
     from app.models import SessionLocal  # noqa: PLC0415
     from core.single_flight import single_flight  # noqa: PLC0415
     from core.tenant_loop import for_each_tenant  # noqa: PLC0415

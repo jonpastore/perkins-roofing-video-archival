@@ -112,6 +112,17 @@ def _video(**overrides) -> dict:
     return base
 
 
+def test_upsert_video_clips_urls_over_1000(db):
+    from app.models import CompanyCamVideo
+
+    long_url = "https://cdn.example.com/" + ("x" * 1200)
+    assert upsert_video(db, _video(url=long_url, thumbnail_url=long_url)) is True
+    db.flush()
+    row = db.query(CompanyCamVideo).one()
+    assert len(row.url) == 1000
+    assert len(row.thumbnail_url) == 1000
+
+
 def test_upsert_video_inserts_then_idempotent_on_replay(db):
     from app.models import CompanyCamVideo
 

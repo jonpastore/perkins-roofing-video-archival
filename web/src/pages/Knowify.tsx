@@ -8,6 +8,7 @@ import {
   triggerKnowifySync,
   knowifyReconnect,
 } from "../api";
+import { DataSources } from "../components/DataSources";
 import type {
   KnowifySyncHealth,
   KnowifyCustomer,
@@ -132,6 +133,10 @@ function SyncHealthPanel() {
     setReconnectInfo(null);
     try {
       const result = await knowifyReconnect();
+      if (result.auth_url) {
+        window.location.href = result.auth_url;
+        return;
+      }
       setReconnectInfo(result);
     } catch (e: unknown) {
       setReconnectErr(e instanceof Error ? e.message : String(e));
@@ -576,6 +581,7 @@ export function Knowify() {
   return (
     <main style={{ maxWidth: 1100, fontFamily: FONT }}>
       <PageTitle>Legacy Data</PageTitle>
+      <DataSources />
 
       {/* Read-only banner */}
       <div style={{

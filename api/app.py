@@ -381,6 +381,13 @@ def daily_content_cron():
     return run()
 
 
+@app.post("/internal/weekly-digest", dependencies=[Depends(_require_internal)])
+def weekly_digest_cron():
+    """Cloud Scheduler target. Emails Tim/Marco/Jon the week's actions + under-$2500 quotes."""
+    from jobs.weekly_digest import run
+    return run()
+
+
 @app.post("/internal/portfolio-scan", dependencies=[Depends(_require_internal)])
 def portfolio_scan_cron():
     """Cloud Scheduler target (guarded by INTERNAL_SECRET). READ-ONLY project readiness scan.

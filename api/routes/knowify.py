@@ -266,24 +266,28 @@ def knowify_sync_now(
 def knowify_reconnect(
     claims=Depends(require_role(_ADMIN_ROLE)),
 ):
-    """Surface Knowify OAuth reconnect status and instructions (admin-only).
+    """Start a Knowify browser login (DCR + PKCE → MCP token) or explain how."""
+    from api.routes.connections import _oauth_start_knowify  # noqa: PLC0415
+    from fastapi import HTTPException  # noqa: PLC0415
 
-    NOTE: Knowify's interactive OAuth is currently 500ing server-side (Wave-0).
-    The actual browser re-login is Jon's CLI: python scripts/knowify/knowify_oauth.py
-    This endpoint surfaces that status so the UI can guide the operator.
-
-    When Knowify's device-code or redirect OAuth recovers, the real flow will:
-      1. Generate the authorization URL from the DCR client.
-      2. Return it here for the UI to open.
-      3. Handle the callback at GET /knowify/oauth/callback.
-    """
-    return {
-        "status": "manual_required",
-        "instructions": (
-            "The Knowify refresh token has lapsed. "
-            "Run: python scripts/knowify/knowify_oauth.py "
-            "on the operator workstation to mint fresh tokens, "
-            "then bootstrap the knowify-tokens Secret Manager secret."
-        ),
-        "oauth_server_status": "known_issue_500",
-    }
+    try:
+        bound = dict(claims) if isinstance(claims, dict) else {}
+        bound.setdefault("tenant_id", 1)
+        started = _oauth_start_knowify(bound)
+        return {
+            "status": "redirect",
+            "auth_url": started["auth_url"],
+            "instructions": "Continue in the Knowify login window.",
+            "oauth_server_status": "mcp",
+        }
+    except HTTPException as exc:
+        return {
+            "status": "manual_required",
+            "instructions": (
+                "In-app Knowify login is not configured (OAUTH_REDIRECT_BASE / "
+                "oauth-state-hmac). On the operator box run: "
+                "python scripts/knowify/knowify_oauth.py --mcp --bootstrap-secret"
+            ),
+            "oauth_server_status": "start_failed",
+            "detail": str(exc.detail),
+        }

@@ -161,8 +161,11 @@ def _secrets_present_gate(facts: dict[str, Any]) -> Gate:
 
 def _integrations_gate(facts: dict[str, Any]) -> Gate:
     statuses = facts.get("integration_statuses") or []
-    broken = [s["integration"] for s in statuses if s.get("status") == "broken"]
-    unconfigured = [s["integration"] for s in statuses if s.get("status") == "unconfigured"]
+    broken = [s["integration"] for s in statuses
+              if s.get("status") == "broken" and not str(s.get("integration") or "").startswith("ops_")]
+    unconfigured = [s["integration"] for s in statuses
+                    if s.get("status") == "unconfigured"
+                    and not str(s.get("integration") or "").startswith("ops_")]
     if broken:
         return Gate(
             id="integrations",

@@ -749,6 +749,26 @@ resource "google_cloud_scheduler_job" "generate_daily_content" {
 # neither is something a cron may supply about a customer's house. See jobs/portfolio_scan_job.
 #
 # 07:30, after companycam-sync at 06:00 — so the scan reads media mirrored this morning.
+resource "google_cloud_scheduler_job" "weekly_digest" {
+  name      = "weekly-digest"
+  region    = var.region
+  schedule  = "0 8 * * 1"
+  time_zone = "America/New_York"
+
+  http_target {
+    uri         = "${google_cloud_run_v2_service.api.uri}/internal/weekly-digest"
+    http_method = "POST"
+    headers     = { "X-Internal-Secret" = google_secret_manager_secret_version.internal_secret.secret_data }
+
+    oidc_token {
+      service_account_email = google_service_account.scheduler_sa.email
+      audience              = google_cloud_run_v2_service.api.uri
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_cloud_scheduler_job" "portfolio_scan" {
   name      = "portfolio-scan-daily"
   region    = var.region
@@ -1330,9 +1350,9 @@ locals {
     # kept because GCP secrets cannot be renamed and the value is referenced
     # as COMPANYCAM_PAT in deploy.sh.
     "companycam-webhook-secret", # CompanyCam webhook signature secret: value out-of-band once issued.
-    "companycam-client-id",      # OAuth app credentials for the same application. Not needed for the
-    "companycam-client-secret",  # bearer-token calls we make today; required if/when we move to the
-    # authorization-code flow (the app is a confidential client).
+    "companycam-client-id",      # OAuth app credentials for the same application.
+    "companycam-client-secret",
+    "companycam-tokens",         # Browser-OAuth blob (access+refresh) written by /oauth/companycam/callback.
     # "youtube-cookies" was DELETED 2026-07-29. Cookies never fixed the bot-block — 15/15
     # downloads still failed from Cloud Run with the jar verified loaded, because the block is
     # on the egress IP (see wireguard-configs below). Nothing mounted it any more, and a YouTube

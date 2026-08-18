@@ -19,6 +19,11 @@ class TestRoundtrip:
         out = verify_state(_mint(), [KEY], now=NOW)
         assert out == {"tenant_id": 1, "platform": "youtube", "nonce": "n-abc"}
 
+    def test_extra_roundtrips(self):
+        state = _mint(extra={"v": "verifier", "c": "client"})
+        out = verify_state(state, [KEY], now=NOW)
+        assert out is not None and out["extra"] == {"v": "verifier", "c": "client"}
+
     def test_second_key_rotation_window(self):
         # Signed with the old key; verifier holds [new, old] — must still verify.
         state = _mint(key=KEY)

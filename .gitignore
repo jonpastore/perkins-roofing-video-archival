@@ -1,6 +1,7 @@
 # Databases & downloaded media (large, regenerable)
 *.db
 poc/data/
+tmp/
 
 # Python caches
 __pycache__/

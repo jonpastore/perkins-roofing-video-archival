@@ -95,7 +95,18 @@ PROVIDERS: dict[str, dict] = {
         "client_secret_env": "X_CLIENT_SECRET",
         "extra_auth_params": {},
     },
+    "companycam": {
+        "auth_url": "https://app.companycam.com/oauth/authorize",
+        "token_url": "https://app.companycam.com/oauth/token",
+        "scopes": "read write",
+        "client_id_env": "COMPANYCAM_CLIENT_ID",
+        "client_secret_env": "COMPANYCAM_CLIENT_SECRET",
+        "extra_auth_params": {},
+    },
 }
+
+# Always listed on Connections even before a health row exists.
+DATA_SOURCES = frozenset({"knowify", "companycam"})
 
 # Non-OAuth secrets the re-enter form may rotate (integration → SM secret id).
 # Deliberate allowlist — an arbitrary secret_id from the client would be a
@@ -106,6 +117,7 @@ SECRET_TARGETS: dict[str, str] = {
     "pexels": "pexels-api-key",
     "serper": "serper-api-key",
     "youtube_api_key": "youtube-api-key",
+    "companycam": "companycam-pat",
 }
 
 
@@ -160,20 +172,24 @@ def list_connections(claims: dict = Depends(require_role_db("manage_config"))):
 
     by_key = {r.integration: r for r in rows}
     out = []
-    known = set(PROVIDERS) | set(SECRET_TARGETS) | {r.integration for r in rows}
+    known = set(PROVIDERS) | set(SECRET_TARGETS) | DATA_SOURCES | {r.integration for r in rows}
     for integration in sorted(known):
+        if integration.startswith("ops_"):
+            continue
         r = by_key.get(integration)
         provider = PROVIDERS.get(integration)
+        knowify = integration == "knowify"
         out.append({
             "integration": integration,
             "status": r.status if r else "unconfigured",
-            "shared": bool(r and r.tenant_id is None),
+            "shared": bool(r and r.tenant_id is None) or integration in DATA_SOURCES,
             "last_checked": r.last_checked.isoformat() if r and r.last_checked else None,
             "last_ok": r.last_ok.isoformat() if r and r.last_ok else None,
             "last_error": r.last_error if r else None,
-            "oauth": provider is not None,
-            "oauth_configured": bool(
-                provider and os.getenv(provider["client_id_env"]) and _redirect_base()
+            "oauth": provider is not None or knowify,
+            "oauth_configured": (
+                bool(_redirect_base() and _hmac_keys()) if knowify
+                else bool(provider and os.getenv(provider["client_id_env"]) and _redirect_base())
             ),
             "secret_reenter": integration in SECRET_TARGETS,
         })
@@ -253,6 +269,8 @@ def oauth_start(
     fetch — a top-level browser navigation could not carry the Authorization
     header — then sets window.location to auth_url.
     """
+    if platform == "knowify":
+        return _oauth_start_knowify(claims)
     provider = PROVIDERS.get(platform)
     if provider is None:
         raise HTTPException(status_code=404, detail=f"unknown platform {platform!r}")
@@ -320,9 +338,7 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
     parsed = verify_state(state, _hmac_keys(), now=int(time.time()))
     if parsed is None or parsed["platform"] != platform:
         raise HTTPException(status_code=403, detail="invalid state")
-
-    provider = PROVIDERS.get(platform)
-    if provider is None:
+    if platform not in PROVIDERS and platform != "knowify":
         raise HTTPException(status_code=404, detail="unknown platform")
     if not code:
         raise HTTPException(status_code=400, detail="missing code")
@@ -348,6 +364,10 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
         log.warning("oauth_callback: state/nonce tenant mismatch for %s", platform)
         raise HTTPException(status_code=403, detail="invalid state")
 
+    if platform == "knowify":
+        return _oauth_finish_knowify(code, parsed)
+
+    provider = PROVIDERS[platform]
     # Server-side code exchange. Tokens never touch the browser.
     import requests  # noqa: PLC0415
     redirect_uri = f"{_redirect_base()}/oauth/{platform}/callback"
@@ -373,36 +393,114 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
     if not access_token:
         raise HTTPException(status_code=502, detail="token exchange failed")
 
-    from adapters.distribution.oauth_store import (  # noqa: PLC0415
-        SINGLE_ACCOUNT,
-        SecretManagerOAuthStore,
-    )
     try:
-        store = SecretManagerOAuthStore(tenant_id=parsed["tenant_id"])
-        store.put(
-            platform,
-            SINGLE_ACCOUNT,
-            access_token=access_token,
-            refresh_token=tokens.get("refresh_token") or "",
-            ttl=int(tokens.get("expires_in") or 3600),
-        )
+        if platform == "companycam":
+            from core.data_source_oauth import persist_companycam  # noqa: PLC0415
+            persist_companycam(tokens)
+        else:
+            from adapters.distribution.oauth_store import (  # noqa: PLC0415
+                SINGLE_ACCOUNT,
+                SecretManagerOAuthStore,
+            )
+            store = SecretManagerOAuthStore(tenant_id=parsed["tenant_id"])
+            store.put(
+                platform,
+                SINGLE_ACCOUNT,
+                access_token=access_token,
+                refresh_token=tokens.get("refresh_token") or "",
+                ttl=int(tokens.get("expires_in") or 3600),
+            )
     except Exception as exc:  # noqa: BLE001
         log.error("oauth_callback: store write failed for %s: %s", platform, exc, exc_info=True)
         raise HTTPException(status_code=502, detail="credential store write failed") from exc
 
-    # Flip the tenant's status row healthy so the Connections page reflects it now.
+    _mark_connected(platform, None if platform in DATA_SOURCES else parsed["tenant_id"])
+
+    log.info("oauth_callback: %s connected", platform)
+    return HTMLResponse(
+        f"<h3>{platform} connected.</h3><p>You can close this tab and return to the dashboard.</p>"
+    )
+
+
+def _oauth_start_knowify(claims: dict) -> dict:
+    from core.data_source_oauth import (  # noqa: PLC0415
+        knowify_auth_url,
+        pkce,
+        register_knowify_client,
+    )
+    from app.models import OAuthStateNonce  # noqa: PLC0415
+
+    base = _redirect_base()
+    if not base or not _hmac_keys():
+        raise HTTPException(
+            status_code=503,
+            detail="knowify OAuth not configured (redirect base / state key)",
+        )
+    tenant_id = claims.get("tenant_id")
+    if tenant_id is None:
+        raise HTTPException(status_code=403, detail="no tenant context")
+    redirect_uri = f"{base}/oauth/knowify/callback"
+    try:
+        client_id = register_knowify_client(redirect_uri)
+    except Exception as exc:  # noqa: BLE001
+        log.error("knowify DCR failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Knowify client registration failed") from exc
+    verifier, challenge = pkce()
+    nonce = pysecrets.token_urlsafe(32)
+    exp = int(time.time()) + DEFAULT_STATE_TTL_SECONDS
+    db = _platform_db()
+    try:
+        db.add(OAuthStateNonce(
+            nonce=nonce, tenant_id=tenant_id, platform="knowify",
+            expires_at=datetime.now(timezone.utc).replace(tzinfo=None)
+            + timedelta(seconds=DEFAULT_STATE_TTL_SECONDS),
+        ))
+        db.commit()
+    finally:
+        db.close()
+    state = sign_state(
+        tenant_id=tenant_id, platform="knowify", nonce=nonce, exp=exp,
+        key=_hmac_keys()[0], extra={"v": verifier, "c": client_id},
+    )
+    return {"auth_url": knowify_auth_url(
+        client_id=client_id, redirect_uri=redirect_uri, state=state, challenge=challenge,
+    )}
+
+
+def _oauth_finish_knowify(code: str, parsed: dict) -> HTMLResponse:
+    extra = parsed.get("extra") or {}
+    verifier = extra.get("v") or ""
+    client_id = extra.get("c") or ""
+    if not verifier or not client_id:
+        raise HTTPException(status_code=403, detail="invalid state")
+    redirect_uri = f"{_redirect_base()}/oauth/knowify/callback"
+    try:
+        from core.data_source_oauth import exchange_knowify, persist_knowify_mcp  # noqa: PLC0415
+        tokens = exchange_knowify(
+            code=code, client_id=client_id, redirect_uri=redirect_uri, verifier=verifier,
+        )
+        persist_knowify_mcp(tokens, client_id)
+    except Exception as exc:  # noqa: BLE001
+        log.error("oauth_callback: knowify exchange failed: %s", exc)
+        raise HTTPException(status_code=502, detail="token exchange failed") from exc
+    _mark_connected("knowify", None)
+    return HTMLResponse(
+        "<h3>Knowify connected.</h3><p>You can close this tab and return to the dashboard.</p>"
+    )
+
+
+def _mark_connected(integration: str, tenant_id: int | None) -> None:
     from app.models import IntegrationStatus  # noqa: PLC0415
+
     now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     db = _platform_db()
     try:
-        row = (
-            db.query(IntegrationStatus)
-            .filter(IntegrationStatus.integration == platform,
-                    IntegrationStatus.tenant_id == parsed["tenant_id"])
-            .first()
-        )
+        q = db.query(IntegrationStatus).filter(IntegrationStatus.integration == integration)
+        q = q.filter(IntegrationStatus.tenant_id.is_(None) if tenant_id is None
+                     else IntegrationStatus.tenant_id == tenant_id)
+        row = q.first()
         if row is None:
-            row = IntegrationStatus(integration=platform, tenant_id=parsed["tenant_id"])
+            row = IntegrationStatus(integration=integration, tenant_id=tenant_id)
             db.add(row)
         row.status = "healthy"
         row.last_ok = now_dt
@@ -412,8 +510,3 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
         db.commit()
     finally:
         db.close()
-
-    log.info("oauth_callback: %s connected for tenant %d", platform, parsed["tenant_id"])
-    return HTMLResponse(
-        f"<h3>{platform} connected.</h3><p>You can close this tab and return to the dashboard.</p>"
-    )

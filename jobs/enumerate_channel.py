@@ -88,11 +88,13 @@ def _run_for_tenant(db, tenant_id: int, channel_id=None, limit=None) -> dict:
     incomplete = any(t in ("videos", "shorts") for t in failed)
     if failed:
         print(f"[warn] tabs failed during enumeration: {failed} (incomplete={incomplete})")
-    return {"enumerated": len(rows),
-            "shorts": sum(1 for r in rows if r["is_short"]),
-            "videos_in_db": total,
-            "failed_tabs": failed,
-            "incomplete": incomplete}
+    result = {"enumerated": len(rows),
+              "shorts": sum(1 for r in rows if r["is_short"]),
+              "videos_in_db": total,
+              "failed_tabs": failed,
+              "incomplete": incomplete}
+    _record_scan(db, tenant_id, "youtube_enumerate", result)
+    return result
 
 
 def run(channel_id=CHANNEL_ID, limit=None):
@@ -139,3 +141,12 @@ if __name__ == "__main__":
     print(backfilled)
 
     sys.exit(1 if result["incomplete"] else 0)  # non-zero exit on partial enumeration
+
+
+def _record_scan(db, tenant_id: int, scan_type: str, payload: dict) -> None:
+    try:
+        from core.scan_report import record  # noqa: PLC0415
+        record(db, scan_type=scan_type, payload=payload, tenant_id=tenant_id)
+        db.commit()
+    except Exception:
+        db.rollback()

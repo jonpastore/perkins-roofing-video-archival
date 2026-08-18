@@ -176,6 +176,20 @@ class EmailLog(Base, TenantMixin):
     )
 
 
+class ScanReport(Base, TenantMixin):
+    """One persisted scan run so the weekly digest can see jobs that used to log-only."""
+    __tablename__ = "scan_reports"
+
+    id        = Column(Integer, primary_key=True, autoincrement=True)
+    scan_type = Column(String(80), nullable=False)
+    ran_at    = Column(DateTime, nullable=False, default=_utcnow)
+    payload   = Column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+
+    __table_args__ = (
+        Index("ix_scan_reports_tenant_type_ran", "tenant_id", "scan_type", "ran_at"),
+    )
+
+
 class AuditLog(Base, TenantMixin):
     """Who did what, when, to which entity, and what happened. Migration 0036.
 
@@ -1407,7 +1421,7 @@ class CompanyCamPhoto(Base, TenantMixin):
     id                  = Column(Integer, primary_key=True, autoincrement=True)
     companycam_photo_id = Column(String(100), nullable=False, index=True)
     project_id          = Column(String(100), nullable=True)
-    url                 = Column(String(1000), nullable=True)
+    url                 = Column(Text, nullable=True)
     captured_at         = Column(DateTime, nullable=True)
     lat                 = Column(Float, nullable=True)
     lon                 = Column(Float, nullable=True)
@@ -1439,8 +1453,8 @@ class CompanyCamVideo(Base, TenantMixin):
     id                  = Column(Integer, primary_key=True, autoincrement=True)
     companycam_video_id = Column(String(100), nullable=False, index=True)
     project_id          = Column(String(100), nullable=True)
-    url                 = Column(String(1000), nullable=True)
-    thumbnail_url       = Column(String(1000), nullable=True)
+    url                 = Column(Text, nullable=True)
+    thumbnail_url       = Column(Text, nullable=True)
     captured_at         = Column(DateTime, nullable=True)
     lat                 = Column(Float, nullable=True)
     lon                 = Column(Float, nullable=True)

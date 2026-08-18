@@ -38,6 +38,7 @@ REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}/callback"
 # resource-bound token still 401s on REST, use the MCP path (or ask Knowify support to
 # entitle this client for /api/v2).
 RESOURCE = "https://assistant.knowify.com/api/v2"
+MCP_RESOURCE = "https://assistant.knowify.com/api/v2/mcp"
 
 # READ-ONLY scopes only — this tool never requests *:write.
 SCOPES = "openid profile offline_access " + " ".join(
@@ -52,6 +53,7 @@ SCOPES = "openid profile offline_access " + " ".join(
 
 CFG_DIR = os.path.expanduser("~/.config/knowify")
 TOKENS = os.path.join(CFG_DIR, "tokens.json")
+MCP_TOKENS = os.path.join(CFG_DIR, "mcp-tokens.json")
 
 
 def _post(url, data, form=True):
@@ -107,7 +109,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def login():
+def login(resource=RESOURCE, mcp=False):
     client = _register_client()
     client_id = client["client_id"]
     verifier, challenge = _pkce()
@@ -115,7 +117,7 @@ def login():
     auth_url = AUTH + "?" + urllib.parse.urlencode({
         "response_type": "code", "client_id": client_id, "redirect_uri": REDIRECT_URI,
         "scope": SCOPES, "state": state, "code_challenge": challenge,
-        "code_challenge_method": "S256", "resource": RESOURCE,
+        "code_challenge_method": "S256", "resource": resource,
     })
 
     srv = http.server.HTTPServer(("localhost", REDIRECT_PORT), _Handler)
@@ -142,13 +144,45 @@ def login():
     tok = _post(TOKEN, {
         "grant_type": "authorization_code", "code": _Handler.code,
         "redirect_uri": REDIRECT_URI, "client_id": client_id, "code_verifier": verifier,
-        "resource": RESOURCE,
+        "resource": resource,
     })
+    if mcp:
+        import time
+        blob = {
+            "clientId": client_id,
+            "accessToken": tok["access_token"],
+            "refreshToken": tok.get("refresh_token"),
+            "expiresAt": int(time.time() * 1000) + int(tok.get("expires_in") or 28800) * 1000,
+            "scope": tok.get("scope", SCOPES),
+        }
+        os.makedirs(CFG_DIR, exist_ok=True)
+        with open(MCP_TOKENS, "w") as f:
+            json.dump(blob, f, indent=1)
+        os.chmod(MCP_TOKENS, 0o600)
+        print(f"\nLogged in (MCP). Token stored at {MCP_TOKENS} (chmod 600).")
+        return blob
     _save({"client_id": client_id, "client_secret": client.get("client_secret"),
            "access_token": tok["access_token"], "refresh_token": tok.get("refresh_token"),
            "expires_in": tok.get("expires_in"), "scope": tok.get("scope", SCOPES)})
-    print(f"\n✓ Logged in. Read-only token stored at {TOKENS} (chmod 600).")
+    print(f"\nLogged in. Read-only token stored at {TOKENS} (chmod 600).")
     print("  Now run:  python scripts/knowify/knowify_pull.py")
+    return None
+
+
+def bootstrap_mcp_secret(blob=None, project="video-archival-and-content-gen"):
+    """Write the MCP token blob to Secret Manager knowify-mcp-tokens (new version)."""
+    if blob is None:
+        with open(MCP_TOKENS) as f:
+            blob = json.load(f)
+    if not blob.get("refreshToken"):
+        sys.exit("MCP blob has no refreshToken — login did not issue one.")
+    from google.cloud import secretmanager
+    client = secretmanager.SecretManagerServiceClient()
+    parent = f"projects/{project}/secrets/knowify-mcp-tokens"
+    client.add_secret_version(
+        request={"parent": parent, "payload": {"data": json.dumps(blob).encode()}}
+    )
+    print("Wrote new knowify-mcp-tokens version. Keep-warm can refresh from here.")
 
 
 def _selfcheck():
@@ -164,5 +198,10 @@ if __name__ == "__main__":
         print(json.dumps({k: ("<set>" if k in ("access_token", "refresh_token", "client_secret") and v else v)
                           for k, v in (json.load(open(TOKENS)).items() if os.path.exists(TOKENS) else {})}, indent=1)
               if os.path.exists(TOKENS) else "no token yet — run without --status to log in")
+    elif "--bootstrap-secret" in sys.argv and "--mcp" not in sys.argv:
+        bootstrap_mcp_secret()
     else:
-        login()
+        mcp = "--mcp" in sys.argv
+        blob = login(resource=MCP_RESOURCE if mcp else RESOURCE, mcp=mcp)
+        if mcp and "--bootstrap-secret" in sys.argv and blob:
+            bootstrap_mcp_secret(blob)

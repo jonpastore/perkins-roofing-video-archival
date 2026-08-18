@@ -952,6 +952,7 @@ export interface KnowifyReconnectResult {
   status: string;
   instructions: string;
   oauth_server_status: string;
+  auth_url?: string;
 }
 
 /** Per-entity sync health for the caller's tenant. Role: billing_manage. */

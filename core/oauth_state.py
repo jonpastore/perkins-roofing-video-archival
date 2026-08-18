@@ -40,7 +40,8 @@ def _mac(key: bytes, payload: bytes) -> bytes:
     return hmac.new(key, payload, hashlib.sha256).digest()
 
 
-def sign_state(*, tenant_id: int, platform: str, nonce: str, exp: int, key: bytes) -> str:
+def sign_state(*, tenant_id: int, platform: str, nonce: str, exp: int, key: bytes,
+               extra: dict | None = None) -> str:
     """Mint a signed state token binding {tenant, platform, nonce} until ``exp``.
 
     Args:
@@ -60,10 +61,10 @@ def sign_state(*, tenant_id: int, platform: str, nonce: str, exp: int, key: byte
         raise ValueError("nonce and platform must be non-empty")
     if tenant_id <= 0 or exp <= 0:
         raise ValueError("tenant_id and exp must be positive")
-    payload = json.dumps(
-        {"t": tenant_id, "p": platform, "n": nonce, "e": exp},
-        separators=(",", ":"), sort_keys=True,
-    ).encode("utf-8")
+    body: dict = {"t": tenant_id, "p": platform, "n": nonce, "e": exp}
+    if extra:
+        body["x"] = extra
+    payload = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
     return f"{_b64e(payload)}.{_b64e(_mac(key, payload))}"
 
 
@@ -105,4 +106,8 @@ def verify_state(state: str, keys: list[bytes], *, now: int) -> dict | None:
     if exp <= now:
         return None
 
-    return {"tenant_id": tenant_id, "platform": platform, "nonce": nonce}
+    out = {"tenant_id": tenant_id, "platform": platform, "nonce": nonce}
+    extra = obj.get("x")
+    if isinstance(extra, dict):
+        out["extra"] = extra
+    return out

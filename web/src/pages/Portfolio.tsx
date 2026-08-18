@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, Loading, ErrorMsg } from "../ui";
 import { errText } from "../lib/errors";
+import { DataSources } from "../components/DataSources";
 
 /**
  * Portfolio admin. Three tabs per project, because the three jobs are genuinely different:
@@ -883,6 +884,7 @@ export function Portfolio() {
   return (
     <div>
       <PageTitle>Portfolio</PageTitle>
+      <DataSources />
       <NewProject onCreated={() => void load()} />
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
