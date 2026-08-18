@@ -117,6 +117,15 @@ def test_unconfigured_secret_refuses_503(client, monkeypatch):
     assert r.status_code == 503  # never accept an unverifiable body
 
 
+def test_iso_created_at_from_modern_api_is_accepted(client, monkeypatch):
+    monkeypatch.setenv("COMPANYCAM_WEBHOOK_SECRET", SECRET)
+    from datetime import datetime, timezone
+    body = _photo_event(photo_id="iso-photo")
+    body["created_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    r = _post(client, body)
+    assert r.status_code == 200, r.text
+
+
 def test_replayed_event_rejected_401(client, monkeypatch):
     """A captured request keeps its valid signature forever; the signed created_at is what
     expires. Signature is genuine here — only the age is wrong."""

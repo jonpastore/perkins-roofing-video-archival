@@ -24,9 +24,10 @@ PAUSED_FIX = (
 )
 JOB_FIX = {
     "companycam-sync": (
-        "A CompanyCam playback URL exceeded varchar(1000). Code now clips URLs to 1000 chars "
-        "and migration 0061 widens url/thumbnail_url to TEXT. Commit/deploy both so the "
-        "06:00 ET sync stops dying. Until deploy, the job will keep failing."
+        "The 06:00 sync OOMs while stamping publish tags across the full photo/video "
+        "mirror, then dies with URLError on list_projects. Application key is fine (health "
+        "probe is green). Deploy the public_api/v1 adapter + SQL tag pass, then re-run "
+        "companycam-sync. Webhook 266201 is already registered for photo/video events."
     ),
     "knowify-keepwarm": (
         "Token refresh is already wired (02:00 ET keep-warm + refresh-on-use). "

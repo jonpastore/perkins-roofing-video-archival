@@ -126,22 +126,23 @@ def _probe_knowify_rest() -> ProbeResult | None:
 
 
 def probe_companycam() -> ProbeResult | None:
-    """GET /v2/projects?per_page=1 — cheapest authenticated call that proves the PAT works.
-
-    Ahead-of-account scaffold: no PAT issued yet, so this returns None (unconfigured,
-    not broken) until adapters.companycam.configured() flips true.
+    """GET /public_api/v1/projects?limit=1 — cheapest authenticated call that proves the key works.
     """
+    import urllib.error  # noqa: PLC0415
+
     import adapters.companycam as companycam
 
     if not companycam.configured():
         return None
     try:
-        companycam.ping()  # single-call probe (list_projects() paginates every page)
+        companycam.ping()
     except RuntimeError as exc:
         msg = str(exc)
         if "CompanyCam API error 401" in msg or "CompanyCam API error 403" in msg:
             return ProbeResult(ok=False, hard_auth_failure=True, error=msg)
         return ProbeResult(ok=False, error=msg)
+    except urllib.error.URLError as exc:
+        return ProbeResult(ok=False, error=f"network: {exc}")
     return ProbeResult(ok=True)
 
 

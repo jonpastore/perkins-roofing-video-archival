@@ -71,14 +71,14 @@ def test_persist_knowify_writes_mcp_blob(monkeypatch):
     assert seen[0]["refreshToken"] == "r"
 
 
-def test_persist_companycam_writes_bearer(monkeypatch):
+def test_persist_companycam_does_not_overwrite_application_key(monkeypatch):
     calls = []
     import core.companycam.tokens as CT
     monkeypatch.setattr(CT, "save_bearer", lambda t: calls.append(("pat", t)))
     monkeypatch.setattr(CT, "save_oauth", lambda b: calls.append(("oauth", b)))
     dso.persist_companycam({"access_token": "AT", "refresh_token": "RT"})
-    assert calls[0] == ("pat", "AT")
-    assert calls[1][1]["refresh_token"] == "RT"
+    assert [c[0] for c in calls] == ["oauth"]
+    assert calls[0][1]["refresh_token"] == "RT"
 
 
 def test_register_knowify_client(monkeypatch):

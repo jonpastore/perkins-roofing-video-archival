@@ -81,43 +81,56 @@ def test_videos_url_is_a_separate_resource_from_photos():
 
 
 # --- pagination ------------------------------------------------------------
-# /v2/projects silently caps per_page at 50. Asking for 100 and treating the 50 that come
-# back as "the last page" mirrored only the first 50 projects of the account and looked
-# entirely successful — 11 of 13 portfolio candidates were missing because of it.
+# public_api/v1 paginates with limit/after. A short page is not the end —
+# only has_next=false (or empty data) is.
 
-def test_get_all_does_not_stop_on_a_short_page(monkeypatch):
-    """The server may cap per_page below what we asked for. Only an EMPTY page ends it."""
-    pages = {1: [{"id": f"a{i}"} for i in range(50)],
-             2: [{"id": f"b{i}"} for i in range(50)],
-             3: [{"id": "c0"}],
-             4: []}
-    monkeypatch.setattr(companycam, "_get", lambda url, params: pages[params["page"]])
+def _page(ids, *, nxt=None):
+    return {
+        "data": [{"id": i} for i in ids],
+        "errors": [],
+        "meta": {"has_next": bool(nxt), "next_cursor": nxt},
+    }
+
+
+def test_get_all_follows_cursor_across_short_pages(monkeypatch):
+    pages = {
+        None: _page([f"a{i}" for i in range(50)], nxt="c2"),
+        "c2": _page([f"b{i}" for i in range(50)], nxt="c3"),
+        "c3": _page(["c0"], nxt=None),
+    }
+    monkeypatch.setattr(companycam, "_get", lambda url, params: pages[params.get("after")])
     assert len(companycam._get_all("http://x", per_page=100)) == 101
 
 
-def test_get_all_stops_on_the_first_empty_page(monkeypatch):
+def test_get_all_stops_when_has_next_is_false(monkeypatch):
     calls = []
 
     def fake_get(url, params):
-        calls.append(params["page"])
-        return [{"id": "only"}] if params["page"] == 1 else []
+        calls.append(params.get("after"))
+        return _page(["only"], nxt=None)
 
     monkeypatch.setattr(companycam, "_get", fake_get)
     assert len(companycam._get_all("http://x")) == 1
-    assert calls == [1, 2], "one extra request confirms the end; it must not keep going"
+    assert calls == [None]
 
 
-def test_get_all_raises_when_the_endpoint_ignores_the_page_param(monkeypatch):
-    """Returning page 1 forever would otherwise loop until _MAX_PAGES, duplicating rows."""
-    monkeypatch.setattr(companycam, "_get", lambda url, params: [{"id": "same"}])
-    with pytest.raises(RuntimeError, match="ignoring the page param"):
+def test_get_all_raises_when_the_endpoint_ignores_the_cursor(monkeypatch):
+    monkeypatch.setattr(
+        companycam, "_get",
+        lambda url, params: _page(["same"], nxt="again"),
+    )
+    with pytest.raises(RuntimeError, match="ignoring the cursor"):
         companycam._get_all("http://x")
 
 
 def test_get_all_raises_rather_than_truncating_at_the_page_cap(monkeypatch):
     monkeypatch.setattr(companycam, "_MAX_PAGES", 3)
-    monkeypatch.setattr(companycam, "_get",
-                        lambda url, params: [{"id": f"p{params['page']}-{i}"} for i in range(50)])
+
+    def fake_get(url, params):
+        after = params.get("after") or "0"
+        return _page([f"p{after}-{i}" for i in range(50)], nxt=str(int(after) + 1))
+
+    monkeypatch.setattr(companycam, "_get", fake_get)
     with pytest.raises(RuntimeError, match="exceeded 3 pages"):
         companycam._get_all("http://x")
 

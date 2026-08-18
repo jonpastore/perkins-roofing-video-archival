@@ -66,9 +66,14 @@ def captured_urls(monkeypatch):
 
     def fake_urlopen(req, timeout=None):
         urls.append(req.full_url)
-        # One populated page, then an empty one ends pagination. Keyed off the call count,
-        # NOT a substring of the URL — "page=1" is also a substring of "per_page=100".
-        body = ([{"id": "p1", "project_id": "proj_1", "uris": []}] if len(urls) == 1 else [])
+        if len(urls) == 1:
+            body = {
+                "data": [{"id": "p1", "project_id": "proj_1", "uris": []}],
+                "errors": [],
+                "meta": {"has_next": True, "next_cursor": "next1"},
+            }
+        else:
+            body = {"data": [], "errors": [], "meta": {"has_next": False, "next_cursor": None}}
         return _Resp(json.dumps(body).encode())
 
     monkeypatch.setenv("COMPANYCAM_PAT", "test-key")
@@ -91,9 +96,9 @@ def test_the_tag_pass_hits_the_ACCOUNT_endpoint_not_a_project_one(captured_urls)
     `needs_media` gate. A per-project URL here would reintroduce the empty-gallery defect."""
     companycam.list_tagged_photos(["26926152"])
     companycam.list_tagged_videos(["26926154"])
-    assert all("/v2/projects/" not in u for u in captured_urls), captured_urls
-    assert any(u.startswith("https://api.companycam.com/v2/photos?") for u in captured_urls)
-    assert any(u.startswith("https://api.companycam.com/v2/videos?") for u in captured_urls)
+    assert all("/public_api/v1/projects/" not in u for u in captured_urls), captured_urls
+    assert any("/public_api/v1/photos?" in u for u in captured_urls)
+    assert any("/public_api/v1/videos?" in u for u in captured_urls)
 
 
 def test_multiple_tag_ids_repeat_the_key_rather_than_joining_with_commas(captured_urls):
@@ -113,6 +118,7 @@ def test_the_filter_is_carried_onto_every_page(captured_urls):
     companycam.list_tagged_photos(["26926152"])
     assert len(captured_urls) >= 2
     assert all("tag_ids[]=26926152" in u for u in captured_urls)
+    assert any("after=next1" in u for u in captured_urls[1:])
 
 
 def test_a_config_value_cannot_inject_extra_query_parameters(captured_urls):
@@ -248,6 +254,34 @@ def test_the_tag_pass_runs_even_when_every_project_is_skipped(db, monkeypatch):
     assert counts["projects_skipped"] == 1, "the crawl must still skip the unchanged project"
     assert counts["photos_tagged"] == 1, "but the tag pass must have run anyway"
     assert db.query(CompanyCamPhoto).one().tags == [companycam.projects_tag_id()]
+
+
+def test_tag_pass_inserts_tagged_media_the_crawl_never_saw(db, monkeypatch):
+    """A photo tagged on a finished roof is not in the incremental crawl.
+
+    Stamp-only (ids of already-mirrored rows) left 7 of 42 live Projects photos
+    out of the gallery on 2026-08-18. The pass must upsert, then stamp.
+    """
+    import jobs.companycam_sync as sync
+
+    assert db.query(CompanyCamPhoto).count() == 0
+    monkeypatch.setattr(sync.companycam, "known_tag_ids",
+                        lambda: {companycam.projects_tag_id(),
+                                 companycam.projects_video_tag_id()})
+    monkeypatch.setattr(sync.companycam, "list_tagged_photos",
+                        lambda tag_ids: [companycam.normalize_photo(
+                            {"id": "brand_new", "project_id": "p9",
+                             "uris": [{"type": "original", "uri": "https://x/n.jpg"}]})])
+    monkeypatch.setattr(sync.companycam, "list_tagged_videos", lambda tag_ids: [])
+
+    counts = {"errors": 0}
+    sync._sync_publish_tags(db, counts)
+
+    row = db.query(CompanyCamPhoto).one()
+    assert row.companycam_photo_id == "brand_new"
+    assert row.tags == [companycam.projects_tag_id()]
+    assert counts["photos_tagged"] == 1
+    assert counts["errors"] == 0
 
 
 def test_a_tag_id_the_account_does_not_have_writes_no_tags_at_all(db, monkeypatch):

@@ -147,6 +147,15 @@ def test_upsert_video_inserts_then_idempotent_on_replay(db):
     assert db.query(CompanyCamVideo).one().url == "https://example.com/video_1_v2.m3u8"
 
 
+def test_upsert_photo_accepts_modern_iso_captured_at(db):
+    photo = _photo(captured_at="2026-08-17T17:18:14Z")
+    assert upsert_photo(db, photo) is True
+    db.flush()
+    row = db.query(CompanyCamPhoto).one()
+    assert row.captured_at.year == 2026
+    assert row.captured_at.month == 8
+
+
 def test_video_internal_defaults_to_true_when_absent(db):
     """The safe default for media we could not classify is DO NOT PUBLISH.
 
@@ -171,6 +180,25 @@ def test_video_internal_flag_is_carried_through(db):
     db.flush()
     publishable = db.query(CompanyCamVideo).filter(CompanyCamVideo.internal.is_(False)).all()
     assert [v.companycam_video_id for v in publishable] == ["pub"]
+
+
+def test_upsert_project_accepts_modern_iso_updated_at(db):
+    from app.models import CompanyCamProject
+    from core.companycam.mirror import upsert_project
+
+    row, needs = upsert_project(db, {
+        "id": "112422429",
+        "name": "Vincent Marshall",
+        "status": "active",
+        "archived": False,
+        "photo_count": 24,
+        "updated_at": "2026-08-17T17:18:14Z",
+        "address": {"city": "Miami Gardens"},
+    })
+    db.flush()
+    assert needs is True
+    assert row.remote_updated_at.year == 2026
+    assert db.query(CompanyCamProject).count() == 1
 
 
 def test_normalize_video_maps_the_live_payload_shape():

@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -99,37 +100,56 @@ def _pat() -> str:
     return pat
 
 
+_GET_ATTEMPTS = 3
+
+
+def _query_string(params: dict[str, Any]) -> str:
+    # A LIST value REPEATS the key. CompanyCam's working tag filter is
+    # `?tag_ids[]=A&tag_ids[]=B` (legacy) and `tag_ids=` (modern). Both are
+    # accepted on public_api/v1. `tag_id=` 400s. Values are quoted, KEYS are
+    # not: `tag_ids[]` must keep literal brackets. Operator-editable tag ids
+    # must not be able to add parameters.
+    pairs: list[str] = []
+    for k, v in params.items():
+        if v is None:
+            continue
+        values = v if isinstance(v, (list, tuple)) else [v]
+        pairs.extend(f"{k}={urllib.parse.quote(str(x), safe='')}" for x in values)
+    return "&".join(pairs)
+
+
 def _get(url: str, params: dict[str, Any] | None = None) -> Any:
     if params:
-        # A LIST value REPEATS the key. CompanyCam's only working tag filter is the plural
-        # bracketed form `?tag_ids[]=A&tag_ids[]=B`; `tag_id=`, `tags[]=` and `tag=` are
-        # accepted and SILENTLY IGNORED — they return the UNFILTERED list, which is
-        # indistinguishable from a filter that matched everything. Verified live 2026-08-12
-        # against project 79260538: unfiltered 100 photos / 22 videos, `tag_ids[]` 9 / 2.
-        # Values are quoted, KEYS are not: `tag_ids[]` must reach CompanyCam with literal
-        # brackets (that exact spelling is the only one it honours), while a value can come
-        # from operator-editable platform_config and must not be able to add parameters.
-        pairs: list[str] = []
-        for k, v in params.items():
-            values = v if isinstance(v, (list, tuple)) else [v]
-            pairs.extend(f"{k}={urllib.parse.quote(str(x), safe='')}" for x in values)
-        url = f"{url}?{'&'.join(pairs)}"
+        url = f"{url}?{_query_string(params)}"
     req = urllib.request.Request(
         url,
         headers={
             "Authorization": f"Bearer {_pat()}",
-            # Explicit UA — same Cloudflare-1010 gotcha as adapters/resend.py.
             "User-Agent": UA,
+            "Accept": "application/json",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode()
-        if exc.code == 404:
-            raise CompanyCamNotFound(f"CompanyCam API error 404: {raw}") from exc
-        raise RuntimeError(f"CompanyCam API error {exc.code}: {raw}") from exc
+    last_err: Exception | None = None
+    for attempt in range(1, _GET_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode()
+            if exc.code == 404:
+                raise CompanyCamNotFound(f"CompanyCam API error 404: {raw}") from exc
+            if exc.code == 429 and attempt < _GET_ATTEMPTS:
+                last_err = RuntimeError(f"CompanyCam API error 429: {raw}")
+                log.warning("companycam GET attempt %d/%d HTTP 429", attempt, _GET_ATTEMPTS)
+                time.sleep(0.4 * attempt)
+                continue
+            raise RuntimeError(f"CompanyCam API error {exc.code}: {raw}") from exc
+        except urllib.error.URLError as exc:
+            last_err = exc
+            log.warning("companycam GET attempt %d/%d URLError %s", attempt, _GET_ATTEMPTS, exc)
+            if attempt < _GET_ATTEMPTS:
+                time.sleep(0.4 * attempt)
+    raise RuntimeError(f"CompanyCam network error after {_GET_ATTEMPTS} attempts: {last_err}") from last_err
 
 
 # 200 pages x 50/page = 10,000 items per endpoint. Perkins' account is ~150 projects and the
@@ -218,45 +238,68 @@ def ping(per_page: int = 1) -> None:
     Raises RuntimeError on a missing PAT or a non-2xx response. The health probe MUST use this,
     NOT list_projects() — the latter paginates through EVERY page via _get_all().
     """
-    _get(projects_url(), {"per_page": per_page})
+    _get(projects_url(), {"limit": per_page})
+
+
+def _unwrap_page(payload: Any) -> tuple[list[dict[str, Any]], str | None]:
+    """Split a modern {data, meta} page or a legacy raw list into (rows, next_cursor)."""
+    if isinstance(payload, list):
+        return payload, None
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"companycam: unexpected payload type {type(payload).__name__}")
+    errors = payload.get("errors") or []
+    if errors:
+        raise RuntimeError(f"CompanyCam API error: {errors}")
+    data = payload.get("data")
+    if data is None:
+        return [], None
+    if isinstance(data, dict):
+        rows = [data]
+    elif isinstance(data, list):
+        rows = data
+    else:
+        raise RuntimeError(f"companycam: unexpected data type {type(data).__name__}")
+    meta = payload.get("meta") or {}
+    cursor = meta.get("next_cursor") if meta.get("has_next") else None
+    return rows, cursor
 
 
 def _get_all(url: str, per_page: int = 100,
              tag_ids: list[str] | None = None) -> list[dict[str, Any]]:
-    """Fetch every page of a CompanyCam list endpoint (paginated via page/per_page).
+    """Fetch every page of a CompanyCam list endpoint.
 
-    Stops on the first EMPTY page, never on a short one. ⚠️ A short page does NOT mean the
-    last page: /v2/projects silently caps per_page at 50, so asking for 100 returns 50 — and
-    the previous "stop when len(batch) < per_page" rule read that as the end and mirrored only
-    the first 50 projects of the account. Measured 2026-07-29: pages 1, 2 and 3 each returned
-    50 more projects, and 11 of 13 portfolio candidates were missing entirely as a result.
-    That failure is invisible — every request succeeds, the job exits 0, and the mirror just
-    stops early — which is why the rule is now "empty page ends it".
+    Modern public_api/v1 paginates with ``limit`` + ``after`` (cursor). A short page is
+    not the end — only ``has_next=false`` or an empty ``data`` list is. Measured 2026-08-18:
+    ``per_page`` 400s on the modern host; ``limit`` + ``after`` is the accepted pair.
 
-    _MAX_PAGES bounds the loop, and a repeated first id detects an endpoint that ignores the
-    page param (which would otherwise spin forever). Both RAISE rather than returning a
-    quietly-truncated list.
+    ``tag_ids[]`` is still the filter spelling we send (modern also accepts ``tag_ids``).
     """
     out: list[dict[str, Any]] = []
-    page = 1
+    cursor: str | None = None
+    pages = 0
     seen_first: set[str] = set()
     extra = {"tag_ids[]": [str(t) for t in tag_ids]} if tag_ids else {}
     while True:
-        batch = _get(url, {"page": page, "per_page": per_page, **extra})
-        if not isinstance(batch, list) or not batch:
+        params: dict[str, Any] = {"limit": per_page, **extra}
+        if cursor:
+            params["after"] = cursor
+        batch, next_cursor = _unwrap_page(_get(url, params))
+        if not batch:
             return out
 
         first_id = str(batch[0].get("id", ""))
         if first_id and first_id in seen_first:
             raise RuntimeError(
-                f"companycam: {url} returned the same first id ({first_id}) on page {page} — "
-                "the endpoint is ignoring the page param; refusing to loop or truncate."
+                f"companycam: {url} returned the same first id ({first_id}) on a later page — "
+                "the endpoint is ignoring the cursor; refusing to loop or truncate."
             )
         seen_first.add(first_id)
-
         out.extend(batch)
-        page += 1
-        if page > _MAX_PAGES:
+        pages += 1
+        if not next_cursor:
+            return out
+        cursor = next_cursor
+        if pages >= _MAX_PAGES:
             raise RuntimeError(
                 f"companycam: {url} exceeded {_MAX_PAGES} pages ({len(out)} items). Raising "
                 "rather than returning a partial mirror — raise _MAX_PAGES if the account "

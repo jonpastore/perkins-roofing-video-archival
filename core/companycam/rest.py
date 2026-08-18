@@ -5,7 +5,9 @@ these live here rather than under scripts/ (mirrors core/knowify/rest.py).
 """
 from __future__ import annotations
 
-API = "https://api.companycam.com/v2"
+# Modern public API (developers.companycam.com). Legacy /v2 sunsets 2027-09-01.
+# Envelope is {data, errors, meta}; lists paginate with limit/after, not page/per_page.
+API = "https://api.companycam.com/public_api/v1"
 UA = "PerkinsRoofingPlatform/1.0"
 
 
@@ -41,6 +43,6 @@ def photo_url(photo_id: str) -> str:
 
 
 def videos_url(project_id: str) -> str:
-    """Videos are a SEPARATE v2 resource from photos — a project's clips do not come back
-    from /photos. Verified live 2026-07-28: /projects/{id}/videos returns 200."""
+    """Videos are a separate resource from photos — a project's clips do not come back
+    from /photos. Same path on public_api/v1 as on legacy /v2."""
     return f"{API}/projects/{project_id}/videos"

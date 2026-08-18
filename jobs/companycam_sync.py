@@ -81,21 +81,38 @@ def _sync_publish_tags(db, counts: dict) -> None:
         counts["errors"] += 1
         return
 
-    for kind, fetch, tag_id, id_key, key in (
-        ("photo", companycam.list_tagged_photos, photo_tag, "companycam_photo_id", "photos"),
-        ("video", companycam.list_tagged_videos, video_tag, "companycam_video_id", "videos"),
+    for kind, fetch, tag_id, id_key, key, upsert in (
+        ("photo", companycam.list_tagged_photos, photo_tag, "companycam_photo_id",
+         "photos", upsert_photo),
+        ("video", companycam.list_tagged_videos, video_tag, "companycam_video_id",
+         "videos", upsert_video),
     ):
         try:
-            tagged_ids = {m[id_key] for m in fetch([tag_id])}
+            items = fetch([tag_id])
         except Exception as exc:  # noqa: BLE001
             log.error("companycam tags: %s fetch failed error=%s: %s",
                       kind, type(exc).__name__, str(exc)[:300])
             counts["errors"] += 1
             continue
+        # Upsert first. The incremental project crawl never sees a photo tagged on a
+        # finished roof (project updated_at does not move), so a stamp-only pass left
+        # 7 of 42 live Projects photos unmirrored on 2026-08-18 and stamped 0 tags.
+        tagged_ids: set[str] = set()
+        for item in items:
+            tagged_ids.add(str(item[id_key]))
+            try:
+                upsert(db, item)
+            except Exception as exc:  # noqa: BLE001
+                log.error("companycam tags: %s upsert id=%s error=%s: %s",
+                          kind, item.get(id_key), type(exc).__name__, str(exc)[:200])
+                counts["errors"] += 1
+        db.commit()
         result = set_publish_tags(db, kind, tagged_ids, tag_id)
         counts[f"{key}_tagged"] = result["tagged"]
         counts[f"{key}_untagged"] = result["cleared"]
         db.commit()
+        log.info("companycam tags: kind=%s fetched=%d tagged=%d cleared=%d",
+                 kind, len(tagged_ids), result["tagged"], result["cleared"])
 
 
 def _sync_tenant(db, tenant_id: int) -> dict:

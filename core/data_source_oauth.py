@@ -109,12 +109,13 @@ def persist_knowify_mcp(tokens: dict[str, Any], client_id: str) -> None:
 
 
 def persist_companycam(tokens: dict[str, Any]) -> None:
-    from core.companycam.tokens import save_bearer, save_oauth  # noqa: PLC0415
+    from core.companycam.tokens import save_oauth  # noqa: PLC0415
 
     access = tokens.get("access_token") or ""
     if not access:
         raise RuntimeError("CompanyCam token response missing access_token")
-    save_bearer(access)
+    # Do NOT write the 2-hour OAuth access token over companycam-pat. That secret
+    # holds the never-expire Application Key the daily sync uses.
     save_oauth({
         "access_token": access,
         "refresh_token": tokens.get("refresh_token") or "",

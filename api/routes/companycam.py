@@ -75,7 +75,17 @@ def _check_not_replayed(created_at) -> None:
     try:
         age = time.time() - float(created_at)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=401, detail="missing created_at") from None
+        if isinstance(created_at, str) and created_at.strip():
+            from datetime import datetime, timezone  # noqa: PLC0415
+            try:
+                parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age = time.time() - parsed.timestamp()
+            except ValueError:
+                raise HTTPException(status_code=401, detail="missing created_at") from None
+        else:
+            raise HTTPException(status_code=401, detail="missing created_at") from None
     if abs(age) > _REPLAY_WINDOW_S:
         raise HTTPException(status_code=401, detail="event outside replay window")
 

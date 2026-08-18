@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.orm import Session
 
 log = logging.getLogger(__name__)
@@ -57,9 +57,7 @@ def upsert_photo(session: Session, photo: dict[str, Any]) -> bool:
     photo_id = str(photo["companycam_photo_id"])
     chash = content_hash(photo)
 
-    captured_at = photo.get("captured_at")
-    if isinstance(captured_at, (int, float)):
-        captured_at = datetime.fromtimestamp(captured_at, tz=timezone.utc).replace(tzinfo=None)
+    captured_at = _epoch_to_dt(photo.get("captured_at"))
 
     values = dict(
         tenant_id=tenant_id,
@@ -147,9 +145,7 @@ def upsert_video(session: Session, video: dict[str, Any]) -> bool:
     video_id = str(video["companycam_video_id"])
     chash = content_hash(video)
 
-    captured_at = video.get("captured_at")
-    if isinstance(captured_at, (int, float)):
-        captured_at = datetime.fromtimestamp(captured_at, tz=timezone.utc).replace(tzinfo=None)
+    captured_at = _epoch_to_dt(video.get("captured_at"))
 
     values = dict(
         tenant_id=tenant_id,
@@ -243,30 +239,70 @@ def set_publish_tags(session: Session, kind: str, tagged_ids: set[str], tag_id: 
     wanted = {str(i) for i in tagged_ids}
 
     tagged = cleared = 0
-    # Only rows we mirror can be tagged; a tagged id we have never synced is simply not here
-    # yet and will be picked up once its project syncs.
-    rows = session.execute(
-        select(model).where(model.tenant_id == tenant_id)
-    ).scalars().all()
-    for row in rows:
-        current = [str(t) for t in (row.tags or [])]
-        should = str(getattr(row, id_col.key)) in wanted
-        if should and current != [tag_id]:
-            row.tags = [tag_id]
-            tagged += 1
-        elif not should and tag_id in current:
-            row.tags = [t for t in current if t != tag_id]
-            cleared += 1
+    # Never load `raw`. The 2026-08-14..18 OOM was the full ORM row for ~157k photos.
+    # Only the wanted ids (to stamp) plus rows that already carry this tag (to clear).
+    to_tag = _pks_needing_tag(session, model, id_col, tenant_id, wanted, tag_id)
+    to_clear = _pks_needing_clear(session, model, id_col, tenant_id, wanted, tag_id)
+    if to_tag:
+        session.execute(update(model).where(model.id.in_(to_tag)).values(tags=[tag_id]))
+        tagged = len(to_tag)
+    for pk, new_tags in to_clear:
+        session.execute(update(model).where(model.id == pk).values(tags=new_tags))
+        cleared += 1
     session.flush()
     log.info("companycam tags: kind=%s tag=%s tagged=%d cleared=%d seen=%d",
              kind, tag_id, tagged, cleared, len(wanted))
     return {"tagged": tagged, "cleared": cleared}
 
 
+def _as_tag_list(current: Any) -> list[str]:
+    return [str(t) for t in (current or [])]
+
+
+def _pks_needing_tag(session: Session, model, id_col, tenant_id: int,
+                     wanted: set[str], tag_id: str) -> list[int]:
+    if not wanted:
+        return []
+    rows = session.execute(
+        select(model.id, model.tags).where(
+            model.tenant_id == tenant_id,
+            id_col.in_(list(wanted)),
+        )
+    ).all()
+    return [pk for pk, current in rows if _as_tag_list(current) != [tag_id]]
+
+
+def _pks_needing_clear(session: Session, model, id_col, tenant_id: int,
+                       wanted: set[str], tag_id: str) -> list[tuple[int, list[str]]]:
+    dialect = session.bind.dialect.name  # type: ignore[union-attr]
+    stmt = select(model.id, id_col, model.tags).where(model.tenant_id == tenant_id)
+    if dialect == "postgresql":
+        # JSON().contains() compiles to LIKE and 400s on JSONB. Length > 0 is
+        # enough: publish tags are this one id, and ~157k rows are [].
+        from sqlalchemy import func  # noqa: PLC0415
+        stmt = stmt.where(func.jsonb_array_length(model.tags) > 0)
+    out: list[tuple[int, list[str]]] = []
+    for pk, ccid, current in session.execute(stmt).all():
+        current_list = _as_tag_list(current)
+        if str(ccid) not in wanted and tag_id in current_list:
+            out.append((pk, [t for t in current_list if t != tag_id]))
+    return out
+
+
 def _epoch_to_dt(value: Any) -> datetime | None:
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(value, tz=timezone.utc).replace(tzinfo=None)
-    return value if isinstance(value, datetime) else None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed
+        return parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return None
 
 
 def upsert_project(session: Session, project: dict[str, Any]) -> tuple[Any, bool]:
