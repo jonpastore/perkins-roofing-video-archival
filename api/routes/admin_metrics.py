@@ -122,16 +122,37 @@ def get_gcp_spend(
     try:
         rows = _query_billing(table, days)
         daily_rows = _query_billing_daily(table, days)
+        span = _query_export_span(table)
     except Exception as exc:  # noqa: BLE001
         log.warning("BQ billing query failed: %s", exc)
         return {"configured": True, "error": str(exc), "window_days": days}
 
+    note = None
+    if not rows and not daily_rows and span and span.get("n"):
+        first, last = span["first"], span["last"]
+        try:
+            rows = _query_billing_range(table, first, last)
+            daily_rows = _query_billing_daily_range(table, first, last)
+            note = (
+                f"Showing latest export ({first} – {last}). "
+                "Google cannot force a billing dump; current days are not in BigQuery yet."
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("BQ billing fallback query failed: %s", exc)
+            return {"configured": True, "error": str(exc), "window_days": days}
+
     agg = aggregate_bq_rows(rows, daily_rows)
-    return {
+    out = {
         "configured": True,
         "window_days": days,
         **agg,
     }
+    if span:
+        out["export_first"] = span.get("first")
+        out["export_last"] = span.get("last")
+    if note:
+        out["note"] = note
+    return out
 
 
 def _run_billing_query(sql: str, days: int) -> list[dict]:
@@ -182,3 +203,68 @@ def _query_billing_daily(table: str, days: int) -> list[dict]:
         LIMIT 400
     """
     return _run_billing_query(query, days)
+
+
+def _query_export_span(table: str) -> dict:
+    """MIN/MAX usage dates in the export table. Empty table → {n: 0}."""
+    from google.cloud import bigquery  # deferred: optional dep
+
+    sql = f"""
+        SELECT
+            MIN(DATE(usage_start_time)) AS first_day,
+            MAX(DATE(usage_start_time)) AS last_day,
+            COUNT(*) AS n
+        FROM `{table}`
+    """
+    client = bigquery.Client()
+    row = list(client.query(sql).result())[0]
+    first = row["first_day"]
+    last = row["last_day"]
+    return {
+        "first": first.isoformat() if first is not None else None,
+        "last": last.isoformat() if last is not None else None,
+        "n": int(row["n"] or 0),
+    }
+
+
+def _query_billing_range(table: str, first: str, last: str) -> list[dict]:
+    sql = f"""
+        SELECT
+            service.description AS service_description,
+            SUM(cost) AS cost,
+            currency
+        FROM `{table}`
+        WHERE DATE(usage_start_time) BETWEEN @first AND @last
+        GROUP BY service_description, currency
+        ORDER BY cost DESC
+        LIMIT 500
+    """
+    return _run_billing_range_query(sql, first, last)
+
+
+def _query_billing_daily_range(table: str, first: str, last: str) -> list[dict]:
+    sql = f"""
+        SELECT
+            DATE(usage_start_time) AS usage_date,
+            SUM(cost) AS cost,
+            currency
+        FROM `{table}`
+        WHERE DATE(usage_start_time) BETWEEN @first AND @last
+        GROUP BY usage_date, currency
+        ORDER BY usage_date
+        LIMIT 400
+    """
+    return _run_billing_range_query(sql, first, last)
+
+
+def _run_billing_range_query(sql: str, first: str, last: str) -> list[dict]:
+    from google.cloud import bigquery  # deferred: optional dep
+
+    client = bigquery.Client()
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("first", "DATE", first),
+            bigquery.ScalarQueryParameter("last", "DATE", last),
+        ]
+    )
+    return [dict(row) for row in client.query(sql, job_config=job_config).result()]

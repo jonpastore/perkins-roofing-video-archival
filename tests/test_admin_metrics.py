@@ -300,7 +300,11 @@ def test_gcp_spend_configured_success():
     with patch.dict(os.environ, {"BILLING_BQ_TABLE": "proj.dataset.table"}):
         with patch("api.routes.admin_metrics._query_billing", return_value=fake_rows):
             with patch("api.routes.admin_metrics._query_billing_daily", return_value=fake_daily):
-                resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
+                with patch(
+                    "api.routes.admin_metrics._query_export_span",
+                    return_value={"first": "2026-08-01", "last": "2026-08-02", "n": 2},
+                ):
+                    resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["configured"] is True
@@ -320,7 +324,11 @@ def test_gcp_spend_empty_export():
     with patch.dict(os.environ, {"BILLING_BQ_TABLE": "proj.dataset.table"}):
         with patch("api.routes.admin_metrics._query_billing", return_value=[]):
             with patch("api.routes.admin_metrics._query_billing_daily", return_value=[]):
-                resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
+                with patch(
+                    "api.routes.admin_metrics._query_export_span",
+                    return_value={"first": None, "last": None, "n": 0},
+                ):
+                    resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["configured"] is True
@@ -328,6 +336,31 @@ def test_gcp_spend_empty_export():
     assert data["by_service"] == []
     assert data["daily"] == []
     assert "error" not in data
+
+
+def test_gcp_spend_falls_back_to_latest_export():
+    headers = _admin_headers()
+    with patch.dict(os.environ, {"BILLING_BQ_TABLE": "proj.dataset.table"}):
+        with patch("api.routes.admin_metrics._query_billing", return_value=[]):
+            with patch("api.routes.admin_metrics._query_billing_daily", return_value=[]):
+                with patch(
+                    "api.routes.admin_metrics._query_export_span",
+                    return_value={"first": "2026-07-04", "last": "2026-07-08", "n": 10},
+                ):
+                    with patch(
+                        "api.routes.admin_metrics._query_billing_range",
+                        return_value=[{"service_description": "Cloud Run", "cost": 44.74, "currency": "USD"}],
+                    ):
+                        with patch(
+                            "api.routes.admin_metrics._query_billing_daily_range",
+                            return_value=[{"usage_date": "2026-07-04", "cost": 3.05, "currency": "USD"}],
+                        ):
+                            resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 44.74
+    assert "2026-07-04" in data["note"]
+    assert data["export_first"] == "2026-07-04"
 
 
 def test_gcp_spend_bq_error_degrades():

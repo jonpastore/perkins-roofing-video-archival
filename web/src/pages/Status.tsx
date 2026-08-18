@@ -709,9 +709,12 @@ function GcpSpendWidget() {
   const configured = Boolean(data && data.configured);
   const currency = data && data.configured ? data.currency : "USD";
   const queryError = data && data.configured ? data.error : undefined;
+  const exportNote = data && data.configured ? data.note : undefined;
   const dailyRaw: SpendDailyPoint[] = data && data.configured && Array.isArray(data.daily) ? data.daily : [];
   const byService: SpendByService[] = data && data.configured && Array.isArray(data.by_service) ? data.by_service : [];
-  const chartData = fillDailySeries(dailyRaw, windowFrom, today);
+  const chartFrom = dailyRaw.length ? dailyRaw[0].date : windowFrom;
+  const chartTo = dailyRaw.length ? dailyRaw[dailyRaw.length - 1].date : today;
+  const chartData = fillDailySeries(dailyRaw, chartFrom, chartTo);
   const windowTotal = chartData.reduce((s, p) => s + p.cost, 0);
   const mtdTotal = dailyRaw.filter((p) => p.date >= monthStart).reduce((s, p) => s + p.cost, 0);
   const empty = !queryError && dailyRaw.length === 0 && byService.length === 0;
@@ -748,6 +751,9 @@ function GcpSpendWidget() {
       </div>
       {error && <ErrorMsg>GCP Spend: {error}</ErrorMsg>}
       {queryError && <div style={{ color: BRAND.red, fontSize: 13, marginBottom: 8 }}>Note: {queryError}</div>}
+      {exportNote && !queryError && (
+        <div style={{ color: BRAND.sub, fontSize: 13, marginBottom: 10, lineHeight: 1.45 }}>{exportNote}</div>
+      )}
       {empty && !error && (
         <div
           style={{
@@ -878,18 +884,13 @@ const GO_LIVE_ITEMS: GoLiveItem[] = [
   { label: "perkins-jsonld mu-plugin installed + active on PRODUCTION (already on staging)", parked: true },
   { label: "Rank Math on prod confirmed not duplicating our FAQ+Video schema nodes — Owner: Wendy", parked: true },
   { label: "Permalinks set to \"Post name\" on prod", href: "https://perkinsroofing.net/wp-admin/options-permalink.php", parked: true },
-  { label: "CF token injected into Cloud Run + LLM_BACKEND=cloudflare (see §2 of the cutover plan)", done: true },
   { label: "SEO submission creds provisioned IF enabling (IndexNow key + Google Indexing API service account) — toggle is OFF by default" },
   { label: "WP_AUTHOR_ID=3 (Tim Kanak) confirmed stable on prod", parked: true },
-  { label: "core/internal_links.py service slugs verified 200 against live perkinsroofing.net", done: true },
-  { label: "Deploy main to prod (scripts/deploy.sh)", done: true },
-  { label: "Tim's $1185/$1435 labor rates confirmed", done: true },
   { label: "Remaining Tim pricing items confirmed (per-branch OH, gutter hangers, downspout $10.50, Verea field-tile, FBC low-slope deltas, T&C)" },
 ];
 
 function GoLiveChecklistBanner() {
   const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(GO_LIVE_DISMISSED_KEY) === "1");
-  const [showCompleted, setShowCompleted] = useState(false);
   const [showParked, setShowParked] = useState(false);
 
   function dismiss() {
@@ -911,16 +912,13 @@ function GoLiveChecklistBanner() {
   }
 
   const openItems = GO_LIVE_ITEMS.filter((i) => !i.done && !i.parked);
-  const doneItems = GO_LIVE_ITEMS.filter((i) => i.done);
   const parkedItems = GO_LIVE_ITEMS.filter((i) => i.parked && !i.done);
-  const activeCount = GO_LIVE_ITEMS.filter((i) => !i.parked).length;
-  const doneActive = doneItems.length;
 
   return (
     <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
         <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
-          Go-Live Checklist — {doneActive} of {activeCount} complete ({openItems.length} open)
+          Go-Live Checklist — {openItems.length} open
         </span>
         <button
           onClick={dismiss}
@@ -942,23 +940,6 @@ function GoLiveChecklistBanner() {
           </li>
         ))}
       </ul>
-      {doneItems.length > 0 && (
-        <div style={{ marginTop: 10 }}>
-          <button
-            onClick={() => setShowCompleted((v) => !v)}
-            style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 12, cursor: "pointer", padding: 0, fontWeight: 600 }}
-          >
-            {showCompleted ? "Hide completed" : `Completed (${doneItems.length})`}
-          </button>
-          {showCompleted && (
-            <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 12, color: BRAND.sub, lineHeight: 1.7 }}>
-              {doneItems.map((item, i) => (
-                <li key={i}>{item.label}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
       {parkedItems.length > 0 && (
         <div style={{ marginTop: 10 }}>
           <button

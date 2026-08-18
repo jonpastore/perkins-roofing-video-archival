@@ -1263,6 +1263,9 @@ export type GcpSpendResponse =
       daily: SpendDailyPoint[];
       window_days: number;
       error?: string;
+      note?: string;
+      export_first?: string | null;
+      export_last?: string | null;
     };
 
 export async function getActiveUsers(params: { days?: number }): Promise<ActiveUsersResponse> {
