@@ -38,6 +38,7 @@ from core.portfolio_content import (
     build_meta,
     build_project_jsonld,
     build_write_up,
+    project_full_graph_kwargs,
 )
 from core.portfolio_criteria import check_project, failing, publishable
 from core.portfolio_criteria import summary as criteria_summary
@@ -350,7 +351,12 @@ def _render_project(candidate: dict, selections: list, available: dict,
         scope_lines=scope,
     )
     faq = build_faq(candidate, photo_count=photos, video_count=videos, scope_lines=scope)
-    return body, build_project_jsonld(candidate, selections, media, faq=faq)
+    from core.brand_identity import ORGANIZATION  # noqa: PLC0415
+    return body, build_project_jsonld(
+        candidate, selections, media, faq=faq,
+        organization_id=ORGANIZATION.get("id"),
+        full_graph=project_full_graph_kwargs(candidate),
+    )
 
 
 def _placeholder_content(candidate: dict) -> str:
@@ -475,6 +481,7 @@ def _gate(db: Session, candidate: dict, selections: list, available: dict,
         title=candidate.get("name", ""), city=candidate.get("city"),
         meta=build_meta(candidate), content_html=body_html, selections=selections,
         scope_lines=scope, jsonld=jsonld, permissions=perms,
+        full_graph=True,
     )
     return criteria, body_html, jsonld
 

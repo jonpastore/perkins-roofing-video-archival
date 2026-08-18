@@ -27,6 +27,7 @@ from core.jsonld import (
     build_organization,
     build_webpage,
     build_website,
+    full_graph_enabled,
 )
 
 SITE = "https://perkinsroofing.net"
@@ -50,6 +51,10 @@ def _types(graph):
 
 
 # --- the migration must not lose anything -----------------------------------
+
+def test_full_graph_is_on_now_that_rank_math_is_gone():
+    assert full_graph_enabled() is True
+
 
 def test_the_graph_carries_every_type_rank_math_owns():
     """The exact list Rank Math emits on a live article: BreadcrumbList, Organization
@@ -240,20 +245,9 @@ def test_every_full_graph_builder_is_reachable_from_build_full_graph(fn):
 
 # --- the ARTICLE path flips with the same flag -------------------------------
 
-def test_articles_ship_only_the_complement_while_rank_math_is_live(monkeypatch):
+def test_articles_ship_the_full_graph_now_that_rank_math_is_gone():
     from jobs.article_job import _build_article_jsonld
 
-    monkeypatch.setattr("adapters.wordpress.publish_full_graph", lambda: False)
-    nodes = _build_article_jsonld(
-        {"faq_json": [{"q": "Q?", "a": "A."}], "title": "T", "slug": "t", "meta": "m"}, {})
-    assert {n["@type"] for n in nodes} == {"FAQPage"}
-    assert not ({n["@type"] for n in nodes} & RANK_MATH_OWNED)
-
-
-def test_articles_ship_the_full_graph_once_rank_math_is_gone(monkeypatch):
-    from jobs.article_job import _build_article_jsonld
-
-    monkeypatch.setattr("adapters.wordpress.publish_full_graph", lambda: True)
     nodes = _build_article_jsonld(
         {"faq_json": [{"q": "Q?", "a": "A."}], "title": "T", "slug": "t",
          "meta": "m", "published_at": "2026-08-12"}, {})

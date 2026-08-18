@@ -36,7 +36,7 @@ import re
 from dataclasses import dataclass, field
 
 from core.internal_links import BASE_URL, matching_service_links
-from core.jsonld import build_video_object
+from core.jsonld import build_video_object, graph_nodes
 
 # Any YouTube id reference: watch?v=, /embed/, youtu.be/, and both thumbnail hosts.
 # Deliberately NOT anchored to 11 chars — a corrupted id can be a different length
@@ -436,10 +436,14 @@ def _sync_video_jsonld(
     fixes: list[str] = []
     issues: list[dict] = []
 
-    kept = [n for n in jsonld if not (isinstance(n, dict) and n.get("@type") == "VideoObject")]
+    wrapped = (
+        len(jsonld) == 1 and isinstance(jsonld[0], dict) and isinstance(jsonld[0].get("@graph"), list)
+    )
+    nodes = graph_nodes(jsonld)
+    kept = [n for n in nodes if n.get("@type") != "VideoObject"]
     old_ids = set()
-    for n in jsonld:
-        if isinstance(n, dict) and n.get("@type") == "VideoObject":
+    for n in nodes:
+        if n.get("@type") == "VideoObject":
             m = _VIDEO_URL_ID_RE.search(n.get("contentUrl", "") or "")
             if m:
                 old_ids.add(m.group(1))
@@ -469,7 +473,12 @@ def _sync_video_jsonld(
 
     if old_ids != new_ids:
         fixes.append(f"resynced VideoObject jsonld: {sorted(old_ids)} -> {sorted(new_ids)}")
-    return kept + new_nodes, fixes, issues
+    merged = kept + new_nodes
+    if wrapped:
+        doc = dict(jsonld[0])
+        doc["@graph"] = merged
+        return [doc], fixes, issues
+    return merged, fixes, issues
 
 
 def _repair_toc_h2_only(content: str) -> tuple[str, list[str]]:

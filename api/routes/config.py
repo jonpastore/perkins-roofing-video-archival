@@ -30,6 +30,7 @@ from api.auth import require_role
 from app.config import settings
 from app.models import PlatformConfig, PlatformSessionLocal, SecretAudit, engine
 from core.email_gate import current_mode as _email_send_mode
+from core.job_switches import knowify_sync_enabled, proposal_reminders_enabled
 from core.production_gates import evaluate_gates
 from core.production_gates import summary as gate_summary
 from core.tenant import assert_rls_enforceable
@@ -151,6 +152,12 @@ EDITABLE_KEYS: dict[str, str] = {
     ),
     "SEARCH_INDEXING_ENABLED": (
         "Auto-submit new/published articles to IndexNow + Google Indexing API (true | false)"
+    ),
+    "KNOWIFY_SYNC_ENABLED": (
+        "Run the hourly Knowify pull (true | false). Off until an admin turns it on."
+    ),
+    "PROPOSAL_REMINDERS_ENABLED": (
+        "Send daily customer proposal reminder emails (true | false). Off until reviewed."
     ),
 }
 
@@ -288,6 +295,15 @@ class SecretEntry(BaseModel):
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+@router.get("/job-switches")
+def get_job_switches(claims=Depends(require_role("quoting_view"))):
+    """On/off flags sales and admin both need (reminder banner on Estimates)."""
+    return {
+        "knowify_sync": knowify_sync_enabled(),
+        "proposal_reminders": proposal_reminders_enabled(),
+    }
+
 
 @router.get("")
 def get_config(claims=Depends(require_role("manage_config"))):
@@ -665,6 +681,20 @@ def _check_gcs(project: str) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _check_billing_export() -> tuple[bool, str]:
+    """Confirm BILLING_BQ_TABLE is set and the billing-export table is readable."""
+    table = os.getenv("BILLING_BQ_TABLE", "").strip()
+    if not table:
+        return False, "BILLING_BQ_TABLE not set"
+    try:
+        from google.cloud import bigquery  # noqa: PLC0415
+        client = bigquery.Client()
+        client.get_table(table)
+        return True, f"table {table} readable"
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _check_oauth(client_id: str) -> tuple[bool, str]:
     """Confirm Google OAuth client ID is configured (config format check — not a live probe).
 
@@ -683,7 +713,7 @@ def health_checks(claims=Depends(require_role("manage_config"))):
     """Run cheap live connectivity probes. Returns [{name, ok, detail}] per integration.
 
     Checks: Vertex/GCP ADC, Google Cloud Storage (reels bucket), DB, WordPress REST,
-    Resend API, YouTube API, Serper API, Google OAuth client ID.
+    Resend API, YouTube API, Serper API, Google OAuth client ID, Billing export.
     All checks run even if earlier ones fail — results are always a full list.
     """
     project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
@@ -702,6 +732,7 @@ def health_checks(claims=Depends(require_role("manage_config"))):
         ("YouTube API", *_check_youtube(youtube_key)),
         ("Serper", *_check_serper(serper_key)),
         ("Google OAuth", *_check_oauth(oauth_client_id)),
+        ("Billing export", *_check_billing_export()),
     ]
 
     return {
@@ -803,6 +834,7 @@ def _gather_production_readiness_facts() -> dict[str, Any]:
         "search_indexing_enabled": indexing_status.enabled,
         "indexnow_key_set": indexing_status.indexnow_configured,
         "google_indexing_creds_set": indexing_status.google_configured,
+        "billing_bq_table_set": bool(os.getenv("BILLING_BQ_TABLE", "").strip()),
     }
 
 

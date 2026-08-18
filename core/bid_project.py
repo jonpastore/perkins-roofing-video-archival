@@ -194,8 +194,7 @@ def _fixed_once(config: PricingConfig, buildings: list[Building], zone: str,
                     "amount": round(amount, 2), "basis": basis})
     if "tile_dumpster" in once:
         # ONE ceil over the summed tile squares. Per building this rounds up per building.
-        tile_sq = sum(b.quote.num_squares for b in buildings
-                      if _tile_involved(b.quote))
+        tile_sq = sum(_tile_dumpster_squares(b.quote) for b in buildings)
         if tile_sq > 0:
             count = config.tile_dumpster_count(tile_sq, zone)
             out.append({"key": "tile_dumpster", "label": "Tile Dumpster",
@@ -205,10 +204,9 @@ def _fixed_once(config: PricingConfig, buildings: list[Building], zone: str,
     return out
 
 
-def _tile_involved(q: QuoteInput) -> bool:
-    """Mirrors the estimator's own test — tile on either side of the job generates dump loads."""
-    from core.estimator import _is_tile  # noqa: PLC0415 — internal, kept in one place
-    return bool(_is_tile(q.roof_type) or q.existing_roof == "tile")
+def _tile_dumpster_squares(q: QuoteInput) -> float:
+    from core.estimator import _tile_dumpster_squares as _sq  # noqa: PLC0415
+    return _sq(q)
 
 
 def price_project(
@@ -324,7 +322,7 @@ def price_project(
         out.profit += item.amount - item.cost
         out.project_items_margin += item.amount - item.cost
 
-    out.floor = _apply_project_floor(config, out, total_days, floor_basis)
+    out.floor = _apply_project_floor(config, out, total_days, floor_basis, buildings)
     _apply_commission(config, out, buildings)
     out.project_total = round(out.project_total, 2)
     out.profit = round(out.profit, 2)
@@ -480,7 +478,8 @@ def _with_project_flags(q: QuoteInput, once: frozenset[str],
 
 
 def _apply_project_floor(config: PricingConfig, out: ProjectPricing,
-                         total_days: float, basis: str) -> dict:
+                         total_days: float, basis: str,
+                         buildings: Optional[list[Building]] = None) -> dict:
     """One floor for the site. Returns what it did and, always, what the alternative would be.
 
     Both numbers are reported because #449 specifies the weekly basis and the weekly basis does
@@ -513,26 +512,20 @@ def _apply_project_floor(config: PricingConfig, out: ProjectPricing,
     if basis == "building":
         info["note"] = "legacy: every building paid its own floor"
         return info
-    if not config.enforce_profit_floor():
-        info["note"] = "floor not enforced by this config"
-        return info
-
     target = week_floor if basis == "week" else job
+    first = buildings[0].quote if buildings else None
+    if first is not None and first.commission_basis == "profit":
+        keep_rate = (
+            first.commission_rate_override if first.commission_rate_override is not None
+            else config.commission_rate("profit")
+        )
+        target = config.floor_to_keep(target, keep_rate)
     info["target"] = target
     if out.profit < target:
-        shortfall = round(target - out.profit, 2)
-        # ONE project line, not redistributed. Spreading it would reprice every building's per-sq
-        # and re-open every margin badge, and Tim's own site money sits on one row.
-        out.project_items.append({
-            "key": "project_profit_floor", "label": "Project minimum profit",
-            "cost": shortfall, "markup": 1.0, "amount": shortfall, "allocation": "project"})
-        out.project_total += shortfall
-        out.profit += shortfall
-        info["applied"] = shortfall
+        info["applied"] = 0.0
         out.warnings.append(
-            f"project_profit_floor_applied: bid profit ${info['profit_before_floor']:,.0f} raised "
-            f"to ${target:,.0f} by one site-level floor ({basis} basis). Per building it would "
-            f"have been {len(out.buildings)} separate floors."
+            f"profit_below_minimum: bid profit ${info['profit_before_floor']:,.0f} is under "
+            f"the ${target:,.0f} minimum. Quote still issued — not rewritten."
         )
     if basis == "project" and total_days <= 0:
         out.warnings.append(

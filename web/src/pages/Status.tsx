@@ -6,14 +6,17 @@ import {
   Bar,
   Cell,
   Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
   Legend,
   CartesianGrid,
 } from "recharts";
-import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, getProductionReadiness, listBranches, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse, type ProductionReadiness, type GateState, type BranchRow } from "../api";
+import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSpend, getProductionReadiness, listBranches, type DashboardBilling, type AgingDetail, type ActiveUsersResponse, type GcpSpendResponse, type SpendDailyPoint, type SpendByService, type ProductionReadiness, type GateState, type BranchRow } from "../api";
 import { NavContext } from "../App";
+import { DataSources } from "../components/DataSources";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg, StatCard, inputStyle } from "../ui";
 import { errText } from "../lib/errors";
 
@@ -196,6 +199,27 @@ function usd(val: string | number): string {
   return Number.isFinite(n)
     ? n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
     : "$—";
+}
+
+function usdFine(val: number, currency = "USD"): string {
+  return Number.isFinite(val)
+    ? val.toLocaleString("en-US", { style: "currency", currency, maximumFractionDigits: 2 })
+    : "$—";
+}
+
+function addUtcDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function fillDailySeries(points: SpendDailyPoint[], from: string, to: string): SpendDailyPoint[] {
+  const map = new Map(points.map((p) => [p.date, p.cost]));
+  const out: SpendDailyPoint[] = [];
+  for (let day = from; day <= to; day = addUtcDays(day, 1)) {
+    out.push({ date: day, cost: map.get(day) ?? 0 });
+  }
+  return out;
 }
 
 // ── Billing section component ─────────────────────────────────────────────────
@@ -643,60 +667,187 @@ function ActiveUsersWidget() {
 
 // ── GCP Spend widget ──────────────────────────────────────────────────────────
 
+const SPEND_WINDOWS: { key: number; label: string }[] = [
+  { key: 7, label: "7d" },
+  { key: 30, label: "30d" },
+  { key: 0, label: "This month" },
+  { key: 90, label: "90d" },
+];
+
+function spendFetchDays(preset: number): number {
+  const mtd = new Date().getUTCDate();
+  return preset === 0 ? mtd : Math.max(preset, mtd);
+}
+
 function GcpSpendWidget() {
+  const [preset, setPreset] = useState(30);
   const [data, setData] = useState<GcpSpendResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getGcpSpend({ days: 30 })
-      .then(setData)
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getGcpSpend({ days: spendFetchDays(preset) })
+      .then((d) => { if (!cancelled) setData(d); })
       .catch((e: unknown) => {
+        if (cancelled) return;
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg.startsWith("403") || msg.includes("403") ? "admin-only" : msg);
       })
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [preset]);
 
-  if (loading) return <Loading />;
+  if (loading && !data) return <Loading />;
   if (error === "admin-only") return null;
+
+  const today = fmt(new Date());
+  const monthStart = `${today.slice(0, 8)}01`;
+  const windowFrom = preset === 0 ? monthStart : addUtcDays(today, -preset);
+  const configured = Boolean(data && data.configured);
+  const currency = data && data.configured ? data.currency : "USD";
+  const queryError = data && data.configured ? data.error : undefined;
+  const dailyRaw: SpendDailyPoint[] = data && data.configured && Array.isArray(data.daily) ? data.daily : [];
+  const byService: SpendByService[] = data && data.configured && Array.isArray(data.by_service) ? data.by_service : [];
+  const chartData = fillDailySeries(dailyRaw, windowFrom, today);
+  const windowTotal = chartData.reduce((s, p) => s + p.cost, 0);
+  const mtdTotal = dailyRaw.filter((p) => p.date >= monthStart).reduce((s, p) => s + p.cost, 0);
+  const empty = !queryError && dailyRaw.length === 0 && byService.length === 0;
+  const topServices = byService.slice(0, 8);
+  const windowLabel = preset === 0 ? "this month" : `${preset}d`;
+  const yesterdayKey = addUtcDays(today, -1);
+  const yesterday = dailyRaw.find((p) => p.date === yesterdayKey)?.cost;
+
+  const pillStyle = (active: boolean): React.CSSProperties => ({
+    padding: "4px 10px",
+    borderRadius: 16,
+    border: active ? `1.5px solid ${BRAND.navy}` : `1.5px solid ${BRAND.border}`,
+    background: active ? BRAND.navy : "#fff",
+    color: active ? "#fff" : BRAND.sub,
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 600,
+    whiteSpace: "nowrap" as const,
+  });
 
   return (
     <Card style={{ marginBottom: 20, padding: "16px 20px" }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
-        GCP Spend (last 30 days)
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5 }}>
+          GCP Spend
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {SPEND_WINDOWS.map((w) => (
+            <button key={w.key} style={pillStyle(preset === w.key)} onClick={() => setPreset(w.key)}>
+              {w.label}
+            </button>
+          ))}
+        </div>
       </div>
       {error && <ErrorMsg>GCP Spend: {error}</ErrorMsg>}
-      {data && !data.configured && (
-        <div style={{ color: BRAND.sub, fontSize: 13 }}>{(data as { configured: false; note: string }).note}</div>
+      {queryError && <div style={{ color: BRAND.red, fontSize: 13, marginBottom: 8 }}>Note: {queryError}</div>}
+      {empty && !error && (
+        <div
+          style={{
+            background: BRAND.cream ?? "#f7f1e6",
+            borderRadius: 10,
+            padding: "16px 18px",
+            margin: "4px 0 2px",
+          }}
+        >
+          <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, marginBottom: 4 }}>
+            No spend data yet
+          </div>
+          <div style={{ color: BRAND.sub, fontSize: 13, lineHeight: 1.5 }}>
+            Daily cloud spend will appear here after the first scheduled import completes.
+          </div>
+          <div style={{ color: BRAND.sub, fontSize: 12, marginTop: 6 }}>Expected cadence: once per day</div>
+        </div>
       )}
-      {data && data.configured && (
+      {!empty && configured && !queryError && (
         <>
-          {"error" in data && data.error && <div style={{ color: BRAND.red, fontSize: 13, marginBottom: 8 }}>Note: {data.error}</div>}
-          {"total" in data && (
-            <>
-              <div style={{ marginBottom: 12 }}>
-                <span style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText }}>
-                  {(data as { configured: true; total: number; currency: string }).total.toLocaleString("en-US", { style: "currency", currency: (data as { configured: true; total: number; currency: string }).currency, maximumFractionDigits: 2 })}
-                </span>
-                <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 8 }}>total · {(data as { configured: true; window_days: number }).window_days}d</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 24, marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText, lineHeight: 1.1 }}>
+                {usdFine(mtdTotal, currency)}
               </div>
-              {"by_service" in data && (data as { configured: true; by_service: { service: string; cost: number }[] }).by_service.length > 0 && (
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart
-                    data={(data as { configured: true; by_service: { service: string; cost: number }[] }).by_service.slice(0, 10)}
-                    layout="vertical"
-                    margin={{ top: 0, right: 40, bottom: 0, left: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: BRAND.sub }}
-                      tickFormatter={(v: number) => `$${v.toFixed(0)}`} />
-                    <YAxis type="category" dataKey="service" tick={{ fontSize: 11, fill: BRAND.sub }} width={120} />
-                    <Tooltip formatter={(v) => [`$${Number(v).toFixed(2)}`, "Cost"]} />
-                    <Bar dataKey="cost" fill={BRAND.navyText} radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>This month</div>
+              {yesterday != null && (
+                <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+                  Yesterday: {usdFine(yesterday, currency)}
+                </div>
               )}
+            </div>
+            <div style={{ width: 1, background: BRAND.border, alignSelf: "stretch", minHeight: 40 }} />
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: BRAND.navyText, lineHeight: 1.1 }}>
+                {usdFine(windowTotal, currency)}
+              </div>
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>{windowLabel} total</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            Daily trend
+          </div>
+          <div style={{ width: "100%", minWidth: 0, marginBottom: 16 }}>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={BRAND.border} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: BRAND.sub }}
+                  tickFormatter={(d: string) => {
+                    const parts = d.split("-");
+                    return `${Number(parts[1])}/${Number(parts[2])}`;
+                  }}
+                  interval="preserveStartEnd"
+                  minTickGap={28}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => `$${v.toFixed(0)}`}
+                  tick={{ fontSize: 11, fill: BRAND.sub }}
+                  width={48}
+                />
+                <Tooltip
+                  formatter={(v) => [usdFine(Number(v), currency), "Cost"]}
+                  labelStyle={{ color: BRAND.navyText, fontWeight: 600 }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="cost"
+                  stroke={BRAND.navyText}
+                  fill={BRAND.navy}
+                  fillOpacity={0.15}
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          {topServices.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                Top services
+              </div>
+              <div>
+                {topServices.map((s) => (
+                  <div
+                    key={s.service}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      padding: "6px 0",
+                      borderBottom: `1px solid ${BRAND.border}`,
+                      fontSize: 13,
+                    }}
+                  >
+                    <span style={{ color: BRAND.navyText }}>{s.service}</span>
+                    <span style={{ color: BRAND.sub, fontWeight: 600, whiteSpace: "nowrap" }}>{usdFine(s.cost, currency)}</span>
+                  </div>
+                ))}
+              </div>
             </>
           )}
         </>
@@ -716,19 +867,20 @@ const GO_LIVE_DISMISSED_KEY = "perkins.goLiveChecklistDismissed.v1";
 interface GoLiveItem {
   label: string;
   done?: boolean;
+  parked?: boolean;
   href?: string;
 }
 
 const GO_LIVE_ITEMS: GoLiveItem[] = [
-  { label: "Staging↔prod WordPress parity confirmed (breadcrumbs etc.) — Owner: Wendy" },
-  { label: "Wendy reviews the 61 staging articles + confirms adherence criteria" },
-  { label: "PROD WP Application Password generated + vaulted (Secret Manager: wordpress-app-password) — Owner: Jon" },
-  { label: "perkins-jsonld mu-plugin installed + active on PRODUCTION (already on staging)" },
-  { label: "Rank Math on prod confirmed not duplicating our FAQ+Video schema nodes — Owner: Wendy" },
-  { label: "Permalinks set to \"Post name\" on prod", href: "https://perkinsroofing.net/wp-admin/options-permalink.php" },
+  { label: "Staging↔prod WordPress parity confirmed (breadcrumbs etc.) — Owner: Wendy", parked: true },
+  { label: "Wendy reviews the 61 staging articles + confirms adherence criteria", parked: true },
+  { label: "PROD WP Application Password generated + vaulted (Secret Manager: wordpress-app-password) — Owner: Jon", parked: true },
+  { label: "perkins-jsonld mu-plugin installed + active on PRODUCTION (already on staging)", parked: true },
+  { label: "Rank Math on prod confirmed not duplicating our FAQ+Video schema nodes — Owner: Wendy", parked: true },
+  { label: "Permalinks set to \"Post name\" on prod", href: "https://perkinsroofing.net/wp-admin/options-permalink.php", parked: true },
   { label: "CF token injected into Cloud Run + LLM_BACKEND=cloudflare (see §2 of the cutover plan)", done: true },
   { label: "SEO submission creds provisioned IF enabling (IndexNow key + Google Indexing API service account) — toggle is OFF by default" },
-  { label: "WP_AUTHOR_ID=3 (Tim Kanak) confirmed stable on prod" },
+  { label: "WP_AUTHOR_ID=3 (Tim Kanak) confirmed stable on prod", parked: true },
   { label: "core/internal_links.py service slugs verified 200 against live perkinsroofing.net", done: true },
   { label: "Deploy main to prod (scripts/deploy.sh)", done: true },
   { label: "Tim's $1185/$1435 labor rates confirmed", done: true },
@@ -737,6 +889,8 @@ const GO_LIVE_ITEMS: GoLiveItem[] = [
 
 function GoLiveChecklistBanner() {
   const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(GO_LIVE_DISMISSED_KEY) === "1");
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [showParked, setShowParked] = useState(false);
 
   function dismiss() {
     window.localStorage.setItem(GO_LIVE_DISMISSED_KEY, "1");
@@ -756,13 +910,17 @@ function GoLiveChecklistBanner() {
     );
   }
 
-  const remaining = GO_LIVE_ITEMS.filter((i) => !i.done).length;
+  const openItems = GO_LIVE_ITEMS.filter((i) => !i.done && !i.parked);
+  const doneItems = GO_LIVE_ITEMS.filter((i) => i.done);
+  const parkedItems = GO_LIVE_ITEMS.filter((i) => i.parked && !i.done);
+  const activeCount = GO_LIVE_ITEMS.filter((i) => !i.parked).length;
+  const doneActive = doneItems.length;
 
   return (
     <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
         <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
-          Go-Live Checklist — staging→prod cutover ({remaining} open)
+          Go-Live Checklist — {doneActive} of {activeCount} complete ({openItems.length} open)
         </span>
         <button
           onClick={dismiss}
@@ -777,13 +935,47 @@ function GoLiveChecklistBanner() {
         cannot verify plugin installs, WP admin settings, or human review; it's a reminder only.
       </p>
       <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: BRAND.ink, lineHeight: 1.9 }}>
-        {GO_LIVE_ITEMS.map((item, i) => (
-          <li key={i} style={{ color: item.done ? BRAND.sub : BRAND.ink, textDecoration: item.done ? "line-through" : "none" }}>
+        {openItems.map((item, i) => (
+          <li key={i}>
             {item.href ? <a href={item.href} target="_blank" rel="noreferrer">{item.label}</a> : item.label}
-            {!item.done && <span style={{ marginLeft: 8 }}><Badge tone="amber">Manual</Badge></span>}
+            <span style={{ marginLeft: 8 }}><Badge tone="amber">Manual</Badge></span>
           </li>
         ))}
       </ul>
+      {doneItems.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <button
+            onClick={() => setShowCompleted((v) => !v)}
+            style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 12, cursor: "pointer", padding: 0, fontWeight: 600 }}
+          >
+            {showCompleted ? "Hide completed" : `Completed (${doneItems.length})`}
+          </button>
+          {showCompleted && (
+            <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 12, color: BRAND.sub, lineHeight: 1.7 }}>
+              {doneItems.map((item, i) => (
+                <li key={i}>{item.label}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {parkedItems.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <button
+            onClick={() => setShowParked((v) => !v)}
+            style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 12, cursor: "pointer", padding: 0, fontWeight: 600 }}
+          >
+            {showParked ? "Hide parked WordPress / Wendy items" : `Parked — replacing WordPress (${parkedItems.length})`}
+          </button>
+          {showParked && (
+            <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 12, color: BRAND.sub, lineHeight: 1.7 }}>
+              {parkedItems.map((item, i) => (
+                <li key={i}>{item.label}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </Card>
   );
 }
@@ -927,8 +1119,8 @@ export function Status() {
         Platform Status
       </PageTitle>
 
-      <GoLiveChecklistBanner />
       <ProductionReadinessBanner />
+      <DataSources />
 
       {toast && (
         <div
@@ -995,11 +1187,13 @@ export function Status() {
           {/* Billing & Receivables section */}
           <BillingSection />
 
-          {/* Admin widgets: Active Users + GCP Spend */}
           <h3 style={{ margin: "0 0 14px", color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
             Platform Metrics
           </h3>
           <ActiveUsersWidget />
+
+          <GoLiveChecklistBanner />
+
           <GcpSpendWidget />
 
           {/* Scheduled content breakdown */}

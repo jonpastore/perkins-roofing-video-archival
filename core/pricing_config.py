@@ -317,8 +317,14 @@ class PricingConfig:
             return float(val)
 
         if basis == "size":
-            for max_sq, amount in zone_matrix.get("bands") or []:
-                if max_sq is None or num_squares <= max_sq:
+            # First band is Tim's "< N" (exclusive). Later bands are "N – M" (inclusive upper).
+            for i, (max_sq, amount) in enumerate(zone_matrix.get("bands") or []):
+                if max_sq is None:
+                    return float(self.get_or_raise(amount, f"pm_incentive[{zone}].bands"))
+                if i == 0:
+                    if num_squares < float(max_sq):
+                        return float(self.get_or_raise(amount, f"pm_incentive[{zone}].bands"))
+                elif num_squares <= float(max_sq):
                     return float(self.get_or_raise(amount, f"pm_incentive[{zone}].bands"))
             raise ConfigError(
                 f"pm_incentive: zone '{zone}' size bands do not cover {num_squares} squares."
@@ -640,6 +646,34 @@ class PricingConfig:
     def job_profit_floor(self) -> float:
         """Absolute minimum profit per job ($2,500), regardless of size."""
         return float(self.raw.get("job_profit_floor") or 2500.0)
+
+    def profit_floor_after_commission(self) -> bool:
+        """#422 experiment: is the $2,500 floor what Tim KEEPS after commission?
+
+        False (default): the profit LINE is $2,500, then 50%-of-net commission takes $1,250
+        and he nets $1,250. That is what has always shipped.
+
+        True: the line is grossed to floor/(1-rate) so that after commission he keeps the
+        floor. At 50% that is a $5,000 line. Only moves money on commission_basis="profit";
+        a commission on gross does not change when the profit line does.
+
+        Absent key is False — do not add this to required keys or the fixture hash moves.
+        """
+        return bool(self.raw.get("profit_floor_after_commission") is True)
+
+    def floor_to_keep(self, floor: float, commission_rate: Optional[float]) -> float:
+        """Return the profit-line target for `floor` under the #422 flag.
+
+        Operator Min $ is a profit-line number — callers must pass only the CONFIG floor
+        here, then max() with min_profit themselves.
+        """
+        target = float(floor or 0)
+        if not self.profit_floor_after_commission():
+            return target
+        rate = float(commission_rate or 0)
+        if rate <= 0.0 or rate >= 1.0:
+            return target
+        return target / (1.0 - rate)
 
     def daily_oh_weeks_rounding(self) -> str:
         """'ceil' (default) or 'floor' — how total series days map to on-site weeks."""

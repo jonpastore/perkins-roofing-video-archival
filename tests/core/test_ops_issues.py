@@ -46,7 +46,7 @@ def test_collect_issues_orders_errors_first():
     )
     assert "job.failed:companycam-sync" in keys
     assert keys.count("job.failed:companycam-sync") == 1
-    assert "job.paused:knowify-sync" in keys
+    assert "job.paused:knowify-sync" not in keys
     assert "job.on_demand:article" in keys
     assert "spend.unavailable" in keys
     assert "profit.below" in keys
@@ -56,14 +56,39 @@ def test_collect_issues_orders_errors_first():
     assert "varchar" in cam["fix"] or "TEXT" in cam["fix"]
 
 
-def test_collect_issues_streams_is_warning():
+def test_collect_issues_streams_only_is_silent():
     issues = collect_issues({
         "youtube": {"blocked": False, "pull_ok": True, "failed_tabs": ["streams"]},
         "scheduled_jobs": {"ok": True, "schedulers": [], "run_jobs": []},
         "cloud_spend": {"ok": True},
     })
-    assert issues[0]["severity"] == "warning"
-    assert "streams" in issues[0]["title"]
+    assert issues == []
+
+
+def test_collect_issues_videos_tab_is_error():
+    issues = collect_issues({
+        "youtube": {"blocked": False, "pull_ok": False, "failed_tabs": ["videos"]},
+        "scheduled_jobs": {"ok": True, "schedulers": [], "run_jobs": []},
+        "cloud_spend": {"ok": True},
+    })
+    assert issues[0]["severity"] == "error"
+    assert "videos" in issues[0]["title"]
+
+
+def test_collect_issues_stale_on_demand_is_silent():
+    issues = collect_issues({
+        "scheduled_jobs": {
+            "ok": True,
+            "schedulers": [],
+            "run_jobs": [{
+                "name": "article", "attention": "failed",
+                "completed": "2026-07-09T07:58:57Z",
+            }],
+        },
+        "youtube": {"blocked": False, "pull_ok": True},
+        "cloud_spend": {"ok": True},
+    })
+    assert not any(i["key"].startswith("job.on_demand:article") for i in issues)
 
 
 def test_collect_issues_jobs_unavailable():

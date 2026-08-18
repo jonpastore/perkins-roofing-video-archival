@@ -1,6 +1,6 @@
 """Best-effort GCP project spend for the weekly digest.
 
-Needs billing.viewer (or billing.budgets.viewer) on the billing account.
+Needs roles/billing.viewer on the billing account.
 The Cloud Run API SA does not have that today — we return an explicit miss
 instead of inventing a number.
 """
@@ -46,7 +46,7 @@ def fetch_cloud_spend() -> dict[str, Any]:
         return {
             "ok": False,
             "error": f"HTTP {exc.code}",
-            "hint": "Grant billing.budgets.viewer on the billing account to the API SA",
+            "hint": "Grant roles/billing.viewer on the billing account to the API SA",
             "billing_account": BILLING_ACCOUNT,
             "project": PROJECT_ID,
         }

@@ -979,6 +979,41 @@ function ConfigEditor({ config, onChange, disabled }: ConfigEditorProps) {
                 onChange={(v) => set(["profit_floor_days_per_week"], v)}
                 disabled={disabled}
               />
+              <div style={{ marginBottom: 8 }}>
+                <label
+                  style={{
+                    display: "block",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: BRAND.sub,
+                    marginBottom: 2,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  $2,500 floor vs commission
+                </label>
+                <select
+                  disabled={disabled}
+                  value={config.profit_floor_after_commission === true ? "after" : "before"}
+                  onChange={(e) => set(["profit_floor_after_commission"], e.target.value === "after")}
+                  style={{
+                    ...inputStyle,
+                    padding: "6px 10px",
+                    fontSize: 13,
+                    width: "100%",
+                    background: disabled ? BRAND.bg : "#fff",
+                    cursor: disabled ? "default" : "pointer",
+                  }}
+                >
+                  <option value="before">profit line is $2,500 (commission comes out of it)</option>
+                  <option value="after">Tim keeps $2,500 (line becomes $5,000 at 50% net)</option>
+                </select>
+                <p style={{ margin: "4px 0 0", fontSize: 11, color: BRAND.sub, lineHeight: 1.4 }}>
+                  Experiment flag. Default matches what has always shipped. Only moves a quote
+                  on 50%-of-net commission.
+                </p>
+              </div>
             </div>
             <SectionLabel>Rounding & profit mode</SectionLabel>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>

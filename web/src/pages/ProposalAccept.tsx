@@ -123,10 +123,14 @@ function orderedTierKeys(snapshot: QuoteSnapshot): TierKey[] {
   ];
 }
 
-function tierLabel(key: string): string {
-  if (key === "good") return "Good";
-  if (key === "better") return "Better";
-  if (key === "best") return "Best";
+function tierLabel(key: string, snapshot?: QuoteSnapshot): string {
+  const fromSnap = snapshot?.tiers?.[key]?.label?.trim();
+  if (fromSnap && !["good", "better", "best"].includes(fromSnap.toLowerCase())) {
+    return fromSnap;
+  }
+  if (key === "good") return "Perkins Protector";
+  if (key === "better") return "Perkins Preferred";
+  if (key === "best") return "Perkins Premium";
   if (key === "legacy") return "Proposal";
   return key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -179,7 +183,7 @@ function TierSelector({ snapshot, selected, onSelect }: TierSelectorProps) {
             />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontWeight: 700, fontSize: 15, color }}>{tier.label || tierLabel(key)}</span>
+                <span style={{ fontWeight: 700, fontSize: 15, color }}>{tierLabel(key, snapshot)}</span>
                 <span style={{ fontWeight: 700, fontSize: 16, color, fontVariantNumeric: "tabular-nums" }}>
                   {usd(Number(tier.total || 0))}
                 </span>
@@ -449,7 +453,7 @@ export function ProposalAccept({ token }: ProposalAcceptProps) {
         <SectionCard>
           <SectionTitle>Summary</SectionTitle>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: BRAND.ink, marginBottom: 6 }}>
-            <span>{quote_snapshot.tiers[selectedTier!]?.label || tierLabel(selectedTier!)} package</span>
+            <span>{tierLabel(selectedTier!, quote_snapshot)} package</span>
             <span style={{ fontVariantNumeric: "tabular-nums" }}>{usd(tierTotal!)}</span>
           </div>
           {selectedOptions.map((id) => {

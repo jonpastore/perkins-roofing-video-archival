@@ -357,7 +357,7 @@ def test_render_html_youtube_and_jobs():
     })
     assert "BLOCKED — cannot pull from YouTube" in html
     assert "Clay vs Concrete" in html
-    assert "failed tabs: streams" in html
+    assert "failed tabs: streams" not in html
     assert "FAILED: archive" in html
     assert "Paused (intentional): knowify-sync" in html
     assert "weekly-digest" in html

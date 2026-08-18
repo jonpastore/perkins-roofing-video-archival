@@ -34,7 +34,11 @@ def _flat_list(url, limit=None):
     if limit:
         cmd += ["--playlist-end", str(limit)]
     cmd.append(url)
-    out = subprocess.run(cmd, check=True, capture_output=True, timeout=600).stdout
+    proc = subprocess.run(cmd, check=False, capture_output=True, timeout=600)
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or b"").decode("utf-8", "replace")
+        raise subprocess.CalledProcessError(proc.returncode, cmd, proc.stdout, err.encode())
+    out = proc.stdout
     if not out.strip():
         return []
     return json.loads(out).get("entries", []) or []
@@ -44,14 +48,22 @@ def list_channel(channel_id, limit=None):
     """Enumerate videos + shorts + streams tabs de-duped by id. Shorts-tab entries are tagged
     with a /shorts/ url so core.enumerate.is_short classifies them. Returns (entries, failed_tabs)
     so the caller can detect a partial enumeration instead of silently under-counting."""
+    from core.youtube_health import is_absent_optional_tab  # noqa: PLC0415
+
     base = f"https://www.youtube.com/channel/{channel_id}"
     seen, merged, failed = set(), [], []
     for tab in _TABS:
         try:
             entries = _flat_list(f"{base}/{tab}", limit=limit)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
-            print(f"[warn] channel tab '{tab}' failed: {str(e)[:120]}")
-            failed.append(tab)
+            err = str(e)
+            if isinstance(e, subprocess.CalledProcessError) and e.stderr:
+                err = e.stderr.decode("utf-8", "replace") if isinstance(e.stderr, bytes) else str(e.stderr)
+            if is_absent_optional_tab(tab, err):
+                print(f"[info] channel tab '{tab}' not present: {err[:120]}")
+            else:
+                print(f"[warn] channel tab '{tab}' failed: {err[:120]}")
+                failed.append(tab)
             entries = []
         for e in entries:
             vid = e.get("id")

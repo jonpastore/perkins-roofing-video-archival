@@ -590,13 +590,10 @@ class QuoteInput:
     leaderheads_comm: int = 0
 
     # v2: Day-based overhead mode
-    # NOTE: the dataclass default stays per_sq while the API default is "daily". Deliberate, and
-    # ugly. Flipping this too reprices the golden regression fixtures, which pin totals computed
-    # under per_sq — they are the baseline, so they must not move underneath a mode change. The
-    # divergence is tracked against the open question of whether "daily" should be the default at
-    # all: it reproduces Tim's stated METHOD but quotes ~10% under his actual SOLD prices, where
-    # per_sq is within 0.8%. Resolve the mode question first, then make the two agree.
-    overhead_mode: str = "per_sq"        # "per_sq" | "daily" (the API defaults to daily)
+    # Tim, 2026-08-03: "Why is this still trying to use per SQ prices on the OH? It's all
+    # going to be based on days." Engine, API, and SPA share this default. Exhibit-B closed
+    # loops that pin a per-sq total must pass overhead_mode="per_sq" explicitly.
+    overhead_mode: str = "daily"         # "daily" | "per_sq"
     daily_series: list[DailyOverheadSeries] = field(default_factory=list)
 
     # v2: Profit mode
@@ -727,6 +724,9 @@ class EstimateResult:
     code_zone: Zone
     roof_type: RoofType
     num_squares: float
+    # Combined sloped+flat squares. num_squares stays the sloped (or sole) input so an audit
+    # row can replay the split. Contracts and package adders read this.
+    total_squares: float
     per_square_total: float
     squares_subtotal: float
     project_total: float
@@ -767,7 +767,7 @@ class EstimateResult:
                 "section": "Squares subtotal",
                 "formula": "per_square_total x squares  (Tim's B17*B18)",
                 "inputs": {"per_square_total": round(self.per_square_total, 2),
-                           "squares": self.num_squares},
+                           "squares": self.total_squares},
                 "result": round(self.squares_subtotal, 2),
             },
             {
@@ -802,6 +802,7 @@ class EstimateResult:
             "code_zone": self.code_zone,
             "roof_type": self.roof_type,
             "num_squares": self.num_squares,
+            "total_squares": self.total_squares,
             "per_square_total": round(self.per_square_total, 2),
             "squares_subtotal": round(self.squares_subtotal, 2),
             "project_total": round(self.project_total, 2),
@@ -848,6 +849,22 @@ def _is_tile(roof_type: RoofType) -> bool:
     return roof_type in ("13_tile", "barrel_tile")
 
 
+def _tile_dumpster_squares(q: QuoteInput) -> float:
+    """Squares that generate a tile dump load.
+
+    Tearing OFF tile dumps the whole roof (sloped + flat). Installing tile dumps
+    only the tile section — a mixed tile+polyglass re-roof of a shingle house
+    does not fill a dumpster with the flat section.
+    """
+    sloped = q.num_squares or 0.0
+    flat = q.flat_squares or 0.0
+    if q.existing_roof == "tile":
+        return sloped + flat
+    if _is_tile(q.roof_type):
+        return sloped
+    return 0.0
+
+
 def _is_metal(roof_type: RoofType) -> bool:
     return roof_type == "standing_seam_metal"
 
@@ -891,71 +908,34 @@ def _apply_min_margin(
     # what this roof would have been floored to on its own.
     if profit_floor_scope == "project":
         return None
-    if config.profit_floor_basis() == "weekly":
-        floor = effective_floor
-    else:
-        floor = config.job_profit_floor()
+    # Caller computes the basis-correct floor (weekly multi vs flat job $ + operator min).
+    # Re-reading job_profit_floor here dropped min_profit_dollars on job-basis branches.
+    floor = effective_floor
+    if config.profit_floor_basis() != "weekly":
         on_site_weeks = 1
-    if not config.enforce_profit_floor() or not floor or sq <= 0:
+    if not floor or sq <= 0:
         return None
     profit = next((li for li in items if li.key == "profit"), None)
     if profit is None or profit.amount >= floor:
         return None
     if explicit_profit:
-        # An operator who typed a number owns it. Overriding a flat profit or a per-square
-        # override here would ALSO suppress the guardrail built to catch exactly that: the
-        # flat_profit_floor check runs later, off the profit line, so raising it first makes
-        # that check pass silently and the margin badge go green on a price nobody approved.
-        # Those paths have their own floor guidance; leave them to it.
-        return None
+        # An operator who typed a number owns it. The $2,500 floor is advisory (warn +
+        # email), not a rewrite of their number. Previous proposals may sit under $2,500.
+        return (
+            f"profit_below_minimum: typed profit ${profit.amount:,.2f} is under the "
+            f"${float(floor):,.0f} minimum. Quote still issued."
+        )
 
     was = profit.amount
     weeks = on_site_weeks or 1
-    profit.amount = float(floor)
-    profit.per_sq = float(floor) / sq
+    # Advisory: do not rewrite the profit line. Old proposals and slider settings
+    # under $2,500 must still price. Notify is the API's job after persist.
     basis = config.profit_floor_basis()
-    how = (f"{weeks}-week minimum at ${config.weekly_profit_floor():,.0f}/week on the job"
-           if basis == "weekly" else "flat minimum per job")
-    profit.explain = {
-        "formula": f"profit floor applied — the sliding scale gave ${was:,.2f}, below the "
-                   f"${float(floor):,.2f} {how}",
-        "inputs": {"scale_profit": round(was, 2), "effective_floor": float(floor),
-                   "profit_floor_basis": basis, "on_site_weeks": weeks,
-                   "weekly_profit_floor": config.weekly_profit_floor(),
-                   "job_profit_floor": config.job_profit_floor(),
-                   "days_per_week": config.profit_floor_days_per_week(),
-                   "squares": sq, "floored": True},
-    }
-    # #422 — the floor moves the PROFIT line, and on the "profit" basis commission is a percentage
-    # OF that line (commission = margin.profit_dollars x rate). So protecting a small job also
-    # raises the salesperson's commission on it: a 10 sq HVHZ tile job floored from $1,400 to
-    # $2,500 takes commission from $700 to $1,250 at Tim's 50% of net. He has never said whether
-    # his $2,500 is what he keeps BEFORE or AFTER commission. If after, the floor should be
-    # 2500/(1-rate), not 2500 — and at 50% that is $5,000, so the question got twice as expensive
-    # when the rate was corrected.
-    #
-    # We cannot answer that for him, and quietly picking one reading would bury a real question
-    # inside a number he is asked to sign. So the quote says it.
-    #
-    # `commission_rate` is the rate that MOVES WITH the profit line — the caller passes None on the
-    # "job" basis, where a commission on GROSS does not move when profit does and the note would be
-    # describing an effect that isn't happening. It is the effective rate, override included, so
-    # the note quotes the number this quote will actually pay rather than the config default.
-    extra = ""
-    try:
-        rate = commission_rate
-        if rate:
-            net = float(floor) * (1.0 - float(rate))
-            extra = (f" Commission rises with it (${was * float(rate):,.0f} -> "
-                     f"${float(floor) * float(rate):,.0f} at {float(rate) * 100:.3g}%), so Tim "
-                     f"nets ${net:,.0f} of the ${float(floor):,.0f} floor. If the floor is meant "
-                     f"to be what he KEEPS, it should be ${float(floor) / (1 - float(rate)):,.0f} "
-                     f"— pending Tim.")
-    except Exception:  # noqa: BLE001 — the note is advisory; never break a quote over it
-        extra = ""
-    return (f"min_margin_applied: profit raised from ${was:,.2f} to ${float(floor):,.2f} "
-            + (f"({weeks}-week minimum)" if basis == "weekly" else "(minimum per job)")
-            + extra)
+    return (
+        f"profit_below_minimum: profit ${was:,.2f} is under the ${float(floor):,.0f} "
+        f"{'weekly' if basis == 'weekly' else 'job'} minimum "
+        f"({weeks}-week window). Quote still issued."
+    )
 
 
 def _build_sloped(config: PricingConfig, q: QuoteInput) -> list[LineItem]:
@@ -1128,9 +1108,9 @@ def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineIt
     # building: Evergrene's nine roofs bill 14 dumpsters where the site needs 10. A dump load is
     # a SITE quantity even though it is not a flat fee, so the project suppresses this too and
     # recomputes it over the summed squares.
-    if (("tile_dumpster" not in skip)
-            and (_is_tile(q.roof_type) or q.existing_roof == "tile") and q.num_squares > 0):
-        count = config.tile_dumpster_count(q.num_squares, zone)
+    dumpster_sq = _tile_dumpster_squares(q)
+    if (("tile_dumpster" not in skip) and dumpster_sq > 0):
+        count = config.tile_dumpster_count(dumpster_sq, zone)
         dumpster_cost = count * config.raw["tile_dumpster_cost"]
         items.append(LineItem("tile_dumpster", "Tile Dumpster", dumpster_cost,
                               tags["tile_dumpster"], explain={
@@ -1138,7 +1118,7 @@ def _build_fixed(config: PricingConfig, q: QuoteInput, zone: str) -> list[LineIt
                        "(Tim's sheet: every 30 sq FBC, more than 15 sq HVHZ)",
             "inputs": {"dumpsters": count, "cost_each": config.raw["tile_dumpster_cost"],
                        "threshold": config.raw["tile_dumpster_threshold"][zone],
-                       "squares": q.num_squares, "zone": zone,
+                       "squares": dumpster_sq, "zone": zone,
                        "boundary_inclusive": config.raw.get("tile_dumpster_boundary_inclusive")}}))
 
     # Accessibility, flat half (Tim 2026-07-27 20:36) — a quoted delivery/hand-load charge that
@@ -1191,8 +1171,10 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
                 f"silicone add-on {_addon!r} is not priced for this config. "
                 f"Known add-ons: {', '.join(sorted(_rates)) or 'none configured'}."
             )
+        silicone_sq = (q.flat_squares or 0.0) if (
+            q.slope_type == "sloped" and q.flat_squares) else q.num_squares
         items.append(LineItem(f"silicone_addon_{_addon}", _addon.replace("_", " ").title(),
-                              _rate * q.num_squares, tags.get("silicone_addons", "Materials"),
+                              _rate * silicone_sq, tags.get("silicone_addons", "Materials"),
                               _rate))
 
     if q.extra_coats:
@@ -1210,9 +1192,11 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
                 "varies by coat — Tim's own build-ups run $195/$220/$300 for 1/2/3 coats."
             )
         _per_sq = _lop + float(q.extra_coat_material_per_sq)
+        coat_sq = (q.flat_squares or 0.0) if (
+            q.slope_type == "sloped" and q.flat_squares) else q.num_squares
         items.append(LineItem(
             "silicone_extra_coats", f"Extra Silicone Coats (x{q.extra_coats})",
-            _per_sq * q.num_squares * q.extra_coats,
+            _per_sq * coat_sq * q.extra_coats,
             tags.get("silicone_addons", "Materials"), _per_sq,
         ))
 
@@ -1233,8 +1217,9 @@ def _build_optional(config: PricingConfig, q: QuoteInput, zone: str) -> list[Lin
         # Rate follows the ROOF's slope, not the config block the value is stored in.
         pc_rate = config.pressure_cleaning_per_sq(q.slope_type)
         if pc_rate:
+            clean_sq = q.num_squares + (q.flat_squares or 0.0)
             items.append(LineItem(
-                "pressure_cleaning", "Pressure Cleaning", pc_rate * q.num_squares,
+                "pressure_cleaning", "Pressure Cleaning", pc_rate * clean_sq,
                 tags.get("pressure_cleaning", "Labor"), pc_rate,
             ))
 
@@ -1382,8 +1367,9 @@ def _compute_margin(
 ) -> MarginInfo:
     """Compute margin metrics and floor warnings.
 
-    flat_profit_effective_floor: when profit_mode='flat', pass the effective floor
-        (max of job_profit_floor and weekly floor) so the margin badge reflects it.
+    flat_profit_effective_floor: when profit_mode='flat', pass the floor that the
+        configured profit_floor_basis actually enforces (weekly multi-week guidance, or
+        the flat job floor) so the margin badge matches the typed-profit raise.
         A flat profit below this floor adds 'flat_profit_floor' to margin_warnings
         and causes profit_floor_ok=False, keeping the hero badge and the inline
         warning consistent.
@@ -1458,40 +1444,20 @@ def estimate(config_or_input, input_or_none=None) -> dict:
     # falling back to per-square OH (the ~$2k PROTECTOR gap — Zoom 2026-07-17). Days the
     # caller typed always win.
     auto_days = False
-    fell_back_to_per_sq = False
     if q.overhead_mode == "daily" and not q.daily_series:
         derived = derive_daily_series(config, q)
         if derived:
             q = replace(q, daily_series=derived)
             auto_days = True
         else:
-            # No fitted day model for this roof type — `derive_daily_series` returns [] for every
-            # low-slope system, because the fitted workbook is SLOPED ONLY. The estimate then
-            # silently uses the per-square overhead table while the caller asked for days, and
-            # nothing in the result said so. Tim, 2026-08-03: "Why is this still trying to use per
-            # SQ prices on the OH? It's all going to be based on days" — a quote that quietly
-            # ignores that reads exactly like one that honoured it.
-            #
-            # This is a GAP, not Tim's method. He prices low-slope by days too, and both
-            # commercial workbooks show the per-square figure being DERIVED from days rather than
-            # driving them: Miramar's overhead cell reads "$1,175 x 25 days & $765 x 30 days =
-            # $52,325" against 142 squares (= the $370/sq it displays), and Evergrene's bid sheet
-            # carries a TOTAL DAYS column whose "Clubhouse Flats (3)" row is 28 sq / 7 days /
-            # $6,195 OH (= the $221.25/sq it displays). A per-square number that is an OUTPUT of a
-            # day calculation must not be read as the input.
-            fell_back_to_per_sq = True
+            raise ValueError(
+                f"daily overhead was requested, but {q.roof_type!r} has no fitted day series. "
+                "Enter daily_series (days per crew). Tim prices overhead by days — a per-square "
+                "table is a guide, not the quote."
+            )
 
     result = _estimate_config(config, q).to_dict()
-    if fell_back_to_per_sq:
-        result["overhead_basis_used"] = "per_sq"
-        result["warnings"] = list(result.get("warnings") or []) + [
-            f"overhead_fell_back_to_per_sq: daily overhead was requested, but {q.roof_type!r} has "
-            "no fitted day series (the time-learning model covers sloped roofs only), so overhead "
-            "came from the per-square table. Tim prices low-slope by DAYS as well — his commercial "
-            "bids derive the per-square figure from a day count — so treat this as an unpriced gap "
-            "and confirm the overhead against a day estimate before sending."
-        ]
-    elif q.overhead_mode == "daily" and q.daily_series:
+    if q.overhead_mode == "daily" and q.daily_series:
         result["overhead_basis_used"] = "daily"
     if auto_days:
         # By-days OH lands well below the per-square OH on tile/metal, so an auto-filled
@@ -1547,7 +1513,8 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
         # section's "overhead" on that path copies the same day total back in as
         # flat_overhead — a silent 2x on the default quote path. Per-sq mode still
         # carries the flat system's own $/sq overhead; the rates are different.
-        carries = {"base_cost_lm", "tear_off", "deck_type", "insulation", "tapered"}
+        carries = {"base_cost_lm", "tear_off", "deck_type", "insulation", "tapered",
+                   "warranty_upgrade"}
         if q.overhead_mode != "daily":
             carries = carries | {"overhead"}
         for li in _build_low_slope(config, flat_q):
@@ -1645,8 +1612,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
         warnings.append(
             f"mixed_roof_priced: {q.num_squares:g} sloped + {q.flat_squares:g} flat squares quoted "
             f"as ONE job. Profit, PM incentive and the profit floor band on the combined "
-            f"{total_sq:g} squares; {flat_contrib}. Tim prices these together on his own sheet, "
-            "but we have no sold mixed roof to check the split against — review before sending."
+            f"{total_sq:g} squares; {flat_contrib}."
         )
 
     # Tim's sheet, note behind the coating block: "Coating Prices Based on 25+ squares (Demo not
@@ -1819,15 +1785,26 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     explicit_profit = (q.profit_mode == "flat" and q.flat_profit_dollars is not None) or (
         q.override_profit_per_sq is not None)
     guidance = compute_profit_guidance(config, q.daily_series or [])
-    # An operator minimum RAISES the config floor, never lowers it — the Quoting slider's "Min $"
-    # box is a "don't go under this on this job" input, not a way to quote below Tim's $2,500.
-    effective_floor = max(guidance["effective_floor"], q.min_profit_dollars or 0.0)
     # The rate follows the BASIS, not the roof: 15% of gross or 50% of net (Tim, 2026-08-02).
-    # An operator slider (commission_rate_override) still wins — that is where a negotiated
-    # per-salesperson split lives. Computed here rather than at its point of use below because
-    # the floor's #422 note needs it, and depends on nothing the floor produces.
+    # Computed before the floor so #422 can gross the CONFIG floor (not operator Min $).
     comm_rate = (q.commission_rate_override if q.commission_rate_override is not None
                  else config.commission_rate(q.commission_basis))
+    keep_rate = comm_rate if q.commission_basis == "profit" else None
+    # Operator min $ RAISES the floor, never lowers it. Weekly basis multiplies by on-site
+    # weeks; job basis is the flat $2,500. Do not feed weekly guidance into a job-basis floor.
+    if config.profit_floor_basis() == "weekly":
+        config_floor = float(guidance["effective_floor"] or 0)
+    else:
+        config_floor = float(config.job_profit_floor() or 0)
+    config_floor = config.floor_to_keep(config_floor, keep_rate)
+    effective_floor = max(config_floor, float(q.min_profit_dollars or 0))
+    # Operator Min $ still moves THIS quote. The $2,500 config floor does not.
+    op_min = float(q.min_profit_dollars or 0)
+    if op_min > 0 and not explicit_profit:
+        profit_li = next((li for li in all_items if li.key == "profit"), None)
+        if profit_li is not None and profit_li.amount + 1e-6 < op_min and total_sq > 0:
+            profit_li.amount = op_min
+            profit_li.per_sq = op_min / total_sq
     floored = _apply_min_margin(
         config, all_items, total_sq, explicit_profit,
         effective_floor=effective_floor, on_site_weeks=guidance["on_site_weeks"],
@@ -1846,16 +1823,24 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
     )
     squares_subtotal = sum(li.amount for li in per_sq_items)
 
-    # v2: compute effective floor for flat-profit margin check
-    flat_floor: Optional[float] = None
-    if q.profit_mode == "flat" and q.flat_profit_dollars is not None:
-        guidance = compute_profit_guidance(config, q.daily_series, q.flat_profit_dollars)
-        flat_floor = guidance["effective_floor"]
+    # Typed flat profit: same floor for min-margin, the margin badge, and the raise.
+    typed_floor = (
+        effective_floor
+        if q.profit_mode == "flat" and q.flat_profit_dollars is not None
+        else None
+    )
 
-    margin = _compute_margin(config, all_items, q.slope_type, zone, flat_floor)
+    margin = _compute_margin(config, all_items, q.slope_type, zone, typed_floor)
 
     comm_base = project_total if q.commission_basis == "job" else margin.profit_dollars
     commission = comm_base * comm_rate
+    if (typed_floor
+            and margin.profit_dollars + 1e-6 < typed_floor
+            and not any(w.startswith("profit_below_minimum") for w in warnings)):
+        warnings.append(
+            f"profit_below_minimum: typed profit ${margin.profit_dollars:,.2f} is under "
+            f"the ${typed_floor:,.0f} minimum. Quote still issued."
+        )
 
     # Build legacy flat dicts for backward compat
     fixed_keys = {"delivery_plywood_vents", "new_bonus_values", "permit_processing",
@@ -1876,6 +1861,7 @@ def _estimate_config(config: PricingConfig, q: QuoteInput) -> EstimateResult:
         code_zone=zone,
         roof_type=q.roof_type,
         num_squares=q.num_squares,
+        total_squares=total_sq,
         per_square_total=per_sq_total_val,
         squares_subtotal=squares_subtotal,
         project_total=project_total,

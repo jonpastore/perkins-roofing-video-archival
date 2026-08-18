@@ -6,7 +6,7 @@ Coverage target: core/gcp_metrics.py >= 97% (adapters/api layers are omitted per
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -113,6 +113,7 @@ def test_aggregate_bq_rows_basic():
     result = aggregate_bq_rows(rows)
     assert result["total"] == round(18.75, 4)
     assert result["currency"] == "USD"
+    assert result["daily"] == []
     svc_map = {s["service"]: s["cost"] for s in result["by_service"]}
     assert svc_map["Cloud Run"] == round(13.50, 4)
     assert svc_map["Cloud SQL"] == round(5.25, 4)
@@ -124,6 +125,7 @@ def test_aggregate_bq_rows_empty():
     result = aggregate_bq_rows([])
     assert result["total"] == 0.0
     assert result["by_service"] == []
+    assert result["daily"] == []
 
 
 def test_aggregate_bq_rows_none_cost():
@@ -136,6 +138,67 @@ def test_aggregate_bq_rows_none_service():
     rows = [{"service_description": None, "cost": 7.0, "currency": "USD"}]
     result = aggregate_bq_rows(rows)
     assert result["by_service"][0]["service"] == "Unknown"
+
+
+def test_aggregate_bq_rows_daily_series():
+    rows = [
+        {"service_description": "Cloud Run", "cost": 10.0, "currency": "USD"},
+        {"service_description": "Cloud SQL", "cost": 7.5, "currency": "USD"},
+    ]
+    daily_rows = [
+        {"usage_date": "2026-08-02", "cost": 7.5, "currency": "USD"},
+        {"usage_date": "2026-08-01", "cost": 4.0, "currency": "USD"},
+        {"usage_date": "2026-08-01", "cost": 6.0, "currency": "USD"},
+    ]
+    result = aggregate_bq_rows(rows, daily_rows)
+    assert result["total"] == 17.5
+    assert result["daily"] == [
+        {"date": "2026-08-01", "cost": 10.0},
+        {"date": "2026-08-02", "cost": 7.5},
+    ]
+
+
+def test_aggregate_bq_rows_daily_from_row_dates():
+    """When daily_rows is omitted, usage_date on the service rows is used."""
+    rows = [
+        {"service_description": "Cloud Run", "cost": 4.0, "currency": "USD", "usage_date": "2026-08-01"},
+        {"service_description": "Cloud SQL", "cost": 6.0, "currency": "USD", "usage_date": "2026-08-01"},
+        {"service_description": "Cloud Run", "cost": 3.0, "currency": "USD", "usage_date": "2026-08-02"},
+    ]
+    result = aggregate_bq_rows(rows)
+    assert result["daily"] == [
+        {"date": "2026-08-01", "cost": 10.0},
+        {"date": "2026-08-02", "cost": 3.0},
+    ]
+
+
+def test_aggregate_bq_rows_daily_date_object():
+    result = aggregate_bq_rows([], [{"usage_date": date(2026, 8, 1), "cost": 1.5}])
+    assert result["daily"] == [{"date": "2026-08-01", "cost": 1.5}]
+
+
+def test_aggregate_bq_rows_daily_empty_list_not_inferred():
+    """Explicit empty daily_rows must not fall back to inferring from service rows."""
+    rows = [
+        {"service_description": "Cloud Run", "cost": 4.0, "currency": "USD", "usage_date": "2026-08-01"},
+    ]
+    result = aggregate_bq_rows(rows, [])
+    assert result["daily"] == []
+    assert result["total"] == 4.0
+
+
+def test_aggregate_bq_rows_skips_blank_dates():
+    result = aggregate_bq_rows([], [
+        {"usage_date": None, "cost": 1.0},
+        {"usage_date": "", "cost": 2.0},
+        {"usage_date": "2026-08-03", "cost": 3.0},
+    ])
+    assert result["daily"] == [{"date": "2026-08-03", "cost": 3.0}]
+
+
+def test_aggregate_bq_rows_daily_datetime():
+    result = aggregate_bq_rows([], [{"usage_date": datetime(2026, 8, 1, 12, 0), "cost": 1.25}])
+    assert result["daily"] == [{"date": "2026-08-01", "cost": 1.25}]
 
 
 # ---------------------------------------------------------------------------
@@ -230,9 +293,14 @@ def test_gcp_spend_configured_success():
         {"service_description": "Cloud Run", "cost": 12.34, "currency": "USD"},
         {"service_description": "Cloud SQL", "cost": 5.00, "currency": "USD"},
     ]
+    fake_daily = [
+        {"usage_date": "2026-08-01", "cost": 10.00, "currency": "USD"},
+        {"usage_date": "2026-08-02", "cost": 7.34, "currency": "USD"},
+    ]
     with patch.dict(os.environ, {"BILLING_BQ_TABLE": "proj.dataset.table"}):
         with patch("api.routes.admin_metrics._query_billing", return_value=fake_rows):
-            resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
+            with patch("api.routes.admin_metrics._query_billing_daily", return_value=fake_daily):
+                resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["configured"] is True
@@ -240,6 +308,26 @@ def test_gcp_spend_configured_success():
     assert data["total"] == round(17.34, 4)
     assert len(data["by_service"]) == 2
     assert data["by_service"][0]["service"] == "Cloud Run"
+    assert data["daily"] == [
+        {"date": "2026-08-01", "cost": 10.0},
+        {"date": "2026-08-02", "cost": 7.34},
+    ]
+
+
+def test_gcp_spend_empty_export():
+    """Configured table with no rows still returns the series shape, not an error."""
+    headers = _admin_headers()
+    with patch.dict(os.environ, {"BILLING_BQ_TABLE": "proj.dataset.table"}):
+        with patch("api.routes.admin_metrics._query_billing", return_value=[]):
+            with patch("api.routes.admin_metrics._query_billing_daily", return_value=[]):
+                resp = client.get("/admin/metrics/gcp-spend?days=30", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is True
+    assert data["total"] == 0.0
+    assert data["by_service"] == []
+    assert data["daily"] == []
+    assert "error" not in data
 
 
 def test_gcp_spend_bq_error_degrades():

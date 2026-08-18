@@ -34,6 +34,14 @@ def sales_client():
     return TestClient(appmod.app)
 
 
+def test_job_switches_readable_by_sales(sales_client):
+    r = sales_client.get("/config/job-switches", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["knowify_sync"] is False
+    assert body["proposal_reminders"] is False
+
+
 # ---------------------------------------------------------------------------
 # GET /config
 # ---------------------------------------------------------------------------
@@ -465,13 +473,14 @@ def test_health_checks_admin_ok(admin_client):
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")), \
+         patch("api.routes.config._check_billing_export", return_value=(True, "table readable")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     body = r.json()
     assert "results" in body
     assert isinstance(body["results"], list)
-    assert len(body["results"]) == 8
+    assert len(body["results"]) == 9
 
 
 def test_health_checks_result_shape(admin_client):
@@ -483,7 +492,8 @@ def test_health_checks_result_shape(admin_client):
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")), \
+         patch("api.routes.config._check_billing_export", return_value=(True, "table readable")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     for result in r.json()["results"]:
         assert "name" in result
@@ -501,7 +511,8 @@ def test_health_checks_partial_failure(admin_client):
          patch("api.routes.config._check_resend", return_value=(True, "HTTP 200")), \
          patch("api.routes.config._check_youtube", return_value=(False, "403 Forbidden")), \
          patch("api.routes.config._check_serper", return_value=(True, "HTTP 200")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")), \
+         patch("api.routes.config._check_billing_export", return_value=(True, "table readable")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     results = {item["name"]: item for item in r.json()["results"]}
@@ -633,7 +644,8 @@ def test_health_checks_includes_oauth(admin_client):
          patch("api.routes.config._check_resend", return_value=(True, "ok")), \
          patch("api.routes.config._check_youtube", return_value=(True, "ok")), \
          patch("api.routes.config._check_serper", return_value=(True, "ok")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")), \
+         patch("api.routes.config._check_billing_export", return_value=(True, "table readable")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     names = [item["name"] for item in r.json()["results"]]
     assert "Google OAuth" in names
@@ -702,10 +714,18 @@ def test_health_checks_includes_gcs(admin_client):
          patch("api.routes.config._check_resend", return_value=(True, "ok")), \
          patch("api.routes.config._check_youtube", return_value=(True, "ok")), \
          patch("api.routes.config._check_serper", return_value=(True, "ok")), \
-         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")):
+         patch("api.routes.config._check_oauth", return_value=(True, "config format valid")), \
+         patch("api.routes.config._check_billing_export", return_value=(True, "table readable")):
         r = admin_client.get("/config/health-checks", headers={"Authorization": "Bearer x"})
     names = [item["name"] for item in r.json()["results"]]
     assert "Google Cloud Storage" in names
+
+
+def test_check_billing_export_unset():
+    from api.routes.config import _check_billing_export
+    ok, detail = _check_billing_export()
+    assert ok is False
+    assert "BILLING_BQ_TABLE" in detail
 
 
 def test_check_oauth_detail_is_format_check():

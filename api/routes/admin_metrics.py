@@ -7,8 +7,9 @@ GET /admin/metrics/active-users?days=30
 
 GET /admin/metrics/gcp-spend?days=30
     GCP billing export via BigQuery (requires BILLING_BQ_TABLE env var).
+    Returns total, by_service, and a daily {date, cost} series for the window.
     Requires: admin role (knowify_admin action — admin-only via '*' wildcard).
-    Degrades gracefully when BILLING_BQ_TABLE is unset or BQ query fails.
+    Degrades gracefully when BILLING_BQ_TABLE is unset, the export is empty, or BQ fails.
 """
 from __future__ import annotations
 
@@ -120,16 +121,29 @@ def get_gcp_spend(
 
     try:
         rows = _query_billing(table, days)
+        daily_rows = _query_billing_daily(table, days)
     except Exception as exc:  # noqa: BLE001
         log.warning("BQ billing query failed: %s", exc)
         return {"configured": True, "error": str(exc), "window_days": days}
 
-    agg = aggregate_bq_rows(rows)
+    agg = aggregate_bq_rows(rows, daily_rows)
     return {
         "configured": True,
         "window_days": days,
         **agg,
     }
+
+
+def _run_billing_query(sql: str, days: int) -> list[dict]:
+    """Execute a parameterized billing-export SQL and return row dicts."""
+    from google.cloud import bigquery  # deferred: optional dep
+
+    client = bigquery.Client()
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("days", "INT64", days)]
+    )
+    result = client.query(sql, job_config=job_config).result()
+    return [dict(row) for row in result]
 
 
 def _query_billing(table: str, days: int) -> list[dict]:
@@ -140,9 +154,6 @@ def _query_billing(table: str, days: int) -> list[dict]:
     service rows per month even for large GCP projects.
     # ponytail: LIMIT 500 is generous; narrow to 200 if query costs become a concern.
     """
-    from google.cloud import bigquery  # deferred: optional dep
-
-    client = bigquery.Client()
     query = f"""
         SELECT
             service.description AS service_description,
@@ -154,8 +165,20 @@ def _query_billing(table: str, days: int) -> list[dict]:
         ORDER BY cost DESC
         LIMIT 500
     """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ScalarQueryParameter("days", "INT64", days)]
-    )
-    result = client.query(query, job_config=job_config).result()
-    return [dict(row) for row in result]
+    return _run_billing_query(query, days)
+
+
+def _query_billing_daily(table: str, days: int) -> list[dict]:
+    """Daily SUM(cost) for the spend chart. Empty export → []."""
+    query = f"""
+        SELECT
+            DATE(usage_start_time) AS usage_date,
+            SUM(cost) AS cost,
+            currency
+        FROM `{table}`
+        WHERE DATE(usage_start_time) >= DATE_SUB(CURRENT_DATE(), INTERVAL @days DAY)
+        GROUP BY usage_date, currency
+        ORDER BY usage_date
+        LIMIT 400
+    """
+    return _run_billing_query(query, days)

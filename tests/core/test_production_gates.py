@@ -14,6 +14,7 @@ BASE_FACTS = {
     "search_indexing_enabled": True,
     "indexnow_key_set": True,
     "google_indexing_creds_set": True,
+    "billing_bq_table_set": True,
 }
 
 
@@ -26,10 +27,10 @@ def _gate(facts, gate_id):
 
 def test_all_ok_gives_ready_summary():
     gates = evaluate_gates(BASE_FACTS)
-    assert len(gates) == 8
+    assert len(gates) == 9
     assert all(g.state == "ok" for g in gates)
     s = summary(gates)
-    assert s == {"ok": 8, "warn": 0, "blocker": 0, "total": 8, "ready": True}
+    assert s == {"ok": 9, "warn": 0, "blocker": 0, "total": 9, "ready": True}
 
 
 # ── email_mode ──────────────────────────────────────────────────────────────
@@ -198,6 +199,17 @@ def test_summary_counts_and_ready_false_on_blocker():
     s = summary(gates)
     assert s["blocker"] == 1
     assert s["warn"] == 1
-    assert s["ok"] == 6
-    assert s["total"] == 8
+    assert s["ok"] == 7
+    assert s["total"] == 9
     assert s["ready"] is False
+
+
+def test_billing_export_unset_warns():
+    g = _gate({**BASE_FACTS, "billing_bq_table_set": False}, "billing_export")
+    assert g.state == "warn"
+    assert "BILLING_BQ_TABLE" in g.detail
+
+
+def test_billing_export_set_ok():
+    g = _gate(BASE_FACTS, "billing_export")
+    assert g.state == "ok"

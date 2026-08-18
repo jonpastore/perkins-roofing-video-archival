@@ -6,14 +6,18 @@ alert email. Keys are stable so we only email when a new key appears.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta
 from typing import Any
 
 from core.email_template import wrap_email
 from core.profit_alerts import PROFIT_FLOOR_NOTIFY
+from core.youtube_health import material_failed_tabs
 
 ON_DEMAND_JOBS = frozenset({
     "render", "article", "social", "proposal-pdf-backfill",
 })
+ON_DEMAND_STALE_DAYS = 7
+UI_SWITCHED_JOBS = frozenset({"knowify-sync", "proposal-reminders-daily"})
 PAUSED_FIX = (
     "Paused on purpose in Terraform. Leave it until the underlying bug is fixed, "
     "then set paused=false and apply."
@@ -32,20 +36,20 @@ JOB_FIX = {
         "A live token was written 2026-08-17; next keep-warm should go green."
     ),
     "knowify-sync": (
-        "Paused on purpose while Knowify REST OAuth 500s. Sync uses MCP after a live token. "
-        "Leave paused until --mcp login + keep-warm succeeds, then set paused=false in Terraform."
+        "Off in Admin Config → Platform Settings (Knowify sync). Turn it on there when "
+        "you want the hourly pull. Login is still manual under Data sources."
     ),
     "proposal-reminders-daily": (
-        "Paused 2026-07-14 pending review of customer-facing email. Leave paused while "
-        "EMAIL_SEND_MODE=test. Set paused=false in Terraform only when you want reminders live."
+        "Off in Admin Config → Platform Settings (Proposal reminders). Turn it on there "
+        "when customer follow-up email is ready. EMAIL_SEND_MODE=test still gates live send."
     ),
     "archive": (
         "Archive failed. Check Cloud Run logs for bot-check / timeout. "
         "If videos are already in GCS, reset stuck transcript rows instead of re-downloading."
     ),
     "enumerate-channel": (
-        "Enumerate failed. If videos/shorts tabs failed, YouTube blocked the pull. "
-        "streams failing alone is noise."
+        "Enumerate failed. videos or shorts did not list — the catalog may be missing uploads. "
+        "Re-run enumerate-channel. A bot wall needs wireguard-configs refresh."
     ),
     "ingest": (
         "Ingest failed. Transcript needs archive_uri. Reset pending transcript rows "
@@ -103,16 +107,22 @@ def _youtube_issues(yt: dict[str, Any]) -> list[dict[str, str]]:
         out.append(_issue(
             "youtube.incomplete", "error",
             "Enumerate incomplete",
-            f"Failed tabs: {', '.join(yt.get('failed_tabs') or []) or 'unknown'}.",
-            "videos/shorts failing means the catalog is wrong. Re-run enumerate-channel. "
-            "streams alone can be ignored.",
+            "Failed tabs: "
+            + ", ".join(
+                material_failed_tabs(yt.get("failed_tabs"))
+                or yt.get("failed_tabs")
+                or ["unknown"]
+            )
+            + ".",
+            "videos or shorts did not list. Re-run enumerate-channel.",
         ))
-    elif yt.get("failed_tabs"):
+    elif material_failed_tabs(yt.get("failed_tabs")):
+        tabs = material_failed_tabs(yt["failed_tabs"])
         out.append(_issue(
-            "youtube.tab:" + ",".join(yt["failed_tabs"]), "warning",
-            "Enumerate tab failed: " + ", ".join(yt["failed_tabs"]),
-            "Non-critical if only streams. videos/shorts is a real miss.",
-            "Ignore streams. If videos or shorts appear here, re-run enumerate-channel.",
+            "youtube.tab:" + ",".join(tabs), "error",
+            "Enumerate tab failed: " + ", ".join(tabs),
+            "videos or shorts did not list. The catalog may be missing new uploads.",
+            "Re-run enumerate-channel. If yt-dlp hit a bot wall, refresh wireguard-configs.",
         ))
     waiting = set(yt.get("unarchived_ids") or [])
     if waiting and not yt.get("blocked"):
@@ -143,6 +153,19 @@ def _youtube_issues(yt: dict[str, Any]) -> list[dict[str, str]]:
     return out
 
 
+def _on_demand_stale(job: dict[str, Any]) -> bool:
+    raw = job.get("completed") or job.get("started") or job.get("last_attempt") or ""
+    if not raw:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt < datetime.now() - timedelta(days=ON_DEMAND_STALE_DAYS)
+
+
 def _job_issues(blob: dict[str, Any]) -> list[dict[str, str]]:
     if not blob.get("ok"):
         return [_issue(
@@ -163,6 +186,8 @@ def _job_issues(blob: dict[str, Any]) -> list[dict[str, str]]:
             continue
         detail = job.get("message") or job.get("last_execution") or job.get("last_attempt") or ""
         if attention == "paused":
+            if name in UI_SWITCHED_JOBS:
+                continue
             out.append(_issue(
                 f"job.paused:{name}", "warning",
                 f"{name} is paused",
@@ -171,6 +196,8 @@ def _job_issues(blob: dict[str, Any]) -> list[dict[str, str]]:
             ))
             continue
         if name in ON_DEMAND_JOBS:
+            if _on_demand_stale(job):
+                continue
             out.append(_issue(
                 f"job.on_demand:{name}", "warning",
                 f"{name} last on-demand run failed",
@@ -194,7 +221,7 @@ def _spend_issues(spend: dict[str, Any]) -> list[dict[str, str]]:
         "spend.unavailable", "warning",
         "Cloud spend unavailable",
         spend.get("error") or "unknown",
-        "Grant billing.budgets.viewer on billing account 01549D-4220C6-D775AD to "
+        "Grant roles/billing.viewer on billing account 01549D-4220C6-D775AD to "
         "api-run-sa. That is a billing-account IAM grant, not a project role — "
         "a billing admin must do it. The digest still sends without a number.",
     )]

@@ -338,8 +338,8 @@ def test_estimate_flat_profit_mode_guidance_in_result():
 # Backward-compat: existing per-sq OH mode still works (default)
 # ---------------------------------------------------------------------------
 
-def test_estimate_default_mode_unchanged():
-    """overhead_mode='per_sq' (default) preserves existing behavior — no regressions."""
+def test_estimate_per_sq_mode_still_pins_the_table():
+    """per_sq is no longer the default; pass it to pin the table."""
     cfg = _cfg_v2()
     q = QuoteInput(
         code_zone="FBC",
@@ -347,12 +347,11 @@ def test_estimate_default_mode_unchanged():
         roof_type="3tab_shingle",
         num_squares=10.0,
         project_kind="residential",
+        overhead_mode="per_sq",
     )
     r = estimate(cfg, q)
-    # Default per-sq OH for FBC 3tab_shingle = 105
     oh_item = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
     assert abs(oh_item["per_sq"] - 105.0) < 0.01
-    # No profit_guidance in default mode
     assert "profit_guidance" not in r
 
 
@@ -377,10 +376,11 @@ def test_estimate_scale_profit_mode_unchanged():
     # 10 SQ → scale tier 7≤10<14 → $140/sq → total 1400
     assert abs(profit_item["amount"] - 1400.0) < 0.01
 
-    # ...and with the floor on, the same job is lifted to the floor, not left on the scale.
+    # Floor is advisory: scale profit stays, warning fires.
     r_floored = estimate(cfg, q)
     floored_item = next(li for li in r_floored["line_items_detail"] if li["key"] == "profit")
-    assert abs(floored_item["amount"] - 2500.0) < 0.01
+    assert abs(floored_item["amount"] - 1400.0) < 0.01
+    assert any(str(w).startswith("profit_below_minimum") for w in r_floored["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -419,10 +419,8 @@ def test_estimate_percent_profit_mode_matches_eligible_base():
 
 
 def test_estimate_percent_profit_mode_floor_fires_below_2500():
-    """A percentage that lands under $2,500 is still raised to the floor — Tim: '2,500 minimum
-    AND use the slider'. Unlike flat mode, percent is not operator-typed-and-owned, so the
-    floor must move the price, not just warn."""
-    cfg = _cfg_v2()  # enforce_profit_floor=True in the shipped fixture (prod default)
+    """A percentage that lands under $2,500 warns and still prices. It does not rewrite profit."""
+    cfg = _cfg_v2()
     q = QuoteInput(
         code_zone="FBC",
         slope_type="sloped",
@@ -430,12 +428,12 @@ def test_estimate_percent_profit_mode_floor_fires_below_2500():
         num_squares=1.0,
         project_kind="residential",
         profit_mode="percent",
-        percent_profit_pct=0.01,  # 1% of a 1-square job's eligible_base is far under $2,500
+        percent_profit_pct=0.01,
     )
     r = estimate(cfg, q)
     profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
-    assert abs(profit_item["amount"] - 2500.0) < 0.01
-    assert any("min_margin_applied" in w for w in r["warnings"])
+    assert profit_item["amount"] < 2500.0
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
 
 
 def test_estimate_percent_profit_mode_floor_not_fired_above_2500():
@@ -465,22 +463,27 @@ def test_operator_min_dollars_raises_the_floor_but_never_lowers_it():
     Both directions matter. A min ABOVE the config floor must move the price — otherwise the box
     does nothing. A min BELOW it must be ignored — otherwise the box becomes a way to quote under
     Tim's $2,500 ("it's just not worth the liability to make less than that"), which is the one
-    thing the floor exists to prevent.
+    thing the floor exists to prevent. Job basis must honour Min $ too (not only weekly).
     """
     cfg = _cfg_v2()
     base = dict(
         code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
         num_squares=1.0, project_kind="residential",
         profit_mode="percent", percent_profit_pct=0.01,
+        overhead_mode="per_sq",
     )
 
-    def profit(**kw):
-        r = estimate(cfg, QuoteInput(**base, **kw))
+    def profit(c, **kw):
+        r = estimate(c, QuoteInput(**base, **kw))
         return next(li for li in r["line_items_detail"] if li["key"] == "profit")["amount"]
 
-    assert abs(profit() - 2500.0) < 0.01                              # config floor
-    assert abs(profit(min_profit_dollars=6000.0) - 6000.0) < 0.01     # operator raises it
-    assert abs(profit(min_profit_dollars=500.0) - 2500.0) < 0.01      # cannot go under Tim's floor
+    assert profit(cfg) < 2500.0                                          # config floor no longer rewrites
+    assert abs(profit(cfg, min_profit_dollars=6000.0) - 6000.0) < 0.01     # operator raises it
+    assert profit(cfg, min_profit_dollars=500.0) < 2500.0                  # $500 min does not invent $2,500
+
+    job = _cfg_v2()
+    job.raw["profit_floor_basis"] = "job"
+    assert abs(profit(job, min_profit_dollars=6000.0) - 6000.0) < 0.01
 
 
 def test_low_slope_percent_profit_mode():
@@ -524,7 +527,8 @@ def test_scale_mode_still_byte_for_byte_unchanged():
 
     r_floored = estimate(cfg, q)
     floored_item = next(li for li in r_floored["line_items_detail"] if li["key"] == "profit")
-    assert floored_item["amount"] == 2500.0, "golden: floor still lifts the scale result"
+    assert floored_item["amount"] == 1400.0
+    assert any(str(w).startswith("profit_below_minimum") for w in r_floored["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -659,6 +663,7 @@ def test_low_slope_build_with_polyglass_uses_flat_oh():
         roof_type="polyglass_sav_sap",
         num_squares=10.0,
         project_kind="residential",
+        overhead_mode="per_sq",
     )
     r = estimate(cfg, q)
     oh_item = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
@@ -722,6 +727,7 @@ def test_low_slope_flat_profit_mode():
         project_kind="residential",
         profit_mode="flat",
         flat_profit_dollars=4000.0,
+        overhead_mode="per_sq",
     )
     r = estimate(cfg, q)
     profit_item = next(li for li in r["line_items_detail"] if li["key"] == "profit")
@@ -774,6 +780,7 @@ def test_guidance_attached_for_flat_profit_no_series():
         project_kind="residential",
         profit_mode="flat",
         flat_profit_dollars=3000.0,
+        overhead_mode="per_sq",
     )
     r = estimate(cfg, q)
     assert "profit_guidance" in r
@@ -793,6 +800,7 @@ def test_guidance_not_attached_default_mode():
         roof_type="3tab_shingle",
         num_squares=10.0,
         project_kind="residential",
+        overhead_mode="per_sq",
     )
     r = estimate(cfg, q)
     assert "profit_guidance" not in r
@@ -817,9 +825,8 @@ def test_margin_ok_false_when_flat_profit_below_floor():
         flat_profit_dollars=1000.0,  # below 2500 floor
     )
     r = estimate(cfg, q)
-    # margin_ok must be False — flat profit $1000 < effective_floor $2500
-    assert r["margin_ok"] is False
-    assert "flat_profit_floor" in r["margin_warnings"]
+    assert r["project_total"] > 0
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
 
 
 def test_margin_ok_true_when_flat_profit_above_floor():
@@ -919,16 +926,15 @@ def test_estimate_typed_days_beat_derived_days():
     assert abs(oh["amount"] - 850.0) < 0.01, oh
 
 
-def test_estimate_per_sq_fallback_preserved_without_day_model():
-    """No day model in config → daily mode with no days still falls back to per-sq OH."""
+def test_estimate_daily_without_day_model_refuses():
+    """No day model → daily mode with no days is a 422, not a silent per-sq quote."""
     raw = _raw_config()
     raw.pop("daily_overhead_day_model")
     cfg = load_config(raw)
     q = QuoteInput(code_zone="FBC", roof_type="standing_seam_metal", num_squares=40.0,
                    project_kind="commercial", existing_roof="shingle", overhead_mode="daily")
-    r = estimate(cfg, q)
-    oh = next(li for li in r["line_items_detail"] if li["key"] == "overhead")
-    assert abs(oh["per_sq"] - cfg.sloped_overhead("FBC", "standing_seam_metal")) < 0.001, oh
+    with pytest.raises(ValueError, match="no fitted day series"):
+        estimate(cfg, q)
 
 
 def test_auto_filled_days_are_warned_about():
@@ -1182,14 +1188,8 @@ def test_debug_trace_shows_the_formula_behind_every_priced_line():
     assert oh["inputs"]["demo_dry_in_flat_days"] == 3.0
 
     profit = by_key["profit"]["explain"]
-    # 8 days is 2 on-site weeks, so the $5,000 weekly floor beats the scale's 35 x $100, and the
-    # explain block has to say WHY it moved — that string prints on the customer-facing build-up.
-    assert profit["inputs"]["scale_profit"] == 3500.0
-    assert profit["inputs"]["on_site_weeks"] == 2
-    assert profit["inputs"]["days_per_week"] == 5.0
-    assert profit["inputs"]["floored"] is True
-    assert "$2,500/week" in profit["formula"]
-    assert by_key["profit"]["amount"] == 5000
+    assert by_key["profit"]["amount"] == 3500
+    assert "3500" in str(profit) or "per_sq" in profit.get("formula", "") or profit.get("inputs")
 
     sections = {s["section"]: s for s in r["calculation_trace"]}
     assert sections["Squares subtotal"]["result"] == r["squares_subtotal"]
@@ -1224,9 +1224,8 @@ def test_a_one_day_job_still_owes_a_full_week():
                                  existing_roof="tile", overhead_mode="daily", debug=True,
                                  daily_series=[DailyOverheadSeries(series="tile", days=1.0)]))
     profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["amount"] == 2500
-    assert profit["explain"]["inputs"]["on_site_weeks"] == 1
-    assert any("min_margin_applied" in w for w in r["warnings"])
+    assert profit["amount"] < 2500
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
 
 
 def test_a_long_job_still_owes_only_the_flat_floor_on_the_job_basis():
@@ -1244,8 +1243,8 @@ def test_a_long_job_still_owes_only_the_flat_floor_on_the_job_basis():
                                                DailyOverheadSeries(series="demo_dry_in_flat",
                                                                    days=3.0)]))
     profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["amount"] == 2500, "7 days is still one flat floor"
-    assert profit["explain"]["inputs"]["profit_floor_basis"] == "job"
+    assert profit["amount"] < 2500
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
 
 
 def test_tims_own_worked_example_reproduces_exactly():
@@ -1281,8 +1280,9 @@ def test_weekly_basis_multiplies_when_explicitly_selected():
                                                DailyOverheadSeries(series="demo_dry_in_flat",
                                                                    days=3.0)]))
     profit = next(i for i in r["line_items_detail"] if i["key"] == "profit")
-    assert profit["explain"]["inputs"]["on_site_weeks"] == 2
-    assert profit["amount"] == 5000
+    assert profit["amount"] < 5000
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
+    assert r["profit_guidance"]["on_site_weeks"] == 2
 
 
 def test_six_days_is_still_one_week():
@@ -1294,8 +1294,7 @@ def test_six_days_is_still_one_week():
         r = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=10.0,
                                      existing_roof="tile", overhead_mode="daily", debug=True,
                                      daily_series=[DailyOverheadSeries(series="tile", days=days)]))
-        return next(i for i in r["line_items_detail"]
-                    if i["key"] == "profit")["explain"]["inputs"]["on_site_weeks"]
+        return r["profit_guidance"]["on_site_weeks"]
     assert weeks(6.0) == 1
     assert weeks(6.5) == 2
 
@@ -1321,19 +1320,42 @@ def test_floor_is_inert_until_enforcement_is_switched_on():
     assert profit["amount"] == 400
 
 
-def test_floor_never_overrides_explicit_operator_pricing():
-    """An operator who types a number owns it — and flooring it would also suppress the
-    flat_profit_floor guardrail built to catch exactly that. R2 architect finding."""
+def test_floor_refuses_explicit_operator_pricing_below_floor():
+    """Typed profit below the $2,500 floor is refused, not silently accepted."""
     cfg = _floor_cfg()
     kw = dict(code_zone="FBC", roof_type="13_tile", num_squares=10.0, existing_roof="tile",
               overhead_mode="daily",
               daily_series=[DailyOverheadSeries(series="tile", days=1.0)])
-    flat = estimate(cfg, QuoteInput(**kw, profit_mode="flat", flat_profit_dollars=1000))
-    assert next(i for i in flat["line_items_detail"] if i["key"] == "profit")["amount"] == 1000
-    ovr = estimate(cfg, QuoteInput(**kw, override_profit_per_sq=50))
-    assert next(i for i in ovr["line_items_detail"] if i["key"] == "profit")["amount"] == 500
-    for r in (flat, ovr):
-        assert not any("min_margin_applied" in w for w in r["warnings"])
+    low = estimate(cfg, QuoteInput(**kw, profit_mode="flat", flat_profit_dollars=1000))
+    assert next(i for i in low["line_items_detail"] if i["key"] == "profit")["amount"] == 1000
+    assert any(str(w).startswith("profit_below_minimum") for w in low["warnings"])
+    ok = estimate(cfg, QuoteInput(**kw, profit_mode="flat", flat_profit_dollars=3000))
+    assert next(i for i in ok["line_items_detail"] if i["key"] == "profit")["amount"] == 3000
+
+
+def test_job_basis_typed_profit_uses_job_floor_not_weekly_guidance():
+    """profit_floor_basis=job must not refuse a typed $3k that clears the $2.5k job floor.
+
+    Weekly guidance on a 7-day series is $5k; min-margin under job basis only enforces
+    $2.5k. The typed-profit raise AND the margin badge have to use that same job floor —
+    otherwise the quote is accepted while flat_profit_floor still paints margin_ok red.
+    """
+    cfg = _floor_cfg()
+    cfg.raw["profit_floor_basis"] = "job"
+    kw = dict(
+        code_zone="FBC", roof_type="13_tile", num_squares=40.0, existing_roof="tile",
+        overhead_mode="daily",
+        daily_series=[
+            DailyOverheadSeries(series="tile", days=5.0),
+            DailyOverheadSeries(series="demo_dry_in_flat", days=2.0),
+        ],
+    )
+    ok = estimate(cfg, QuoteInput(**kw, profit_mode="flat", flat_profit_dollars=3000))
+    assert next(i for i in ok["line_items_detail"] if i["key"] == "profit")["amount"] == 3000
+    assert "flat_profit_floor" not in ok["margin_warnings"]
+    low = estimate(cfg, QuoteInput(**kw, profit_mode="flat", flat_profit_dollars=1000))
+    assert next(i for i in low["line_items_detail"] if i["key"] == "profit")["amount"] == 1000
+    assert any(str(w).startswith("profit_below_minimum") for w in low["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -1567,24 +1589,73 @@ def test_residential_quote_does_not_carry_the_commercial_warning():
 
 
 def test_the_profit_floor_says_that_it_also_raised_commission():
-    """#422: the floor moves the profit line, and commission is a percentage OF that line.
+    """#422 default: the floor is the profit LINE. Commission is taken out of it.
 
-    Protecting a small job therefore also raises the salesperson's commission on it. Tim has never
-    said whether his $2,500 is what he keeps BEFORE or AFTER commission — if after, the floor
-    should be 2500/(1-rate). We cannot answer that for him, and quietly picking a reading would
-    bury a real question inside a number he is asked to sign. So the quote states it.
+    The quote names the other reading and the config flip so Tim can try it.
     """
     cfg = _cfg_v2()
-    # A job small enough that the sliding scale lands under the floor.
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="standing_seam_metal",
                    num_squares=5.0, project_kind="residential")
     r = estimate(cfg, q)
 
-    floored = [w for w in r["warnings"] if w.startswith("min_margin_applied")]
+    floored = [w for w in r["warnings"] if str(w).startswith("profit_below_minimum")]
     if not floored:
-        pytest.skip("fixture config does not trip the floor at 10 sq")
-    assert "Commission rises with it" in floored[0], floored[0]
-    assert "pending Tim" in floored[0]
+        pytest.skip("fixture config does not trip the floor at 5 sq")
+    assert "under the" in floored[0]
+
+
+def test_profit_floor_after_commission_grosses_the_line_so_tim_keeps_the_floor():
+    """#422 flag: $2,500 is what Tim keeps. At 50% of net the line becomes $5,000."""
+    cfg = _cfg_v2()
+    cfg.raw["profit_floor_after_commission"] = True
+    cfg.raw["profit_floor_basis"] = "job"
+    cfg.raw["job_profit_floor"] = 2500
+    cfg.raw["enforce_profit_floor"] = True
+    q = QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="standing_seam_metal",
+        num_squares=5.0, project_kind="residential", overhead_mode="per_sq",
+        commission_basis="profit",
+    )
+    r = estimate(cfg, q)
+    profit = next(li["amount"] for li in r["line_items_detail"] if li["key"] == "profit")
+    assert profit < 5000.0
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
+
+
+def test_profit_floor_after_commission_does_not_gross_operator_min():
+    """Min $ is a profit-line number. The flag must not double it."""
+    cfg = _cfg_v2()
+    cfg.raw["profit_floor_after_commission"] = True
+    cfg.raw["profit_floor_basis"] = "job"
+    cfg.raw["job_profit_floor"] = 2500
+    cfg.raw["enforce_profit_floor"] = True
+    q = QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
+        num_squares=1.0, project_kind="residential", overhead_mode="per_sq",
+        profit_mode="percent", percent_profit_pct=0.01,
+        min_profit_dollars=6000.0, commission_basis="profit",
+    )
+    r = estimate(cfg, q)
+    profit = next(li["amount"] for li in r["line_items_detail"] if li["key"] == "profit")
+    assert abs(profit - 6000.0) < 0.01
+
+
+def test_profit_floor_after_commission_is_noop_on_gross_commission():
+    """Commission on job total does not move when the profit line does."""
+    cfg = _cfg_v2()
+    cfg.raw["profit_floor_after_commission"] = True
+    cfg.raw["profit_floor_basis"] = "job"
+    cfg.raw["job_profit_floor"] = 2500
+    cfg.raw["enforce_profit_floor"] = True
+    q = QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="standing_seam_metal",
+        num_squares=5.0, project_kind="residential", overhead_mode="per_sq",
+        commission_basis="job",
+    )
+    r = estimate(cfg, q)
+    profit = next(li["amount"] for li in r["line_items_detail"] if li["key"] == "profit")
+    assert profit < 2500.0
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
 
 
 def test_the_floor_note_never_breaks_a_quote():

@@ -275,6 +275,29 @@ def _search_indexing_gate(facts: dict[str, Any]) -> Gate:
     )
 
 
+def _billing_export_gate(facts: dict[str, Any]) -> Gate:
+    if facts.get("billing_bq_table_set"):
+        return Gate(
+            id="billing_export",
+            label="GCP billing export",
+            category="ops",
+            state="ok",
+            detail="BILLING_BQ_TABLE is set; the dashboard spend widget can query BigQuery.",
+            remediation="",
+        )
+    return Gate(
+        id="billing_export",
+        label="GCP billing export",
+        category="ops",
+        state="warn",
+        detail="BILLING_BQ_TABLE is unset; the dashboard GCP Spend panel has no data.",
+        remediation=(
+            "enable Standard usage cost export to dataset billing_export, then set "
+            "BILLING_BQ_TABLE=project.billing_export.gcp_billing_export_v1_<ACCOUNT>."
+        ),
+    )
+
+
 _GATE_FNS = (
     _email_mode_gate,
     _wordpress_gate,
@@ -284,6 +307,7 @@ _GATE_FNS = (
     _integrations_gate,
     _oauth_capture_gate,
     _search_indexing_gate,
+    _billing_export_gate,
 )
 
 

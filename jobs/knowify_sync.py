@@ -229,6 +229,12 @@ def run(limit=None, refresh_only: bool = False) -> dict:  # noqa: ARG001 (limit 
     logging.basicConfig(level=logging.INFO)
     mode = _pull_mode()
 
+    if not refresh_only:
+        from core.job_switches import knowify_sync_enabled  # noqa: PLC0415
+        if not knowify_sync_enabled():
+            log.info("knowify sync: disabled in Admin Config — skip")
+            return {"skipped": "disabled", "exit_code": 0, "pull_mode": mode}
+
     if refresh_only:
         rc = tokens.mcp_refresh_only() if mode == "mcp" else tokens.refresh_only()
         return {"exit_code": rc, "mode": "refresh_only", "pull_mode": mode}

@@ -24,7 +24,8 @@
     "layers_to_remove": 0,
     "deck_type": null,
     "include_insulation": false,
-    "include_tapered": false
+    "include_tapered": false,
+    "overhead_mode": "per_sq"
   },
   "expected_total": 46882.50,
   "expected_line_items": {

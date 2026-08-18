@@ -12,6 +12,7 @@ import {
   type ProjectItemDraft,
 } from "../lib/projectQuote";
 import { CustomerFields, emptyCustomerFields, customerFieldsToInput, type CustomerFieldValues } from "../components/CustomerFields";
+import { RemindersPausedNotice } from "../components/RemindersPausedNotice";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,9 +116,10 @@ interface QuoteResult {
   region: string;
   branch?: string;
   pricing_config_hash?: string;
-  floors?: { min_profit_pct: number; min_profit_plus_oh_pct: number };
+  floors?: { min_profit_pct: number; min_profit_plus_oh_pct: number; min_profit_dollars?: number };
   roof_type: string;
   num_squares: number;
+  total_squares?: number;
   per_square_total: number;
   squares_subtotal: number;
   line_items_detail?: Array<{ key: string; label: string; amount: number; category: string; per_sq: number | null }>;
@@ -212,7 +214,7 @@ interface RepairQuoteResult {
   project_total: number;
   warnings?: string[];
   pricing_config_hash?: string;
-  floors?: { min_profit_pct: number; min_profit_plus_oh_pct: number };
+  floors?: { min_profit_pct: number; min_profit_plus_oh_pct: number; min_profit_dollars?: number };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -687,6 +689,8 @@ const ESTIMATE_FLOW_STEPS = ["Customer", "Property", "Measurement", "Estimate", 
 
 function WorkflowCallout() {
   return (
+    <>
+    <RemindersPausedNotice />
     <Card style={{ marginBottom: 16, padding: "14px 18px", background: BRAND.bg, border: `1px solid ${BRAND.border}` }}>
       <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 13, marginBottom: 6 }}>
         Estimates workflow
@@ -722,6 +726,7 @@ function WorkflowCallout() {
         measurement.
       </p>
     </Card>
+    </>
   );
 }
 
@@ -1845,20 +1850,14 @@ export function Quoting() {
   }, [daysInputKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function applyTargetProfit(pct: number) {
-    if (!quoteResult?.margin || !Number.isFinite(pct) || pct <= 0) return;
+    if (!quoteResult?.margin || !Number.isFinite(pct) || pct < 0) return;
     setActiveProfitPreset(pct);
     setTargetProfitPct(String(pct));
-    // The percentage is applied SERVER-side (profit_mode="percent") against the same
-    // eligible_base the margin badge reports. Computing it here and posting a flat dollar amount
-    // was a second mechanism for one number, and flat mode is "the operator owns it" — so the
-    // $2,500/on-site-week floor only warned instead of applying. Tim, 2026-07-27: "let's not have
-    // duplicate mechanisms ... 2,500 minimum and then use the sliding scale to figure out your
-    // percent". Min $ now RAISES that floor rather than replacing it.
-    const minDollars = Number(targetProfitMinDollars || 0);
+    const typedMin = Number(targetProfitMinDollars || 0);
     await runQuote({
       profit_mode: "percent",
       percent_profit_pct: pct / 100,
-      ...(minDollars > 0 ? { min_profit_dollars: minDollars } : {}),
+      ...(typedMin > 0 ? { min_profit_dollars: typedMin } : {}),
     });
   }
 
@@ -1883,7 +1882,7 @@ export function Quoting() {
       region: quoteResult.region,
       code_zone: quoteResult.region,
       roof_type: quoteResult.roof_type,
-      num_squares: quoteResult.num_squares,
+      num_squares: quoteResult.total_squares ?? quoteResult.num_squares,
       // `label` is the PACKAGE the customer is buying; `tier` keeps the good/better/best rank the
       // snapshot schema and the accept page are built around. "Good — Standard materials" against
       // a five-figure price named nothing anyone could compare.
@@ -2477,11 +2476,11 @@ export function Quoting() {
                 Coastal package" one word per line. */}
             <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
               <div>
-                <FieldLabel>Recommended tier</FieldLabel>
+                <FieldLabel>Recommended package</FieldLabel>
                 <select value={recommendedTier} onChange={(e) => setRecommendedTier(e.target.value as "good" | "better" | "best")} style={selectStyle}>
-                  <option value="good">Good</option>
-                  <option value="better">Better</option>
-                  <option value="best">Best</option>
+                  <option value="good">{quoteResult ? tierTotalsForQuote(quoteResult).good.label : "Perkins Protector"}</option>
+                  <option value="better">{quoteResult ? tierTotalsForQuote(quoteResult).better.label : "Perkins Preferred"}</option>
+                  <option value="best">{quoteResult ? tierTotalsForQuote(quoteResult).best.label : "Perkins Premium"}</option>
                 </select>
               </div>
               <div>
@@ -3210,7 +3209,7 @@ export function Quoting() {
                 <Card style={{ padding: "20px 18px" }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                      {labelRoofType(quoteResult.roof_type)} · {quoteResult.num_squares} sq
+                      {labelRoofType(quoteResult.roof_type)} · {quoteResult.total_squares ?? quoteResult.num_squares} sq
                       {quoteResult.branch && ` · ${branches.find((b) => b.key === quoteResult.branch)?.name ?? quoteResult.branch} branch`}
                     </div>
                     <span style={{
@@ -3325,7 +3324,9 @@ export function Quoting() {
                       </div>
                       <SectionLabel>Target margin (drives price)</SectionLabel>
                       {(() => {
+                        const jobFloor = Number(quoteResult.floors?.min_profit_dollars ?? 2500);
                         const cur = targetProfitPct !== "" ? Number(targetProfitPct) : Math.round((quoteResult.profit_pct || 0) * 100);
+                        const under = Number(quoteResult.profit_dollars || 0) + 1e-6 < jobFloor;
                         return (
                           <div style={{ marginBottom: 10 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
@@ -3339,13 +3340,21 @@ export function Quoting() {
                               disabled={quoting}
                               style={{ width: "100%", accentColor: BRAND.red }}
                             />
-                            <div style={{ fontSize: 11, color: BRAND.sub }}>Release to reprice the job to this margin.</div>
+                            {under ? (
+                              <div style={{ fontSize: 11, color: BRAND.red, fontWeight: 700, marginTop: 4 }}>
+                                Profit ${Number(quoteResult.profit_dollars).toLocaleString()} is under the
+                                ${jobFloor.toLocaleString()} minimum. Quote is still valid — Tim / Marco / Jon are notified.
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 11, color: BRAND.sub }}>
+                                Release to reprice. Under ${jobFloor.toLocaleString()} profit warns, does not block.
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
                       <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
                         {(() => {
-                          // "Min" reflects the active config's profit floor, not a hardcoded 13%.
                           const minPct = Math.round((quoteResult.floors?.min_profit_pct ?? 0.13) * 100);
                           return <PillButton active={activeProfitPreset === minPct} onClick={() => void applyTargetProfit(minPct)}>Min {minPct}%</PillButton>;
                         })()}
@@ -3354,8 +3363,8 @@ export function Quoting() {
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, alignItems: "end" }}>
                         <div><FieldLabel>Target %</FieldLabel><input type="number" min="0" step="0.5" value={targetProfitPct} onChange={(e) => setTargetProfitPct(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
-                        <div><FieldLabel>Min $</FieldLabel><input type="number" min="0" step="50" value={targetProfitMinDollars} onChange={(e) => setTargetProfitMinDollars(e.target.value)} style={{ ...inputStyle, width: "100%" }} /></div>
-                        <Button variant="ghost" onClick={() => void applyTargetProfit(Number(targetProfitPct || 0))} disabled={quoting || !targetProfitPct} style={{ fontSize: 12 }}>Apply</Button>
+                        <div><FieldLabel>Min $</FieldLabel><input type="number" min="0" step="50" value={targetProfitMinDollars} onChange={(e) => setTargetProfitMinDollars(e.target.value)} placeholder="optional" style={{ ...inputStyle, width: "100%" }} /></div>
+                        <Button variant="ghost" onClick={() => void applyTargetProfit(Number(targetProfitPct || 0))} disabled={quoting} style={{ fontSize: 12 }}>Apply</Button>
                       </div>
                       <SectionLabel>Commission</SectionLabel>
                       <div style={{ fontSize: 11, color: BRAND.sub, marginBottom: 6, lineHeight: 1.5 }}>

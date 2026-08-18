@@ -46,13 +46,40 @@ def filter_active_users(
 # GCP spend helpers
 # ---------------------------------------------------------------------------
 
+def _as_iso_date(value: Any) -> str | None:
+    """Normalize a BQ DATE / datetime / ISO string to YYYY-MM-DD, or None."""
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat())[:10]
+    text = str(value).strip()
+    return text[:10] if text else None
+
+
+def _daily_series(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sum cost by usage_date. Rows without a date are skipped."""
+    by_day: dict[str, float] = {}
+    for row in rows:
+        day = _as_iso_date(row.get("usage_date"))
+        if day is None:
+            continue
+        by_day[day] = by_day.get(day, 0.0) + float(row.get("cost") or 0.0)
+    return [
+        {"date": day, "cost": round(cost, 4)}
+        for day, cost in sorted(by_day.items())
+    ]
+
+
 def aggregate_bq_rows(
     rows: list[dict[str, Any]],
+    daily_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Aggregate BQ billing-export rows into the spend response shape.
 
     Expected row keys: service_description (str), cost (float), currency (str).
-    Returns { total, currency, by_service }.
+    Optional daily_rows keys: usage_date (date|str), cost (float).
+    When daily_rows is None, usage_date on *rows* (if present) is used instead.
+    Returns { total, currency, by_service, daily }.
     """
     total = 0.0
     currency = "USD"
@@ -65,6 +92,7 @@ def aggregate_bq_rows(
         total += cost
         currency = cur  # all rows share the same currency in a billing export
 
+    source = rows if daily_rows is None else daily_rows
     return {
         "total": round(total, 4),
         "currency": currency,
@@ -72,4 +100,5 @@ def aggregate_bq_rows(
             {"service": svc, "cost": round(cost, 4)}
             for svc, cost in sorted(by_service.items(), key=lambda x: x[1], reverse=True)
         ],
+        "daily": _daily_series(source),
     }

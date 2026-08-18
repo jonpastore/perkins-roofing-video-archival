@@ -8,7 +8,9 @@ from core.youtube_health import (
     apply_job_runs,
     classify_pull,
     collect_youtube_health,
+    is_absent_optional_tab,
     is_bot_block,
+    material_failed_tabs,
     parse_upload_date,
 )
 
@@ -28,6 +30,14 @@ def test_is_bot_block():
     assert not is_bot_block(None)
 
 
+def test_absent_streams_tab_is_not_a_failure():
+    assert is_absent_optional_tab("streams", "ERROR: [youtube] This tab is not available") is True
+    assert is_absent_optional_tab("streams", "Sign in to confirm you're not a bot") is False
+    assert is_absent_optional_tab("streams", "timed out") is False
+    assert is_absent_optional_tab("videos", "exit 1") is False
+    assert material_failed_tabs(["streams", "videos"]) == ["videos"]
+
+
 def test_classify_pull_bot_is_blocked():
     out = classify_pull(
         newest_age_days=1, unarchived=2, bot_hits=3,
@@ -45,7 +55,7 @@ def test_classify_pull_streams_tab_is_not_block():
     )
     assert out["blocked"] is False
     assert out["pull_ok"] is True
-    assert any("streams" in r for r in out["reasons"])
+    assert not any("streams" in r for r in out["reasons"])
 
 
 def test_classify_pull_videos_tab_fails():

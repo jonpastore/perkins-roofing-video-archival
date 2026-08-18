@@ -47,9 +47,11 @@ def strip_blog_links_deep(obj):
 def video_nodes(jsonld: list[dict] | None) -> list[dict]:
     """Existing VideoObject nodes from a jsonld_json list — carried through unchanged
     into the FAQ+Video-only rebuild (already correct, nothing to regenerate)."""
-    return [n for n in (jsonld or []) if isinstance(n, dict) and n.get("@type") == "VideoObject"]
+    from core.jsonld import graph_nodes  # noqa: PLC0415
+    return [n for n in graph_nodes(jsonld) if n.get("@type") == "VideoObject"]
 
 
 def jsonld_types(jsonld: list[dict] | None) -> list[str]:
     """@type of every node in a jsonld_json list, for dry-run before/after reporting."""
-    return [n.get("@type") for n in (jsonld or []) if isinstance(n, dict)]
+    from core.jsonld import graph_nodes  # noqa: PLC0415
+    return [n.get("@type") for n in graph_nodes(jsonld)]

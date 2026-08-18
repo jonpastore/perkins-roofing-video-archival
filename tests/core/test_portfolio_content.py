@@ -11,6 +11,7 @@ from core.portfolio_content import (
     build_project_jsonld,
     build_write_up,
     location_page_for,
+    project_full_graph_kwargs,
     service_page_for,
 )
 
@@ -161,6 +162,23 @@ def test_faq_is_visible_on_the_page_and_in_the_schema():
     types = [n["@type"] for n in nodes]
     assert types == ["FAQPage"]
     assert len(nodes[0]["mainEntity"]) == len(faq)
+
+
+def test_full_graph_on_a_project_is_one_document_not_blog_posting():
+    """Astro/no Rank Math: project pages ship the site graph plus media, not BlogPosting."""
+    sel = [{"kind": "photo", "id": "p1", "alt": "North tower after re-roof"}]
+    nodes = build_project_jsonld(
+        {**RECORD, "slug": "sunny-isles-ac-towers"},
+        sel, MEDIA, full_graph=project_full_graph_kwargs({**RECORD, "slug": "sunny-isles-ac-towers"}),
+    )
+    assert len(nodes) == 1
+    types = {n.get("@type") for n in nodes[0]["@graph"]}
+    assert "RoofingContractor" in types
+    assert "WebSite" in types
+    assert "WebPage" in types
+    assert "BreadcrumbList" in types
+    assert "ImageObject" in types
+    assert "BlogPosting" not in types
 
 
 def test_write_up_carries_the_in_content_toc_our_criteria_require():

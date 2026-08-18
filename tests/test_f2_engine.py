@@ -74,9 +74,11 @@ def cfg() -> PricingConfig:
 def test_golden_file(fixture_path: Path, cfg: PricingConfig):
     data = json.loads(fixture_path.read_text())
     inp = data["input"]
-    q = QuoteInput(**{k: v for k, v in inp.items() if v is not None or k in (
+    payload = {k: v for k, v in inp.items() if v is not None or k in (
         "specialty_tile", "county", "deck_type",
-    )})
+    )}
+    payload.setdefault("overhead_mode", "per_sq")
+    q = QuoteInput(**payload)
     result = estimate(cfg, q)
     total = result["project_total"]
     expected = data["expected_total"]
@@ -218,8 +220,7 @@ def test_floor_exhibit_b_example(cfg: PricingConfig):
     q = QuoteInput(
         code_zone="HVHZ", county="broward", slope_type="sloped",
         roof_type="13_tile", num_squares=28.0,
-        project_kind="commercial",
-    )
+        project_kind="commercial", overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert "profit_floor" in r["margin_warnings"]
     # Combined floor also fails at 31.95% (< 33%) given auto dumpster and $110/sq profit
@@ -234,8 +235,7 @@ def test_profit_floor_13pct_pass(cfg: PricingConfig):
     q = QuoteInput(
         code_zone="HVHZ", slope_type="sloped", roof_type="3tab_shingle",
         num_squares=5.0, project_kind="residential",
-        override_profit_per_sq=500,
-    )
+        override_profit_per_sq=500, overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert r["margin"]["profit_floor_ok"] is True
     assert "profit_floor" not in r["margin_warnings"]
@@ -246,8 +246,7 @@ def test_profit_floor_13pct_fail(cfg: PricingConfig):
     q = QuoteInput(
         code_zone="HVHZ", slope_type="sloped", roof_type="3tab_shingle",
         num_squares=5.0, project_kind="residential",
-        override_profit_per_sq=1,
-    )
+        override_profit_per_sq=1, overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert r["margin"]["profit_floor_ok"] is False
     assert "profit_floor" in r["margin_warnings"]
@@ -261,8 +260,7 @@ def test_combined_floor_33pct(cfg: PricingConfig):
     q = QuoteInput(
         code_zone="HVHZ", slope_type="sloped", roof_type="3tab_shingle",
         num_squares=5.0, project_kind="residential",
-        override_profit_per_sq=200, override_overhead=600,
-    )
+        override_profit_per_sq=200, override_overhead=600, overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert r["margin"]["combined_floor_ok"] is True
     assert r["margin"]["combined_pct"] >= 0.33
@@ -273,8 +271,7 @@ def test_combined_floor_fail(cfg: PricingConfig):
     q = QuoteInput(
         code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
         num_squares=5.0, project_kind="residential",
-        override_profit_per_sq=1, override_overhead=1,
-    )
+        override_profit_per_sq=1, override_overhead=1, overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert r["margin"]["combined_floor_ok"] is False
     assert "combined_floor" in r["margin_warnings"]
@@ -284,8 +281,7 @@ def test_eligible_base_excludes_profit(cfg: PricingConfig):
     """Profit dollars must not be in their own denominator."""
     q = QuoteInput(
         code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-        num_squares=10.0, project_kind="residential",
-    )
+        num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     r = estimate(cfg, q)
     # eligible_base = project_total - profit_dollars (no insulation/tapered in this quote)
     profit_d = r["margin"]["profit_dollars"]
@@ -305,8 +301,7 @@ def test_commission_is_half_of_net_in_every_zone(cfg: PricingConfig, zone: str):
     """
     q = QuoteInput(
         code_zone=zone, slope_type="sloped", roof_type="3tab_shingle",
-        num_squares=10.0, project_kind="residential",
-    )
+        num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert abs(r["commission"] - r["margin"]["profit_dollars"] * 0.50) < 0.01
 
@@ -375,7 +370,7 @@ def test_dumpster_hvhz_15sq(cfg: PricingConfig):
     """15 SQ HVHZ tile, boundary_inclusive=true → ceil(15/15) = 1 dumpster ($300)."""
     assert cfg.tile_dumpster_count(15.0, "HVHZ") == 1
     q = QuoteInput(code_zone="HVHZ", slope_type="sloped", roof_type="13_tile",
-                   num_squares=15.0, project_kind="residential")
+                   num_squares=15.0, project_kind="residential", overhead_mode="per_sq")
     r = estimate(cfg, q)
     dumpster_item = next((li for li in r["line_items_detail"] if li["key"] == "tile_dumpster"), None)
     assert dumpster_item is not None
@@ -386,7 +381,7 @@ def test_dumpster_hvhz_16sq(cfg: PricingConfig):
     """16 SQ HVHZ → ceil(16/15) = 2 dumpsters ($600)."""
     assert cfg.tile_dumpster_count(16.0, "HVHZ") == 2
     q = QuoteInput(code_zone="HVHZ", slope_type="sloped", roof_type="13_tile",
-                   num_squares=16.0, project_kind="residential")
+                   num_squares=16.0, project_kind="residential", overhead_mode="per_sq")
     r = estimate(cfg, q)
     dumpster_item = next((li for li in r["line_items_detail"] if li["key"] == "tile_dumpster"), None)
     assert dumpster_item["amount"] == 600.0
@@ -410,7 +405,7 @@ def test_dumpster_hvhz_30sq(cfg: PricingConfig):
 def test_dumpster_not_applied_shingle(cfg: PricingConfig):
     """Shingle roof → no tile_dumpster line item."""
     q = QuoteInput(code_zone="HVHZ", slope_type="sloped", roof_type="3tab_shingle",
-                   num_squares=10.0, project_kind="residential")
+                   num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     r = estimate(cfg, q)
     keys = [li["key"] for li in r["line_items_detail"]]
     assert "tile_dumpster" not in keys
@@ -450,7 +445,7 @@ def test_county_permit_fee_add():
         {"permit_fee_add": 150, "materials_tax_7pct_tile": False, "extra_line_items": {}}
     )
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                   num_squares=10.0, project_kind="residential", county="test_county")
+                   num_squares=10.0, project_kind="residential", county="test_county", overhead_mode="per_sq")
     r = estimate(cfg2, q)
     permit_item = next(li for li in r["line_items_detail"] if li["key"] == "permit_processing")
     assert permit_item["amount"] == 500 + 150
@@ -462,9 +457,9 @@ def test_county_materials_tax_tile():
     )
     # 13-tile roof — base_cost_lm is Materials and should be taxed 7%
     q_no_county = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
-                             num_squares=10.0, project_kind="residential")
+                             num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     q_county = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
-                          num_squares=10.0, project_kind="residential", county="test_county")
+                          num_squares=10.0, project_kind="residential", county="test_county", overhead_mode="per_sq")
     r1 = estimate(cfg2, q_no_county)
     r2 = estimate(cfg2, q_county)
     base_no_county = next(li["amount"] for li in r1["line_items_detail"] if li["key"] == "base_cost_lm")
@@ -477,9 +472,9 @@ def test_county_materials_tax_not_applied_shingle():
         {"permit_fee_add": 0, "materials_tax_7pct_tile": True, "extra_line_items": {}}
     )
     q_no = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                      num_squares=10.0, project_kind="residential")
+                      num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     q_yes = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                       num_squares=10.0, project_kind="residential", county="test_county")
+                       num_squares=10.0, project_kind="residential", county="test_county", overhead_mode="per_sq")
     r1 = estimate(cfg2, q_no)
     r2 = estimate(cfg2, q_yes)
     # shingle — tax flag must NOT change amounts
@@ -494,7 +489,7 @@ def test_county_extra_line_items():
          "extra_line_items": {"special_inspection": 750}}
     )
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                   num_squares=10.0, project_kind="residential", county="test_county")
+                   num_squares=10.0, project_kind="residential", county="test_county", overhead_mode="per_sq")
     r = estimate(cfg2, q)
     keys = [li["key"] for li in r["line_items_detail"]]
     assert "special_inspection" in keys
@@ -508,7 +503,7 @@ def test_county_override_stacks_on_zone():
         {"permit_fee_add": 200, "materials_tax_7pct_tile": False, "extra_line_items": {}}
     )
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                   num_squares=10.0, project_kind="residential", county="test_county")
+                   num_squares=10.0, project_kind="residential", county="test_county", overhead_mode="per_sq")
     r = estimate(cfg2, q)
     permit_item = next(li for li in r["line_items_detail"] if li["key"] == "permit_processing")
     assert permit_item["amount"] == 500 + 200  # base 500 + county add 200
@@ -545,9 +540,33 @@ def test_pm_fbc_bands_are_size_only_and_ignore_project_kind(cfg: PricingConfig):
     """
     for kind in ("residential", "commercial"):
         assert cfg.pm_incentive("FBC", kind, 19.9) == 50
-        assert cfg.pm_incentive("FBC", kind, 20.0) == 50     # 20 is the top of the <=20 band
+        assert cfg.pm_incentive("FBC", kind, 20.0) == 100    # sheet: 20–50 is $100; <20 is $50
         assert cfg.pm_incentive("FBC", kind, 35.0) == 100
         assert cfg.pm_incentive("FBC", kind, 60.0) == 250
+
+
+def test_mixed_tile_tearoff_dumpster_uses_combined_squares(cfg: PricingConfig):
+    """20 sloped + 15 flat existing-tile FBC is 2 dumpsters (ceil(35/30)), not 1."""
+    r = estimate(cfg, QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="13_tile",
+        num_squares=20.0, flat_squares=15.0, existing_roof="tile",
+        overhead_mode="per_sq", project_kind="residential",
+    ))
+    dump = next(li for li in r["line_items_detail"] if li["key"] == "tile_dumpster")
+    assert dump["amount"] == 2 * float(cfg.raw["tile_dumpster_cost"])
+    assert r["total_squares"] == 35.0
+
+
+def test_new_tile_only_dumpster_uses_sloped_squares(cfg: PricingConfig):
+    """Installing tile on a non-tile house dumps the tile section only, not the flat."""
+    r = estimate(cfg, QuoteInput(
+        code_zone="FBC", slope_type="sloped", roof_type="13_tile",
+        num_squares=20.0, flat_squares=15.0, existing_roof="shingle",
+        overhead_mode="per_sq", project_kind="residential",
+    ))
+    dump = next(li for li in r["line_items_detail"] if li["key"] == "tile_dumpster")
+    # ceil(20/30) = 1, not ceil(35/30) = 2
+    assert dump["amount"] == 1 * float(cfg.raw["tile_dumpster_cost"])
 
 
 def test_pm_fbc_commercial_gt50(cfg: PricingConfig):
@@ -601,7 +620,7 @@ _LOW_SLOPE_GOLDEN = GOLDEN_DIR / "498sq_low_slope_hvhz.json"
                            "total for a 498 sq commercial TPO job, not a number we invent")
 def test_low_slope_tpo_hvhz(cfg: PricingConfig):
     q = QuoteInput(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
-                   num_squares=498.0, project_kind="commercial")
+                   num_squares=498.0, project_kind="commercial", overhead_mode="per_sq")
     golden = json.loads(_LOW_SLOPE_GOLDEN.read_text())
     r = estimate(cfg, q)
     assert abs(r["project_total"] - golden["expected_total"]) <= golden["tolerance_abs"]
@@ -610,7 +629,7 @@ def test_low_slope_tpo_hvhz(cfg: PricingConfig):
 def _low_slope_q(cfg: PricingConfig, **kw) -> dict:
     return estimate(cfg, QuoteInput(
         code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
-        num_squares=100.0, project_kind="commercial", **kw))
+        num_squares=100.0, project_kind="commercial", **kw, overhead_mode="per_sq"))
 
 
 def test_low_slope_insulation_no_profit(cfg: PricingConfig):
@@ -665,8 +684,7 @@ def test_all_sloped_adders(cfg: PricingConfig):
         num_squares=10.0, project_kind="residential",
         roof_cuts="high", roof_height="2_stories", tile_pointing="yes",
         specialty_tile="santa_fe_clay_s", pitch_7_12=True, demo=True,
-        secondary_water_barrier=True, winterguard=True,
-    )
+        secondary_water_barrier=True, winterguard=True, overhead_mode="per_sq")
     r = estimate(cfg, q)
     # base 780 + oh 270 + profit(8-14 band → 140) + cuts 50 + height 50 + pointing 200
     # + specialty 160 + pitch 305 + tile demo 40 + swb 75 + winterguard 135 = 2205 per sq
@@ -678,10 +696,11 @@ def test_all_sloped_adders(cfg: PricingConfig):
     # not, so anything built from the fixture ran with NO floor. At 10 squares the sliding scale
     # pays 10 x $140 = $1,400, under the floor, so profit lifts to $2,500 = $250/sq. The adder
     # math is unchanged; only the profit term moves.
-    scale_profit, floored_profit = 140, 250
+    scale_profit = 140
     adders = 780 + 270 + 50 + 50 + 200 + 160 + 305 + 40 + 75 + 135
-    assert r["per_square_total"] == adders + floored_profit
-    assert r["margin"]["profit_dollars"] == 2500.0
+    assert r["per_square_total"] == adders + scale_profit
+    assert r["margin"]["profit_dollars"] == 1400.0
+    assert any(str(w).startswith("profit_below_minimum") for w in r["warnings"])
     # ...and with the floor off, the same adders sum against the sliding-scale profit
     raw_nofloor = dict(_raw_config())
     raw_nofloor["enforce_profit_floor"] = False
@@ -691,7 +710,7 @@ def test_all_sloped_adders(cfg: PricingConfig):
 
 def test_metal_demo_not_tile_demo(cfg: PricingConfig):
     q = QuoteInput(code_zone="HVHZ", slope_type="sloped", roof_type="standing_seam_metal",
-                   num_squares=10.0, project_kind="residential", demo=True)
+                   num_squares=10.0, project_kind="residential", demo=True, overhead_mode="per_sq")
     r = estimate(cfg, q)
     keys = [li["key"] for li in r["line_items_detail"]]
     assert "metal_demo" in keys
@@ -700,7 +719,7 @@ def test_metal_demo_not_tile_demo(cfg: PricingConfig):
 
 def test_6_plus_stories_raises(cfg: PricingConfig):
     q = QuoteInput(code_zone="HVHZ", slope_type="sloped", roof_type="3tab_shingle",
-                   num_squares=10.0, project_kind="residential", roof_height="6_plus")
+                   num_squares=10.0, project_kind="residential", roof_height="6_plus", overhead_mode="per_sq")
     with pytest.raises(QuoteRequiresManualReview):
         estimate(cfg, q)
 
@@ -710,8 +729,7 @@ def test_optional_line_items(cfg: PricingConfig):
         code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
         num_squares=10.0, project_kind="residential",
         stucco_metal_lf=10, penetrations=3, ridge_vent_lf=20,
-        extra_line_items=["turbine_vents"],
-    )
+        extra_line_items=["turbine_vents"], overhead_mode="per_sq")
     r = estimate(cfg, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert abs(keys["stucco_metal"] - 90.0) < 0.01      # 10 * 9
@@ -723,7 +741,7 @@ def test_optional_line_items(cfg: PricingConfig):
 def test_unknown_extra_line_item_ignored(cfg: PricingConfig):
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
                    num_squares=10.0, project_kind="residential",
-                   extra_line_items=["not_a_real_key"])
+                   extra_line_items=["not_a_real_key"], overhead_mode="per_sq")
     r = estimate(cfg, q)
     keys = [li["key"] for li in r["line_items_detail"]]
     assert "not_a_real_key" not in keys
@@ -731,7 +749,7 @@ def test_unknown_extra_line_item_ignored(cfg: PricingConfig):
 
 def test_3_5_stories_flat_add(cfg: PricingConfig):
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                   num_squares=10.0, project_kind="residential", roof_height="3_5_stories")
+                   num_squares=10.0, project_kind="residential", roof_height="3_5_stories", overhead_mode="per_sq")
     r = estimate(cfg, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert keys.get("stories_3_5_delivery_chute") == 1200
@@ -739,7 +757,7 @@ def test_3_5_stories_flat_add(cfg: PricingConfig):
 
 def test_commercial_permit_add(cfg: PricingConfig):
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                   num_squares=25.0, project_kind="commercial")
+                   num_squares=25.0, project_kind="commercial", overhead_mode="per_sq")
     r = estimate(cfg, q)
     permit = next(li["amount"] for li in r["line_items_detail"] if li["key"] == "permit_processing")
     assert permit == 1000  # 500 + 500 commercial
@@ -748,7 +766,7 @@ def test_commercial_permit_add(cfg: PricingConfig):
 def test_line_items_have_category(cfg: PricingConfig):
     """Every line item must carry a cost_category."""
     q = QuoteInput(code_zone="HVHZ", slope_type="sloped", roof_type="13_tile",
-                   num_squares=10.0, project_kind="residential")
+                   num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     r = estimate(cfg, q)
     for li in r["line_items_detail"]:
         assert li["category"] in ("Labor", "Materials", "Equipment", "Sub", "Misc", "OH", "Profit"), (
@@ -771,7 +789,7 @@ def test_selfcheck_runs():
 def test_quote_input_missing_zone_raises():
     """QuoteInput requires either code_zone or region — neither raises ValueError."""
     with pytest.raises(ValueError, match="code_zone or region"):
-        QuoteInput(roof_type="3tab_shingle", num_squares=10.0)
+        QuoteInput(roof_type="3tab_shingle", num_squares=10.0, overhead_mode="per_sq")
 
 
 def test_sliding_scale_upper_inclusive_branch():
@@ -893,8 +911,7 @@ def test_low_slope_build_tear_off_branch():
     q = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        layers_to_remove=2,
-    )
+        layers_to_remove=2, overhead_mode="per_sq")
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "tear_off" in keys
@@ -912,8 +929,7 @@ def test_low_slope_build_deck_branch():
     q = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        deck_type="plywood_replace",
-    )
+        deck_type="plywood_replace", overhead_mode="per_sq")
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "deck_type" in keys
@@ -926,8 +942,7 @@ def test_low_slope_insulation_in_estimate():
     q = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        include_insulation=True,
-    )
+        include_insulation=True, overhead_mode="per_sq")
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "insulation" in keys
@@ -939,8 +954,7 @@ def test_low_slope_tapered_in_estimate():
     q = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        include_tapered=True,
-    )
+        include_tapered=True, overhead_mode="per_sq")
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "tapered" in keys
@@ -953,8 +967,7 @@ def test_low_slope_3_5_stories():
     q = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        roof_height="3_5_stories",
-    )
+        roof_height="3_5_stories", overhead_mode="per_sq")
     r = estimate(cfg2, q)
     keys = {li["key"]: li["amount"] for li in r["line_items_detail"]}
     assert "trash_chute" in keys
@@ -967,8 +980,7 @@ def test_low_slope_6_plus_raises():
     q = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        roof_height="6_plus",
-    )
+        roof_height="6_plus", overhead_mode="per_sq")
     with pytest.raises(QuoteRequiresManualReview):
         estimate(cfg2, q)
 
@@ -994,13 +1006,11 @@ def test_low_slope_2_story_height_add():
     cfg2 = _cfg_with_low_slope_data()
     q_1story = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
-        num_squares=10.0, project_kind="residential",
-    )
+        num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     q_2story = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        roof_height="2_stories",
-    )
+        roof_height="2_stories", overhead_mode="per_sq")
     r1 = estimate(cfg2, q_1story)
     r2 = estimate(cfg2, q_2story)
     # 2-story adds $50/sq * 10 = $500
@@ -1035,7 +1045,7 @@ def test_plywood_allowance_two_sheets_free(cfg: PricingConfig):
     roof too — the adder is not low_slope-scoped."""
     q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
                    num_squares=10.0, project_kind="residential",
-                   plywood_sheets=2, plywood_thickness="5_8in")
+                   plywood_sheets=2, plywood_thickness="5_8in", overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert not any(li["key"] == "plywood_replacement" for li in r["line_items_detail"])
 
@@ -1044,10 +1054,10 @@ def test_plywood_bills_only_the_excess_sheet(cfg: PricingConfig):
     """3 sheets = 1 billable sheet at the thickness rate ($120 for 5/8"), and it flows into
     both the project total and eligible_base like any other fixed line item."""
     q_base = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
-                         num_squares=10.0, project_kind="residential")
+                         num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     q_ply = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
                         num_squares=10.0, project_kind="residential",
-                        plywood_sheets=3, plywood_thickness="5_8in")
+                        plywood_sheets=3, plywood_thickness="5_8in", overhead_mode="per_sq")
     r_base = estimate(cfg, q_base)
     r_ply = estimate(cfg, q_ply)
     item = next(li for li in r_ply["line_items_detail"] if li["key"] == "plywood_replacement")
@@ -1059,10 +1069,10 @@ def test_plywood_bills_only_the_excess_sheet(cfg: PricingConfig):
 def test_plywood_other_thicknesses_bill_at_their_own_rate(cfg: PricingConfig):
     q_half = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
                          num_squares=10.0, project_kind="residential",
-                         plywood_sheets=3, plywood_thickness="1_2in")
+                         plywood_sheets=3, plywood_thickness="1_2in", overhead_mode="per_sq")
     q_3q = QuoteInput(code_zone="FBC", slope_type="sloped", roof_type="3tab_shingle",
                        num_squares=10.0, project_kind="residential",
-                       plywood_sheets=3, plywood_thickness="3_4in")
+                       plywood_sheets=3, plywood_thickness="3_4in", overhead_mode="per_sq")
     r_half = estimate(cfg, q_half)
     r_3q = estimate(cfg, q_3q)
     half_item = next(li for li in r_half["line_items_detail"] if li["key"] == "plywood_replacement")
@@ -1081,7 +1091,7 @@ def test_plywood_other_thicknesses_bill_at_their_own_rate(cfg: PricingConfig):
 ])
 def test_deck_type_not_hvhz_warns_on_hvhz_job(cfg: PricingConfig, deck_type, detail):
     q = QuoteInput(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
-                   num_squares=10.0, project_kind="residential", deck_type=deck_type)
+                   num_squares=10.0, project_kind="residential", deck_type=deck_type, overhead_mode="per_sq")
     r = estimate(cfg, q)
     warning = next((w for w in r["warnings"] if w.startswith("deck_type_not_hvhz")), None)
     assert warning is not None
@@ -1092,7 +1102,7 @@ def test_deck_type_not_hvhz_warns_on_hvhz_job(cfg: PricingConfig, deck_type, det
 @pytest.mark.parametrize("deck_type", ["bur_wood_wb3000", "bur_wood_sav_flashing"])
 def test_deck_type_not_hvhz_does_not_warn_in_fbc(cfg: PricingConfig, deck_type):
     q = QuoteInput(code_zone="FBC", slope_type="low_slope", roof_type="tpo_adhered",
-                   num_squares=10.0, project_kind="residential", deck_type=deck_type)
+                   num_squares=10.0, project_kind="residential", deck_type=deck_type, overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert not any(w.startswith("deck_type_not_hvhz") for w in r["warnings"])
 
@@ -1100,7 +1110,7 @@ def test_deck_type_not_hvhz_does_not_warn_in_fbc(cfg: PricingConfig, deck_type):
 def test_deck_type_hvhz_legal_does_not_warn(cfg: PricingConfig):
     """A deck type NOT in not_hvhz_deck_types must never warn, even on an HVHZ job."""
     q = QuoteInput(code_zone="HVHZ", slope_type="low_slope", roof_type="tpo_adhered",
-                   num_squares=10.0, project_kind="residential", deck_type="bur_wood_elastobase")
+                   num_squares=10.0, project_kind="residential", deck_type="bur_wood_elastobase", overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert not any(w.startswith("deck_type_not_hvhz") for w in r["warnings"])
 
@@ -1141,8 +1151,7 @@ def test_insulation_excluded_from_profit_floor():
     q = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        include_insulation=True,
-    )
+        include_insulation=True, overhead_mode="per_sq")
     r = estimate(cfg, q)
     # insulation amount = 80 * 10 = 800
     insulation_amount = next(
@@ -1174,13 +1183,11 @@ def test_insulation_included_in_oh_total():
     cfg = _cfg_with_low_slope_and_insulation()
     q_no_ins = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
-        num_squares=10.0, project_kind="residential",
-    )
+        num_squares=10.0, project_kind="residential", overhead_mode="per_sq")
     q_with_ins = QuoteInput(
         code_zone="FBC", slope_type="low_slope", roof_type="tpo",
         num_squares=10.0, project_kind="residential",
-        include_insulation=True,
-    )
+        include_insulation=True, overhead_mode="per_sq")
     r_no  = estimate(cfg, q_no_ins)
     r_yes = estimate(cfg, q_with_ins)
 
@@ -1285,8 +1292,7 @@ def test_estimate_residential_ge20_pm_incentive_does_not_warn(cfg: PricingConfig
         code_zone="HVHZ",
         roof_type="3tab_shingle",
         num_squares=27.0,
-        project_kind="residential",
-    )
+        project_kind="residential", overhead_mode="per_sq")
     r = estimate(cfg, q)
     assert r["project_total"] > 0
     assert r["pm_incentive"] == 150.0
@@ -1325,9 +1331,9 @@ def test_mixed_roof_prices_both_sections_as_one_job(cfg: PricingConfig):
     """
     kw = dict(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
               project_kind="residential", demo=True, existing_roof="tile")
-    sloped = estimate(cfg, QuoteInput(num_squares=32.5, **kw))
+    sloped = estimate(cfg, QuoteInput(num_squares=32.5, **kw, overhead_mode="per_sq"))
     mixed = estimate(cfg, QuoteInput(num_squares=32.5, flat_squares=17.0,
-                                     flat_roof_type="polyglass_sav_sap", **kw))
+                                     flat_roof_type="polyglass_sav_sap", **kw, overhead_mode="per_sq"))
     keys = [li["key"] for li in mixed["line_items_detail"]]
 
     assert mixed["project_total"] > sloped["project_total"]          # the flat area is now priced
@@ -1348,9 +1354,9 @@ def test_mixed_roof_profit_bands_on_combined_squares(cfg: PricingConfig):
     """
     kw = dict(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
               project_kind="residential", demo=True, existing_roof="tile")
-    sloped = estimate(cfg, QuoteInput(num_squares=28.0, **kw))
+    sloped = estimate(cfg, QuoteInput(num_squares=28.0, **kw, overhead_mode="per_sq"))
     mixed = estimate(cfg, QuoteInput(num_squares=28.0, flat_squares=8.0,
-                                     flat_roof_type="polyglass_sav_sap", **kw))
+                                     flat_roof_type="polyglass_sav_sap", **kw, overhead_mode="per_sq"))
 
     def profit_per_sq(r):
         return next(li["per_sq"] for li in r["line_items_detail"] if li["key"] == "profit")
@@ -1371,8 +1377,8 @@ def test_mixed_roof_defaults_the_flat_system_from_config(cfg: PricingConfig):
     """
     kw = dict(code_zone="FBC", slope_type="sloped", roof_type="13_tile",
               num_squares=30.0, flat_squares=10.0, project_kind="residential")
-    defaulted = estimate(cfg, QuoteInput(**kw))
-    explicit = estimate(cfg, QuoteInput(flat_roof_type="polyglass_sav_sap", **kw))
+    defaulted = estimate(cfg, QuoteInput(**kw, overhead_mode="per_sq"))
+    explicit = estimate(cfg, QuoteInput(flat_roof_type="polyglass_sav_sap", **kw, overhead_mode="per_sq"))
     assert defaulted["project_total"] == explicit["project_total"]
     assert any(li["key"] == "flat_base_cost_lm" for li in defaulted["line_items_detail"])
 
@@ -1381,7 +1387,7 @@ def test_mixed_roof_defaults_the_flat_system_from_config(cfg: PricingConfig):
     raw = copy.deepcopy(_raw_config())
     raw["low_slope"].pop("default_flat_system", None)
     with pytest.raises(ConfigError, match="default_flat_system"):
-        estimate(load_config(raw), QuoteInput(**kw))
+        estimate(load_config(raw), QuoteInput(**kw, overhead_mode="per_sq"))
 
 
 # ---------------------------------------------------------------------------
@@ -1512,21 +1518,8 @@ def test_access_alone_does_not_trigger_the_geometry_model(cfg: PricingConfig):
     assert plain == hard, f"access must not switch a cut-less quote onto the geometry model: {plain} vs {hard}"
 
 
-def test_low_slope_daily_overhead_falls_back_and_says_so(cfg: PricingConfig):
-    """Asking for daily overhead on a low-slope system must not silently bill per-square.
-
-    `derive_daily_series` returns [] for every low-slope system — Tim's time-learning workbook is
-    `Residential_OH_Calculator_SLOPED_ONLY`, so no low-slope day series was ever fitted. The
-    estimate then used the per-square overhead table while the caller had asked for days, and
-    NOTHING in the result said so: a quote that quietly ignored the request was indistinguishable
-    from one that honoured it. Tim, 2026-08-03: "Why is this still trying to use per SQ prices on
-    the OH? It's all going to be based on days".
-
-    The per-square number is not necessarily wrong, but it is NOT his method: both commercial
-    workbooks derive the per-square overhead FROM a day count (Miramar "$1,175 x 25 days & $765 x
-    30 days = $52,325" over 142 sq = its displayed $370/sq; Evergrene's flat row 28 sq / 7 days /
-    $6,195 = its displayed $221.25/sq). So this is an unpriced gap, and the silence was the bug.
-    """
+def test_low_slope_daily_overhead_derives_or_refuses(cfg: PricingConfig):
+    """Asking for daily overhead on a low-slope system must not silently bill per-square."""
     # The shipped fixture now carries a low_slope series, so low slope derives days like anything
     # else — assert that first, because it is the behaviour Tim asked for.
     ok = estimate(cfg, QuoteInput(
@@ -1535,18 +1528,16 @@ def test_low_slope_daily_overhead_falls_back_and_says_so(cfg: PricingConfig):
     assert ok["overhead_basis_used"] == "daily"
     assert not any("overhead_fell_back_to_per_sq" in w for w in ok["warnings"])
 
-    # The fallback still has to announce itself for any config that lacks the series — an older
-    # branch config, or one rolled back to a previous version.
+    # No fitted series: refuse rather than silently bill per-square. Tim prices by days.
     import copy as _copy
 
     from core.pricing_config import load_config as _load
     raw = _copy.deepcopy(cfg.raw)
     raw["daily_overhead_day_model"]["install_series_by_roof_type"].pop("polyglass_sav_sap", None)
-    r = estimate(_load(raw), QuoteInput(
-        roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
-        code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="daily"))
-    assert r["overhead_basis_used"] == "per_sq"
-    assert any("overhead_fell_back_to_per_sq" in w for w in r["warnings"]), r["warnings"]
+    with pytest.raises(ValueError, match="no fitted day series"):
+        estimate(_load(raw), QuoteInput(
+            roof_type="polyglass_sav_sap", num_squares=6.0, slope_type="low_slope",
+            code_zone="HVHZ", deck_type="existing_concrete", overhead_mode="daily"))
 
 
 def test_sloped_daily_overhead_is_not_labelled_a_fallback(cfg: PricingConfig):
@@ -1700,10 +1691,7 @@ def test_two_day_cells_price_the_same_as_the_three_series_the_model_derives(cfg:
 
 
 def test_mixed_daily_overhead_is_charged_once(cfg: PricingConfig):
-    """Daily overhead is a whole-job line. Mixed + daily is the DEFAULT quote path
-    (API overhead_mode='daily') and QuoteInput defaults to per_sq, so every existing
-    mixed money test missed a double charge: _build_sloped billed the day total, then
-    CARRIES_OVER copied the same daily total back in as flat_overhead.
+    """Daily overhead is a whole-job line. Mixed + daily is the default quote path.
 
     Invariant: sum of every overhead line == compute_daily_overhead once.
     """

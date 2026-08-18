@@ -270,6 +270,10 @@ def run_reminders(session: Any = None) -> dict[str, int]:
 def run() -> dict[str, int]:
     """Iterate active tenants; run the SKIP LOCKED reminder scan inside each
     tenant's RLS context (the F5 for_each_tenant refactor — strict-safe)."""
+    from core.job_switches import proposal_reminders_enabled  # noqa: PLC0415
+    if not proposal_reminders_enabled():
+        return {"sent": 0, "skipped": 0, "errored": 0, "disabled": True}
+
     from app.models import SessionLocal  # noqa: PLC0415
     from core.tenant_loop import for_each_tenant  # noqa: PLC0415
 

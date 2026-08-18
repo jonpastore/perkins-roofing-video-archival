@@ -102,6 +102,9 @@ class ProposalRenderContext:
     # (see structure_groups). Empty/None on an ordinary single-roof proposal, which renders exactly
     # as it did before.
     structures: list[dict[str, Any]] | None = field(default=None)
+    #: Customer-facing package cards (name + price + featured). Built from package_options
+    #: or tier labels — never "Good / Better / Best".
+    quote_packages: list[dict[str, Any]] | None = field(default=None)
 
 
 class _SilentUndefined(jinja2.Undefined):
@@ -149,6 +152,64 @@ def _build_jinja_env() -> jinja2.Environment:
 
 _ENV = _build_jinja_env()
 
+_RANK_PACKAGE = {
+    "good": "Perkins Protector",
+    "better": "Perkins Preferred",
+    "best": "Perkins Premium",
+}
+
+
+def _money(value) -> str:
+    try:
+        return f"${float(value):,.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _is_featured(key: str, recommended: str) -> bool:
+    if key == recommended:
+        return True
+    if recommended == "good":
+        return key == "PROTECTOR"
+    if recommended == "better":
+        return key == "PREFERRED"
+    if recommended == "best":
+        return str(key).startswith("PREMIUM")
+    return False
+
+
+def package_cards_from_snapshot(snap: dict[str, Any]) -> list[dict[str, Any]]:
+    """Customer-facing package names and prices. Never emit Good / Better / Best."""
+    rec = str(snap.get("recommended_tier") or snap.get("selected_tier_default") or "")
+    cards: list[dict[str, Any]] = []
+    for opt in snap.get("package_options") or []:
+        name = (opt.get("label") or opt.get("key") or "").strip()
+        price = _money(opt.get("total"))
+        if not name or not price:
+            continue
+        cards.append({
+            "name": name,
+            "price": price,
+            "featured": _is_featured(str(opt.get("key") or ""), rec),
+        })
+    if cards:
+        return cards
+    tiers = snap.get("tiers") or {}
+    for key in ("good", "better", "best"):
+        tier = tiers.get(key) or {}
+        price = _money(tier.get("total"))
+        if not price:
+            continue
+        label = (tier.get("label") or "").strip()
+        if not label or label.lower() in _RANK_PACKAGE:
+            label = _RANK_PACKAGE[key]
+        cards.append({
+            "name": label,
+            "price": price,
+            "featured": key == rec or (key == "better" and rec not in tiers),
+        })
+    return cards
+
 
 def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
     """Map ProposalRenderContext fields to the nested Jinja2 variable namespace."""
@@ -173,6 +234,7 @@ def _ctx_to_dict(ctx: ProposalRenderContext) -> dict[str, Any]:
             "good_price": ctx.quote_good_price,
             "better_price": ctx.quote_better_price,
             "best_price": ctx.quote_best_price,
+            "packages": ctx.quote_packages or [],
             "line_items": ctx.quote_line_items,
         },
         "deposit": {
@@ -303,7 +365,7 @@ DEFAULT_TEMPLATE_HTML = """\
     h2 { color: var(--brand-navy); font-size: var(--fs-h2); font-weight:800; text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border); padding-bottom: var(--sp-2); margin: var(--sp-6) 0 var(--sp-3); break-after: avoid; page-break-after: avoid; }
     /* Page 1 is the decision page; this forces everything after the CTA onto page 2. */
     .page-break-1 { break-before: page; page-break-before: always; }
-    .tiers { display:grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); margin: var(--sp-3) 0; break-inside: avoid; }
+    .tiers { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--sp-3); margin: var(--sp-3) 0; break-inside: avoid; }
     .tier-card { position:relative; border:1px solid var(--border); border-radius:8px; padding: var(--sp-4) var(--sp-3); text-align:center; }
     .tier-card--featured { border-color: var(--brand-navy); border-width:2px; }
     .tier-flag { position:absolute; top:-10px; left:50%; transform:translateX(-50%); background: var(--brand-navy); color:#fff; font-size: var(--fs-small); font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 10px; border-radius:10px; }
@@ -376,15 +438,15 @@ DEFAULT_TEMPLATE_HTML = """\
   </div>
 
   {# ── Page 1: the decision page — options, price, signature. Detail follows overleaf. ── #}
-  {% if quote.better_price or quote.best_price %}
+  {% if quote.packages %}
   <h2>Your Options</h2>
   <div class="tiers">
-    {% for name, price, featured in [("Good", quote.good_price, False), ("Better", quote.better_price, True), ("Best", quote.best_price, False)] %}
-      {% if price %}
-      <div class="tier-card{% if featured %} tier-card--featured{% endif %}">
-        {% if featured %}<div class="tier-flag">Recommended</div>{% endif %}
-        <div class="tier-name">{{ name }}</div>
-        <div class="tier-price">{{ price }}</div>
+    {% for pkg in quote.packages %}
+      {% if pkg.price %}
+      <div class="tier-card{% if pkg.featured %} tier-card--featured{% endif %}">
+        {% if pkg.featured %}<div class="tier-flag">Recommended</div>{% endif %}
+        <div class="tier-name">{{ pkg.name }}</div>
+        <div class="tier-price">{{ pkg.price }}</div>
       </div>
       {% endif %}
     {% endfor %}

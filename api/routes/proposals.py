@@ -64,6 +64,7 @@ from api.routes.quotes import (
 from app.config import settings as app_settings
 from app.models import (
     Customer,
+    Estimate,
     Job,
     KnowifyRawRecord,
     PlatformSessionLocal,
@@ -91,6 +92,7 @@ from core.proposal_render import (
     DEFAULT_TEMPLATE_HTML,
     ProposalRenderContext,
     calc_lines_from_estimate,
+    package_cards_from_snapshot,
     render_proposal_html,
     structure_groups,
 )
@@ -1226,6 +1228,37 @@ def _freeze_calc_breakdown(snapshot: dict | None) -> dict | None:
     return snap
 
 
+def _snapshot_owned_by_estimate(
+    db: Session, tenant_id: int, estimate_id: Optional[int], snapshot: Optional[dict],
+) -> dict:
+    """Stamp headline money from the persisted estimate. The SPA snapshot is UX, not the total."""
+    snap = dict(snapshot or {})
+    if not estimate_id:
+        return snap
+    est = db.get(Estimate, estimate_id)
+    if est is None or est.tenant_id != tenant_id:
+        raise HTTPException(404, f"Estimate {estimate_id} not found")
+    result = dict(est.result_json or {})
+    server_total = result.get("project_total")
+    if server_total is None:
+        return snap
+    snap["estimate_result"] = result
+    if result.get("total_squares") is not None:
+        snap["num_squares"] = result["total_squares"]
+    if result.get("package_options"):
+        snap["package_options"] = result["package_options"]
+    tiers = snap.get("tiers")
+    if isinstance(tiers, dict) and isinstance(tiers.get("good"), dict):
+        tiers = dict(tiers)
+        good = dict(tiers["good"])
+        good["total"] = float(server_total)
+        tiers["good"] = good
+        snap["tiers"] = tiers
+    if snap.get("recommended_tier") in (None, "good") or snap.get("selected_tier_default") == "good":
+        snap["total"] = float(server_total)
+    return snap
+
+
 @router.post("/quoting/proposals")
 def create_proposal(
     body: ProposalCreate,
@@ -1234,6 +1267,7 @@ def create_proposal(
 ):
     tenant_id = _tenant_id(db)
     email = claims.get("email") or "unknown"
+    snap = _snapshot_owned_by_estimate(db, tenant_id, body.estimate_id, body.quote_snapshot)
     row = Proposal(
         tenant_id=tenant_id,
         customer_id=body.customer_id,
@@ -1241,7 +1275,7 @@ def create_proposal(
         estimate_id=body.estimate_id,
         template_id=body.template_id,
         title=body.title,
-        quote_snapshot=_freeze_calc_breakdown(body.quote_snapshot),
+        quote_snapshot=_freeze_calc_breakdown(snap),
         status="draft",
         accept_token=generate_accept_token(),
         created_by=email,
@@ -1382,6 +1416,7 @@ def create_proposal_from_project(
         "floors": {
             "min_profit_pct": config.raw["profit_floor_pct"],
             "min_profit_plus_oh_pct": config.raw["profit_plus_oh_floor_pct"],
+            "min_profit_dollars": float(config.job_profit_floor() or 0),
         },
         "estimator_version": "project_v1",
     }
@@ -1532,8 +1567,9 @@ def update_proposal(
     # not the client's to send, so carry them forward here rather than asking the SPA to echo
     # something it is deliberately never given.
     if "quote_snapshot" in updates:
-        updates["quote_snapshot"] = _carry_internal_calc(row.quote_snapshot,
-                                                         updates["quote_snapshot"])
+        est_id = updates.get("estimate_id", row.estimate_id)
+        owned = _snapshot_owned_by_estimate(db, tenant_id, est_id, updates["quote_snapshot"])
+        updates["quote_snapshot"] = _carry_internal_calc(row.quote_snapshot, owned)
 
     for field, value in updates.items():
         setattr(row, field, value)
@@ -1906,6 +1942,7 @@ def render_and_cache_proposal_pdf(db: Session, row: Proposal, *, explain: bool =
         quote_good_price=_tier_price(tiers, "good", fallback=total),
         quote_better_price=_tier_price(tiers, "better"),
         quote_best_price=_tier_price(tiers, "best"),
+        quote_packages=package_cards_from_snapshot(snap),
         quote_line_items=scope_lines,
         deposit_amount=f"${_fmt_money(dp.get('amount')):,.2f}" if dp.get("amount") is not None else "",
         deposit_instructions=dp.get("instructions", ""),

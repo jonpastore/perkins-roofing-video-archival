@@ -23,6 +23,7 @@ from core.youtube_health import (
     apply_job_runs,
     collect_youtube_health,
     fetch_bot_block_logs,
+    material_failed_tabs,
 )
 
 DIGEST_LOOKBACK_DAYS = 7
@@ -400,11 +401,11 @@ def _youtube_rows(yt: dict[str, Any]) -> list[list[str]]:
 
 def _youtube_extra_rows(yt: dict[str, Any]) -> list[list[str]]:
     rows: list[list[str]] = []
-    tabs = yt.get("failed_tabs") or []
+    tabs = material_failed_tabs(yt.get("failed_tabs"))
     if tabs:
         rows.append([_esc("Failed tabs"), _esc(", ".join(tabs)),
-                     _esc("Last enumerate failed tabs: " + ", ".join(tabs)
-                          + ". streams is noise; videos/shorts is a real miss.")])
+                     _esc("Last enumerate missed: " + ", ".join(tabs)
+                          + ". Re-run enumerate-channel.")])
     if yt.get("incomplete"):
         rows.append([_esc("Enumerate"), _esc("incomplete"),
                      _esc("Enumerate marked incomplete (videos or shorts tab failed).")])

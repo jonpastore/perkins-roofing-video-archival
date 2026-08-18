@@ -19,6 +19,7 @@ BOT_MARKERS = (
 )
 
 YOUTUBE_SCAN_TYPES = ("youtube_enumerate", "youtube_archive", "youtube")
+CATALOG_TABS = frozenset({"videos", "shorts"})
 
 
 def parse_upload_date(raw: Any) -> datetime | None:
@@ -40,6 +41,27 @@ def is_bot_block(text: str | None) -> bool:
     return any(marker in lowered for marker in BOT_MARKERS)
 
 
+def is_absent_optional_tab(tab: str, error: str) -> bool:
+    """True when this is 'channel has no Live tab', not a catalog miss.
+
+    Perkins rarely livestreams. YouTube's /streams tab 404s or yt-dlp exits 1
+    on that channel every morning. videos/shorts failing, a bot wall, or a
+    timeout is a real miss.
+    """
+    if tab in CATALOG_TABS:
+        return False
+    if is_bot_block(error):
+        return False
+    err = (error or "").lower()
+    if "timeout" in err or "timed out" in err:
+        return False
+    return True
+
+
+def material_failed_tabs(failed_tabs: list[str] | None) -> list[str]:
+    return [t for t in (failed_tabs or []) if t in CATALOG_TABS]
+
+
 def classify_pull(*, newest_age_days: int | None, unarchived: int,
                   bot_hits: int, failed_tabs: list[str], incomplete: bool) -> dict[str, Any]:
     """Return blocked / pull_ok / reasons. Bot-check only sets blocked."""
@@ -47,14 +69,12 @@ def classify_pull(*, newest_age_days: int | None, unarchived: int,
     blocked = bot_hits > 0
     if blocked:
         reasons.append(f"yt-dlp bot-check in {bot_hits} ingest error(s)")
-    material = [t for t in failed_tabs if t in ("videos", "shorts")]
+    material = material_failed_tabs(failed_tabs)
     if material or incomplete:
         reasons.append(
             "enumerate incomplete"
-            + (f" (failed tabs: {', '.join(failed_tabs)})" if failed_tabs else "")
+            + (f" (failed tabs: {', '.join(material or failed_tabs)})" if (material or failed_tabs) else "")
         )
-    elif failed_tabs:
-        reasons.append(f"non-critical tab failed: {', '.join(failed_tabs)}")
     if unarchived:
         reasons.append(f"{unarchived} video(s) still unarchived")
     if newest_age_days is not None and newest_age_days > 14:

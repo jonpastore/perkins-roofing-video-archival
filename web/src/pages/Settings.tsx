@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch, getProductionReadiness, type ProductionReadiness, type GateState } from "../api";
+import { JobSwitches } from "../components/JobSwitches";
 import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } from "../ui";
 import { errText } from "../lib/errors";
 
@@ -476,8 +477,11 @@ export function Settings() {
   }
 
   // Split settings into model vs regular — defensive: treat missing arrays as empty
+  const SWITCH_KEYS = new Set(["KNOWIFY_SYNC_ENABLED", "PROPOSAL_REMINDERS_ENABLED"]);
   const modelEntries = (config?.settings ?? []).filter((s) => MODEL_KEYS.has(s.key));
-  const regularEntries = (config?.settings ?? []).filter((s) => !MODEL_KEYS.has(s.key));
+  const regularEntries = (config?.settings ?? []).filter(
+    (s) => !MODEL_KEYS.has(s.key) && !SWITCH_KEYS.has(s.key),
+  );
 
   // Defensive: known_models may be absent from API response
   const knownLlm: string[] = config?.known_models?.llm ?? [];
@@ -489,6 +493,8 @@ export function Settings() {
   return (
     <main style={{ maxWidth: 960 }}>
       <PageTitle>Platform Settings</PageTitle>
+
+      <JobSwitches />
 
       {/* ------------------------------------------------------------------ */}
       {/* Section 1: Editable settings                                        */}

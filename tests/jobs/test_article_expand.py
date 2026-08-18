@@ -578,32 +578,33 @@ def test_grounding_audit_escalates_terms_tim_has_never_said():
         article_job._corpus_vocabulary.cache_clear()
 
 
-# ── per-post schema scoped to FAQ + Video only (Rank Math owns Org/Article/Breadcrumb) ──────
+# ── per-post schema is the full graph Rank Math used to own + FAQ/Video ──────
 
-def test_jsonld_is_faq_and_video_only():
+def test_jsonld_is_the_full_graph_plus_faq_and_video():
     from jobs.article_job import _build_article_jsonld
 
     fields = {
         "title": "Wall Flashings Guide",
+        "slug": "wall-flashings-guide",
         "meta": "m",
         "faq_json": [{"q": "q", "a": "a"}],
         "_video_jsonld": [{"@context": "https://schema.org", "@type": "VideoObject", "name": "v"}],
     }
     jsonld = _build_article_jsonld(fields, {"role": "pillar", "pillar_slug": None})
-    types = [node["@type"] for node in jsonld]
-    assert types == ["FAQPage", "VideoObject"]
-    assert "Article" not in types
-    assert "BreadcrumbList" not in types
-    assert "Organization" not in types
-    assert "Person" not in types
+    assert len(jsonld) == 1
+    types = {node["@type"] for node in jsonld[0]["@graph"]}
+    assert {"BlogPosting", "RoofingContractor", "Person", "WebSite", "WebPage",
+            "BreadcrumbList", "FAQPage", "VideoObject"} <= types
 
 
 def test_jsonld_omits_video_when_ungrounded():
     from jobs.article_job import _build_article_jsonld
 
-    fields = {"title": "T", "meta": "m", "faq_json": [{"q": "q", "a": "a"}]}
+    fields = {"title": "T", "slug": "t", "meta": "m", "faq_json": [{"q": "q", "a": "a"}]}
     jsonld = _build_article_jsonld(fields, {"role": "pillar", "pillar_slug": None})
-    assert [node["@type"] for node in jsonld] == ["FAQPage"]
+    types = {node["@type"] for node in jsonld[0]["@graph"]}
+    assert "FAQPage" in types
+    assert "VideoObject" not in types
 
 
 # ── internal linking: cluster -> pillar + contextual services links ────────────────────────

@@ -18,6 +18,8 @@ import logging
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from sqlalchemy import create_engine, insert, select
 from sqlalchemy.orm import sessionmaker
 
@@ -25,6 +27,13 @@ from app.models import Base, KnowifyRawRecord, KnowifySyncState
 from jobs.knowify_sync import SYNC_ENTITIES
 
 log = logging.getLogger(__name__)
+
+
+@pytest.fixture(autouse=True)
+def _knowify_sync_on(request, monkeypatch):
+    if request.node.name == "test_knowify_sync_disabled_skips":
+        return
+    monkeypatch.setattr("core.job_switches.knowify_sync_enabled", lambda: True)
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +136,7 @@ def _run_sync(factory, fetch_fn=_mock_fetch, tok=None, refresh_only=False):
         patch.object(knowify_sync.tokens, "load_tokens", return_value=tok),
         patch.object(knowify_sync.tokens, "is_valid", return_value=True),
         patch.object(knowify_sync, "_fetch_entity", side_effect=fetch_fn),
+        patch("core.job_switches.knowify_sync_enabled", return_value=True),
         patch("jobs.knowify_sync.for_each_tenant", side_effect=lambda sf, fn: _fake_tenant_loop(sf, fn, factory)),
     ):
         return knowify_sync.run(refresh_only=refresh_only)
@@ -153,6 +163,14 @@ def _fake_tenant_loop(db_factory, fn, real_factory):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+def test_knowify_sync_disabled_skips():
+    from jobs import knowify_sync
+    with patch("core.job_switches.knowify_sync_enabled", return_value=False):
+        result = knowify_sync.run()
+    assert result["skipped"] == "disabled"
+    assert result["exit_code"] == 0
+
 
 class TestFullPullRun:
     """Full-pull populates raw + first-class + sync_state + handles tombstones."""

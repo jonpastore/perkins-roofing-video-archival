@@ -1340,15 +1340,10 @@ def _wp_base_url() -> str:
 # ---------------------------------------------------------------------------
 
 def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
-    """Deterministic JSON-LD: FAQPage + VideoObject ONLY.
+    """Deterministic JSON-LD: full site graph + FAQPage + VideoObject.
 
-    Rank Math (the live site's SEO plugin) already emits Organization/Person/Article/
-    BreadcrumbList for every post — see core.brand_identity for the same NAP data
-    modeled for the (currently unused-here) full-graph path in ``generate_article``.
-    Emitting those node types again per-article would duplicate what Rank Math already
-    puts on the page, so the per-post schema we inject here is scoped to the two node
-    types Rank Math does NOT generate: the article's own FAQ Q&A pairs and its source
-    VideoObject(s).
+    Rank Math used to emit Organization/Person/Article/BreadcrumbList. Public pages
+    now go to Astro, so we emit that graph ourselves and fold FAQ/Video into it.
     """
     from core.jsonld import build_faq_page  # noqa: PLC0415
 
@@ -1385,12 +1380,9 @@ def _build_article_jsonld(fields: dict, ctx: dict) -> list[dict]:
 
 
 def _full_graph_enabled() -> bool:
-    """Read through to the WordPress adapter so article and project pages cannot disagree."""
-    try:
-        from adapters.wordpress import publish_full_graph  # noqa: PLC0415
-        return publish_full_graph()
-    except Exception:  # noqa: BLE001 — a config lookup must never fail a generation run
-        return False
+    """Astro is the public sink. Rank Math is gone; emit the full graph."""
+    from core.jsonld import full_graph_enabled  # noqa: PLC0415
+    return full_graph_enabled()
 
 
 def _clamp_meta(meta: str, title: str, content_md: str, keyword: str = "") -> str:

@@ -1248,9 +1248,22 @@ export interface SpendByService {
   cost: number;
 }
 
+export interface SpendDailyPoint {
+  date: string;
+  cost: number;
+}
+
 export type GcpSpendResponse =
   | { configured: false; note: string }
-  | { configured: true; total: number; currency: string; by_service: SpendByService[]; window_days: number; error?: string };
+  | {
+      configured: true;
+      total: number;
+      currency: string;
+      by_service: SpendByService[];
+      daily: SpendDailyPoint[];
+      window_days: number;
+      error?: string;
+    };
 
 export async function getActiveUsers(params: { days?: number }): Promise<ActiveUsersResponse> {
   const r = await apiFetch(`/admin/metrics/active-users${qs(params)}`);

@@ -23,6 +23,7 @@ import {
 } from "../api";
 import { errText } from "../lib/errors";
 import { DataSources } from "../components/DataSources";
+import { JobSwitches } from "../components/JobSwitches";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -847,6 +848,7 @@ export function MarketingConfig({ role }: MarketingConfigProps) {
 
       <div style={{ marginTop: 16 }}>
         <DataSources manage={manage} />
+        <JobSwitches manage={manage} />
       </div>
 
       {/* Social accounts */}

@@ -687,11 +687,12 @@ def quote(
             "entirely as sloped. If the roof has a flat section, record pitched_sq/flat_sq on the "
             "measurement and re-quote — total_sq means sloped-only on Tim's sheet but pitched+flat "
             "on a RoofR transcription.")
-    # Config floor percentages, exposed so clients (proposal snapshot "floors") stay
-    # config-driven per branch instead of hardcoding 13%/33%.
+    # Config floors, exposed so clients (proposal snapshot "floors" + the margin slider)
+    # stay config-driven per branch instead of hardcoding 13%/33%/$2,500.
     result["floors"] = {
         "min_profit_pct": config.raw["profit_floor_pct"],
         "min_profit_plus_oh_pct": config.raw["profit_plus_oh_floor_pct"],
+        "min_profit_dollars": float(config.job_profit_floor() or 0),
     }
 
     # Discounts are sales concessions. They reduce project_total and available
@@ -732,11 +733,23 @@ def quote(
             floor_after_discount = float(guidance.get("effective_floor")
                                          or guidance.get("profit_floor_guidance") or 0)
         else:
-            floor_after_discount = config.job_profit_floor()
-        if (config.enforce_profit_floor() and floor_after_discount
-                and adjusted_profit < floor_after_discount
-                and "min_margin_breached" not in warnings):
-            warnings.append("min_margin_breached")
+            floor_after_discount = float(config.job_profit_floor() or 0)
+        # Same #422 gross-up the engine used. Commission on gross does not move with profit.
+        if body.commission_basis == "profit":
+            floor_after_discount = config.floor_to_keep(floor_after_discount, commission_rate)
+        # Operator Min $ raises the floor the same way the engine does — a discount must
+        # not silently undo it.
+        floor_after_discount = max(floor_after_discount, float(body.min_profit_dollars or 0))
+        if floor_after_discount and adjusted_profit < floor_after_discount:
+            note = (
+                f"profit_below_minimum: discount drops profit ${adjusted_profit:,.2f} "
+                f"under the ${floor_after_discount:,.0f} minimum. Quote still issued."
+            )
+            if note not in warnings:
+                warnings.append(note)
+            result["warnings"] = list(result.get("warnings") or []) + (
+                [note] if note not in (result.get("warnings") or []) else []
+            )
         result["pre_discount_total"] = round(pre_discount_total, 2)
         result["discount_total"] = discount_total
         result["discounts"] = resolved_discounts
@@ -765,8 +778,10 @@ def quote(
     # RESOLVED squares, not body.num_squares: PROTECTOR is the engine total (priced off the
     # resolved split) while every upgrade tier is catalog $/sq x squares. Reading the body here
     # made the two disagree by exactly the amount the split resolution corrected.
+    pkg_sq = float(result.get("total_squares") or (
+        (q.num_squares or 0) + (q.flat_squares or 0)))
     result["package_options"] = package_options(
-        body.roof_type, float(q.num_squares), float(result["project_total"]),
+        body.roof_type, pkg_sq, float(result["project_total"]),
         discount_total=float(result.get("discount_total") or 0),
     )
 
@@ -853,6 +868,12 @@ def quote(
     result["estimate_version"] = est.version_number
     est.result_json = _audit_payload(result, debug=q.debug)
     db.flush()
+    from core.profit_alerts import notify_profit_below_minimum  # noqa: PLC0415
+    notify_profit_below_minimum(
+        result=result,
+        actor=str(claims.get("email") or "unknown"),
+        tenant_id=db.info.get("tenant_id"),
+    )
 
     return _public_estimate(result, claims)
 
@@ -1132,6 +1153,12 @@ def project_quote(
 
     result["bid_project_id"] = project.id
     result["estimate_ids"] = estimate_ids
+    from core.profit_alerts import notify_profit_below_minimum  # noqa: PLC0415
+    notify_profit_below_minimum(
+        result=result,
+        actor=str(claims.get("email") or "unknown"),
+        tenant_id=db.info.get("tenant_id"),
+    )
     return _public_estimate(result, claims)
 
 
@@ -1183,6 +1210,7 @@ def repair_quote(
     result["floors"] = {
         "min_profit_pct": config.raw["profit_floor_pct"],
         "min_profit_plus_oh_pct": config.raw["profit_plus_oh_floor_pct"],
+        "min_profit_dollars": float(config.job_profit_floor() or 0),
     }
     return _public_estimate(result, claims)
 
@@ -1331,6 +1359,7 @@ def rates(
             "profit_floor_days_per_week": cfg.get("profit_floor_days_per_week") or 6,
             # "job" = one flat floor per job (current). "weekly" = x on-site weeks.
             "profit_floor_basis": cfg.get("profit_floor_basis") or "job",
+            "profit_floor_after_commission": bool(cfg.get("profit_floor_after_commission")),
             # v2: repair (time-based) quote config — roof-type categories + daily labor rates
             "repair": cfg.get("repair") or {},
             # scope-of-work AI rewrite: saved default template ({"default_template": str})

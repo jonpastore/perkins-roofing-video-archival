@@ -188,6 +188,7 @@ def _make_allIn_input(system: str, sq: float = 20, zone: str = "HVHZ") -> QuoteI
         num_squares=sq,
         slope_type="low_slope",
         project_kind="commercial",  # commercial band requires sq >= 20
+        overhead_mode="per_sq",
     )
 
 
@@ -249,6 +250,7 @@ def _make_base_input(system: str, sq: float = 20, zone: str = "HVHZ") -> QuoteIn
         num_squares=sq,
         slope_type="low_slope",
         project_kind="commercial",
+        overhead_mode="per_sq",
     )
 
 
@@ -293,6 +295,7 @@ def _make_wood_deck_input(system: str, deck: str, sq: float = 20) -> QuoteInput:
         slope_type="low_slope",
         deck_type=deck,
         project_kind="commercial",
+        overhead_mode="per_sq",
     )
 
 
@@ -321,11 +324,12 @@ def test_wood_deck_adds_50_oh_per_sq_not_flat():
     sq = 15
     q_concrete = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=sq,
-        slope_type="low_slope", project_kind="residential",
+        slope_type="low_slope", project_kind="residential", overhead_mode="per_sq",
     )
     q_wood = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=sq,
         slope_type="low_slope", deck_type="bur_wood_sav_flashing", project_kind="residential",
+        overhead_mode="per_sq",
     )
     r_c = estimate(cfg, q_concrete)
     r_w = estimate(cfg, q_wood)
@@ -341,7 +345,7 @@ def test_concrete_deck_no_wood_oh_adder():
     q_concrete = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", deck_type="existing_concrete", project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     r1 = estimate(cfg, q_no_deck)
     r2 = estimate(cfg, q_concrete)
     oh1 = next(li for li in r1["line_items_detail"] if li["key"] == "overhead")
@@ -383,7 +387,7 @@ def test_both_zones_resolve_without_config_error(zone, system):
     cfg = _cfg()
     q = QuoteInput(
         code_zone=zone, roof_type=system, num_squares=20,
-        slope_type="low_slope", project_kind="commercial",
+        slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
     )
     result = estimate(cfg, q)
     assert result["project_total"] > 0
@@ -415,7 +419,7 @@ def test_insulation_tiers_resolve():
     q = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", include_insulation=True, project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     result = estimate(cfg, q)
     detail = result["line_items_detail"]
     assert any(li["key"] == "insulation" for li in detail)
@@ -426,7 +430,7 @@ def test_tapered_insulation_resolves():
     q = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", include_tapered=True, project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     result = estimate(cfg, q)
     detail = result["line_items_detail"]
     assert any(li["key"] == "tapered" for li in detail)
@@ -441,7 +445,7 @@ def test_tear_off_resolves():
     q = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", layers_to_remove=1, project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     result = estimate(cfg, q)
     detail = result["line_items_detail"]
     assert any(li["key"] == "tear_off" for li in detail)
@@ -481,7 +485,7 @@ def test_low_slope_6plus_raises():
     q = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", roof_height="6_plus", project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     with pytest.raises(QuoteRequiresManualReview):
         estimate(cfg, q)
 
@@ -491,7 +495,7 @@ def test_low_slope_3_5_stories_trash_chute():
     q = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", roof_height="3_5_stories", project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     result = estimate(cfg, q)
     detail = result["line_items_detail"]
     assert any(li["key"] == "trash_chute" for li in detail)
@@ -504,11 +508,11 @@ def test_low_slope_2_stories_height_line():
     q_1 = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", roof_height="1_story", project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     q_2 = QuoteInput(
         code_zone="HVHZ", roof_type="polyglass_sav_sap", num_squares=20,
         slope_type="low_slope", roof_height="2_stories", project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     r1 = estimate(cfg, q_1)
     r2 = estimate(cfg, q_2)
     detail2 = r2["line_items_detail"]
@@ -533,7 +537,7 @@ def test_adhered_tpo_concrete_hvhz_quote_math():
         code_zone="HVHZ", roof_type="tpo_adhered", num_squares=sq,
         slope_type="low_slope", deck_type="bur_tpo_concrete_primer",
         project_kind="commercial",
-    )
+        overhead_mode="per_sq")
     result = estimate(cfg, q)
     detail = result["line_items_detail"]
 
@@ -572,7 +576,7 @@ def _stockmeier_quote(sq: float, zone: str = "HVHZ") -> QuoteInput:
         num_squares=sq,
         slope_type="low_slope",
         project_kind="commercial",
-    )
+        overhead_mode="per_sq")
 
 
 def test_stockmeier_under_minimum_warns():
@@ -606,7 +610,8 @@ def test_stockmeier_floor_disabled_when_unconfigured():
 
 def test_other_low_slope_systems_do_not_trip_the_stockmeier_floor():
     q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=8,
-                   slope_type="low_slope", project_kind="commercial")
+                   slope_type="low_slope", project_kind="commercial",
+        overhead_mode="per_sq")
     r = estimate(_cfg(), q)
     assert not any(w.startswith("stockmeier_below_minimum") for w in r.get("warnings", []))
 
@@ -622,7 +627,8 @@ def _pc_quote(slope_type, sq=20, **kw):
     return QuoteInput(
         code_zone="HVHZ",
         roof_type="polyglass_sav_sap" if slope_type == "low_slope" else "13_tile",
-        num_squares=sq, slope_type=slope_type, project_kind="commercial", **kw)
+        num_squares=sq, slope_type=slope_type, project_kind="commercial", **kw,
+        overhead_mode="per_sq")
 
 
 def _line(result, key):
@@ -669,7 +675,7 @@ def test_pressure_cleaning_silent_when_unconfigured():
 
 def _deck_quote(deck_type, sq=20):
     return QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=sq,
-                      slope_type="low_slope", project_kind="commercial", deck_type=deck_type)
+                      slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq", deck_type=deck_type)
 
 
 def test_cover_board_adds_forty_to_overhead():
@@ -697,7 +703,7 @@ def test_cover_board_silent_when_unconfigured():
 
 def _poly_quote(upgrade=None, zone="HVHZ", sq=20):
     return QuoteInput(code_zone=zone, roof_type="polyglass_sav_sap", num_squares=sq,
-                      slope_type="low_slope", project_kind="commercial",
+                      slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
                       warranty_upgrade=upgrade)
 
 
@@ -752,7 +758,7 @@ def test_warranty_upgrade_on_a_config_without_the_key_raises():
 
 def _chute_quote(stories=None, height="3_5_stories"):
     return QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
-                      slope_type="low_slope", project_kind="commercial",
+                      slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
                       roof_height=height, stories=stories)
 
 
@@ -788,7 +794,7 @@ def test_trash_chute_sections_silent_when_unconfigured():
     ("granules", 50), ("traffic_coat_1coat", 225), ("tpo_primer", 25)])
 def test_silicone_addons_price_per_square(key, rate):
     q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=20,
-                   slope_type="low_slope", project_kind="commercial", silicone_addons=[key])
+                   slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq", silicone_addons=[key])
     r = estimate(_cfg(), q)
     assert _line(r, f"silicone_addon_{key}")["amount"] == rate * 20
 
@@ -801,7 +807,7 @@ def test_extra_coat_is_not_a_flat_addon():
 
 def _coat_quote(coats, material=None, sq=20):
     return QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=sq,
-                      slope_type="low_slope", project_kind="commercial",
+                      slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
                       extra_coats=coats, extra_coat_material_per_sq=material)
 
 
@@ -829,7 +835,7 @@ def test_no_extra_coat_line_when_none_requested():
 def test_unknown_silicone_addon_raises():
     from core.estimator import ConfigError
     q = QuoteInput(code_zone="HVHZ", roof_type="pb_silicone_2coat", num_squares=20,
-                   slope_type="low_slope", project_kind="commercial",
+                   slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
                    silicone_addons=["gold_flakes"])
     with pytest.raises(ConfigError):
         estimate(_cfg(), q)
@@ -837,7 +843,7 @@ def test_unknown_silicone_addon_raises():
 
 def test_detail_items_price_in_the_sheets_own_units():
     q = QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
-                   slope_type="low_slope", project_kind="commercial",
+                   slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
                    detail_items={"penetration_flashing": 4, "scupper_drain_detail": 2,
                                  "flashing_valley_metal_oh_per_lf": 100})
     r = estimate(_cfg(), q)
@@ -848,7 +854,7 @@ def test_detail_items_price_in_the_sheets_own_units():
 
 def test_detail_items_absent_by_default_and_zero_quantities_skipped():
     r = estimate(_cfg(), QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
-                                    slope_type="low_slope", project_kind="commercial",
+                                    slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
                                     detail_items={"penetration_flashing": 0}))
     assert _line(r, "detail_penetration_flashing") is None
 
@@ -857,7 +863,7 @@ def test_unknown_detail_item_raises_naming_the_branch_config():
     from core.estimator import ConfigError
     with pytest.raises(ConfigError):
         estimate(_cfg(), QuoteInput(code_zone="HVHZ", roof_type="tpo_adhered", num_squares=20,
-                                    slope_type="low_slope", project_kind="commercial",
+                                    slope_type="low_slope", project_kind="commercial", overhead_mode="per_sq",
                                     detail_items={"gutter_helmet": 3}))
 
 
@@ -866,7 +872,8 @@ def test_stucco_metal_warns_about_the_ten_times_contradiction():
     right reading, every stucco line is 10x over. The warning must carry BOTH totals so the
     exposure is legible without opening the sheet."""
     q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=20,
-                   project_kind="residential", stucco_metal_lf=200)
+                   project_kind="residential", stucco_metal_lf=200,
+        overhead_mode="per_sq")
     r = estimate(_cfg(), q)
     warn = next(w for w in r["warnings"] if w.startswith("stucco_metal_basis_contradiction"))
     assert "$1,800.00" in warn and "$180.00" in warn
@@ -874,6 +881,7 @@ def test_stucco_metal_warns_about_the_ten_times_contradiction():
 
 def test_no_stucco_warning_when_none_quoted():
     q = QuoteInput(code_zone="HVHZ", roof_type="13_tile", num_squares=20,
-                   project_kind="residential")
+                   project_kind="residential",
+        overhead_mode="per_sq")
     r = estimate(_cfg(), q)
     assert not any(w.startswith("stucco_metal_basis_contradiction") for w in r.get("warnings", []))

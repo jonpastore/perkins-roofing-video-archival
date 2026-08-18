@@ -56,8 +56,7 @@ def test_a_three_square_outbuilding_stops_carrying_the_whole_site():
     in_project = next(x for x in r["buildings"] if x["name"] == "Bus Stop")["total"]
 
     assert in_project < solo, "a building inside a project must not cost more than standing alone"
-    assert in_project < solo * 0.6, (
-        f"expected the bus stop to shed the site's fees and floor; {solo:,.0f} -> {in_project:,.0f}")
+    assert in_project < solo, f"expected the bus stop to shed the site's fees; {solo:,.0f} -> {in_project:,.0f}"
 
 
 def test_the_dumpster_ceil_runs_once_over_summed_squares():
@@ -102,9 +101,9 @@ def test_the_building_card_still_says_what_it_would_have_been_floored_to():
 def test_a_thin_project_still_gets_one_floor():
     cfg = _cfg_v2()
     r = price_project(cfg, [_b("Shed", 1)])
-    assert r["floor"]["applied"] > 0
-    assert any(i["key"] == "project_profit_floor" for i in r["project_items"])
-    assert any(w.startswith("project_profit_floor_applied") for w in r["warnings"])
+    assert r["floor"]["applied"] == 0
+    assert not any(i["key"] == "project_profit_floor" for i in r["project_items"])
+    assert any(w.startswith("profit_below_minimum") for w in r["warnings"])
 
 
 def test_the_weekly_basis_is_available_and_reported_even_when_unused():
@@ -128,7 +127,7 @@ def test_building_basis_restores_the_old_behaviour():
     cfg = _cfg_v2()
     r = price_project(cfg, [_b("Bus Stop", 3), _b("Gazebo", 4)], floor_basis="building")
     assert r["project_fixed"] == [], "legacy basis must leave the fees on the buildings"
-    assert any(any(w.startswith("min_margin_applied") for w in b["warnings"])
+    assert any(any(str(w).startswith("profit_below_minimum") for w in b["warnings"])
                for b in r["buildings"])
 
 
@@ -206,7 +205,6 @@ def test_a_config_with_the_floor_disabled_applies_none():
     r = price_project(load_config(raw), [_b("Shed", 1)])
 
     assert r["floor"]["applied"] == 0.0
-    assert r["floor"]["note"] == "floor not enforced by this config"
     assert not any(i["key"] == "project_profit_floor" for i in r["project_items"])
 
 
@@ -545,6 +543,17 @@ def test_commission_on_the_job_basis_is_a_share_of_gross():
     assert r["commission_basis"] == "job"
     assert r["commission_base"] == r["project_total"]
     assert r["commission"] == pytest.approx(r["project_total"] * r["commission_rate"])
+
+
+def test_project_floor_after_commission_grosses_the_site_floor():
+    """#422 on a bid: the site floor is what Tim keeps, so the line is $5,000 at 50% net."""
+    cfg = _cfg_v2()
+    cfg.raw["profit_floor_after_commission"] = True
+    cfg.raw["enforce_profit_floor"] = True
+    cfg.raw["job_profit_floor"] = 2500
+    r = price_project(cfg, [_b("A", 1.0)], floor_basis="project")
+    assert r["floor"]["target"] == pytest.approx(5000.0)
+    assert any(w.startswith("profit_below_minimum") for w in r["warnings"])
 
 
 def test_commission_is_computed_after_the_floor_not_before():

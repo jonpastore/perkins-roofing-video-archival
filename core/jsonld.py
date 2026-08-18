@@ -313,6 +313,21 @@ RANK_MATH_OWNED = frozenset({
 COMPLEMENT_TYPES = frozenset({"FAQPage", "ImageObject", "VideoObject"})
 
 
+def graph_nodes(jsonld) -> list[dict]:
+    """The node list, whether stored flat or as one ``{@graph: [...]}`` document."""
+    nodes = [n for n in (jsonld or []) if isinstance(n, dict)]
+    if len(nodes) == 1 and nodes[0].get("@graph"):
+        return [n for n in nodes[0]["@graph"] if isinstance(n, dict)]
+    return nodes
+
+
+def full_graph_enabled() -> bool:
+    """Articles and projects publish to Astro. Rank Math is not in that stack, so we emit
+    the types it used to own (Organization, WebSite, WebPage, Person, BreadcrumbList,
+    BlogPosting on articles). Complement-only output would silently drop those nodes."""
+    return True
+
+
 def build_full_graph(
     *,
     org: dict,

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { listConnections, startOAuth, type Connection } from "../api";
 import { BRAND, Badge, Button, Card, ErrorMsg } from "../ui";
 
-const SOURCES: { id: string; label: string; help: string }[] = [
+const SOURCES: { id: string; label: string; help: string; statusId?: string }[] = [
   {
     id: "knowify",
     label: "Knowify",
@@ -12,6 +12,12 @@ const SOURCES: { id: string; label: string; help: string }[] = [
     id: "companycam",
     label: "CompanyCam",
     help: "Log in so project photos and videos keep syncing. Also accepts a new application key.",
+  },
+  {
+    id: "youtube",
+    statusId: "youtube_reply",
+    label: "YouTube",
+    help: "Log in as the Perkins channel owner so comment replies can post. Use this if OAuth breaks.",
   },
 ];
 
@@ -62,9 +68,11 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
         After login, refresh keeps the token alive.
       </div>
       {SOURCES.map((src) => {
-        const conn = rows[src.id];
+        const statusRow = rows[src.statusId ?? src.id] ?? rows[src.id];
+        const oauthRow = rows[src.id] ?? statusRow;
+        const conn = statusRow;
         const status = conn?.status;
-        const canLogin = manage && (conn?.oauth_configured ?? true);
+        const canLogin = manage && (oauthRow?.oauth_configured ?? conn?.oauth_configured ?? false);
         return (
           <div
             key={src.id}

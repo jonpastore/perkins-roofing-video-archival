@@ -251,26 +251,39 @@ resource "google_project_iam_member" "api_secret_viewer" {
 }
 
 # Admin metrics — GCP spend widget reads the BigQuery billing export.
-# roles/bigquery.jobUser lets api-run-sa run BQ queries (required for client.query()).
-# NOTE: dataset-level roles/bigquery.dataViewer must also be granted on the billing
-# export dataset out-of-band (gcloud bigquery datasets add-iam-policy-binding or console)
-# since Terraform cannot manage a dataset in a different project (billing exports land in
-# the project's own dataset, but billing export setup is console-side).
-# roles/billing.viewer is NOT needed — BQ export reads work with jobUser + dataViewer only.
+# jobUser = run queries. dataViewer is dataset-scoped (never project-wide).
+# Enabling the *export itself* is still console-only (Billing Account Admin).
 resource "google_project_iam_member" "api_bq_job_user" {
   project = var.project_id
   role    = "roles/bigquery.jobUser"
   member  = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
-# Data read is deliberately NOT granted project-wide (roles/bigquery.dataViewer at the
-# project level would let api-run-sa read EVERY dataset — over-broad). Grant dataViewer
-# on the billing-export DATASET ONLY, out-of-band, at the same time you enable the export
-# and set BILLING_BQ_TABLE (both are console-side steps Terraform can't manage here):
-#   bq add-iam-policy-binding \
-#     --member=serviceAccount:api-run-sa@${var.project_id}.iam.gserviceaccount.com \
-#     --role=roles/bigquery.dataViewer  PROJECT:BILLING_DATASET
-# Until then the GCP-spend widget returns {configured:false} and needs no read grant.
+resource "google_bigquery_dataset" "billing_export" {
+  dataset_id                 = "billing_export"
+  location                   = "US"
+  description                = "Cloud Billing standard usage-cost export for the dashboard spend widget."
+  delete_contents_on_destroy = false
+}
+
+resource "google_bigquery_dataset_iam_member" "api_billing_export_viewer" {
+  dataset_id = google_bigquery_dataset.billing_export.dataset_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+# Digest/ops job health: Cloud Scheduler last-attempt + Cloud Run executions.
+resource "google_project_iam_member" "api_scheduler_viewer" {
+  project = var.project_id
+  role    = "roles/cloudscheduler.viewer"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
+
+resource "google_project_iam_member" "api_run_viewer" {
+  project = var.project_id
+  role    = "roles/run.viewer"
+  member  = "serviceAccount:${google_service_account.api_run_sa.email}"
+}
 
 # ---------------------------------------------------------------------------
 # 4. IAM bindings — jobs-sa
@@ -587,7 +600,7 @@ locals {
     salinity-sweep   = "900s"
     ingest           = "7200s"
     render           = "7200s"
-    article          = "3600s"
+    article          = "7200s"
     social           = "3600s"
     knowify-sync     = "1800s"
     knowify-keepwarm = "300s"
@@ -1446,8 +1459,32 @@ resource "google_billing_budget" "spend_cap" {
     }
   }
 
-  # all_updates_rule omitted — alerts fire to the billing account's default contacts.
-  # Add a monitoring_notification_channels entry here post-billing if needed.
+  all_updates_rule {
+    monitoring_notification_channels = [
+      google_monitoring_notification_channel.cloud_warnings_email.name,
+    ]
+    disable_default_iam_recipients = false
+  }
+}
+
+# Workspace group is cloudwarnings@ — Admin Console rejects dots in group emails
+# (cloud.warnings@ is not a valid group address).
+resource "google_monitoring_notification_channel" "cloud_warnings_email" {
+  display_name = "Cloud Warnings list"
+  type         = "email"
+  labels = {
+    email_address = "cloudwarnings@perkinsroofing.net"
+  }
+  depends_on = [google_project_service.apis]
+}
+
+# Weekly digest / dashboard spend.unavailable — billing-account IAM, not a project role.
+# roles/billing.budgets.viewer is NOT grantable on a billing account (INVALID_ARGUMENT).
+# roles/billing.viewer is the least-privilege role that includes billing.budgets.get/list.
+resource "google_billing_account_iam_member" "api_budget_viewer" {
+  billing_account_id = var.billing_account
+  role               = "roles/billing.viewer"
+  member             = "serviceAccount:${google_service_account.api_run_sa.email}"
 }
 
 # ---------------------------------------------------------------------------

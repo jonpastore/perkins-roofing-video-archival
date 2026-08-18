@@ -67,7 +67,7 @@ def test_estimates_customer_search_uses_server_side_search():
 def test_estimates_expose_pricing_drivers_discounts_and_estimate_linkage():
     source = Path("web/src/pages/Quoting.tsx").read_text()
 
-    assert "Recommended tier" in source
+    assert "Recommended package" in source
     assert "EstimateCheckbox" in source
     # Demo is now the existing-roof selector (Zoom 2026-07-17: price by what's torn OFF)
     assert "Existing roof (what are we tearing off?)" in source

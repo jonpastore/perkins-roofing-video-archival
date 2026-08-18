@@ -41,7 +41,7 @@ def test_fetch_cloud_spend_http_403(monkeypatch):
     out = cloud_spend.fetch_cloud_spend()
     assert out["ok"] is False
     assert "403" in out["error"]
-    assert "billing.budgets.viewer" in out["hint"]
+    assert "roles/billing.viewer" in out["hint"]
 
 
 def test_fetch_cloud_spend_parses_budget(monkeypatch):

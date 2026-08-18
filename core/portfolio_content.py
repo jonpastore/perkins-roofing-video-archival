@@ -8,13 +8,11 @@ the other 450. Everything here is assembled from fields that exist; a page reads
 than confident-and-wrong. If Perkins supplies real project detail later, that is what should
 lengthen these pages.
 
-SCHEMA SCOPE — mirrors the article standard rather than inventing a second one:
-  * ``schema_scoped``  — articles emit ONLY FAQPage + VideoObject because Rank Math already
-    emits Article/Organization/WebPage/BreadcrumbList, and shipping our own duplicates it
-    (fixed 2026-07-22 after exactly that). Project pages get the same treatment: nothing that
-    Rank Math owns. ImageObject is added because Rank Math does NOT emit it for gallery images
-    and it is the multimodal-AEO lever — AI engines parse ImageObject captions/creator to
-    attribute and cite images.
+SCHEMA SCOPE — Rank Math is gone. Public pages are Astro.
+  * ``schema_scoped``  — publish the full graph Rank Math used to own (Organization,
+    WebSite, WebPage, Person, BreadcrumbList) plus FAQPage / ImageObject / VideoObject.
+    Complement-only output is still the default of ``build_project_jsonld`` so tests can
+    pin the media nodes; the live render passes ``full_graph``.
   * ``videoobject_only_embedded`` — Wendy, 2026-07-28: "Google says we can only have video
     object schema for embedded videos, not links to videos." The gallery renders a real
     <video> player per curated video, so one VideoObject each is legitimate. A project whose
@@ -346,3 +344,28 @@ def build_project_jsonld(
         return [build_full_graph(extra_nodes=nodes, **full_graph)]
 
     return nodes
+
+
+def project_full_graph_kwargs(record: dict) -> dict:
+    """Kwargs for ``build_full_graph`` on a project page (not a BlogPosting)."""
+    from core.brand_identity import AUTHOR, ORGANIZATION  # noqa: PLC0415
+
+    site = (ORGANIZATION.get("url") or "https://perkinsroofing.net").rstrip("/")
+    slug = (record.get("slug") or "").strip("/")
+    page_url = f"{site}/portfolio/{slug}/" if slug else f"{site}/portfolio/"
+    name = record.get("name") or "Project"
+    return {
+        "org": ORGANIZATION,
+        "author": AUTHOR,
+        "site_url": site,
+        "site_name": ORGANIZATION["name"],
+        "page_url": page_url,
+        "page_name": name,
+        "description": build_meta(record),
+        "breadcrumbs": [
+            {"name": "Home", "url": f"{site}/"},
+            {"name": "Projects", "url": f"{site}/portfolio/"},
+            {"name": name, "url": page_url},
+        ],
+        "article": False,
+    }

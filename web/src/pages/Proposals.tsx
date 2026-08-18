@@ -11,6 +11,7 @@ import {
 } from "../api";
 import { BRAND, FONT, Button, Card, PageTitle, inputStyle, Loading, ErrorMsg, StatusPill, StatCard, TierCard, SectionLabel } from "../ui";
 import { ProposalBuilder } from "./ProposalBuilder";
+import { RemindersPausedNotice } from "../components/RemindersPausedNotice";
 import { errText } from "../lib/errors";
 
 // Pre-send fairness/security review (core/proposal_review). send returns 422 with
@@ -1349,6 +1350,8 @@ export function Proposals() {
       >
         Proposals
       </PageTitle>
+
+      <RemindersPausedNotice />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
         <button style={workspaceTabStyle("proposals")} onClick={() => handleWorkspaceTabChange("proposals")}>

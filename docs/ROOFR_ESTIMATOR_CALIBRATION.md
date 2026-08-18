@@ -1,45 +1,42 @@
-# Estimator calibration vs Roofr golden measurements + sold proposals
+# Estimator vs sold PROTECTOR lines (honest harness)
 
-Roofr is the source of truth for measurements. This calibration feeds the **Roofr
-squares** from `roofr_baseline.json` (extracted from Tim's golden attachments) into the
-cost-plus estimator using the **production-active pricing config** (branch `miami`, hash
-`dc8775b6…`, snapshotted at `tests/fixtures/golden/roofr_calibration/active_pricing_config.json`)
-and compares the estimator's PROTECTOR base to Tim's sold PROTECTOR base line.
+This is **not** a claim that we reprint Tim's Knowify PDFs. Those PDFs live in
+`~/perkins-corpus/` (mostly Roofr *measurement* reports). The one real Knowify
+proposal in `golden-proposals/` is Josh's 30 SQ tile test roof at **$33,000**.
 
-## Results (residential, standard slope, 1-story assumption)
+The 7/25 and 7/26 "worked examples" PDFs are **engine output we generated**, not
+Tim's sold book. They disagree with each other on the same house when the weekly
+floor basis flips. Do not call them golden.
 
-| Job | System | Roofr SQ | Est. base | Sold base | Est/Sold |
-|-----|--------|---------:|----------:|----------:|---------:|
-| Butterworth | tile | 23.79 | $28,186 | $28,320 | 100% |
-| Thompson | metal | 35.48 | $39,981 | $39,985 | 100% |
-| Mazzeo | tile | 37.05 | $42,238 | $43,938 | 96% |
-| Allen | shingle | 34.58 | $24,163 | $22,840 | 106% |
-| Palmer* | metal | 25.86 | $30,091 | $38,380 | 78% |
-| Malooley* | tile | 64.28 | $71,265 | $94,460 | 75% |
+Exhibit-B JSON fixtures (`tests/fixtures/golden/28sq_*.json`, `41_5sq_*.json`)
+are **closed-loop unit tests** of the per-square table. They pass
+`overhead_mode=per_sq` explicitly. They are not sold jobs.
 
-`*` Excluded from the tight-tolerance regression assertion — Tim's sold price carried a
-documented surcharge the base estimate does not model:
-- **Palmer** — 3-story + 6/12 slope surcharge.
-- **Malooley** — 76 SQ premium (Mediterranean) tile job.
+## What the harness actually does
 
-Two golden proposals (Person, Meharg) have no Roofr baseline extracted, so they are not in
-the calibration set.
+`tests/test_roofr_calibration.py` (rewritten 2026-08-15):
 
-## Interpretation
+- Roofr **pitched / flat** split, not `total_sqft` billed as one sloped system
+- `demo=True` (every sold PROTECTOR tears off)
+- `overhead_mode=daily` — Tim, 2026-08-03: overhead is days; per-sq is a guide
+- compares engine `project_total` to the **sum of PROTECTOR / flat / 3-ply lines**
+  (copper, paint, gutters, named discounts stripped)
 
-For standard-slope / standard-height single-system jobs, the cost-plus estimator, fed Roofr
-squares, reproduces Tim's sold PROTECTOR base within ~±6% — strong evidence the pricing
-config and per-square build-up are calibrated to real sold work. The two outliers are
-explained by documented surcharges/premium tiers, not model error.
+Tolerance is **±15%**. That is the remaining method gap (catalog specials, waste,
+unmodeled extras), not a 100% calibration.
 
-## What this validates vs. not
+Butterworth is mixed (8.28 pitched + 15.51 flat). Pricing it as 23.79 SQ of tile
+against the sold *flat* line of $28,320 was a false 100%.
 
-- Validated: estimator base $/project for standard jobs ≈ Tim's sold base.
-- Not yet modeled automatically: 3-story/steep-slope surcharge, large-job premium tiers,
-  gutters/accessory LF lines, discounts — these are the sold-total deltas above the base.
+Palmer (3-story) and Malooley (waste / second structure / 76 SQ) are exercised
+for "still prices", not for a ratio.
 
-## Reproduce
+Person and Meharg have no Roofr row.
 
-- Regression test: `tests/test_roofr_calibration.py` (pins standard jobs within 10%).
-- Measurement import (prod): `scripts/import_roofr_golden_measurements.py --cloud-sql-connector --apply`
-  creates `provider="roofr_fixture"` measurements linked to golden customers/properties.
+## Josh 30 SQ
+
+`knowify_jon_test_roof_2026-08-08.pdf` (2026-07-08): PROTECTOR tile, 30 SQ,
+**$33,000** ($1,100/sq catalog). The engine cost-up is ~$35,450–$35,700. The
+catalog number is what he charged; `package_options()` still layers adders on
+the engine total. Closing that last gap is a product call (catalog as headline
+vs engine as headline), not a missing formula.

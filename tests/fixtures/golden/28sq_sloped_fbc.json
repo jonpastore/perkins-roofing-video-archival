@@ -1,5 +1,5 @@
 {
-  "description": "28 SQ sloped FBC — dimensional shingle, Lee county, commercial, 1-story, no options",
+  "description": "EXHIBIT-B UNIT TEST (not a Tim sold PDF) — 28 SQ sloped FBC dimensional shingle, per_sq OH",
   "source": "exhibit_b_derived",
   "provider": "manual",
   "input": {
@@ -24,7 +24,8 @@
     "layers_to_remove": 0,
     "deck_type": null,
     "include_insulation": false,
-    "include_tapered": false
+    "include_tapered": false,
+    "overhead_mode": "per_sq"
   },
   "expected_total": 20880.0,
   "expected_line_items": {

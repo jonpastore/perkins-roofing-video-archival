@@ -17,6 +17,7 @@ import pytest
 from core.proposal_render import (
     DEFAULT_TEMPLATE_HTML,
     ProposalRenderContext,
+    package_cards_from_snapshot,
     render_proposal_html,
     structure_groups,
 )
@@ -26,6 +27,15 @@ from core.proposal_render import (
 # ---------------------------------------------------------------------------
 
 def _minimal_context(**overrides) -> ProposalRenderContext:
+    good = overrides.get("quote_good_price", "$18,400.00")
+    better = overrides.get("quote_better_price", "$21,200.00")
+    best = overrides.get("quote_best_price", "$24,800.00")
+    if "quote_packages" not in overrides:
+        overrides["quote_packages"] = [
+            {"name": "Perkins Protector", "price": good, "featured": False},
+            {"name": "Perkins Preferred", "price": better, "featured": True},
+            {"name": "Perkins Premium", "price": best, "featured": False},
+        ]
     base = ProposalRenderContext(
         proposal_title="Roof Replacement — 123 Main St",
         proposal_date="July 8, 2026",
@@ -37,9 +47,9 @@ def _minimal_context(**overrides) -> ProposalRenderContext:
         property_code_zone="HVHZ",
         quote_roof_type="Dimensional Shingle",
         quote_num_squares=28.0,
-        quote_good_price="$18,400.00",
-        quote_better_price="$21,200.00",
-        quote_best_price="$24,800.00",
+        quote_good_price=good,
+        quote_better_price=better,
+        quote_best_price=best,
         quote_line_items=[
             {"label": "Shingles", "qty": 28, "unit": "sq", "unit_price": 350.0, "total": 9800.0},
         ],
@@ -57,6 +67,43 @@ def _minimal_context(**overrides) -> ProposalRenderContext:
 # ---------------------------------------------------------------------------
 # Variable substitution
 # ---------------------------------------------------------------------------
+
+def test_package_cards_use_catalog_names_not_good_better_best():
+    cards = package_cards_from_snapshot({
+        "recommended_tier": "better",
+        "package_options": [
+            {"key": "PROTECTOR", "label": "Perkins Protector", "total": 18400},
+            {"key": "PREFERRED", "label": "Perkins Preferred", "total": 21200},
+            {"key": "COASTAL", "label": "Perkins Coastal", "total": 25000},
+        ],
+    })
+    assert [c["name"] for c in cards] == [
+        "Perkins Protector", "Perkins Preferred", "Perkins Coastal",
+    ]
+    assert cards[1]["featured"] is True
+
+
+def test_package_cards_remap_legacy_good_better_best_labels():
+    cards = package_cards_from_snapshot({
+        "recommended_tier": "good",
+        "tiers": {
+            "good": {"label": "Good", "total": 18400},
+            "better": {"label": "Better", "total": 21200},
+            "best": {"label": "Best", "total": 24800},
+        },
+    })
+    assert [c["name"] for c in cards] == [
+        "Perkins Protector", "Perkins Preferred", "Perkins Premium",
+    ]
+
+
+def test_default_template_prints_package_names():
+    html = render_proposal_html(DEFAULT_TEMPLATE_HTML, _minimal_context())
+    assert "Perkins Protector" in html
+    assert "Perkins Preferred" in html
+    assert ">Good<" not in html
+    assert ">Better<" not in html
+
 
 class TestVariableSubstitution:
     def test_customer_name_substituted(self):

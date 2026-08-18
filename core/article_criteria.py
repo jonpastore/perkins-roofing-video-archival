@@ -16,6 +16,7 @@ from core.article_repair import RELATED_BLOCK_RE as _RELATED_BLOCK_RE
 from core.article_repair import YT_ID_RE as _YT_ID_RE
 from core.brand_identity import YOUTUBE_CHANNEL_URL, YOUTUBE_CHANNEL_URL_LEGACY
 from core.internal_links import BASE_URL, matching_service_links
+from core.jsonld import graph_nodes
 from core.seo import aio_signals, check_tier, rank_math_checks
 
 _HREF_RE = re.compile(r'href="([^"]*)"', re.IGNORECASE)
@@ -94,7 +95,7 @@ class Criterion:
 
 
 def _types(jsonld) -> set:
-    return {j.get("@type") for j in (jsonld or [])}
+    return {j.get("@type") for j in graph_nodes(jsonld)}
 
 
 def check_compliance(
@@ -130,7 +131,7 @@ def check_compliance(
     # "Google says we can only have video object schema for embedded videos, not links to
     # videos." The 26-gauge post shipped 6 VideoObject nodes against 1 iframe, because the
     # schema builder counted every watch-link and every i.ytimg thumbnail as an "embed".
-    n_vo = sum(1 for j in (jsonld or []) if j.get("@type") == "VideoObject")
+    n_vo = sum(1 for j in graph_nodes(jsonld) if j.get("@type") == "VideoObject")
     n_embeds = len(_VIDEO_EMBED_RE.findall(c))
     add("videoobject_only_embedded", "One VideoObject per EMBEDDED video (never for links)",
         n_vo <= n_embeds, True,

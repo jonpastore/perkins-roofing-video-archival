@@ -334,3 +334,9 @@ class TestReminderRealRoundTrip:
         assert result["sent"] == 0, (
             f"Expected 0 sent (idempotent), got {result['sent']}"
         )
+
+
+def test_run_skips_when_admin_disabled(monkeypatch):
+    from jobs.proposal_reminders import run
+    monkeypatch.setattr("core.job_switches.proposal_reminders_enabled", lambda: False)
+    assert run() == {"sent": 0, "skipped": 0, "errored": 0, "disabled": True}

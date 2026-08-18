@@ -17,6 +17,7 @@ import copy
 import json
 import hashlib
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -121,6 +122,22 @@ SAMPLE_CONFIG = {
     },
 }
 
+_EXHIBIT_B = json.loads(
+    Path(__file__).resolve().parents[2].joinpath(
+        "infra/fixtures/pricing_config_exhibit_b.json"
+    ).read_text()
+)
+
+
+def _daily_ready(cfg: dict) -> dict:
+    """SAMPLE_CONFIG is the per-sq exhibit-B slice. Live quotes need a day model."""
+    out = dict(cfg)
+    out.setdefault("daily_overhead_rates", _EXHIBIT_B["daily_overhead_rates"])
+    out.setdefault("daily_overhead_day_model", _EXHIBIT_B["daily_overhead_day_model"])
+    out.setdefault("daily_overhead_weeks_rounding_mode",
+                   _EXHIBIT_B["daily_overhead_weeks_rounding_mode"])
+    return out
+
 
 def _hash(cfg: dict) -> str:
     import jcs
@@ -193,7 +210,7 @@ def _ensure_branch(client, branch: str) -> str:
 
 
 def _create_config(client, branch="miami", label="Test", config=None):
-    cfg = config or SAMPLE_CONFIG
+    cfg = _daily_ready(config or SAMPLE_CONFIG)
     _ensure_branch(client, branch)
     r = client.post("/estimator/configs", json={"branch": branch, "label": label, "config": cfg},
                     headers=AUTH)
@@ -672,6 +689,7 @@ class TestEstimatorQuote:
                 "roof_type": "bur",
                 "slope_type": "sloped",  # should be corrected by roof_type family
                 "num_squares": 10.0,
+                "overhead_mode": "per_sq",
             },
             headers=AUTH,
         )
@@ -777,7 +795,7 @@ class TestEstimatorQuote:
         _activate_config(admin_client, _create_config(admin_client, branch=branch)["id"])
         base = admin_client.post(
             "/estimator/quote",
-            json={"branch": branch, "code_zone": "FBC", "roof_type": "dimensional_shingle", "num_squares": 10.0},
+            json={"branch": branch, "code_zone": "FBC", "roof_type": "dimensional_shingle", "num_squares": 40.0},
             headers=AUTH,
         )
         discounted = admin_client.post(
@@ -786,7 +804,7 @@ class TestEstimatorQuote:
                 "branch": branch,
                 "code_zone": "FBC",
                 "roof_type": "dimensional_shingle",
-                "num_squares": 10.0,
+                "num_squares": 40.0,
                 "discounts": [{"description": "Referral", "discount_type": "amount", "value": 500}],
             },
             headers=AUTH,
@@ -800,6 +818,85 @@ class TestEstimatorQuote:
         assert d["discount_total"] == 500.0
         assert d["project_total"] == b["project_total"] - 500.0
         assert d["profit_dollars"] == b["profit_dollars"] - 500.0
+
+    def test_api_quote_refuses_discount_that_breaches_floor(self, admin_client):
+        branch = _unique_branch("quote-disc-floor")
+        floored = _daily_ready({
+            **SAMPLE_CONFIG,
+            "enforce_profit_floor": True,
+            "job_profit_floor": 2500,
+            "weekly_profit_floor": 2500,
+        })
+        _activate_config(admin_client, _create_config(admin_client, branch=branch, config=floored)["id"])
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "dimensional_shingle",
+                "num_squares": 10.0,
+                "discounts": [{"description": "Giveaway", "discount_type": "amount", "value": 2000}],
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        assert any("profit_below_minimum" in str(w) for w in r.json().get("warnings") or [])
+
+    def test_api_quote_slider_under_2500_warns_and_still_returns_200(self, admin_client):
+        """0% target on a small job is under $2,500: warning, not 422. floors still expose the minimum."""
+        branch = _unique_branch("quote-slider-floor")
+        floored = _daily_ready({
+            **SAMPLE_CONFIG,
+            "enforce_profit_floor": True,
+            "job_profit_floor": 2500,
+            "weekly_profit_floor": 2500,
+            "profit_floor_basis": "job",
+        })
+        _activate_config(admin_client, _create_config(admin_client, branch=branch, config=floored)["id"])
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "dimensional_shingle",
+                "num_squares": 8.0,
+                "overhead_mode": "per_sq",
+                "profit_mode": "percent",
+                "percent_profit_pct": 0.0,
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["floors"]["min_profit_dollars"] == 2500
+        profit = next(li["amount"] for li in body["line_items_detail"] if li["key"] == "profit")
+        assert profit < 2500
+        assert any(str(w).startswith("profit_below_minimum") for w in body.get("warnings") or [])
+
+    def test_api_quote_refuses_discount_that_breaches_operator_min(self, admin_client):
+        """Operator Min $ raises the post-discount floor the same way the engine does."""
+        branch = _unique_branch("quote-disc-min")
+        floored = _daily_ready({
+            **SAMPLE_CONFIG,
+            "enforce_profit_floor": True,
+            "job_profit_floor": 2500,
+            "weekly_profit_floor": 2500,
+        })
+        _activate_config(admin_client, _create_config(admin_client, branch=branch, config=floored)["id"])
+        r = admin_client.post(
+            "/estimator/quote",
+            json={
+                "branch": branch,
+                "code_zone": "FBC",
+                "roof_type": "dimensional_shingle",
+                "num_squares": 40.0,
+                "min_profit_dollars": 10000,
+                "discounts": [{"description": "Giveaway", "discount_type": "amount", "value": 500}],
+            },
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        assert any("profit_below_minimum" in str(w) for w in r.json().get("warnings") or [])
 
     def test_api_quote_can_create_estimate_revision(self, admin_client):
         branch = _unique_branch("quote-rev")
@@ -1767,7 +1864,8 @@ def test_the_engines_own_explain_inputs_reconcile_on_a_mixed_roof():
     cfg = load_config(json.loads(
         Path("infra/fixtures/pricing_config_exhibit_b.json").read_text()))
     res = estimate(cfg, QuoteInput(code_zone="FBC", roof_type="13_tile", num_squares=30.0,
-                                   flat_squares=10.0, flat_roof_type="tpo_adhered", debug=True))
+                                   flat_squares=10.0, flat_roof_type="tpo_adhered",
+                                   overhead_mode="per_sq", debug=True))
 
     checked = 0
     for li in res["line_items_detail"]:

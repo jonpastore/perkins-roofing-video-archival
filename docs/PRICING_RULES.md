@@ -5,7 +5,8 @@ calculator, a comment behind that cell, a line in an email, or a moment on a rec
 here is a DeGenito assumption. Where something *is* still an assumption it is marked **OPEN** and
 says so.
 
-Last updated 2026-07-27. Source of truth for the numbers: `infra/fixtures/pricing_config_exhibit_b.json`
+Last updated 2026-08-15. Engine/API/SPA default `overhead_mode` is **daily**. Per-square
+OH is a comparison guide, not the quote (Tim, 2026-08-03). Source of truth for the numbers: `infra/fixtures/pricing_config_exhibit_b.json`
 (git) and the active `pricing_configs` row per branch (prod). This document explains the rules; the
 config carries the values.
 
@@ -172,8 +173,19 @@ charge $2,500 minimum on re-roofs" (7/17 [08:52]).
 Across his own 29 homes this lifts **20 of 29** above the sliding scale and raises the set by
 **+$28,655 (+2.6%)**. On-site weeks run 1 (10 homes), 2 (17), 3 (1), 4 (1).
 
+The $2,500 is an **advisory minimum**, not a rewrite and not a 422. Quotes under $2,500
+still issue, carry `profit_below_minimum`, email Tim / Marco / Jon, and land in the
+weekly digest. Older proposals may sit under $2,500; they must still re-price. Operator
+Min $ on this job still raises the profit line if the estimator typed one.
+
 The floor never overrides an operator who prices deliberately — a typed flat profit or a per-square
-override is left alone.
+override is left alone, except a typed amount **below** $2,500 is refused.
+
+**OPEN / experiment — is $2,500 before or after commission?** Config key
+`profit_floor_after_commission` (Estimating Config → Profit floors). Default **false**: the
+profit line is $2,500 and 50%-of-net commission takes $1,250, so Tim nets $1,250. Flip **true**
+and the line becomes `$2,500 / (1 − rate)` so he keeps $2,500 after commission ($5,000 line at
+50%). Operator Min $ is a profit-line number and is not doubled. Commission-on-gross is a no-op.
 
 **OPEN — what counts as a week.** His rationale is *"in window after inspections"*, which is calendar
 occupancy rather than crew-days. We currently count **crew days ÷ 5**. If a job has a long inspection
