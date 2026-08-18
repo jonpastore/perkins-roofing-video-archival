@@ -50,6 +50,33 @@ def test_verify_api_key_http_error():
     assert Y.verify_api_key("AIza-bad", urlopen=_open) is False
 
 
+def test_access_token_from_refresh_success(monkeypatch):
+    monkeypatch.setenv("OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "sec")
+
+    def _open(req, timeout=0):
+        return _Resp({"access_token": "AT-1"})
+
+    assert Y.access_token_from_refresh("rt", urlopen=_open) == "AT-1"
+
+
+def test_access_token_from_refresh_empty_inputs(monkeypatch):
+    monkeypatch.delenv("OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("OAUTH_CLIENT_SECRET", raising=False)
+    assert Y.access_token_from_refresh("") == ""
+    assert Y.access_token_from_refresh("rt") == ""
+
+
+def test_access_token_from_refresh_http_error(monkeypatch):
+    monkeypatch.setenv("OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "sec")
+
+    def _open(req, timeout=0):
+        raise urllib.error.HTTPError(req.full_url, 400, "bad", hdrs=None, fp=None)
+
+    assert Y.access_token_from_refresh("rt", urlopen=_open) == ""
+
+
 def test_verify_refresh_requires_client(monkeypatch):
     monkeypatch.delenv("OAUTH_CLIENT_ID", raising=False)
     monkeypatch.delenv("OAUTH_CLIENT_SECRET", raising=False)
@@ -69,6 +96,18 @@ def test_verify_refresh_perkins_channel(monkeypatch):
 
     assert Y.verify_refresh_token("rt", urlopen=_open) is True
     assert any("token" in u for u in calls)
+
+
+def test_posting_channel_channels_http_error(monkeypatch):
+    monkeypatch.setenv("OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "sec")
+
+    def _open(req, timeout=0):
+        if "oauth2.googleapis.com/token" in req.full_url:
+            return _Resp({"access_token": "AT"})
+        raise urllib.error.HTTPError(req.full_url, 403, "no", hdrs=None, fp=None)
+
+    assert Y.posting_channel("rt", urlopen=_open) is None
 
 
 def test_verify_refresh_wrong_channel(monkeypatch):

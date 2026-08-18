@@ -48,7 +48,23 @@ def creds_for(platform: str, tenant_id: int) -> dict:
     rec = _from_store(platform, tenant_id)
     if rec and rec.get("access_token"):
         return rec
+    if platform in ("youtube_shorts", "youtube"):
+        return _youtube_refresh_creds(rec)
     return _from_env(platform)
+
+
+def _youtube_refresh_creds(store_rec: dict | None) -> dict:
+    """Store refresh, else GSM youtube-oauth-refresh-token, else env."""
+    if store_rec and store_rec.get("refresh_token"):
+        return store_rec
+    try:
+        from core.youtube_creds import load_refresh_token  # noqa: PLC0415
+        refresh = load_refresh_token()
+    except Exception:  # noqa: BLE001
+        refresh = (os.environ.get("YOUTUBE_OAUTH_REFRESH_TOKEN") or "").strip()
+    if not refresh:
+        return _from_env("youtube_shorts")
+    return {"refresh_token": refresh}
 
 
 def _from_store(platform: str, tenant_id: int) -> dict | None:

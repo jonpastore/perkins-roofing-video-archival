@@ -101,10 +101,38 @@ def _publisher(platform: str, creds: dict, tenant_id: int):
                     "social_job: TikTok token refresh failed (%s) — using resolved token", exc,
                 )
         return TikTokPublisher(**kwargs)
+    if platform == "youtube":
+        platform = "youtube_shorts"
     spec = _DIST_ADAPTERS.get(platform)
     if spec:
+        if platform == "youtube_shorts":
+            creds = {**creds, "access_token": _youtube_access_token(creds)}
         return _compat_dist_publisher(*spec[:2], creds, spec[2])
     raise ValueError(f"Unknown platform: {platform!r}")
+
+
+def _youtube_access_token(creds: dict) -> str:
+    """Prefer a store access token; else exchange store/GSM/env refresh. Never log tokens."""
+    token = (creds.get("access_token") or "").strip()
+    refresh = (creds.get("refresh_token") or "").strip()
+    if not refresh:
+        try:
+            from core.youtube_creds import load_refresh_token  # noqa: PLC0415
+            refresh = load_refresh_token()
+        except Exception:  # noqa: BLE001
+            refresh = (os.environ.get("YOUTUBE_OAUTH_REFRESH_TOKEN") or "").strip()
+    if refresh:
+        try:
+            from core.youtube_creds import access_token_from_refresh  # noqa: PLC0415
+            exchanged = access_token_from_refresh(refresh)
+            if exchanged:
+                return exchanged
+            logger.warning("social_job: YouTube token exchange returned no access token")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("social_job: YouTube token exchange failed (%s)", type(exc).__name__)
+    if token:
+        return token
+    raise RuntimeError("YouTube access token unavailable")
 
 
 def _is_new_publisher(cls) -> bool:

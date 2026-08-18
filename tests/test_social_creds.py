@@ -167,4 +167,28 @@ def test_store_exception_falls_back_to_env(monkeypatch):
 def test_youtube_shorts_env_fallback(monkeypatch):
     _patch_store(monkeypatch, None)
     monkeypatch.setenv("YOUTUBE_ACCESS_TOKEN", "yt-env")
+    monkeypatch.setattr("core.youtube_creds.load_refresh_token", lambda: "")
     assert SC.creds_for("youtube_shorts", 1) == {"access_token": "yt-env"}
+
+
+def test_youtube_shorts_store_refresh(monkeypatch):
+    _patch_store(monkeypatch, {"refresh_token": "STORE-RT"})
+    assert SC.creds_for("youtube_shorts", 1) == {"refresh_token": "STORE-RT"}
+
+
+def test_youtube_shorts_refresh_load_error_uses_env(monkeypatch):
+    _patch_store(monkeypatch, None)
+    monkeypatch.delenv("YOUTUBE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("YOUTUBE_OAUTH_REFRESH_TOKEN", "ENV-RT")
+    monkeypatch.setattr(
+        "core.youtube_creds.load_refresh_token",
+        lambda: (_ for _ in ()).throw(RuntimeError("gsm")),
+    )
+    assert SC.creds_for("youtube_shorts", 1) == {"refresh_token": "ENV-RT"}
+
+
+def test_youtube_shorts_uses_gsm_refresh(monkeypatch):
+    _patch_store(monkeypatch, None)
+    monkeypatch.delenv("YOUTUBE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setattr("core.youtube_creds.load_refresh_token", lambda: "GSM-RT")
+    assert SC.creds_for("youtube_shorts", 1) == {"refresh_token": "GSM-RT"}

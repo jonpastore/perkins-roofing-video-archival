@@ -56,18 +56,19 @@ def verify_api_key(key: str, *, urlopen=None) -> bool:
         return False
 
 
-def posting_channel(
+def access_token_from_refresh(
     refresh: str,
     *,
     client_id: str = "",
     client_secret: str = "",
     urlopen=None,
-) -> dict | None:
+) -> str:
+    """Exchange a refresh token for a short-lived access token. Empty string on failure."""
     cid = client_id or os.getenv("OAUTH_CLIENT_ID", "")
     secret = client_secret or os.getenv("OAUTH_CLIENT_SECRET", "")
     refresh = (refresh or "").strip()
-    if not (refresh and cid and secret):
-        return None
+    if not refresh or not cid or not secret:
+        return ""
     opener = urlopen or urllib.request.urlopen
     try:
         body = urllib.parse.urlencode({
@@ -78,9 +79,25 @@ def posting_channel(
         }).encode()
         tok_req = urllib.request.Request(TOKEN_URL, data=body, method="POST")
         with opener(tok_req, timeout=20) as resp:
-            access = json.loads(resp.read().decode()).get("access_token") or ""
-        if not access:
-            return None
+            return json.loads(resp.read().decode()).get("access_token") or ""
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, TimeoutError, ValueError, json.JSONDecodeError):
+        return ""
+
+
+def posting_channel(
+    refresh: str,
+    *,
+    client_id: str = "",
+    client_secret: str = "",
+    urlopen=None,
+) -> dict | None:
+    access = access_token_from_refresh(
+        refresh, client_id=client_id, client_secret=client_secret, urlopen=urlopen,
+    )
+    if not access:
+        return None
+    opener = urlopen or urllib.request.urlopen
+    try:
         ch_req = urllib.request.Request(
             CHANNELS_MINE, headers={"Authorization": f"Bearer {access}", "User-Agent": _UA},
         )
