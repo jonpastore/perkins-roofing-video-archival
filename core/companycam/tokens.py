@@ -1,21 +1,16 @@
-"""CompanyCam bearer + OAuth blob in Secret Manager.
+"""CompanyCam Application Key in Secret Manager (env name COMPANYCAM_PAT is historical).
 
-The sync adapter still speaks a Bearer token (COMPANYCAM_PAT). Browser OAuth
-writes a new :latest version so running jobs pick it up on the next process
-start, and load_bearer() reads SM at call time so a reconnect works without
-waiting for a deploy.
+load_bearer() reads SM at call time so a key rotation is picked up without a deploy.
+There is no user OAuth flow — persist_companycam / save_oauth were removed.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
-from typing import Any
 
 log = logging.getLogger(__name__)
 
 PAT_SECRET = "companycam-pat"
-OAUTH_SECRET = "companycam-tokens"
 
 
 def _project() -> str:
@@ -50,12 +45,3 @@ def save_bearer(token: str, sm_client=None) -> None:
         request={"parent": parent, "payload": {"data": token.encode()}}
     )
     log.info("companycam-pat: wrote new secret version")
-
-
-def save_oauth(blob: dict[str, Any], sm_client=None) -> None:
-    client = sm_client or _client()
-    parent = f"projects/{_project()}/secrets/{OAUTH_SECRET}"
-    client.add_secret_version(
-        request={"parent": parent, "payload": {"data": json.dumps(blob).encode()}}
-    )
-    log.info("companycam-tokens: wrote new secret version")

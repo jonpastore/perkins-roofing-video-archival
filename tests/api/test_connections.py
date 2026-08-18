@@ -91,7 +91,7 @@ class TestListConnections:
         assert by_key["wordpress"]["status"] == "unconfigured"
         assert by_key["knowify"]["oauth"] is True
         assert by_key["knowify"]["oauth_configured"] is True
-        assert by_key["companycam"]["oauth"] is True
+        assert by_key["companycam"]["oauth"] is False
         assert by_key["companycam"]["secret_reenter"] is True
         assert by_key["companycam"]["oauth_configured"] is False
 
@@ -106,6 +106,9 @@ class TestListConnections:
 class TestOAuthStart:
     def test_unknown_platform_404(self):
         assert _make_client().get("/oauth/myspace/start", headers=AUTH).status_code == 404
+
+    def test_companycam_oauth_removed(self):
+        assert _make_client().get("/oauth/companycam/start", headers=AUTH).status_code == 404
 
     def test_unconfigured_platform_503(self, monkeypatch):
         monkeypatch.delenv("OAUTH_CLIENT_ID")

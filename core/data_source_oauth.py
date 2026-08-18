@@ -1,14 +1,12 @@
-"""Knowify + CompanyCam browser OAuth helpers (stopgap until first-party API keys).
+"""Knowify browser OAuth helpers (Dynamic Client Registration + PKCE).
 
-Knowify uses Dynamic Client Registration + PKCE bound to the MCP audience.
-CompanyCam uses the registered confidential app (client id/secret already in GSM).
+CompanyCam is an Application Key in companycam-pat — there is no user OAuth flow.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import os
 import secrets
 import time
 import urllib.parse
@@ -27,11 +25,6 @@ KNOWIFY_SCOPES = (
     "bills:read payments:read milestones:read items:read contracts:read "
     "documents:read vendors:read users:read"
 )
-
-COMPANYCAM_AUTH = "https://app.companycam.com/oauth/authorize"
-COMPANYCAM_TOKEN = "https://app.companycam.com/oauth/token"
-COMPANYCAM_SCOPES = "read write"
-
 
 def pkce() -> tuple[str, str]:
     import base64
@@ -106,19 +99,3 @@ def persist_knowify_mcp(tokens: dict[str, Any], client_id: str) -> None:
     if not blob["accessToken"] or not blob["refreshToken"]:
         raise RuntimeError("Knowify token response missing access or refresh token")
     save_mcp_tokens(blob)
-
-
-def persist_companycam(tokens: dict[str, Any]) -> None:
-    from core.companycam.tokens import save_oauth  # noqa: PLC0415
-
-    access = tokens.get("access_token") or ""
-    if not access:
-        raise RuntimeError("CompanyCam token response missing access_token")
-    # Do NOT write the 2-hour OAuth access token over companycam-pat. That secret
-    # holds the never-expire Application Key the daily sync uses.
-    save_oauth({
-        "access_token": access,
-        "refresh_token": tokens.get("refresh_token") or "",
-        "expires_in": tokens.get("expires_in"),
-        "client_id": os.getenv("COMPANYCAM_CLIENT_ID", ""),
-    })

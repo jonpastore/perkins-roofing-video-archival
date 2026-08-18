@@ -95,14 +95,6 @@ PROVIDERS: dict[str, dict] = {
         "client_secret_env": "X_CLIENT_SECRET",
         "extra_auth_params": {},
     },
-    "companycam": {
-        "auth_url": "https://app.companycam.com/oauth/authorize",
-        "token_url": "https://app.companycam.com/oauth/token",
-        "scopes": "read write",
-        "client_id_env": "COMPANYCAM_CLIENT_ID",
-        "client_secret_env": "COMPANYCAM_CLIENT_SECRET",
-        "extra_auth_params": {},
-    },
 }
 
 # Always listed on Connections even before a health row exists.
@@ -394,22 +386,18 @@ def oauth_callback(platform: str, code: str = "", state: str = "", error: str = 
         raise HTTPException(status_code=502, detail="token exchange failed")
 
     try:
-        if platform == "companycam":
-            from core.data_source_oauth import persist_companycam  # noqa: PLC0415
-            persist_companycam(tokens)
-        else:
-            from adapters.distribution.oauth_store import (  # noqa: PLC0415
-                SINGLE_ACCOUNT,
-                SecretManagerOAuthStore,
-            )
-            store = SecretManagerOAuthStore(tenant_id=parsed["tenant_id"])
-            store.put(
-                platform,
-                SINGLE_ACCOUNT,
-                access_token=access_token,
-                refresh_token=tokens.get("refresh_token") or "",
-                ttl=int(tokens.get("expires_in") or 3600),
-            )
+        from adapters.distribution.oauth_store import (  # noqa: PLC0415
+            SINGLE_ACCOUNT,
+            SecretManagerOAuthStore,
+        )
+        store = SecretManagerOAuthStore(tenant_id=parsed["tenant_id"])
+        store.put(
+            platform,
+            SINGLE_ACCOUNT,
+            access_token=access_token,
+            refresh_token=tokens.get("refresh_token") or "",
+            ttl=int(tokens.get("expires_in") or 3600),
+        )
     except Exception as exc:  # noqa: BLE001
         log.error("oauth_callback: store write failed for %s: %s", platform, exc, exc_info=True)
         raise HTTPException(status_code=502, detail="credential store write failed") from exc

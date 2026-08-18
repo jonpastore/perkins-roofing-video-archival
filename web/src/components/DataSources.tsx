@@ -11,7 +11,7 @@ const SOURCES: { id: string; label: string; help: string; statusId?: string }[] 
   {
     id: "companycam",
     label: "CompanyCam",
-    help: "Log in so project photos and videos keep syncing. Also accepts a new application key.",
+    help: "Application Key in companycam-pat. Nightly sync at 06:00 ET. Rotate the key under Connections if it ever breaks.",
   },
   {
     id: "youtube",
@@ -64,8 +64,7 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
         Data sources
       </div>
       <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 12 }}>
-        Knowify and CompanyCam need a person to log in until long-lived API access is in place.
-        After login, refresh keeps the token alive.
+        Log in here for Knowify and YouTube. CompanyCam uses an application key, not OAuth.
       </div>
       {SOURCES.map((src) => {
         const statusRow = rows[src.statusId ?? src.id] ?? rows[src.id];
@@ -96,7 +95,7 @@ export function DataSources({ manage = true }: { manage?: boolean }) {
               )}
             </div>
             <Badge tone={tone(status)}>{labelFor(status)}</Badge>
-            {canLogin && (
+            {canLogin && src.id !== "companycam" && (
               <Button
                 variant={status === "broken" ? "danger" : "ghost"}
                 style={{ fontSize: 12, padding: "5px 12px" }}

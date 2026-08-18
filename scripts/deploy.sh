@@ -89,10 +89,6 @@ SECRETS="${SECRETS},SQUARES_API_KEY=squares-api-key:latest"
 # user account. Verified against the live API: /v2/projects, /projects/{id}/photos and
 # /projects/{id}/videos all 200.
 SECRETS="${SECRETS},COMPANYCAM_PAT=companycam-pat:latest"
-# Browser OAuth for CompanyCam (Connections → Log in). The app already exists; these
-# were stored but unused. Injected so /oauth/companycam/start can mint a consent URL.
-SECRETS="${SECRETS},COMPANYCAM_CLIENT_ID=companycam-client-id:latest"
-SECRETS="${SECRETS},COMPANYCAM_CLIENT_SECRET=companycam-client-secret:latest"
 # COMPANYCAM_WEBHOOK_SECRET — version 1 created 2026-08-02, so this is now safe to inject. It
 # was held back until then for a real reason: a versionless secret in --set-secrets fails EVERY
 # deploy, including unrelated ones.
@@ -105,8 +101,8 @@ SECRETS="${SECRETS},COMPANYCAM_CLIENT_SECRET=companycam-client-secret:latest"
 # The webhook is not registered with CompanyCam yet, which is the remaining operational step —
 # until it is, this secret is simply unused rather than wrong.
 SECRETS="${SECRETS},COMPANYCAM_WEBHOOK_SECRET=companycam-webhook-secret:latest"
-# companycam-client-id / -client-secret are stored but not injected either — nothing uses the
-# authorization-code flow yet; they exist so the app can be moved onto it without re-issuing.
+# companycam-client-id / companycam-client-secret / companycam-tokens stay in Secret
+# Manager but are not injected — there is no CompanyCam user OAuth flow.
 
 echo "== Build + push image via Cloud Build =="
 gcloud builds submit --tag "$IMAGE" --project "$PROJECT" .

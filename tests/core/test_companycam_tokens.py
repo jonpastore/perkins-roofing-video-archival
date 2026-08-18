@@ -6,7 +6,7 @@ def test_load_bearer_prefers_env(monkeypatch):
     assert load_bearer() == "env-tok"
 
 
-def test_save_bearer_and_oauth(monkeypatch):
+def test_save_bearer_writes_application_key_only(monkeypatch):
     seen = []
 
     class _C:
@@ -16,9 +16,9 @@ def test_save_bearer_and_oauth(monkeypatch):
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "p")
     from core.companycam import tokens as T
     T.save_bearer("tok", sm_client=_C())
-    T.save_oauth({"access_token": "a"}, sm_client=_C())
-    assert len(seen) == 2
+    assert len(seen) == 1
     assert seen[0]["parent"].endswith("companycam-pat")
+    assert not hasattr(T, "save_oauth")
 
 
 def test_load_bearer_from_sm(monkeypatch):

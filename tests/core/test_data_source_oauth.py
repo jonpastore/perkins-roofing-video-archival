@@ -1,4 +1,4 @@
-"""Knowify/CompanyCam OAuth helpers."""
+"""Knowify OAuth helpers."""
 from __future__ import annotations
 
 import json
@@ -25,14 +25,6 @@ def test_knowify_auth_url_binds_mcp_audience():
 def test_persist_knowify_requires_refresh():
     try:
         dso.persist_knowify_mcp({"access_token": "a"}, "cid")
-        assert False
-    except RuntimeError:
-        pass
-
-
-def test_persist_companycam_requires_access():
-    try:
-        dso.persist_companycam({})
         assert False
     except RuntimeError:
         pass
@@ -71,14 +63,9 @@ def test_persist_knowify_writes_mcp_blob(monkeypatch):
     assert seen[0]["refreshToken"] == "r"
 
 
-def test_persist_companycam_does_not_overwrite_application_key(monkeypatch):
-    calls = []
-    import core.companycam.tokens as CT
-    monkeypatch.setattr(CT, "save_bearer", lambda t: calls.append(("pat", t)))
-    monkeypatch.setattr(CT, "save_oauth", lambda b: calls.append(("oauth", b)))
-    dso.persist_companycam({"access_token": "AT", "refresh_token": "RT"})
-    assert [c[0] for c in calls] == ["oauth"]
-    assert calls[0][1]["refresh_token"] == "RT"
+def test_companycam_oauth_helpers_are_gone():
+    assert not hasattr(dso, "persist_companycam")
+    assert not hasattr(dso, "COMPANYCAM_AUTH")
 
 
 def test_register_knowify_client(monkeypatch):
