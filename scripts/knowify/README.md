@@ -13,13 +13,20 @@ validate our invoicing/milestone/numbering model against reality.
 - **OAuth AS**: `https://developers-v2.knowify.com` — supports Dynamic Client
   Registration (`/oauth/reg`), so no pre-provisioned app is needed.
 
-## Usage (no passwords stored — OAuth only)
+## Reconnect (product)
+
+Humans: Status → Data sources → Knowify → Log in.
+Agents (vaulted `knowify-login` + Playwright): `python -m jobs.knowify_relogin`.
+
+`knowify_oauth.py` is the **REST importer** login only (`~/.config/knowify/tokens.json`).
+It is not the product MCP reconnect path.
+
+## Usage (importer)
 ```bash
-python scripts/knowify/knowify_oauth.py     # log in once (opens browser → Knowify login)
-python scripts/knowify/knowify_pull.py      # pull all entities → $KNOWIFY_OUT (default /tmp/knowify_data)
-python scripts/knowify/knowify_pull.py invoices clients   # subset
+python scripts/knowify/knowify_oauth.py     # REST token for knowify_pull.py
+python scripts/knowify/knowify_pull.py      # pull all entities → $KNOWIFY_OUT
+python scripts/knowify/knowify_pull.py invoices clients
 ```
-Tokens live in `~/.config/knowify/tokens.json` (chmod 600, **outside the repo** — never committed).
 Scopes requested are **`:read` only** — this tooling never writes to Knowify.
 
 ## Notes

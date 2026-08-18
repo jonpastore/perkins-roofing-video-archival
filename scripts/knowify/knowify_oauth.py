@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-"""Knowify CLI OAuth login — "log in with your Knowify creds" from the terminal.
+"""Knowify REST-importer OAuth (laptop tokens.json). Not the product MCP reconnect.
 
-No passwords are stored. Uses the standard OAuth 2.0 Authorization-Code + PKCE
-flow against Knowify's authorization server (developers-v2.knowify.com), with
-Dynamic Client Registration so no pre-provisioned app is needed. You log in once
-in the browser; we keep only the resulting access/refresh TOKENS (read-only
-scopes) in ~/.config/knowify/tokens.json (chmod 600, OUTSIDE the git repo).
+Product reconnect: Status → Data sources → Knowify → Log in.
+Agent reconnect: python -m jobs.knowify_relogin
 
-    python scripts/knowify/knowify_oauth.py            # login (opens browser)
-    python scripts/knowify/knowify_oauth.py --status   # show token state
-
-Then scripts/knowify/knowify_pull.py can pull data with the stored token.
+    python scripts/knowify/knowify_oauth.py            # REST login for knowify_pull.py
+    python scripts/knowify/knowify_oauth.py --status
 """
 import base64
 import hashlib

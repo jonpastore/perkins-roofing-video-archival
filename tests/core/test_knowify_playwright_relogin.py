@@ -2,6 +2,27 @@
 from core.knowify import playwright_relogin as R
 
 
+def test_callback_server_records_code():
+    import urllib.request
+    box, srv = R._start_callback_server()
+    try:
+        urllib.request.urlopen("http://127.0.0.1:8765/callback?code=ABC&state=s", timeout=3)
+        assert box["code"] == "ABC"
+    finally:
+        srv.server_close()
+
+
+def test_callback_server_records_error():
+    import urllib.request
+    box, srv = R._start_callback_server()
+    try:
+        urllib.request.urlopen("http://127.0.0.1:8765/callback?error=access_denied", timeout=3)
+        assert box["error"] == "access_denied"
+        assert box["code"] is None
+    finally:
+        srv.server_close()
+
+
 def test_extract_code_from_redirect():
     assert R.code_from_url("http://127.0.0.1:8765/callback?code=abc&state=s") == "abc"
     assert R.code_from_url("http://127.0.0.1:8765/callback?error=access_denied") is None
@@ -82,11 +103,11 @@ def test_relogin_skips_vault_when_persist_login_false(monkeypatch):
     assert vaulted == []
 
 
-def test_available_when_prompt_possible(monkeypatch):
+def test_available_requires_vault_not_just_tty(monkeypatch):
     monkeypatch.setattr(R, "_playwright_import", lambda: object)
     monkeypatch.setattr(R.login_vault, "configured", lambda: False)
     monkeypatch.setattr("core.verified_secret.can_prompt", lambda: True)
-    assert R.available() is True
+    assert R.available() is False
 
 
 def test_relogin_or_prompt_uses_vault(monkeypatch):
@@ -141,22 +162,8 @@ class _Loc:
         return None
 
 
-class _Route:
-    def __init__(self, url):
-        self.request = type("R", (), {"url": url})()
-
-    def fulfill(self, **_k):
-        return None
-
-
 class _Page:
-    def __init__(self, redirect):
-        self.url = "https://app.knowify.com/oauth"
-        self._redirect = redirect
-        self._handler = None
-
-    def route(self, _pat, fn):
-        self._handler = fn
+    url = "https://app.knowify.com/oauth"
 
     def goto(self, *_a, **_k):
         return None
@@ -168,9 +175,7 @@ class _Page:
         return _Loc()
 
     def wait_for_timeout(self, _ms):
-        if self._handler:
-            self._handler(_Route(self._redirect))
-            self._handler = None
+        return None
 
 
 class _Browser:
@@ -196,24 +201,33 @@ class _PW:
         return False
 
 
+def _fake_srv():
+    return type("S", (), {"server_close": lambda self: None})()
+
+
 def test_browser_get_code_from_loopback(monkeypatch):
-    page = _Page("http://127.0.0.1:8765/callback?code=THECODE&state=s")
-    monkeypatch.setattr(R, "_playwright_import", lambda: (lambda: _PW(page)))
+    box = {"code": "THECODE", "error": None}
+    monkeypatch.setattr(R, "_start_callback_server", lambda: (box, _fake_srv()))
+    monkeypatch.setattr(R, "_playwright_import", lambda: (lambda: _PW(_Page())))
     assert R._browser_get_code("https://auth", "u", "p", headless=True) == "THECODE"
 
 
-def test_browser_get_code_from_page_url(monkeypatch):
-    page = _Page("http://unused")
-    page.url = "http://127.0.0.1:8765/callback?code=FROMURL"
-    page.route = lambda *_a, **_k: None
-    page.wait_for_timeout = lambda _ms: None
-    monkeypatch.setattr(R, "_playwright_import", lambda: (lambda: _PW(page)))
-    assert R._browser_get_code("https://auth", "u", "p", headless=True) == "FROMURL"
+def test_browser_get_code_waits_for_server(monkeypatch):
+    box = {"code": None, "error": None}
+
+    class _WaitPage(_Page):
+        def wait_for_timeout(self, _ms):
+            box["code"] = "LATER"
+
+    monkeypatch.setattr(R, "_start_callback_server", lambda: (box, _fake_srv()))
+    monkeypatch.setattr(R, "_playwright_import", lambda: (lambda: _PW(_WaitPage())))
+    assert R._browser_get_code("https://auth", "u", "p", headless=True) == "LATER"
 
 
 def test_browser_get_code_raises_without_code(monkeypatch):
-    page = _Page("http://127.0.0.1:8765/callback?error=access_denied")
-    monkeypatch.setattr(R, "_playwright_import", lambda: (lambda: _PW(page)))
+    box = {"code": None, "error": "access_denied"}
+    monkeypatch.setattr(R, "_start_callback_server", lambda: (box, _fake_srv()))
+    monkeypatch.setattr(R, "_playwright_import", lambda: (lambda: _PW(_Page())))
     try:
         R._browser_get_code("https://auth", "u", "p", headless=True)
         assert False
@@ -230,7 +244,7 @@ def test_browser_get_code_requires_playwright(monkeypatch):
         pass
 
 
-def test_keepwarm_hook_runs_relogin_on_auth_error(monkeypatch):
+def test_keepwarm_does_not_drive_a_browser(monkeypatch):
     from core.knowify import tokens as T
 
     calls = []
@@ -245,10 +259,10 @@ def test_keepwarm_hook_runs_relogin_on_auth_error(monkeypatch):
 
     monkeypatch.setattr(T, "with_token_lock", lambda session: _Lock())
     monkeypatch.setattr(T, "refresh_mcp", lambda tok: (_ for _ in ()).throw(T.AuthError("dead")))
-
-    import core.knowify.playwright_relogin as PR
-    monkeypatch.setattr(PR, "available", lambda: True)
-    monkeypatch.setattr(PR, "relogin", lambda: calls.append("relogin") or {"ok": True})
+    monkeypatch.setattr(
+        "core.knowify.playwright_relogin.relogin",
+        lambda: calls.append("relogin"),
+    )
 
     class _Sess:
         info = {}
@@ -257,5 +271,5 @@ def test_keepwarm_hook_runs_relogin_on_auth_error(monkeypatch):
 
     import app.models as models
     monkeypatch.setattr(models, "SessionLocal", lambda: _Sess())
-    assert T.mcp_refresh_only() == 0
-    assert calls == ["relogin"]
+    assert T.mcp_refresh_only() == 1
+    assert calls == []

@@ -3,7 +3,9 @@
 Status: **implemented-local**
 
 ## Surfaces
-- CLI TTY: `jobs.knowify_relogin --prompt`, `jobs.wordpress_vault --prompt`,
+- Knowify human: Status → Data sources → Log in.
+- Knowify agent: `jobs.knowify_relogin` (vaulted login, no TTY required).
+- CLI TTY: `jobs.wordpress_vault --prompt`,
   `jobs.youtube_relogin --prompt` / `--api-key`. Username hint, password via
   `getpass` (no echo). YouTube `--headed` when Google blocks headless.
 - Dashboard Connections / Config: pasting `wordpress-app-password` or

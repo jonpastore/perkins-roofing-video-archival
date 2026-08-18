@@ -31,10 +31,9 @@ JOB_FIX = {
     ),
     "knowify-keepwarm": (
         "Token refresh is already wired (02:00 ET keep-warm + refresh-on-use). "
-        "If this is red, Log in from Data sources on Legacy Data / Portfolio / "
-        "Admin → Marketing, or run "
-        "python scripts/knowify/knowify_oauth.py --mcp --bootstrap-secret. "
-        "A live token was written 2026-08-17; next keep-warm should go green."
+        "If this is red, Log in from Status → Data sources → Knowify. "
+        "An agent on a machine with Playwright can run: "
+        "python -m jobs.knowify_relogin"
     ),
     "knowify-sync": (
         "Off in Admin Config → Platform Settings (Knowify sync). Turn it on there when "

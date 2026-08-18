@@ -286,8 +286,8 @@ def knowify_reconnect(
             "status": "manual_required",
             "instructions": (
                 "In-app Knowify login is not configured (OAUTH_REDIRECT_BASE / "
-                "oauth-state-hmac). On the operator box run: "
-                "python scripts/knowify/knowify_oauth.py --mcp --bootstrap-secret"
+                "oauth-state-hmac). Use Status → Data sources → Knowify → Log in, "
+                "or on a machine with Playwright: python -m jobs.knowify_relogin"
             ),
             "oauth_server_status": "start_failed",
             "detail": str(exc.detail),

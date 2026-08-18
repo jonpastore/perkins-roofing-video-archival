@@ -1,8 +1,10 @@
-"""CLI: mint Knowify OAuth tokens via vaulted login + Playwright.
+"""Agent CLI: mint Knowify MCP tokens (vaulted login + real localhost callback).
+
+Humans use Status → Data sources → Knowify → Log in.
+This job is for an agent on a box with Playwright + `knowify-login`.
 
     PYTHONPATH=. GOOGLE_CLOUD_PROJECT=... .venv/bin/python -m jobs.knowify_relogin
-    .venv/bin/python -m jobs.knowify_relogin --headed   # debug the login page
-    .venv/bin/python -m jobs.knowify_relogin --prompt   # type user/pass; vaulted after OAuth works
+    .venv/bin/python -m jobs.knowify_relogin --headed
 """
 from __future__ import annotations
 

@@ -6,8 +6,9 @@ Status: **implemented-local**
 - `core.verified_secret.prompt_username_password` / `can_prompt` / `prompt_and_update`
 - `update_after_verify(secret_id, blob, verify=, save=)` — JSON login
 - `update_text_after_verify(secret_id, text, verify=, save=)` — raw secret
-- Knowify: `core.knowify.playwright_relogin.relogin_or_prompt`
-  CLI `python -m jobs.knowify_relogin [--prompt] [--headed]`
+- Knowify human: `GET /oauth/knowify/start` → callback → `persist_knowify_mcp`.
+- Knowify agent: `core.knowify.playwright_relogin` (real HTTPServer on :8765,
+  no loopback intercept). CLI `python -m jobs.knowify_relogin`.
 - WordPress: `core.wordpress_creds.verify_app_password` / `vault_after_verify`
   CLI `python -m jobs.wordpress_vault --prompt`
 - YouTube: `core.youtube_creds` + `core.youtube_playwright.relogin_or_prompt`

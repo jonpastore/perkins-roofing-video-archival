@@ -262,12 +262,7 @@ def mcp_refresh_only() -> int:
                 refresh_mcp(tok)
         return 0
     except AuthError:
-        from core.knowify import playwright_relogin as _relogin  # noqa: PLC0415
-        if _relogin.available():
-            log.warning("knowify mcp keep-warm: refresh dead — trying Playwright relogin")
-            _relogin.relogin()
-            return 0
-        log.error("knowify mcp keep-warm: auth_error — human Reconnect required")
+        log.error("knowify mcp keep-warm: auth_error — Log in from Data sources")
         return 1
     finally:
         session.close()

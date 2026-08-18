@@ -169,7 +169,9 @@ operator paste in this session):
 4. Never log the password. Never commit it.
 
 `core/verified_secret.py` is the one helper.
-- Knowify: `python -m jobs.knowify_relogin --prompt` (OAuth success is the proof).
+- Knowify: humans use Status → Data sources → Knowify → Log in.
+  An agent: `python -m jobs.knowify_relogin` (vaulted `knowify-login` + real
+  localhost callback). Do not intercept the loopback.
 - WordPress Application Password: `python -m jobs.wordpress_vault --prompt`
   (`GET /wp-json/wp/v2/users/me`). Dashboard / Config paste of `wordpress-app-password`
   uses the same verify-then-write. Never vault the wp-admin login password.

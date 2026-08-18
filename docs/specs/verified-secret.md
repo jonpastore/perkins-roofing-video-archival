@@ -9,7 +9,8 @@ previous still-useful version.
 
 ## What
 One helper (`core/verified_secret.py`): prompt → verify callback → write.
-- Knowify: Playwright OAuth success, then `knowify-login`.
+- Knowify: dashboard Log in (human) or `jobs.knowify_relogin` (agent, vaulted
+  login + real localhost callback). Then `knowify-login` if the pair was prompted.
 - WordPress: `GET /wp-json/wp/v2/users/me`, then `wordpress-app-password`.
   Dashboard / Config paste of that secret uses the same verify.
 - YouTube: Playwright Google OAuth + `channels?mine=true` must be Perkins
