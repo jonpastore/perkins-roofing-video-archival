@@ -13,10 +13,10 @@ from typing import Any
 
 from core.cloud_spend import fetch_cloud_spend
 from core.email_template import wrap_email
+from core.ops_issues import collect_issues
 from core.profit_alerts import PROFIT_FLOOR_NOTIFY, WARNING_PREFIX, has_profit_below_minimum
 from core.scheduled_jobs import fetch_scheduled_jobs
 from core.suggestion_counts import compute_suggestion_counts
-from core.ops_issues import collect_issues
 from core.youtube_health import (
     YOUTUBE_SCAN_TYPES,
     apply_block_logs,

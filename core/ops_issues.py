@@ -304,8 +304,8 @@ def send_ops_alert(issues: list[dict[str, str]], *, tenant_id: int | None = None
         intro="New error or warning since the last check. Address the How to fix column.",
     )
     try:
-        from core.email_gate import decide  # noqa: PLC0415
         import adapters.resend as resend  # noqa: PLC0415
+        from core.email_gate import decide  # noqa: PLC0415
     except Exception:
         return []
     ids: list[str] = []

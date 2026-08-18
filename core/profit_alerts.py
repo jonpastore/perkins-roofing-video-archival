@@ -60,8 +60,8 @@ def notify_profit_below_minimum(
     )
     ids: list[str] = []
     try:
-        from core.email_gate import decide  # noqa: PLC0415
         import adapters.resend as resend  # noqa: PLC0415
+        from core.email_gate import decide  # noqa: PLC0415
     except Exception as exc:  # noqa: BLE001
         log.warning("profit-floor notify: resend import failed: %s", exc)
         return []
