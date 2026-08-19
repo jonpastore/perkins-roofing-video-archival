@@ -29,6 +29,7 @@ from app.models import (  # noqa: E402
     Base,
     GraphNode,
     MiniSeries,
+    PlatformConfig,
     Segment,
     SessionLocal,
     SocialPost,
@@ -596,3 +597,48 @@ def test_brand_scene_config_accepts_valid_brand_uri(tmp_path, monkeypatch):
     assert title_path.startswith(str(tmp_path)), "Downloaded file must live inside scratch"
     assert open(title_path, "rb").read() == fake_png
     assert closing_path is None
+
+
+def test_brand_video_url_404_when_unset():
+    with SessionLocal() as db:
+        row = db.get(PlatformConfig, "BRAND_INTRO_VIDEO")
+        if row is not None:
+            db.delete(row)
+            db.commit()
+    client = _make_client("admin")
+    r = client.get("/clips/brand-video-url?scene=intro", headers=ADMIN_HDR)
+    assert r.status_code == 404
+
+
+def test_brand_video_url_422_bad_scene():
+    client = _make_client("admin")
+    r = client.get("/clips/brand-video-url?scene=middle", headers=ADMIN_HDR)
+    assert r.status_code == 422
+
+
+def test_brand_video_url_signs_reels_brand_object(monkeypatch):
+    client = _make_client("admin")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "myproject")
+    with SessionLocal() as db:
+        db.merge(PlatformConfig(key="BRAND_INTRO_VIDEO", value="gs://myproject-reels/brand/intro_video.mp4"))
+        db.commit()
+
+    def _sign(bucket, key, ttl_seconds=3600):
+        assert bucket == "myproject-reels"
+        assert key == "brand/intro_video.mp4"
+        return "https://signed.example/intro"
+
+    monkeypatch.setattr("adapters.storage.signed_get_url", _sign)
+    r = client.get("/clips/brand-video-url?scene=intro", headers=ADMIN_HDR)
+    assert r.status_code == 200
+    assert r.json()["preview_url"] == "https://signed.example/intro"
+
+
+def test_brand_video_url_rejects_foreign_bucket(monkeypatch):
+    client = _make_client("admin")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "myproject")
+    with SessionLocal() as db:
+        db.merge(PlatformConfig(key="BRAND_OUTRO_VIDEO", value="gs://evil/brand/outro_video.mp4"))
+        db.commit()
+    r = client.get("/clips/brand-video-url?scene=outro", headers=ADMIN_HDR)
+    assert r.status_code == 404

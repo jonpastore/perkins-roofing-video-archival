@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { apiFetch, apiFetchMultipart } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, Spinner } from "../ui";
 import { NavContext } from "../App";
@@ -11,6 +11,7 @@ import { seriesTitle } from "../lib/clipTitles";
 interface ArchiveVideo {
   id: string;
   title: string;
+  description?: string | null;
   duration: number | null;
   upload_date: string | null;
   archived: boolean;
@@ -606,12 +607,69 @@ interface BrandVideoUploadProps {
   onCleared: () => void;
 }
 
+function HelpModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div
+      role="dialog"
+      aria-label={title}
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000, background: "rgba(16,24,40,0.45)",
+        display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "48px 16px",
+      }}
+    >
+      <Card style={{ width: "min(520px, 96vw)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+          <h3 style={{ margin: 0, fontSize: 16, color: BRAND.navyText }}>{title}</h3>
+          <Button variant="ghost" onClick={onClose} style={{ padding: "4px 10px", fontSize: 13 }}>Close</Button>
+        </div>
+        <div style={{ fontSize: 14, color: BRAND.ink, lineHeight: 1.55 }}>{children}</div>
+      </Card>
+    </div>
+  );
+}
+
+function HelpIcon({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      style={{
+        width: 20, height: 20, borderRadius: "50%", border: `1px solid ${BRAND.border}`,
+        background: "#fff", color: BRAND.sub, fontSize: 12, fontWeight: 700, cursor: "pointer",
+        lineHeight: "18px", padding: 0,
+      }}
+    >
+      ?
+    </button>
+  );
+}
+
 function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: BrandVideoUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [path, setPath] = useState(currentPath);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setPath(currentPath);
+    if (!currentPath) {
+      setPreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    apiFetch(`/clips/brand-video-url?scene=${scene}`)
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((d: { preview_url?: string } | null) => {
+        if (!cancelled) setPreviewUrl(d?.preview_url ?? null);
+      })
+      .catch(() => { if (!cancelled) setPreviewUrl(null); });
+    return () => { cancelled = true; };
+  }, [currentPath, scene]);
 
   async function handleFile(file: File) {
     setUploading(true);
@@ -629,6 +687,11 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
       const data = await r.json() as { gcs_path: string };
       setPath(data.gcs_path);
       setMsg("Set.");
+      const prev = await apiFetch(`/clips/brand-video-url?scene=${scene}`);
+      if (prev.ok) {
+        const body = await prev.json() as { preview_url?: string };
+        setPreviewUrl(body.preview_url ?? null);
+      }
     } catch (e: unknown) {
       setMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -648,6 +711,7 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
                 throw new Error(await errText(r));
       }
       setPath("");
+      setPreviewUrl(null);
       onCleared();
       setMsg("Cleared.");
     } catch (e: unknown) {
@@ -657,58 +721,69 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
     }
   }
 
-  // Derive a short display name from the gs:// path (last segment).
   const displayName = path ? path.split("/").pop() ?? path : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 600, color: BRAND.ink }}>{label}</span>
-      {displayName ? (
-        <span style={{ fontSize: 11, color: "#1a7f4b", fontFamily: "monospace", wordBreak: "break-all" }}>
-          ✓ {displayName}
-        </span>
-      ) : (
-        <span style={{ fontSize: 11, color: BRAND.sub, fontStyle: "italic" }}>
-          Not set — generated card used as fallback
-        </span>
-      )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="video/mp4"
-          style={{ display: "none" }}
-          onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
-        />
-        <Button
-          variant="ghost"
-          disabled={uploading || clearing}
-          onClick={() => inputRef.current?.click()}
-          style={{ padding: "4px 12px", fontSize: 12 }}
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: BRAND.ink, marginBottom: 6 }}>{label}</div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="video/mp4"
+        style={{ display: "none" }}
+        onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
+      />
+      <button
+        type="button"
+        disabled={uploading || clearing}
+        onClick={() => inputRef.current?.click()}
+        style={{
+          position: "relative", display: "block", width: "100%", padding: 0,
+          border: `1px solid ${BRAND.border}`, borderRadius: 8, overflow: "hidden",
+          background: "#111", cursor: uploading ? "wait" : "pointer", aspectRatio: "16 / 9",
+        }}
+        title={displayName ? "Replace MP4" : "Upload MP4"}
+      >
+        {previewUrl ? (
+          <video
+            src={previewUrl}
+            muted
+            playsInline
+            preload="metadata"
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+        ) : (
+          <span style={{ color: "#9ca3af", fontSize: 13 }}>
+            {uploading ? "Uploading…" : "No video — click to upload"}
+          </span>
+        )}
+        <span
+          aria-hidden
+          style={{
+            position: "absolute", right: 10, bottom: 10, width: 32, height: 32, borderRadius: 16,
+            background: "rgba(255,255,255,0.92)", color: BRAND.navyText, fontSize: 18,
+            display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
+          }}
         >
-          {uploading ? "Uploading…" : (displayName ? "Replace" : "Upload MP4")}
-        </Button>
+          ↑
+        </span>
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, minHeight: 18 }}>
+        <span style={{ fontSize: 12, color: displayName ? "#1a7f4b" : BRAND.sub }}>
+          {uploading ? "Uploading…" : displayName ? displayName : "Generated title card used until you upload"}
+        </span>
         {displayName && (
           <button
+            type="button"
             disabled={clearing}
             onClick={handleClear}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 12,
-              color: BRAND.sub,
-              padding: 0,
-              textDecoration: "underline",
-            }}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: BRAND.sub, padding: 0, textDecoration: "underline" }}
           >
             {clearing ? "Clearing…" : "Clear"}
           </button>
         )}
         {msg && (
-          <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>
-            {msg}
-          </span>
+          <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>{msg}</span>
         )}
       </div>
     </div>
@@ -723,6 +798,7 @@ function ReelSettingsPanel() {
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [help, setHelp] = useState<"intro" | "apply" | null>(null);
 
   useEffect(() => {
     apiFetch("/config")
@@ -764,20 +840,46 @@ function ReelSettingsPanel() {
   }
 
   return (
-    <Card style={{ marginBottom: 24 }}>
-      <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
-        Reel Intro / Outro
-      </div>
-      <p style={{ margin: "0 0 14px", fontSize: 13, color: BRAND.sub, lineHeight: 1.5 }}>
-        Upload an <strong>intro video</strong> and <strong>outro video</strong> (MP4) to be
-        concatenated with every rendered reel. When set, these videos are merged directly
-        into each clip — the intro is prepended and the outro is appended. Falls back to
-        auto-generated title and closing cards when no videos are set.
-      </p>
+    <Card id="reel-intro-outro" style={{ marginBottom: 24 }}>
+      {help === "intro" && (
+        <HelpModal title="Intro and outro" onClose={() => setHelp(null)}>
+          <p style={{ margin: "0 0 10px" }}>
+            Upload an MP4 for the start and end of every rendered reel. The intro is prepended
+            and the outro is appended. If either is empty, the render uses a generated title
+            card and the closing brand text instead.
+          </p>
+          <p style={{ margin: 0 }}>
+            Changing these files does not recut videos that already rendered. Click
+            <strong> Render now</strong> again on a series to apply the new bumpers.
+          </p>
+        </HelpModal>
+      )}
+      {help === "apply" && (
+        <HelpModal title="Apply All" onClose={() => setHelp(null)}>
+          <p style={{ margin: "0 0 10px" }}>
+            When this is on and no intro/outro MP4 is set, each <strong>new</strong> render
+            gets a generated title card plus the closing brand text.
+          </p>
+          <p style={{ margin: "0 0 10px" }}>
+            It is <strong>not retroactive</strong>. Clips already rendered stay as they are
+            until you render that series again.
+          </p>
+          <p style={{ margin: 0 }}>
+            Future renders pick up the current setting. Intro/outro MP4s, when uploaded,
+            replace these generated cards.
+          </p>
+        </HelpModal>
+      )}
 
-      {/* Brand video uploads */}
-      {loaded && (
-        <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+          Reel Intro / Outro
+        </div>
+        <HelpIcon label="How intro and outro work" onClick={() => setHelp("intro")} />
+      </div>
+
+      {loaded ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
           <BrandVideoUpload
             label="Intro video"
             scene="intro"
@@ -793,10 +895,10 @@ function ReelSettingsPanel() {
             onCleared={() => setOutroVideoPath("")}
           />
         </div>
+      ) : (
+        <Spinner small />
       )}
-      {!loaded && <Spinner small />}
 
-      {/* Closing brand text */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <label style={{ fontSize: 13, color: BRAND.ink, fontWeight: 600, whiteSpace: "nowrap" }}>
           Closing brand text
@@ -815,7 +917,6 @@ function ReelSettingsPanel() {
         )}
       </div>
 
-      {/* Apply checkbox */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <input
           type="checkbox"
@@ -825,15 +926,12 @@ function ReelSettingsPanel() {
           onChange={(e) => setApplyBrandScenes(e.target.checked)}
           style={{ width: 15, height: 15, accentColor: BRAND.red, cursor: "pointer" }}
         />
-        <label
-          htmlFor="apply-brand-scenes"
-          style={{ fontSize: 13, color: BRAND.ink, cursor: "pointer" }}
-        >
-          Apply brand scenes to every render (used when no intro/outro videos are set)
+        <label htmlFor="apply-brand-scenes" style={{ fontSize: 13, color: BRAND.ink, cursor: "pointer" }}>
+          Apply All
         </label>
+        <HelpIcon label="What Apply All means" onClick={() => setHelp("apply")} />
       </div>
 
-      {/* Save */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Button
           variant="primary"
@@ -1441,6 +1539,7 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
 }
 
 function RenderablePanel() {
+  const { navigate } = useContext(NavContext);
   const [series, setSeries] = useState<RenderableSeries[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1466,7 +1565,26 @@ function RenderablePanel() {
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
       {!loading && !error && series.length === 0 && (
-        <p style={{ margin: 0, color: BRAND.sub, fontSize: 13 }}>No approved series awaiting render.</p>
+        <div style={{ fontSize: 13, color: BRAND.ink, lineHeight: 1.55 }}>
+          <p style={{ margin: "0 0 8px", color: BRAND.sub }}>No approved series awaiting render.</p>
+          <p style={{ margin: "0 0 8px" }}>To put a reel here:</p>
+          <ol style={{ margin: 0, paddingLeft: 18 }}>
+            <li>Pick a source video below (or Edit one that already has clips).</li>
+            <li>Suggest clips, then <strong>Save as clip series</strong>.</li>
+            <li>
+              Open{" "}
+              <button
+                type="button"
+                onClick={() => navigate("video-approval")}
+                style={{ background: "none", border: "none", padding: 0, color: BRAND.red, fontWeight: 600, cursor: "pointer", fontSize: 13 }}
+              >
+                Video Approval
+              </button>
+              {" "}and Approve the series.
+            </li>
+            <li>It appears here — set render options, then <strong>Render now</strong>.</li>
+          </ol>
+        </div>
       )}
 
       {!loading && !error && series.length > 0 && (
@@ -1482,6 +1600,10 @@ function RenderablePanel() {
 
 // ── Generated clips list ──────────────────────────────────────────────────────
 
+function ytThumb(id: string): string {
+  return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+}
+
 function GeneratedClipsList({
   videos,
   onRevisit,
@@ -1489,52 +1611,125 @@ function GeneratedClipsList({
   videos: ArchiveVideo[];
   onRevisit: (v: ArchiveVideo) => void;
 }) {
+  const { navigate } = useContext(NavContext);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const withClips = videos.filter((v) => v.clips_generated);
   if (withClips.length === 0) return null;
+
+  function scrollToIntro() {
+    document.getElementById("reel-intro-outro")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <Card style={{ marginBottom: 20 }}>
-      <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+      <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
         Videos with generated clips
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {withClips.map((v) => (
-          <div
-            key={v.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "8px 12px",
-              background: BRAND.bg,
-              borderRadius: 8,
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ fontWeight: 500, color: BRAND.ink, fontSize: 14, flex: 1 }}>{v.title}</span>
-            {v.clips_generated_at && (
-              <span style={{ fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
-                {formatClipDate(v.clips_generated_at)}
-              </span>
-            )}
-            <button
-              onClick={() => onRevisit(v)}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {withClips.map((v) => {
+          const open = previewId === v.id;
+          return (
+            <div
+              key={v.id}
               style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 13,
-                color: BRAND.red,
-                fontWeight: 600,
-                padding: 0,
-                whiteSpace: "nowrap",
+                display: "flex",
+                gap: 12,
+                padding: 10,
+                background: BRAND.bg,
+                borderRadius: 10,
+                alignItems: "flex-start",
               }}
             >
-              Re-generate →
-            </button>
-          </div>
-        ))}
+              <button
+                type="button"
+                onClick={() => setPreviewId(open ? null : v.id)}
+                style={{
+                  position: "relative", flex: "0 0 168px", width: 168, height: 94, padding: 0,
+                  border: "none", borderRadius: 8, overflow: "hidden", background: "#111", cursor: "pointer",
+                }}
+                title="Preview"
+              >
+                <img
+                  src={ytThumb(v.id)}
+                  alt=""
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+                <span
+                  style={{
+                    position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 22, textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+                  }}
+                >
+                  ▶
+                </span>
+                {v.duration != null && (
+                  <span
+                    style={{
+                      position: "absolute", right: 6, bottom: 6, background: "rgba(0,0,0,0.8)",
+                      color: "#fff", fontSize: 11, padding: "1px 5px", borderRadius: 3, fontWeight: 600,
+                    }}
+                  >
+                    {formatDuration(v.duration)}
+                  </span>
+                )}
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, color: BRAND.ink, fontSize: 14, lineHeight: 1.35 }}>
+                  {v.title}
+                </div>
+                {v.description && (
+                  <div
+                    style={{
+                      marginTop: 4, fontSize: 12, color: BRAND.sub, lineHeight: 1.4,
+                      display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
+                    }}
+                  >
+                    {v.description}
+                  </div>
+                )}
+                <div style={{ marginTop: 4, fontSize: 12, color: BRAND.sub }}>
+                  {v.clips_generated_at ? formatClipDate(v.clips_generated_at) : "Clips generated"}
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => navigate("video-approval", { series: v.id })}
+                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13, color: BRAND.navyText, fontWeight: 600 }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRevisit(v)}
+                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13, color: BRAND.red, fontWeight: 600 }}
+                  >
+                    Re-generate →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={scrollToIntro}
+                    style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13, color: BRAND.navyText, fontWeight: 600 }}
+                  >
+                    Intro / Outro
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
+      {previewId && (
+        <div style={{ marginTop: 12 }}>
+          <iframe
+            title="Clip preview"
+            src={`https://www.youtube.com/embed/${previewId}?autoplay=1`}
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+            style={{ width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 8, background: "#000" }}
+          />
+        </div>
+      )}
     </Card>
   );
 }

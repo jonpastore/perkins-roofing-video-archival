@@ -26,15 +26,6 @@ interface UnusedBucket {
   unused_videos_total: number;
 }
 
-interface TopicItem {
-  label: string;
-  count: number;
-  num_videos: number;
-  total_content_length: number;
-  sample: { video_id: string; t: number };
-  generated: boolean;
-}
-
 interface TopicVideo {
   video_id: string;
   title: string;
@@ -67,7 +58,6 @@ function slugify(text: string): string {
     .slice(0, 80);
 }
 
-const TOPIC_PAGE_SIZE = 24;
 const BUCKET_PAGE_SIZE = 50;
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
@@ -465,69 +455,90 @@ function Paginator({
   );
 }
 
-type TopicFilter = "all" | "not_generated" | "generated";
+interface GraphSubject {
+  label: string;
+  slug: string;
+  n_videos: number;
+  yt_views: number;
+  yt_comments: number;
+  grounding_seconds: number;
+  opportunity: number;
+  aio: number;
+  covered: boolean;
+}
+interface GraphGenre {
+  id: string;
+  label: string;
+  publishable: boolean;
+  density: string;
+  color: string;
+  n_unpublished: number;
+  subjects: GraphSubject[];
+}
+interface GraphPayload {
+  genres: GraphGenre[];
+  diversity: { shannon: number; concentrated: boolean; flags: { genre: string; flag: string }[] };
+}
+
+const INBOX_LIMIT = 12;
+
+function inboxFromGraph(g: GraphPayload | null): Array<GraphSubject & { genre: string; genreId: string; density: string }> {
+  if (!g) return [];
+  const rows: Array<GraphSubject & { genre: string; genreId: string; density: string }> = [];
+  for (const genre of g.genres) {
+    if (!genre.publishable || genre.id === "internal") continue;
+    for (const s of genre.subjects) {
+      if (s.covered) continue;
+      rows.push({ ...s, genre: genre.label, genreId: genre.id, density: genre.density });
+    }
+  }
+  rows.sort((a, b) => b.opportunity - a.opportunity || b.yt_comments - a.yt_comments);
+  return rows.slice(0, INBOX_LIMIT);
+}
 
 export function Opportunities() {
   const { navigate } = useContext(NavContext);
 
-  // Per-topic state: label -> { state: "generating"|"done", result?: GenerateResult }
   const [topicStates, setTopicStates] = useState<Record<string, { state: "generating" | "done"; result?: GenerateResult }>>({});
   const [genMsg, setGenMsg] = useState<Record<string, string>>({});
-  // Modal for post-generation cluster result
   const [clusterModal, setClusterModal] = useState<{ topic: string; result: GenerateResult } | null>(null);
-
-  // Server-paginated topics section
-  const [topicSort, setTopicSort] = useState<"length" | "videos" | "alpha">("length");
-  const [topicFilter, setTopicFilter] = useState<TopicFilter>("all");
-  const [topicOffset, setTopicOffset] = useState(0);
-  const [topicItems, setTopicItems] = useState<TopicItem[]>([]);
-  const [topicTotal, setTopicTotal] = useState(0);
-  const [topicLoading, setTopicLoading] = useState(true);
-  const [topicError, setTopicError] = useState<string | null>(null);
   const [videoModalLabel, setVideoModalLabel] = useState<string | null>(null);
 
-  // Reels — fetched once
+  const [articleGraph, setArticleGraph] = useState<GraphPayload | null>(null);
+  const [faqGraph, setFaqGraph] = useState<GraphPayload | null>(null);
+  const [graphLoading, setGraphLoading] = useState(true);
+  const [graphError, setGraphError] = useState<string | null>(null);
+
   const [reels, setReels] = useState<Reel[]>([]);
   const [reelsLoading, setReelsLoading] = useState(true);
   const [reelsError, setReelsError] = useState<string | null>(null);
 
-  // Unused videos — server-paginated
   const [unused, setUnused] = useState<UnusedVideo[]>([]);
   const [unusedTotal, setUnusedTotal] = useState(0);
   const [unusedPage, setUnusedPage] = useState(0);
   const [unusedLoading, setUnusedLoading] = useState(true);
   const [unusedError, setUnusedError] = useState<string | null>(null);
 
-  const fetchTopics = useCallback((sort: "length" | "videos" | "alpha", filter: TopicFilter, offset: number) => {
-    setTopicLoading(true);
-    setTopicError(null);
-    const generatedParam = filter === "not_generated" ? "no" : filter === "generated" ? "yes" : "all";
-    apiFetch(`/topics?sort=${sort}&limit=${TOPIC_PAGE_SIZE}&offset=${offset}&generated=${generatedParam}`)
-      .then(async (r) => {
+  const fetchGraph = useCallback(() => {
+    setGraphLoading(true);
+    setGraphError(null);
+    Promise.all([
+      apiFetch("/topic-graph?kind=articles&published=no").then(async (r) => {
         if (!r.ok) throw new Error(await errText(r));
         return r.json();
+      }),
+      apiFetch("/topic-graph?kind=faqs&published=no").then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
+        return r.json();
+      }),
+    ])
+      .then(([arts, faqs]: [GraphPayload, GraphPayload]) => {
+        setArticleGraph(arts);
+        setFaqGraph(faqs);
       })
-      .then((d: { total: number; items: TopicItem[] }) => {
-        setTopicItems(d.items);
-        setTopicTotal(d.total);
-      })
-      .catch((e: unknown) => setTopicError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setTopicLoading(false));
+      .catch((e: unknown) => setGraphError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setGraphLoading(false));
   }, []);
-
-  useEffect(() => {
-    fetchTopics(topicSort, topicFilter, topicOffset);
-  }, [fetchTopics, topicSort, topicFilter, topicOffset]);
-
-  function handleTopicSortChange(s: "length" | "videos" | "alpha") {
-    setTopicSort(s);
-    setTopicOffset(0);
-  }
-
-  function handleTopicFilterChange(f: TopicFilter) {
-    setTopicFilter(f);
-    setTopicOffset(0);
-  }
 
   const fetchReels = useCallback(() => {
     setReelsLoading(true);
@@ -559,11 +570,12 @@ export function Opportunities() {
       .finally(() => setUnusedLoading(false));
   }, []);
 
+  useEffect(() => { fetchGraph(); }, [fetchGraph]);
   useEffect(() => { fetchReels(); }, [fetchReels]);
   useEffect(() => { fetchUnused(unusedPage); }, [fetchUnused, unusedPage]);
 
   function refreshAll() {
-    fetchTopics(topicSort, topicFilter, topicOffset);
+    fetchGraph();
     fetchReels();
     fetchUnused(unusedPage);
   }
@@ -582,8 +594,7 @@ export function Opportunities() {
       const d = await r.json() as GenerateResult;
       setTopicStates((s) => ({ ...s, [topic]: { state: "done", result: d } }));
       setClusterModal({ topic, result: d });
-      // Refresh topics so the generated flag updates
-      fetchTopics(topicSort, topicFilter, topicOffset);
+      fetchGraph();
     } catch (e: unknown) {
       setTopicStates((s) => {
         const next = { ...s };
@@ -597,40 +608,15 @@ export function Opportunities() {
     }
   }
 
-  async function generateUnusedArticle(video: UnusedVideo) {
-    const key = video.video_id;
-    setTopicStates((s) => ({ ...s, [key]: { state: "generating" } }));
-    try {
-      const r = await apiFetch("/topics/generate-article", {
-        method: "POST",
-        body: JSON.stringify({ topic: video.title }),
-      });
-      if (!r.ok) {
-        const txt = await r.text().catch(() => r.statusText);
-        throw new Error(`${r.status}: ${txt}`);
-      }
-      const d = await r.json() as GenerateResult;
-      setTopicStates((s) => ({ ...s, [key]: { state: "done", result: d } }));
-      setClusterModal({ topic: video.title, result: d });
-    } catch (e: unknown) {
-      setTopicStates((s) => {
-        const next = { ...s };
-        delete next[key];
-        return next;
-      });
-      setGenMsg((prev) => ({
-        ...prev,
-        [key]: `Error: ${e instanceof Error ? e.message : String(e)}`,
-      }));
-    }
-  }
-
-  // Server handles filter + generated-to-back ordering across all pages.
-  const filteredTopicItems: TopicItem[] = topicItems;
-
+  const articleInbox = inboxFromGraph(articleGraph);
+  const faqInbox = inboxFromGraph(faqGraph);
+  const underServed = new Set(
+    (articleGraph?.diversity.flags ?? [])
+      .filter((f) => f.flag === "under_served" || f.flag === "empty")
+      .map((f) => f.genre),
+  );
   const unusedTotalPages = Math.max(1, Math.ceil(unusedTotal / BUCKET_PAGE_SIZE));
-
-  const anyLoading = reelsLoading || unusedLoading || topicLoading;
+  const anyLoading = reelsLoading || unusedLoading || graphLoading;
 
   return (
     <main style={{ padding: "0 4px" }}>
@@ -653,166 +639,82 @@ export function Opportunities() {
         />
       )}
 
-      {/* Article Topics — server-paginated from /topics */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, margin: "28px 0 4px", flexWrap: "wrap" }}>
-        <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
-          Suggested article topics to cover ({topicTotal > 0 ? topicTotal : "…"})
-        </h3>
-        <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: "auto", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: BRAND.sub }}>Filter:</span>
-          {([["all", "All"], ["not_generated", "Not generated"], ["generated", "Generated"]] as [TopicFilter, string][]).map(([f, label]) => (
-            <button
-              key={f}
-              onClick={() => handleTopicFilterChange(f)}
-              style={{
-                fontSize: 12, padding: "3px 10px", borderRadius: 6,
-                border: `1px solid ${topicFilter === f ? BRAND.navyText : BRAND.border}`,
-                background: topicFilter === f ? BRAND.navyText : "#fff",
-                color: topicFilter === f ? "#fff" : BRAND.sub,
-                cursor: "pointer", fontWeight: topicFilter === f ? 600 : 400,
-              }}
-            >
-              {label}
-            </button>
-          ))}
-          <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 8 }}>Sort:</span>
-          {(["length", "videos", "alpha"] as const).map((s) => {
-            const label = s === "length" ? "Total content length" : s === "videos" ? "Number of videos" : "A–Z";
-            return (
-              <button
-                key={s}
-                onClick={() => handleTopicSortChange(s)}
-                style={{
-                  fontSize: 12, padding: "3px 10px", borderRadius: 6,
-                  border: `1px solid ${topicSort === s ? BRAND.navyText : BRAND.border}`,
-                  background: topicSort === s ? BRAND.navyText : "#fff",
-                  color: topicSort === s ? "#fff" : BRAND.sub,
-                  cursor: "pointer", fontWeight: topicSort === s ? 600 : 400,
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* Scored article inbox — from topic-graph, not the 8k variant list */}
+      <SectionHeader>This week — articles to write ({articleInbox.length})</SectionHeader>
       <ActionNote>
-        Generating an article creates a cluster draft — see the Articles tab to review and publish.
+        Ranked by opportunity (YouTube engagement, grounding, named-entity AIO, genre diversity).
+        Internal topics never appear. Open the Topic Graph on Articles for the full map.
       </ActionNote>
-      {topicLoading && <Loading label="Loading topics…" />}
-      {topicError && <ErrorMsg>Could not load topics: {topicError}</ErrorMsg>}
-      {!topicLoading && !topicError && filteredTopicItems.length === 0 && (
-        <EmptyState label={topicFilter === "generated" ? "No generated topics" : topicFilter === "not_generated" ? "All topics have been generated" : "All topics covered"} />
+      {graphLoading && <Loading label="Scoring topics…" />}
+      {graphError && <ErrorMsg>Could not load topic graph: {graphError}</ErrorMsg>}
+      {!graphLoading && !graphError && articleInbox.length === 0 && (
+        <EmptyState label="No uncovered article subjects in the queue" />
       )}
-      {!topicLoading && !topicError && filteredTopicItems.length > 0 && (
-        <>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {filteredTopicItems.map((t) => {
-              const ts = topicStates[t.label];
-              const isGenerated = t.generated || ts?.state === "done";
-              const genResult = ts?.result;
-              const pillarSlug = genResult?.pillar_slug ?? slugify(t.label);
-              return (
-                <Card
-                  key={t.label}
-                  style={{
-                    flex: "1 1 220px", minWidth: 220,
-                    opacity: isGenerated && topicFilter !== "generated" ? 0.75 : 1,
-                    borderColor: isGenerated ? BRAND.border : undefined,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
-                    <div style={{ fontWeight: 600, color: isGenerated ? BRAND.sub : BRAND.navyText, flex: 1 }}>
-                      {t.label}
+      {!graphLoading && !graphError && articleInbox.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {articleInbox.map((t) => {
+            const ts = topicStates[t.label];
+            return (
+              <Card key={t.slug} style={{ padding: 14 }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontWeight: 600, color: BRAND.navyText }}>{t.label}</div>
+                    <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 4 }}>
+                      {t.genre}
+                      {" · "}{t.n_videos} video{t.n_videos !== 1 ? "s" : ""}
+                      {" · "}{Math.round(t.grounding_seconds / 60)} min
+                      {" · "}{t.yt_comments} comments
+                      {" · opp "}{t.opportunity.toFixed(2)}
+                      {t.aio ? " · AIO entity" : ""}
+                      {t.density === "under_served" || t.density === "empty" ? " · under-served genre" : ""}
                     </div>
-                    {isGenerated && (
-                      <span style={{
-                        fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 10,
-                        background: "#e6f9f0", color: "#1a7f4b", whiteSpace: "nowrap",
-                      }}>
-                        Generated
-                      </span>
-                    )}
                   </div>
-                  <div style={{ fontSize: 13, color: BRAND.sub, marginBottom: 6 }}>
-                    {t.num_videos} video{t.num_videos !== 1 ? "s" : ""}
-                    {" · "}
-                    {hms(t.total_content_length)}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <button
-                      onClick={() => setVideoModalLabel(t.label)}
-                      style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-                    >
-                      View videos
-                    </button>
-                    <a
-                      href={`https://youtu.be/${t.sample.video_id}?t=${t.sample.t}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline" }}
-                    >
-                      sample clip
-                    </a>
-                    {isGenerated && (
-                      <button
-                        onClick={() => navigate("articles", { cluster: pillarSlug })}
-                        style={{ fontSize: 12, color: "#1a7f4b", fontWeight: 700, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-                      >
-                        View cluster →
-                      </button>
-                    )}
-                  </div>
-                  {genMsg[t.label] && ts?.state !== "done" && (
-                    <div style={{ fontSize: 12, color: genMsg[t.label].startsWith("Error") ? BRAND.red : BRAND.sub, fontStyle: "italic", marginBottom: 6 }}>
-                      {genMsg[t.label]}
-                    </div>
-                  )}
-                  {!isGenerated && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Button variant="ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setVideoModalLabel(t.label)}>
+                      Videos
+                    </Button>
+                    <Button variant="ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => navigate("articles")}>
+                      Graph
+                    </Button>
                     <Button
-                      variant="primary"
-                      style={{ fontSize: 13, padding: "6px 14px" }}
+                      style={{ fontSize: 12, padding: "5px 12px" }}
                       disabled={ts?.state === "generating"}
                       onClick={() => generateArticle(t.label)}
                     >
-                      {ts?.state === "generating" ? "Rendering…" : "Generate cluster articles"}
+                      {ts?.state === "generating" ? "Generating…" : "Generate cluster"}
                     </Button>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
-          {/* Server pagination for topics */}
-          {topicTotal > TOPIC_PAGE_SIZE && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0 4px", fontSize: 13 }}>
+                  </div>
+                </div>
+                {genMsg[t.label] && (
+                  <div style={{ fontSize: 12, color: BRAND.red, marginTop: 6 }}>{genMsg[t.label]}</div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <SectionHeader>FAQs to answer ({faqInbox.length})</SectionHeader>
+      <ActionNote>Unanswered questions, same score as the FAQ graph. Full map is on FAQ Builder.</ActionNote>
+      {!graphLoading && faqInbox.length === 0 && <EmptyState label="No FAQ gaps in the queue" />}
+      {faqInbox.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {faqInbox.map((t) => (
+            <Card key={t.slug} style={{ padding: "10px 14px" }}>
+              <div style={{ fontWeight: 600, color: BRAND.navyText }}>{t.label}</div>
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3 }}>
+                {t.genre} · {t.yt_comments} comments · opp {t.opportunity.toFixed(2)}
+              </div>
               <button
-                onClick={() => setTopicOffset((o) => Math.max(0, o - TOPIC_PAGE_SIZE))}
-                disabled={topicOffset === 0}
-                style={{
-                  background: "none", border: `1px solid ${BRAND.border}`, borderRadius: 6,
-                  padding: "3px 12px", cursor: topicOffset === 0 ? "not-allowed" : "pointer",
-                  color: topicOffset === 0 ? BRAND.sub : BRAND.navyText, fontWeight: 600,
-                }}
+                type="button"
+                onClick={() => navigate("faq")}
+                style={{ marginTop: 6, background: "none", border: "none", padding: 0, color: BRAND.red, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
               >
-                Prev
+                Open FAQ Builder →
               </button>
-              <span style={{ color: BRAND.sub }}>
-                Page {Math.floor(topicOffset / TOPIC_PAGE_SIZE) + 1} of {Math.ceil(topicTotal / TOPIC_PAGE_SIZE)} · {topicTotal} topics
-              </span>
-              <button
-                onClick={() => setTopicOffset((o) => o + TOPIC_PAGE_SIZE)}
-                disabled={topicOffset + TOPIC_PAGE_SIZE >= topicTotal}
-                style={{
-                  background: "none", border: `1px solid ${BRAND.border}`, borderRadius: 6,
-                  padding: "3px 12px", cursor: topicOffset + TOPIC_PAGE_SIZE >= topicTotal ? "not-allowed" : "pointer",
-                  color: topicOffset + TOPIC_PAGE_SIZE >= topicTotal ? BRAND.sub : BRAND.navyText, fontWeight: 600,
-                }}
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </>
+            </Card>
+          ))}
+        </div>
       )}
 
       {videoModalLabel && (
@@ -856,13 +758,13 @@ export function Opportunities() {
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <Badge tone="blue">Approved</Badge>
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); }}
-                  style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", cursor: "pointer" }}
+                <button
+                  type="button"
+                  onClick={() => navigate("clip-studio", { video: r.video_id })}
+                  style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
                 >
                   Open in Clip Studio
-                </a>
+                </button>
               </div>
             </Card>
           ))}
@@ -871,11 +773,12 @@ export function Opportunities() {
 
       {/* Unused Videos */}
       <SectionHeader>
-        Unused videos ({unusedTotal > 0 ? unusedTotal : unusedLoading ? "…" : unused.length})
+        Unused footage ({unusedTotal > 0 ? unusedTotal : unusedLoading ? "…" : unused.length})
+        {underServed.size > 0 ? ` — under-served: ${[...underServed].slice(0, 3).join(", ")}` : ""}
       </SectionHeader>
       <p style={{ fontSize: 13, color: BRAND.sub, margin: "-6px 0 14px" }}>
-        A video is "used" when it is referenced in a published or draft article, or included in a
-        video mini-series. These videos have transcript or topic data but are not yet used anywhere.
+        Footage not yet in an article or reel. Use it to ground an under-served genre — do not
+        generate an article from the video title.
       </p>
       {unusedLoading && <Loading label="Loading unused videos…" />}
       {unusedError && <ErrorMsg>Could not load unused videos: {unusedError}</ErrorMsg>}
@@ -913,44 +816,20 @@ export function Opportunities() {
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  {genMsg[v.video_id] && topicStates[v.video_id]?.state !== "done" && (
-                    <div style={{ fontSize: 12, color: genMsg[v.video_id].startsWith("Error") ? BRAND.red : BRAND.sub, fontStyle: "italic", width: "100%" }}>
-                      {genMsg[v.video_id]}
-                    </div>
-                  )}
-                  {topicStates[v.video_id]?.state === "done" ? (
-                    <Button
-                      variant="primary"
-                      style={{ fontSize: 12, padding: "5px 12px" }}
-                      onClick={() => navigate("articles", { cluster: topicStates[v.video_id].result?.pillar_slug ?? slugify(v.title) })}
-                    >
-                      View
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      style={{ fontSize: 12, padding: "5px 12px" }}
-                      disabled={topicStates[v.video_id]?.state === "generating"}
-                      onClick={() => generateUnusedArticle(v)}
-                    >
-                      {topicStates[v.video_id]?.state === "generating" ? "Rendering…" : "Generate cluster articles"}
-                    </Button>
-                  )}
-                  <a
-                    href={`/video/proposals?video_id=${v.video_id}`}
-                    style={{
-                      fontSize: 12,
-                      padding: "5px 12px",
-                      borderRadius: 8,
-                      border: `1px solid ${BRAND.border}`,
-                      color: BRAND.navyText,
-                      textDecoration: "none",
-                      fontWeight: 600,
-                      display: "inline-block",
-                    }}
+                  <Button
+                    variant="ghost"
+                    style={{ fontSize: 12, padding: "5px 12px" }}
+                    onClick={() => navigate("clip-studio", { video: v.video_id })}
                   >
-                    Propose mini-series
-                  </a>
+                    Open in Clip Studio
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    style={{ fontSize: 12, padding: "5px 12px" }}
+                    onClick={() => navigate("articles")}
+                  >
+                    Topic Graph
+                  </Button>
                 </div>
               </Card>
             ))}

@@ -74,42 +74,35 @@ PER_DAY = int(os.getenv("DAILY_ARTICLE_PER_DAY", "1"))
 _LOCK_KEY = 8274127
 
 
-def _generated_slugs(db) -> set[str]:
-    """Slugs that already have an article, pillar or cluster.
-
-    Mirrors api.routes.topics._build_generated_set rather than importing it: that module is a
-    FastAPI route file, and a cron importing a route module drags the whole API surface into the
-    job container for one set comprehension.
-    """
-    from app.models import Article  # noqa: PLC0415
-
-    out: set[str] = set()
-    for slug, pillar_slug in db.query(Article.slug, Article.pillar_slug).all():
-        if slug:
-            out.add(slug)
-        if pillar_slug:
-            out.add(pillar_slug)
-    return out
-
-
 def next_topic(db, extra_done: set[str] | None = None) -> dict | None:
-    """The best ungenerated topic, or None when the catalogue is exhausted.
+    """Best ungenerated topic: uncovered, not internal, diversity-weighted opportunity.
 
-    Ranked by total_seconds — how much real transcript backs the topic — because this pipeline's
-    characteristic failure is inventing content, and the compliance gate rejects what it cannot
-    ground. Ranking by num_videos instead would favour a topic mentioned briefly in many clips
-    over one covered in depth.
+    Coverage is keyword/title/slug/pillar — not slug-only — so a SEO-titled article
+    still blocks a second pillar on the same subject. Internal genres never publish.
+    Opportunity blends YouTube engagement, grounding depth, named-entity AIO boost,
+    and a penalty for genres we already over-serve.
 
-    Source is content_graph, not aggregated_topics. The aggregate table is a snapshot
-    nothing currently refreshes; a cron that ranked it would keep picking from a stale
-    catalogue after every ingest.
+    Source is content_graph, not aggregated_topics (that snapshot is stale).
     """
-    from api.routes.articles import _slugify  # noqa: PLC0415
-    from app.models import GraphNode, Video  # noqa: PLC0415
+    from app.models import Article, GraphNode, Video  # noqa: PLC0415
+    from core.topic_graph import (  # noqa: PLC0415
+        classify_label,
+        coverage_from_articles,
+        pick_next_label,
+        slugify,
+    )
 
-    done = _generated_slugs(db)
+    cov = coverage_from_articles(
+        db.query(Article.slug, Article.pillar_slug, Article.title, Article.focus_keyword).all()
+    )
     if extra_done:
-        done |= extra_done
+        cov = {
+            "slugs": set(cov["slugs"]) | extra_done,
+            "pillars": set(cov["pillars"]) | extra_done,
+            "titles": cov["titles"],
+            "keywords": cov["keywords"],
+        }
+
     groups: dict[str, dict] = {}
     for row in db.query(GraphNode).filter(GraphNode.kind == "topics").all():
         label = (row.label or "").strip()
@@ -125,6 +118,7 @@ def next_topic(db, extra_done: set[str] | None = None) -> dict | None:
 
     video_ids = {vid for g in groups.values() for vid in g["video_ids"]}
     duration_map: dict[str, float] = {}
+    views_map: dict[str, tuple[int, int, int]] = {}
     derived: set[str] = set()
     if video_ids:
         from core.video_lineage import derived_video_ids  # noqa: PLC0415
@@ -132,25 +126,49 @@ def next_topic(db, extra_done: set[str] | None = None) -> dict | None:
         derived = derived_video_ids(videos)
         for video in videos:
             duration_map[video.id] = video.duration or 0.0
+            views_map[video.id] = (
+                int(getattr(video, "views", 0) or 0),
+                int(getattr(video, "likes", 0) or 0),
+                int(getattr(video, "comments", 0) or 0),
+            )
 
-    best = None
+    candidates = []
+    published_per_genre: dict[str, int] = {}
     for g in groups.values():
-        slug = _slugify(g["label"])
-        if slug in done:
-            continue
         source_ids = {vid for vid in g["video_ids"] if vid not in derived}
         if not source_ids:
             continue
         seconds = sum(duration_map.get(vid, 0.0) for vid in source_ids)
-        candidate = {
+        views = likes = comments = 0
+        for vid in source_ids:
+            v, l, c = views_map.get(vid, (0, 0, 0))
+            views += v
+            likes += l
+            comments += c
+        gid, _, pub = classify_label(g["label"])
+        sl = slugify(g["label"])
+        covered = sl in cov["slugs"] or sl in cov["pillars"]
+        if covered or not pub:
+            published_per_genre[gid] = published_per_genre.get(gid, 0) + 1
+        candidates.append({
             "label": g["label"],
-            "slug": slug,
+            "slug": sl,
             "num_videos": len(source_ids),
             "total_seconds": seconds,
-        }
-        if best is None or seconds > best["total_seconds"]:
-            best = candidate
-    return best
+            "views": views,
+            "likes": likes,
+            "comments": comments,
+        })
+
+    picked = pick_next_label(candidates, cov, published_per_genre)
+    if picked is None:
+        return None
+    return {
+        "label": picked["label"],
+        "slug": picked.get("slug") or slugify(picked["label"]),
+        "num_videos": picked["num_videos"],
+        "total_seconds": picked["total_seconds"],
+    }
 
 
 def _clusters_for(topic_label: str, db) -> list[str]:

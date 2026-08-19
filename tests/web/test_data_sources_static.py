@@ -16,13 +16,13 @@ def test_data_sources_panel_has_login_buttons():
     assert "visibilitychange" in src
 
 
-def test_knowify_and_portfolio_mount_data_sources():
-    assert "DataSources" in (ROOT / "pages" / "Knowify.tsx").read_text()
-    assert "DataSources" in (ROOT / "pages" / "Portfolio.tsx").read_text()
-    assert "DataSources" in (ROOT / "pages" / "MarketingConfig.tsx").read_text()
+def test_data_sources_only_on_dashboard():
     status = (ROOT / "pages" / "Status.tsx").read_text()
     assert "DataSources" in status
     assert status.find("<DataSources") < status.find("<ProductionReadinessBanner")
+    for name in ("Knowify.tsx", "Portfolio.tsx", "MarketingConfig.tsx", "Articles.tsx", "Scheduling.tsx"):
+        src = (ROOT / "pages" / name).read_text()
+        assert "DataSources" not in src, f"{name} must not mount Data sources"
 
 
 def test_job_switches_and_reminder_notice_mounted():

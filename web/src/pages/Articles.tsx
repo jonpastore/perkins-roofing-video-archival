@@ -7,6 +7,7 @@ import { BRAND, Card, Button, PageTitle, Badge, inputStyle, Loading, ErrorMsg } 
 import { NavContext } from "../App";
 import { richEditorInit } from "../lib/richEditor";
 import { errText } from "../lib/errors";
+import { TopicGraphPanel } from "./TopicGraph";
 
 // Detect user's local timezone once at module load
 const USER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1593,6 +1594,7 @@ export function Articles() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [viewingSlug, setViewingSlug] = useState<string | null>(null);
+  const [showGraph, setShowGraph] = useState(false);
 
   // Sort + filter state — seed filterCluster from nav params when navigated here
   const [sortMode, setSortMode] = useState<SortMode>("cluster");
@@ -1773,10 +1775,16 @@ export function Articles() {
   return (
     <main style={{ maxWidth: 1000 }}>
       <PageTitle
-        right={!showForm && <Button onClick={openNew}>+ New Article</Button>}
+        right={!showForm && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="ghost" onClick={() => setShowGraph(true)}>Topic Graph</Button>
+            <Button onClick={openNew}>+ New Article</Button>
+          </div>
+        )}
       >
         Articles
       </PageTitle>
+      {showGraph && <TopicGraphPanel kind="articles" onClose={() => setShowGraph(false)} />}
 
       {viewingSlug && (
         <ArticleModal

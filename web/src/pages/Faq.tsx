@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, hms, ytLink } from "../ui";
 import { ComposeEmailModal } from "../components/ComposeEmailModal";
 import { errText } from "../lib/errors";
+import { TopicGraphPanel } from "./TopicGraph";
 
 // Render an FAQ answer: turn `[link n](url)` markdown citations into clickable links.
 function renderAnswer(text: string): ReactNode[] {
@@ -104,6 +105,7 @@ export function Faq() {
   const [answeringId, setAnsweringId] = useState<number | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [mineBatchSize, setMineBatchSize] = useState<number>(200);
   const [answerBatchSize, setAnswerBatchSize] = useState<number>(25);
@@ -353,7 +355,12 @@ export function Faq() {
 
   return (
     <main style={{ maxWidth: 960 }}>
-      <PageTitle>FAQ Builder</PageTitle>
+      <PageTitle
+        right={<Button variant="ghost" onClick={() => setShowGraph(true)}>FAQ Graph</Button>}
+      >
+        FAQ Builder
+      </PageTitle>
+      {showGraph && <TopicGraphPanel kind="faqs" onClose={() => setShowGraph(false)} />}
 
       {/* Tab switcher */}
       <div style={{ display: "flex", borderBottom: `1px solid ${BRAND.border}`, marginBottom: 20 }}>

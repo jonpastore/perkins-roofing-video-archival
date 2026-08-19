@@ -32,16 +32,6 @@ interface SearchRow {
   video_id: string;
   text: string;
 }
-interface TopicItem {
-  label: string;
-  count: number;
-  num_videos: number;
-  total_content_length: number;
-  sample: { video_id: string; t: number };
-  generated?: boolean;  // server-side: articles already exist for this topic's cluster
-  stale?: boolean;      // server-side: new source videos appeared since articles were generated
-  new_source_count?: number;
-}
 interface TopicVideo {
   video_id: string;
   title: string;
@@ -73,8 +63,6 @@ const SUGGESTIONS = [
   "Do I need a permit to replace my roof?",
   "How long does a roof replacement take?",
 ];
-
-const TOPIC_PAGE_SIZE = 30;
 
 // Pull {videoId, t} out of a youtu.be/watch deep link.
 function parseLink(url: string): { videoId: string; t: number } | null {
@@ -337,112 +325,8 @@ function TopicVideosModal({
   );
 }
 
-// ---- Topic chip / row component ----
-function TopicRow({
-  topic,
-  generating,
-  done,
-  onGenerate,
-  onView,
-  onDrillIn,
-}: {
-  topic: TopicItem;
-  generating: boolean;  // this specific topic is being generated
-  done: boolean;        // cluster was successfully created for this topic
-  onGenerate: (label: string) => void;
-  onView: (label: string) => void;
-  onDrillIn: (label: string) => void;
-}) {
-  const sampleUrl = ytLink(topic.sample.video_id, topic.sample.t);
-  const numVids = topic.num_videos ?? topic.count;
-  const totalSecs = topic.total_content_length ?? 0;
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "10px 14px",
-        background: "#fff",
-        border: `1px solid ${BRAND.border}`,
-        borderRadius: 10,
-        boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-      }}
-    >
-      <span style={{ flex: 1, fontSize: 14, color: BRAND.ink, fontWeight: 500 }}>
-        {topic.label}
-      </span>
-      {topic.generated && (
-        <span
-          title="Articles have been generated for this topic. Click 'View' to see them."
-          style={{
-            fontSize: 11, fontWeight: 700, color: "#1a7f4b", background: "#e6f4ec",
-            border: "1px solid #b7e0c6", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap",
-          }}
-        >
-          ✓ articles
-        </span>
-      )}
-      {topic.generated && topic.stale && (
-        <span
-          title="New source videos have been published for this topic since its articles were generated — regenerate to enhance."
-          style={{
-            color: "#b45309", background: "#fef3e2", border: "1px solid #f5c98a",
-            borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
-          }}
-        >
-          🔄 {topic.new_source_count} new
-        </span>
-      )}
-      <button
-        onClick={() => onDrillIn(topic.label)}
-        style={{
-          background: "none", border: "none", cursor: "pointer", padding: 0,
-          fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap", textDecoration: "underline dotted",
-        }}
-        title="Click to see all videos for this topic"
-      >
-        {numVids} video{numVids !== 1 ? "s" : ""} · {hms(totalSecs)}
-      </button>
-      <a
-        href={sampleUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`Jump to sample timecode (${hms(topic.sample.t)})`}
-        style={{
-          color: BRAND.red,
-          fontWeight: 600,
-          fontSize: 12,
-          textDecoration: "none",
-          whiteSpace: "nowrap",
-        }}
-      >
-        ▶ {hms(topic.sample.t)}
-      </a>
-      {done ? (
-        <Button
-          variant="ghost"
-          style={{ fontSize: 12, padding: "5px 10px", whiteSpace: "nowrap" }}
-          onClick={() => onView(topic.label)}
-        >
-          View
-        </Button>
-      ) : (
-        <Button
-          variant="ghost"
-          style={{ fontSize: 12, padding: "5px 10px", whiteSpace: "nowrap" }}
-          disabled={generating}
-          onClick={() => !generating && onGenerate(topic.label)}
-        >
-          {generating ? "Rendering…" : "Generate cluster articles"}
-        </Button>
-      )}
-    </div>
-  );
-}
-
 export function SearchAsk() {
-  const { navigate, params } = useContext(NavContext);
+  const { params } = useContext(NavContext);
 
   const [mode, setMode] = useState<"ask" | "search">("ask");
   const [query, setQuery] = useState("");
@@ -460,60 +344,16 @@ export function SearchAsk() {
   const [emailModalBody, setEmailModalBody] = useState<string | null>(null);
 
   // Pre-mined topics state
-  const [topics, setTopics] = useState<TopicItem[]>([]);
-  const [topicsLoading, setTopicsLoading] = useState(false);
-  const [topicsError, setTopicsError] = useState<string | null>(null);
-  const [generateMsg, setGenerateMsg] = useState<string | null>(null);
-  // Per-topic state: label -> "generating" | "done"
-  const [topicStates, setTopicStates] = useState<Record<string, "generating" | "done">>({});
-  const [topicSort, setTopicSort] = useState<"alpha" | "videos" | "length">("videos");
+  const [genres, setGenres] = useState<Array<{ id: string; label: string; publishable: boolean }>>([]);
   const [drillLabel, setDrillLabel] = useState<string | null>(null);
-  const [topicOffset, setTopicOffset] = useState(0);
-  const [topicTotal, setTopicTotal] = useState(0);
-  const archiveTopicQuery = params.topic?.trim() ?? "";
-  const isArchiveTopicSearch =
-    mode === "search" && archiveTopicQuery.length > 0 && query.trim() === archiveTopicQuery;
-
-  // Fetch topics when in "search" mode.
-  // Strategy: when there is an active filter query, fetch ALL topics (no limit) so
-  // client-side filtering covers the full corpus — topic labels are short strings and
-  // the entire set fits in one response at any realistic scale (< 5 000 rows).
-  // When there is no query, use normal pagination so the initial load stays fast.
-  const isFiltering = mode === "search" && !isArchiveTopicSearch && query.trim().length > 0;
-
   useEffect(() => {
-    if (mode !== "search") return;
-    if (isArchiveTopicSearch) {
-      // Archive topic clicks are free-text searches across video content. Do not
-      // also open/filter the global topic catalog: archive detail labels can be
-      // per-video graph topics rather than aggregated canonical topic labels, so
-      // the catalog can legitimately say "0 topics" while /search finds videos.
-      setTopics([]);
-      setTopicTotal(0);
-      setTopicsError(null);
-      setTopicsLoading(false);
-      return;
-    }
-    setTopicsLoading(true);
-    setTopicsError(null);
-    const sortParam = topicSort === "alpha" ? "alpha" : topicSort === "videos" ? "videos" : "length";
-    // Omit limit when the user is filtering so we search across all topics, not just the current page.
-    const url = isFiltering
-      ? `/topics?sort=${sortParam}`
-      : `/topics?sort=${sortParam}&limit=${TOPIC_PAGE_SIZE}&offset=${topicOffset}`;
-    apiFetch(url)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(await errText(r));
-        return r.json();
+    apiFetch("/topic-graph/genres")
+      .then(async (r) => (r.ok ? r.json() : []))
+      .then((rows: Array<{ id: string; label: string; publishable: boolean }>) => {
+        setGenres((rows ?? []).filter((g) => g.publishable && g.id !== "other"));
       })
-      .then((data: { total?: number; items?: TopicItem[] } | TopicItem[]) => {
-        const items = Array.isArray(data) ? data : data.items ?? [];
-        setTopics(items);
-        setTopicTotal(Array.isArray(data) ? items.length : data.total ?? items.length);
-      })
-      .catch((e) => setTopicsError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setTopicsLoading(false));
-  }, [mode, topicOffset, topicSort, isFiltering, isArchiveTopicSearch]);
+      .catch(() => setGenres([]));
+  }, []);
 
   // Debounced typeahead: fire /ask/suggest after 400 ms when >=8 chars typed in ask mode
   function handleQueryChange(val: string) {
@@ -571,48 +411,16 @@ export function SearchAsk() {
     if (!topic) return;
     setMode("search");
     setQuery(topic);
-    setTopicOffset(0);
     setDrillLabel(null);
     run(topic, "search");
     // params is intentionally the trigger: Archive passes a topic when navigating here.
     // Run a video-content search only; do not open the topic drilldown modal here.
   }, [params.topic]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleGenerateArticle(label: string) {
-    setTopicStates((s) => ({ ...s, [label]: "generating" }));
-    setGenerateMsg(null);
-    try {
-      const r = await apiFetch("/topics/generate-article", {
-        method: "POST",
-        body: JSON.stringify({ topic: label }),
-      });
-      if (!r.ok) {
-        const txt = await r.text().catch(() => r.statusText);
-        throw new Error(`${r.status}: ${txt}`);
-      }
-      const data = await r.json() as {
-        pillar_slug: string;
-        pillar: { slug: string; title: string };
-        clusters: { slug: string; title: string }[];
-        count: number;
-      };
-      setTopicStates((s) => ({ ...s, [label]: "done" }));
-      setGenerateMsg(
-        `Cluster created: "${data.pillar.title}" — ${data.clusters.length} supporting articles (${data.count} total).`
-      );
-    } catch (e) {
-      // On error, clear the generating state so the button returns to normal
-      setTopicStates((s) => {
-        const next = { ...s };
-        delete next[label];
-        return next;
-      });
-      setGenerateMsg(`Error: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  function handleViewCluster(label: string) {
-    navigate("articles", { cluster: slugify(label) });
+  function searchGenre(label: string) {
+    setMode("search");
+    setQuery(label);
+    run(label, "search");
   }
 
   // group the descriptive sources by video so each clip is labeled with its video + topic
@@ -684,34 +492,19 @@ export function SearchAsk() {
     setEmailModalBody(buildEmailBody());
   }
 
-  // Filtered + sorted topic list
-  const filteredTopics = (() => {
-    let list = query.trim()
-      ? topics.filter((t) => t.label.toLowerCase().includes(query.toLowerCase()))
-      : [...topics];
-    if (topicSort === "alpha") {
-      list = [...list].sort((a, b) => a.label.localeCompare(b.label));
-    } else if (topicSort === "videos") {
-      list = [...list].sort((a, b) => (b.num_videos ?? b.count) - (a.num_videos ?? a.count));
-    } else {
-      list = [...list].sort((a, b) => (b.total_content_length ?? 0) - (a.total_content_length ?? 0));
-    }
-    return list;
-  })();
-
   return (
     <main style={{ maxWidth: 860 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <h2 style={{ margin: 0, color: BRAND.navyText, fontSize: 22 }}>Ask Perkins Knowledge Base</h2>
         <div style={{ display: "inline-flex", border: `1px solid ${BRAND.border}`, borderRadius: 8, overflow: "hidden" }}>
           {(["ask", "search"] as const).map((mo) => (
-            <button key={mo} onClick={() => { setMode(mo); setGenerateMsg(null); }}
+            <button key={mo} onClick={() => { setMode(mo); }}
               style={{
                 padding: "7px 16px", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
                 background: mode === mo ? BRAND.navy : "#fff",
                 color: mode === mo ? "#fff" : BRAND.navyText,
               }}>
-              {mo === "ask" ? "Ask a question" : "Search topics"}
+              {mo === "ask" ? "Ask a question" : "Search"}
             </button>
           ))}
         </div>
@@ -722,13 +515,31 @@ export function SearchAsk() {
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") run(query); }}
-          placeholder={mode === "ask" ? "Ask anything about the roofing content…" : "Filter topics, or type to search all videos…"}
+          placeholder={mode === "ask" ? "Ask anything about the roofing content…" : "Search Tim's videos…"}
           style={{ ...inputStyle, flex: 1 }}
         />
         <Button onClick={() => run(query)} disabled={loading || !query.trim()}>
           {loading ? "…" : mode === "ask" ? "Ask" : "Search"}
         </Button>
       </div>
+      {mode === "search" && genres.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+          {genres.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => searchGenre(g.label)}
+              style={{
+                padding: "5px 10px", borderRadius: 16, cursor: "pointer", fontSize: 12,
+                border: `1px solid ${BRAND.border}`, background: query === g.label ? BRAND.navy : "#fff",
+                color: query === g.label ? "#fff" : BRAND.navyText, fontWeight: 600,
+              }}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ask-cache typeahead chips — up to 3 "Asked before" suggestions */}
       {mode === "ask" && suggestions.length > 0 && (
@@ -772,7 +583,7 @@ export function SearchAsk() {
       {loading && <Loading label={mode === "ask" ? "Searching Tim's videos…" : "Searching videos…"} />}
       {error && <ErrorMsg>Error: {error}</ErrorMsg>}
 
-      {/* ---- ASK result (only in ask mode — switching to Search topics must hide it) ---- */}
+      {/* ---- ASK result (only in ask mode — switching to Search must hide it) ---- */}
       {mode === "ask" && ans && (
         <Card style={{ borderTop: `4px solid ${ans.abstained ? BRAND.sub : BRAND.red}` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
@@ -861,93 +672,8 @@ export function SearchAsk() {
         />
       )}
 
-      {/* ---- SEARCH mode: pre-mined topic list ---- */}
-      {mode === "search" && !isArchiveTopicSearch && (
-        <div>
-          {/* Generate-article confirmation / error banner */}
-          {generateMsg && (
-            <div
-              style={{
-                marginBottom: 12,
-                padding: "10px 14px",
-                borderRadius: 8,
-                background: generateMsg.startsWith("Error") ? "#fff0f0" : "#e6f9f0",
-                color: generateMsg.startsWith("Error") ? BRAND.red : "#1a7f4b",
-                fontSize: 13,
-                fontWeight: 500,
-                border: `1px solid ${generateMsg.startsWith("Error") ? "#fecaca" : "#bbf7d0"}`,
-              }}
-            >
-              {generateMsg}
-            </div>
-          )}
-
-          {topicsLoading && <Loading label="Loading mined topics…" />}
-          {topicsError && <ErrorMsg>Could not load topics: {topicsError}</ErrorMsg>}
-
-          {!topicsLoading && !topicsError && topics.length > 0 && (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: BRAND.sub, flex: 1 }}>
-                  {query.trim() ? filteredTopics.length : topicTotal} topic{(query.trim() ? filteredTopics.length : topicTotal) !== 1 ? "s" : ""}
-                  {query.trim() ? ` matching "${query}"` : " extracted from Tim's videos"}
-                  {" — click the count to see all videos, ▶ to jump to a timecode"}
-                </span>
-                <div style={{ display: "inline-flex", border: `1px solid ${BRAND.border}`, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
-                  {(["alpha", "videos", "length"] as const).map((s) => {
-                    const labels = { alpha: "A–Z", videos: "# Videos", length: "Total time" };
-                    return (
-                      <button
-                        key={s}
-                        onClick={() => { setTopicSort(s); setTopicOffset(0); }}
-                        style={{
-                          padding: "4px 10px", border: "none", cursor: "pointer",
-                          fontSize: 11, fontWeight: 600,
-                          background: topicSort === s ? BRAND.navy : "#fff",
-                          color: topicSort === s ? "#fff" : BRAND.navyText,
-                        }}
-                      >
-                        {labels[s]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {filteredTopics.map((t) => (
-                  <TopicRow
-                    key={t.label}
-                    topic={t}
-                    generating={topicStates[t.label] === "generating"}
-                    done={t.generated === true || topicStates[t.label] === "done"}
-                    onGenerate={handleGenerateArticle}
-                    onView={handleViewCluster}
-                    onDrillIn={setDrillLabel}
-                  />
-                ))}
-                {filteredTopics.length === 0 && query.trim() && (
-                  <p style={{ color: BRAND.sub, fontSize: 14 }}>
-                    No mined topics match "{query}". Try the Search button above to search across all video content.
-                  </p>
-                )}
-              </div>
-              {topicTotal > TOPIC_PAGE_SIZE && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginTop: 14 }}>
-                  <Button variant="ghost" disabled={topicOffset === 0}
-                    onClick={() => setTopicOffset(Math.max(0, topicOffset - TOPIC_PAGE_SIZE))}>← Prev</Button>
-                  <span style={{ fontSize: 13, color: BRAND.sub }}>
-                    Page {Math.floor(topicOffset / TOPIC_PAGE_SIZE) + 1} of {Math.ceil(topicTotal / TOPIC_PAGE_SIZE)} · {topicTotal} topics
-                  </span>
-                  <Button variant="ghost" disabled={topicOffset + TOPIC_PAGE_SIZE >= topicTotal}
-                    onClick={() => setTopicOffset(topicOffset + TOPIC_PAGE_SIZE)}>Next →</Button>
-                </div>
-              )}
-            </>
-          )}
-          {drillLabel && (
-            <TopicVideosModal label={drillLabel} onClose={() => setDrillLabel(null)} />
-          )}
-        </div>
+      {drillLabel && (
+        <TopicVideosModal label={drillLabel} onClose={() => setDrillLabel(null)} />
       )}
     </main>
   );

@@ -86,7 +86,7 @@ export function Scheduling() {
   const [items, setItems] = useState<ScheduledItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("unpublished");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -381,9 +381,10 @@ export function Scheduling() {
             onChange={(e) => handleFilterChange(e.target.value)}
             style={{ ...inputStyle, padding: "7px 10px", fontSize: 13 }}
           >
-            <option value="">All statuses</option>
-            <option value="scheduled">scheduled</option>
-            <option value="published">published</option>
+            <option value="unpublished">Unpublished (next up first)</option>
+            <option value="published">Published (newest first)</option>
+            <option value="">All (unpublished, then published)</option>
+            <option value="scheduled">scheduled only</option>
             <option value="error">error</option>
           </select>
         </div>

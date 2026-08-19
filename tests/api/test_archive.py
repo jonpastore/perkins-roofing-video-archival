@@ -144,6 +144,22 @@ def test_list_videos_youtube_url_present():
     assert data[VIDEO_ARCHIVED]["youtube_url"] == "https://youtube.com/watch?v=abc"
 
 
+def test_list_videos_includes_description():
+    client = _make_client("admin")
+    resp = client.get("/archive/videos", headers={"Authorization": "Bearer tok"})
+    data = {v["id"]: v for v in resp.json()}
+    assert "description" in data[VIDEO_ARCHIVED]
+    assert "genre" in data[VIDEO_ARCHIVED]
+    assert "id" in data[VIDEO_ARCHIVED]["genre"]
+
+
+def test_list_videos_filters_by_genre():
+    client = _make_client("admin")
+    resp = client.get("/archive/videos?genre=other", headers={"Authorization": "Bearer tok"})
+    assert resp.status_code == 200
+    assert all(v["genre"]["id"] == "other" for v in resp.json())
+
+
 def test_list_videos_paginates_and_sets_total_header():
     client = _make_client("admin")
     first = client.get("/archive/videos?limit=1&offset=0", headers={"Authorization": "Bearer tok"})

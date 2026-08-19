@@ -409,6 +409,48 @@ def upload_brand_video(
     return {"key": config_key, "gcs_path": gcs_path}
 
 
+@router.get("/brand-video-url")
+def brand_video_url(
+    scene: str,
+    claims=Depends(require_role("approve_video")),
+):
+    """Short-lived signed GET URL for the stored intro/outro MP4 (preview in Clip Studio)."""
+    if scene not in ("intro", "outro"):
+        raise HTTPException(status_code=422, detail="scene must be 'intro' or 'outro'")
+    config_key = "BRAND_INTRO_VIDEO" if scene == "intro" else "BRAND_OUTRO_VIDEO"
+    with PlatformSessionLocal() as db:
+        db.info["platform_scope"] = True
+        row = db.get(PlatformConfig, config_key)
+        gcs_uri = (row.value or "").strip() if row else ""
+    if not gcs_uri:
+        raise HTTPException(status_code=404, detail="not set")
+    if not gcs_uri.startswith("gs://"):
+        raise HTTPException(status_code=404, detail="not a GCS URI")
+    try:
+        without_scheme = gcs_uri[len("gs://"):]
+        slash = without_scheme.index("/")
+        bucket = without_scheme[:slash]
+        key = without_scheme[slash + 1:]
+    except (ValueError, IndexError) as exc:
+        raise HTTPException(status_code=500, detail="malformed GCS URI") from exc
+    if not key.startswith("brand/"):
+        raise HTTPException(status_code=404, detail="not a brand video")
+    try:
+        allowed = _reels_bucket()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if bucket != allowed:
+        raise HTTPException(status_code=404, detail="not a brand video")
+    try:
+        from adapters.storage import signed_get_url  # noqa: PLC0415
+
+        url = signed_get_url(bucket, key, ttl_seconds=3600)
+    except RuntimeError as exc:
+        logger.error("brand-video-url: GCS signing failed for %s: %s", scene, exc)
+        raise HTTPException(status_code=502, detail="could not generate preview URL") from exc
+    return {"preview_url": url, "expires_in": 3600}
+
+
 def _platform_guidance(platform: str | None) -> str:
     """One-line platform tuning drawn from PLATFORM_PRESETS/PLATFORM_SPECS, or "" when
     no (known) platform is given. Augments the suggestion prompt — it never replaces

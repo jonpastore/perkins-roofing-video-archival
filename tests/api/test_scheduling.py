@@ -113,6 +113,46 @@ def test_admin_list_returns_items():
     assert matching[0]["kind"] == "reel"
 
 
+def test_unpublished_filter_sorts_next_up_first():
+    from app.models import ScheduledContent, SessionLocal
+
+    client = _make_client("admin")
+    with SessionLocal() as db:
+        db.add(ScheduledContent(
+            kind="article", ref_id="later", publish_at=__import__("datetime").datetime(2026, 9, 1),
+            status="scheduled", tenant_id=1))
+        db.add(ScheduledContent(
+            kind="article", ref_id="soon", publish_at=__import__("datetime").datetime(2026, 8, 20),
+            status="scheduled", tenant_id=1))
+        db.add(ScheduledContent(
+            kind="article", ref_id="old", publish_at=__import__("datetime").datetime(2026, 7, 1),
+            status="published", tenant_id=1))
+        db.commit()
+    r = client.get("/scheduling?status=unpublished", headers=ADMIN_HDR)
+    assert r.status_code == 200
+    refs = [i["ref_id"] for i in r.json() if i["ref_id"] in ("soon", "later", "old")]
+    assert refs[0] == "soon"
+    assert "old" not in refs
+
+
+def test_published_filter_sorts_most_recent_first():
+    from app.models import ScheduledContent, SessionLocal
+
+    client = _make_client("admin")
+    with SessionLocal() as db:
+        db.add(ScheduledContent(
+            kind="article", ref_id="older-pub", publish_at=__import__("datetime").datetime(2026, 7, 1),
+            status="published", tenant_id=1))
+        db.add(ScheduledContent(
+            kind="article", ref_id="newer-pub", publish_at=__import__("datetime").datetime(2026, 8, 1),
+            status="published", tenant_id=1))
+        db.commit()
+    r = client.get("/scheduling?status=published", headers=ADMIN_HDR)
+    assert r.status_code == 200
+    refs = [i["ref_id"] for i in r.json() if i["ref_id"] in ("older-pub", "newer-pub")]
+    assert refs[0] == "newer-pub"
+
+
 def test_admin_list_filter_by_status():
     client = _make_client("admin")
     client.post("/scheduling", json=ITEM_BODY, headers=ADMIN_HDR)
@@ -124,7 +164,8 @@ def test_admin_list_filter_by_status():
 
     r2 = client.get("/scheduling?status=published", headers=ADMIN_HDR)
     assert r2.status_code == 200
-    assert r2.json() == []
+    for item in r2.json():
+        assert item["status"] == "published"
 
 
 def test_admin_update_item():

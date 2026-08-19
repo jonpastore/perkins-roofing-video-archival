@@ -25,6 +25,7 @@ from core.archive_list import (
 )
 from core.ratelimit import SingleFlightGuard
 from core.retrieval import link
+from core.topic_graph import video_genre
 
 router = APIRouter(prefix="/archive", tags=["archive"])
 
@@ -41,6 +42,10 @@ _check_new_guard = SingleFlightGuard(cooldown_seconds=0)
 _list_cache = TtlCache(ttl_seconds=30.0)
 
 
+def _video_genre(v: Video) -> dict:
+    return video_genre(v.title or "", v.description or "")
+
+
 def _video_to_dict(
     v: Video,
     topic_count: int = 0,
@@ -53,6 +58,8 @@ def _video_to_dict(
     return {
         "id": v.id,
         "title": v.title,
+        "description": v.description,
+        "genre": _video_genre(v),
         "duration": v.duration,
         "content_length": int(v.duration) if v.duration is not None else None,
         "upload_date": v.upload_date,
@@ -96,6 +103,7 @@ def list_videos(
     clips: str = "all",
     articles: str = "all",
     social: str = "all",
+    genre: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     _claims=Depends(require_role("search")),
@@ -141,6 +149,7 @@ def list_videos(
         "clips": clips,
         "articles": articles,
         "social": social,
+        "genre": genre or "",
     })
     cached = _list_cache.get(cache_key)
     if cached is not None:
@@ -221,6 +230,8 @@ def list_videos(
         if not keep_generated(articles, articles_generated_map.get(v.id, False)):
             continue
         if not keep_generated(social, social_generated_map.get(v.id, False)):
+            continue
+        if genre and _video_genre(v)["id"] != genre:
             continue
         result.append(
             _video_to_dict(

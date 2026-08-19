@@ -39,6 +39,7 @@ from api.routes.quotes import router as quotes_router
 from api.routes.scheduling import router as scheduling_router
 from api.routes.squares import router as squares_router
 from api.routes.suggestions import router as suggestions_router
+from api.routes.topic_graph import router as topic_graph_router
 from api.routes.topics import router as topics_router
 from api.routes.users import me_router
 from api.routes.users import router as users_router
@@ -99,6 +100,7 @@ app.include_router(archive_router)
 app.include_router(articles_router)
 app.include_router(scheduling_router)
 app.include_router(topics_router)
+app.include_router(topic_graph_router)
 app.include_router(estimator_router)
 app.include_router(pricing_configs_router)
 app.include_router(invoices_router)

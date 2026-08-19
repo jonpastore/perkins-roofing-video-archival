@@ -1,0 +1,102 @@
+"""Behavioral tests for GET /topic-graph."""
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from api.auth import set_verifier
+from api.routes.topic_graph import router
+from app.models import Article, FaqEntry, GraphNode, SessionLocal, Video, init_db
+
+
+def _client(role: str = "admin") -> TestClient:
+    set_verifier(lambda token: {"uid": "u1", "email": "a@x.com", "role": role})
+    app = FastAPI()
+    app.include_router(router)
+    init_db()
+    return TestClient(app)
+
+
+AUTH = {"Authorization": "Bearer tok"}
+
+
+def _seed():
+    init_db()
+    with SessionLocal() as db:
+        if not db.get(Video, "v-tile"):
+            db.add(Video(id="v-tile", title="Tile how-to", duration=100,
+                         views=1000, likes=20, comments=10))
+        if not db.get(Video, "v-storm"):
+            db.add(Video(id="v-storm", title="Storm", duration=40,
+                         views=10, likes=0, comments=0))
+        if not db.query(GraphNode).filter(GraphNode.video_id == "v-tile").first():
+            db.add(GraphNode(video_id="v-tile", kind="topics",
+                             label="Tile foam method", start=1.0, version="v1"))
+            db.add(GraphNode(video_id="v-storm", kind="topics",
+                             label="Hurricane prep", start=2.0, version="v1"))
+            db.add(GraphNode(video_id="v-tile", kind="objections",
+                             label="How do I walk on a tile roof", start=3.0, version="v1"))
+        if not db.get(Article, "tile-foam-method"):
+            db.add(Article(
+                slug="tile-foam-method", title="Tile Foam Method",
+                role="pillar", status="published",
+                focus_keyword="tile foam method", tenant_id=1,
+            ))
+        if not db.query(FaqEntry).filter(FaqEntry.video_id == "v-tile").first():
+            node = db.query(GraphNode).filter(
+                GraphNode.label == "How do I walk on a tile roof").first()
+            db.add(FaqEntry(
+                question="How do I walk on a tile roof?",
+                answer="Walk on the battens.",
+                source_kind="objections",
+                source_node_id=node.id if node else 9999,
+                video_id="v-tile", start=3.0, status="answered", tenant_id=1,
+            ))
+        db.commit()
+
+
+def test_sales_can_read_article_graph():
+    _seed()
+    c = _client("sales")
+    r = c.get("/topic-graph?kind=articles&published=all", headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "articles"
+    ids = {g["id"] for g in body["genres"]}
+    assert "tile" in ids
+    tile = next(g for g in body["genres"] if g["id"] == "tile")
+    assert tile["n_published"] >= 1
+    assert "legend" in body
+    assert "diversity" in body
+
+
+def test_unpublished_filter_drops_covered_tile():
+    _seed()
+    c = _client("admin")
+    r = c.get("/topic-graph?kind=articles&published=no", headers=AUTH)
+    assert r.status_code == 200
+    tile = next((g for g in r.json()["genres"] if g["id"] == "tile"), None)
+    if tile:
+        assert tile["n_published"] == 0
+
+
+def test_faq_graph_includes_answered():
+    _seed()
+    c = _client("admin")
+    r = c.get("/topic-graph?kind=faqs&published=all", headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "faqs"
+    assert body["totals"]["published"] >= 1
+
+
+def test_genre_catalog_endpoint():
+    c = _client("sales")
+    r = c.get("/topic-graph/genres", headers=AUTH)
+    assert r.status_code == 200
+    ids = {g["id"] for g in r.json()}
+    assert "tile" in ids and "weather" in ids
+
+
+def test_unauthenticated_is_rejected():
+    c = _client("admin")
+    r = c.get("/topic-graph")
+    assert r.status_code in (401, 403)

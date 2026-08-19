@@ -30,17 +30,33 @@ def compute_suggestion_counts(db) -> dict[str, int]:
     from core.video_lineage import derived_ids_from_db  # noqa: PLC0415
     derived = derived_ids_from_db(db)
 
+    from core.topic_graph import (  # noqa: PLC0415
+        article_covered,
+        classify_label,
+        coverage_from_articles,
+        slugify,
+    )
+
     topic_rows = db.query(GraphNode).filter(GraphNode.kind == "topics").all()
     articles = db.query(Article).all()
-    article_titles_lower = {(a.title or "").strip().lower() for a in articles}
+    cov = coverage_from_articles(
+        (a.slug, a.pillar_slug, a.title, a.focus_keyword) for a in articles
+    )
 
-    topic_groups: dict[str, set] = {}
+    seen_subjects: set[str] = set()
+    article_topics_count = 0
     for row in topic_rows:
         if not row.label or row.video_id in derived:
             continue
-        topic_groups.setdefault(_normalize(row.label), set()).add(row.video_id)
-
-    article_topics_count = sum(1 for key in topic_groups if key not in article_titles_lower)
+        key = slugify(row.label) or _normalize(row.label)
+        if not key or key in seen_subjects:
+            continue
+        seen_subjects.add(key)
+        _gid, _glabel, pub = classify_label(row.label)
+        if not pub:
+            continue
+        if not article_covered(row.label, cov):
+            article_topics_count += 1
 
     approved_ids = {s.id for s in db.query(MiniSeries).filter(MiniSeries.approved == 1).all()}
     scheduled_ref_ids = {

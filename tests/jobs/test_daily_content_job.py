@@ -72,8 +72,26 @@ def test_skips_topics_that_already_have_an_article():
     assert DC.next_topic(db) is None
 
 
+def test_skips_topic_that_matches_an_existing_focus_keyword():
+    """SEO slugs used to miss this — dump would rewrite Impact Windows."""
+    nodes, videos = _graph("Impact windows and doors", 900.0)
+    db = _DB(nodes, videos, [(
+        "impact-windows-and-doors-florida-guide", None,
+        "Impact Windows and Doors: Guide", "impact windows and doors",
+    )])
+    assert DC.next_topic(db) is None
+
+
+def test_skips_internal_genre_even_when_best_grounded():
+    deep_n, deep_v = _graph("Business Leadership", 9000.0)
+    tile_n, tile_v = _graph("Tile foam method", 100.0)
+    picked = DC.next_topic(_DB(deep_n + tile_n, deep_v + tile_v, []))
+    assert picked is not None
+    assert picked["label"] == "Tile foam method"
+
+
 def test_skips_a_topic_that_exists_only_as_a_CLUSTER_parent():
-    """_generated_slugs collects pillar_slug too — a topic with clusters under it is generated
+    """Coverage collects pillar_slug too — a topic with clusters under it is generated
     even if no article carries its own slug."""
     nodes, videos = _graph("Metal roofing", 900.0)
     db = _DB(nodes, videos, [("some-cluster", "metal-roofing")])

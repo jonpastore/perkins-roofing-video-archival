@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, Loading, ErrorMsg } from "../ui";
 import { errText } from "../lib/errors";
-import { DataSources } from "../components/DataSources";
+
 
 /**
  * Portfolio admin. Three tabs per project, because the three jobs are genuinely different:
@@ -699,21 +699,19 @@ function SeoTab({ view, item, onPublished }: {
         {err && <ErrorMsg>{err}</ErrorMsg>}
       </div>
 
-      <details style={{ width: "100%" }}>
-        <summary style={{ cursor: "pointer", fontSize: 12, color: BRAND.navyText }}>
-          Preview the page that will publish
+      <div style={{ width: "100%" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: BRAND.navyText, marginBottom: 6 }}>
+          Preview of the WordPress page
           {view.scope_lines.length > 0 && ` · ${view.scope_lines.length} scope lines from the contract`}
-        </summary>
+        </div>
         <div
           style={{
             border: `1px solid ${BRAND.border}`, borderRadius: 4, padding: 8, marginTop: 6,
             maxHeight: 340, overflowY: "auto", background: "#fff", fontSize: 12,
           }}
-          // Server-built from our own record fields and CompanyCam URLs; no user-authored html
-          // reaches this, and an editor must see the real markup to judge it.
           dangerouslySetInnerHTML={{ __html: view.preview_html }}
         />
-      </details>
+      </div>
     </div>
   );
 }
@@ -863,6 +861,28 @@ export function Portfolio() {
   const [items, setItems] = useState<PortfolioItem[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openSlug, setOpenSlug] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ name: string; html: string; scope: number } | null>(null);
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState<string | null>(null);
+
+  async function previewItem(item: PortfolioItem) {
+    setPreviewing(item.slug);
+    setPreviewErr(null);
+    try {
+      const r = await apiFetch(`/portfolio/${item.slug}/media`);
+      if (!r.ok) throw new Error(await errText(r));
+      const view: CurationView = await r.json();
+      setPreview({
+        name: view.name,
+        html: view.preview_html,
+        scope: view.scope_lines.length,
+      });
+    } catch (e) {
+      setPreviewErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreviewing(null);
+    }
+  }
 
   async function load() {
     setLoadError(null);
@@ -884,7 +904,6 @@ export function Portfolio() {
   return (
     <div>
       <PageTitle>Portfolio</PageTitle>
-      <DataSources />
       <NewProject onCreated={() => void load()} />
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
@@ -930,10 +949,17 @@ export function Portfolio() {
                     </div>
                   </td>
                   <td style={{ padding: "10px 14px" }}>
-                    <Button variant="ghost"
-                            onClick={() => setOpenSlug(openSlug === item.slug ? null : item.slug)}>
-                      {openSlug === item.slug ? "Close" : "Manage"}
-                    </Button>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <Button variant="ghost"
+                              onClick={() => void previewItem(item)}
+                              disabled={previewing === item.slug}>
+                        {previewing === item.slug ? "Loading…" : "Preview"}
+                      </Button>
+                      <Button variant="ghost"
+                              onClick={() => setOpenSlug(openSlug === item.slug ? null : item.slug)}>
+                        {openSlug === item.slug ? "Close" : "Manage"}
+                      </Button>
+                    </div>
                   </td>
                 </tr>,
                 openSlug === item.slug ? (
@@ -948,6 +974,44 @@ export function Portfolio() {
           </table>
         </div>
       </Card>
+      {previewErr && <ErrorMsg>{previewErr}</ErrorMsg>}
+      {preview && (
+        <div
+          role="dialog"
+          aria-label="WordPress preview"
+          onClick={() => setPreview(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)",
+            zIndex: 40, display: "flex", justifyContent: "center", alignItems: "flex-start",
+            padding: 32, overflow: "auto",
+          }}
+        >
+          <Card
+            style={{ width: "min(860px, 100%)", maxHeight: "calc(100vh - 64px)", overflow: "auto" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+              <div>
+                <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16 }}>
+                  Preview: {preview.name}
+                </h3>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: BRAND.sub }}>
+                  This is the HTML that Publish to WordPress will push
+                  {preview.scope > 0 ? ` · ${preview.scope} scope lines from the contract` : ""}.
+                </p>
+              </div>
+              <Button variant="ghost" onClick={() => setPreview(null)}>Close</Button>
+            </div>
+            <div
+              style={{
+                border: `1px solid ${BRAND.border}`, borderRadius: 6, padding: 12,
+                background: "#fff", fontSize: 13,
+              }}
+              dangerouslySetInnerHTML={{ __html: preview.html }}
+            />
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

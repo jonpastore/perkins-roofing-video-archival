@@ -104,9 +104,28 @@ def list_scheduled(
     db: Session = Depends(get_db_session),
 ):
     q = db.query(ScheduledContent)
-    if status is not None:
+    if status not in (None, "", "unpublished", "published"):
         q = q.filter(ScheduledContent.status == status)
-    rows = q.order_by(ScheduledContent.publish_at).all()
+    rows = q.all()
+    if status == "unpublished":
+        rows = [r for r in rows if r.status != "published"]
+        rows.sort(key=lambda r: r.publish_at or datetime.max)
+    elif status == "published":
+        rows = [r for r in rows if r.status == "published"]
+        rows.sort(key=lambda r: r.publish_at or datetime.min, reverse=True)
+    elif status in (None, ""):
+        unpub = sorted(
+            (r for r in rows if r.status != "published"),
+            key=lambda r: r.publish_at or datetime.max,
+        )
+        pub = sorted(
+            (r for r in rows if r.status == "published"),
+            key=lambda r: r.publish_at or datetime.min,
+            reverse=True,
+        )
+        rows = list(unpub) + list(pub)
+    else:
+        rows.sort(key=lambda r: r.publish_at or datetime.max)
     return [_row_dict(r, db) for r in rows]
 
 

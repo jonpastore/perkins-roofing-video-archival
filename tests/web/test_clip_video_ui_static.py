@@ -71,6 +71,12 @@ def test_clip_studio_flow_steps_are_wired():
         "Hide videos with clips already",
         "Re-generate →",
         "? Help — features",
+        "Apply All",
+        "Intro / Outro",
+        "ytThumb",
+        "brand-video-url",
+        "reel-intro-outro",
+        "Video Approval",
     ):
         assert needle in CLIP, needle
 

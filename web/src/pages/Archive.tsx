@@ -7,6 +7,8 @@ import { errText } from "../lib/errors";
 interface ArchiveVideo {
   id: string;
   title: string;
+  description?: string | null;
+  genre?: { id: string; label: string; publishable: boolean };
   duration: number | null;
   content_length: number | null;
   upload_date: string | null;
@@ -70,6 +72,7 @@ interface Filters {
   clips: TriState;
   articles: TriState;
   social: TriState;
+  genre: string;
 }
 
 const PAGE_SIZE = 50;
@@ -83,6 +86,7 @@ const DEFAULT_FILTERS: Filters = {
   clips: "all",
   articles: "all",
   social: "all",
+  genre: "",
 };
 
 function hasActiveFilters(f: Filters): boolean {
@@ -94,7 +98,8 @@ function hasActiveFilters(f: Filters): boolean {
     f.uploaded_before !== "" ||
     f.clips !== "all" ||
     f.articles !== "all" ||
-    f.social !== "all"
+    f.social !== "all" ||
+    f.genre !== ""
   );
 }
 
@@ -437,6 +442,7 @@ export function Archive() {
   const [kpiResult, setKpiResult] = useState<{ polled: number } | null>(null);
 
   // Show-hidden toggle — when true the API is called with include_hidden=true
+  const [genreOptions, setGenreOptions] = useState<Array<{ id: string; label: string }>>([]);
   const [includeHidden, setIncludeHidden] = useState(false);
   const [hiddenCount, setHiddenCount] = useState(0);
   const [hidingId, setHidingId] = useState<string | null>(null);
@@ -528,6 +534,7 @@ export function Archive() {
     if (f.clips !== "all") params.set("clips", f.clips);
     if (f.articles !== "all") params.set("articles", f.articles);
     if (f.social !== "all") params.set("social", f.social);
+    if (f.genre) params.set("genre", f.genre);
     if (withHidden) params.set("include_hidden", "true");
     params.set("limit", String(PAGE_SIZE));
     params.set("offset", String(pageOffset));
@@ -558,6 +565,13 @@ export function Archive() {
         setLoading(false);
         setLoadingMore(false);
       });
+  }, []);
+
+  useEffect(() => {
+    apiFetch("/topic-graph/genres")
+      .then(async (r) => (r.ok ? r.json() : []))
+      .then((rows: Array<{ id: string; label: string }>) => setGenreOptions(rows ?? []))
+      .catch(() => setGenreOptions([]));
   }, []);
 
   // Initial load (and re-load when filters or includeHidden changes)
@@ -831,6 +845,19 @@ export function Archive() {
         </div>
 
         {/* TriState toggles */}
+        <div>
+          <label style={labelStyle}>Genre</label>
+          <select
+            value={filters.genre}
+            onChange={(e) => patchFilter("genre", e.target.value, true)}
+            style={{ ...inputStyle, padding: "5px 8px", fontSize: 13 }}
+          >
+            <option value="">All genres</option>
+            {genreOptions.map((g) => (
+              <option key={g.id} value={g.id}>{g.label}</option>
+            ))}
+          </select>
+        </div>
         <TriToggle label="Clips generated" value={filters.clips} onChange={(v) => patchFilter("clips", v, true)} />
         <TriToggle label="Articles generated" value={filters.articles} onChange={(v) => patchFilter("articles", v, true)} />
         <TriToggle label="Social generated" value={filters.social} onChange={(v) => patchFilter("social", v, true)} />
@@ -922,8 +949,14 @@ export function Archive() {
                   style={{ borderBottom: expandedId === v.id ? "none" : "1px solid #f0f0f0" }}
                 >
                   {/* Title cell */}
-                  <td style={{ padding: "10px 12px", maxWidth: 340 }}>
+                  <td style={{ padding: "10px 12px", maxWidth: 420 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      <img
+                        src={`https://i.ytimg.com/vi/${v.id}/mqdefault.jpg`}
+                        alt=""
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = "hidden"; }}
+                        style={{ width: 88, height: 50, objectFit: "cover", borderRadius: 6, background: "#111", flexShrink: 0 }}
+                      />
                       <button
                         onClick={() => toggleExpand(v.id)}
                         aria-label={expandedId === v.id ? "Collapse" : "Expand"}
@@ -1015,6 +1048,11 @@ export function Archive() {
                             <span onClick={() => toggleExpand(v.id)} style={{ cursor: "pointer", textDecoration: expandedId === v.id ? "underline" : "none", textUnderlineOffset: 2 }} title="Click to expand topics and usage">
                               {v.title}
                             </span>
+                            {v.genre && (
+                              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, background: "#eef2ff", color: "#4338ca", borderRadius: 4, padding: "1px 6px" }}>
+                                {v.genre.label}
+                              </span>
+                            )}
                             <button onClick={(e) => { e.stopPropagation(); startRename(v); }} title="Rename this video"
                               style={{ background: "none", border: "none", cursor: "pointer", marginLeft: 6, color: BRAND.sub, fontSize: 12, padding: 0 }}>
                               ✏
@@ -1036,6 +1074,11 @@ export function Archive() {
                               }}
                             >
                               Unavailable on YouTube
+                            </span>
+                          )}
+                          {v.description && (
+                            <span style={{ fontSize: 12, color: BRAND.sub, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                              {v.description}
                             </span>
                           )}
                           {v.clips_generated && (
@@ -1062,6 +1105,11 @@ export function Archive() {
                   {/* Usage badges */}
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {v.clips_generated && (
+                        <span style={{ fontSize: 11, fontWeight: 600, background: "#fdf2f8", color: "#9d174d", borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>
+                          clips
+                        </span>
+                      )}
                       {v.topic_count > 0 && (
                         <span style={{ fontSize: 11, fontWeight: 600, background: "#eef2ff", color: "#4338ca", borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>
                           {v.topic_count} topics
