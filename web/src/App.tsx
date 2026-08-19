@@ -197,6 +197,7 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
 
 const NAV_COLLAPSE_KEY = "perkins.nav.collapsed";
 const NAV_PINS_KEY = "perkins.nav.pins";
+const NAV_SECTIONS_KEY = "perkins.nav.sections";
 const NAV_RAIL_PX = 56;
 const NAV_OPEN_PX = 220;
 
@@ -247,13 +248,17 @@ function NavIcon({ id }: { id: string }) {
   );
 }
 
-function readPins(): string[] {
+function readStringList(key: string): string[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(NAV_PINS_KEY) || "[]");
+    const raw = JSON.parse(localStorage.getItem(key) || "[]");
     return Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
   } catch {
     return [];
   }
+}
+
+function readPins(): string[] {
+  return readStringList(NAV_PINS_KEY);
 }
 
 function NavButton({
@@ -380,8 +385,18 @@ function NavButton({
 // SectionHeader — visual group label in the sidebar
 // ---------------------------------------------------------------------------
 
-function SectionHeader({ label, collapsed }: { label: string; collapsed?: boolean }) {
-  if (collapsed) {
+function SectionHeader({
+  label,
+  rail,
+  folded,
+  onToggle,
+}: {
+  label: string;
+  rail?: boolean;
+  folded?: boolean;
+  onToggle?: () => void;
+}) {
+  if (rail) {
     return (
       <div
         title={label}
@@ -394,36 +409,57 @@ function SectionHeader({ label, collapsed }: { label: string; collapsed?: boolea
     );
   }
   return (
-    <div
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!folded}
+      title={folded ? `Expand ${label}` : `Collapse ${label}`}
       style={{
         margin: "14px 0 4px",
-        padding: "0 16px",
+        padding: "4px 12px",
         display: "flex",
         alignItems: "center",
         gap: 8,
+        width: "100%",
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        color: "rgba(255,255,255,0.38)",
       }}
     >
-      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
+      <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
+      <span
+        aria-hidden
+        style={{ fontSize: 9, width: 10, flexShrink: 0 }}
+      >
+        {folded ? "▸" : "▾"}
+      </span>
       <span
         style={{
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: "0.08em",
-          color: "rgba(255,255,255,0.38)",
           textTransform: "uppercase",
           whiteSpace: "nowrap",
         }}
       >
         {label}
       </span>
-      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
-    </div>
+      <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.12)" }} />
+    </button>
   );
 }
 
-// AdminSectionDivider kept for backward compat with the visual — now delegates to SectionHeader.
-function AdminSectionDivider({ collapsed }: { collapsed?: boolean }) {
-  return <SectionHeader label="Admin" collapsed={collapsed} />;
+function AdminSectionDivider({
+  rail,
+  folded,
+  onToggle,
+}: {
+  rail?: boolean;
+  folded?: boolean;
+  onToggle?: () => void;
+}) {
+  return <SectionHeader label="Admin" rail={rail} folded={folded} onToggle={onToggle} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +489,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(NAV_COLLAPSE_KEY) === "1");
   const [pins, setPins] = useState<string[]>(readPins);
+  const [foldedSections, setFoldedSections] = useState<string[]>(() => readStringList(NAV_SECTIONS_KEY));
 
   useEffect(() => {
     apiFetch("/suggestions/counts")
@@ -481,12 +518,37 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
   function navigate(targetTab: string, params: NavParams = {}) {
     setNavParams(params);
     setTab(targetTab);
+    openSectionForTab(targetTab);
   }
 
   function handleTabClick(id: string) {
     setNavParams({});
     setTab(id);
     setSidebarOpen(false); // close mobile drawer on nav
+    openSectionForTab(id);
+  }
+
+  function toggleSection(label: string) {
+    setFoldedSections((prev) => {
+      const next = prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label];
+      localStorage.setItem(NAV_SECTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function openSectionForTab(id: string) {
+    const labels: string[] = [];
+    for (const section of sections) {
+      if (section.tabs.some(([tid]) => tid === id)) labels.push(section.label);
+    }
+    if (adminSection?.tabs.some(([tid]) => tid === id)) labels.push(adminSection.label);
+    if (labels.length === 0) return;
+    setFoldedSections((prev) => {
+      const next = prev.filter((x) => !labels.includes(x));
+      if (next.length === prev.length) return prev;
+      localStorage.setItem(NAV_SECTIONS_KEY, JSON.stringify(next));
+      return next;
+    });
   }
 
   function toggleCollapsed() {
@@ -576,10 +638,19 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
       ))}
 
       {useSections
-        ? sections.map((section) => (
+        ? sections.map((section) => {
+            const folded = !rail && foldedSections.includes(section.label);
+            return (
             <div key={section.label}>
-              <SectionHeader label={section.label} collapsed={rail} />
-              {section.tabs.map(([id, label]) => (
+              <SectionHeader
+                label={section.label}
+                rail={rail}
+                folded={folded}
+                onToggle={() => toggleSection(section.label)}
+              />
+              {section.tabs
+                .filter(([id]) => !folded || id === tab)
+                .map(([id, label]) => (
                 <NavButton
                   key={id}
                   id={id}
@@ -594,7 +665,8 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
                 />
               ))}
             </div>
-          ))
+            );
+          })
         : allSectionTabs.map(([id, label]) => (
             <NavButton
               key={id}
@@ -611,8 +683,14 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
 
       {adminSection && allAdminTabs.length > 0 && (
         <>
-          <AdminSectionDivider collapsed={rail} />
-          {allAdminTabs.map(([id, label]) => (
+          <AdminSectionDivider
+            rail={rail}
+            folded={!rail && foldedSections.includes(adminSection.label)}
+            onToggle={() => toggleSection(adminSection.label)}
+          />
+          {allAdminTabs
+            .filter(([id]) => rail || !foldedSections.includes(adminSection.label) || id === tab)
+            .map(([id, label]) => (
             <NavButton
               key={id}
               id={id}
