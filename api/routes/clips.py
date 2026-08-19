@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
 from app.models import GraphNode, MiniSeries, PlatformConfig, PlatformSessionLocal, Segment, SocialPost, Video
+from core.clip_package import CLIP_MAX_SECS, CLIP_MIN_SECS
 from core.clip_search import search_to_clips
 from core.platform_specs import PLATFORM_PRESETS, PLATFORM_SPECS
 from core.platform_specs import validate as validate_platform
@@ -82,6 +83,10 @@ class ClipSuggestion(BaseModel):
     hook: str
     reason: str
     summary: str = ""
+    town: str = ""
+    problem: str = ""
+    audience: str = ""
+    phone_cta: str = ""
     virality: ViralityScore = ViralityScore()
 
 
@@ -519,12 +524,14 @@ def _build_suggest_prompt(
     )
     return f"""You are a short-form video editor for a roofing company's social media.
 Analyse the transcript and content graph below for the video titled "{video_title}".
-Identify the {count} BEST moments to clip as standalone Instagram/TikTok reels (20-60 seconds each).{_platform_guidance(platform)}
+Identify the {count} BEST moments to clip as standalone Instagram/TikTok/YouTube Shorts ({CLIP_MIN_SECS}-{CLIP_MAX_SECS} seconds each).{_platform_guidance(platform)}
 
 Select moments that are:
 - Self-contained (no context needed from outside the clip)
-- High-energy hooks, punchy answers, or strong calls to action
-- Genuinely useful or surprising for homeowners
+- Town + specific roofing problem spoken and captioned in the first 3 seconds
+- One audience only: homeowner (risk/cost/diagnosis) or roofer (technique/mistake)
+- Phone CTA in the spoken end or the description
+- Genuinely useful — story titles, not "metal roofing 101"
 
 TRANSCRIPT SEGMENTS (start_sec-end_sec: text):
 {seg_lines}
@@ -536,9 +543,13 @@ Return ONLY valid JSON — a single object with a "clips" array. Each clip:
 {{
   "start": <float seconds, must match a real transcript timestamp>,
   "end":   <float seconds, must match a real transcript timestamp>,
-  "title": "<short clip title>",
-  "caption": "<Instagram/TikTok caption with hashtags>",
-  "hook":  "<the actual opening line/sentence spoken in the clip that works as a scroll-stopping hook — quote or closely paraphrase the transcript>",
+  "title": "<Town + problem: story/result — e.g. Boca Raton tile leak: the flashing mistake we found>",
+  "town": "<Florida town or city spoken or implied>",
+  "problem": "<specific roofing problem, not a generic topic>",
+  "audience": "homeowner" or "roofer",
+  "phone_cta": "<first-line description includes town+problem and a phone CTA>",
+  "caption": "<first line repeats town+problem; include phone CTA and hashtags>",
+  "hook":  "<first 3 seconds: spoken town + problem, quoted or closely paraphrased from the transcript>",
   "summary": "<2-3 sentence plain-English summary of what happens in this specific clip, grounded in the transcript text for that timespan>",
   "reason": "<why this specific moment is a strong clip — reference the content, not a generic explanation>",
   "virality": {{
@@ -553,7 +564,7 @@ Return ONLY valid JSON — a single object with a "clips" array. Each clip:
 
 Rules:
 - start and end must be real timestamps from the transcript above (do NOT invent times)
-- end - start must be between 20 and 60 seconds
+- end - start must be between {CLIP_MIN_SECS} and {CLIP_MAX_SECS} seconds
 - do not overlap clips
 - hook must be specific to this clip's content — never a generic phrase like "Did you know?" or "Watch this"
 - summary must describe what is actually said/shown in this clip's timespan
@@ -626,6 +637,9 @@ def _llm_suggestions(
                 if not all(k in c for k in ("start", "end", "title")):
                     continue
                 virality = _parse_virality(c.get("virality"))
+                audience = str(c.get("audience") or "").strip().lower()
+                if audience not in ("homeowner", "roofer"):
+                    audience = ""
                 validated.append({
                     "start": float(c["start"]),
                     "end": float(c["end"]),
@@ -634,6 +648,10 @@ def _llm_suggestions(
                     "hook": str(c.get("hook", "")),
                     "reason": str(c.get("reason", "")),
                     "summary": str(c.get("summary", "")),
+                    "town": str(c.get("town") or "")[:80],
+                    "problem": str(c.get("problem") or "")[:80],
+                    "audience": audience,
+                    "phone_cta": str(c.get("phone_cta") or "")[:160],
                     "virality": virality,
                 })
             if validated:
@@ -698,6 +716,10 @@ def _fallback_suggestions(segments: list, nodes: list, count: int) -> list[dict]
             "hook": hook,
             "summary": summary,
             "reason": f"Content graph segment: {p['title']}",
+            "town": "",
+            "problem": "",
+            "audience": "",
+            "phone_cta": "",
             "virality": _parse_virality(None),
         })
     return results

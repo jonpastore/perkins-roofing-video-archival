@@ -1,10 +1,13 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch, apiFetchMultipart } from "../api";
 import { BRAND, Card, Button, PageTitle, inputStyle, Loading, ErrorMsg, Badge, Spinner } from "../ui";
 import { NavContext } from "../App";
 import { ClipStudioHelp } from "../components/ClipStudioHelp";
+import { ScoreChip } from "../components/ScoreChip";
 import { errText } from "../lib/errors";
 import { seriesTitle } from "../lib/clipTitles";
+import { CLIP_MAX_SECS, CLIP_MIN_SECS, missingPackageFields } from "../lib/clipPackage";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +40,10 @@ interface SuggestedClip {
   hook: string;
   reason: string;
   summary?: string;
+  town?: string;
+  problem?: string;
+  audience?: string;
+  phone_cta?: string;
   virality?: ViralityScore;
 }
 
@@ -327,13 +334,25 @@ const CLIP_FIT_LABELS: Record<string, string> = {
 function ClipCard({
   clip,
   index,
+  total,
   videoId,
   onChange,
+  onMove,
+  dragging,
+  dropTarget,
+  onDragFrom,
+  onDragOverIndex,
 }: {
   clip: EditableClip;
   index: number;
+  total: number;
   videoId: string;
   onChange: (index: number, updated: EditableClip) => void;
+  onMove: (from: number, to: number) => void;
+  dragging: boolean;
+  dropTarget: boolean;
+  onDragFrom: (index: number | null) => void;
+  onDragOverIndex: (index: number | null) => void;
 }) {
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [transcriptSegs, setTranscriptSegs] = useState<TranscriptSegment[] | null>(null);
@@ -401,8 +420,74 @@ function ClipCard({
   const hasSummary = clip.summary && clip.summary.trim().length > 0;
 
   return (
-    <Card style={{ opacity: clip.included ? 1 : 0.55, transition: "opacity 0.15s" }}>
+    <Card
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOverIndex(index);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const from = Number(e.dataTransfer.getData("text/plain"));
+        onMove(from, index);
+        onDragFrom(null);
+        onDragOverIndex(null);
+      }}
+      onDragLeave={() => { if (dropTarget) onDragOverIndex(null); }}
+      style={{
+        opacity: dragging ? 0.45 : clip.included ? 1 : 0.55,
+        transition: "opacity 0.15s, box-shadow 0.15s, outline 0.15s",
+        outline: dropTarget ? `2px solid ${BRAND.navyText}` : "none",
+      }}
+    >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+        <button
+          type="button"
+          draggable
+          aria-label={`Drag to reorder clip ${index + 1}`}
+          title="Drag to change order"
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/plain", String(index));
+            e.dataTransfer.effectAllowed = "move";
+            onDragFrom(index);
+          }}
+          onDragEnd={() => { onDragFrom(null); onDragOverIndex(null); }}
+          style={{
+            marginTop: 2, flexShrink: 0, width: 22, height: 28, padding: 0, cursor: "grab",
+            border: `1px solid ${BRAND.border}`, borderRadius: 4, background: BRAND.bg,
+            color: BRAND.sub, fontSize: 14, lineHeight: "12px", letterSpacing: -1,
+          }}
+        >
+          ⋮⋮
+        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, flexShrink: 0, marginTop: 1 }}>
+          <button
+            type="button"
+            aria-label="Move clip up"
+            disabled={index === 0}
+            onClick={() => onMove(index, index - 1)}
+            style={{
+              border: "none", background: "none", cursor: index === 0 ? "default" : "pointer",
+              color: index === 0 ? BRAND.border : BRAND.sub, fontSize: 11, padding: 0, lineHeight: 1,
+            }}
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            aria-label="Move clip down"
+            disabled={index === total - 1}
+            onClick={() => onMove(index, index + 1)}
+            style={{
+              border: "none", background: "none", cursor: index === total - 1 ? "default" : "pointer",
+              color: index === total - 1 ? BRAND.border : BRAND.sub, fontSize: 11, padding: 0, lineHeight: 1,
+            }}
+          >
+            ▼
+          </button>
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, marginTop: 6, flexShrink: 0 }}>
+          {index + 1}
+        </span>
         <input
           type="checkbox"
           checked={clip.included}
@@ -424,10 +509,67 @@ function ClipCard({
         )}
       </div>
 
+      {/* Aastro package — town + problem in 3s, one audience, phone CTA, 15–40s */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+        <label style={{ fontSize: 12, color: BRAND.sub }}>
+          Town
+          <input
+            type="text"
+            value={clip.town ?? ""}
+            placeholder="Boca Raton"
+            onChange={(e) => update("town", e.target.value)}
+            style={{ ...inputStyle, width: "100%", marginTop: 4, boxSizing: "border-box" }}
+          />
+        </label>
+        <label style={{ fontSize: 12, color: BRAND.sub }}>
+          Problem
+          <input
+            type="text"
+            value={clip.problem ?? ""}
+            placeholder="tile leak"
+            onChange={(e) => update("problem", e.target.value)}
+            style={{ ...inputStyle, width: "100%", marginTop: 4, boxSizing: "border-box" }}
+          />
+        </label>
+        <label style={{ fontSize: 12, color: BRAND.sub }}>
+          Audience
+          <select
+            value={clip.audience ?? ""}
+            onChange={(e) => update("audience", e.target.value)}
+            style={{ ...inputStyle, width: "100%", marginTop: 4, boxSizing: "border-box" }}
+          >
+            <option value="">Choose…</option>
+            <option value="homeowner">Homeowner</option>
+            <option value="roofer">Roofer</option>
+          </select>
+        </label>
+        <label style={{ fontSize: 12, color: BRAND.sub }}>
+          Phone CTA
+          <input
+            type="text"
+            value={clip.phone_cta ?? ""}
+            placeholder="Phone in description / end card"
+            onChange={(e) => update("phone_cta", e.target.value)}
+            style={{ ...inputStyle, width: "100%", marginTop: 4, boxSizing: "border-box" }}
+          />
+        </label>
+      </div>
+      {missingPackageFields(clip).length > 0 && clip.included && (
+        <div style={{ fontSize: 12, color: BRAND.red, marginBottom: 8 }}>
+          Needs {missingPackageFields(clip).join(", ")} before save. Title pattern: Town + problem: result. Length {CLIP_MIN_SECS}–{CLIP_MAX_SECS}s.
+        </div>
+      )}
+
       {/* Hook */}
       <div style={{ marginBottom: 8, padding: "8px 12px", background: BRAND.bg, borderRadius: 8, borderLeft: `3px solid ${BRAND.red}` }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Hook </span>
-        <span style={{ fontSize: 13, color: BRAND.ink }}>{clip.hook || <em style={{ color: BRAND.sub }}>—</em>}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Hook (first 3s) </span>
+        <input
+          type="text"
+          value={clip.hook ?? ""}
+          placeholder="Spoken town + problem"
+          onChange={(e) => update("hook", e.target.value)}
+          style={{ ...inputStyle, width: "100%", marginTop: 6, boxSizing: "border-box", fontSize: 13 }}
+        />
       </div>
 
       {/* Summary */}
@@ -441,7 +583,13 @@ function ClipCard({
       {/* Caption */}
       <div style={{ marginBottom: 10 }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: BRAND.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Caption </span>
-        <span style={{ fontSize: 13, color: BRAND.ink }}>{clip.caption || <em style={{ color: BRAND.sub }}>—</em>}</span>
+        <textarea
+          value={clip.caption ?? ""}
+          placeholder="First line repeats town + problem; include phone"
+          onChange={(e) => update("caption", e.target.value)}
+          rows={2}
+          style={{ ...inputStyle, width: "100%", marginTop: 6, boxSizing: "border-box", fontSize: 13, resize: "vertical" }}
+        />
       </div>
 
       {/* Per-platform spec fit (duration-driven) */}
@@ -653,6 +801,7 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
   const [msg, setMsg] = useState<string | null>(null);
   const [path, setPath] = useState(currentPath);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fullOpen, setFullOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -724,7 +873,7 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
   const displayName = path ? path.split("/").pop() ?? path : null;
 
   return (
-    <div>
+    <div style={{ flex: "1 1 180px", minWidth: 160, maxWidth: 220 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: BRAND.ink, marginBottom: 6 }}>{label}</div>
       <input
         ref={inputRef}
@@ -733,45 +882,56 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
         style={{ display: "none" }}
         onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); }}
       />
-      <button
-        type="button"
-        disabled={uploading || clearing}
-        onClick={() => inputRef.current?.click()}
+      <div
         style={{
-          position: "relative", display: "block", width: "100%", padding: 0,
+          position: "relative", width: "100%", aspectRatio: "9 / 16",
           border: `1px solid ${BRAND.border}`, borderRadius: 8, overflow: "hidden",
-          background: "#111", cursor: uploading ? "wait" : "pointer", aspectRatio: "16 / 9",
+          background: "#111",
         }}
-        title={displayName ? "Replace MP4" : "Upload MP4"}
       >
         {previewUrl ? (
           <video
             src={previewUrl}
-            muted
+            controls
             playsInline
             preload="metadata"
             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
           />
         ) : (
-          <span style={{ color: "#9ca3af", fontSize: 13 }}>
-            {uploading ? "Uploading…" : "No video — click to upload"}
-          </span>
+          <button
+            type="button"
+            disabled={uploading || clearing}
+            onClick={() => inputRef.current?.click()}
+            style={{
+              width: "100%", height: "100%", border: "none", background: "transparent",
+              color: "#9ca3af", fontSize: 12, cursor: uploading ? "wait" : "pointer", padding: 10,
+            }}
+          >
+            {uploading ? "Uploading…" : "No MP4 — click to upload"}
+          </button>
         )}
-        <span
-          aria-hidden
-          style={{
-            position: "absolute", right: 10, bottom: 10, width: 32, height: 32, borderRadius: 16,
-            background: "rgba(255,255,255,0.92)", color: BRAND.navyText, fontSize: 18,
-            display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700,
-          }}
-        >
-          ↑
-        </span>
-      </button>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6, minHeight: 18 }}>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 6, minHeight: 18 }}>
         <span style={{ fontSize: 12, color: displayName ? "#1a7f4b" : BRAND.sub }}>
-          {uploading ? "Uploading…" : displayName ? displayName : "Generated title card used until you upload"}
+          {uploading ? "Uploading…" : displayName ? displayName : "Generated card until you upload"}
         </span>
+        {previewUrl && (
+          <button
+            type="button"
+            onClick={() => setFullOpen(true)}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: BRAND.navyText, padding: 0, textDecoration: "underline" }}
+          >
+            Full size
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={uploading || clearing}
+          onClick={() => inputRef.current?.click()}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: BRAND.sub, padding: 0, textDecoration: "underline" }}
+        >
+          {displayName ? "Replace" : "Upload"}
+        </button>
         {displayName && (
           <button
             type="button"
@@ -786,6 +946,33 @@ function BrandVideoUpload({ label, scene, configKey, currentPath, onCleared }: B
           <span style={{ fontSize: 12, color: msg.startsWith("Error") ? BRAND.red : BRAND.sub }}>{msg}</span>
         )}
       </div>
+      {fullOpen && previewUrl && createPortal(
+        <div
+          role="dialog"
+          aria-label={`${label} full size`}
+          onClick={() => setFullOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 1100, background: "rgba(16,24,40,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(420px, 92vw)" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <Button variant="ghost" onClick={() => setFullOpen(false)} style={{ padding: "4px 10px", fontSize: 13 }}>
+                Close
+              </Button>
+            </div>
+            <video
+              src={previewUrl}
+              controls
+              autoPlay
+              playsInline
+              style={{ width: "100%", maxHeight: "80vh", borderRadius: 8, background: "#000", display: "block" }}
+            />
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -879,7 +1066,7 @@ function ReelSettingsPanel() {
       </div>
 
       {loaded ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 16, marginBottom: 14, alignItems: "flex-start" }}>
           <BrandVideoUpload
             label="Intro video"
             scene="intro"
@@ -1398,6 +1585,7 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFull, setPreviewFull] = useState(false);
 
   async function handlePreview() {
     if (previewOpen) {
@@ -1516,19 +1704,58 @@ function RenderableRow({ s }: { s: RenderableSeries }) {
       )}
 
       {previewOpen && previewUrl && (
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 10, display: "flex", alignItems: "flex-start", gap: 10 }}>
           <video
             src={previewUrl}
             controls
+            autoPlay
+            playsInline
             style={{
-              maxWidth: "100%",
-              maxHeight: 480,
+              width: 180,
+              maxHeight: 320,
               borderRadius: 8,
               background: "#000",
               display: "block",
             }}
           />
+          <button
+            type="button"
+            onClick={() => setPreviewFull(true)}
+            style={{
+              background: "none", border: "none", cursor: "pointer", fontSize: 12,
+              color: BRAND.navyText, padding: 0, textDecoration: "underline",
+            }}
+          >
+            Full size
+          </button>
         </div>
+      )}
+      {previewFull && previewUrl && createPortal(
+        <div
+          role="dialog"
+          aria-label="Rendered reel full size"
+          onClick={() => setPreviewFull(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 1100, background: "rgba(16,24,40,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(420px, 92vw)" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <Button variant="ghost" onClick={() => setPreviewFull(false)} style={{ padding: "4px 10px", fontSize: 13 }}>
+                Close
+              </Button>
+            </div>
+            <video
+              src={previewUrl}
+              controls
+              autoPlay
+              playsInline
+              style={{ width: "100%", maxHeight: "80vh", borderRadius: 8, background: "#000", display: "block" }}
+            />
+          </div>
+        </div>,
+        document.body,
       )}
 
       {!isRendered && (
@@ -1604,6 +1831,96 @@ function ytThumb(id: string): string {
   return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 }
 
+const CUT_ACTION_LABEL: Record<string, string> = {
+  post_short: "Post short",
+  cut_to_short: "Cut to short",
+  tighten_or_split: "Tighten or split",
+  chop: "Chop",
+};
+
+interface CutCandidate {
+  id: string;
+  title: string;
+  duration: number;
+  heat: number;
+  action: string;
+  why: string;
+  comments: number;
+  has_clips: boolean;
+}
+
+function EditDownQueue({ onSelect }: { onSelect: (videoId: string) => void }) {
+  const [rows, setRows] = useState<CutCandidate[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch("/topic-graph/social-brief")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
+        return r.json();
+      })
+      .then((d: { cut_for_social?: CutCandidate[] }) => {
+        if (!cancelled) setRows(d.cut_for_social ?? []);
+      })
+      .catch(() => { if (!cancelled) setRows([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (rows === null) {
+    return (
+      <Card style={{ marginBottom: 20 }}>
+        <Loading label="Ranking videos to edit down…" />
+      </Card>
+    );
+  }
+  if (rows.length === 0) return null;
+  const heats = rows.map((r) => r.heat ?? 0);
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        Edit these down
+        <span style={{ fontWeight: 400, color: BRAND.sub, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
+          ranked by Heat — cut to {CLIP_MIN_SECS}–{CLIP_MAX_SECS}s Shorts
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 320, overflowY: "auto" }}>
+        {rows.map((v) => (
+          <div
+            key={v.id}
+            style={{
+              display: "flex", gap: 12, padding: 8, background: BRAND.bg, borderRadius: 10,
+              alignItems: "flex-start",
+            }}
+          >
+            <img
+              src={ytThumb(v.id)}
+              alt=""
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+              style={{ width: 120, height: 68, objectFit: "cover", borderRadius: 8, background: "#111", flex: "0 0 120px" }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, color: BRAND.ink, fontSize: 14, lineHeight: 1.35 }}>{v.title}</div>
+              <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12, color: BRAND.sub }}>
+                <Badge tone="gray">{CUT_ACTION_LABEL[v.action] ?? v.action}</Badge>
+                <span>{formatDuration(v.duration)}</span>
+                <ScoreChip kind="heat" value={v.heat ?? 0} peers={heats} />
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12, color: BRAND.ink }}>{v.why}</div>
+              <button
+                type="button"
+                onClick={() => onSelect(v.id)}
+                style={{ background: "none", border: "none", padding: 0, marginTop: 8, cursor: "pointer", fontSize: 13, color: BRAND.red, fontWeight: 600 }}
+              >
+                Review →
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function GeneratedClipsList({
   videos,
   onRevisit,
@@ -1622,10 +1939,13 @@ function GeneratedClipsList({
 
   return (
     <Card style={{ marginBottom: 20 }}>
-      <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
-        Videos with generated clips
+      <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 700, color: BRAND.navyText, textTransform: "uppercase", letterSpacing: 0.4 }}>
+        Already generated
+        <span style={{ fontWeight: 400, color: BRAND.sub, marginLeft: 8, textTransform: "none", letterSpacing: 0 }}>
+          {withClips.length}
+        </span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto" }}>
         {withClips.map((v) => {
           const open = previewId === v.id;
           return (
@@ -1634,7 +1954,7 @@ function GeneratedClipsList({
               style={{
                 display: "flex",
                 gap: 12,
-                padding: 10,
+                padding: 8,
                 background: BRAND.bg,
                 borderRadius: 10,
                 alignItems: "flex-start",
@@ -1644,7 +1964,7 @@ function GeneratedClipsList({
                 type="button"
                 onClick={() => setPreviewId(open ? null : v.id)}
                 style={{
-                  position: "relative", flex: "0 0 168px", width: 168, height: 94, padding: 0,
+                  position: "relative", flex: "0 0 120px", width: 120, height: 68, padding: 0,
                   border: "none", borderRadius: 8, overflow: "hidden", background: "#111", cursor: "pointer",
                 }}
                 title="Preview"
@@ -1754,6 +2074,14 @@ export function ClipStudio() {
   const [allVideos, setAllVideos] = useState<ArchiveVideo[]>([]);
   // Track whether we've consumed the incoming nav param.
   const preselectedRef = useRef(false);
+  const [fromTab, setFromTab] = useState<string | null>(params.from ?? null);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  const FROM_LABEL: Record<string, string> = {
+    archive: "Video Archive",
+    opportunities: "Opportunities",
+  };
 
   // When videos are loaded by the picker, check if there's a pending preselect param.
   function handleVideosLoaded(videos: ArchiveVideo[]) {
@@ -1762,12 +2090,24 @@ export function ClipStudio() {
       const target = videos.find((v) => v.id === params.video);
       if (target) {
         preselectedRef.current = true;
-        // Clear the param so a manual "start over" doesn't re-trigger.
-        navNavigate("clip-studio", {});
+        const origin = params.from || fromTab;
+        setFromTab(origin ?? null);
+        // Keep origin so Back can leave Clip Studio. Drop video so Start over
+        // does not re-open the same clip.
+        navNavigate("clip-studio", origin ? { from: origin } : {});
         setStep({ kind: "suggest", video: target });
         setSuggestError(null);
       }
     }
+  }
+
+  function handleLeaveEdit() {
+    if (fromTab) {
+      navNavigate(fromTab, {});
+      return;
+    }
+    preselectedRef.current = false;
+    setStep({ kind: "pick" });
   }
 
   // Step 1 → 2: video selected
@@ -1810,12 +2150,32 @@ export function ClipStudio() {
     setStep({ ...step, clips });
   }
 
+  function handleClipMove(from: number, to: number) {
+    if (step.kind !== "clips") return;
+    if (!Number.isInteger(from) || !Number.isInteger(to)) return;
+    if (from === to || from < 0 || to < 0 || from >= step.clips.length || to >= step.clips.length) return;
+    const clips = [...step.clips];
+    const [item] = clips.splice(from, 1);
+    clips.splice(to, 0, item);
+    setStep({ ...step, clips });
+  }
+
   // Step 3: save curated clips
   async function handleSave() {
     if (step.kind !== "clips") return;
     const selected = step.clips.filter((c) => c.included);
     if (selected.length === 0) {
       setSaveError("Select at least one clip to save.");
+      return;
+    }
+    const blocked = selected
+      .map((c, i) => {
+        const gaps = missingPackageFields(c);
+        return gaps.length ? `Clip ${i + 1} needs ${gaps.join(", ")}` : "";
+      })
+      .filter(Boolean);
+    if (blocked.length) {
+      setSaveError(`Package incomplete: ${blocked.join(". ")}. Town, problem, ${CLIP_MIN_SECS}–${CLIP_MAX_SECS}s, audience, hook, and phone CTA are required.`);
       return;
     }
     setSaving(true);
@@ -1846,8 +2206,15 @@ export function ClipStudio() {
   return (
     <main style={{ maxWidth: 820 }}>
       {helpOpen && <ClipStudioHelp onClose={() => setHelpOpen(false)} />}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <PageTitle>Clip Studio</PageTitle>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {(step.kind !== "pick" || fromTab) && (
+            <Button variant="ghost" style={{ fontSize: 13, padding: "6px 10px" }} onClick={handleLeaveEdit}>
+              ← {fromTab ? `Back to ${FROM_LABEL[fromTab] ?? fromTab}` : "Back to video list"}
+            </Button>
+          )}
+          <PageTitle>Clip Studio</PageTitle>
+        </div>
         <Button variant="ghost" style={{ fontSize: 13 }} onClick={() => setHelpOpen(true)}>? Help — features</Button>
       </div>
 
@@ -1862,8 +2229,8 @@ export function ClipStudio() {
         <>
           <SuccessBanner seriesTitle={step.seriesTitle} />
           <div style={{ marginTop: 16 }}>
-            <Button variant="ghost" onClick={() => { preselectedRef.current = false; setStep({ kind: "pick" }); }}>
-              Start another
+            <Button variant="ghost" onClick={handleLeaveEdit}>
+              {fromTab ? `Back to ${FROM_LABEL[fromTab] ?? fromTab}` : "Start another"}
             </Button>
           </div>
         </>
@@ -1872,6 +2239,18 @@ export function ClipStudio() {
       {/* Step: pick — show generated list + picker */}
       {step.kind === "pick" && (
         <>
+          <EditDownQueue
+            onSelect={(id) => {
+              const found = allVideos.find((v) => v.id === id);
+              if (found) {
+                setStep({ kind: "suggest", video: found });
+                setSuggestError(null);
+                return;
+              }
+              setStep({ kind: "suggest", video: { id, title: id, duration: null, upload_date: null, archived: true, youtube_url: `https://www.youtube.com/watch?v=${id}` } });
+              setSuggestError(null);
+            }}
+          />
           <GeneratedClipsList
             videos={allVideos}
             onRevisit={(v) => { setStep({ kind: "suggest", video: v }); setSuggestError(null); }}
@@ -1925,8 +2304,8 @@ export function ClipStudio() {
             <Button onClick={() => handleSuggest(step.video)} disabled={suggesting}>
               {suggesting ? "Analyzing video… (may take 15–30s)" : "Suggest clips"}
             </Button>
-            <Button variant="ghost" onClick={() => setStep({ kind: "pick" })} disabled={suggesting}>
-              Back
+            <Button variant="ghost" onClick={handleLeaveEdit} disabled={suggesting}>
+              {fromTab ? `Back to ${FROM_LABEL[fromTab] ?? fromTab}` : "Back"}
             </Button>
           </div>
 
@@ -1969,14 +2348,26 @@ export function ClipStudio() {
             </Button>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}
+            onDragOver={(e) => e.preventDefault()}
+          >
+            <div style={{ fontSize: 12, color: BRAND.sub }}>
+              Drag the handle to change play order. Saved series uses this order.
+            </div>
             {step.clips.map((clip, i) => (
               <ClipCard
-                key={i}
+                key={`${clip.start}-${clip.end}-${clip.title}`}
                 clip={clip}
                 index={i}
+                total={step.clips.length}
                 videoId={step.video.id}
                 onChange={handleClipChange}
+                onMove={handleClipMove}
+                dragging={dragFrom === i}
+                dropTarget={dragOver === i && dragFrom !== i}
+                onDragFrom={setDragFrom}
+                onDragOverIndex={setDragOver}
               />
             ))}
           </div>
@@ -1997,8 +2388,8 @@ export function ClipStudio() {
               <Button onClick={handleSave} disabled={saving}>
                 {saving ? "Saving…" : "Save as clip series"}
               </Button>
-              <Button variant="ghost" onClick={() => setStep({ kind: "pick" })} disabled={saving}>
-                Start over
+              <Button variant="ghost" onClick={handleLeaveEdit} disabled={saving}>
+                {fromTab ? `Back to ${FROM_LABEL[fromTab] ?? fromTab}` : "Start over"}
               </Button>
             </div>
           </Card>

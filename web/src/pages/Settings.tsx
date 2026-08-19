@@ -477,7 +477,7 @@ export function Settings() {
   }
 
   // Split settings into model vs regular — defensive: treat missing arrays as empty
-  const SWITCH_KEYS = new Set(["KNOWIFY_SYNC_ENABLED", "PROPOSAL_REMINDERS_ENABLED"]);
+  const SWITCH_KEYS = new Set(["KNOWIFY_SYNC_ENABLED", "PROPOSAL_REMINDERS_ENABLED", "CONTENT_GEN_MODE"]);
   const modelEntries = (config?.settings ?? []).filter((s) => MODEL_KEYS.has(s.key));
   const regularEntries = (config?.settings ?? []).filter(
     (s) => !MODEL_KEYS.has(s.key) && !SWITCH_KEYS.has(s.key),

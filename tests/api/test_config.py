@@ -40,6 +40,8 @@ def test_job_switches_readable_by_sales(sales_client):
     body = r.json()
     assert body["knowify_sync"] is False
     assert body["proposal_reminders"] is False
+    assert "content_gen" in body
+    assert body["content_gen"] in (True, False)
 
 
 # ---------------------------------------------------------------------------

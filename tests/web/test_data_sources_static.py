@@ -29,6 +29,8 @@ def test_job_switches_and_reminder_notice_mounted():
     switches = (ROOT / "components" / "JobSwitches.tsx").read_text()
     assert "KNOWIFY_SYNC_ENABLED" in switches
     assert "PROPOSAL_REMINDERS_ENABLED" in switches
+    assert "CONTENT_GEN_MODE" in switches
+    assert "Daily articles" in switches
     assert "JobSwitches" in (ROOT / "pages" / "Settings.tsx").read_text()
     assert "JobSwitches" in (ROOT / "pages" / "MarketingConfig.tsx").read_text()
     notice = (ROOT / "components" / "RemindersPausedNotice.tsx").read_text()

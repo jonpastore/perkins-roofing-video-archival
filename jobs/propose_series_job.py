@@ -121,7 +121,7 @@ def _build_prompt(name: str, segments: list[dict], graph_nodes: list[dict], coun
     )
     return f"""You are a short-form video editor for a roofing company's social media.
 Analyse the transcript and content graph below for the video titled "{name}".
-Identify the {count} BEST moments to clip as standalone Instagram/TikTok reels (20-60 seconds each).
+Identify the {count} BEST moments to clip as standalone Instagram/TikTok/YouTube Shorts (15-40 seconds each).
 
 Select moments that are self-contained, high-energy, and useful for homeowners.
 
@@ -136,7 +136,7 @@ Return ONLY valid JSON — a single object with a "clips" array. Each clip:
 
 Rules:
 - start and end must be real timestamps from the transcript above (do NOT invent times)
-- end - start must be between 20 and 60 seconds
+- end - start must be between 15 and 40 seconds
 - do not overlap clips
 - return exactly {count} clips
 - return ONLY the JSON object, no markdown fences

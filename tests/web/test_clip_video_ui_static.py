@@ -25,11 +25,18 @@ def test_nav_exposes_the_three_video_surfaces():
     assert "<ClipStudio />" in APP
     assert "<VideoApproval />" in APP
     assert "<Archive />" in APP
+    assert "Collapse navigation" in APP
+    assert "perkins.nav.pins" in APP
+    assert "sidebar-collapsed" in APP
+    assert "NavIcon" in APP
+    assert "NAV_RAIL_PX" in APP
+    assert "collapsedIds" not in APP
 
 
 def test_clip_studio_help_titles_all_have_a_writer_on_the_screen():
     """Help is the operator contract. Every titled control must exist in ClipStudio.tsx."""
     writers = {
+        "Edit these down": ["Edit these down", "/topic-graph/social-brief", "cut_to_short"],
         "Platform presets": ["General", "Instagram", "TikTok", "YouTube Shorts", "Facebook",
                              "Suggest clips"],
         "Scene detection": ["Detect scenes", "visual", "/clips/scenes"],
@@ -69,6 +76,12 @@ def test_clip_studio_flow_steps_are_wired():
         "Ready to Render",
         "Save as clip series",
         "Hide videos with clips already",
+        "Back to video list",
+        "Edit these down",
+        "missingPackageFields",
+        "Town",
+        "Phone CTA",
+        "handleLeaveEdit",
         "Re-generate →",
         "? Help — features",
         "Apply All",
@@ -76,6 +89,7 @@ def test_clip_studio_flow_steps_are_wired():
         "ytThumb",
         "brand-video-url",
         "reel-intro-outro",
+        "maxHeight: 260",
         "Video Approval",
     ):
         assert needle in CLIP, needle
@@ -90,6 +104,8 @@ def test_clip_card_curation_controls():
         'detectScenes("visual")',
         "cut @",
         "clip.included",
+        "Drag to change order",
+        "handleClipMove",
         "clip.hook",
         "clip.caption",
         "ViralityBadge",
@@ -115,6 +131,10 @@ def test_brand_intro_outro_upload_exists():
     assert "upload-brand-video" in CLIP
     assert "intro" in CLIP.lower()
     assert "outro" in CLIP.lower()
+    assert 'flexDirection: "row"' in CLIP
+    assert "Full size" in CLIP
+    assert "9 / 16" in CLIP
+    assert "createPortal" in CLIP
 
 
 def test_scheduling_uses_platform_checkboxes_not_a_select():
@@ -134,12 +154,15 @@ def test_archive_detail_and_actions():
         "Used in Articles",
         "Used in Social Posts",
         "Topics (",
-        "navigate(\"clip-studio\", { video: v.id })",
+        "navigate(\"clip-studio\", { video: v.id, from: \"archive\" })",
         "navigate(\"video-approval\", { series: v.id })",
         "/archive/${video.id}/download",
         "/archive/${video.id}/hide",
         "/archive/${v.id}/rename",
         "Open in Clip Studio",
+        "ScoreChip",
+        "kind=\"heat\"",
+        'from: "archive"',
         "Review reel →",
         "include_hidden",
         "PAGE_SIZE",

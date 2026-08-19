@@ -195,6 +195,67 @@ const ROLE_CONFIG: Partial<Record<Exclude<Role, null>, ShellConfig>> = {
 // NavButton
 // ---------------------------------------------------------------------------
 
+const NAV_COLLAPSE_KEY = "perkins.nav.collapsed";
+const NAV_PINS_KEY = "perkins.nav.pins";
+const NAV_RAIL_PX = 56;
+const NAV_OPEN_PX = 220;
+
+// Stroke icons (24 viewBox). Collapsed rail is icon-only; title= carries the label.
+const NAV_ICON: Record<string, string[]> = {
+  dashboard: ["M4 4h7v7H4z", "M13 4h7v7h-7z", "M4 13h7v7H4z", "M13 13h7v7h-7z"],
+  "search-ask": ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z", "M21 21l-4.35-4.35"],
+  faq: ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z", "M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4", "M12 17h.01"],
+  archive: ["M4 7h16v12H4z", "M8 7V5h8v2", "M8 12h8"],
+  "contract-faq": ["M7 3h8l5 5v13H7z", "M15 3v5h5", "M10 13h6", "M10 17h4"],
+  opportunities: ["M12 3l2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4z"],
+  articles: ["M5 4h10l4 4v12H5z", "M15 4v4h4", "M8 13h8", "M8 17h5"],
+  portfolio: ["M3 8h18v11H3z", "M8 8V6h8v2", "M3 13l4-3 4 3 4-4 4 4"],
+  scheduling: ["M5 5h14v14H5z", "M5 10h14", "M9 3v4", "M15 3v4"],
+  "clip-studio": ["M6 7l5 5-5 5", "M13 17h6"],
+  comments: ["M5 5h14v10H8l-3 3z"],
+  email: ["M4 6h16v12H4z", "M4 7l8 6 8-6"],
+  "video-approval": ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z", "M8 12l3 3 5-6"],
+  customers: ["M16 19v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1", "M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M20 19v-1a3.5 3.5 0 0 0-2.5-3.3", "M17 9a2.5 2.5 0 1 0 0-4"],
+  quoting: ["M6 4h12v16H6z", "M9 9h6", "M9 13h6", "M9 17h3"],
+  proposals: ["M7 3h8l5 5v13H7z", "M15 3v5h5", "M9 14l2 2 4-4"],
+  invoices: ["M7 3h10v18H7z", "M10 8h4", "M10 12h4", "M10 16h2"],
+  payments: ["M3 8h18v10H3z", "M3 12h18", "M7 16h3"],
+  "admin-config": ["M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M19.4 15a7.7 7.7 0 0 0 .1-2l2-1.6-2-3.4-2.4.5a8 8 0 0 0-1.7-1L15 5h-6l-.4 2.5a8 8 0 0 0-1.7 1L8.5 8l-2 3.4 2 1.6a7.7 7.7 0 0 0 .1 2l-2 1.6 2 3.4 2.4-.5a8 8 0 0 0 1.7 1L9 21h6l.4-2.5a8 8 0 0 0 1.7-1l2.4.5 2-3.4z"],
+  "legacy-data": ["M4 7a8 3 0 0 0 16 0A8 3 0 0 0 4 7z", "M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7"],
+  logs: ["M6 5h12", "M6 10h12", "M6 15h8", "M6 20h10"],
+  signout: ["M10 6H6v12h4", "M14 16l4-4-4-4", "M10 12h8"],
+  collapse: ["M15 6l-6 6 6 6"],
+  expand: ["M9 6l6 6-6 6"],
+};
+
+function NavIcon({ id }: { id: string }) {
+  const paths = NAV_ICON[id] ?? ["M12 7v5", "M12 17h.01", "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"];
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {paths.map((d) => <path key={d} d={d} />)}
+    </svg>
+  );
+}
+
+function readPins(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NAV_PINS_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function NavButton({
   id,
   label,
@@ -202,6 +263,9 @@ function NavButton({
   onClick,
   badge,
   indent,
+  collapsed,
+  pinned,
+  onPin,
 }: {
   id: string;
   label: string;
@@ -209,17 +273,24 @@ function NavButton({
   onClick: () => void;
   badge?: number;
   indent?: boolean;
+  collapsed?: boolean;
+  pinned?: boolean;
+  onPin?: () => void;
 }) {
   return (
     <button
       key={id}
+      type="button"
+      title={label}
+      aria-label={label}
       onClick={onClick}
       style={{
         display: "flex",
         alignItems: "center",
+        justifyContent: collapsed ? "center" : "flex-start",
         width: "100%",
         textAlign: "left",
-        padding: indent ? "9px 16px 9px 28px" : "11px 16px",
+        padding: collapsed ? "10px 0" : indent ? "9px 10px 9px 20px" : "10px 10px 10px 14px",
         background: active ? BRAND.navyActive : "transparent",
         color: active ? "#fff" : "#c3c9d9",
         borderLeft: active ? `3px solid ${BRAND.red}` : "3px solid transparent",
@@ -227,11 +298,26 @@ function NavButton({
         fontSize: 14,
         fontWeight: active ? 600 : 400,
         border: "none",
-        gap: 8,
+        gap: 10,
+        position: "relative",
       }}
     >
-      <span style={{ flex: 1 }}>{label}</span>
-      {badge != null && badge > 0 && (
+      <span style={{ display: "flex", flexShrink: 0, opacity: active ? 1 : 0.85 }}>
+        <NavIcon id={id} />
+      </span>
+      <span
+        style={{
+          flex: 1,
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          opacity: collapsed ? 0 : 1,
+          width: collapsed ? 0 : "auto",
+          transition: "opacity 0.15s ease",
+        }}
+      >
+        {label}
+      </span>
+      {!collapsed && badge != null && badge > 0 && (
         <span
           style={{
             background: BRAND.red,
@@ -249,6 +335,43 @@ function NavButton({
           {badge > 99 ? "99+" : badge}
         </span>
       )}
+      {collapsed && badge != null && badge > 0 && (
+        <span
+          style={{
+            position: "absolute",
+            top: 4,
+            right: 6,
+            background: BRAND.red,
+            color: "#fff",
+            fontSize: 9,
+            fontWeight: 700,
+            borderRadius: 8,
+            padding: "0 4px",
+            lineHeight: 1.5,
+            minWidth: 14,
+            textAlign: "center",
+          }}
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
+      {!collapsed && onPin && (
+        <span
+          role="button"
+          tabIndex={0}
+          title={pinned ? "Unpin from collapsed menu" : "Pin to collapsed menu"}
+          aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
+          onClick={(e) => { e.stopPropagation(); onPin(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onPin(); } }}
+          style={{
+            flexShrink: 0, fontSize: 12, padding: "0 2px",
+            color: pinned ? "#fff" : "rgba(255,255,255,0.35)",
+            cursor: "pointer",
+          }}
+        >
+          {pinned ? "●" : "○"}
+        </span>
+      )}
     </button>
   );
 }
@@ -257,7 +380,19 @@ function NavButton({
 // SectionHeader — visual group label in the sidebar
 // ---------------------------------------------------------------------------
 
-function SectionHeader({ label }: { label: string }) {
+function SectionHeader({ label, collapsed }: { label: string; collapsed?: boolean }) {
+  if (collapsed) {
+    return (
+      <div
+        title={label}
+        style={{
+          margin: "8px 12px",
+          height: 1,
+          background: "rgba(255,255,255,0.16)",
+        }}
+      />
+    );
+  }
   return (
     <div
       style={{
@@ -287,8 +422,8 @@ function SectionHeader({ label }: { label: string }) {
 }
 
 // AdminSectionDivider kept for backward compat with the visual — now delegates to SectionHeader.
-function AdminSectionDivider() {
-  return <SectionHeader label="Admin" />;
+function AdminSectionDivider({ collapsed }: { collapsed?: boolean }) {
+  return <SectionHeader label="Admin" collapsed={collapsed} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -316,6 +451,8 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
   const [navParams, setNavParams] = useState<NavParams>({});
   const [oppCounts, setOppCounts] = useState<OpportunityCounts | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(NAV_COLLAPSE_KEY) === "1");
+  const [pins, setPins] = useState<string[]>(readPins);
 
   useEffect(() => {
     apiFetch("/suggestions/counts")
@@ -352,9 +489,28 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
     setSidebarOpen(false); // close mobile drawer on nav
   }
 
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem(NAV_COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
+  function togglePin(id: string) {
+    setPins((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      localStorage.setItem(NAV_PINS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
   // Collect all tab keys in a flat list for section rendering
   const allSectionTabs = sections.flatMap((s) => s.tabs);
   const allAdminTabs = adminSection?.tabs ?? [];
+  const configPinnedIds = pinnedTabs.map(([id]) => id);
+  const isPinned = (id: string) => configPinnedIds.includes(id) || pins.includes(id);
+  const rail = collapsed && !sidebarOpen;
 
   const sidebarContent = (
     <>
@@ -363,21 +519,48 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          padding: "0 16px 18px",
+          gap: rail ? 0 : 10,
+          padding: rail ? "0 8px 14px" : "0 16px 18px",
           marginBottom: 10,
           borderBottom: "1px solid rgba(255,255,255,0.12)",
+          justifyContent: rail ? "center" : "flex-start",
         }}
       >
         <img
           src="/perkins-logo.png"
           alt="Perkins Roofing"
-          style={{ height: 36, background: "#fff", borderRadius: 6, padding: "3px 5px" }}
+          style={{ height: rail ? 26 : 36, background: "#fff", borderRadius: 6, padding: "3px 5px" }}
         />
-        <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>
+        {!rail && <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>{title}</span>}
       </div>
 
-      {/* Pinned tabs (e.g. Dashboard) */}
+      <button
+        type="button"
+        className="sidebar-collapse-btn"
+        aria-label={rail ? "Expand navigation" : "Collapse navigation"}
+        title={rail ? "Expand menu" : "Collapse to icons"}
+        onClick={toggleCollapsed}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: rail ? "center" : "flex-start",
+          gap: 8,
+          margin: rail ? "0 8px 10px" : "0 12px 10px",
+          padding: rail ? "8px 0" : "6px 8px",
+          background: "rgba(255,255,255,0.08)",
+          color: "#c3c9d9",
+          border: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+          fontSize: 12,
+          fontWeight: 600,
+          width: rail ? "auto" : undefined,
+        }}
+      >
+        <NavIcon id={rail ? "expand" : "collapse"} />
+        {!rail && "Collapse"}
+      </button>
+
       {pinnedTabs.map(([id, label]) => (
         <NavButton
           key={id}
@@ -386,14 +569,16 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
           active={tab === id}
           onClick={() => handleTabClick(id)}
           badge={badgeFor(id)}
+          collapsed={rail}
+          pinned={isPinned(id)}
+          onPin={configPinnedIds.includes(id) ? undefined : () => togglePin(id)}
         />
       ))}
 
-      {/* Sections */}
       {useSections
         ? sections.map((section) => (
             <div key={section.label}>
-              <SectionHeader label={section.label} />
+              <SectionHeader label={section.label} collapsed={rail} />
               {section.tabs.map(([id, label]) => (
                 <NavButton
                   key={id}
@@ -403,12 +588,14 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
                   onClick={() => handleTabClick(id)}
                   badge={badgeFor(id)}
                   indent
+                  collapsed={rail}
+                  pinned={isPinned(id)}
+                  onPin={() => togglePin(id)}
                 />
               ))}
             </div>
           ))
         : allSectionTabs.map(([id, label]) => (
-            // Flat list for sales role (no section headers)
             <NavButton
               key={id}
               id={id}
@@ -416,13 +603,15 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
               active={tab === id}
               onClick={() => handleTabClick(id)}
               badge={badgeFor(id)}
+              collapsed={rail}
+              pinned={isPinned(id)}
+              onPin={() => togglePin(id)}
             />
           ))}
 
-      {/* Admin section */}
       {adminSection && allAdminTabs.length > 0 && (
         <>
-          <AdminSectionDivider />
+          <AdminSectionDivider collapsed={rail} />
           {allAdminTabs.map(([id, label]) => (
             <NavButton
               key={id}
@@ -430,18 +619,35 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
               label={label}
               active={tab === id}
               onClick={() => handleTabClick(id)}
+              collapsed={rail}
+              pinned={isPinned(id)}
+              onPin={() => togglePin(id)}
             />
           ))}
         </>
       )}
 
-      {/* Sign out */}
-      <div style={{ marginTop: "auto", padding: "18px 16px 0" }}>
+      <div style={{ marginTop: "auto", padding: rail ? "14px 0 0" : "18px 16px 0" }}>
         <button
           onClick={signOutUser}
-          style={{ background: "none", border: "none", color: "#9aa3ba", cursor: "pointer", fontSize: 13 }}
+          title="Sign out"
+          aria-label="Sign out"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: rail ? "center" : "flex-start",
+            gap: 10,
+            width: "100%",
+            background: "none",
+            border: "none",
+            color: "#9aa3ba",
+            cursor: "pointer",
+            fontSize: 13,
+            padding: rail ? "8px 0" : 0,
+          }}
         >
-          Sign out
+          <NavIcon id="signout" />
+          {!rail && "Sign out"}
         </button>
       </div>
     </>
@@ -495,7 +701,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
           aria-label="Main navigation"
           role="navigation"
           style={{
-            width: 220,
+            width: rail ? NAV_RAIL_PX : NAV_OPEN_PX,
             background: BRAND.navy,
             color: "#fff",
             display: "flex",
@@ -503,10 +709,12 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
             padding: "18px 0",
             flexShrink: 0,
             overflowY: "auto",
+            overflowX: "hidden",
             position: "relative",
             zIndex: 1400,
+            transition: "width 0.2s ease",
           }}
-          className={`app-sidebar${sidebarOpen ? " sidebar-open" : ""}`}
+          className={`app-sidebar${sidebarOpen ? " sidebar-open" : ""}${rail ? " sidebar-collapsed" : ""}`}
         >
           {sidebarContent}
         </nav>
@@ -534,6 +742,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
           .app-sidebar.sidebar-open {
             transform: translateX(0);
           }
+          .sidebar-collapse-btn { display: none !important; }
         }
       `}</style>
     </NavContext.Provider>

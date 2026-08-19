@@ -12,3 +12,6 @@ def test_build_suggest_prompt_tolerates_null_timestamps():
     nodes = [SimpleNamespace(start=None, kind="topic", label="x")]
     prompt = _build_suggest_prompt("Title", segs, nodes, 4)
     assert "0.0s" in prompt and "null ts" in prompt
+    assert "15 and 40 seconds" in prompt
+    assert '"town"' in prompt
+    assert "homeowner" in prompt

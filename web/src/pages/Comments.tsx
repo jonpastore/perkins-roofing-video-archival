@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
 import { BRAND, Button, Card, ErrorMsg, Loading, PageTitle, inputStyle } from "../ui";
+import { HelpTip, SCORE_HELP } from "../components/ScoreChip";
 import { errText } from "../lib/errors";
 
 // ---------------------------------------------------------------------------
@@ -19,6 +20,7 @@ interface CommentItem {
   needs_reply: boolean;
   draft_reply: string | null;
   status: string;
+  platform: string;
   created_at: string | null;
 }
 
@@ -28,6 +30,7 @@ interface ListResponse {
 }
 
 type StatusFilter = "all" | "pending" | "drafted" | "ready" | "posted" | "dismissed";
+type PlatformFilter = "all" | "youtube" | "paa";
 
 const PAGE_SIZE = 25;
 
@@ -49,6 +52,7 @@ export function Comments() {
   const [offset, setOffset]           = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [needsReplyOnly, setNeedsReplyOnly] = useState(true);
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
   const [crawling, setCrawling]       = useState(false);
@@ -67,7 +71,7 @@ export function Comments() {
   // switch-account escape hatch; only the explicit confirm actually posts.
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
 
-  function loadItems(status: StatusFilter, needsOnly: boolean, off: number) {
+  function loadItems(status: StatusFilter, needsOnly: boolean, off: number, plat: PlatformFilter = platformFilter) {
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({
@@ -76,6 +80,7 @@ export function Comments() {
     });
     if (status !== "all") params.set("status", status);
     if (needsOnly) params.set("needs_reply", "true");
+    if (plat !== "all") params.set("platform", plat);
 
     apiFetch(`/comments?${params}`)
       .then(async (r) => {
@@ -113,19 +118,25 @@ export function Comments() {
   function handleStatusChange(val: StatusFilter) {
     setStatusFilter(val);
     setOffset(0);
-    loadItems(val, needsReplyOnly, 0);
+    loadItems(val, needsReplyOnly, 0, platformFilter);
   }
 
   function handleNeedsReplyToggle(val: boolean) {
     setNeedsReplyOnly(val);
     setOffset(0);
-    loadItems(statusFilter, val, 0);
+    loadItems(statusFilter, val, 0, platformFilter);
+  }
+
+  function handlePlatformChange(val: PlatformFilter) {
+    setPlatformFilter(val);
+    setOffset(0);
+    loadItems(statusFilter, needsReplyOnly, 0, val);
   }
 
   function gotoPage(pageIdx: number) {
     const off = Math.max(0, pageIdx) * PAGE_SIZE;
     setOffset(off);
-    loadItems(statusFilter, needsReplyOnly, off);
+    loadItems(statusFilter, needsReplyOnly, off, platformFilter);
   }
 
   async function handlePost(item: CommentItem) {
@@ -229,7 +240,10 @@ export function Comments() {
 
   return (
     <main style={{ maxWidth: 960 }}>
-      <PageTitle>Comment Reply Assistant</PageTitle>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <PageTitle>Comment Reply Assistant</PageTitle>
+        <HelpTip text={`${SCORE_HELP.heat} High-heat threads are the ones to answer first. Opportunity appears when a comment becomes a proposed FAQ.`} />
+      </div>
 
       {/* Posting mode note — reflects whether the token can ACTUALLY post to the channel */}
       {replyCfg.can_post ? (
@@ -326,6 +340,15 @@ export function Comments() {
             <option value="ready">Ready</option>
             <option value="dismissed">Dismissed</option>
           </select>
+          <select
+            value={platformFilter}
+            onChange={(e) => handlePlatformChange(e.target.value as PlatformFilter)}
+            style={{ ...inputStyle, minWidth: 150 }}
+          >
+            <option value="all">All sources</option>
+            <option value="youtube">YouTube</option>
+            <option value="paa">Questions (PAA)</option>
+          </select>
           <span style={{ fontSize: 13, color: BRAND.sub, whiteSpace: "nowrap" }}>
             {total} comment{total !== 1 ? "s" : ""}
           </span>
@@ -360,6 +383,7 @@ export function Comments() {
                   {/* Header: video link + author + status badge */}
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 10 }}>
                     <div style={{ flex: 1 }}>
+                      {item.video_id && item.video_id !== "inbox" ? (
                       <a
                         href={item.video_url}
                         target="_blank"
@@ -368,6 +392,11 @@ export function Comments() {
                       >
                         ▶ {item.video_title}
                       </a>
+                      ) : (
+                      <span style={{ color: BRAND.navyText, fontSize: 13, fontWeight: 600 }}>
+                        {item.platform === "paa" ? "People Also Ask" : item.video_title}
+                      </span>
+                      )}
                       <span style={{ fontSize: 12, color: BRAND.sub, marginLeft: 10 }}>
                         by {item.author || "unknown"}
                         {item.published_at ? ` · ${new Date(item.published_at).toLocaleDateString()}` : ""}
@@ -454,7 +483,7 @@ export function Comments() {
                           Mark Ready
                         </Button>
                       )}
-                      {replyCfg.can_post && item.status !== "posted" && confirmingId !== item.id && (
+                      {replyCfg.can_post && (item.platform || "youtube") === "youtube" && item.status !== "posted" && confirmingId !== item.id && (
                         <Button
                           disabled={postingId === item.id || !draftValue(item).trim()}
                           onClick={() => setConfirmingId(item.id)}

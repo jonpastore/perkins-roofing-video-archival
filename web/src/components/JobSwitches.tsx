@@ -6,11 +6,13 @@ import { BRAND, Badge, Button, Card, ErrorMsg } from "../ui";
 const KEYS = {
   knowify: "KNOWIFY_SYNC_ENABLED",
   reminders: "PROPOSAL_REMINDERS_ENABLED",
+  content: "CONTENT_GEN_MODE",
 } as const;
 
 export function JobSwitches({ manage = true }: { manage?: boolean }) {
   const [knowify, setKnowify] = useState(false);
   const [reminders, setReminders] = useState(false);
+  const [contentGen, setContentGen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -21,9 +23,10 @@ export function JobSwitches({ manage = true }: { manage?: boolean }) {
         if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
-      .then((data: { knowify_sync?: boolean; proposal_reminders?: boolean }) => {
+      .then((data: { knowify_sync?: boolean; proposal_reminders?: boolean; content_gen?: boolean }) => {
         setKnowify(data.knowify_sync === true);
         setReminders(data.proposal_reminders === true);
+        setContentGen(data.content_gen === true);
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -34,10 +37,11 @@ export function JobSwitches({ manage = true }: { manage?: boolean }) {
     setBusy(key);
     setError(null);
     apply(next);
+    const value = key === KEYS.content ? (next ? "dump" : "off") : (next ? "true" : "false");
     try {
       const r = await apiFetch("/config", {
         method: "PUT",
-        body: JSON.stringify({ key, value: next ? "true" : "false" }),
+        body: JSON.stringify({ key, value }),
       });
       if (!r.ok) throw new Error(await errText(r));
     } catch (e: unknown) {
@@ -72,6 +76,14 @@ export function JobSwitches({ manage = true }: { manage?: boolean }) {
         loaded={loaded}
         disabled={!manage || busy === KEYS.reminders}
         onToggle={(v) => save(KEYS.reminders, v, setReminders)}
+      />
+      <SwitchRow
+        title="Daily articles"
+        help="On = one new uncovered pillar per morning cron, drafts only — will not auto-publish. Off = cron no-ops. Uses the topic graph so we do not write synonym pages."
+        on={contentGen}
+        loaded={loaded}
+        disabled={!manage || busy === KEYS.content}
+        onToggle={(v) => save(KEYS.content, v, setContentGen)}
       />
       {error && <ErrorMsg>{error}</ErrorMsg>}
     </Card>

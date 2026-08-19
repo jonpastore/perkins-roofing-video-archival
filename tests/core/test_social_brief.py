@@ -1,7 +1,13 @@
 """Social release + film-next ranking from footage heat and genre gaps."""
 from __future__ import annotations
 
-from core.social_brief import rank_cut_for_social, rank_film_next, social_action
+from core.social_brief import (
+    rank_cut_for_social,
+    rank_film_next,
+    rank_this_week,
+    rank_write_next,
+    social_action,
+)
 
 
 def test_already_posted_is_not_a_cut_candidate():
@@ -113,3 +119,93 @@ def test_film_next_keeps_balanced_genre_when_audience_asks():
     )
     assert rows and rows[0]["id"] == "cost"
     assert "asking" in rows[0]["why"].lower()
+
+
+def test_cut_to_short_why_targets_aastro_length():
+    rows = rank_cut_for_social([{
+        "id": "talk", "title": "How To Flash a Tile Valley", "duration": 400,
+        "views": 10_000, "likes": 80, "comments": 20, "has_clips": False, "has_social": False,
+    }])
+    assert rows and rows[0]["action"] == "cut_to_short"
+    assert "15–40s" in rows[0]["why"]
+
+
+def test_write_next_skips_covered_and_zero_opportunity():
+    rows = rank_write_next([
+        {
+            "id": "internal", "label": "Internal", "publishable": True,
+            "subjects": [{"slug": "wip", "label": "WIP", "covered": False, "opportunity": 99, "yt_comments": 1}],
+        },
+        {
+            "id": "windows", "label": "Windows", "publishable": False,
+            "subjects": [{"slug": "impact", "label": "Impact", "covered": False, "opportunity": 50, "yt_comments": 1}],
+        },
+        {
+            "id": "tile", "label": "Tile", "publishable": True,
+            "subjects": [
+                {"slug": "covered", "label": "Covered", "covered": True, "opportunity": 9, "yt_comments": 4},
+                {"slug": "zero", "label": "Zero", "covered": False, "opportunity": 0, "yt_comments": 8},
+                {"slug": "leak", "label": "Boca tile leak", "covered": False, "opportunity": 12, "yt_comments": 3},
+            ],
+        },
+    ])
+    assert [r["id"] for r in rows] == ["leak"]
+
+
+def test_this_week_prefers_heat_cuts_then_fills_with_opportunity():
+    cuts = rank_cut_for_social([
+        {"id": "a", "title": "Hot talk", "duration": 400, "views": 9_000, "likes": 90,
+         "comments": 40, "has_clips": False, "has_social": False},
+        {"id": "b", "title": "Warm talk", "duration": 500, "views": 2_000, "likes": 20,
+         "comments": 8, "has_clips": False, "has_social": False},
+        {"id": "c", "title": "Short unused", "duration": 70, "views": 100, "likes": 4,
+         "comments": 1, "has_clips": False, "has_social": False},
+        {"id": "d", "title": "Fourth", "duration": 90, "views": 50, "likes": 2,
+         "comments": 0, "has_clips": False, "has_social": False},
+    ])
+    films = [{"id": "weather", "label": "Weather", "opportunity": 22, "why": "empty", "questions": []}]
+    writes = [{"id": "hoa", "label": "HOA metal", "opportunity": 18, "why": "gap", "genre": "Code"}]
+    week = rank_this_week(cuts, films, writes, limit=5, max_cuts=3)
+    assert len(week) == 5
+    kinds = [r["kind"] for r in week]
+    assert kinds.count("cut") + kinds.count("post") == 3
+    assert "film" in kinds and "write" in kinds
+    assert week[0]["score_kind"] == "heat"
+    assert any(r["format"].startswith("Film one") for r in week)
+
+
+def test_this_week_stops_other_once_full_and_backfills_cuts():
+    cuts = rank_cut_for_social([
+        {"id": "a", "title": "A", "duration": 400, "views": 9_000, "likes": 90,
+         "comments": 40, "has_clips": False, "has_social": False},
+        {"id": "b", "title": "B", "duration": 90, "views": 100, "likes": 4,
+         "comments": 1, "has_clips": False, "has_social": False},
+        {"id": "c", "title": "C", "duration": 80, "views": 80, "likes": 3,
+         "comments": 1, "has_clips": False, "has_social": False},
+        {"id": "d", "title": "D", "duration": 70, "views": 50, "likes": 2,
+         "comments": 0, "has_clips": False, "has_social": False},
+    ])
+    overflow = rank_this_week(
+        cuts,
+        films=[{"id": "w", "label": "Weather", "opportunity": 9, "why": "x", "questions": []}],
+        writes=[
+            {"id": "1", "label": "One", "opportunity": 8, "why": "x"},
+            {"id": "2", "label": "Two", "opportunity": 7, "why": "x"},
+            {"id": "3", "label": "Three", "opportunity": 6, "why": "x"},
+        ],
+        limit=5,
+        max_cuts=3,
+    )
+    assert len(overflow) == 5
+    assert sum(1 for r in overflow if r["kind"] in {"cut", "post"}) == 3
+    backfill = rank_this_week(cuts, films=[], writes=[], limit=5, max_cuts=3)
+    assert len(backfill) == 4
+    assert all(r["kind"] in {"cut", "post"} for r in backfill)
+    unknown = rank_this_week(
+        [{"id": "x", "title": "X", "heat": 3, "action": "mystery", "why": "?", "duration": 10}],
+        [],
+        [],
+        limit=1,
+    )
+    assert unknown[0]["format"].startswith("Cut to")
+    assert unknown[0]["effort_min"] == 20

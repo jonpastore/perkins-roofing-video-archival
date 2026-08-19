@@ -1,13 +1,14 @@
 """Production-readiness gates — pure evaluation, no I/O.
 
-WHY: go-live readiness (email restricted to test allowlist, WordPress still on
-staging, RLS bypassable, DMARC not enforced, missing secrets, broken
-integrations, OAuth self-service reconnect off) was scattered across health
-checks, env vars, and tribal knowledge. This module is the single, testable
-source of truth for "are we actually ready to go live" — callers gather the
-facts (env, DB, DNS, Secret Manager) and this module turns them into a gate
-list the UI renders. Complements (does not replace) the live connectivity
-probes in ``api/routes/config.py`` (``GET /config/health-checks``).
+WHY: go-live readiness (email restricted to test allowlist, RLS bypassable,
+DMARC not enforced, missing secrets, broken integrations, OAuth self-service
+reconnect off) was scattered across health checks, env vars, and tribal
+knowledge. This module is the single, testable source of truth for "are we
+actually ready to go live" — callers gather the facts (env, DB, DNS, Secret
+Manager) and this module turns them into a gate list the UI renders.
+WordPress is not a prod target (public site is leaving WP); it is not a gate.
+Complements (does not replace) the live connectivity probes in
+``api/routes/config.py`` (``GET /config/health-checks``).
 """
 from __future__ import annotations
 
@@ -51,36 +52,9 @@ def _email_mode_gate(facts: dict[str, Any]) -> Gate:
     )
 
 
-def _wordpress_gate(facts: dict[str, Any]) -> Gate:
-    if not facts.get("wp_user_set") or not facts.get("wp_app_pwd_set"):
-        return Gate(
-            id="wordpress",
-            label="WordPress credentials",
-            category="wordpress",
-            state="blocker",
-            detail="WordPress username and/or application password are not configured.",
-            remediation="set WP_USER and the wordpress-app-password secret in Admin Config.",
-        )
-    if facts.get("wp_is_staging"):
-        return Gate(
-            id="wordpress",
-            label="WordPress target",
-            category="wordpress",
-            state="warn",
-            detail=(
-                "publishing to a staging site; production cutover pending #317, "
-                "noindex still on"
-            ),
-            remediation="complete the production cutover (#317) and point WP_URL at the live site.",
-        )
-    return Gate(
-        id="wordpress",
-        label="WordPress target",
-        category="wordpress",
-        state="ok",
-        detail="Publishing to the production WordPress site with valid credentials.",
-        remediation="",
-    )
+def _counts_for_prod(s: dict[str, Any]) -> bool:
+    name = str(s.get("integration") or "")
+    return bool(name) and not name.startswith("ops_") and name != "wordpress"
 
 
 def _rls_security_gate(facts: dict[str, Any]) -> Gate:
@@ -162,10 +136,9 @@ def _secrets_present_gate(facts: dict[str, Any]) -> Gate:
 def _integrations_gate(facts: dict[str, Any]) -> Gate:
     statuses = facts.get("integration_statuses") or []
     broken = [s["integration"] for s in statuses
-              if s.get("status") == "broken" and not str(s.get("integration") or "").startswith("ops_")]
+              if s.get("status") == "broken" and _counts_for_prod(s)]
     unconfigured = [s["integration"] for s in statuses
-                    if s.get("status") == "unconfigured"
-                    and not str(s.get("integration") or "").startswith("ops_")]
+                    if s.get("status") == "unconfigured" and _counts_for_prod(s)]
     if broken:
         return Gate(
             id="integrations",
@@ -300,7 +273,6 @@ def _billing_export_gate(facts: dict[str, Any]) -> Gate:
 
 _GATE_FNS = (
     _email_mode_gate,
-    _wordpress_gate,
     _rls_security_gate,
     _dmarc_gate,
     _secrets_present_gate,

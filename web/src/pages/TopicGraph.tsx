@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { BRAND, Badge, Button, Card, ErrorMsg, Loading } from "../ui";
+import { engagementScore, HelpTip, ScoreChip } from "../components/ScoreChip";
 import { errText } from "../lib/errors";
 
 export type GraphKind = "articles" | "faqs";
@@ -85,15 +87,17 @@ function densityTone(d: string): "red" | "amber" | "green" | "gray" {
 export function TopicGraphPanel({
   kind,
   onClose,
+  initialGenreId = null,
 }: {
   kind: GraphKind;
   onClose: () => void;
+  initialGenreId?: string | null;
 }) {
   const [published, setPublished] = useState<PubFilter>("all");
   const [data, setData] = useState<GraphPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialGenreId);
   const [openSubject, setOpenSubject] = useState<string | null>(null);
 
   useEffect(() => {
@@ -106,12 +110,15 @@ export function TopicGraphPanel({
       })
       .then((body: GraphPayload) => {
         setData(body);
-        setOpenId(null);
+        const keep = initialGenreId && body.genres.some((g) => g.id === initialGenreId)
+          ? initialGenreId
+          : null;
+        setOpenId(keep);
         setOpenSubject(null);
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, [kind, published]);
+  }, [kind, published, initialGenreId]);
 
   const selected = useMemo(
     () => data?.genres.find((g) => g.id === openId) ?? null,
@@ -124,20 +131,20 @@ export function TopicGraphPanel({
 
   const noun = kind === "faqs" ? "FAQs" : "articles";
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-label="Topic graph"
       style={{
         position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)",
-        zIndex: 40, display: "flex", justifyContent: "center", alignItems: "flex-start",
-        padding: "32px 16px", overflow: "auto",
+        zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start",
+        padding: "24px 16px", overflow: "auto",
       }}
       onClick={onClose}
     >
       <Card
         style={{
-          width: "min(1100px, 100%)", maxHeight: "calc(100vh - 48px)",
+          width: "min(880px, calc(100vw - 32px))", maxHeight: "calc(100vh - 48px)",
           overflow: "auto", padding: 20,
         }}
         onClick={(e) => e.stopPropagation()}
@@ -148,7 +155,7 @@ export function TopicGraphPanel({
               {kind === "faqs" ? "FAQ graph" : "Topic graph"}
             </h3>
             <p style={{ margin: "4px 0 0", fontSize: 12, color: BRAND.sub }}>
-              Top row is genre. Click a cell to see subjects, then {noun}.
+              Pick a genre, then a subject, then {noun}.
             </p>
           </div>
           <Button variant="ghost" onClick={onClose}>Close</Button>
@@ -179,14 +186,12 @@ export function TopicGraphPanel({
 
         {data && !loading && (
           <>
-            <DiversityBanner data={data} noun={noun} />
-            <Icicle
+            <DiversityBanner data={data} noun={noun} legend={data.legend} />
+            <GenreBar
               genres={data.genres}
               selectedId={openId}
               onSelect={(id) => { setOpenId(id); setOpenSubject(null); }}
-              published={published}
             />
-            <Legend legend={data.legend} />
 
             {selected && (
               <SubjectStrip
@@ -198,90 +203,86 @@ export function TopicGraphPanel({
             {selectedSubject && (
               <LeafList subject={selectedSubject} noun={noun} />
             )}
-
-            <GenreTable
-              genres={data.genres}
-              openId={openId}
-              onOpen={(id) => { setOpenId(id); setOpenSubject(null); }}
-            />
           </>
         )}
       </Card>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
-function DiversityBanner({ data, noun }: { data: GraphPayload; noun: string }) {
+function DiversityBanner({
+  data, noun, legend,
+}: {
+  data: GraphPayload;
+  noun: string;
+  legend: Record<string, string>;
+}) {
   const even = data.diversity.shannon;
-  const conc = data.diversity.concentrated;
+  const flags = data.diversity.flags.slice(0, 3);
+  const help = [
+    `Evenness ${even.toFixed(2)} (near 1 = pages spread across genres).`,
+    `Concentration ${data.diversity.herfindahl.toFixed(2)} (near 1 = one genre owns the inventory).`,
+    ...Object.values(legend),
+  ].join(" ");
   return (
     <div
       style={{
-        display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12,
-        padding: "10px 12px", background: BRAND.bg, borderRadius: 8, fontSize: 13,
+        display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center",
+        padding: "8px 12px", background: BRAND.bg, borderRadius: 8, fontSize: 13,
       }}
     >
       <span><strong>{data.totals.published}</strong> published {noun}</span>
-      <span>Evenness {even.toFixed(2)} {even < 0.7 ? "(uneven)" : "(ok)"}</span>
-      <span>Concentration {data.diversity.herfindahl.toFixed(2)} {conc ? "— density issue" : ""}</span>
-      {data.diversity.flags.slice(0, 4).map((f) => (
+      <span style={{ color: BRAND.sub }}>{even < 0.7 ? "spread is uneven" : "spread is even"}</span>
+      {flags.map((f) => (
         <Badge key={f.genre} tone={densityTone(f.flag)}>
           {f.genre}: {f.flag.replace("_", " ")}
         </Badge>
       ))}
+      <HelpTip text={help} />
     </div>
   );
 }
 
-function Icicle({
-  genres, selectedId, onSelect, published,
+function GenreBar({
+  genres, selectedId, onSelect,
 }: {
   genres: Genre[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  published: PubFilter;
 }) {
-  const weight = (g: Genre) => {
-    if (published === "yes") return Math.max(g.n_published, 0.15);
-    if (published === "no") return Math.max(g.opportunity, 0.15);
-    return Math.max(g.n_published + g.opportunity, 0.2);
-  };
-  const total = genres.reduce((s, g) => s + weight(g), 0) || 1;
   return (
-    <div style={{ display: "flex", height: 72, borderRadius: 6, overflow: "hidden", border: `1px solid ${BRAND.border}` }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
       {genres.map((g) => {
-        const pct = (weight(g) / total) * 100;
-        if (pct < 1.2 && g.id !== selectedId) return null;
         const active = selectedId === g.id;
         return (
           <button
             key={g.id}
             type="button"
-            title={`${g.label} · ${g.n_published} published · ${g.n_unpublished} open`}
+            title={`${g.label}: ${g.n_published} published, ${g.n_unpublished} open`}
             onClick={() => onSelect(g.id)}
             style={{
-              flex: `${weight(g)} 1 0`,
-              minWidth: 28,
-              border: "none",
-              borderRight: `1px solid rgba(255,255,255,0.25)`,
-              background: FILL[g.color],
-              color: "#fff",
-              cursor: "pointer",
-              padding: "6px 4px",
-              fontSize: 11,
-              fontWeight: active ? 700 : 500,
-              outline: active ? "2px solid #fff" : "none",
-              outlineOffset: -2,
-              overflow: "hidden",
-              textAlign: "left",
+              display: "flex", alignItems: "stretch",
+              minWidth: 148, maxWidth: "100%",
+              padding: 0, cursor: "pointer", textAlign: "left",
+              borderRadius: 8, overflow: "hidden",
+              border: `1.5px solid ${active ? FILL[g.color] : BRAND.border}`,
+              background: active ? "#f3f6fb" : "#fff",
             }}
           >
-            <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {g.label}
-            </div>
-            <div style={{ opacity: 0.85, fontSize: 10 }}>
-              {g.n_published}p / {g.n_unpublished}o
-            </div>
+            <span style={{ width: 6, background: FILL[g.color], flexShrink: 0 }} />
+            <span style={{ padding: "8px 10px", minWidth: 0 }}>
+              <span style={{
+                display: "block", fontSize: 13, fontWeight: 600, color: BRAND.navyText,
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }}>
+                {g.label}
+              </span>
+              <span style={{ fontSize: 11, color: BRAND.sub }}>
+                {g.n_published} published · {g.n_unpublished} open
+                {g.density !== "balanced" ? ` · ${g.density.replace("_", " ")}` : ""}
+              </span>
+            </span>
           </button>
         );
       })}
@@ -296,34 +297,79 @@ function SubjectStrip({
   selectedSlug: string | null;
   onSelect: (slug: string) => void;
 }) {
+  const [q, setQ] = useState("");
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return [...genre.subjects]
+      .filter((s) => !needle || s.label.toLowerCase().includes(needle))
+      .sort((a, b) => {
+        if (a.covered !== b.covered) return a.covered ? 1 : -1;
+        if (b.opportunity !== a.opportunity) return b.opportunity - a.opportunity;
+        return b.yt_views - a.yt_views;
+      });
+  }, [genre.subjects, q]);
+
   if (genre.subjects.length === 0) {
     return <p style={{ fontSize: 13, color: BRAND.sub }}>No subjects in this filter.</p>;
   }
   return (
-    <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: BRAND.navyText, marginBottom: 6 }}>
-        {genre.label} — {genre.subjects.length} subjects
+    <div style={{ marginTop: 14 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap",
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: BRAND.navyText }}>
+          {genre.label}
+          <span style={{ fontWeight: 400, color: BRAND.sub, marginLeft: 8 }}>
+            {rows.length} of {genre.subjects.length}
+            {genre.yt_views ? ` · ${fmt(genre.yt_views)} views` : ""}
+          </span>
+          <ScoreChip kind="coverage" value={genre.coverage ?? 0} />
+        </div>
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search subjects"
+          aria-label="Search subjects"
+          style={{
+            flex: "1 1 180px", maxWidth: 280, fontSize: 13, padding: "6px 10px",
+            border: `1px solid ${BRAND.border}`, borderRadius: 6,
+          }}
+        />
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {genre.subjects.slice(0, 40).map((s) => (
-          <button
-            key={s.slug}
-            type="button"
-            onClick={() => onSelect(s.slug)}
-            style={{
-              fontSize: 12, padding: "4px 8px", borderRadius: 4, cursor: "pointer",
-              border: `1px solid ${selectedSlug === s.slug ? BRAND.navyText : BRAND.border}`,
-              background: s.covered ? "#eef2ff" : "#fff",
-              color: BRAND.navyText, maxWidth: 260,
-              textAlign: "left",
-            }}
-          >
-            {s.label}
-            <span style={{ color: BRAND.sub, marginLeft: 6 }}>
-              {s.covered ? "covered" : `opp ${s.opportunity.toFixed(2)}`}
-            </span>
-          </button>
-        ))}
+      <div style={{
+        maxHeight: 320, overflowY: "auto", border: `1px solid ${BRAND.border}`,
+        borderRadius: 8,
+      }}>
+        {rows.map((s) => {
+          const active = selectedSlug === s.slug;
+          return (
+            <button
+              key={s.slug}
+              type="button"
+              onClick={() => onSelect(s.slug)}
+              style={{
+                display: "flex", width: "100%", gap: 12, alignItems: "flex-start",
+                padding: "10px 12px", cursor: "pointer", textAlign: "left",
+                border: "none", borderBottom: `1px solid ${BRAND.border}`,
+                background: active ? "#eef2ff" : "#fff",
+              }}
+            >
+              <span style={{ flex: 1, fontSize: 13, color: BRAND.navyText, lineHeight: 1.35 }}>
+                {s.label}
+              </span>
+              <span style={{
+                flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end",
+                gap: 4, fontSize: 11, color: BRAND.sub, textAlign: "right",
+              }}>
+                {s.covered
+                  ? <ScoreChip kind="coverage" value={1} />
+                  : <ScoreChip kind="opportunity" value={s.opportunity} peers={rows.map((r) => r.opportunity)} />}
+                {s.n_videos ? `${fmt(s.yt_views)} views` : ""}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -339,6 +385,15 @@ function LeafList({ subject, noun }: { subject: Subject; noun: string }) {
         {subject.n_variants} variants · {fmt(subject.yt_views)} views · {subject.yt_comments} comments
         · {Math.round(subject.grounding_seconds / 60)} min transcript
         {subject.aio ? " · AIO entity" : ""}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+        {subject.covered
+          ? <ScoreChip kind="coverage" value={1} />
+          : <ScoreChip kind="opportunity" value={subject.opportunity} />}
+        <ScoreChip
+          kind="heat"
+          value={engagementScore(subject.yt_views, subject.yt_likes, subject.yt_comments)}
+        />
       </div>
       {subject.articles.length === 0 ? (
         <span style={{ color: BRAND.sub }}>No published {noun} on this subject.</span>
@@ -356,67 +411,6 @@ function LeafList({ subject, noun }: { subject: Subject; noun: string }) {
   );
 }
 
-function GenreTable({
-  genres, openId, onOpen,
-}: {
-  genres: Genre[];
-  openId: string | null;
-  onOpen: (id: string) => void;
-}) {
-  return (
-    <div style={{ marginTop: 18, overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: `2px solid ${BRAND.border}` }}>
-            {["Genre", "Published", "Open", "Coverage", "YT views", "Comments", "Grounded", "Opportunity", "Density", ""].map((h) => (
-              <th key={h} style={{ padding: "6px 8px", color: BRAND.sub, fontWeight: 600, fontSize: 11 }}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {genres.map((g) => (
-            <tr
-              key={g.id}
-              style={{
-                borderBottom: `1px solid ${BRAND.border}`,
-                background: openId === g.id ? "#f3f6fb" : undefined,
-              }}
-            >
-              <td style={{ padding: "8px", fontWeight: 600, color: FILL[g.color] }}>{g.label}</td>
-              <td style={{ padding: "8px" }}>{g.n_published}</td>
-              <td style={{ padding: "8px" }}>{g.n_unpublished}</td>
-              <td style={{ padding: "8px" }}>{Math.round(g.coverage * 100)}%</td>
-              <td style={{ padding: "8px" }}>{fmt(g.yt_views)}</td>
-              <td style={{ padding: "8px" }}>{fmt(g.yt_comments)}</td>
-              <td style={{ padding: "8px" }}>{Math.round(g.grounding_seconds / 60)}m</td>
-              <td style={{ padding: "8px" }}>{g.opportunity.toFixed(2)}</td>
-              <td style={{ padding: "8px" }}>
-                <Badge tone={densityTone(g.density)}>{g.density.replace("_", " ")}</Badge>
-              </td>
-              <td style={{ padding: "8px" }}>
-                <Button variant="ghost" onClick={() => onOpen(g.id)} style={{ padding: "4px 10px", fontSize: 12 }}>
-                  Open
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
-function Legend({ legend }: { legend: Record<string, string> }) {
-  return (
-    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", margin: "8px 0 4px", fontSize: 11, color: BRAND.sub }}>
-      {Object.entries(legend).map(([k, v]) => (
-        <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: FILL[k as Genre["color"]] }} />
-          {v}
-        </span>
-      ))}
-    </div>
-  );
-}
+
+

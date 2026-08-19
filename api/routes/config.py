@@ -30,7 +30,7 @@ from api.auth import require_role
 from app.config import settings
 from app.models import PlatformConfig, PlatformSessionLocal, SecretAudit, engine
 from core.email_gate import current_mode as _email_send_mode
-from core.job_switches import knowify_sync_enabled, proposal_reminders_enabled
+from core.job_switches import content_gen_enabled, knowify_sync_enabled, proposal_reminders_enabled
 from core.production_gates import evaluate_gates
 from core.production_gates import summary as gate_summary
 from core.tenant import assert_rls_enforceable
@@ -306,6 +306,7 @@ def get_job_switches(claims=Depends(require_role("quoting_view"))):
     return {
         "knowify_sync": knowify_sync_enabled(),
         "proposal_reminders": proposal_reminders_enabled(),
+        "content_gen": content_gen_enabled(),
     }
 
 
@@ -756,13 +757,13 @@ def health_checks(claims=Depends(require_role("manage_config"))):
 # ---------------------------------------------------------------------------
 # Production-readiness gates — complements /config/health-checks above.
 # health-checks is live connectivity probes; this is go-live posture (email
-# mode, staging vs prod, RLS enforcement, DMARC, missing secrets, integration
-# status, OAuth capture) evaluated by the pure core.production_gates module.
+# mode, RLS enforcement, DMARC, missing secrets, integration status, OAuth
+# capture) evaluated by the pure core.production_gates module. WordPress is
+# not a prod target and is not a readiness gate.
 # ---------------------------------------------------------------------------
 
 _REQUIRED_SECRETS = (
     "db-password",
-    "wordpress-app-password",
     "internal-secret",
     "resend-api-key",
     "youtube-api-key",
@@ -791,8 +792,6 @@ def _dmarc_policy() -> str:
 def _gather_production_readiness_facts() -> dict[str, Any]:
     """Gather the live facts core.production_gates.evaluate_gates needs. All I/O
     lives here; the gate logic itself stays pure and unit-tested separately."""
-    wp_url = _env_value("WP_URL")
-
     try:
         client = _secret_manager_client()
         project = _gcp_project()
@@ -808,12 +807,10 @@ def _gather_production_readiness_facts() -> dict[str, Any]:
             for secret_id in _REQUIRED_SECRETS
         }
         missing_secrets = [s for s in _REQUIRED_SECRETS if not secret_has_version[s]]
-        wp_app_pwd_set = secret_has_version["wordpress-app-password"]
     else:
         # Can't verify Secret Manager (dev/local without ADC) — don't fabricate a
-        # blocker; fall back to the env var wordpress actually reads at runtime.
+        # blocker.
         missing_secrets = []
-        wp_app_pwd_set = bool(os.environ.get("WP_APP_PWD"))
 
     try:
         # Local import: the integration_status table/model (plan Phase 1.2) may not
@@ -833,9 +830,6 @@ def _gather_production_readiness_facts() -> dict[str, Any]:
 
     return {
         "email_send_mode": _email_send_mode(),
-        "wp_user_set": bool(os.environ.get("WP_USER")),
-        "wp_app_pwd_set": wp_app_pwd_set,
-        "wp_is_staging": any(s in wp_url.lower() for s in ("myftpupload", "staging")),
         "rls_enforceable": assert_rls_enforceable(engine),
         "dmarc_policy": _dmarc_policy(),
         "missing_secrets": missing_secrets,

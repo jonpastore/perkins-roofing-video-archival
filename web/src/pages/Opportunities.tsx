@@ -3,6 +3,8 @@ import { apiFetch } from "../api";
 import { hms, ytLink, BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg } from "../ui";
 import { NavContext } from "../App";
 import { errText } from "../lib/errors";
+import { ScoreChip } from "../components/ScoreChip";
+import { TopicGraphPanel, type GraphKind } from "./TopicGraph";
 
 interface Reel {
   series_id: number;
@@ -486,6 +488,7 @@ interface CutRow {
   duration: number;
   views: number;
   comments: number;
+  heat?: number;
   action: string;
   why: string;
   genre: string;
@@ -499,6 +502,23 @@ interface FilmRow {
   why: string;
   questions: string[];
   grounding_seconds: number;
+  opportunity?: number;
+}
+
+interface WeekAction {
+  kind: "cut" | "post" | "film" | "write";
+  id: string;
+  title: string;
+  score: number;
+  score_kind: "heat" | "opportunity";
+  action?: string;
+  why: string;
+  format: string;
+  primary: string;
+  effort_min: number;
+  genre?: string;
+  genre_id?: string;
+  questions?: string[];
 }
 
 interface CompetitorRow {
@@ -551,10 +571,12 @@ export function Opportunities() {
   const [unusedError, setUnusedError] = useState<string | null>(null);
   const [cuts, setCuts] = useState<CutRow[]>([]);
   const [films, setFilms] = useState<FilmRow[]>([]);
+  const [week, setWeek] = useState<WeekAction[]>([]);
   const [cutPlans, setCutPlans] = useState<Record<string, { action: string; reason: string; target_seconds: number; cut_seconds: number } | "loading" | "error">>({});
   const [competitorRows, setCompetitorRows] = useState<CompetitorRow[]>([]);
   const [competitorError, setCompetitorError] = useState<string | null>(null);
   const [competitorLoading, setCompetitorLoading] = useState(false);
+  const [showGraph, setShowGraph] = useState<{ kind: GraphKind; genreId?: string } | null>(null);
 
   const fetchGraph = useCallback(() => {
     setGraphLoading(true);
@@ -613,11 +635,12 @@ export function Opportunities() {
         if (!r.ok) throw new Error(await errText(r));
         return r.json();
       })
-      .then((d: { cut_for_social?: CutRow[]; film_next?: FilmRow[] }) => {
+      .then((d: { cut_for_social?: CutRow[]; film_next?: FilmRow[]; this_week?: WeekAction[] }) => {
         setCuts(d.cut_for_social ?? []);
         setFilms(d.film_next ?? []);
+        setWeek(d.this_week ?? []);
       })
-      .catch(() => { setCuts([]); setFilms([]); });
+      .catch(() => { setCuts([]); setFilms([]); setWeek([]); });
   }, []);
 
   useEffect(() => { fetchGraph(); }, [fetchGraph]);
@@ -711,9 +734,14 @@ export function Opportunities() {
     <main style={{ padding: "0 4px" }}>
       <PageTitle
         right={
-          <Button onClick={refreshAll} disabled={anyLoading}>
-            Refresh
-          </Button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="ghost" onClick={() => setShowGraph({ kind: "articles" })}>
+              Topic Graph
+            </Button>
+            <Button onClick={refreshAll} disabled={anyLoading}>
+              Refresh
+            </Button>
+          </div>
         }
       >
         Content Opportunities
@@ -728,11 +756,64 @@ export function Opportunities() {
         />
       )}
 
+      <SectionHeader>This week — ship these first ({week.length})</SectionHeader>
+      <ActionNote>
+        Five actions ranked from the topic graph. High-heat footage that can ship this week
+        comes first; uncovered topics fill the rest. Expected result: a shown appointment.
+      </ActionNote>
+      {week.length === 0 && !graphLoading && <EmptyState label="No ranked actions this week" />}
+      {week.map((row) => (
+        <Card key={`${row.kind}-${row.id}`} style={{ padding: 14, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <Badge tone={row.kind === "write" || row.kind === "film" ? "blue" : "amber"}>
+                  {row.kind === "post" ? "Post short" : row.kind === "cut" ? "Cut for Shorts" : row.kind === "film" ? "Film next" : "Write"}
+                </Badge>
+                <ScoreChip kind={row.score_kind} value={row.score} />
+              </div>
+              <div style={{ fontWeight: 600, color: BRAND.navyText, marginTop: 6 }}>{row.title}</div>
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 4 }}>
+                {row.format} · ~{row.effort_min} min
+              </div>
+              <div style={{ fontSize: 13, marginTop: 6 }}>{row.why}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {(row.kind === "cut" || row.kind === "post") && (
+                <Button
+                  style={{ fontSize: 12, padding: "5px 12px" }}
+                  onClick={() => navigate("clip-studio", { video: String(row.id), from: "opportunities" })}
+                >
+                  {row.primary}
+                </Button>
+              )}
+              {row.kind === "write" && (
+                <Button
+                  style={{ fontSize: 12, padding: "5px 12px" }}
+                  onClick={() => generateArticle(row.title)}
+                >
+                  {row.primary}
+                </Button>
+              )}
+              {row.kind === "film" && row.genre_id && (
+                <Button
+                  variant="ghost"
+                  style={{ fontSize: 12, padding: "5px 12px" }}
+                  onClick={() => setShowGraph({ kind: "articles", genreId: row.genre_id })}
+                >
+                  Graph
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      ))}
+
       {/* Scored article inbox — from topic-graph, not the 8k variant list */}
       <SectionHeader>This week — articles to write ({articleInbox.length})</SectionHeader>
       <ActionNote>
         Ranked by opportunity (YouTube engagement, grounding, named-entity AIO, genre diversity).
-        Internal topics never appear. Open the Topic Graph on Articles for the full map.
+        Internal topics never appear. Topic Graph on this page is the full map.
       </ActionNote>
       {graphLoading && <Loading label="Scoring topics…" />}
       {graphError && <ErrorMsg>Could not load topic graph: {graphError}</ErrorMsg>}
@@ -748,21 +829,23 @@ export function Opportunities() {
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
                   <div style={{ flex: 1, minWidth: 220 }}>
                     <div style={{ fontWeight: 600, color: BRAND.navyText }}>{t.label}</div>
-                    <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 4 }}>
-                      {t.genre}
-                      {" · "}{t.n_videos} video{t.n_videos !== 1 ? "s" : ""}
-                      {" · "}{Math.round(t.grounding_seconds / 60)} min
-                      {" · "}{t.yt_comments} comments
-                      {" · opp "}{t.opportunity.toFixed(2)}
-                      {t.aio ? " · AIO entity" : ""}
-                      {t.density === "under_served" || t.density === "empty" ? " · under-served genre" : ""}
+                    <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      <span>
+                        {t.genre}
+                        {" · "}{t.n_videos} video{t.n_videos !== 1 ? "s" : ""}
+                        {" · "}{Math.round(t.grounding_seconds / 60)} min
+                        {" · "}{t.yt_comments} comments
+                        {t.aio ? " · AIO entity" : ""}
+                        {t.density === "under_served" || t.density === "empty" ? " · under-served genre" : ""}
+                      </span>
+                      <ScoreChip kind="opportunity" value={t.opportunity} peers={articleInbox.map((x) => x.opportunity)} />
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Button variant="ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setVideoModalLabel(t.label)}>
                       Videos
                     </Button>
-                    <Button variant="ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => navigate("articles")}>
+                    <Button variant="ghost" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setShowGraph({ kind: "articles", genreId: t.genreId })}>
                       Graph
                     </Button>
                     <Button
@@ -784,22 +867,23 @@ export function Opportunities() {
       )}
 
       <SectionHeader>FAQs to answer ({faqInbox.length})</SectionHeader>
-      <ActionNote>Unanswered questions, same score as the FAQ graph. Full map is on FAQ Builder.</ActionNote>
+      <ActionNote>Unanswered questions, same score as the FAQ graph. Open FAQ graph for the full map.</ActionNote>
       {!graphLoading && faqInbox.length === 0 && <EmptyState label="No FAQ gaps in the queue" />}
       {faqInbox.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {faqInbox.map((t) => (
             <Card key={t.slug} style={{ padding: "10px 14px" }}>
               <div style={{ fontWeight: 600, color: BRAND.navyText }}>{t.label}</div>
-              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3 }}>
-                {t.genre} · {t.yt_comments} comments · opp {t.opportunity.toFixed(2)}
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <span>{t.genre} · {t.yt_comments} comments</span>
+                <ScoreChip kind="opportunity" value={t.opportunity} peers={faqInbox.map((x) => x.opportunity)} />
               </div>
               <button
                 type="button"
-                onClick={() => navigate("faq")}
+                onClick={() => setShowGraph({ kind: "faqs", genreId: t.genreId })}
                 style={{ marginTop: 6, background: "none", border: "none", padding: 0, color: BRAND.red, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
               >
-                Open FAQ Builder →
+                Open FAQ graph →
               </button>
             </Card>
           ))}
@@ -815,7 +899,8 @@ export function Opportunities() {
         Five Florida-local Google queries (HOA metal, hurricane insurance, secondary water
         barrier, salt-air standing seam, impact-window leaks). Not a crawl of every roofer,
         and not run on page load. Film = we do not rank. Write = we rank but People Also
-        Ask is unanswered. Hold = we already cover it.
+        Ask is unanswered. Hold = we already cover it. Unanswered questions land in
+        Comments → Questions for Tim to draft by hand.
       </ActionNote>
       <div style={{ marginBottom: 10 }}>
         <Button onClick={() => void scanCompetitors()} disabled={competitorLoading}>
@@ -856,9 +941,14 @@ export function Opportunities() {
         return (
           <Card key={c.id} style={{ padding: 14, marginBottom: 8 }}>
             <div style={{ fontWeight: 600, color: BRAND.navyText }}>{c.title}</div>
-            <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3 }}>
-              {c.genre} · {Math.round(c.duration / 60)} min · {c.comments} comments · {c.views.toLocaleString()} views
-              {" · "}{c.action.replaceAll("_", " ")}
+            <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <span>
+                {c.genre} · {Math.round(c.duration / 60)} min · {c.comments} comments · {c.views.toLocaleString()} views
+                {" · "}{c.action.replaceAll("_", " ")}
+              </span>
+              {c.heat != null && (
+                <ScoreChip kind="heat" value={c.heat} peers={cuts.map((x) => x.heat ?? 0)} />
+              )}
             </div>
             <div style={{ fontSize: 13, marginTop: 6 }}>{c.why}</div>
             {typeof plan === "object" && plan && (
@@ -881,7 +971,7 @@ export function Opportunities() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate("clip-studio", { video: c.id })}
+                onClick={() => navigate("clip-studio", { video: c.id, from: "opportunities" })}
                 style={{ background: "none", border: "none", padding: 0, color: BRAND.red, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
               >
                 Open in Clip Studio →
@@ -900,8 +990,11 @@ export function Opportunities() {
       {films.map((f) => (
         <Card key={f.id} style={{ padding: 14, marginBottom: 8 }}>
           <div style={{ fontWeight: 600, color: BRAND.navyText }}>{f.label}</div>
-          <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3 }}>
-            {f.density.replaceAll("_", " ")} · {Math.round(f.grounding_seconds / 60)} min on tape
+          <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <span>{f.density.replaceAll("_", " ")} · {Math.round(f.grounding_seconds / 60)} min on tape</span>
+            {f.opportunity != null && (
+              <ScoreChip kind="opportunity" value={f.opportunity} peers={films.map((x) => x.opportunity ?? 0)} />
+            )}
           </div>
           <div style={{ fontSize: 13, marginTop: 6 }}>{f.why}</div>
           {f.questions.length > 0 && (
@@ -951,7 +1044,7 @@ export function Opportunities() {
                 <Badge tone="blue">Approved</Badge>
                 <button
                   type="button"
-                  onClick={() => navigate("clip-studio", { video: r.video_id })}
+                  onClick={() => navigate("clip-studio", { video: r.video_id, from: "opportunities" })}
                   style={{ fontSize: 12, color: BRAND.navyText, textDecoration: "underline", background: "none", border: "none", cursor: "pointer", padding: 0 }}
                 >
                   Open in Clip Studio
@@ -1010,14 +1103,14 @@ export function Opportunities() {
                   <Button
                     variant="ghost"
                     style={{ fontSize: 12, padding: "5px 12px" }}
-                    onClick={() => navigate("clip-studio", { video: v.video_id })}
+                    onClick={() => navigate("clip-studio", { video: v.video_id, from: "opportunities" })}
                   >
                     Open in Clip Studio
                   </Button>
                   <Button
                     variant="ghost"
                     style={{ fontSize: 12, padding: "5px 12px" }}
-                    onClick={() => navigate("articles")}
+                    onClick={() => setShowGraph({ kind: "articles" })}
                   >
                     Topic Graph
                   </Button>
@@ -1032,6 +1125,13 @@ export function Opportunities() {
             onNext={() => setUnusedPage((p) => Math.min(unusedTotalPages - 1, p + 1))}
           />
         </>
+      )}
+      {showGraph && (
+        <TopicGraphPanel
+          kind={showGraph.kind}
+          initialGenreId={showGraph.genreId ?? null}
+          onClose={() => setShowGraph(null)}
+        />
       )}
     </main>
   );

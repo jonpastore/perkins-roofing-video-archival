@@ -96,8 +96,11 @@ def test_social_brief_returns_cut_and_film_lists():
     body = r.json()
     assert "cut_for_social" in body
     assert "film_next" in body
+    assert "this_week" in body
     assert isinstance(body["cut_for_social"], list)
     assert isinstance(body["film_next"], list)
+    assert isinstance(body["this_week"], list)
+    assert len(body["this_week"]) <= 5
 
 
 def test_genre_catalog_endpoint():
@@ -153,3 +156,22 @@ def test_competitor_scan_ranks_gaps_from_mocked_serp(monkeypatch):
     assert len(body["queries"]) >= 1
     assert body["queries"][0]["action"] == "film"
     assert body["queries"][0]["we_rank"] is False
+    assert body.get("inbox_added", 0) >= 1
+
+
+def test_engagement_inbox_lists_captured_paa(monkeypatch):
+    _seed()
+    c = _client("admin")
+
+    def _serp(query: str):
+        return {
+            "organic": [{"title": "Other", "link": "https://example.com/x"}],
+            "peopleAlsoAsk": [{"question": "Does insurance cover a hurricane leak?"}],
+        }
+
+    monkeypatch.setattr("adapters.serper.fetch_serp", _serp)
+    c.post("/topic-graph/competitor-scan", headers=AUTH)
+    r = c.get("/topic-graph/engagement-inbox", headers=AUTH)
+    assert r.status_code == 200
+    texts = [i["text"] for i in r.json()["items"]]
+    assert any("hurricane" in t.lower() for t in texts)

@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { NavContext } from "../App";
 import { BRAND, Badge, Button, Loading, ErrorMsg, Spinner, hms, inputStyle } from "../ui";
+import { engagementScore, ScoreChip } from "../components/ScoreChip";
 import { errText } from "../lib/errors";
 
 interface ArchiveVideo {
@@ -320,6 +321,12 @@ function DetailPanel({ video }: { video: ArchiveVideo }) {
             KPIs
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 13 }}>
+            <div style={{ marginBottom: 4 }}>
+              <ScoreChip
+                kind="heat"
+                value={engagementScore(video.views ?? 0, video.likes ?? 0, video.comment_count ?? 0)}
+              />
+            </div>
             <div style={{ display: "flex", gap: 8 }}>
               <span style={{ color: BRAND.sub, minWidth: 90 }}>Views</span>
               <span style={{ color: BRAND.ink, fontWeight: 600 }}>{video.views?.toLocaleString() ?? "—"}</span>
@@ -1134,6 +1141,11 @@ export function Archive() {
                   {/* KPIs inline (single row, hover explains each) */}
                   <td style={{ padding: "10px 12px", fontSize: 12, color: BRAND.sub, whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", flexDirection: "row", gap: 14, alignItems: "center" }}>
+                      <ScoreChip
+                        kind="heat"
+                        value={engagementScore(v.views ?? 0, v.likes ?? 0, v.comment_count ?? 0)}
+                        peers={videos.map((x) => engagementScore(x.views ?? 0, x.likes ?? 0, x.comment_count ?? 0))}
+                      />
                       <span title="Total lifetime views on YouTube" style={{ cursor: "help" }}>👁 {v.views?.toLocaleString() ?? "—"}</span>
                       <span title="Total likes on YouTube" style={{ cursor: "help" }}>♥ {v.likes?.toLocaleString() ?? "—"}</span>
                       <span title="Total comments on YouTube" style={{ cursor: "help" }}>💬 {v.comment_count?.toLocaleString() ?? "—"}</span>
@@ -1144,7 +1156,7 @@ export function Archive() {
                   <td style={{ padding: "10px 12px" }}>
                     <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
                       <button
-                        onClick={() => navigate("clip-studio", { video: v.id })}
+                        onClick={() => navigate("clip-studio", { video: v.id, from: "archive" })}
                         title="Open in Clip Studio"
                         aria-label="Open in Clip Studio"
                         style={{

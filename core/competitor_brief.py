@@ -87,3 +87,24 @@ def gap_from_serp(
 def summarize_scan(rows: list[dict]) -> list[dict]:
     order = {"film": 0, "write": 1, "hold": 2}
     return sorted(rows, key=lambda r: (order.get(r.get("action") or "hold", 9), -len(r.get("unanswered_paa") or [])))
+
+
+def score_foreign_page(*, title: str, meta: str, html: str, keyword: str = "") -> dict:
+    """Run our SEO + AIO rubric on someone else's page. No I/O."""
+    from core.seo import aio_signals, score_article  # noqa: PLC0415
+
+    scored = score_article(title or "", meta or "", html or "", None, False, keyword or "")
+    aio = aio_signals(html or "")
+    return {
+        "score": scored["score"],
+        "max": scored["max"],
+        "checks": scored["checks"],
+        "aio": aio,
+    }
+
+
+def is_valuable(scored: dict) -> bool:
+    """Named entity or fact density — not word count. Mills fail this."""
+    aio = scored.get("aio") or []
+    keys = {s.get("key"): bool(s.get("pass")) for s in aio}
+    return bool(keys.get("aio_entity_clarity") or keys.get("aio_fact_density"))

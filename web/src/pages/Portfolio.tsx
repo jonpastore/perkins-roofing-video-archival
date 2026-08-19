@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { BRAND, Card, Button, PageTitle, Badge, Loading, ErrorMsg } from "../ui";
 import { errText } from "../lib/errors";
@@ -975,24 +976,29 @@ export function Portfolio() {
         </div>
       </Card>
       {previewErr && <ErrorMsg>{previewErr}</ErrorMsg>}
-      {preview && (
+      {preview && createPortal(
         <div
           role="dialog"
-          aria-label="WordPress preview"
+          aria-label="Portfolio preview"
           onClick={() => setPreview(null)}
           style={{
             position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)",
-            zIndex: 40, display: "flex", justifyContent: "center", alignItems: "flex-start",
-            padding: 32, overflow: "auto",
+            zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start",
+            padding: "24px 16px", overflow: "auto",
           }}
         >
           <Card
-            style={{ width: "min(860px, 100%)", maxHeight: "calc(100vh - 64px)", overflow: "auto" }}
+            style={{
+              width: "min(800px, calc(100vw - 32px))",
+              maxHeight: "calc(100vh - 48px)",
+              overflow: "auto",
+              padding: 20,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-              <div>
-                <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16, lineHeight: 1.3 }}>
                   Preview: {preview.name}
                 </h3>
                 <p style={{ margin: "4px 0 0", fontSize: 12, color: BRAND.sub }}>
@@ -1003,14 +1009,17 @@ export function Portfolio() {
               <Button variant="ghost" onClick={() => setPreview(null)}>Close</Button>
             </div>
             <div
+              className="portfolio-preview-html"
               style={{
-                border: `1px solid ${BRAND.border}`, borderRadius: 6, padding: 12,
-                background: "#fff", fontSize: 13,
+                border: `1px solid ${BRAND.border}`, borderRadius: 8, padding: "20px 24px",
+                background: "#fff", fontSize: 15, lineHeight: 1.55, color: BRAND.ink,
+                overflowWrap: "anywhere",
               }}
               dangerouslySetInnerHTML={{ __html: preview.html }}
             />
           </Card>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

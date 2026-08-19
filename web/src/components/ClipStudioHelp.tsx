@@ -9,6 +9,13 @@ const HELP: {
   items: { title: string; body: string; req?: string }[];
 }[] = [
   {
+    group: "Edit-down queue",
+    blurb: "Top of Clip Studio, before the video picker. Ranked by Heat from the topic graph.",
+    items: [
+      { title: "Edit these down", body: "Heat-ranked source videos that still need a Shorts/reel package. Actions follow duration: Post short (already 45–180s), Cut to short (>180s), Tighten or split (15–30 min), Chop (30+ min). Target length is 15–40s with town + problem in the first 3 seconds." },
+    ],
+  },
+  {
     group: "Step 2 — AI clip suggestions",
     blurb: "Shown after you pick a source video, before you generate suggestions.",
     items: [

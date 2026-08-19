@@ -18,6 +18,7 @@ import { apiFetch, getDashboardBilling, getAgingDetail, getActiveUsers, getGcpSp
 import { NavContext } from "../App";
 import { DataSources } from "../components/DataSources";
 import { BRAND, PageTitle, Card, Button, Badge, Loading, ErrorMsg, StatCard, inputStyle } from "../ui";
+import { HelpTip } from "../components/ScoreChip";
 import { errText } from "../lib/errors";
 
 type ToastTone = "green" | "red";
@@ -970,6 +971,9 @@ interface EditPlan {
   pieces: Array<{ start: number; end: number; label: string }>;
 }
 
+const LONGFORM_HELP =
+  "Over 15 minutes belongs here. Under 30 minutes, Analyze says whether to tighten (cut fluff) or split on topic changes. After you upload the slices to YouTube, paste those clip URLs here and mark chopped — that joins them to this source so we stop suggesting it. Those clips will not generate new articles, FAQs, or topic suggestions. We still cannot push to YouTube from this app.";
+
 function LongformQueue() {
   const [rows, setRows] = useState<Array<{
     id: string;
@@ -982,6 +986,7 @@ function LongformQueue() {
   const [busy, setBusy] = useState<string | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [plans, setPlans] = useState<Record<string, EditPlan | "loading" | "error">>({});
+  const [openList, setOpenList] = useState(false);
 
   useEffect(() => {
     apiFetch("/archive/videos?min_length=900&unchopped=true&limit=200")
@@ -1028,66 +1033,80 @@ function LongformQueue() {
   }
 
   if (loading) return null;
+  const shown = open.slice(0, 20);
   return (
     <Card style={{ marginBottom: 16, padding: "14px 20px" }}>
-      <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15, marginBottom: 4 }}>
-        Long videos (over 15 min) — {open.length} not chopped
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => setOpenList((v) => !v)}
+          aria-expanded={openList}
+          style={{
+            display: "flex", alignItems: "center", gap: 8, background: "none", border: "none",
+            padding: 0, cursor: "pointer", fontWeight: 700, color: BRAND.navyText, fontSize: 15,
+          }}
+        >
+          <span aria-hidden style={{ fontSize: 12, width: 12 }}>{openList ? "▾" : "▸"}</span>
+          Long videos (over 15 min) — {open.length} not chopped
+        </button>
+        <HelpTip text={LONGFORM_HELP} />
       </div>
-      <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 10 }}>
-        Over 15 minutes belongs here. Under 30 minutes, Analyze says whether to
-        <strong> tighten</strong> (cut fluff) or <strong>split</strong> on topic changes.
-        After you upload the slices, paste their YouTube URLs. Those clips will not
-        generate new articles, FAQs, or topic suggestions. We still cannot push to YouTube from this app.
-      </div>
-      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.7, maxHeight: 360, overflow: "auto" }}>
-        {open.slice(0, 20).map((r) => {
-          const scored = plans[r.id];
-          return (
-          <li key={r.id} style={{ marginBottom: 10 }}>
-            {r.youtube_url ? (
-              <a href={r.youtube_url} target="_blank" rel="noreferrer" style={{ color: BRAND.navyText }}>
-                {r.title || r.id}
-              </a>
-            ) : (r.title || r.id)}
-            <span style={{ color: BRAND.sub, marginLeft: 8 }}>{fmtDuration(r.duration)}</span>
-            {(r.duration ?? 0) < 1800 && (
-              <span style={{ marginLeft: 8, fontSize: 11, color: BRAND.sub }}>under 30 min — evaluate tighten vs split</span>
-            )}
-            <div style={{ marginTop: 4 }}>
-              <button
+      {openList && (
+        <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 13, lineHeight: 1.7, maxHeight: 360, overflow: "auto" }}>
+          {shown.map((r) => {
+            const scored = plans[r.id];
+            return (
+            <li key={r.id} style={{ marginBottom: 12 }}>
+              {r.youtube_url ? (
+                <a href={r.youtube_url} target="_blank" rel="noreferrer" style={{ color: BRAND.navyText }}>
+                  {r.title || r.id}
+                </a>
+              ) : (r.title || r.id)}
+              <span style={{ color: BRAND.sub, marginLeft: 8 }}>{fmtDuration(r.duration)}</span>
+              {(r.duration ?? 0) < 1800 && (
+                <span style={{ marginLeft: 8, fontSize: 11, color: BRAND.sub }}>under 30 min — evaluate tighten vs split</span>
+              )}
+              <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  onClick={() => void loadPlan(r.id)}
+                  disabled={scored === "loading"}
+                  style={{ fontSize: 12, padding: "5px 10px" }}
+                >
+                  {scored === "loading" ? "Analyzing…" : "Analyze cut"}
+                </Button>
+              </div>
+              {typeof scored === "object" && scored && (
+                <EditPlanView plan={scored} />
+              )}
+              {scored === "error" && (
+                <div style={{ fontSize: 12, color: BRAND.red }}>Could not score this transcript.</div>
+              )}
+              <label style={{ display: "block", marginTop: 8, fontSize: 12, color: BRAND.sub }}>
+                Clip YouTube URLs you already uploaded (one per line). Mark chopped joins them to this source.
+                <textarea
+                  aria-label="YouTube URLs of uploaded clips, one per line"
+                  placeholder="https://youtu.be/abc123"
+                  value={urls[r.id] || ""}
+                  onChange={(e) => setUrls((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                  style={{ ...inputStyle, width: "100%", minHeight: 52, fontSize: 12, marginTop: 4 }}
+                />
+              </label>
+              <Button
+                variant="ghost"
                 type="button"
-                onClick={() => void loadPlan(r.id)}
-                disabled={scored === "loading"}
-                style={{ marginRight: 8, fontSize: 12, cursor: "pointer" }}
-              >
-                {scored === "loading" ? "Analyzing…" : "Analyze cut"}
-              </button>
-            </div>
-            {typeof scored === "object" && scored && (
-              <EditPlanView plan={scored} />
-            )}
-            {scored === "error" && (
-              <div style={{ fontSize: 12, color: BRAND.red }}>Could not score this transcript.</div>
-            )}
-            <div style={{ marginTop: 4 }}>
-              <textarea
-                placeholder="https://youtu.be/… (one clip URL per line)"
-                value={urls[r.id] || ""}
-                onChange={(e) => setUrls((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                style={{ ...inputStyle, width: "100%", minHeight: 52, fontSize: 12 }}
-              />
-              <button
                 onClick={() => markDone(r.id)}
                 disabled={busy === r.id}
-                style={{ marginTop: 4, fontSize: 12, cursor: "pointer" }}
+                style={{ marginTop: 6, fontSize: 12, padding: "5px 10px" }}
               >
                 {busy === r.id ? "Saving…" : "Mark chopped + join clips"}
-              </button>
-            </div>
-          </li>
-          );
-        })}
-      </ul>
+              </Button>
+            </li>
+            );
+          })}
+        </ul>
+      )}
     </Card>
   );
 }

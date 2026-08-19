@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from core.job_switches import (
+    CONTENT_GEN,
     KNOWIFY_SYNC,
     PROPOSAL_REMINDERS,
+    content_gen_enabled,
     knowify_sync_enabled,
     parse_bool,
     proposal_reminders_enabled,
@@ -15,6 +17,7 @@ def test_flags_are_editable_config_keys():
     from api.routes.config import EDITABLE_KEYS
     assert KNOWIFY_SYNC in EDITABLE_KEYS
     assert PROPOSAL_REMINDERS in EDITABLE_KEYS
+    assert CONTENT_GEN in EDITABLE_KEYS
 
 
 def test_parse_bool():
@@ -40,6 +43,15 @@ def test_read_flag_default_off(monkeypatch):
     monkeypatch.delenv(PROPOSAL_REMINDERS, raising=False)
     assert knowify_sync_enabled() is False
     assert proposal_reminders_enabled() is False
+
+
+def test_content_gen_on_only_when_mode_is_dump(monkeypatch):
+    monkeypatch.setenv(CONTENT_GEN, "dump")
+    assert content_gen_enabled() is True
+    monkeypatch.setenv(CONTENT_GEN, "off")
+    assert content_gen_enabled() is False
+    monkeypatch.delenv(CONTENT_GEN, raising=False)
+    assert content_gen_enabled() is False
 
 
 def test_read_flag_db_wins(monkeypatch):

@@ -3,9 +3,6 @@ from core.production_gates import evaluate_gates, summary
 
 BASE_FACTS = {
     "email_send_mode": "live",
-    "wp_user_set": True,
-    "wp_app_pwd_set": True,
-    "wp_is_staging": False,
     "rls_enforceable": True,
     "dmarc_policy": "reject",
     "missing_secrets": [],
@@ -27,10 +24,10 @@ def _gate(facts, gate_id):
 
 def test_all_ok_gives_ready_summary():
     gates = evaluate_gates(BASE_FACTS)
-    assert len(gates) == 9
+    assert len(gates) == 8
     assert all(g.state == "ok" for g in gates)
     s = summary(gates)
-    assert s == {"ok": 9, "warn": 0, "blocker": 0, "total": 9, "ready": True}
+    assert s == {"ok": 8, "warn": 0, "blocker": 0, "total": 8, "ready": True}
 
 
 # ── email_mode ──────────────────────────────────────────────────────────────
@@ -45,29 +42,6 @@ def test_email_mode_test_warns():
     assert g.state == "warn"
     assert "test allowlist" in g.detail
     assert "EMAIL_SEND_MODE=live" in g.remediation
-
-
-# ── wordpress ───────────────────────────────────────────────────────────────
-
-def test_wordpress_missing_user_blocks():
-    g = _gate({**BASE_FACTS, "wp_user_set": False}, "wordpress")
-    assert g.state == "blocker"
-
-
-def test_wordpress_missing_pwd_blocks():
-    g = _gate({**BASE_FACTS, "wp_app_pwd_set": False}, "wordpress")
-    assert g.state == "blocker"
-
-
-def test_wordpress_staging_warns():
-    g = _gate({**BASE_FACTS, "wp_is_staging": True}, "wordpress")
-    assert g.state == "warn"
-    assert "#317" in g.detail
-
-
-def test_wordpress_prod_ok():
-    g = _gate(BASE_FACTS, "wordpress")
-    assert g.state == "ok"
 
 
 # ── rls_security ────────────────────────────────────────────────────────────
@@ -122,10 +96,20 @@ def test_secrets_none_missing_ok():
 # ── integrations ────────────────────────────────────────────────────────────
 
 def test_integrations_broken_blocks():
-    facts = {**BASE_FACTS, "integration_statuses": [{"integration": "wordpress", "status": "broken"}]}
+    facts = {**BASE_FACTS, "integration_statuses": [{"integration": "resend", "status": "broken"}]}
     g = _gate(facts, "integrations")
     assert g.state == "blocker"
-    assert "wordpress" in g.detail
+    assert "resend" in g.detail
+
+
+def test_wordpress_integration_does_not_gate_prod():
+    facts = {**BASE_FACTS, "integration_statuses": [
+        {"integration": "wordpress", "status": "broken"},
+        {"integration": "resend", "status": "healthy"},
+    ]}
+    g = _gate(facts, "integrations")
+    assert g.state == "ok"
+    assert "wordpress" not in {x.id for x in evaluate_gates(facts)}
 
 
 def test_integrations_unconfigured_warns():
@@ -199,8 +183,8 @@ def test_summary_counts_and_ready_false_on_blocker():
     s = summary(gates)
     assert s["blocker"] == 1
     assert s["warn"] == 1
-    assert s["ok"] == 7
-    assert s["total"] == 9
+    assert s["ok"] == 6
+    assert s["total"] == 8
     assert s["ready"] is False
 
 

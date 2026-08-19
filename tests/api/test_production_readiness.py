@@ -37,9 +37,6 @@ def sales_client():
 
 _ALL_OK_FACTS = {
     "email_send_mode": "live",
-    "wp_user_set": True,
-    "wp_app_pwd_set": True,
-    "wp_is_staging": False,
     "rls_enforceable": True,
     "dmarc_policy": "reject",
     "missing_secrets": [],
@@ -62,9 +59,10 @@ def test_all_ok_facts_yield_ready_summary(admin_client, monkeypatch):
     r = admin_client.get("/config/production-readiness", headers={"Authorization": "Bearer x"})
     assert r.status_code == 200
     body = r.json()
-    assert len(body["gates"]) == 9
+    assert len(body["gates"]) == 8
     assert all(g["state"] == "ok" for g in body["gates"])
-    assert body["summary"] == {"ok": 9, "warn": 0, "blocker": 0, "total": 9, "ready": True}
+    assert body["summary"] == {"ok": 8, "warn": 0, "blocker": 0, "total": 8, "ready": True}
+    assert "wordpress" not in {g["id"] for g in body["gates"]}
 
 
 def test_blocker_facts_surface_in_response(admin_client, monkeypatch):

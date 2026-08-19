@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from api.auth import get_db_session, require_role
 from app.models import Article, CommentDraft, FaqEntry, GraphNode, MiniSeries, SocialPost, Video
 from core.competitor_brief import WATCHLIST, gap_from_serp, summarize_scan
-from core.social_brief import rank_cut_for_social, rank_film_next
+from core.engagement_inbox import INBOX_VIDEO, inbox_items, paa_draft_key
+from core.social_brief import rank_cut_for_social, rank_film_next, rank_this_week, rank_write_next
 from core.suggestion_counts import to_question
 from core.topic_graph import build_article_graph, build_faq_graph, genre_catalog
 
@@ -27,6 +28,35 @@ def _our_keywords(db: Session) -> set[str]:
         if kw:
             kws.add(kw)
     return kws
+
+
+def _capture_paa(db: Session, ranked: list[dict]) -> int:
+    """Idempotent: unanswered PAA become comment_drafts Tim can answer by hand."""
+    added = 0
+    existing = {
+        row.comment_id
+        for row in db.query(CommentDraft.comment_id).filter(CommentDraft.platform == "paa").all()
+    }
+    for gap in ranked:
+        for q in gap.get("unanswered_paa") or []:
+            key = paa_draft_key(q)
+            if not key or key in existing:
+                continue
+            db.add(CommentDraft(
+                video_id=INBOX_VIDEO,
+                comment_id=key,
+                platform="paa",
+                author="People Also Ask",
+                comment_text=q,
+                needs_reply=True,
+                status="pending",
+                tenant_id=1,
+            ))
+            existing.add(key)
+            added += 1
+    if added:
+        db.commit()
+    return added
 
 
 def _scan_watch_query(wq, our_keywords: set[str], fetch) -> dict:
@@ -58,7 +88,40 @@ def competitor_scan(
             return {"ok": False, "error": str(exc)[:200], "queries": [], "errors": []}
         except Exception as exc:  # noqa: BLE001
             errors.append({"query": wq.query, "error": str(exc)[:200]})
-    return {"ok": True, "error": None, "queries": summarize_scan(rows), "errors": errors}
+    ranked = summarize_scan(rows)
+    captured = _capture_paa(db, ranked)
+    return {
+        "ok": True, "error": None, "queries": ranked, "errors": errors,
+        "inbox_added": captured,
+    }
+
+
+@router.get("/engagement-inbox")
+def engagement_inbox(
+    claims=Depends(require_role("article_read")),
+    db: Session = Depends(get_db_session),
+):
+    """YouTube comments + PAA + film questions. Tim answers; we do not post for him."""
+    comments = [
+        {
+            "comment_id": c.comment_id,
+            "comment_text": c.comment_text,
+            "video_id": c.video_id,
+            "needs_reply": c.needs_reply,
+        }
+        for c in db.query(CommentDraft).filter(CommentDraft.platform == "youtube").limit(80).all()
+    ]
+    paa = [
+        c.comment_text
+        for c in db.query(CommentDraft).filter(
+            CommentDraft.platform == "paa", CommentDraft.needs_reply.is_(True),
+        ).limit(40).all()
+    ]
+    brief = social_brief(claims=claims, db=db)
+    film_qs: list[str] = []
+    for row in brief.get("film_next") or []:
+        film_qs.extend(row.get("questions") or [])
+    return {"items": inbox_items(comments=comments, paa=paa, film_questions=film_qs)}
 
 
 @router.get("/genres")
@@ -99,9 +162,14 @@ def social_brief(
         for c in db.query(CommentDraft).filter(CommentDraft.needs_reply.is_(True)).limit(200).all()
     ]
     graph = _article_payload(db, _video_map(db), "all")
+    genres = graph.get("genres") or []
+    cuts = rank_cut_for_social(videos, limit=12)
+    films = rank_film_next(genres, comments, limit=8)
+    writes = rank_write_next(genres, limit=12)
     return {
-        "cut_for_social": rank_cut_for_social(videos, limit=12),
-        "film_next": rank_film_next(graph.get("genres") or [], comments, limit=8),
+        "cut_for_social": cuts,
+        "film_next": films,
+        "this_week": rank_this_week(cuts, films, writes, limit=5),
     }
 
 

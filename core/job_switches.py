@@ -9,6 +9,7 @@ import os
 
 KNOWIFY_SYNC = "KNOWIFY_SYNC_ENABLED"
 PROPOSAL_REMINDERS = "PROPOSAL_REMINDERS_ENABLED"
+CONTENT_GEN = "CONTENT_GEN_MODE"
 TRUE = frozenset({"1", "true", "yes", "on"})
 
 
@@ -39,3 +40,10 @@ def knowify_sync_enabled() -> bool:
 
 def proposal_reminders_enabled() -> bool:
     return read_flag(PROPOSAL_REMINDERS, default=False)
+
+
+def content_gen_enabled() -> bool:
+    """True when the daily cron will write a new pillar campaign (drafts only)."""
+    from core.content_cadence import read_mode  # noqa: PLC0415
+
+    return read_mode() == "dump"

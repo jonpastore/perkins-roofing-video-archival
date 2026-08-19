@@ -6,9 +6,21 @@ ROOT = Path(__file__).resolve().parents[2] / "web" / "src"
 def test_opportunities_has_social_and_film_queues():
     src = (ROOT / "pages" / "Opportunities.tsx").read_text()
     assert "/topic-graph/social-brief" in src
+    assert "this_week" in src
+    assert "This week — ship these first" in src
+    assert "ScoreChip" in src
     assert "Cut for social" in src
     assert "Film next" in src
     assert "/archive/${id}/edit-plan" in src or "/archive/${c.id}/edit-plan" in src
+
+
+def test_comments_filters_paa_questions_and_hides_youtube_post():
+    src = (ROOT / "pages" / "Comments.tsx").read_text()
+    assert 'option value="paa"' in src
+    assert "Questions (PAA)" in src
+    assert '(item.platform || "youtube") === "youtube"' in src
+    assert "SCORE_HELP.heat" in src
+    assert "HelpTip" in src
 
 
 def test_opportunities_scans_competitors_on_demand():
@@ -24,6 +36,9 @@ def test_opportunities_is_scored_inbox():
     assert "This week — articles to write" in src
     assert "Generate cluster articles" not in src or "Generate cluster" in src
     assert "do not" in src.lower() or "not yet in an article" in src.lower() or "ground an under-served" in src
+    assert "TopicGraphPanel" in src
+    assert "setShowGraph({ kind: \"articles\"" in src
+    assert "initialGenreId" in src
 
 
 def test_search_ask_does_not_generate_articles():
@@ -47,6 +62,11 @@ def test_longform_queue_is_fifteen_minutes_and_has_analyze():
     assert "/archive/${id}/edit-plan" in status
     assert "Analyze cut" in status
     assert "under 30 min" in status
+    assert "aria-expanded" in status
+    assert "LONGFORM_HELP" in status
+    assert "HelpTip" in status
+    assert "Clip YouTube URLs you already uploaded" in status
+    assert 'variant="ghost"' in status
 
 
 def test_articles_and_faq_mount_topic_graph():
@@ -59,11 +79,15 @@ def test_articles_and_faq_mount_topic_graph():
     assert "FAQ Graph" in faq
     assert 'kind="faqs"' in faq
     assert "/topic-graph" in graph
-    assert "Icicle" in graph
-    assert "GenreTable" in graph
+    assert "GenreBar" in graph
+    assert "GenreTable" not in graph
+    assert "createPortal" in graph
     assert "Published" in graph
     assert "Not published" in graph
-    assert "Evenness" in graph
+    assert "Search subjects" in graph
+    assert "HelpTip" in graph
+    assert "ScoreChip" in graph
+    assert "opp 0.00" not in graph
 
 
 def test_scheduling_defaults_to_unpublished_next_up():
@@ -78,4 +102,5 @@ def test_portfolio_preview_from_list():
     assert "Preview" in src
     assert "preview_html" in src
     assert "This is the HTML that Publish to WordPress will push" in src
+    assert "createPortal" in src
     assert "DataSources" not in src

@@ -5,8 +5,24 @@ graph. No LLM. Callers attach optional edit-plan details per video.
 """
 from __future__ import annotations
 
+from core.clip_package import CLIP_MAX_SECS, CLIP_MIN_SECS
 from core.edit_plan import EVAL_MAX_SECS, LONG_SECS
 from core.topic_graph import classify_label, engagement_score, video_genre
+
+_RANGE = f"{CLIP_MIN_SECS}–{CLIP_MAX_SECS}s"
+
+_ACTION_FORMAT = {
+    "post_short": f"Package as a {_RANGE} Short/reel and post",
+    "cut_to_short": f"Cut to 1–3 × {_RANGE} Shorts",
+    "tighten_or_split": f"Tighten or split, then cut {_RANGE}",
+    "chop": f"Chop into standalone clips, then pick the hottest {_RANGE}",
+}
+_ACTION_EFFORT = {
+    "post_short": 10,
+    "cut_to_short": 20,
+    "tighten_or_split": 35,
+    "chop": 50,
+}
 
 _QUESTION = ("how ", "what ", "why ", "when ", "does ", "do ", "can ", "is ", "should ")
 
@@ -29,9 +45,9 @@ def social_action(*, duration: float, has_clips: bool, has_social: bool) -> str 
 def _why(action: str, comments: int, duration: float) -> str:
     mins = int(duration // 60)
     if action == "post_short":
-        return f"{comments} comments — already short enough to post."
+        return f"{comments} comments — already short; package as {_RANGE} with town + problem in 3s."
     if action == "cut_to_short":
-        return f"{mins} min with audience heat — cut to 45–90s for Reels/Shorts."
+        return f"{mins} min with audience heat — cut to {_RANGE} for Reels/Shorts."
     if action == "tighten_or_split":
         return f"{mins} min — tighten fluff or split on topic changes before posting."
     return f"{mins} min — chop into standalone clips, then pick the hottest piece."
@@ -132,3 +148,102 @@ def rank_film_next(
         -len(r["questions"]),
     ))
     return rows[:limit]
+
+
+def rank_write_next(genres: list[dict], *, limit: int = 12) -> list[dict]:
+    rows = []
+    for g in genres:
+        if not g.get("publishable") or g.get("id") == "internal":
+            continue
+        for s in g.get("subjects") or []:
+            if s.get("covered"):
+                continue
+            opp = float(s.get("opportunity") or 0)
+            if opp <= 0:
+                continue
+            rows.append({
+                "id": s.get("slug") or s.get("label"),
+                "label": s.get("label") or "",
+                "opportunity": opp,
+                "genre": g.get("label") or "",
+                "genre_id": g.get("id") or "",
+                "yt_comments": int(s.get("yt_comments") or 0),
+                "why": "Uncovered topic with demand — write or refresh a page.",
+            })
+    rows.sort(key=lambda r: (-r["opportunity"], -r["yt_comments"]))
+    return rows[:limit]
+
+
+def _cut_action(row: dict) -> dict:
+    action = row.get("action") or "cut_to_short"
+    kind = "post" if action == "post_short" else "cut"
+    return {
+        "kind": kind,
+        "id": row.get("id"),
+        "title": row.get("title") or row.get("id"),
+        "score": float(row.get("heat") or 0),
+        "score_kind": "heat",
+        "action": action,
+        "why": row.get("why") or "",
+        "format": _ACTION_FORMAT.get(action, f"Cut to {_RANGE}"),
+        "primary": "Publish" if kind == "post" else "Review",
+        "effort_min": _ACTION_EFFORT.get(action, 20),
+    }
+
+
+def _film_action(row: dict) -> dict:
+    return {
+        "kind": "film",
+        "id": row.get("id"),
+        "title": row.get("label") or row.get("id"),
+        "score": float(row.get("opportunity") or 0),
+        "score_kind": "opportunity",
+        "action": "film_next",
+        "why": row.get("why") or "",
+        "format": f"Film one {_RANGE} answer",
+        "primary": "Film",
+        "effort_min": 30,
+        "questions": list(row.get("questions") or []),
+        "genre_id": row.get("id") or "",
+    }
+
+
+def _write_action(row: dict) -> dict:
+    return {
+        "kind": "write",
+        "id": row.get("id"),
+        "title": row.get("label") or row.get("id"),
+        "score": float(row.get("opportunity") or 0),
+        "score_kind": "opportunity",
+        "action": "write",
+        "why": row.get("why") or "",
+        "format": "Write or refresh the page",
+        "primary": "Write",
+        "effort_min": 40,
+        "genre": row.get("genre") or "",
+        "genre_id": row.get("genre_id") or "",
+    }
+
+
+def rank_this_week(
+    cuts: list[dict],
+    films: list[dict],
+    writes: list[dict],
+    *,
+    limit: int = 5,
+    max_cuts: int = 3,
+) -> list[dict]:
+    """Five actions for this week. Existing high-heat footage ships first."""
+    cut_rows = sorted((_cut_action(c) for c in cuts), key=lambda r: -r["score"])
+    other = sorted(
+        [_film_action(f) for f in films] + [_write_action(w) for w in writes],
+        key=lambda r: -r["score"],
+    )
+    picked = cut_rows[:max_cuts]
+    for row in other:
+        if len(picked) >= limit:
+            break
+        picked.append(row)
+    if len(picked) < limit:
+        picked.extend(cut_rows[max_cuts:limit])
+    return picked[:limit]
