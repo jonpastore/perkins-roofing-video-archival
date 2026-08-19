@@ -863,67 +863,6 @@ function GcpSpendWidget() {
   );
 }
 
-// ── Go-live checklist banner ──────────────────────────────────────────────────
-// Non-WP leftovers only. Wendy / staging / Rank Math / permalinks / WP author
-// and the prod app-password row stay off this list — that stack is being replaced.
-const GO_LIVE_DISMISSED_KEY = "perkins.goLiveChecklistDismissed.v4";
-
-interface GoLiveItem {
-  label: string;
-}
-
-const GO_LIVE_ITEMS: GoLiveItem[] = [
-  { label: "SEO submission creds provisioned IF enabling (IndexNow key + Google Indexing API service account) — toggle is OFF by default" },
-  { label: "Remaining Tim pricing items confirmed (per-branch OH, gutter hangers, downspout $10.50, Verea field-tile, FBC low-slope deltas, T&C)" },
-];
-
-function GoLiveChecklistBanner() {
-  const [dismissed, setDismissed] = useState(() => window.localStorage.getItem(GO_LIVE_DISMISSED_KEY) === "1");
-
-  function dismiss() {
-    window.localStorage.setItem(GO_LIVE_DISMISSED_KEY, "1");
-    setDismissed(true);
-  }
-
-  if (dismissed) {
-    return (
-      <div style={{ marginBottom: 24, textAlign: "right" }}>
-        <button
-          onClick={() => { window.localStorage.removeItem(GO_LIVE_DISMISSED_KEY); setDismissed(false); }}
-          style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
-        >
-          Show go-live checklist
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
-        <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
-          Go-Live Checklist — {GO_LIVE_ITEMS.length} open
-        </span>
-        <button
-          onClick={dismiss}
-          title="Dismiss"
-          style={{ background: "none", border: "none", color: BRAND.sub, fontSize: 16, cursor: "pointer", lineHeight: 1, padding: 0 }}
-        >
-          &times;
-        </button>
-      </div>
-      <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: BRAND.ink, lineHeight: 1.9 }}>
-        {GO_LIVE_ITEMS.map((item) => (
-          <li key={item.label}>
-            {item.label}
-            <span style={{ marginLeft: 8 }}><Badge tone="amber">Manual</Badge></span>
-          </li>
-        ))}
-      </ul>
-    </Card>
-  );
-}
-
 function EditPlanView({ plan }: { plan: EditPlan }) {
   const label =
     plan.action === "tighten" ? "Tighten (cut fluff)"
@@ -1123,6 +1062,12 @@ const GATE_TONE: Record<GateState, "green" | "amber" | "red" | "gray"> = {
   unknown: "gray",
 };
 
+const READINESS_HELP =
+  "Automated go-live gates. Search-engine indexing is IndexNow + Google Indexing API (off by default until creds are in Admin Config). Remediation lives in Admin Config → Platform Settings.";
+
+const TIM_PRICING_HELP =
+  "Still need Tim to confirm per-branch overhead, gutter hangers, downspout $10.50, Verea field-tile, FBC low-slope deltas, and T&C. Not a platform secret — it is estimator config.";
+
 function ProductionReadinessBanner() {
   const [data, setData] = useState<ProductionReadiness | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1143,9 +1088,10 @@ function ProductionReadinessBanner() {
     <Card style={{ marginBottom: 24, padding: "14px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14 }}>
+          <span style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 6 }}>
             Production Readiness
             {data && ` — ${data.summary.ok}/${data.summary.total} gates ready`}
+            <HelpTip text={READINESS_HELP} />
           </span>
           {loading && <Loading label="Checking…" />}
           {error && <ErrorMsg>Error: {error}</ErrorMsg>}
@@ -1156,6 +1102,10 @@ function ProductionReadinessBanner() {
                   {g.label}
                 </Badge>
               ))}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Badge tone="amber">Tim pricing</Badge>
+                <HelpTip text={TIM_PRICING_HELP} />
+              </span>
             </div>
           )}
         </div>
@@ -1323,8 +1273,6 @@ export function Status() {
             Platform Metrics
           </h3>
           <ActiveUsersWidget />
-
-          <GoLiveChecklistBanner />
 
           <GcpSpendWidget />
 

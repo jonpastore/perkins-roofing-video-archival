@@ -657,9 +657,10 @@ export function Settings() {
       <Card style={{ marginBottom: 24, borderTop: `4px solid ${BRAND.navyText}` }}>
         <SectionTitle>Production Readiness</SectionTitle>
         <p style={{ margin: "0 0 16px", fontSize: 13, color: BRAND.sub }}>
-          Go-live gates shown as chips at the top of the Dashboard. This is the
-          explanation + remediation for each one — connectivity itself is tested
-          in the "Connectivity Tests" section above.
+          Go-live gates shown as chips at the top of the Dashboard (there is no
+          separate checklist). This is the explanation + remediation for each
+          one — connectivity itself is tested in the "Connectivity Tests" section
+          above. Tim pricing confirmations are estimator config, not a secret.
         </p>
         <Button
           onClick={loadReadiness}

@@ -16,6 +16,16 @@ def test_data_sources_panel_has_login_buttons():
     assert "visibilitychange" in src
 
 
+def test_dashboard_has_one_readiness_surface():
+    status = (ROOT / "pages" / "Status.tsx").read_text()
+    assert "Go-Live Checklist" not in status
+    assert "GoLiveChecklistBanner" not in status
+    assert "ProductionReadinessBanner" in status
+    assert "Search-engine indexing is IndexNow" in status
+    assert "Tim pricing" in status
+    assert status.count("<ProductionReadinessBanner") == 1
+
+
 def test_data_sources_only_on_dashboard():
     status = (ROOT / "pages" / "Status.tsx").read_text()
     assert "DataSources" in status
