@@ -2081,6 +2081,7 @@ export function ClipStudio() {
   const FROM_LABEL: Record<string, string> = {
     archive: "Video Archive",
     opportunities: "Opportunities",
+    dashboard: "Dashboard",
   };
 
   // When videos are loaded by the picker, check if there's a pending preselect param.

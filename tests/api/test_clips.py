@@ -253,6 +253,25 @@ def test_save_inserts_approved_miniseries(seeded_video):
         assert len(row.parts_json) == 2
 
 
+def test_save_stamps_longform_on_fifteen_plus_source():
+    video_id = "vid_long_clip"
+    with SessionLocal() as db:
+        db.add(Video(id=video_id, title="Hour talk", duration=3600.0))
+        db.commit()
+    client = _make_client("admin")
+    resp = client.post("/clips/save", json={
+        "video_id": video_id,
+        "title": "Cuts",
+        "parts": [{"title": "Hook", "start": 10.0, "end": 35.0}],
+    }, headers=ADMIN_HDR)
+    assert resp.status_code == 200
+    with SessionLocal() as db:
+        v = db.get(Video, video_id)
+        assert v is not None
+        assert v.longform_reprocessed_at is not None
+        assert v.longform_note == "clip_studio"
+
+
 def test_save_upserts_existing_series(seeded_video):
     """Second save for the same video_id updates the existing MiniSeries row."""
     client = _make_client("admin")

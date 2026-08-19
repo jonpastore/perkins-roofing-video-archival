@@ -392,14 +392,15 @@ def test_poll_kpis_401_no_token():
     assert resp.status_code == 401
 
 
-def test_mark_longform_requires_clip_urls():
+def test_mark_longform_allows_internal_chop_without_urls():
     client = _make_client("admin")
     resp = client.post(
         f"/archive/{VID_LONG}/longform-reprocessed",
-        json={"note": "chopped"},
+        json={"note": "clip_studio"},
         headers=AUTH,
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
+    assert resp.json()["longform_reprocessed_at"] is not None
 
 
 def test_mark_longform_reprocessed():

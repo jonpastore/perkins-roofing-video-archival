@@ -73,6 +73,28 @@ def parent_index_from_db(db) -> dict[str, str]:
     return index
 
 
+def stamp_longform_source(video) -> bool:
+    """Drop a >=15min source from the chop queue once we have an in-app cut.
+
+    Clip Studio clips live on the same YouTube id — there is no new upload to
+    join. Pasting child URLs is only for slices uploaded as new YouTube videos.
+    """
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from core.edit_plan import LONG_SECS  # noqa: PLC0415
+
+    if video is None:
+        return False
+    if float(video.duration or 0) < LONG_SECS:
+        return False
+    if getattr(video, "longform_reprocessed_at", None):
+        return False
+    video.longform_reprocessed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not getattr(video, "longform_note", None):
+        video.longform_note = "clip_studio"
+    return True
+
+
 def attach_derived_urls(parent, urls: list[str], db) -> list[str]:
     """Record clip URLs on the long video and stamp any already-catalogued children."""
     from app.models import Video  # noqa: PLC0415

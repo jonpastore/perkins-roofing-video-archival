@@ -833,6 +833,8 @@ def save_clips(
     video = db.get(Video, body.video_id)
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
+    from core.video_lineage import stamp_longform_source  # noqa: PLC0415
+    stamp_longform_source(video)
 
     existing = (
         db.query(MiniSeries)

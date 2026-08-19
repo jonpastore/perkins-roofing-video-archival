@@ -6,8 +6,20 @@ from core.video_lineage import (
     derived_video_ids,
     ids_from_urls,
     parent_index_from_db,
+    stamp_longform_source,
     youtube_id_from_url,
 )
+
+
+def test_stamp_longform_only_on_uncut_fifteen_plus():
+    short = SimpleNamespace(duration=400, longform_reprocessed_at=None, longform_note=None)
+    assert stamp_longform_source(short) is False
+    long = SimpleNamespace(duration=1200, longform_reprocessed_at=None, longform_note=None)
+    assert stamp_longform_source(long) is True
+    assert long.longform_reprocessed_at is not None
+    assert long.longform_note == "clip_studio"
+    assert stamp_longform_source(long) is False
+    assert stamp_longform_source(None) is False
 
 
 def test_parses_watch_share_and_raw_ids():

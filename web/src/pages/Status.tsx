@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -940,21 +941,28 @@ interface EditPlan {
 }
 
 const LONGFORM_HELP =
-  "Over 15 minutes belongs here. Under 30 minutes, Analyze says whether to tighten (cut fluff) or split on topic changes. After you upload the slices to YouTube, paste those clip URLs here and mark chopped — that joins them to this source so we stop suggesting it. Those clips will not generate new articles, FAQs, or topic suggestions. We still cannot push to YouTube from this app.";
+  "Videos over 15 minutes. Analyze cut scores the transcript. Open in Clip Studio to cut 15–40s Shorts — saving clips drops the source from this list automatically. Paste YouTube URLs only if you uploaded the slices as new videos so we do not treat them as new source. We still cannot push to YouTube from this app.";
+
+function ytThumb(id: string): string {
+  return `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+}
 
 function LongformQueue() {
+  const { navigate } = useContext(NavContext);
   const [rows, setRows] = useState<Array<{
     id: string;
     title: string;
     duration: number | null;
     youtube_url: string | null;
     longform_reprocessed_at: string | null;
+    clips_generated?: boolean;
   }>>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [plans, setPlans] = useState<Record<string, EditPlan | "loading" | "error">>({});
   const [openList, setOpenList] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetch("/archive/videos?min_length=900&unchopped=true&limit=200")
@@ -1020,60 +1028,128 @@ function LongformQueue() {
         <HelpTip text={LONGFORM_HELP} />
       </div>
       {openList && (
-        <ul style={{ margin: "10px 0 0", paddingLeft: 18, fontSize: 13, lineHeight: 1.7, maxHeight: 360, overflow: "auto" }}>
+        <div style={{ margin: "10px 0 0", maxHeight: 420, overflow: "auto" }}>
           {shown.map((r) => {
             const scored = plans[r.id];
             return (
-            <li key={r.id} style={{ marginBottom: 12 }}>
-              {r.youtube_url ? (
-                <a href={r.youtube_url} target="_blank" rel="noreferrer" style={{ color: BRAND.navyText }}>
+            <div
+              key={r.id}
+              style={{
+                display: "flex", gap: 12, padding: "10px 0",
+                borderBottom: `1px solid ${BRAND.border}`, alignItems: "flex-start",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setPreviewId(r.id)}
+                title="Play"
+                aria-label={`Play ${r.title || r.id}`}
+                style={{
+                  position: "relative", flex: "0 0 120px", width: 120, height: 68, padding: 0,
+                  border: "none", borderRadius: 8, overflow: "hidden", background: "#111", cursor: "pointer",
+                }}
+              >
+                <img
+                  src={ytThumb(r.id)}
+                  alt=""
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+                <span
+                  style={{
+                    position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 22, textShadow: "0 1px 4px rgba(0,0,0,0.6)",
+                  }}
+                >
+                  ▶
+                </span>
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <a href={r.youtube_url || `https://youtu.be/${r.id}`} target="_blank" rel="noreferrer" style={{ color: BRAND.navyText, fontWeight: 600 }}>
                   {r.title || r.id}
                 </a>
-              ) : (r.title || r.id)}
-              <span style={{ color: BRAND.sub, marginLeft: 8 }}>{fmtDuration(r.duration)}</span>
-              {(r.duration ?? 0) < 1800 && (
-                <span style={{ marginLeft: 8, fontSize: 11, color: BRAND.sub }}>under 30 min — evaluate tighten vs split</span>
-              )}
-              <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Button
-                  variant="ghost"
-                  type="button"
-                  onClick={() => void loadPlan(r.id)}
-                  disabled={scored === "loading"}
-                  style={{ fontSize: 12, padding: "5px 10px" }}
-                >
-                  {scored === "loading" ? "Analyzing…" : "Analyze cut"}
-                </Button>
+                <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 2 }}>
+                  {fmtDuration(r.duration)}
+                  {(r.duration ?? 0) < 1800 ? " · under 30 min — evaluate tighten vs split" : ""}
+                  {r.clips_generated ? " · clips already in Clip Studio" : ""}
+                </div>
+                <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={() => void loadPlan(r.id)}
+                    disabled={scored === "loading"}
+                    style={{ fontSize: 12, padding: "5px 10px" }}
+                  >
+                    {scored === "loading" ? "Analyzing…" : "Analyze cut"}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => navigate("clip-studio", { video: r.id, from: "dashboard" })}
+                    style={{ fontSize: 12, padding: "5px 10px" }}
+                  >
+                    Open in Clip Studio
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    onClick={() => markDone(r.id)}
+                    disabled={busy === r.id}
+                    style={{ fontSize: 12, padding: "5px 10px" }}
+                  >
+                    {busy === r.id ? "Saving…" : "Mark chopped"}
+                  </Button>
+                </div>
+                {typeof scored === "object" && scored && (
+                  <EditPlanView plan={scored} />
+                )}
+                {scored === "error" && (
+                  <div style={{ fontSize: 12, color: BRAND.red }}>Could not score this transcript.</div>
+                )}
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ fontSize: 12, color: BRAND.sub, cursor: "pointer" }}>
+                    Uploaded the cuts as new YouTube videos? Attach those URLs
+                  </summary>
+                  <textarea
+                    aria-label="YouTube URLs of uploaded clips, one per line"
+                    placeholder="https://youtu.be/abc123"
+                    value={urls[r.id] || ""}
+                    onChange={(e) => setUrls((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                    style={{ ...inputStyle, width: "100%", minHeight: 52, fontSize: 12, marginTop: 6 }}
+                  />
+                </details>
               </div>
-              {typeof scored === "object" && scored && (
-                <EditPlanView plan={scored} />
-              )}
-              {scored === "error" && (
-                <div style={{ fontSize: 12, color: BRAND.red }}>Could not score this transcript.</div>
-              )}
-              <label style={{ display: "block", marginTop: 8, fontSize: 12, color: BRAND.sub }}>
-                Clip YouTube URLs you already uploaded (one per line). Mark chopped joins them to this source.
-                <textarea
-                  aria-label="YouTube URLs of uploaded clips, one per line"
-                  placeholder="https://youtu.be/abc123"
-                  value={urls[r.id] || ""}
-                  onChange={(e) => setUrls((prev) => ({ ...prev, [r.id]: e.target.value }))}
-                  style={{ ...inputStyle, width: "100%", minHeight: 52, fontSize: 12, marginTop: 4 }}
-                />
-              </label>
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={() => markDone(r.id)}
-                disabled={busy === r.id}
-                style={{ marginTop: 6, fontSize: 12, padding: "5px 10px" }}
-              >
-                {busy === r.id ? "Saving…" : "Mark chopped + join clips"}
-              </Button>
-            </li>
+            </div>
             );
           })}
-        </ul>
+        </div>
+      )}
+      {previewId && createPortal(
+        <div
+          role="dialog"
+          aria-label="Video preview"
+          onClick={() => setPreviewId(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 1100, background: "rgba(16,24,40,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "min(860px, 96vw)" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <Button variant="ghost" onClick={() => setPreviewId(null)} style={{ padding: "4px 10px", fontSize: 13 }}>
+                Close
+              </Button>
+            </div>
+            <iframe
+              title="Long video preview"
+              src={`https://www.youtube.com/embed/${previewId}?autoplay=1`}
+              allow="autoplay; encrypted-media"
+              allowFullScreen
+              style={{ width: "100%", aspectRatio: "16 / 9", border: 0, borderRadius: 8, background: "#000" }}
+            />
+          </div>
+        </div>,
+        document.body,
       )}
     </Card>
   );

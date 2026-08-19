@@ -65,7 +65,10 @@ def test_longform_queue_is_fifteen_minutes_and_has_analyze():
     assert "aria-expanded" in status
     assert "LONGFORM_HELP" in status
     assert "HelpTip" in status
-    assert "Clip YouTube URLs you already uploaded" in status
+    assert "Open in Clip Studio" in status
+    assert "ytThumb" in status
+    assert "createPortal" in status
+    assert "Mark chopped" in status
     assert 'variant="ghost"' in status
 
 

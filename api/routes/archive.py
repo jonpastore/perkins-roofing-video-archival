@@ -583,17 +583,12 @@ def mark_longform_reprocessed(
     v = db.get(Video, video_id)
     if v is None:
         raise HTTPException(status_code=404, detail="video not found")
-    from core.video_lineage import attach_derived_urls, ids_from_urls  # noqa: PLC0415
-    parsed = ids_from_urls(body.urls)
-    if not parsed:
-        raise HTTPException(
-            status_code=400,
-            detail="clip urls required — marking chopped without joins leaves slices as new source",
-        )
+    from core.video_lineage import attach_derived_urls  # noqa: PLC0415
     v.longform_reprocessed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     if body.note is not None:
         v.longform_note = body.note
-    attach_derived_urls(v, body.urls, db)
+    if body.urls:
+        attach_derived_urls(v, body.urls, db)
     db.commit()
     db.refresh(v)
     _list_cache.clear()
