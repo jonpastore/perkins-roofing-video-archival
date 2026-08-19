@@ -13,12 +13,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.auth import current_claims, get_db_session, require_role
 from app.config import settings
 from app.models import UserSetting
 from app.observability import log
+from core.user_nav import nav_saved, sanitize_nav
 
 router = APIRouter(prefix="/admin/users", tags=["users"])
 me_router = APIRouter(prefix="/me", tags=["me"])
@@ -43,6 +45,12 @@ class DeleteRequest(BaseModel):
 
 class SignatureRequest(BaseModel):
     signature: Optional[str] = None
+
+
+class NavRequest(BaseModel):
+    pins: list
+    sections: list
+    collapsed: object
 
 
 class AdminSignatureRequest(BaseModel):
@@ -308,6 +316,63 @@ def set_my_signature(
         row.signature = body.signature or None
     db.flush()
     return {"email": email, "signature": body.signature or None}
+
+
+# ---------------------------------------------------------------------------
+# /me/nav — current user's sidebar pins / folded sections / icon rail
+# ---------------------------------------------------------------------------
+
+def _me_email(claims: dict) -> str:
+    email = (claims.get("email") or "").lower()
+    if not email:
+        raise HTTPException(status_code=401, detail="unauthenticated")
+    return email
+
+
+def _get_or_create_setting(db: Session, email: str) -> UserSetting:
+    row = db.get(UserSetting, email)
+    if row is not None:
+        return row
+    row = UserSetting(email=email, tenant_id=db.info["tenant_id"], nav={})
+    db.add(row)
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        row = db.get(UserSetting, email)
+        if row is None:
+            raise
+    return row
+
+
+def _nav_payload(raw) -> dict:
+    body = sanitize_nav(raw)
+    body["saved"] = nav_saved(raw)
+    return body
+
+
+@me_router.get("/nav")
+def get_my_nav(
+    claims=Depends(current_claims),
+    db: Session = Depends(get_db_session),
+):
+    email = _me_email(claims)
+    row = db.get(UserSetting, email)
+    return _nav_payload(row.nav if row else None)
+
+
+@me_router.put("/nav")
+def set_my_nav(
+    body: NavRequest,
+    claims=Depends(current_claims),
+    db: Session = Depends(get_db_session),
+):
+    email = _me_email(claims)
+    nav = sanitize_nav(body.model_dump())
+    row = _get_or_create_setting(db, email)
+    row.nav = nav
+    db.flush()
+    return _nav_payload(nav)
 
 
 def _directory_access_token(subject: str, scope: str, key_file: str) -> str:

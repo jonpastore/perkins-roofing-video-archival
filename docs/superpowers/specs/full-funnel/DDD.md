@@ -60,7 +60,7 @@ Future extraction seams are called out per bounded context below. Nothing is mic
 - `TenantOffboarded` — cascade delete completed + audit record written.
 
 **Mapping to current code.**
-- `app/models.py`: no `Tenant` or `User` model yet — these are F0/F4 additions. The `UserSetting` model (email signature) is a thin slice of User that will be subsumed.
+- `app/models.py`: no `Tenant` or `User` model yet — these are F0/F4 additions. The `UserSetting` model (email signature + sidebar nav JSON) is a thin slice of User that will be subsumed.
 - `api/routes/users.py` (`api/users.py` in listing): the existing Users API is the application surface; `core/authz.py` holds role logic. Both map to this context.
 - F0 adds `tenants` table + `tenant_id` FK. F4 adds RLS + GCIP upgrade + platform_admin. The `DEFAULT_ADMINS` config is the interim per-tenant admin guard.
 

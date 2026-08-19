@@ -528,10 +528,16 @@ class CommentDraft(Base):
 
 
 class UserSetting(Base):
-    """Per-user settings (email signature, etc.). email is the PK."""
+    """Per-user settings (email signature, sidebar nav). email is the PK."""
     __tablename__ = "user_settings"
     email = Column(String, primary_key=True)
     signature = Column(Text, nullable=True)
+    nav = Column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, default=1)
     __table_args__ = (Index("ix_user_settings_tenant_id", "tenant_id"),)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, type ReactNode } from "react";
+import { useState, useEffect, useRef, createContext, type ReactNode } from "react";
 import type { User } from "firebase/auth";
 import { signIn, signOutUser, getRole, onAuthChanged } from "./auth";
 import { apiFetch } from "./api";
@@ -261,6 +261,76 @@ function readPins(): string[] {
   return readStringList(NAV_PINS_KEY);
 }
 
+interface NavPrefs {
+  pins: string[];
+  sections: string[];
+  collapsed: boolean;
+}
+
+function profileNavKey(email: string) {
+  return `perkins.nav.profile.${email.toLowerCase()}`;
+}
+
+function coerceNav(raw: unknown): NavPrefs | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as { pins?: unknown; sections?: unknown; collapsed?: unknown };
+  if (!Array.isArray(o.pins) || !Array.isArray(o.sections)) return null;
+  return {
+    pins: o.pins.filter((x) => typeof x === "string"),
+    sections: o.sections.filter((x) => typeof x === "string"),
+    collapsed: !!o.collapsed,
+  };
+}
+
+function readLegacyNav(): NavPrefs {
+  return {
+    pins: readPins(),
+    sections: readStringList(NAV_SECTIONS_KEY),
+    collapsed: localStorage.getItem(NAV_COLLAPSE_KEY) === "1",
+  };
+}
+
+function emptyPrefs(): NavPrefs {
+  return { pins: [], sections: [], collapsed: false };
+}
+
+function readLocalNav(email: string): NavPrefs {
+  if (email) {
+    try {
+      const raw = localStorage.getItem(profileNavKey(email));
+      if (raw !== null) return coerceNav(JSON.parse(raw)) || emptyPrefs();
+    } catch { /* keyed cache unreadable */ }
+    const migratedTo = (localStorage.getItem("perkins.nav.legacyMigratedTo") || "").toLowerCase();
+    if (!migratedTo) {
+      localStorage.setItem("perkins.nav.legacyMigratedTo", email.toLowerCase());
+      const legacy = readLegacyNav();
+      if (!navIsEmpty(legacy)) {
+        writeLocalNav(legacy, email);
+        return legacy;
+      }
+    }
+    return emptyPrefs();
+  }
+  return readLegacyNav();
+}
+
+function writeLocalNav(nav: NavPrefs, email: string) {
+  if (email) localStorage.setItem(profileNavKey(email), JSON.stringify(nav));
+  localStorage.setItem(NAV_PINS_KEY, JSON.stringify(nav.pins));
+  localStorage.setItem(NAV_SECTIONS_KEY, JSON.stringify(nav.sections));
+  localStorage.setItem(NAV_COLLAPSE_KEY, nav.collapsed ? "1" : "0");
+}
+
+function persistNav(nav: NavPrefs, email: string) {
+  writeLocalNav(nav, email);
+  apiFetch("/me/nav", { method: "PUT", body: JSON.stringify(nav) }).catch(() => { /* cache still holds */ });
+}
+
+function navIsEmpty(nav: { pins?: string[]; sections?: string[]; collapsed?: boolean } | null) {
+  if (!nav) return true;
+  return !(nav.pins && nav.pins.length) && !(nav.sections && nav.sections.length) && !nav.collapsed;
+}
+
 function NavButton({
   id,
   label,
@@ -481,15 +551,30 @@ interface OpportunityCounts {
 // Shell
 // ---------------------------------------------------------------------------
 
-function Shell({ config, role }: { config: ShellConfig; role: Role }) {
+function Shell({ config, role, email }: { config: ShellConfig; role: Role; email: string }) {
   const { title, pinnedTabs, sections, adminSection, useSections, defaultTab } = config;
   const [tab, setTab] = useState<string>(defaultTab);
   const [navParams, setNavParams] = useState<NavParams>({});
   const [oppCounts, setOppCounts] = useState<OpportunityCounts | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(NAV_COLLAPSE_KEY) === "1");
-  const [pins, setPins] = useState<string[]>(readPins);
-  const [foldedSections, setFoldedSections] = useState<string[]>(() => readStringList(NAV_SECTIONS_KEY));
+  const initialNav = readLocalNav(email);
+  const [collapsed, setCollapsed] = useState(initialNav.collapsed);
+  const [pins, setPins] = useState<string[]>(initialNav.pins);
+  const [foldedSections, setFoldedSections] = useState<string[]>(initialNav.sections);
+  const hydrated = useRef(false);
+  const patchQueue = useRef<Partial<NavPrefs>[]>([]);
+  const navRef = useRef<NavPrefs>(initialNav);
+
+  function persistPatch(patch: Partial<NavPrefs>) {
+    const next = { ...navRef.current, ...patch };
+    navRef.current = next;
+    writeLocalNav(next, email);
+    if (!hydrated.current) {
+      patchQueue.current.push(patch);
+      return;
+    }
+    persistNav(next, email);
+  }
 
   useEffect(() => {
     apiFetch("/suggestions/counts")
@@ -497,6 +582,34 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
       .then((d: OpportunityCounts | null) => { if (d) setOppCounts(d); })
       .catch(() => { /* badge is best-effort */ });
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch("/me/nav")
+      .then(async (r) => {
+        if (cancelled) return;
+        if (!r.ok) {
+          hydrated.current = true;
+          if (patchQueue.current.length) persistNav(navRef.current, email);
+          return;
+        }
+        const d = await r.json() as NavPrefs & { saved?: boolean };
+        let base: NavPrefs = d.saved
+          ? { pins: d.pins ?? [], sections: d.sections ?? [], collapsed: !!d.collapsed }
+          : readLocalNav(email);
+        for (const patch of patchQueue.current) base = { ...base, ...patch };
+        hydrated.current = true;
+        navRef.current = base;
+        setPins(base.pins);
+        setFoldedSections(base.sections);
+        setCollapsed(base.collapsed);
+        writeLocalNav(base, email);
+        const shouldPut = d.saved ? patchQueue.current.length > 0 : !navIsEmpty(base);
+        if (shouldPut) persistNav(base, email);
+      })
+      .catch(() => { hydrated.current = true; });
+    return () => { cancelled = true; };
+  }, [email]);
 
   const oppBadge = oppCounts
     ? oppCounts.article_topics + oppCounts.reels + oppCounts.faqs
@@ -531,7 +644,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
   function toggleSection(label: string) {
     setFoldedSections((prev) => {
       const next = prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label];
-      localStorage.setItem(NAV_SECTIONS_KEY, JSON.stringify(next));
+      persistPatch({ sections: next });
       return next;
     });
   }
@@ -546,7 +659,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
     setFoldedSections((prev) => {
       const next = prev.filter((x) => !labels.includes(x));
       if (next.length === prev.length) return prev;
-      localStorage.setItem(NAV_SECTIONS_KEY, JSON.stringify(next));
+      persistPatch({ sections: next });
       return next;
     });
   }
@@ -554,7 +667,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
   function toggleCollapsed() {
     setCollapsed((c) => {
       const next = !c;
-      localStorage.setItem(NAV_COLLAPSE_KEY, next ? "1" : "0");
+      persistPatch({ collapsed: next });
       return next;
     });
   }
@@ -562,7 +675,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
   function togglePin(id: string) {
     setPins((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      localStorage.setItem(NAV_PINS_KEY, JSON.stringify(next));
+      persistPatch({ pins: next });
       return next;
     });
   }
@@ -1007,7 +1120,7 @@ export default function App() {
   if (!user) return <LoginScreen />;
   const shellConfig = role ? ROLE_CONFIG[role as Exclude<Role, null>] : undefined;
   if (role && shellConfig) {
-    return <Shell config={shellConfig} role={role} />;
+    return <Shell config={shellConfig} role={role} email={user.email || ""} />;
   }
 
   // Signed in but no recognized role

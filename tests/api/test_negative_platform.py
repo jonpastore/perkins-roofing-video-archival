@@ -84,6 +84,7 @@ MISSING_FIELD_CASES = [
     ("estimator_quote_missing_num_squares", "post", "/estimator/quote",
      {"branch": "miami", "code_zone": "HVHZ", "roof_type": "13_tile"}),
     ("connections_secret_missing_value", "post", "/connections/wordpress/secret", {}),
+    ("me_nav_missing_sections", "put", "/me/nav", {"pins": [], "collapsed": False}),
 ]
 
 WRONG_TYPE_CASES = [
@@ -92,6 +93,7 @@ WRONG_TYPE_CASES = [
     ("users_signature_email_wrong_type", "put", "/admin/users/signature",
      {"email": 123, "signature": "hi"}),
     ("me_signature_wrong_type", "put", "/me/signature", {"signature": 123}),
+    ("me_nav_pins_wrong_type", "put", "/me/nav", {"pins": "search-ask"}),
     ("config_put_value_wrong_type", "put", "/config", {"key": "WP_URL", "value": 123}),
     ("config_secrets_value_wrong_type", "put", "/config/secrets",
      {"key": "youtube-api-key", "value": 123}),

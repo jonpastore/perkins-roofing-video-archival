@@ -28,6 +28,15 @@ def test_nav_exposes_the_three_video_surfaces():
     assert "Collapse navigation" in APP
     assert "perkins.nav.pins" in APP
     assert "perkins.nav.sections" in APP
+    assert 'apiFetch("/me/nav"' in APP
+    assert "persistNav" in APP
+    assert "persistPatch" in APP
+    assert "navRef" in APP
+    assert "profileNavKey" in APP
+    assert "perkins.nav.legacyMigratedTo" in APP
+    assert "patchQueue" in APP
+    assert "d.saved" in APP
+    assert "hydrated.current" in APP
     assert "toggleSection" in APP
     assert "id === tab || isPinned(id)" in APP
     assert "sidebar-collapsed" in APP

@@ -54,7 +54,7 @@ Derived from full enumeration of `app/models.py` at commit `b19b34b`:
 | `social_posts` | `SocialPost` | per-tenant social publishing |
 | `aggregated_topics` | `AggregatedTopic` | per-tenant content graph aggregation |
 | `comment_drafts` | `CommentDraft` | per-tenant YouTube comments |
-| `user_settings` | `UserSetting` | per-tenant user email signatures |
+| `user_settings` | `UserSetting` | per-tenant user email signatures and sidebar nav prefs |
 | `faq_entries` | `FaqEntry` | per-tenant FAQ corpus |
 
 **Total: 16 tenant-scoped tables.**

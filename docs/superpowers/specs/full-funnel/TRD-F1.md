@@ -5,7 +5,20 @@
 **Date:** 2026-07-08  
 **Estimate:** 1–2 sessions  
 **Depends on:** F0 (thin tenancy must be merged first)  
-**Blocks:** F3 (mobile acceptance criterion references F1's sidebar structure)  
+**Blocks:** F3 (mobile acceptance criterion references F1's sidebar structure)
+
+### Amendment 2026-08-19 — nav prefs on the user profile
+
+Original F1 was SPA-only. Pins, folded section labels, and the icon rail now persist on
+`user_settings.nav` (JSONB) via `GET/PUT /me/nav`.
+
+**Rollout order (required):** apply `infra/migrations/0064_user_nav.sql` **before** shipping
+the API image that maps `UserSetting.nav`. The column is `NOT NULL`. Skipping 0064 500s
+`/me/signature` and `/admin/users` as well as `/me/nav`.
+
+- PUT replaces the whole `{pins, sections, collapsed}` blob. All three fields are required (422 if omitted).
+- GET includes `saved: true` after a PUT (even if every list is empty). `saved: false` means never written — the SPA may seed once from that account's local cache.
+- A failed GET must not seed. Account-switch must not write another user's cache onto this profile.  
 
 ---
 
@@ -15,6 +28,7 @@
 - Two-level sidebar: four content sections (Knowledge Base, Marketing, Estimating, Quoting) plus Admin
 - All existing tab keys preserved as internal route identifiers — no broken bookmarks, no lost state
 - Section group headers in the sidebar nav (collapsible on mobile)
+- Pin / fold / icon-rail prefs persist on `user_settings.nav` via `GET/PUT /me/nav` (per signed-in account, not the browser). localStorage is a cache and a one-time seed when the profile is empty.
 - Admin config-tab shell: six tabs (KB / Marketing / Estimating / Quoting / Users & Roles / Tenants) — the Tenants tab is platform_admin only (hidden for all current roles); the other five are admin-only shells with placeholder content for now
 - Existing `Users` and `Settings` pages fold into Admin → Users & Roles tab
 - Role gating: which sections and tabs are visible per role, using the existing `admin / web_admin / sales` roles
