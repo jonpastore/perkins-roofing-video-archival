@@ -11,6 +11,8 @@ Status: **implemented-local**
 - `core.video_lineage.youtube_id_from_url` / `ids_from_urls` / `attach_derived_urls` /
   `derived_ids_from_db` / `parent_index_from_db`.
 - `POST /archive/...` longform-reprocessed + derived_urls (see `api/routes/archive.py`).
+- `GET /archive/{id}/edit-plan` — `core.edit_plan.plan` on segments + topic stamps.
+- Status queue uses `min_length=900` (15 min).
 - Skip `parent_video_id` in `app/ingest.py`, `jobs/ingest_worker.py`,
   `jobs/aggregate_topics.py`, `core/suggestion_counts.py`, `api/routes/topics.py`.
 - `jobs/enumerate_channel.py` stamps parent when a listed child appears.

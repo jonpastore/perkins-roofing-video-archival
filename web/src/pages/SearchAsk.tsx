@@ -255,7 +255,7 @@ function TopicVideosModal({
               {articleErr && <ErrorMsg>Could not load articles: {articleErr}</ErrorMsg>}
               {articles && articles.length === 0 && (
                 <p style={{ color: BRAND.sub, fontSize: 14 }}>
-                  No articles generated for this topic yet. Use "Generate cluster articles" to create them.
+                  No articles for this topic yet. Open Opportunities if it scores as a gap.
                 </p>
               )}
               {articles && articles.length > 0 && (

@@ -3,6 +3,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2] / "web" / "src"
 
 
+def test_opportunities_has_social_and_film_queues():
+    src = (ROOT / "pages" / "Opportunities.tsx").read_text()
+    assert "/topic-graph/social-brief" in src
+    assert "Cut for social" in src
+    assert "Film next" in src
+    assert "/archive/${id}/edit-plan" in src or "/archive/${c.id}/edit-plan" in src
+
+
+def test_opportunities_scans_competitors_on_demand():
+    src = (ROOT / "pages" / "Opportunities.tsx").read_text()
+    assert "/topic-graph/competitor-scan" in src
+    assert "Scan what others cover" in src
+    assert "method: \"POST\"" in src or 'method: "POST"' in src
+
+
 def test_opportunities_is_scored_inbox():
     src = (ROOT / "pages" / "Opportunities.tsx").read_text()
     assert "/topic-graph?kind=articles&published=no" in src
@@ -23,6 +38,15 @@ def test_archive_has_genre_filter_and_thumb():
     assert 'params.set("genre"' in src
     assert "i.ytimg.com" in src
     assert "All genres" in src
+
+
+def test_longform_queue_is_fifteen_minutes_and_has_analyze():
+    status = (ROOT / "pages" / "Status.tsx").read_text()
+    assert "min_length=900" in status
+    assert "over 15 min" in status
+    assert "/archive/${id}/edit-plan" in status
+    assert "Analyze cut" in status
+    assert "under 30 min" in status
 
 
 def test_articles_and_faq_mount_topic_graph():

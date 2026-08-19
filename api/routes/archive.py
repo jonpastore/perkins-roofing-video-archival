@@ -14,7 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.auth import get_db_session, require_role
-from app.models import Article, GraphNode, MiniSeries, SocialPost, Video
+from app.models import Article, GraphNode, MiniSeries, Segment, SocialPost, Video
 from core.archive_list import (
     TtlCache,
     article_counts_for,
@@ -536,6 +536,36 @@ def poll_kpis(
 # Visibility: hide / unhide
 # ---------------------------------------------------------------------------
 
+@router.get("/{video_id}/edit-plan")
+def video_edit_plan(
+    video_id: str,
+    _claims=Depends(require_role("search")),
+    db: Session = Depends(get_db_session),
+):
+    """Fluff cuts + split vs tighten vs chop from the transcript and topic stamps."""
+    from core.edit_plan import plan  # noqa: PLC0415
+
+    v = db.get(Video, video_id)
+    if v is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    segs = (
+        db.query(Segment)
+        .filter(Segment.video_id == video_id)
+        .order_by(Segment.start)
+        .all()
+    )
+    topics = (
+        db.query(GraphNode)
+        .filter(GraphNode.kind == "topics", GraphNode.video_id == video_id)
+        .all()
+    )
+    return plan(
+        duration=float(v.duration or 0),
+        segments=[{"start": s.start, "end": s.end, "text": s.text} for s in segs],
+        topics=[{"label": t.label, "start": t.start} for t in topics],
+    )
+
+
 class LongformBody(BaseModel):
     note: str | None = None
     urls: list[str] = []
@@ -548,7 +578,7 @@ def mark_longform_reprocessed(
     _claims=Depends(require_role("manage_archive")),
     db: Session = Depends(get_db_session),
 ):
-    """Stamp a >10min source as already chopped so the work list skips it."""
+    """Stamp a >15min source as already chopped so the work list skips it."""
     from datetime import datetime, timezone  # noqa: PLC0415
     v = db.get(Video, video_id)
     if v is None:

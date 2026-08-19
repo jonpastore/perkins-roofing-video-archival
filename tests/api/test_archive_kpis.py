@@ -18,7 +18,7 @@ os.environ.setdefault("DB_URL", f"sqlite:///{_tmp.name}")
 
 from api.auth import set_verifier  # noqa: E402
 from api.routes.archive import router, _backfill_guard, _poll_kpis_guard, _check_new_guard, _list_cache  # noqa: E402
-from app.models import Base, SessionLocal, Video, MiniSeries, SocialPost, Article, engine  # noqa: E402
+from app.models import Base, SessionLocal, Video, MiniSeries, SocialPost, Article, Segment, GraphNode, engine  # noqa: E402
 
 Base.metadata.create_all(engine)
 
@@ -52,6 +52,8 @@ def seed_db():
         db.query(SocialPost).delete()
         db.query(MiniSeries).delete()
         db.query(Article).delete()
+        db.query(GraphNode).delete()
+        db.query(Segment).delete()
         db.query(Video).delete()
 
         db.add(Video(
@@ -418,3 +420,35 @@ def test_mark_longform_reprocessed():
     unchopped = {v["id"] for v in client.get(
         "/archive/videos?min_length=600&unchopped=true", headers=AUTH).json()}
     assert VID_LONG not in unchopped
+
+
+def test_edit_plan_404_unknown_video():
+    client = _make_client("admin")
+    resp = client.get("/archive/missing/edit-plan", headers=AUTH)
+    assert resp.status_code == 404
+
+
+def test_edit_plan_tightens_fluff_on_a_short_longform():
+    with SessionLocal() as db:
+        db.add(Segment(
+            video_id=VID_LONG, start=0, end=40,
+            text="Hey guys uh thanks for watching smash that like button you know",
+            tenant_id=1,
+        ))
+        db.add(Segment(
+            video_id=VID_LONG, start=40, end=400,
+            text="Foam the tile, set the hip, and check the Miami-Dade notice of acceptance.",
+            tenant_id=1,
+        ))
+        db.add(GraphNode(
+            video_id=VID_LONG, kind="topics", label="Tile foam method",
+            start=40, version="v1", tenant_id=1,
+        ))
+        db.commit()
+    client = _make_client("admin")
+    resp = client.get(f"/archive/{VID_LONG}/edit-plan", headers=AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["action"] in {"tighten", "split", "chop"}
+    assert body["duration"] == 600
+    assert "keep" in body and "pieces" in body

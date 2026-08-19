@@ -225,7 +225,7 @@ function TopicVideoModal({
               {articleErr && <ErrorMsg>Could not load articles: {articleErr}</ErrorMsg>}
               {articles && articles.length === 0 && (
                 <p style={{ color: BRAND.sub, fontSize: 14 }}>
-                  No articles generated for this topic yet. Use "Generate cluster articles" to create them.
+                  No articles for this topic yet. Use Generate cluster from the inbox if it is still uncovered.
                 </p>
               )}
               {articles && articles.length > 0 && (
@@ -480,6 +480,37 @@ interface GraphPayload {
   diversity: { shannon: number; concentrated: boolean; flags: { genre: string; flag: string }[] };
 }
 
+interface CutRow {
+  id: string;
+  title: string;
+  duration: number;
+  views: number;
+  comments: number;
+  action: string;
+  why: string;
+  genre: string;
+  has_clips: boolean;
+}
+
+interface FilmRow {
+  id: string;
+  label: string;
+  density: string;
+  why: string;
+  questions: string[];
+  grounding_seconds: number;
+}
+
+interface CompetitorRow {
+  genre_id: string;
+  query: string;
+  we_rank: boolean;
+  unanswered_paa: string[];
+  competitor_hosts: string[];
+  action: "film" | "write" | "hold" | string;
+  why?: string;
+}
+
 const INBOX_LIMIT = 12;
 
 function inboxFromGraph(g: GraphPayload | null): Array<GraphSubject & { genre: string; genreId: string; density: string }> {
@@ -518,6 +549,12 @@ export function Opportunities() {
   const [unusedPage, setUnusedPage] = useState(0);
   const [unusedLoading, setUnusedLoading] = useState(true);
   const [unusedError, setUnusedError] = useState<string | null>(null);
+  const [cuts, setCuts] = useState<CutRow[]>([]);
+  const [films, setFilms] = useState<FilmRow[]>([]);
+  const [cutPlans, setCutPlans] = useState<Record<string, { action: string; reason: string; target_seconds: number; cut_seconds: number } | "loading" | "error">>({});
+  const [competitorRows, setCompetitorRows] = useState<CompetitorRow[]>([]);
+  const [competitorError, setCompetitorError] = useState<string | null>(null);
+  const [competitorLoading, setCompetitorLoading] = useState(false);
 
   const fetchGraph = useCallback(() => {
     setGraphLoading(true);
@@ -570,14 +607,66 @@ export function Opportunities() {
       .finally(() => setUnusedLoading(false));
   }, []);
 
+  const fetchSocial = useCallback(() => {
+    apiFetch("/topic-graph/social-brief")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(await errText(r));
+        return r.json();
+      })
+      .then((d: { cut_for_social?: CutRow[]; film_next?: FilmRow[] }) => {
+        setCuts(d.cut_for_social ?? []);
+        setFilms(d.film_next ?? []);
+      })
+      .catch(() => { setCuts([]); setFilms([]); });
+  }, []);
+
   useEffect(() => { fetchGraph(); }, [fetchGraph]);
   useEffect(() => { fetchReels(); }, [fetchReels]);
   useEffect(() => { fetchUnused(unusedPage); }, [fetchUnused, unusedPage]);
+  useEffect(() => { fetchSocial(); }, [fetchSocial]);
 
   function refreshAll() {
     fetchGraph();
     fetchReels();
     fetchUnused(unusedPage);
+    fetchSocial();
+  }
+
+  async function scanCompetitors() {
+    setCompetitorLoading(true);
+    setCompetitorError(null);
+    try {
+      const r = await apiFetch("/topic-graph/competitor-scan", { method: "POST" });
+      if (!r.ok) throw new Error(await errText(r));
+      const body = await r.json() as {
+        ok?: boolean;
+        error?: string | null;
+        queries?: CompetitorRow[];
+      };
+      if (!body.ok) {
+        setCompetitorRows([]);
+        setCompetitorError(body.error || "Serper is not configured.");
+        return;
+      }
+      setCompetitorRows(body.queries ?? []);
+    } catch (e: unknown) {
+      setCompetitorRows([]);
+      setCompetitorError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCompetitorLoading(false);
+    }
+  }
+
+  async function analyzeCut(id: string) {
+    setCutPlans((p) => ({ ...p, [id]: "loading" }));
+    try {
+      const r = await apiFetch(`/archive/${id}/edit-plan`);
+      if (!r.ok) throw new Error(await errText(r));
+      const body = await r.json();
+      setCutPlans((p) => ({ ...p, [id]: body }));
+    } catch {
+      setCutPlans((p) => ({ ...p, [id]: "error" }));
+    }
   }
 
   async function generateArticle(topic: string) {
@@ -720,6 +809,108 @@ export function Opportunities() {
       {videoModalLabel && (
         <TopicVideoModal label={videoModalLabel} onClose={() => setVideoModalLabel(null)} />
       )}
+
+      <SectionHeader>What others cover</SectionHeader>
+      <ActionNote>
+        Five Florida-local Google queries (HOA metal, hurricane insurance, secondary water
+        barrier, salt-air standing seam, impact-window leaks). Not a crawl of every roofer,
+        and not run on page load. Film = we do not rank. Write = we rank but People Also
+        Ask is unanswered. Hold = we already cover it.
+      </ActionNote>
+      <div style={{ marginBottom: 10 }}>
+        <Button onClick={() => void scanCompetitors()} disabled={competitorLoading}>
+          {competitorLoading ? "Scanning…" : "Scan what others cover"}
+        </Button>
+      </div>
+      {competitorError && <ErrorMsg>{competitorError}</ErrorMsg>}
+      {competitorRows.map((row) => (
+        <Card key={row.query} style={{ padding: 14, marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Badge tone={row.action === "hold" ? "green" : row.action === "write" ? "blue" : "amber"}>
+              {row.action}
+            </Badge>
+            <div style={{ fontWeight: 600, color: BRAND.navyText }}>{row.query}</div>
+          </div>
+          <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 4 }}>
+            {row.we_rank ? "We already rank in the top 10" : "We do not rank in the top 10"}
+            {row.competitor_hosts.length > 0 ? ` · ${row.competitor_hosts.slice(0, 3).join(", ")}` : ""}
+          </div>
+          {row.why && <div style={{ fontSize: 13, marginTop: 6 }}>{row.why}</div>}
+          {row.unanswered_paa.length > 0 && (
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12, color: BRAND.ink }}>
+              {row.unanswered_paa.map((q) => <li key={q}>{q}</li>)}
+            </ul>
+          )}
+        </Card>
+      ))}
+
+      <SectionHeader>Cut for social ({cuts.length})</SectionHeader>
+      <ActionNote>
+        Highest YouTube heat (comments, then likes, then views) that is not already posted.
+        Long talks get tighten/split; already-short clips say post. Analyze uses the same
+        transcript cut plan as the Dashboard long-video queue.
+      </ActionNote>
+      {cuts.length === 0 && !graphLoading && <EmptyState label="No unused high-heat footage" />}
+      {cuts.map((c) => {
+        const plan = cutPlans[c.id];
+        return (
+          <Card key={c.id} style={{ padding: 14, marginBottom: 8 }}>
+            <div style={{ fontWeight: 600, color: BRAND.navyText }}>{c.title}</div>
+            <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3 }}>
+              {c.genre} · {Math.round(c.duration / 60)} min · {c.comments} comments · {c.views.toLocaleString()} views
+              {" · "}{c.action.replaceAll("_", " ")}
+            </div>
+            <div style={{ fontSize: 13, marginTop: 6 }}>{c.why}</div>
+            {typeof plan === "object" && plan && (
+              <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 6 }}>
+                {plan.reason}
+                {plan.action === "tighten" ? ` Drop ${Math.round(plan.cut_seconds)}s.` : ""}
+              </div>
+            )}
+            {plan === "error" && (
+              <div style={{ fontSize: 12, color: BRAND.red, marginTop: 4 }}>No transcript to score.</div>
+            )}
+            <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => void analyzeCut(c.id)}
+                disabled={plan === "loading"}
+                style={{ background: "none", border: "none", padding: 0, color: BRAND.navyText, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+              >
+                {plan === "loading" ? "Analyzing…" : "Analyze cut"}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("clip-studio", { video: c.id })}
+                style={{ background: "none", border: "none", padding: 0, color: BRAND.red, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+              >
+                Open in Clip Studio →
+              </button>
+            </div>
+          </Card>
+        );
+      })}
+
+      <SectionHeader>Film next ({films.length})</SectionHeader>
+      <ActionNote>
+        Under-served or empty genres, plus questions people already asked on YouTube.
+        We do not have TikTok/IG insights yet — this is Tim&apos;s channel + the topic graph.
+      </ActionNote>
+      {films.length === 0 && !graphLoading && <EmptyState label="No film gaps ranked" />}
+      {films.map((f) => (
+        <Card key={f.id} style={{ padding: 14, marginBottom: 8 }}>
+          <div style={{ fontWeight: 600, color: BRAND.navyText }}>{f.label}</div>
+          <div style={{ fontSize: 12, color: BRAND.sub, marginTop: 3 }}>
+            {f.density.replaceAll("_", " ")} · {Math.round(f.grounding_seconds / 60)} min on tape
+          </div>
+          <div style={{ fontSize: 13, marginTop: 6 }}>{f.why}</div>
+          {f.questions.length > 0 && (
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12, color: BRAND.ink }}>
+              {f.questions.map((q) => <li key={q}>{q}</li>)}
+            </ul>
+          )}
+        </Card>
+      ))}
 
       {/* Reels */}
       <SectionHeader>

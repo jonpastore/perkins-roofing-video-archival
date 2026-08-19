@@ -88,6 +88,18 @@ def test_faq_graph_includes_answered():
     assert body["totals"]["published"] >= 1
 
 
+def test_social_brief_returns_cut_and_film_lists():
+    _seed()
+    c = _client("admin")
+    r = c.get("/topic-graph/social-brief", headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert "cut_for_social" in body
+    assert "film_next" in body
+    assert isinstance(body["cut_for_social"], list)
+    assert isinstance(body["film_next"], list)
+
+
 def test_genre_catalog_endpoint():
     c = _client("sales")
     r = c.get("/topic-graph/genres", headers=AUTH)
@@ -100,3 +112,44 @@ def test_unauthenticated_is_rejected():
     c = _client("admin")
     r = c.get("/topic-graph")
     assert r.status_code in (401, 403)
+
+
+def test_competitor_scan_fails_soft_without_serper(monkeypatch):
+    _seed()
+    c = _client("admin")
+
+    def _boom(_query: str):
+        raise RuntimeError("SERPER_API_KEY env var is not set")
+
+    monkeypatch.setattr("adapters.serper.fetch_serp", _boom)
+    r = c.post("/topic-graph/competitor-scan", headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert body["queries"] == []
+    assert "SERPER" in (body.get("error") or "")
+
+
+def test_competitor_scan_ranks_gaps_from_mocked_serp(monkeypatch):
+    _seed()
+    c = _client("admin")
+
+    def _serp(query: str):
+        if "hurricane" in query.lower():
+            return {
+                "organic": [{"title": "This Old House", "link": "https://thisoldhouse.com/hurricane"}],
+                "peopleAlsoAsk": [{"question": "Does insurance cover a hurricane leak?"}],
+            }
+        return {
+            "organic": [{"title": "Perkins", "link": "https://perkinsroofing.com/hoa-metal"}],
+            "peopleAlsoAsk": [],
+        }
+
+    monkeypatch.setattr("adapters.serper.fetch_serp", _serp)
+    r = c.post("/topic-graph/competitor-scan", headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert len(body["queries"]) >= 1
+    assert body["queries"][0]["action"] == "film"
+    assert body["queries"][0]["we_rank"] is False

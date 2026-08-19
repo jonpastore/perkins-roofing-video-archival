@@ -10,3 +10,5 @@ Status: **implemented-local**
 - Store clip URLs on the parent (operator-facing) and stamp `parent_video_id` on children
   (query-facing). Both are required: enumerate may see C before anyone pastes URLs, or after.
 - Skip generation; do not delete child Video rows.
+- Long means over 15 minutes. Under 30 minutes is still long enough to evaluate
+  tighten (one topic, cut fluff) vs split (two or more topic blocks).

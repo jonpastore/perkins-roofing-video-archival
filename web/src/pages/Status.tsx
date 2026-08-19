@@ -923,11 +923,51 @@ function GoLiveChecklistBanner() {
   );
 }
 
+function EditPlanView({ plan }: { plan: EditPlan }) {
+  const label =
+    plan.action === "tighten" ? "Tighten (cut fluff)"
+    : plan.action === "split" ? "Split on topic changes"
+    : plan.action === "chop" ? "Chop into clips"
+    : "No transcript";
+  return (
+    <div style={{ margin: "6px 0 8px", padding: "8px 10px", background: BRAND.bg, borderRadius: 8, fontSize: 12, lineHeight: 1.5 }}>
+      <div style={{ fontWeight: 700, color: BRAND.navyText, textTransform: "capitalize" }}>{label}</div>
+      <div style={{ color: BRAND.sub }}>{plan.reason}</div>
+      {plan.action === "tighten" && plan.keep.length > 0 && (
+        <div style={{ marginTop: 4 }}>
+          Keep {plan.keep.map((k) => `${fmtDuration(k.start)}–${fmtDuration(k.end)}`).join(", ")}
+          {" "}(drop {fmtDuration(plan.cut_seconds)} fluff)
+        </div>
+      )}
+      {(plan.action === "split" || plan.action === "chop") && plan.pieces.length > 1 && (
+        <ol style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+          {plan.pieces.map((p, i) => (
+            <li key={`${p.start}-${i}`}>
+              {fmtDuration(p.start)}–{fmtDuration(p.end)}
+              {p.label ? ` — ${p.label}` : ""}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function fmtDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds)) return "—";
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+interface EditPlan {
+  action: "tighten" | "split" | "chop" | "unknown";
+  reason: string;
+  target_seconds: number;
+  cut_seconds: number;
+  fluff_ratio: number;
+  keep: Array<{ start: number; end: number; label: string }>;
+  pieces: Array<{ start: number; end: number; label: string }>;
 }
 
 function LongformQueue() {
@@ -941,9 +981,10 @@ function LongformQueue() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [urls, setUrls] = useState<Record<string, string>>({});
+  const [plans, setPlans] = useState<Record<string, EditPlan | "loading" | "error">>({});
 
   useEffect(() => {
-    apiFetch("/archive/videos?min_length=600&unchopped=true&limit=200")
+    apiFetch("/archive/videos?min_length=900&unchopped=true&limit=200")
       .then(async (res) => {
         if (!res.ok) throw new Error(await errText(res));
         return res.json();
@@ -974,18 +1015,34 @@ function LongformQueue() {
     }
   }
 
+  async function loadPlan(id: string) {
+    setPlans((prev) => ({ ...prev, [id]: "loading" }));
+    try {
+      const res = await apiFetch(`/archive/${id}/edit-plan`);
+      if (!res.ok) throw new Error(await errText(res));
+      const body = await res.json() as EditPlan;
+      setPlans((prev) => ({ ...prev, [id]: body }));
+    } catch {
+      setPlans((prev) => ({ ...prev, [id]: "error" }));
+    }
+  }
+
   if (loading) return null;
   return (
     <Card style={{ marginBottom: 16, padding: "14px 20px" }}>
       <div style={{ fontWeight: 700, color: BRAND.navyText, fontSize: 15, marginBottom: 4 }}>
-        Long videos (≥10 min) — {open.length} not chopped
+        Long videos (over 15 min) — {open.length} not chopped
       </div>
       <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 10 }}>
-        After you upload the slices, paste their YouTube URLs here. Those clips will not
+        Over 15 minutes belongs here. Under 30 minutes, Analyze says whether to
+        <strong> tighten</strong> (cut fluff) or <strong>split</strong> on topic changes.
+        After you upload the slices, paste their YouTube URLs. Those clips will not
         generate new articles, FAQs, or topic suggestions. We still cannot push to YouTube from this app.
       </div>
       <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.7, maxHeight: 360, overflow: "auto" }}>
-        {open.slice(0, 20).map((r) => (
+        {open.slice(0, 20).map((r) => {
+          const scored = plans[r.id];
+          return (
           <li key={r.id} style={{ marginBottom: 10 }}>
             {r.youtube_url ? (
               <a href={r.youtube_url} target="_blank" rel="noreferrer" style={{ color: BRAND.navyText }}>
@@ -993,6 +1050,25 @@ function LongformQueue() {
               </a>
             ) : (r.title || r.id)}
             <span style={{ color: BRAND.sub, marginLeft: 8 }}>{fmtDuration(r.duration)}</span>
+            {(r.duration ?? 0) < 1800 && (
+              <span style={{ marginLeft: 8, fontSize: 11, color: BRAND.sub }}>under 30 min — evaluate tighten vs split</span>
+            )}
+            <div style={{ marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => void loadPlan(r.id)}
+                disabled={scored === "loading"}
+                style={{ marginRight: 8, fontSize: 12, cursor: "pointer" }}
+              >
+                {scored === "loading" ? "Analyzing…" : "Analyze cut"}
+              </button>
+            </div>
+            {typeof scored === "object" && scored && (
+              <EditPlanView plan={scored} />
+            )}
+            {scored === "error" && (
+              <div style={{ fontSize: 12, color: BRAND.red }}>Could not score this transcript.</div>
+            )}
             <div style={{ marginTop: 4 }}>
               <textarea
                 placeholder="https://youtu.be/… (one clip URL per line)"
@@ -1009,7 +1085,8 @@ function LongformQueue() {
               </button>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </Card>
   );
