@@ -411,7 +411,6 @@ def _finalize(
         yt_likes = sum(s["yt_likes"] for s in subjects_raw)
         yt_comments = sum(s["yt_comments"] for s in subjects_raw)
         grounding = sum(s["grounding_seconds"] for s in subjects_raw)
-        demand = engagement_score(yt_views, yt_likes, yt_comments)
         div_w = diversity_weight(n_pub_sub if pub else 99)
         subjects = []
         genre_opp = 0.0

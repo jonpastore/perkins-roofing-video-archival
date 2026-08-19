@@ -141,10 +141,10 @@ def next_topic(db, extra_done: set[str] | None = None) -> dict | None:
         seconds = sum(duration_map.get(vid, 0.0) for vid in source_ids)
         views = likes = comments = 0
         for vid in source_ids:
-            v, l, c = views_map.get(vid, (0, 0, 0))
-            views += v
-            likes += l
-            comments += c
+            v_ct, like_ct, cmt_ct = views_map.get(vid, (0, 0, 0))
+            views += v_ct
+            likes += like_ct
+            comments += cmt_ct
         gid, _, pub = classify_label(g["label"])
         sl = slugify(g["label"])
         covered = sl in cov["slugs"] or sl in cov["pillars"]
