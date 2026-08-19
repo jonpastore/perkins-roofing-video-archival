@@ -22,7 +22,8 @@ def test_queue_shows_when_and_why():
     assert "Waiting because" in status
     assert "ingest_next_at" in status
     assert "timeAgo" in status
-    assert "Hourly 9:00–18:00 ET" in status
+    assert "Every hour" in status
+    assert "9:00–18:00" not in status
 
 
 def test_dashboard_has_one_readiness_surface():

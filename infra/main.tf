@@ -939,12 +939,12 @@ resource "google_cloud_scheduler_job" "search_indexing_daily" {
   depends_on = [google_project_service.apis]
 }
 
-# Trigger the `ingest` Cloud Run Job hourly during business hours (9:00-18:00 ET, inclusive).
-# Runs as jobs-sa: speech.client + media-bucket access + a 3600s timeout — the STT-heavy work
-# does NOT belong in the user-facing API request. The job is single-flight (Postgres advisory
-# lock), so executions can never overlap — a second execution grabs no lock and exits.
-# History: per-minute during the initial backlog drain, then paused out-of-band 2026-07-06 once
-# the queue emptied; hourly drains the pending queue without 1,440 no-op runs/day.
+# Trigger the `ingest` Cloud Run Job every hour, 24/7. A run takes ~50 minutes and is
+# single-flight (Postgres advisory lock), so the next hourly fire exits immediately if the
+# previous one is still going. Runs as jobs-sa: speech.client + media-bucket access.
+# History: per-minute during the initial backlog drain, then paused out-of-band 2026-07-06
+# once the queue emptied; then hourly 9-18 ET. Overnight idle was a schedule choice, not a
+# machine limit — 2026-08-19 it went back to hourly all day so pending transcripts do not sit.
 # NOTE: this job does NOT discover new uploads — it only advances videos already in the table
 # (jobs/ingest_worker.py selects rows whose stages aren't all done). An earlier version of this
 # comment claimed it "keeps new channel uploads flowing", which was wrong and cost 25 days of
@@ -953,7 +953,7 @@ resource "google_cloud_scheduler_job" "search_indexing_daily" {
 resource "google_cloud_scheduler_job" "run_ingest" {
   name      = "run-ingest"
   region    = var.region
-  schedule  = "0 9-18 * * *"
+  schedule  = "0 * * * *"
   time_zone = "America/New_York"
   paused    = false
 
@@ -974,8 +974,8 @@ resource "google_cloud_scheduler_job" "run_ingest" {
 # The enumerator was written and committed but never given a Cloud Run Job or a schedule, so
 # the catalog froze at its seed date: by 2026-07-28 the channel had 863 videos and the DB 841,
 # with the newest row dated 2026-07-03 — 15 uploads missed, including two that day.
-# 07:00 ET, i.e. BEFORE the 09:00-18:00 ingest window, so a video found in the morning is
-# transcribed the same day rather than waiting for the next one.
+# 07:00 ET, before the day's first archive (07:30) so a video found in the morning is
+# transcribed the same day rather than waiting for the next enumerate.
 resource "google_cloud_scheduler_job" "enumerate_channel" {
   name      = "enumerate-channel"
   region    = var.region
@@ -1005,7 +1005,7 @@ resource "google_cloud_scheduler_job" "enumerate_channel" {
 #
 # Inherently incremental: the job filters Video.archive_uri IS NULL, so a run with nothing new
 # does nothing. 07:30 ET, i.e. after enumerate-channel at 07:00, so the morning's finds are
-# archived the same day and ingest (09:00-18:00) can transcribe them.
+# archived the same day and the hourly ingest job can transcribe them.
 resource "google_cloud_scheduler_job" "archive" {
   name      = "archive"
   region    = var.region

@@ -1424,10 +1424,10 @@ export function Status() {
             <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
               Processing / Queue
             </h3>
-            <HelpTip text="Ingest is not a continuous drain. Cloud Scheduler run-ingest fires hourly 9:00–18:00 ET, 25 videos per run, oldest id first. A run takes ~50 minutes. Pending means the worker has not started this row yet — the cron is not missing, this video is waiting its turn. Archive must exist (07:30 ET job) before STT can start." />
+            <HelpTip text="Cloud Scheduler run-ingest fires every hour, 24/7, 25 videos per run, oldest id first. A run takes ~50 minutes; if the previous hour is still going, the next fire exits (single-flight). Pending means this row has not been started yet. Archive must exist (07:30 ET job) before STT can start." />
           </div>
           <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 14 }}>
-            Hourly 9:00–18:00 ET · next {fmtEt(data.ingest_next_at)} · 25 videos/run
+            Every hour · next {fmtEt(data.ingest_next_at)} · 25 videos/run
           </div>
 
           {data.queue.length === 0 ? (

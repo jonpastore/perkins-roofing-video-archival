@@ -141,7 +141,7 @@ def _youtube_issues(yt: dict[str, Any]) -> list[dict[str, str]]:
                 f"Transcript stuck for {vid}",
                 "Ingest tried STT before the MP4 landed. The file is in GCS now.",
                 "POST /status/retry {video_id, stage: transcript} then let run-ingest pick it up "
-                "(09:00–18:00 ET), or gcloud run jobs execute ingest.",
+                "(hourly), or gcloud run jobs execute ingest.",
             ))
         elif "no archive_uri" in raw:
             out.append(_issue(

@@ -3,10 +3,10 @@ need work. Transcript = on-disk captions -> cloud STT fallback (GCP Speech-to-Te
 Shorts are VAD-skipped inside ingest_video (core.vad) — the skip is persisted so they're never
 re-transcribed.
 
-Triggering: Cloud Scheduler `run-ingest` fires hourly 9:00–18:00 ET (`0 9-18 * * *`
-America/New_York). Overlap is prevented by a Postgres session advisory lock held for the
-whole run — if a prior execution is still working, a new one grabs no lock and exits
-immediately. On sqlite (dev) there is no advisory lock. A run typically takes ~50 minutes.
+Triggering: Cloud Scheduler `run-ingest` fires every hour (`0 * * * *` America/New_York).
+Overlap is prevented by a Postgres session advisory lock held for the whole run — if a
+prior execution is still working, a new one grabs no lock and exits immediately. On sqlite
+(dev) there is no advisory lock. A run typically takes ~50 minutes.
 
 Selection: only videos whose transcript/graph/embed stages are not all 'done' at the current
 PIPELINE_VERSION are picked up, so a per-minute cron makes forward progress instead of
