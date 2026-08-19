@@ -16,6 +16,15 @@ def test_data_sources_panel_has_login_buttons():
     assert "visibilitychange" in src
 
 
+def test_queue_shows_when_and_why():
+    status = (ROOT / "pages" / "Status.tsx").read_text()
+    assert "Queued" in status
+    assert "Waiting because" in status
+    assert "ingest_next_at" in status
+    assert "timeAgo" in status
+    assert "Hourly 9:00–18:00 ET" in status
+
+
 def test_dashboard_has_one_readiness_surface():
     status = (ROOT / "pages" / "Status.tsx").read_text()
     assert "Go-Live Checklist" not in status

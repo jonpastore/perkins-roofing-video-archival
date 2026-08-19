@@ -7,6 +7,8 @@ All functions accept a SQLAlchemy session and return plain dicts.
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 # ---------------------------------------------------------------------------
@@ -113,3 +115,54 @@ def action_counters(db: Session) -> dict:
         "comments_pending": comments_pending,
         "videos_pending": videos_pending,
     }
+
+
+# Ingest cron: Cloud Scheduler `run-ingest` is `0 9-18 * * *` America/New_York,
+# 25 videos/run, oldest video id first. Not a per-minute drain.
+INGEST_HOUR_START = 9
+INGEST_HOUR_END = 18
+INGEST_BATCH = 25
+INGEST_TZ_NAME = "America/New_York"
+
+
+def next_ingest_at(now: datetime) -> datetime:
+    """Next top-of-hour ingest fire in America/New_York, returned tz-aware."""
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    et = now.astimezone(ZoneInfo(INGEST_TZ_NAME))
+    for hour in range(INGEST_HOUR_START, INGEST_HOUR_END + 1):
+        cand = et.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if cand > et:
+            return cand
+    nxt = et + timedelta(days=1)
+    return nxt.replace(hour=INGEST_HOUR_START, minute=0, second=0, microsecond=0)
+
+
+def queue_wait_reason(
+    *,
+    status: str,
+    archive_uri: str | None,
+    now: datetime | None = None,
+) -> str:
+    """Why a pending/running ingest row has not finished."""
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+
+    if status == "running":
+        return "Worker has this stage now."
+    if not archive_uri:
+        return "Waiting for archive (07:30 ET) before STT can start."
+    clock = now or datetime.now(timezone.utc)
+    nxt = next_ingest_at(clock)
+    et = clock.astimezone(ZoneInfo(INGEST_TZ_NAME))
+    if INGEST_HOUR_START <= et.hour <= INGEST_HOUR_END:
+        return (
+            f"Ingest runs hourly {INGEST_HOUR_START}:00–{INGEST_HOUR_END}:00 ET, "
+            f"{INGEST_BATCH} videos/run, oldest id first. Waiting its turn; next fire "
+            f"{nxt.strftime('%H:%M')} ET."
+        )
+    return (
+        f"Ingest is idle overnight. Next run {nxt.strftime('%H:%M')} ET "
+        f"({INGEST_HOUR_START}:00–{INGEST_HOUR_END}:00, {INGEST_BATCH}/run)."
+    )

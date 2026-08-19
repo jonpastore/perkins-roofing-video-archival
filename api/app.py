@@ -643,10 +643,12 @@ def status(_claims=Depends(require_role("view_status")), s: Session = Depends(ge
     """Admin observability (Req 6): corpus + pipeline + content counts, last errors,
     scheduled-content breakdown (articles vs social by platform), and action counters.
     Uses the RLS-stamped session so all counts are the caller's tenant."""
+    from datetime import datetime, timezone
+
     from sqlalchemy import func
 
     from app.models import Article, Chunk, FaqEntry, IngestionRun, ScheduledContent, Video
-    from core.status import action_counters, scheduled_breakdown
+    from core.status import action_counters, next_ingest_at, queue_wait_reason, scheduled_breakdown
     errors = [
         {
             "video_id": r.video_id,
@@ -662,23 +664,31 @@ def status(_claims=Depends(require_role("view_status")), s: Session = Depends(ge
             .limit(20)
         )
     ]
-    queue = [
-        {
+    queue = []
+    for r, v in (
+        s.query(IngestionRun, Video)
+        .outerjoin(Video, Video.id == IngestionRun.video_id)
+        .filter(IngestionRun.status.in_(["pending", "running"]))
+        .order_by(IngestionRun.updated_at.desc())
+        .limit(50)
+    ):
+        archive_uri = v.archive_uri if v else None
+        queued = r.updated_at.isoformat() if r.updated_at else None
+        if queued and not queued.endswith("Z") and "+" not in queued:
+            queued += "Z"
+        queue.append({
             "video_id": r.video_id,
             "title": (v.title if v else None),
             "stage": r.stage,
             "status": r.status,
-        }
-        for r, v in (
-            s.query(IngestionRun, Video)
-            .outerjoin(Video, Video.id == IngestionRun.video_id)
-            .filter(IngestionRun.status.in_(["pending", "running"]))
-            .order_by(IngestionRun.updated_at.desc())
-            .limit(50)
-        )
-    ]
+            "queued_at": queued,
+            "attempts": int(r.attempts or 0),
+            "archived": bool(archive_uri),
+            "wait_reason": queue_wait_reason(status=r.status or "", archive_uri=archive_uri),
+        })
     breakdown = scheduled_breakdown(s)
     counters = action_counters(s)
+    nxt = next_ingest_at(datetime.now(timezone.utc))
     return {
         "videos": s.query(func.count(Video.id)).scalar(),
         "videos_embedded": s.query(func.count(func.distinct(Chunk.video_id))).scalar(),
@@ -702,6 +712,7 @@ def status(_claims=Depends(require_role("view_status")), s: Session = Depends(ge
         "videos_pending": counters["videos_pending"],
         "failed_stages": errors,
         "queue": queue,
+        "ingest_next_at": nxt.isoformat(),
     }
 
 

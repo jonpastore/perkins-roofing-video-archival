@@ -39,6 +39,10 @@ interface QueueItem {
   title?: string | null;
   stage: string;
   status: string;
+  queued_at?: string | null;
+  attempts?: number;
+  archived?: boolean;
+  wait_reason?: string;
 }
 
 interface ScheduledBucket {
@@ -65,6 +69,7 @@ interface StatusData {
   videos_to_approve?: number;
   failed_stages: FailedStage[];
   queue: QueueItem[];
+  ingest_next_at?: string | null;
 }
 
 interface KpiCard {
@@ -900,6 +905,30 @@ function fmtDuration(seconds: number | null | undefined): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function timeAgo(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  const sec = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
+
+function fmtEt(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  return new Date(t).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    day: "numeric",
+  }) + " ET";
+}
+
 interface EditPlan {
   action: "tighten" | "split" | "chop" | "unknown";
   reason: string;
@@ -1391,9 +1420,15 @@ export function Status() {
           )}
 
           {/* Processing / Queue */}
-          <h3 style={{ margin: "32px 0 14px", color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
-            Processing / Queue
-          </h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "32px 0 8px", flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0, color: BRAND.navyText, fontSize: 16, fontWeight: 600 }}>
+              Processing / Queue
+            </h3>
+            <HelpTip text="Ingest is not a continuous drain. Cloud Scheduler run-ingest fires hourly 9:00–18:00 ET, 25 videos per run, oldest id first. A run takes ~50 minutes. Pending means the worker has not started this row yet — the cron is not missing, this video is waiting its turn. Archive must exist (07:30 ET job) before STT can start." />
+          </div>
+          <div style={{ fontSize: 12, color: BRAND.sub, marginBottom: 14 }}>
+            Hourly 9:00–18:00 ET · next {fmtEt(data.ingest_next_at)} · 25 videos/run
+          </div>
 
           {data.queue.length === 0 ? (
             <div style={{ marginBottom: 8 }}>
@@ -1407,6 +1442,8 @@ export function Status() {
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Video</th>
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Stage</th>
                     <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Queued</th>
+                    <th style={{ padding: "10px 16px", color: BRAND.sub, fontWeight: 600 }}>Waiting because</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1430,6 +1467,13 @@ export function Status() {
                       </td>
                       <td style={{ padding: "10px 16px" }}>
                         <Badge tone={q.status === "running" ? "green" : "amber"}>{q.status}</Badge>
+                      </td>
+                      <td style={{ padding: "10px 16px", color: BRAND.sub, fontSize: 13, whiteSpace: "nowrap" }} title={q.queued_at ?? undefined}>
+                        {timeAgo(q.queued_at)}
+                        {q.attempts ? ` · try ${q.attempts}` : ""}
+                      </td>
+                      <td style={{ padding: "10px 16px", color: BRAND.ink, fontSize: 12, lineHeight: 1.4 }}>
+                        {q.wait_reason || "—"}
                       </td>
                     </tr>
                   ))}

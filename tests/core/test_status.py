@@ -13,7 +13,7 @@ from app.models import (
     MiniSeries,
     ScheduledContent,
 )
-from core.status import action_counters, scheduled_breakdown
+from core.status import action_counters, next_ingest_at, queue_wait_reason, scheduled_breakdown
 
 
 @pytest.fixture()
@@ -160,3 +160,39 @@ class TestActionCounters:
         result = action_counters(db)
         # "shingle replacement" matches article title — should not count as uncovered
         assert result["content_opportunities"] == 0
+
+
+def test_next_ingest_before_nine_is_nine_et():
+    from zoneinfo import ZoneInfo
+    now = datetime(2026, 8, 19, 12, 30, tzinfo=ZoneInfo("UTC"))  # 08:30 ET
+    nxt = next_ingest_at(now)
+    assert nxt.hour == 9 and nxt.minute == 0
+    assert str(nxt.tzinfo) == "America/New_York"
+
+
+def test_next_ingest_during_window_is_next_hour():
+    from zoneinfo import ZoneInfo
+    now = datetime(2026, 8, 19, 13, 40, tzinfo=ZoneInfo("UTC"))  # 09:40 ET
+    nxt = next_ingest_at(now)
+    assert nxt.hour == 10 and nxt.minute == 0
+
+
+def test_next_ingest_after_window_is_tomorrow_nine():
+    from zoneinfo import ZoneInfo
+    now = datetime(2026, 8, 19, 23, 10, tzinfo=ZoneInfo("UTC"))  # 19:10 ET
+    nxt = next_ingest_at(now)
+    assert nxt.day == 20 and nxt.hour == 9
+
+
+def test_wait_reason_running_and_unarchived():
+    assert "now" in queue_wait_reason(status="running", archive_uri="gs://x").lower()
+    assert "archive" in queue_wait_reason(status="pending", archive_uri=None).lower()
+
+
+def test_wait_reason_pending_in_window_names_the_cron():
+    from zoneinfo import ZoneInfo
+    now = datetime(2026, 8, 19, 13, 40, tzinfo=ZoneInfo("UTC"))
+    why = queue_wait_reason(status="pending", archive_uri="gs://x", now=now)
+    assert "hourly" in why.lower()
+    assert "25" in why
+    assert "10:00" in why
