@@ -29,6 +29,7 @@ def test_nav_exposes_the_three_video_surfaces():
     assert "perkins.nav.pins" in APP
     assert "perkins.nav.sections" in APP
     assert "toggleSection" in APP
+    assert "id === tab || isPinned(id)" in APP
     assert "sidebar-collapsed" in APP
     assert "NavIcon" in APP
     assert "NAV_RAIL_PX" in APP

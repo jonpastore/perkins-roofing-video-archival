@@ -364,7 +364,7 @@ function NavButton({
         <span
           role="button"
           tabIndex={0}
-          title={pinned ? "Unpin from collapsed menu" : "Pin to collapsed menu"}
+          title={pinned ? "Unpin — stays visible when this section is folded" : "Pin — stays visible when this section is folded"}
           aria-label={pinned ? `Unpin ${label}` : `Pin ${label}`}
           onClick={(e) => { e.stopPropagation(); onPin(); }}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onPin(); } }}
@@ -649,7 +649,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
                 onToggle={() => toggleSection(section.label)}
               />
               {section.tabs
-                .filter(([id]) => !folded || id === tab)
+                .filter(([id]) => !folded || id === tab || isPinned(id))
                 .map(([id, label]) => (
                 <NavButton
                   key={id}
@@ -689,7 +689,7 @@ function Shell({ config, role }: { config: ShellConfig; role: Role }) {
             onToggle={() => toggleSection(adminSection.label)}
           />
           {allAdminTabs
-            .filter(([id]) => rail || !foldedSections.includes(adminSection.label) || id === tab)
+            .filter(([id]) => rail || !foldedSections.includes(adminSection.label) || id === tab || isPinned(id))
             .map(([id, label]) => (
             <NavButton
               key={id}
