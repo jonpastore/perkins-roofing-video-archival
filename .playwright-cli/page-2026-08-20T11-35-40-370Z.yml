@@ -1,0 +1,107 @@
+- main [ref=f1e3]:
+  - generic [ref=f1e4]:
+    - generic [ref=f1e5]: Corporate / Platform Operations
+    - generic [ref=f1e6]: Restricted to authorized administrators
+  - generic [ref=f1e7]:
+    - paragraph [ref=f1e8]: PLATFORM OPERATIONS · MOCK DATA
+    - heading "Keep system health and remediation visible without putting it on branch Today" [level=1] [ref=f1e9]
+    - paragraph [ref=f1e10]: A consequential preservation prototype for current Status, readiness, connection, legacy-data and diagnostic capabilities. A green summary never replaces per-service evidence.
+    - generic [ref=f1e11]:
+      - article [ref=f1e12]:
+        - generic [ref=f1e13]: Readiness gates
+        - generic [ref=f1e14]: 14 / 16
+        - text: 2 require action
+      - article [ref=f1e15]:
+        - generic [ref=f1e16]: Integrations
+        - generic [ref=f1e17]: 6 / 7
+        - text: 1 needs reconnect
+      - article [ref=f1e18]:
+        - generic [ref=f1e19]: Processing queue
+        - generic [ref=f1e20]: "3"
+        - text: 1 retryable failure
+      - article [ref=f1e21]:
+        - generic [ref=f1e22]: 24h spend
+        - generic [ref=f1e23]: $84.21
+        - text: Within alert range
+    - generic [ref=f1e24]:
+      - generic [ref=f1e25]:
+        - generic [ref=f1e26]:
+          - heading "Readiness and integration exceptions" [level=2] [ref=f1e27]
+          - generic [ref=f1e28]:
+            - generic [ref=f1e29]:
+              - generic [ref=f1e30]:
+                - text: Knowify accounting sync
+                - generic [ref=f1e31]: Last confirmed 9:42 AM · invoices delayed · raw record retained
+              - generic [ref=f1e32]: RECONNECT
+            - generic [ref=f1e33]:
+              - generic [ref=f1e34]:
+                - text: Proposal reminder job
+                - generic [ref=f1e35]: Retryable failure at 9:18 AM · no reminder replayed yet
+              - generic [ref=f1e36]: RETRY
+            - generic [ref=f1e37]:
+              - generic [ref=f1e38]:
+                - text: Production readiness
+                - generic [ref=f1e39]: DMARC and billing-export checks need remediation
+              - generic [ref=f1e40]: 2 BLOCKERS
+            - generic [ref=f1e41]:
+              - generic [ref=f1e42]:
+                - text: GHL lifecycle sync
+                - generic [ref=f1e43]: Healthy summary; record-level conflicts remain visible in sales work
+              - generic [ref=f1e44]: HEALTHY
+            - generic [ref=f1e45]:
+              - generic [ref=f1e46]:
+                - text: CompanyCam ingestion
+                - generic [ref=f1e47]: Webhook verified 8:56 AM · no backlog
+              - generic [ref=f1e48]: HEALTHY
+          - button "Open selected remediation" [ref=f1e49]
+          - button "Run permitted health checks" [ref=f1e50]
+        - generic [ref=f1e51]:
+          - heading "Recent restricted audit events" [level=2] [ref=f1e52]
+          - table [ref=f1e53]:
+            - rowgroup [ref=f1e54]:
+              - row [ref=f1e55]:
+                - columnheader "Time" [ref=f1e56]
+                - columnheader "Actor" [ref=f1e57]
+                - columnheader "Action" [ref=f1e58]
+                - columnheader "Result" [ref=f1e59]
+            - rowgroup [ref=f1e60]:
+              - row [ref=f1e61]:
+                - cell "10:02" [ref=f1e62]
+                - cell "Tim P." [ref=f1e63]
+                - cell "Viewed Miami branch exceptions" [ref=f1e64]
+                - cell "Allowed" [ref=f1e65]
+              - row [ref=f1e66]:
+                - cell "9:42" [ref=f1e67]
+                - cell "System" [ref=f1e68]
+                - cell "Knowify sync" [ref=f1e69]
+                - cell "Retryable failure" [ref=f1e70]
+              - row [ref=f1e71]:
+                - cell "9:18" [ref=f1e72]
+                - cell "System" [ref=f1e73]
+                - cell "Proposal reminder job" [ref=f1e74]
+                - cell "Failed safely" [ref=f1e75]
+      - complementary [ref=f1e76]:
+        - generic [ref=f1e77]:
+          - heading "Data-source health" [level=2] [ref=f1e78]
+          - generic [ref=f1e79]:
+            - generic [ref=f1e80]:
+              - generic [ref=f1e81]:
+                - text: Knowify
+                - generic [ref=f1e82]: OAuth reconnect required
+              - generic [ref=f1e83]: ACTION
+            - generic [ref=f1e84]:
+              - generic [ref=f1e85]:
+                - text: WordPress
+                - generic [ref=f1e86]: Last publish 8:21 AM
+              - generic [ref=f1e87]: OK
+            - generic [ref=f1e88]:
+              - generic [ref=f1e89]:
+                - text: YouTube
+                - generic [ref=f1e90]: Archive KPI poll 8:45 AM
+              - generic [ref=f1e91]: OK
+            - generic [ref=f1e92]:
+              - generic [ref=f1e93]:
+                - text: GCP / GCS
+                - generic [ref=f1e94]: Storage and render checks passed
+              - generic [ref=f1e95]: OK
+        - generic [ref=f1e96]: Security boundary:Secrets, OAuth actions, raw logs, health probes and retries are role-gated. Branch users see only record-relevant status and recovery guidance.

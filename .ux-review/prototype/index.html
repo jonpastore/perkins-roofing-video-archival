@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Disposable Perkins Roofing revenue command center UX prototype"
+    />
+    <title>Perkins — Revenue command center prototype</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="prototype-overrides.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to work queue</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand">
+          <img
+            class="brand-logo"
+            src="../../web/public/perkins-logo.png"
+            alt="Perkins Roofing Corp."
+          />
+        </div>
+        <button
+          class="workspace"
+          type="button"
+          aria-label="Current workspace"
+          data-prototype-unavailable="Workspace switching"
+        >
+          <span id="workspaceName">Jupiter Branch</span> <span>⌄</span>
+        </button>
+        <button
+          class="drawer-close"
+          type="button"
+          aria-label="Close navigation"
+        >
+          Close navigation
+        </button>
+        <nav id="primaryNav">
+          <a
+            class="nav-item active"
+            href="#today"
+            aria-current="page"
+            data-visible-to="manager sales corporate"
+            ><span>◉</span>Today <b id="navRiskCount">6</b></a
+          >
+          <a
+            class="nav-item"
+            href="#pipeline"
+            data-visible-to="manager sales corporate"
+            data-prototype-unavailable="Pipeline"
+            ><span>◇</span>Pipeline</a
+          >
+          <a
+            class="nav-item"
+            href="#customers"
+            data-visible-to="manager sales corporate"
+            data-prototype-unavailable="Customers"
+            ><span>◎</span>Customers</a
+          >
+          <a
+            class="nav-item"
+            href="#sales"
+            data-visible-to="manager sales corporate"
+            data-prototype-unavailable="Sales work"
+            ><span>▣</span>Sales work</a
+          >
+          <a
+            class="nav-item"
+            href="#schedule"
+            data-visible-to="manager sales corporate"
+            data-prototype-unavailable="Schedule"
+            ><span>◫</span>Schedule</a
+          >
+          <a
+            class="nav-item"
+            href="#knowledge"
+            data-visible-to="manager sales corporate"
+            data-prototype-unavailable="Knowledge"
+            ><span>?</span>Knowledge</a
+          >
+          <a
+            class="nav-item"
+            href="#reports"
+            data-visible-to="corporate"
+            data-prototype-unavailable="Reports"
+            hidden
+            ><span>▤</span>Reports</a
+          >
+          <a
+            class="nav-item"
+            href="#content-operations"
+            data-visible-to="corporate"
+            data-prototype-unavailable="Content Operations"
+            hidden
+            ><span>◒</span>Content operations</a
+          >
+          <a
+            class="nav-item"
+            href="platform-operations.html"
+            data-visible-to="platform"
+            hidden
+            ><span>⚙</span>Platform operations</a
+          >
+        </nav>
+        <div class="sidebar-footer">
+          <span class="sync-dot" aria-hidden="true"></span
+          ><span id="integrationLabel">Queue current</span>
+        </div>
+      </aside>
+      <button
+        class="drawer-scrim"
+        type="button"
+        aria-hidden="true"
+        tabindex="-1"
+        hidden
+      ></button>
+
+      <section class="surface">
+        <header class="topbar">
+          <button
+            class="mobile-menu"
+            type="button"
+            aria-label="Open navigation"
+            aria-expanded="false"
+            aria-controls="primaryNav"
+          >
+            ☰
+          </button>
+          <div class="breadcrumbs">
+            <span id="scopeLabel">Jupiter Branch</span><span>/</span
+            ><strong id="pageLabel">Today</strong>
+          </div>
+          <div class="topbar-actions">
+            <button
+              class="icon-button"
+              type="button"
+              aria-label="Search"
+              data-prototype-unavailable="Search"
+            >
+              ⌕
+            </button>
+            <button
+              class="icon-button"
+              type="button"
+              aria-label="Notifications"
+              data-prototype-unavailable="Notifications"
+            >
+              ◌<span class="notification-dot"></span>
+            </button>
+            <button
+              class="avatar"
+              type="button"
+              aria-label="User profile"
+              data-prototype-unavailable="User profile"
+            >
+              JP
+            </button>
+          </div>
+        </header>
+
+        <main id="main" class="content">
+          <section class="intro" aria-labelledby="title">
+            <div>
+              <p class="eyebrow" id="roleEyebrow">BRANCH OPERATIONS</p>
+              <h1 id="title">Protect today’s revenue</h1>
+              <p id="introCopy">
+                Six items need attention in Jupiter. Start with the accepted job
+                waiting on its deposit.
+              </p>
+            </div>
+            <details class="prototype-scenarios">
+              <summary id="scenarioSummary">
+                Review scenario: Branch manager
+              </summary>
+              <div
+                class="scenario-picker"
+                role="group"
+                aria-label="Prototype review scenario"
+              >
+                <button
+                  class="scenario active"
+                  type="button"
+                  data-scenario="manager"
+                  aria-pressed="true"
+                >
+                  Branch manager preview
+                </button>
+                <button
+                  class="scenario"
+                  type="button"
+                  data-scenario="sales"
+                  aria-pressed="false"
+                >
+                  Salesperson preview
+                </button>
+                <button
+                  class="scenario"
+                  type="button"
+                  data-scenario="corporate"
+                  aria-pressed="false"
+                >
+                  Corporate preview
+                </button>
+                <button
+                  class="scenario"
+                  type="button"
+                  data-scenario="platform"
+                  aria-pressed="false"
+                >
+                  Platform admin preview
+                </button>
+              </div>
+              <p>
+                Reviewer-only mock-data switcher. Production views are assigned
+                by server-authorized role and scope.
+              </p>
+            </details>
+          </section>
+
+          <section class="metric-strip" aria-label="Branch status">
+            <article>
+              <span>At-risk revenue</span><strong>$42,600</strong
+              ><small class="urgent">↑ $18,400 needs action</small>
+            </article>
+            <article>
+              <span>Human response SLA</span><strong>92%</strong
+              ><small>5-minute business-hours target</small>
+            </article>
+            <article>
+              <span>Inspections today</span><strong>7</strong
+              ><small>2 awaiting outcome</small>
+            </article>
+            <article class="corporate-metric">
+              <span>Branch performance</span><strong>3 / 4</strong
+              ><small>Jupiter is on target</small>
+            </article>
+          </section>
+
+          <section
+            id="portfolioSummary"
+            class="portfolio-summary"
+            aria-labelledby="portfolioTitle"
+            hidden
+          >
+            <div>
+              <p class="eyebrow">CROSS-BRANCH PRIORITIES</p>
+              <h2 id="portfolioTitle">Where corporate needs to intervene</h2>
+            </div>
+            <div class="branch-cards">
+              <article>
+                <div>
+                  <strong>Jupiter</strong><span class="good">On target</span>
+                </div>
+                <p><b>92%</b> response SLA · <b>1</b> payment risk</p>
+                <button type="button" data-branch="Jupiter">
+                  View Jupiter exceptions
+                </button>
+              </article>
+              <article class="needs-attention">
+                <div>
+                  <strong>Miami</strong
+                  ><span class="urgent">Manager follow-up</span>
+                </div>
+                <p><b>76%</b> response SLA · <b>2</b> unattempted leads</p>
+                <button type="button" data-branch="Miami">
+                  View Miami exceptions
+                </button>
+              </article>
+              <article>
+                <div><strong>Naples</strong><span>Capacity watch</span></div>
+                <p><b>89%</b> response SLA · <b>4</b> inspections tomorrow</p>
+                <button type="button" data-branch="Naples">
+                  View Naples exceptions
+                </button>
+              </article>
+            </div>
+          </section>
+
+          <section class="platform-preview" id="platformPreview" hidden>
+            <p class="eyebrow">RESTRICTED WORKSPACE</p>
+            <h2>Platform Operations is isolated from customer work</h2>
+            <p>
+              This reviewer-only role preview intentionally withholds branch
+              queues and customer records. Platform access requires an audited
+              support scope before any operational customer data is available.
+            </p>
+            <a class="outline-button" href="platform-operations.html"
+              >Open Platform Operations prototype</a
+            >
+          </section>
+
+          <section class="workspace-grid">
+            <section class="queue-panel" aria-labelledby="queueTitle">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">OWNED WORK</p>
+                  <h2 id="queueTitle">
+                    Revenue risk queue <span id="queueCount">6</span>
+                  </h2>
+                </div>
+                <button class="text-button" type="button" id="stateButton">
+                  Preview states
+                </button>
+              </div>
+              <div class="filters" aria-label="Queue filters">
+                <button
+                  class="filter active"
+                  type="button"
+                  data-filter="all"
+                  aria-pressed="true"
+                >
+                  All <span>6</span>
+                </button>
+                <button
+                  class="filter"
+                  type="button"
+                  data-filter="mine"
+                  aria-pressed="false"
+                >
+                  Mine <span>3</span>
+                </button>
+                <button
+                  class="filter"
+                  type="button"
+                  data-filter="due"
+                  aria-pressed="false"
+                >
+                  Due now <span>2</span>
+                </button>
+                <button
+                  class="filter"
+                  type="button"
+                  data-filter="payment"
+                  aria-pressed="false"
+                >
+                  Payment <span>1</span>
+                </button>
+              </div>
+              <div class="queue-head" aria-hidden="true">
+                <span>Customer & risk</span><span>Owner</span
+                ><span>Next action</span>
+              </div>
+              <div id="queue" class="queue"></div>
+              <div id="emptyState" class="empty-state" hidden>
+                <div class="empty-icon">✓</div>
+                <h3>No urgent revenue risk</h3>
+                <p>Keep the pipeline moving or review long-term nurture.</p>
+                <button class="outline-button" type="button">
+                  Open pipeline
+                </button>
+              </div>
+            </section>
+
+            <aside class="record-panel" aria-labelledby="recordTitle">
+              <div id="recordContent"></div>
+            </aside>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <dialog id="activityDialog" aria-labelledby="dialogTitle">
+      <form method="dialog" id="activityForm">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">HUMAN ACTIVITY</p>
+            <h2 id="dialogTitle">Log an attempt</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p id="dialogContext" class="dialog-context"></p>
+        <label
+          >Channel<select id="attemptChannel">
+            <option>Phone call</option>
+            <option>Human text via approved channel</option>
+            <option>Human email via approved channel</option>
+          </select></label
+        >
+        <label
+          >Outcome<select id="attemptOutcome">
+            <option value="attempted">No answer — attempted</option>
+            <option value="connected">Two-way conversation — connected</option>
+          </select></label
+        >
+        <label
+          >Context
+          <textarea
+            id="attemptNote"
+            rows="3"
+            placeholder="Optional, visible to the branch team"
+          ></textarea>
+        </label>
+        <p class="form-note">
+          This records a human attempt. Automated messages use the approved team
+          sender shown in the record’s message provenance. Neither changes
+          payment, acceptance or handoff status.
+        </p>
+        <div class="dialog-actions">
+          <button class="outline-button" value="cancel">Cancel</button
+          ><button class="primary-button" id="saveAttempt" value="default">
+            Log attempt
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script src="prototype.js"></script>
+  </body>
+</html>

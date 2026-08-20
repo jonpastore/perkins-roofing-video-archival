@@ -1,0 +1,451 @@
+- generic [ref=e102]:
+  - complementary [ref=e103]:
+    - button "Collapse sidebar" [ref=e105] [cursor=pointer]:
+      - generic [ref=e106]: 
+    - generic [ref=e108]:
+      - img "agency logo" [ref=e110]
+      - generic [ref=e111] [cursor=pointer]:
+        - generic [ref=e112]: Click here to switch
+        - generic [ref=e121]:
+          - generic [ref=e122]: 
+          - generic [ref=e123]: 
+        - generic [ref=e261]:
+          - searchbox "Search for a sub-account" [ref=e265]
+          - generic [ref=e269]:
+            - generic [ref=e270]: ALL ACCOUNTS
+            - generic [ref=e273]:
+              - generic [ref=e274]: "3"
+              - generic [ref=e275]:
+                - generic [ref=e276]: 3MG Solutions, LLC.
+                - generic [ref=e277]: 1127 Solana Ave, Winter Park, FL
+            - generic [ref=e282]:
+              - generic [ref=e283]: D
+              - generic [ref=e284]:
+                - generic [ref=e285]: DeGenito Innovations, LLC.
+                - generic [ref=e286]: 30 N Gould St, Ste R, Sheridan, WY
+            - generic [ref=e291]:
+              - generic [ref=e292]: E
+              - generic [ref=e293]: Empire Home Pros
+            - generic [ref=e299]:
+              - generic [ref=e300]: P
+              - generic [ref=e301]:
+                - generic [ref=e302]: Perkins Roofing
+                - generic [ref=e303]: 15658 Alexander Run, Jupiter, FL
+            - generic [ref=e308]:
+              - generic [ref=e309]: P
+              - generic [ref=e310]:
+                - generic [ref=e311]: Perkins Roofing - Miami
+                - generic [ref=e312]: 575 NW 152nd St, Miami, FL
+            - generic [ref=e317]:
+              - generic [ref=e318]: R
+              - generic [ref=e319]:
+                - generic [ref=e320]: Robert Eberst - Marketing Simplified
+                - generic [ref=e321]: Boca Raton, Boca Raton, Florida
+              - generic "Your home sub-account" [ref=e322]
+            - generic [ref=e329]:
+              - generic [ref=e330]: S
+              - generic [ref=e331]:
+                - generic [ref=e332]: Sanctuary Home Solutions
+                - generic [ref=e333]: 2139 N University Dr Ste 2283, Coral Springs, FL
+            - generic [ref=e338]:
+              - generic [ref=e339]: s
+              - generic [ref=e340]:
+                - generic [ref=e341]: snapshot_template
+                - generic [ref=e342]: 30 N Gould Street Ste R, Sheridan, WY
+              - generic "Your home sub-account" [ref=e343]
+      - navigation "header" [ref=e125]:
+        - link " Get Free AI" [ref=e126] [cursor=pointer]:
+          - /url: /ai-employee-promo
+          - generic [ref=e127]: 
+          - generic [ref=e129]: Get Free AI
+        - link "AI Suite icon AI Suite New" [ref=e130] [cursor=pointer]:
+          - /url: /ai-suite
+          - img "AI Suite icon" [ref=e131]
+          - generic [ref=e132]: AI Suite
+          - generic [ref=e133]: New
+        - link "Ask AI Ask AI" [ref=e134] [cursor=pointer]:
+          - /url: /ask-ai-agency
+          - img "Ask AI" [ref=e135]
+          - generic [ref=e136]: Ask AI
+        - link "Launchpad icon Launchpad" [ref=e137] [cursor=pointer]:
+          - /url: /agency_launchpad
+          - img "Launchpad icon" [ref=e138]
+          - generic [ref=e139]: Launchpad
+        - link "Agency Dashboard icon Agency Dashboard" [ref=e140] [cursor=pointer]:
+          - /url: /agency_dashboard
+          - img "Agency Dashboard icon" [ref=e141]
+          - generic [ref=e142]: Agency Dashboard
+        - link " SaaS Configurator" [ref=e143] [cursor=pointer]:
+          - /url: /saas_dashboard
+          - generic [ref=e144]: 
+          - generic [ref=e146]: SaaS Configurator
+        - link "Prospecting icon Prospecting" [ref=e147] [cursor=pointer]:
+          - /url: /prospecting
+          - img "Prospecting icon" [ref=e148]
+          - generic [ref=e149]: Prospecting
+        - link "Sub-Accounts icon Sub-Accounts" [ref=e150] [cursor=pointer]:
+          - /url: /sub-accounts
+          - img "Sub-Accounts icon" [ref=e151]
+          - generic [ref=e152]: Sub-Accounts
+        - link "Account Snapshots icon Account Snapshots" [ref=e153] [cursor=pointer]:
+          - /url: /snapshots
+          - img "Account Snapshots icon" [ref=e154]
+          - generic [ref=e155]: Account Snapshots
+        - link "Reselling icon Reselling" [ref=e156] [cursor=pointer]:
+          - /url: /reselling
+          - img "Reselling icon" [ref=e157]
+          - generic [ref=e158]: Reselling
+        - link "Add-Ons icon Add-Ons" [ref=e159] [cursor=pointer]:
+          - /url: /marketplace
+          - img "Add-Ons icon" [ref=e160]
+          - generic [ref=e161]: Add-Ons
+        - link " Affiliate Portal" [ref=e162] [cursor=pointer]:
+          - /url: /affiliate_portal/terms-and-conditions
+          - generic [ref=e163]: 
+          - generic [ref=e165]: Affiliate Portal
+        - link " Template Library" [ref=e166] [cursor=pointer]:
+          - /url: /template-library-admin
+          - generic [ref=e167]: 
+          - generic [ref=e169]: Template Library
+        - link "Partners icon Partners" [ref=e170] [cursor=pointer]:
+          - /url: /partners
+          - img "Partners icon" [ref=e171]
+          - generic [ref=e172]: Partners
+        - link " University" [ref=e173] [cursor=pointer]:
+          - /url: /university
+          - generic [ref=e174]: 
+          - generic [ref=e176]: University
+        - link "SaaS Education icon SaaS Education" [ref=e177] [cursor=pointer]:
+          - /url: /saas_education
+          - img "SaaS Education icon" [ref=e178]
+          - generic [ref=e179]: SaaS Education
+        - link "GHL Swag icon GHL Swag" [ref=e180] [cursor=pointer]:
+          - /url: /ghl-swag
+          - img "GHL Swag icon" [ref=e181]
+          - generic [ref=e182]: GHL Swag
+        - link "Ideas icon Ideas" [ref=e183] [cursor=pointer]:
+          - /url: /ideas
+          - img "Ideas icon" [ref=e184]
+          - generic [ref=e185]: Ideas
+        - link "Mobile App icon Mobile App New" [ref=e186] [cursor=pointer]:
+          - /url: /mobile-app-customiser
+          - img "Mobile App icon" [ref=e187]
+          - generic [ref=e188]: Mobile App
+          - generic [ref=e189]: New
+        - link " Desktop App New" [ref=e190] [cursor=pointer]:
+          - /url: /desktop-whitelabel-app
+          - generic [ref=e191]: 
+          - generic [ref=e193]: Desktop App
+          - generic [ref=e194]: New
+        - link "App Marketplace icon App Marketplace" [ref=e195] [cursor=pointer]:
+          - /url: /integration
+          - img "App Marketplace icon" [ref=e196]
+          - generic [ref=e197]: App Marketplace
+        - link "WAVV Admin" [ref=e198] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - navigation "footer" [ref=e203]:
+        - link "Settings icon Settings" [ref=e204] [cursor=pointer]:
+          - /url: /settings/profile
+          - img "Settings icon" [ref=e205]
+          - generic [ref=e206]: Settings
+  - banner [ref=e207]:
+    - region "Notification Banner" [ref=e208]:
+      - generic [ref=e209]:
+        - generic [ref=e210]:
+          - button "Previous notification" [disabled] [ref=e211]
+          - generic [ref=e214]: 1/1
+          - button "Next notification" [disabled] [ref=e215]
+        - generic [ref=e218]:
+          - region [ref=e220]: "Summer of AI: $100K in cash prizes. Your division. Your clients."
+          - button "Check your standing" [ref=e222] [cursor=pointer]
+      - button "Close notification" [ref=e223] [cursor=pointer]
+    - generic [ref=e227]:
+      - generic "Report Translation Issue"
+      - button "Ask AI Assistant" [ref=e228] [cursor=pointer]:
+        - generic [ref=e233]: Ask AI
+      - button "View Changelog" [ref=e235] [cursor=pointer]:
+        - generic [ref=e236]: 
+      - button "View Notifications" [ref=e239] [cursor=pointer]:
+        - generic [ref=e240]: 
+        - generic [ref=e241]: Notifications
+      - button "Access Help & Support" [ref=e242] [cursor=pointer]:
+        - generic [ref=e243]: "?"
+        - generic [ref=e244]: Support
+      - generic [ref=e245]:
+        - button "Open Profile Menu" [ref=e246] [cursor=pointer]:
+          - generic [ref=e247]: JP
+        - text: 
+  - main [ref=e249]:
+    - generic [ref=e253]:
+      - button "Manage AI Employee offer settings" [ref=e254] [cursor=pointer]
+      - iframe [ref=e258]:
+        - generic [ref=f5e2]:
+          - status [ref=f5e631]
+          - generic [ref=f5e5]:
+            - generic: 
+            - generic [ref=f5e9]:
+              - generic [ref=f5e11]:
+                - generic [ref=f5e13]:
+                  - generic [ref=f5e16]:
+                    - generic [ref=f5e17]: SUMMER OF
+                    - generic [ref=f5e18]: AI
+                  - heading [level=2] [ref=f5e30]:
+                    - text: FREE AI...
+                    - emphasis [ref=f5e31]: ALL. SUMMER. LONG.
+                  - paragraph [ref=f5e35]: Five AI tools are free all summer for every account. Plus, eligible sub-accounts can unlock 30 days of free AI Agents. Each month, we spotlight a new way to put your AI to work. This month, we are focusing on AI Studio. And you could win a share of $100K!
+                  - link "I want FREE AI" [ref=f5e37] [cursor=pointer]:
+                    - /url: "#"
+                  - link "Have questions? Hop on Zoom with us!" [ref=f5e42] [cursor=pointer]:
+                    - /url: "#"
+                - img "FREE AI... ALL. SUMMER. LONG." [ref=f5e55]
+              - generic [ref=f5e59]:
+                - heading "Summer of AI starts here" [level=1] [ref=f5e63]
+                - link "I want FREE AI" [ref=f5e69] [cursor=pointer]:
+                  - /url: "#"
+                - link "Have questions? Hop on Zoom with us!" [ref=f5e74] [cursor=pointer]:
+                  - /url: "#"
+              - generic [ref=f5e83]:
+                - generic [ref=f5e87]:
+                  - generic [ref=f5e91]:
+                    - paragraph [ref=f5e100]: "Summer of AI: Road to 100,000"
+                    - heading "Activate AI this summer & compete for your share of $100,000" [level=1] [ref=f5e104]:
+                      - text: Activate AI this summer & compete for
+                      - emphasis [ref=f5e105]:
+                        - generic [ref=f5e106]: your share of $100,000
+                    - generic [ref=f5e109]:
+                      - paragraph [ref=f5e110]: The AI you're already activating could be your ticket in. No registration required.
+                      - paragraph [ref=f5e111]: Just activate eligible AI plans, stack your points and compete. Winners announced live at LevelUp 2026 in Dallas.
+                    - generic [ref=f5e115]:
+                      - paragraph [ref=f5e119]:
+                        - text: "Campaign:"
+                        - strong [ref=f5e120]: June 1 – Aug 31, 2026
+                      - paragraph [ref=f5e124]:
+                        - strong [ref=f5e125]: "|"
+                      - paragraph [ref=f5e129]:
+                        - text: "Review:"
+                        - strong [ref=f5e130]: September 2026
+                      - paragraph [ref=f5e134]:
+                        - text: "Awards:"
+                        - strong [ref=f5e135]: LevelUp in Dallas
+                  - generic [ref=f5e139]:
+                    - link "I want FREE AI" [ref=f5e141] [cursor=pointer]:
+                      - /url: "#"
+                    - paragraph [ref=f5e147]:
+                      - link "Terms apply" [ref=f5e148] [cursor=pointer]:
+                        - /url: https://www.gohighlevel.com/summer-ai-tc
+                - generic [ref=f5e152]:
+                  - paragraph [ref=f5e161]: HELP YOUR CLIENTS WIN WITH AI THIS SUMMER
+                  - heading "Activate AI early and earn points" [level=2] [ref=f5e165]
+                  - paragraph [ref=f5e169]: Every agency or reseller with sub-accounts on a qualifying AI subscription plan is automatically entered to win part of the $100,000 prize pool. Activate early. Stack your points. Compete against agencies your size. Top three in every division win cash.
+                - generic [ref=f5e171]:
+                  - generic [ref=f5e173]:
+                    - paragraph [ref=f5e181]: AI EMPLOYEE GROWTH
+                    - generic [ref=f5e183]:
+                      - paragraph [ref=f5e189]:
+                        - text: $50
+                        - emphasis [ref=f5e190]: /mo
+                      - paragraph [ref=f5e196]: 3 PTS
+                  - generic [ref=f5e198]:
+                    - generic [ref=f5e200]:
+                      - paragraph [ref=f5e206]: AI EMPLOYEE Unlimited Plan
+                      - paragraph [ref=f5e212]: Most Points
+                    - generic [ref=f5e214]:
+                      - paragraph [ref=f5e220]:
+                        - text: $97
+                        - emphasis [ref=f5e221]: /mo
+                      - paragraph [ref=f5e227]: 6 PTS
+                - generic [ref=f5e238]:
+                  - paragraph [ref=f5e247]: Division Structure
+                  - heading "Compete against agencies and resellers your own size" [level=2] [ref=f5e251]
+                  - paragraph [ref=f5e255]: Division assignment locks when the campaign begins. Six divisions ensure every agency and reseller competes on a fair playing field, from first-timers to enterprise operations.
+                - generic [ref=f5e259]:
+                  - table [ref=f5e263]:
+                    - rowgroup [ref=f5e264]:
+                      - row [ref=f5e265]:
+                        - columnheader "DIVISION" [ref=f5e266]
+                        - columnheader "ACCOUNTS" [ref=f5e270]
+                        - columnheader "1ST PLACE" [ref=f5e271]
+                        - columnheader "2ND PLACE" [ref=f5e276]
+                        - columnheader "3RD PLACE" [ref=f5e281]
+                        - columnheader "PRIZE POOL" [ref=f5e286]
+                    - rowgroup [ref=f5e287]:
+                      - row [ref=f5e288]:
+                        - cell "Launch Starter tier" [ref=f5e289]:
+                          - generic [ref=f5e292]:
+                            - generic [ref=f5e293]: Launch
+                            - generic [ref=f5e294]: Starter tier
+                        - cell "1 – 10" [ref=f5e295]
+                        - cell "$6,000" [ref=f5e297]
+                        - cell "$3,000" [ref=f5e298]
+                        - cell "$1,000" [ref=f5e299]
+                        - cell "$10,000" [ref=f5e300]
+                      - row [ref=f5e302]:
+                        - cell "Emerging Growing tier" [ref=f5e303]:
+                          - generic [ref=f5e306]:
+                            - generic [ref=f5e307]: Emerging
+                            - generic [ref=f5e308]: Growing tier
+                        - cell "11 – 50" [ref=f5e309]
+                        - cell "$6,000" [ref=f5e311]
+                        - cell "$3,000" [ref=f5e312]
+                        - cell "$1,000" [ref=f5e313]
+                        - cell "$10,000" [ref=f5e314]
+                      - row [ref=f5e316]:
+                        - cell "Growth Scaling tier" [ref=f5e317]:
+                          - generic [ref=f5e320]:
+                            - generic [ref=f5e321]: Growth
+                            - generic [ref=f5e322]: Scaling tier
+                        - cell "51 – 100" [ref=f5e323]
+                        - cell "$10,000" [ref=f5e325]
+                        - cell "$4,000" [ref=f5e326]
+                        - cell "$1,000" [ref=f5e327]
+                        - cell "$15,000" [ref=f5e328]
+                      - row [ref=f5e330]:
+                        - cell "Gold Established tier" [ref=f5e331]:
+                          - generic [ref=f5e334]:
+                            - generic [ref=f5e335]: Gold
+                            - generic [ref=f5e336]: Established tier
+                        - cell "101 – 500" [ref=f5e337]
+                        - cell "$10,000" [ref=f5e339]
+                        - cell "$4,000" [ref=f5e340]
+                        - cell "$1,000" [ref=f5e341]
+                        - cell "$15,000" [ref=f5e342]
+                      - row [ref=f5e344]:
+                        - cell "Platinum Elite tier" [ref=f5e345]:
+                          - generic [ref=f5e348]:
+                            - generic [ref=f5e349]: Platinum
+                            - generic [ref=f5e350]: Elite tier
+                        - cell "501 – 1,000" [ref=f5e351]
+                        - cell "$14,000" [ref=f5e353]
+                        - cell "$5,000" [ref=f5e354]
+                        - cell "$1,000" [ref=f5e355]
+                        - cell "$20,000" [ref=f5e356]
+                      - row [ref=f5e358]:
+                        - cell "Diamond Top tier" [ref=f5e359]:
+                          - generic [ref=f5e362]:
+                            - generic [ref=f5e363]: Diamond
+                            - generic [ref=f5e364]: Top tier
+                        - cell "1,001+" [ref=f5e365]
+                        - cell "$20,000" [ref=f5e367]
+                        - cell "$8,000" [ref=f5e368]
+                        - cell "$2,000" [ref=f5e369]
+                        - cell "$30,000" [ref=f5e370]
+                  - paragraph [ref=f5e375]: "* Division assignment locks at campaign start on June 1, 2026. Agencies compete against similarly sized agencies only."
+              - generic [ref=f5e377]:
+                - generic [ref=f5e379]:
+                  - paragraph [ref=f5e383]:
+                    - strong [ref=f5e384]: •
+                    - text: AUGUST SPOTLIGHT FEATURE
+                  - heading "AI studio" [level=2] [ref=f5e388]
+                  - paragraph [ref=f5e392]: Create campaigns, content & visuals for free all summer.
+                  - list [ref=f5e396]:
+                    - listitem [ref=f5e397]:
+                      - paragraph [ref=f5e398]: Generate full websites, emails and reels from one prompt
+                    - listitem [ref=f5e399]:
+                      - paragraph [ref=f5e400]: Design polished visuals with no design skills needed
+                    - listitem [ref=f5e401]:
+                      - paragraph [ref=f5e402]: Launch full campaigns in minutes, not weeks
+                  - link "I want FREE AI" [ref=f5e404] [cursor=pointer]:
+                    - /url: "#"
+                - generic [ref=f5e413]:
+                  - generic [ref=f5e414]:
+                    - img "ai icon blue" [ref=f5e415]
+                    - heading "Studio AI" [level=3] [ref=f5e416]
+                    - generic [ref=f5e417]: Generating
+                  - generic [ref=f5e420]:
+                    - paragraph [ref=f5e421]: Prompt
+                    - generic [ref=f5e422]:
+                      - paragraph [ref=f5e423]: ...
+                      - generic [ref=f5e424]: //
+                  - generic [ref=f5e426]:
+                    - generic [ref=f5e427]:
+                      - img "ai icon blue" [ref=f5e429]
+                      - generic [ref=f5e430]:
+                        - paragraph [ref=f5e431]: Hero
+                        - paragraph [ref=f5e432]: "-"
+                      - img "tick icon" [ref=f5e434]
+                    - generic [ref=f5e436]:
+                      - img "ai icon blue" [ref=f5e438]
+                      - generic [ref=f5e439]:
+                        - paragraph [ref=f5e440]: Services
+                        - paragraph [ref=f5e441]: "-"
+                      - img "tick icon" [ref=f5e443]
+                    - generic [ref=f5e445]:
+                      - img "ai icon blue" [ref=f5e447]
+                      - generic [ref=f5e448]:
+                        - paragraph [ref=f5e449]: Portfolio
+                        - paragraph [ref=f5e450]: "-"
+                      - img "tick icon" [ref=f5e452]
+                    - generic [ref=f5e454]:
+                      - img "ai icon blue" [ref=f5e456]
+                      - generic [ref=f5e457]:
+                        - paragraph [ref=f5e458]: CTA
+                        - paragraph [ref=f5e459]: "-"
+                      - img "tick icon" [ref=f5e461]
+              - generic [ref=f5e466]:
+                - heading "FREE AI. All summer long." [level=2] [ref=f5e470]
+                - paragraph [ref=f5e474]: Five HighLevel AI tools, unlocked from June 1–August 31, 2026.
+                - generic [ref=f5e476]:
+                  - generic [ref=f5e478]:
+                    - paragraph [ref=f5e482]: AI Studio
+                    - paragraph [ref=f5e486]: Build conversion-ready websites in minutes from a prompt or example URL.
+                  - generic [ref=f5e488]:
+                    - paragraph [ref=f5e492]: Ask AI
+                    - paragraph [ref=f5e496]: Your built-in HighLevel assistant. Ready to help answer questions right inside HighLevel.
+                - generic [ref=f5e498]:
+                  - generic [ref=f5e500]:
+                    - paragraph [ref=f5e504]: Workflow AI
+                    - paragraph [ref=f5e508]: Build smarter automations in plain English without the guesswork.
+                  - generic [ref=f5e510]:
+                    - paragraph [ref=f5e514]: Funnel AI
+                    - paragraph [ref=f5e518]: Generate funnels designed to help convert in seconds. No starting from scratch.
+                - generic [ref=f5e522]:
+                  - paragraph [ref=f5e526]: Email AI
+                  - paragraph [ref=f5e530]: Write campaigns that sound like you and help convert like a pro.
+                - link "I want FREE AI" [ref=f5e532] [cursor=pointer]:
+                  - /url: "#"
+              - generic [ref=f5e538]:
+                - paragraph [ref=f5e542]: Your free AI is ready when you are
+                - link "I want FREE AI" [ref=f5e544] [cursor=pointer]:
+                  - /url: "#"
+                - paragraph [ref=f5e550]: Summer of AI opens June 1 and ends August 31, 2026 (11:59 PM PDT).
+              - generic [ref=f5e554]:
+                - heading "FAQs" [level=2] [ref=f5e558]
+                - generic [ref=f5e560]:
+                  - generic [ref=f5e561]:
+                    - generic [ref=f5e562] [cursor=pointer]:
+                      - heading "Who is eligible for the Summer of AI promotion?" [level=4] [ref=f5e632]
+                      - generic [ref=f5e566]: 
+                    - paragraph [ref=f5e633]: All active paying HighLevel PLATFORM customers. Trial users who convert to paid during the promo window. New sub-accounts created during the promo window once the agency is on a paid plan.
+                  - generic [ref=f5e568]:
+                    - generic [ref=f5e569] [cursor=pointer]:
+                      - heading "Who is not eligible for the Summer of AI promotion?" [level=4] [ref=f5e634]
+                      - generic [ref=f5e573]: 
+                    - paragraph [ref=f5e635]: Sub-accounts currently on an active AI Employee subscription and Pay Per Use are not eligible for the free trial promotion.
+                  - generic [ref=f5e575]:
+                    - generic [ref=f5e576] [cursor=pointer]:
+                      - heading "I already have some subaccounts on the AI Employee Unlimited Plan - will I get points for the $100k contest?" [level=4] [ref=f5e636]
+                      - generic [ref=f5e580]: 
+                    - paragraph [ref=f5e637]: YES! All agencies will get points for subaccounts who have AI Employee Unlimited Plans.
+                  - generic [ref=f5e582]:
+                    - generic [ref=f5e583] [cursor=pointer]:
+                      - heading "What exactly is the Summer of AI?" [level=4] [ref=f5e638]
+                      - generic [ref=f5e587]: 
+                    - paragraph [ref=f5e639]: It's HighLevel's summer-long promotion running June 1 through August 31, 2026. Five AI tools (Ask AI, AI Studio, Workflow AI, Funnel AI and Email AI) are free all summer for every account. Plus, any account that hasn't activated AI agents yet gets 30 days free on Conversation AI, Voice AI and all AI agents. The clock starts on your first activation.
+                  - generic [ref=f5e589]:
+                    - generic [ref=f5e590] [cursor=pointer]:
+                      - heading "Does the Summer of AI promotion apply to annual plan subscribers or only monthly?" [level=4] [ref=f5e640]
+                      - generic [ref=f5e594]: 
+                    - paragraph [ref=f5e641]: Both. Annual subscribers are eligible for the free AI tools and the 30-day AI agent trial just like monthly subscribers.
+                  - generic [ref=f5e596]:
+                    - generic [ref=f5e597] [cursor=pointer]:
+                      - heading "Can I stack the 50% off promotion with the free AI offer?" [level=4] [ref=f5e642]
+                      - generic [ref=f5e601]: 
+                    - paragraph [ref=f5e643]: During the 50% off promo, the platform discount and free AI offer are both available at the same time. Outside of that, promotional offers are generally not combinable with other discounts, credits or coupons unless HighLevel expressly states otherwise on the offer page.
+                  - text:                                  
+                - button "See More" [ref=f5e604] [cursor=pointer]
+              - paragraph [ref=f5e617]:
+                - emphasis [ref=f5e618]: Eligibility requirements, exclusions, usage limitations, fair use limits, and additional terms apply. In some cases, Communication Surcharges, carrier fees, telephony fees, messaging fees, and other applicable pass-through or usage-based charges are not included. Promotional offers, pricing, AI access, and participation in the Road to 100,000 Challenge are subject to the applicable
+                - link [ref=f5e619] [cursor=pointer]:
+                  - /url: https://www.gohighlevel.com/summer-ai-tc
+                  - emphasis [ref=f5e620]: Summer of AI Terms and Conditions
+                - emphasis [ref=f5e621]: and may be modified, suspended, or discontinued by HighLevel as described in those terms.

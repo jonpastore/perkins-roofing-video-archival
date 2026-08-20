@@ -1,0 +1,168 @@
+- generic [ref=f4e1]:
+  - link "Skip to work queue" [ref=f4e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f4e3]:
+    - complementary "Primary navigation" [ref=f4e4]:
+      - generic [ref=f4e5]:
+        - generic [ref=f4e6]: P
+        - generic [ref=f4e7]:
+          - text: PERKINS
+          - generic [ref=f4e8]: ROOFING
+      - button "Current workspace" [ref=f4e9]:
+        - text: Jupiter Branch
+        - generic [ref=f4e10]: ⌄
+      - navigation [ref=f4e11]:
+        - link "◉ Today 6" [ref=f4e12] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=f4e13]: ◉
+          - text: Today
+          - generic [ref=f4e14]: "6"
+        - link "◇ Pipeline" [ref=f4e15] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=f4e16]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=f4e17] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=f4e18]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=f4e19] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=f4e20]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=f4e21] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=f4e22]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=f4e23] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=f4e24]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=f4e25] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=f4e26]: ▤
+          - text: Reports
+      - generic [ref=f4e27]: GHL sync healthy
+    - generic [ref=f4e29]:
+      - generic [ref=f4e30]:
+        - generic [ref=f4e31]:
+          - generic [ref=f4e32]: All branches
+          - generic [ref=f4e33]: /
+          - strong [ref=f4e34]: Today
+        - generic [ref=f4e35]:
+          - button "Search" [ref=f4e36] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=f4e37] [cursor=pointer]: ◌
+          - button "User profile" [ref=f4e39] [cursor=pointer]: JP
+      - main [ref=f4e40]:
+        - region [ref=f4e188]:
+          - generic [ref=f4e42]:
+            - paragraph [ref=f4e43]: CORPORATE PORTFOLIO
+            - heading "See branch risk before it costs revenue" [level=1] [ref=f4e189]
+            - paragraph [ref=f4e45]: Jupiter is on target. Miami has two items requiring branch-manager follow-up.
+          - group "Prototype scenario" [ref=f4e46]:
+            - button "Branch manager" [ref=f4e47] [cursor=pointer]
+            - button "Salesperson" [ref=f4e48] [cursor=pointer]
+            - button "Corporate" [ref=f4e49] [cursor=pointer]
+        - region "Branch status" [ref=f4e50]:
+          - article [ref=f4e51]:
+            - generic [ref=f4e52]: At-risk revenue
+            - strong [ref=f4e53]: $88,900
+            - generic [ref=f4e54]: ↑ $18,400 needs action
+          - article [ref=f4e55]:
+            - generic [ref=f4e56]: Human response SLA
+            - strong [ref=f4e57]: 89%
+            - generic [ref=f4e58]: 5-minute business-hours target
+          - article [ref=f4e59]:
+            - generic [ref=f4e60]: Inspections today
+            - strong [ref=f4e61]: "19"
+            - generic [ref=f4e62]: 2 awaiting outcome
+          - article [ref=f4e63]:
+            - generic [ref=f4e64]: Branch performance
+            - strong [ref=f4e65]: 3 / 4
+            - generic [ref=f4e66]: Jupiter is on target
+        - region [ref=f4e190]:
+          - generic [ref=f4e191]:
+            - paragraph [ref=f4e192]: CROSS-BRANCH PRIORITIES
+            - heading "Where corporate needs to intervene" [level=2] [ref=f4e193]
+          - generic [ref=f4e194]:
+            - article [ref=f4e195]:
+              - generic [ref=f4e196]:
+                - strong [ref=f4e197]: Jupiter
+                - generic [ref=f4e198]: On target
+              - paragraph [ref=f4e199]: 92% response SLA · 1 payment risk
+              - button "Open branch" [ref=f4e200] [cursor=pointer]
+            - article [ref=f4e201]:
+              - generic [ref=f4e202]:
+                - strong [ref=f4e203]: Miami
+                - generic [ref=f4e204]: Manager follow-up
+              - paragraph [ref=f4e205]: 76% response SLA · 2 unattempted leads
+              - button "Open branch" [ref=f4e206] [cursor=pointer]
+            - article [ref=f4e207]:
+              - generic [ref=f4e208]:
+                - strong [ref=f4e209]: Naples
+                - generic [ref=f4e210]: Capacity watch
+              - paragraph [ref=f4e211]: 89% response SLA · 4 inspections tomorrow
+              - button "Open branch" [ref=f4e212] [cursor=pointer]
+        - generic [ref=f4e67]:
+          - region [ref=f4e68]:
+            - generic [ref=f4e69]:
+              - generic [ref=f4e70]:
+                - paragraph [ref=f4e71]: OWNED WORK
+                - heading "Revenue risk queue 6" [level=2] [ref=f4e72]
+              - button "Show integration error" [active] [ref=f4e312] [cursor=pointer]
+            - generic "Queue filters" [ref=f4e74]:
+              - button "All 6" [ref=f4e75] [cursor=pointer]:
+                - text: All
+                - generic [ref=f4e76]: "6"
+              - button "Mine 2" [ref=f4e77] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=f4e78]: "2"
+              - button "Due now 5" [ref=f4e79] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=f4e80]: "5"
+              - button "Payment 1" [ref=f4e81] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=f4e82]: "1"
+            - generic [ref=f4e83]:
+              - generic [ref=f4e84]: Customer & risk
+              - generic [ref=f4e85]: Owner
+              - generic [ref=f4e86]: Next action
+            - generic [ref=f4e314]:
+              - heading "Refreshing risk queue…" [level=3] [ref=f4e315]
+              - paragraph [ref=f4e316]: Keeping the last confirmed action context while GHL activity is checked.
+          - complementary [ref=f4e154]:
+            - generic [ref=f4e155]:
+              - generic [ref=f4e317]:
+                - paragraph [ref=f4e318]: CUSTOMER & PROPERTY
+                - heading "Marisol Martinez" [level=2] [ref=f4e319]
+                - paragraph [ref=f4e320]: 1426 Seabrook Way · Jupiter
+                - generic [ref=f4e321]: Accepted — payment pending
+              - generic [ref=f4e322]:
+                - heading "What matters now" [level=3] [ref=f4e323]
+                - generic [ref=f4e324]:
+                  - generic [ref=f4e325]:
+                    - generic [ref=f4e326]: Potential revenue
+                    - strong [ref=f4e327]: $18,400
+                  - generic [ref=f4e328]:
+                    - generic [ref=f4e329]: Owner
+                    - strong [ref=f4e330]: Sam R.
+                  - generic [ref=f4e331]:
+                    - generic [ref=f4e332]: Lifecycle
+                    - strong [ref=f4e333]: PR-1048 · signed 9:12 AM
+                  - generic [ref=f4e334]:
+                    - generic [ref=f4e335]: Next action
+                    - strong [ref=f4e336]: Call about deposit
+              - generic [ref=f4e337]:
+                - heading "Activity & sync" [level=3] [ref=f4e338]
+                - generic [ref=f4e339]:
+                  - generic [ref=f4e340]:
+                    - text: Proposal accepted
+                    - generic [ref=f4e341]: 9:12 AM
+                  - generic [ref=f4e342]:
+                    - text: Deposit link sent
+                    - generic [ref=f4e343]: 9:13 AM
+                  - generic [ref=f4e344]:
+                    - text: No payment confirmation yet
+                    - generic [ref=f4e345]: now
+              - generic [ref=f4e346]:
+                - button "Log a human attempt" [ref=f4e347] [cursor=pointer]
+                - button "Open customer record" [ref=f4e348] [cursor=pointer]

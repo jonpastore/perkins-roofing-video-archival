@@ -1,0 +1,54 @@
+- generic [ref=e14]:
+  - generic [ref=e16]:
+    - link "Go to homepage" [ref=e17] [cursor=pointer]:
+      - /url: ./
+    - generic [ref=e20]:
+      - generic [ref=e21]: "Platform Language:"
+      - combobox [ref=e22]:
+        - option "English" [selected]
+        - option "Dansk"
+        - option "Deutsch"
+        - option "Español"
+        - option "Suomi"
+        - option "Français (Canada)"
+        - option "Français (France)"
+        - option "Italiano"
+        - option "Nederlands"
+        - option "Norsk"
+        - option "Português (Brasil)"
+        - option "Português (Portugal)"
+        - option "Svenska"
+  - generic [ref=e60]:
+    - heading "Verify Security Code" [level=2] [ref=e62]
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - generic [ref=e65]:
+          - radio "Send code to email" [ref=e66]
+          - generic [ref=e67]: Send code to email
+        - paragraph [ref=e68]: jo*@degenito.ai
+      - generic [ref=e69]:
+        - generic [ref=e70]:
+          - radio "Send code to phone" [ref=e71]
+          - generic [ref=e72]: Send code to phone
+        - paragraph [ref=e73]: +1*******666
+      - generic [ref=e75]:
+        - radio "Use Authenticator App" [checked] [ref=e76]
+        - generic [ref=e77]: Use Authenticator App
+    - generic [ref=e83]:
+      - generic [ref=e84]:
+        - spinbutton [active] [ref=e85]
+        - generic [ref=e86]: "-"
+      - generic [ref=e87]:
+        - spinbutton [ref=e88]
+        - generic [ref=e89]: "-"
+      - generic [ref=e90]:
+        - spinbutton [ref=e91]
+        - generic [ref=e92]: "-"
+      - generic [ref=e93]:
+        - spinbutton [ref=e94]
+        - generic [ref=e95]: "-"
+      - generic [ref=e96]:
+        - spinbutton [ref=e97]
+        - generic [ref=e98]: "-"
+      - spinbutton [ref=e100]
+    - generic [ref=e101] [cursor=pointer]: Use backup code

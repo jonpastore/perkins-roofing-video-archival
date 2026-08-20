@@ -1,0 +1,173 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "Primary navigation" [ref=e4]:
+      - img "Perkins Roofing Corp." [ref=e6]
+      - button "Current workspace" [ref=e7]:
+        - generic [ref=e8]: Jupiter Branch
+        - generic [ref=e9]: ⌄
+      - navigation [ref=e10]:
+        - link "◉ Today 7" [ref=e11] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=e12]: ◉
+          - text: Today
+          - generic [ref=e13]: "7"
+        - link "◇ Pipeline" [ref=e14] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=e15]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=e16] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=e17]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=e18] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=e19]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=e20] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=e21]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=e22] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=e23]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=e24] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=e25]: ▤
+          - text: Reports
+      - generic [ref=e26]: Queue current
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: Jupiter Branch
+          - generic [ref=e32]: /
+          - strong [ref=e33]: Today
+        - generic [ref=e34]:
+          - button "Search" [ref=e35] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=e36] [cursor=pointer]: ◌
+          - button "User profile" [ref=e38] [cursor=pointer]: JP
+      - main [ref=e39]:
+        - region [ref=e40]:
+          - generic [ref=e41]:
+            - paragraph [ref=e42]: BRANCH OPERATIONS
+            - heading "Protect today’s revenue" [level=1] [ref=e43]
+            - paragraph [ref=e44]: 2 items need attention in Jupiter. Payment decisions stay blocked until their status is clear.
+          - group "Prototype scenario" [ref=e45]:
+            - button "Branch manager" [ref=e46] [cursor=pointer]
+            - button "Salesperson" [ref=e47] [cursor=pointer]
+            - button "Corporate" [ref=e48] [cursor=pointer]
+        - region "Branch status" [ref=e49]:
+          - article [ref=e50]:
+            - generic [ref=e51]: At-risk revenue
+            - strong [ref=e52]: $42,600
+            - generic [ref=e53]: ↑ $18,400 needs action
+          - article [ref=e54]:
+            - generic [ref=e55]: Human response SLA
+            - strong [ref=e56]: 92%
+            - generic [ref=e57]: 5-minute business-hours target
+          - article [ref=e58]:
+            - generic [ref=e59]: Inspections today
+            - strong [ref=e60]: "7"
+            - generic [ref=e61]: 2 awaiting outcome
+          - article [ref=e62]:
+            - generic [ref=e63]: Branch performance
+            - strong [ref=e64]: 3 / 4
+            - generic [ref=e65]: Jupiter is on target
+        - generic [ref=e66]:
+          - region [ref=e205]:
+            - generic [ref=e68]:
+              - generic [ref=e69]:
+                - paragraph [ref=e70]: OWNED WORK
+                - heading "Revenue risk queue 2" [level=2] [ref=e206]
+              - button "Preview states" [ref=e72] [cursor=pointer]
+            - generic "Queue filters" [ref=e73]:
+              - button "All 7" [ref=e74] [cursor=pointer]:
+                - text: All
+                - generic [ref=e75]: "7"
+              - button "Mine 3" [ref=e76] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=e77]: "3"
+              - button "Due now 6" [ref=e78] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=e79]: "6"
+              - button "Payment 2" [active] [pressed] [ref=e80] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=e81]: "2"
+            - generic [ref=e82]:
+              - generic [ref=e83]: Customer & risk
+              - generic [ref=e84]: Owner
+              - generic [ref=e85]: Next action
+            - generic [ref=e86]:
+              - button "Open Marisol Martinez; Accepted — payment pending; owner Sam R.; next action Call about required deposit; 37 min overdue; priority critical" [ref=e207] [cursor=pointer]:
+                - generic [ref=e208]:
+                  - generic [ref=e209]: "1"
+                  - generic [ref=e210]:
+                    - generic [ref=e211]: Marisol Martinez
+                    - generic [ref=e212]: 1426 Seabrook Way · Jupiter
+                    - generic [ref=e213]: Accepted — payment pending
+                - generic [ref=e214]:
+                  - generic [ref=e215]: SR
+                  - text: Sam R.
+                - generic [ref=e216]:
+                  - text: Call about required deposit
+                  - generic [ref=e217]: 37 min overdue
+              - button "Open Charlotte Anne Montgomery-Smythe; Policy review required; owner You; next action Open payment review; Due today; priority high" [ref=e218] [cursor=pointer]:
+                - generic [ref=e219]:
+                  - generic [ref=e220]: "2"
+                  - generic [ref=e221]:
+                    - generic [ref=e222]: Charlotte Anne Montgomery-Smythe
+                    - generic [ref=e223]: 2147 North County Road 211, Building B · Palm Beach Gardens
+                    - generic [ref=e224]: Policy review required
+                - generic [ref=e225]:
+                  - generic [ref=e226]: JP
+                  - text: You
+                - generic [ref=e227]:
+                  - text: Open payment review
+                  - generic [ref=e228]: Due today
+          - complementary [ref=e164]:
+            - generic [ref=e165]:
+              - generic [ref=e229]:
+                - paragraph [ref=e230]: CUSTOMER & PROPERTY
+                - heading "Marisol Martinez" [level=2] [ref=e231]
+                - paragraph [ref=e232]: 1426 Seabrook Way · Jupiter
+                - generic [ref=e233]: Accepted — payment pending
+              - generic [ref=e234]:
+                - heading "What matters now" [level=3] [ref=e235]
+                - generic [ref=e236]:
+                  - generic [ref=e237]:
+                    - generic [ref=e238]: Potential revenue
+                    - strong [ref=e239]: $18,400 contract
+                  - generic [ref=e240]:
+                    - generic [ref=e241]: Owner
+                    - strong [ref=e242]: Sam R.
+                  - generic [ref=e243]:
+                    - generic [ref=e244]: Lifecycle
+                    - strong [ref=e245]: PR-1048 · signed 9:12 AM
+                  - generic [ref=e246]:
+                    - generic [ref=e247]: Next action
+                    - strong [ref=e248]: Call about required deposit
+                  - generic [ref=e249]:
+                    - generic [ref=e250]: Required deposit
+                    - strong [ref=e251]: $1,840 required · link delivered
+                  - generic [ref=e252]:
+                    - generic [ref=e253]: Payment status
+                    - strong [ref=e254]: Awaiting provider confirmation · verified 9:13 AM
+              - generic [ref=e255]:
+                - heading "Activity & sync" [level=3] [ref=e256]
+                - generic [ref=e257]:
+                  - generic [ref=e258]:
+                    - text: Proposal accepted
+                    - generic [ref=e259]: 9:12 AM · app
+                  - generic [ref=e260]:
+                    - text: Deposit link delivered
+                    - generic [ref=e261]: 9:13 AM · GHL
+                  - generic [ref=e262]:
+                    - text: No payment confirmation yet
+                    - generic [ref=e263]: 9:13 AM · payment provider
+              - generic [ref=e264]:
+                - button "Call Marisol" [ref=e265] [cursor=pointer]
+                - button "Message / open GHL" [ref=e266] [cursor=pointer]
+                - button "Record human outcome" [ref=e267] [cursor=pointer]
+  - status [ref=e268]: Payment view applied — mock data only.

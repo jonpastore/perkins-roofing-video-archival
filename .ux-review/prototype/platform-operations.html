@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Perkins — Platform operations prototype</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="capability-prototypes.css" />
+  </head>
+  <body>
+    <div class="cap-shell">
+      <aside class="cap-nav">
+        <img
+          src="../../web/public/perkins-logo.png"
+          alt="Perkins Roofing Corp."
+        />
+        <p>PLATFORM ADMIN</p>
+        <a href="#">Overview</a><a class="active" href="#">Readiness & health</a
+        ><a href="#">Integrations & legacy data</a
+        ><a href="#">Processing queue</a><a href="#">Logs & audit</a
+        ><a href="#">Usage & cost</a>
+        <p>ADMINISTRATION</p>
+        <a href="#">Branches & access</a><a href="#">Pricing & templates</a>
+      </aside>
+      <main class="cap-main">
+        <header class="cap-top">
+          <a class="cap-mobile-nav" href="index.html">← Back to workspaces</a>
+          <span>Platform Admin / Platform Operations</span
+          ><span
+            >Corporate reporting is separate · server-authorized access
+            required</span
+          >
+        </header>
+        <section class="cap-content">
+          <p class="eyebrow">PLATFORM OPERATIONS · MOCK DATA</p>
+          <h1>Operate safely without cluttering branch work</h1>
+          <p class="lede">
+            A consequential preservation prototype for current Status,
+            readiness, connection, legacy-data and diagnostic capabilities. A
+            green summary never replaces per-service evidence.
+          </p>
+          <section class="metric-grid">
+            <article class="metric">
+              <span>Readiness gates</span><b>14 / 16</b
+              ><small>2 require action</small>
+            </article>
+            <article class="metric">
+              <span>Integrations</span><b>6 / 7</b
+              ><small>1 needs reconnect</small>
+            </article>
+            <article class="metric">
+              <span>Processing queue</span><b>3</b
+              ><small>1 retryable failure</small>
+            </article>
+            <article class="metric">
+              <span>24h spend</span><b>$84.21</b
+              ><small>Within alert range</small>
+            </article>
+          </section>
+          <div class="grid">
+            <div>
+              <section class="card">
+                <h2>Readiness and integration exceptions</h2>
+                <div class="rows">
+                  <div class="status-row">
+                    <div>
+                      <b>Knowify accounting sync</b
+                      ><small
+                        >Last confirmed 9:42 AM · invoices delayed · raw record
+                        retained</small
+                      ><a href="#">View legacy raw records</a> ·
+                      <a href="#">Reconnect Knowify</a>
+                    </div>
+                    <span class="state bad">ACTION</span>
+                  </div>
+                  <div class="status-row">
+                    <div>
+                      <b>Proposal reminder job</b
+                      ><small
+                        >Retryable failure at 9:18 AM · no reminder replayed
+                        yet</small
+                      ><a href="#">Inspect job and retry safely</a>
+                    </div>
+                    <span class="state warn">RETRY</span>
+                  </div>
+                  <div class="status-row">
+                    <div>
+                      <b>Production readiness</b
+                      ><small
+                        >DMARC and billing-export checks need remediation</small
+                      ><a href="#">View readiness blockers</a>
+                    </div>
+                    <span class="state warn">2 BLOCKERS</span>
+                  </div>
+                  <div class="status-row">
+                    <div>
+                      <b>GHL lifecycle sync</b
+                      ><small
+                        >Healthy summary; record-level conflicts remain visible
+                        in sales work</small
+                      ><a href="#">Open integration detail</a>
+                    </div>
+                    <span class="state ok">HEALTHY</span>
+                  </div>
+                  <div class="status-row">
+                    <div>
+                      <b>CompanyCam ingestion</b
+                      ><small>Webhook verified 8:56 AM · no backlog</small
+                      ><a href="#">View ingestion history</a>
+                    </div>
+                    <span class="state ok">HEALTHY</span>
+                  </div>
+                </div>
+                <div class="notice">
+                  Each remediation is scoped to its service and impact. Retry
+                  uses the existing idempotency/authorization contract; health
+                  summaries never execute a broad repair.
+                </div>
+              </section>
+              <section class="card" style="margin-top: 18px">
+                <h2>Recent restricted audit events</h2>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Actor</th>
+                      <th>Action</th>
+                      <th>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>10:02</td>
+                      <td>Tim P.</td>
+                      <td>Viewed Miami branch exceptions</td>
+                      <td>Allowed</td>
+                    </tr>
+                    <tr>
+                      <td>9:42</td>
+                      <td>System</td>
+                      <td>Knowify sync</td>
+                      <td>Retryable failure</td>
+                    </tr>
+                    <tr>
+                      <td>9:18</td>
+                      <td>System</td>
+                      <td>Proposal reminder job</td>
+                      <td>Failed safely</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+            </div>
+            <aside>
+              <section class="card">
+                <h2>Data-source health</h2>
+                <div class="rows">
+                  <div class="status-row">
+                    <div>
+                      <b>Knowify</b><small>OAuth reconnect required</small>
+                    </div>
+                    <span class="state bad">ACTION</span>
+                  </div>
+                  <div class="status-row">
+                    <div>
+                      <b>WordPress</b><small>Last publish 8:21 AM</small>
+                    </div>
+                    <span class="state ok">OK</span>
+                  </div>
+                  <div class="status-row">
+                    <div>
+                      <b>YouTube</b><small>Archive KPI poll 8:45 AM</small>
+                    </div>
+                    <span class="state ok">OK</span>
+                  </div>
+                  <div class="status-row">
+                    <div>
+                      <b>GCP / GCS</b
+                      ><small>Storage and render checks passed</small>
+                    </div>
+                    <span class="state ok">OK</span>
+                  </div>
+                </div>
+              </section>
+              <section class="restricted">
+                <b>Role boundary:</b><br />Corporate may view authorized branch
+                and finance reports. Product Admin manages branch/users/pricing.
+                Platform Admin alone receives secrets-adjacent integrations, raw
+                logs, health probes, retries, tenant and SSO controls. The
+                server enforces every capability.
+              </section>
+              <section class="restricted">
+                <b>Mobile context:</b><br />This is a restricted contextual
+                destination, not a primary phone home. Its application
+                navigation and Perkins logo remain available from the
+                authenticated shell; the compact mock focuses on the content
+                surface.
+              </section>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,34 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e26]:
+    - generic [ref=e27]:
+      - button "Open navigation" [ref=e208]: ☰
+      - generic [ref=e28]:
+        - generic [ref=e29]: Platform Admin
+        - generic [ref=e30]: /
+        - strong [ref=e31]: Platform Operations
+      - generic [ref=e32]:
+        - button "Notifications" [ref=e34] [cursor=pointer]: ◌
+        - button "User profile" [ref=e36] [cursor=pointer]: JP
+    - main [ref=e37]:
+      - region [ref=e215]:
+        - generic [ref=e39]:
+          - paragraph [ref=e40]: PLATFORM OPERATIONS
+          - heading "Keep product operations safe and observable" [level=1] [ref=e216]
+          - paragraph [ref=e42]: Review platform health and restricted remediation. Customer data requires an explicit audited support scope.
+        - group [ref=e43]:
+          - 'generic "Review scenario: Platform admin" [ref=e217] [cursor=pointer]'
+          - group "Prototype review scenario" [ref=e209]:
+            - button "Branch manager preview" [ref=e210] [cursor=pointer]
+            - button "Salesperson preview" [ref=e211] [cursor=pointer]
+            - button "Corporate preview" [ref=e212] [cursor=pointer]
+            - button "Platform admin preview" [active] [pressed] [ref=e213] [cursor=pointer]
+          - paragraph [ref=e214]: Reviewer-only mock-data switcher. Production views are assigned by server-authorized role and scope.
+      - generic [ref=e218]:
+        - paragraph [ref=e219]: RESTRICTED WORKSPACE
+        - heading "Platform Operations is isolated from customer work" [level=2] [ref=e220]
+        - paragraph [ref=e221]: This reviewer-only role preview intentionally withholds branch queues and customer records. Platform access requires an audited support scope before any operational customer data is available.
+        - link "Open Platform Operations prototype" [ref=e222] [cursor=pointer]:
+          - /url: platform-operations.html
+  - status [ref=e223]: Platform-admin navigation preview loaded — mock data only.

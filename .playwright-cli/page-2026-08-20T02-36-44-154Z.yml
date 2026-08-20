@@ -1,0 +1,162 @@
+- generic [ref=f1e1]:
+  - link "Skip to work queue" [ref=f1e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f1e3]:
+    - complementary "Primary navigation" [ref=f1e4]:
+      - img "Perkins Roofing Corp." [ref=f1e6]
+      - button "Current workspace" [ref=f1e7]:
+        - text: Jupiter Branch
+        - generic [ref=f1e8]: ⌄
+      - navigation [ref=f1e9]:
+        - link "◉ Today 2" [ref=f1e310] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=f1e11]: ◉
+          - text: Today
+          - generic [ref=f1e12]: "2"
+        - link "◇ Pipeline" [ref=f1e13] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=f1e14]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=f1e15] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=f1e16]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=f1e17] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=f1e18]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=f1e19] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=f1e20]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=f1e21] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=f1e22]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=f1e23] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=f1e24]: ▤
+          - text: Reports
+      - generic [ref=f1e25]: GHL sync healthy
+    - generic [ref=f1e27]:
+      - generic [ref=f1e28]:
+        - generic [ref=f1e29]:
+          - generic [ref=f1e30]: Jupiter · Sales
+          - generic [ref=f1e31]: /
+          - strong [ref=f1e32]: Today
+        - generic [ref=f1e33]:
+          - button "Search" [ref=f1e34] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=f1e35] [cursor=pointer]: ◌
+          - button "User profile" [ref=f1e37] [cursor=pointer]: JP
+      - main [ref=f1e38]:
+        - region [ref=f1e311]:
+          - generic [ref=f1e40]:
+            - paragraph [ref=f1e41]: YOUR WORK
+            - heading "Make the next right move" [level=1] [ref=f1e312]
+            - paragraph [ref=f1e43]: Two customers are waiting on you. A human attempt prevents the first SLA breach.
+          - group "Prototype scenario" [ref=f1e44]:
+            - button "Branch manager" [ref=f1e45] [cursor=pointer]
+            - button "Salesperson" [active] [ref=f1e46] [cursor=pointer]
+            - button "Corporate" [ref=f1e47] [cursor=pointer]
+        - region "Branch status" [ref=f1e48]:
+          - article [ref=f1e49]:
+            - generic [ref=f1e50]: At-risk revenue
+            - strong [ref=f1e51]: $34,700
+            - generic [ref=f1e52]: ↑ $18,400 needs action
+          - article [ref=f1e53]:
+            - generic [ref=f1e54]: Human response SLA
+            - strong [ref=f1e55]: 100%
+            - generic [ref=f1e56]: 5-minute business-hours target
+          - article [ref=f1e57]:
+            - generic [ref=f1e58]: Inspections today
+            - strong [ref=f1e59]: "3"
+            - generic [ref=f1e60]: 2 awaiting outcome
+        - generic [ref=f1e65]:
+          - region [ref=f1e313]:
+            - generic [ref=f1e67]:
+              - generic [ref=f1e68]:
+                - paragraph [ref=f1e69]: OWNED WORK
+                - heading "Revenue risk queue 2" [level=2] [ref=f1e314]
+              - button "View states" [ref=f1e71] [cursor=pointer]
+            - generic "Queue filters" [ref=f1e72]:
+              - button "All 2" [ref=f1e315] [cursor=pointer]:
+                - text: All
+                - generic [ref=f1e74]: "2"
+              - button "Mine 2" [ref=f1e75] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=f1e76]: "2"
+              - button "Due now 2" [ref=f1e316] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=f1e78]: "2"
+              - button "Payment 0" [ref=f1e317] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=f1e80]: "0"
+            - generic [ref=f1e81]:
+              - generic [ref=f1e82]: Customer & risk
+              - generic [ref=f1e83]: Owner
+              - generic [ref=f1e84]: Next action
+            - generic [ref=f1e85]:
+              - button "Open Evan Li, No human attempt" [ref=f1e318] [cursor=pointer]:
+                - generic [ref=f1e319]:
+                  - generic [ref=f1e320]: "1"
+                  - generic [ref=f1e321]:
+                    - generic [ref=f1e322]: Evan Li
+                    - generic [ref=f1e323]: 84 Seagate Drive · Jupiter
+                    - generic [ref=f1e324]: No human attempt
+                - generic [ref=f1e325]:
+                  - generic [ref=f1e326]: JP
+                  - text: You
+                - generic [ref=f1e327]:
+                  - text: Make first contact
+                  - generic [ref=f1e328]: 3 min left
+              - button "Open Carlos Ortiz, Proposal needs follow-up" [ref=f1e329] [cursor=pointer]:
+                - generic [ref=f1e330]:
+                  - generic [ref=f1e331]: "2"
+                  - generic [ref=f1e332]:
+                    - generic [ref=f1e333]: Carlos Ortiz
+                    - generic [ref=f1e334]: 12 Coralberry Ct · Jupiter
+                    - generic [ref=f1e335]: Proposal needs follow-up
+                - generic [ref=f1e336]:
+                  - generic [ref=f1e337]: JP
+                  - text: You
+                - generic [ref=f1e338]:
+                  - text: Review open questions
+                  - generic [ref=f1e339]: Due today
+          - complementary [ref=f1e340]:
+            - generic [ref=f1e153]:
+              - generic [ref=f1e341]:
+                - paragraph [ref=f1e342]: CUSTOMER & PROPERTY
+                - heading "Evan Li" [level=2] [ref=f1e343]
+                - paragraph [ref=f1e344]: 84 Seagate Drive · Jupiter
+                - generic [ref=f1e345]: No human attempt
+              - generic [ref=f1e346]:
+                - heading "What matters now" [level=3] [ref=f1e347]
+                - generic [ref=f1e348]:
+                  - generic [ref=f1e349]:
+                    - generic [ref=f1e350]: Potential revenue
+                    - strong [ref=f1e351]: $12,600 est.
+                  - generic [ref=f1e352]:
+                    - generic [ref=f1e353]: Owner
+                    - strong [ref=f1e354]: You
+                  - generic [ref=f1e355]:
+                    - generic [ref=f1e356]: Lifecycle
+                    - strong [ref=f1e357]: Facebook lead · 2 min ago
+                  - generic [ref=f1e358]:
+                    - generic [ref=f1e359]: Next action
+                    - strong [ref=f1e360]: Make first contact
+              - generic [ref=f1e361]:
+                - heading "Activity & sync" [level=3] [ref=f1e362]
+                - generic [ref=f1e363]:
+                  - generic [ref=f1e364]:
+                    - text: Lead captured from Facebook
+                    - generic [ref=f1e365]: 2 min ago
+                  - generic [ref=f1e366]:
+                    - text: Automated acknowledgment sent
+                    - generic [ref=f1e367]: 2 min ago
+                  - generic [ref=f1e368]:
+                    - text: Awaiting human outreach
+                    - generic [ref=f1e369]: now
+              - generic [ref=f1e370]:
+                - button "Log a human attempt" [ref=f1e371] [cursor=pointer]
+                - button "Open customer record" [ref=f1e372] [cursor=pointer]
+  - status [ref=f1e309]: Scenario updated — mock data only.

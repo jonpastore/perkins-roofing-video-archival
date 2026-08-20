@@ -1,0 +1,281 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "Primary navigation" [ref=e4]:
+      - img "Perkins Roofing Corp." [ref=e6]
+      - button "Current workspace" [ref=e7]:
+        - generic [ref=e8]: All branches
+        - generic [ref=e9]: ⌄
+      - navigation [ref=e10]:
+        - link "◉ Today 9" [ref=e316] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=e12]: ◉
+          - text: Today
+          - generic [ref=e13]: "9"
+        - link "◇ Pipeline" [ref=e14] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=e15]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=e16] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=e17]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=e18] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=e19]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=e20] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=e21]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=e22] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=e23]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=e24] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=e25]: ▤
+          - text: Reports
+      - generic [ref=e26]: GHL sync healthy
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: All branches
+          - generic [ref=e32]: /
+          - strong [ref=e33]: Today
+        - generic [ref=e34]:
+          - button "Search" [ref=e35] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=e36] [cursor=pointer]: ◌
+          - button "User profile" [ref=e38] [cursor=pointer]: JP
+      - main [ref=e39]:
+        - region [ref=e317]:
+          - generic [ref=e41]:
+            - paragraph [ref=e42]: CORPORATE PORTFOLIO
+            - heading "See branch risk before it costs revenue" [level=1] [ref=e318]
+            - paragraph [ref=e44]: Miami has two items requiring branch-manager follow-up. Open a branch to inspect its exceptions.
+          - group "Prototype scenario" [ref=e45]:
+            - button "Branch manager" [ref=e46] [cursor=pointer]
+            - button "Salesperson" [ref=e47] [cursor=pointer]
+            - button "Corporate" [active] [ref=e48] [cursor=pointer]
+        - region "Branch status" [ref=e49]:
+          - article [ref=e50]:
+            - generic [ref=e51]: At-risk revenue
+            - strong [ref=e52]: $88,900
+            - generic [ref=e53]: ↑ $18,400 needs action
+          - article [ref=e54]:
+            - generic [ref=e55]: Human response SLA
+            - strong [ref=e56]: 89%
+            - generic [ref=e57]: 5-minute business-hours target
+          - article [ref=e58]:
+            - generic [ref=e59]: Inspections today
+            - strong [ref=e60]: "19"
+            - generic [ref=e61]: 2 awaiting outcome
+          - article [ref=e62]:
+            - generic [ref=e63]: Branch performance
+            - strong [ref=e64]: 3 / 4
+            - generic [ref=e65]: Jupiter is on target
+        - region [ref=e319]:
+          - generic [ref=e320]:
+            - paragraph [ref=e321]: CROSS-BRANCH PRIORITIES
+            - heading "Where corporate needs to intervene" [level=2] [ref=e322]
+          - generic [ref=e323]:
+            - article [ref=e324]:
+              - generic [ref=e325]:
+                - strong [ref=e326]: Jupiter
+                - generic [ref=e327]: On target
+              - paragraph [ref=e328]: 92% response SLA · 1 payment risk
+              - button "View Jupiter exceptions" [ref=e329] [cursor=pointer]
+            - article [ref=e330]:
+              - generic [ref=e331]:
+                - strong [ref=e332]: Miami
+                - generic [ref=e333]: Manager follow-up
+              - paragraph [ref=e334]: 76% response SLA · 2 unattempted leads
+              - button "View Miami exceptions" [ref=e335] [cursor=pointer]
+            - article [ref=e336]:
+              - generic [ref=e337]:
+                - strong [ref=e338]: Naples
+                - generic [ref=e339]: Capacity watch
+              - paragraph [ref=e340]: 89% response SLA · 4 inspections tomorrow
+              - button "View Naples exceptions" [ref=e341] [cursor=pointer]
+        - generic [ref=e66]:
+          - region [ref=e342]:
+            - generic [ref=e68]:
+              - generic [ref=e69]:
+                - paragraph [ref=e70]: OWNED WORK
+                - heading "Revenue risk queue 9" [level=2] [ref=e343]
+              - button "View states" [ref=e72] [cursor=pointer]
+            - generic "Queue filters" [ref=e73]:
+              - button "All 9" [ref=e344] [cursor=pointer]:
+                - text: All
+                - generic [ref=e75]: "9"
+              - button "Mine 2" [ref=e76] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=e77]: "2"
+              - button "Due now 7" [ref=e345] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=e79]: "7"
+              - button "Payment 1" [ref=e80] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=e81]: "1"
+            - generic [ref=e82]:
+              - generic [ref=e83]: Customer & risk
+              - generic [ref=e84]: Owner
+              - generic [ref=e85]: Next action
+            - generic [ref=e86]:
+              - button "Open Marisol Martinez; Accepted — payment pending; owner Sam R.; next action Call about required deposit; 37 min overdue; priority critical" [ref=e346] [cursor=pointer]:
+                - generic [ref=e347]:
+                  - generic [ref=e348]: "1"
+                  - generic [ref=e349]:
+                    - generic [ref=e350]: Marisol Martinez
+                    - generic [ref=e351]: 1426 Seabrook Way · Jupiter
+                    - generic [ref=e352]: Accepted — payment pending
+                - generic [ref=e353]:
+                  - generic [ref=e354]: SR
+                  - text: Sam R.
+                - generic [ref=e355]:
+                  - text: Call about required deposit
+                  - generic [ref=e356]: 37 min overdue
+              - button "Open Evan Li; No human attempt; owner You; next action Make first contact; 3 min left; priority critical" [ref=e357] [cursor=pointer]:
+                - generic [ref=e358]:
+                  - generic [ref=e359]: "2"
+                  - generic [ref=e360]:
+                    - generic [ref=e361]: Evan Li
+                    - generic [ref=e362]: 84 Seagate Drive · Jupiter
+                    - generic [ref=e363]: No human attempt
+                - generic [ref=e364]:
+                  - generic [ref=e365]: JP
+                  - text: You
+                - generic [ref=e366]:
+                  - text: Make first contact
+                  - generic [ref=e367]: 3 min left
+              - button "Open Heather Douglas; Appointment cancelled; owner Tara M.; next action Offer a new time; Due in 18 min; priority high" [ref=e368] [cursor=pointer]:
+                - generic [ref=e369]:
+                  - generic [ref=e370]: "3"
+                  - generic [ref=e371]:
+                    - generic [ref=e372]: Heather Douglas
+                    - generic [ref=e373]: 311 Ocean Dunes Rd · Juno
+                    - generic [ref=e374]: Appointment cancelled
+                - generic [ref=e375]:
+                  - generic [ref=e376]: TM
+                  - text: Tara M.
+                - generic [ref=e377]:
+                  - text: Offer a new time
+                  - generic [ref=e378]: Due in 18 min
+              - button "Open Carlos Ortiz; Proposal needs follow-up; owner You; next action Review open questions; Due today; priority high" [ref=e379] [cursor=pointer]:
+                - generic [ref=e380]:
+                  - generic [ref=e381]: "4"
+                  - generic [ref=e382]:
+                    - generic [ref=e383]: Carlos Ortiz
+                    - generic [ref=e384]: 12 Coralberry Ct · Jupiter
+                    - generic [ref=e385]: Proposal needs follow-up
+                - generic [ref=e386]:
+                  - generic [ref=e387]: JP
+                  - text: You
+                - generic [ref=e388]:
+                  - text: Review open questions
+                  - generic [ref=e389]: Due today
+              - button "Open Ruth Bennett; No-show recovery; owner Jared C.; next action Rebook inspection; Due today; priority high" [ref=e390] [cursor=pointer]:
+                - generic [ref=e391]:
+                  - generic [ref=e392]: "5"
+                  - generic [ref=e393]:
+                    - generic [ref=e394]: Ruth Bennett
+                    - generic [ref=e395]: 708 Loxahatchee Dr · Tequesta
+                    - generic [ref=e396]: No-show recovery
+                - generic [ref=e397]:
+                  - generic [ref=e398]: JC
+                  - text: Jared C.
+                - generic [ref=e399]:
+                  - text: Rebook inspection
+                  - generic [ref=e400]: Due today
+              - button "Open Diana Moore; Connected, not booked; owner Sam R.; next action Confirm inspection time; Tomorrow; priority medium" [ref=e401] [cursor=pointer]:
+                - generic [ref=e402]:
+                  - generic [ref=e403]: "6"
+                  - generic [ref=e404]:
+                    - generic [ref=e405]: Diana Moore
+                    - generic [ref=e406]: 19 Atlantic Ave · Palm Beach
+                    - generic [ref=e407]: Connected, not booked
+                - generic [ref=e408]:
+                  - generic [ref=e409]: SR
+                  - text: Sam R.
+                - generic [ref=e410]:
+                  - text: Confirm inspection time
+                  - generic [ref=e411]: Tomorrow
+              - button "Open Ava Reyes; No human attempt; owner Nia P.; next action Make first contact; 8 min overdue; priority critical" [ref=e412] [cursor=pointer]:
+                - generic [ref=e413]:
+                  - generic [ref=e414]: "7"
+                  - generic [ref=e415]:
+                    - generic [ref=e416]: Ava Reyes
+                    - generic [ref=e417]: 88 Bay Harbor Dr · Miami
+                    - generic [ref=e418]: No human attempt
+                - generic [ref=e419]:
+                  - generic [ref=e420]: NP
+                  - text: Nia P.
+                - generic [ref=e421]:
+                  - text: Make first contact
+                  - generic [ref=e422]: 8 min overdue
+              - button "Open Daniel Cho; No human attempt; owner Luis G.; next action Make first contact; Due in 4 min; priority high" [ref=e423] [cursor=pointer]:
+                - generic [ref=e424]:
+                  - generic [ref=e425]: "8"
+                  - generic [ref=e426]:
+                    - generic [ref=e427]: Daniel Cho
+                    - generic [ref=e428]: 230 Coral Gate · Miami
+                    - generic [ref=e429]: No human attempt
+                - generic [ref=e430]:
+                  - generic [ref=e431]: LG
+                  - text: Luis G.
+                - generic [ref=e432]:
+                  - text: Make first contact
+                  - generic [ref=e433]: Due in 4 min
+              - button "Open Maya Fischer; Appointment capacity watch; owner Mina D.; next action Confirm inspection capacity; Tomorrow; priority medium" [ref=e434] [cursor=pointer]:
+                - generic [ref=e435]:
+                  - generic [ref=e436]: "9"
+                  - generic [ref=e437]:
+                    - generic [ref=e438]: Maya Fischer
+                    - generic [ref=e439]: 15 Gulfshore Blvd · Naples
+                    - generic [ref=e440]: Appointment capacity watch
+                - generic [ref=e441]:
+                  - generic [ref=e442]: MD
+                  - text: Mina D.
+                - generic [ref=e443]:
+                  - text: Confirm inspection capacity
+                  - generic [ref=e444]: Tomorrow
+          - complementary [ref=e263]:
+            - generic [ref=e154]:
+              - generic [ref=e445]:
+                - paragraph [ref=e446]: CUSTOMER & PROPERTY
+                - heading "Evan Li" [level=2] [ref=e447]
+                - paragraph [ref=e448]: 84 Seagate Drive · Jupiter
+                - generic [ref=e449]: No human attempt
+              - generic [ref=e450]:
+                - heading "What matters now" [level=3] [ref=e451]
+                - generic [ref=e452]:
+                  - generic [ref=e453]:
+                    - generic [ref=e454]: Potential revenue
+                    - strong [ref=e455]: $12,600 estimate
+                  - generic [ref=e456]:
+                    - generic [ref=e457]: Owner
+                    - strong [ref=e458]: You
+                  - generic [ref=e459]:
+                    - generic [ref=e460]: Lifecycle
+                    - strong [ref=e461]: Facebook lead · 2 min ago
+                  - generic [ref=e462]:
+                    - generic [ref=e463]: Next action
+                    - strong [ref=e464]: Make first contact
+              - generic [ref=e465]:
+                - heading "Activity & sync" [level=3] [ref=e466]
+                - generic [ref=e467]:
+                  - generic [ref=e468]:
+                    - text: Lead captured from Facebook
+                    - generic [ref=e469]: 2 min ago · GHL
+                  - generic [ref=e470]:
+                    - text: Automated acknowledgment sent
+                    - generic [ref=e471]: 2 min ago · GHL
+                  - generic [ref=e472]:
+                    - text: Awaiting human outreach
+                    - generic [ref=e473]: now · app
+              - generic [ref=e474]:
+                - button "Call Evan" [ref=e475] [cursor=pointer]
+                - button "Message / open GHL" [ref=e476] [cursor=pointer]
+                - button "Record human outcome" [ref=e477] [cursor=pointer]
+  - status [ref=e478]: Portfolio view loaded — select a branch for its exceptions.

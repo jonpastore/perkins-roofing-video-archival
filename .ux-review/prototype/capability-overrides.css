@@ -1,0 +1,5 @@
+@media (max-width: 760px) {
+  .row span {
+    display: block;
+  }
+}

@@ -1,0 +1,245 @@
+- generic [ref=f4e1]:
+  - link "Skip to work queue" [ref=f4e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f4e3]:
+    - complementary "Primary navigation" [ref=f4e4]:
+      - generic [ref=f4e5]:
+        - generic [ref=f4e6]: P
+        - generic [ref=f4e7]:
+          - text: PERKINS
+          - generic [ref=f4e8]: ROOFING
+      - button "Current workspace" [ref=f4e9]:
+        - text: Jupiter Branch
+        - generic [ref=f4e10]: ⌄
+      - navigation [ref=f4e11]:
+        - link "◉ Today 6" [ref=f4e12] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=f4e13]: ◉
+          - text: Today
+          - generic [ref=f4e14]: "6"
+        - link "◇ Pipeline" [ref=f4e15] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=f4e16]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=f4e17] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=f4e18]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=f4e19] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=f4e20]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=f4e21] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=f4e22]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=f4e23] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=f4e24]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=f4e25] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=f4e26]: ▤
+          - text: Reports
+      - generic [ref=f4e27]: GHL sync healthy
+    - generic [ref=f4e29]:
+      - generic [ref=f4e30]:
+        - generic [ref=f4e31]:
+          - generic [ref=f4e32]: All branches
+          - generic [ref=f4e33]: /
+          - strong [ref=f4e34]: Today
+        - generic [ref=f4e35]:
+          - button "Search" [ref=f4e36] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=f4e37] [cursor=pointer]: ◌
+          - button "User profile" [ref=f4e39] [cursor=pointer]: JP
+      - main [ref=f4e40]:
+        - region [ref=f4e188]:
+          - generic [ref=f4e42]:
+            - paragraph [ref=f4e43]: CORPORATE PORTFOLIO
+            - heading "See branch risk before it costs revenue" [level=1] [ref=f4e189]
+            - paragraph [ref=f4e45]: Jupiter is on target. Miami has two items requiring branch-manager follow-up.
+          - group "Prototype scenario" [ref=f4e46]:
+            - button "Branch manager" [ref=f4e47] [cursor=pointer]
+            - button "Salesperson" [ref=f4e48] [cursor=pointer]
+            - button "Corporate" [active] [ref=f4e49] [cursor=pointer]
+        - region "Branch status" [ref=f4e50]:
+          - article [ref=f4e51]:
+            - generic [ref=f4e52]: At-risk revenue
+            - strong [ref=f4e53]: $88,900
+            - generic [ref=f4e54]: ↑ $18,400 needs action
+          - article [ref=f4e55]:
+            - generic [ref=f4e56]: Human response SLA
+            - strong [ref=f4e57]: 89%
+            - generic [ref=f4e58]: 5-minute business-hours target
+          - article [ref=f4e59]:
+            - generic [ref=f4e60]: Inspections today
+            - strong [ref=f4e61]: "19"
+            - generic [ref=f4e62]: 2 awaiting outcome
+          - article [ref=f4e63]:
+            - generic [ref=f4e64]: Branch performance
+            - strong [ref=f4e65]: 3 / 4
+            - generic [ref=f4e66]: Jupiter is on target
+        - region [ref=f4e190]:
+          - generic [ref=f4e191]:
+            - paragraph [ref=f4e192]: CROSS-BRANCH PRIORITIES
+            - heading "Where corporate needs to intervene" [level=2] [ref=f4e193]
+          - generic [ref=f4e194]:
+            - article [ref=f4e195]:
+              - generic [ref=f4e196]:
+                - strong [ref=f4e197]: Jupiter
+                - generic [ref=f4e198]: On target
+              - paragraph [ref=f4e199]: 92% response SLA · 1 payment risk
+              - button "Open branch" [ref=f4e200] [cursor=pointer]
+            - article [ref=f4e201]:
+              - generic [ref=f4e202]:
+                - strong [ref=f4e203]: Miami
+                - generic [ref=f4e204]: Manager follow-up
+              - paragraph [ref=f4e205]: 76% response SLA · 2 unattempted leads
+              - button "Open branch" [ref=f4e206] [cursor=pointer]
+            - article [ref=f4e207]:
+              - generic [ref=f4e208]:
+                - strong [ref=f4e209]: Naples
+                - generic [ref=f4e210]: Capacity watch
+              - paragraph [ref=f4e211]: 89% response SLA · 4 inspections tomorrow
+              - button "Open branch" [ref=f4e212] [cursor=pointer]
+        - generic [ref=f4e67]:
+          - region [ref=f4e68]:
+            - generic [ref=f4e69]:
+              - generic [ref=f4e70]:
+                - paragraph [ref=f4e71]: OWNED WORK
+                - heading "Revenue risk queue 6" [level=2] [ref=f4e72]
+              - button "View states" [ref=f4e73] [cursor=pointer]
+            - generic "Queue filters" [ref=f4e74]:
+              - button "All 6" [ref=f4e75] [cursor=pointer]:
+                - text: All
+                - generic [ref=f4e76]: "6"
+              - button "Mine 2" [ref=f4e77] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=f4e78]: "2"
+              - button "Due now 5" [ref=f4e79] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=f4e80]: "5"
+              - button "Payment 1" [ref=f4e81] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=f4e82]: "1"
+            - generic [ref=f4e83]:
+              - generic [ref=f4e84]: Customer & risk
+              - generic [ref=f4e85]: Owner
+              - generic [ref=f4e86]: Next action
+            - generic [ref=f4e87]:
+              - button "Open Marisol Martinez, Accepted — payment pending" [ref=f4e213] [cursor=pointer]:
+                - generic [ref=f4e214]:
+                  - generic [ref=f4e215]: "1"
+                  - generic [ref=f4e216]:
+                    - generic [ref=f4e217]: Marisol Martinez
+                    - generic [ref=f4e218]: 1426 Seabrook Way · Jupiter
+                    - generic [ref=f4e219]: Accepted — payment pending
+                - generic [ref=f4e220]:
+                  - generic [ref=f4e221]: SR
+                  - text: Sam R.
+                - generic [ref=f4e222]:
+                  - text: Call about deposit
+                  - generic [ref=f4e223]: 37 min overdue
+              - button "Open Evan Li, No human attempt" [ref=f4e224] [cursor=pointer]:
+                - generic [ref=f4e225]:
+                  - generic [ref=f4e226]: "2"
+                  - generic [ref=f4e227]:
+                    - generic [ref=f4e228]: Evan Li
+                    - generic [ref=f4e229]: 84 Seagate Drive · Jupiter
+                    - generic [ref=f4e230]: No human attempt
+                - generic [ref=f4e231]:
+                  - generic [ref=f4e232]: JP
+                  - text: You
+                - generic [ref=f4e233]:
+                  - text: Make first contact
+                  - generic [ref=f4e234]: 3 min left
+              - button "Open Heather Douglas, Appointment cancelled" [ref=f4e235] [cursor=pointer]:
+                - generic [ref=f4e236]:
+                  - generic [ref=f4e237]: "3"
+                  - generic [ref=f4e238]:
+                    - generic [ref=f4e239]: Heather Douglas
+                    - generic [ref=f4e240]: 311 Ocean Dunes Rd · Juno
+                    - generic [ref=f4e241]: Appointment cancelled
+                - generic [ref=f4e242]:
+                  - generic [ref=f4e243]: TM
+                  - text: Tara M.
+                - generic [ref=f4e244]:
+                  - text: Offer a new time
+                  - generic [ref=f4e245]: Due in 18 min
+              - button "Open Carlos Ortiz, Proposal needs follow-up" [ref=f4e246] [cursor=pointer]:
+                - generic [ref=f4e247]:
+                  - generic [ref=f4e248]: "4"
+                  - generic [ref=f4e249]:
+                    - generic [ref=f4e250]: Carlos Ortiz
+                    - generic [ref=f4e251]: 12 Coralberry Ct · Jupiter
+                    - generic [ref=f4e252]: Proposal needs follow-up
+                - generic [ref=f4e253]:
+                  - generic [ref=f4e254]: JP
+                  - text: You
+                - generic [ref=f4e255]:
+                  - text: Review open questions
+                  - generic [ref=f4e256]: Due today
+              - button "Open Ruth Bennett, No-show recovery" [ref=f4e257] [cursor=pointer]:
+                - generic [ref=f4e258]:
+                  - generic [ref=f4e259]: "5"
+                  - generic [ref=f4e260]:
+                    - generic [ref=f4e261]: Ruth Bennett
+                    - generic [ref=f4e262]: 708 Loxahatchee Dr · Tequesta
+                    - generic [ref=f4e263]: No-show recovery
+                - generic [ref=f4e264]:
+                  - generic [ref=f4e265]: JC
+                  - text: Jared C.
+                - generic [ref=f4e266]:
+                  - text: Rebook inspection
+                  - generic [ref=f4e267]: Due today
+              - button "Open Diana Moore, Connected, not booked" [ref=f4e268] [cursor=pointer]:
+                - generic [ref=f4e269]:
+                  - generic [ref=f4e270]: "6"
+                  - generic [ref=f4e271]:
+                    - generic [ref=f4e272]: Diana Moore
+                    - generic [ref=f4e273]: 19 Atlantic Ave · Palm Beach
+                    - generic [ref=f4e274]: Connected, not booked
+                - generic [ref=f4e275]:
+                  - generic [ref=f4e276]: SR
+                  - text: Sam R.
+                - generic [ref=f4e277]:
+                  - text: Confirm inspection time
+                  - generic [ref=f4e278]: Tomorrow
+          - complementary [ref=f4e154]:
+            - generic [ref=f4e155]:
+              - generic [ref=f4e279]:
+                - paragraph [ref=f4e280]: CUSTOMER & PROPERTY
+                - heading "Marisol Martinez" [level=2] [ref=f4e281]
+                - paragraph [ref=f4e282]: 1426 Seabrook Way · Jupiter
+                - generic [ref=f4e283]: Accepted — payment pending
+              - generic [ref=f4e284]:
+                - heading "What matters now" [level=3] [ref=f4e285]
+                - generic [ref=f4e286]:
+                  - generic [ref=f4e287]:
+                    - generic [ref=f4e288]: Potential revenue
+                    - strong [ref=f4e289]: $18,400
+                  - generic [ref=f4e290]:
+                    - generic [ref=f4e291]: Owner
+                    - strong [ref=f4e292]: Sam R.
+                  - generic [ref=f4e293]:
+                    - generic [ref=f4e294]: Lifecycle
+                    - strong [ref=f4e295]: PR-1048 · signed 9:12 AM
+                  - generic [ref=f4e296]:
+                    - generic [ref=f4e297]: Next action
+                    - strong [ref=f4e298]: Call about deposit
+              - generic [ref=f4e299]:
+                - heading "Activity & sync" [level=3] [ref=f4e300]
+                - generic [ref=f4e301]:
+                  - generic [ref=f4e302]:
+                    - text: Proposal accepted
+                    - generic [ref=f4e303]: 9:12 AM
+                  - generic [ref=f4e304]:
+                    - text: Deposit link sent
+                    - generic [ref=f4e305]: 9:13 AM
+                  - generic [ref=f4e306]:
+                    - text: No payment confirmation yet
+                    - generic [ref=f4e307]: now
+              - generic [ref=f4e308]:
+                - button "Log a human attempt" [ref=f4e309] [cursor=pointer]
+                - button "Open customer record" [ref=f4e310] [cursor=pointer]
+  - status [ref=f4e311]: Portfolio view updated — branch controls remain scoped.

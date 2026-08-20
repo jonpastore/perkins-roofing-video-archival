@@ -1,0 +1,415 @@
+- generic [ref=f53e13]:
+  - complementary [ref=f53e20]:
+    - button "Collapse sidebar" [ref=f53e22] [cursor=pointer]:
+      - generic [ref=f53e23]: 
+    - generic [ref=f53e25]:
+      - img "agency logo" [ref=f53e27]
+      - generic [ref=f53e28] [cursor=pointer]:
+        - generic [ref=f53e36]:
+          - generic [ref=f53e37]: Perkins Roofing
+          - generic [ref=f53e38]: Jupiter, FL
+        - generic [ref=f53e39]:
+          - generic [ref=f53e40]: 
+          - generic [ref=f53e41]: 
+      - generic [ref=f53e42]:
+        - generic [ref=f53e44] [cursor=pointer]:
+          - generic [ref=f53e45]: Search
+          - generic "Press Ctrl + K to open" [ref=f53e49]: ctrlK
+        - img "Quick actions icon" [ref=f53e52] [cursor=pointer]
+      - navigation "header" [ref=f53e54]:
+        - link "Ask AI Ask AI" [ref=f53e55] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/ask-ai
+          - img "Ask AI" [ref=f53e56]
+          - generic [ref=f53e57]: Ask AI
+        - link "Launchpad icon Launchpad" [ref=f53e58] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/launchpad
+          - img "Launchpad icon" [ref=f53e59]
+          - generic [ref=f53e60]: Launchpad
+        - link "Dashboard icon Dashboard" [ref=f53e61] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/dashboard
+          - img "Dashboard icon" [ref=f53e62]
+          - generic [ref=f53e63]: Dashboard
+        - link "Conversations icon Conversations" [ref=f53e64] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/conversations/conversations
+          - img "Conversations icon" [ref=f53e65]
+          - generic [ref=f53e66]: Conversations
+        - link "Calendars icon Calendars" [ref=f53e67] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/calendars/view
+          - img "Calendars icon" [ref=f53e68]
+          - generic [ref=f53e69]: Calendars
+        - link "Contacts icon Contacts" [ref=f53e70] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/contacts/smart_list/All
+          - img "Contacts icon" [ref=f53e71]
+          - generic [ref=f53e72]: Contacts
+        - link "Opportunities icon Opportunities" [ref=f53e73] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/opportunities/list
+          - img "Opportunities icon" [ref=f53e74]
+          - generic [ref=f53e75]: Opportunities
+        - link "Payments icon Payments" [ref=f53e76] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/payments/invoices
+          - img "Payments icon" [ref=f53e77]
+          - generic [ref=f53e78]: Payments
+        - paragraph [ref=f53e80]
+        - link "AI Agents icon AI Agents" [ref=f53e81] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/ai-agents/getting-started
+          - img "AI Agents icon" [ref=f53e82]
+          - generic [ref=f53e83]: AI Agents
+        - link "Marketing icon Marketing" [ref=f53e84] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/marketing/social-planner
+          - img "Marketing icon" [ref=f53e85]
+          - generic [ref=f53e86]: Marketing
+        - link "Automation icon Automation" [ref=f53e87] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/workflows
+          - img "Automation icon" [ref=f53e88]
+          - generic [ref=f53e89]: Automation
+        - link "Sites icon Sites" [ref=f53e90] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/funnels-websites/funnels
+          - img "Sites icon" [ref=f53e91]
+          - generic [ref=f53e92]: Sites
+        - link "Memberships icon Memberships" [ref=f53e93] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/memberships/client-portal/dashboard
+          - img "Memberships icon" [ref=f53e94]
+          - generic [ref=f53e95]: Memberships
+        - link "Media Storage icon Media Storage" [ref=f53e96] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/media-storage
+          - img "Media Storage icon" [ref=f53e97]
+          - generic [ref=f53e98]: Media Storage
+        - link "Reputation icon Reputation" [ref=f53e99] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/reputation/overview
+          - img "Reputation icon" [ref=f53e100]
+          - generic [ref=f53e101]: Reputation
+        - link "Reporting icon Reporting" [ref=f53e102] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/reporting/reports
+          - img "Reporting icon" [ref=f53e103]
+          - generic [ref=f53e104]: Reporting
+        - link "App Marketplace icon App Marketplace" [ref=f53e105] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/integration
+          - img "App Marketplace icon" [ref=f53e106]
+          - generic [ref=f53e107]: App Marketplace
+      - navigation "footer" [ref=f53e109]:
+        - link "Settings icon Settings" [ref=f53e110] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/settings/company
+          - img "Settings icon" [ref=f53e111]
+          - generic [ref=f53e112]: Settings
+  - banner [ref=f53e113]:
+    - region "Notification Banner" [ref=f53e114]:
+      - generic [ref=f53e115]:
+        - generic [ref=f53e116]:
+          - button "Previous notification" [disabled] [ref=f53e117]
+          - generic [ref=f53e120]: 1/1
+          - button "Next notification" [disabled] [ref=f53e121]
+        - generic [ref=f53e124]:
+          - region [ref=f53e126]: "Summer of AI: $100K in cash prizes. Your division. Your clients."
+          - button "Check your standing" [ref=f53e128] [cursor=pointer]
+      - button "Close notification" [ref=f53e129] [cursor=pointer]
+    - generic [ref=f53e133]:
+      - generic [ref=f53e139]:
+        - button "automation What's new Automation updates" [ref=f53e140] [cursor=pointer]:
+          - img "automation" [ref=f53e141]
+          - generic [ref=f53e142]: What's new
+          - generic [ref=f53e143]: Automation updates
+        - superscript [ref=f53e144]
+      - generic "Report Translation Issue"
+      - button "Ask AI Assistant" [ref=f53e145] [cursor=pointer]:
+        - generic [ref=f53e150]: Ask AI
+      - button "View Changelog" [ref=f53e152] [cursor=pointer]:
+        - generic [ref=f53e153]: 
+      - button "View Notifications" [ref=f53e156] [cursor=pointer]:
+        - generic [ref=f53e157]: 
+        - generic [ref=f53e158]: Notifications
+      - button "Access Help & Support" [ref=f53e159] [cursor=pointer]:
+        - generic [ref=f53e160]: "?"
+        - generic [ref=f53e161]: Support
+      - generic [ref=f53e162]:
+        - button "Open Profile Menu" [ref=f53e163] [cursor=pointer]:
+          - generic [ref=f53e164]: JP
+        - text: 
+    - generic [ref=f53e166]:
+      - heading "Automation" [level=1] [ref=f53e167]
+      - link "Workflows" [ref=f53e168] [cursor=pointer]:
+        - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/workflows
+      - link "Overview" [ref=f53e170] [cursor=pointer]:
+        - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/overview
+        - generic [ref=f53e171]:
+          - text: Overview
+          - generic [ref=f53e172]: Beta
+      - link "Global Workflow Settings" [ref=f53e174] [cursor=pointer]:
+        - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/workflows/settings
+        - generic [ref=f53e175]:
+          - img "Global Workflow Settings" [ref=f53e176]
+          - text: Global Workflow Settings
+  - iframe [active] [ref=f53e18]:
+    - generic [active] [ref=f56e1]:
+      - generic [ref=f56e15]:
+        - list:
+          - listitem:
+            - link "Skip to main content" [ref=f56e16] [cursor=pointer]:
+              - /url: "#main"
+        - generic [ref=f56e290]:
+          - generic [ref=f56e291]:
+            - heading "Workflows list" [level=2] [ref=f56e293]
+            - generic [ref=f56e294]:
+              - button "Create folder" [ref=f56e295] [cursor=pointer]
+              - button "Build using AI" [ref=f56e299] [cursor=pointer]
+              - button "Create workflow" [ref=f56e303] [cursor=pointer]
+          - paragraph [ref=f56e307] [cursor=pointer]: All workflows
+          - paragraph [ref=f56e308] [cursor=pointer]: Needs review (0)
+          - paragraph [ref=f56e309] [cursor=pointer]: Deleted
+          - button "Add smart list" [ref=f56e310] [cursor=pointer]:
+            - paragraph [ref=f56e314]: New smart list
+          - button "Customize smart list" [disabled] [ref=f56e315]:
+            - paragraph [ref=f56e319]: Customize list
+          - generic [ref=f56e324]:
+            - generic [ref=f56e325]:
+              - generic [ref=f56e326]:
+                - paragraph [ref=f56e335] [cursor=pointer]: Advanced filters
+                - generic [ref=f56e336]:
+                  - generic [ref=f56e337]:
+                    - group [ref=f56e338]:
+                      - button "Copy workflow history" [ref=f56e339] [cursor=pointer]
+                    - group [ref=f56e343]:
+                      - button "Recent" [ref=f56e344] [cursor=pointer]
+                      - button "List" [ref=f56e348] [cursor=pointer]
+                  - generic [ref=f56e357]:
+                    - textbox "Search" [ref=f56e358]
+                    - generic: Search
+              - navigation "Breadcrumb" [ref=f56e362]:
+                - list [ref=f56e363]:
+                  - listitem [ref=f56e364]:
+                    - button "Home" [ref=f56e366] [cursor=pointer]
+            - generic [ref=f56e367]:
+              - generic [ref=f56e370]:
+                - table [ref=f56e372]:
+                  - rowgroup [ref=f56e383]:
+                    - row [ref=f56e384]:
+                      - columnheader [ref=f56e385]:
+                        - checkbox [ref=f56e386] [cursor=pointer]
+                      - columnheader "Name" [ref=f56e396]
+                      - columnheader "Status" [ref=f56e399]
+                      - columnheader "Total enrolled" [ref=f56e402]
+                      - columnheader "Active enrolled" [ref=f56e405]
+                      - columnheader "Last updated" [ref=f56e408]
+                      - columnheader "Created on" [ref=f56e411]
+                      - columnheader "Stats" [ref=f56e414]
+                      - columnheader [ref=f56e420]
+                - table [ref=f56e421]:
+                  - rowgroup [ref=f56e432]:
+                    - row [ref=f56e433]:
+                      - cell [ref=f56e434]:
+                        - checkbox [ref=f56e435] [cursor=pointer]
+                      - cell [ref=f56e442]:
+                        - link [ref=f56e443]:
+                          - generic [ref=f56e446] [cursor=pointer]:
+                            - text: 01. FB Lead - Speed to Lead & Nurture
+                            - link [ref=f56e447]
+                      - cell "Published" [ref=f56e450]
+                      - cell [ref=f56e455]:
+                        - paragraph [ref=f56e456] [cursor=pointer]: "7"
+                      - cell [ref=f56e457]:
+                        - paragraph [ref=f56e458] [cursor=pointer]: "0"
+                      - cell [ref=f56e459]:
+                        - paragraph [ref=f56e460]: Jul 27 2026, 1:36 PM
+                      - cell [ref=f56e461]:
+                        - paragraph [ref=f56e462]: Jul 12 2026, 2:56 PM
+                      - cell [ref=f56e463]:
+                        - generic [ref=f56e464] [cursor=pointer]
+                      - cell [ref=f56e468]:
+                        - button "Workflow list actions" [ref=f56e469] [cursor=pointer]
+                    - row [ref=f56e473]:
+                      - cell [ref=f56e474]:
+                        - checkbox [ref=f56e475] [cursor=pointer]
+                      - cell [ref=f56e482]:
+                        - link [ref=f56e483]:
+                          - generic [ref=f56e486] [cursor=pointer]:
+                            - text: 02. Appointment - Confirmation & Reminders
+                            - link [ref=f56e487]
+                      - cell "Published" [ref=f56e490]
+                      - cell [ref=f56e495]:
+                        - paragraph [ref=f56e496] [cursor=pointer]: "1"
+                      - cell [ref=f56e497]:
+                        - paragraph [ref=f56e498] [cursor=pointer]: "0"
+                      - cell [ref=f56e499]:
+                        - paragraph [ref=f56e500]: Jul 27 2026, 2:26 PM
+                      - cell [ref=f56e501]:
+                        - paragraph [ref=f56e502]: Jul 12 2026, 3:18 PM
+                      - cell [ref=f56e503]:
+                        - generic [ref=f56e504] [cursor=pointer]
+                      - cell [ref=f56e508]:
+                        - button "Workflow list actions" [ref=f56e509] [cursor=pointer]
+                    - row [ref=f56e513]:
+                      - cell [ref=f56e514]:
+                        - checkbox [ref=f56e515] [cursor=pointer]
+                      - cell [ref=f56e522]:
+                        - link [ref=f56e523]:
+                          - generic [ref=f56e526] [cursor=pointer]:
+                            - text: 03. Appointment Cancelled - Recovery
+                            - link [ref=f56e527]
+                      - cell "Published" [ref=f56e530]
+                      - cell [ref=f56e535]:
+                        - paragraph [ref=f56e536] [cursor=pointer]: "1"
+                      - cell [ref=f56e537]:
+                        - paragraph [ref=f56e538] [cursor=pointer]: "0"
+                      - cell [ref=f56e539]:
+                        - paragraph [ref=f56e540]: Jul 27 2026, 1:37 PM
+                      - cell [ref=f56e541]:
+                        - paragraph [ref=f56e542]: Jul 12 2026, 4:57 PM
+                      - cell [ref=f56e543]:
+                        - generic [ref=f56e544] [cursor=pointer]
+                      - cell [ref=f56e548]:
+                        - button "Workflow list actions" [ref=f56e549] [cursor=pointer]
+                    - row [ref=f56e553]:
+                      - cell [ref=f56e554]:
+                        - checkbox [ref=f56e555] [cursor=pointer]
+                      - cell [ref=f56e562]:
+                        - link [ref=f56e563]:
+                          - generic [ref=f56e566] [cursor=pointer]:
+                            - text: 04. Review Request - Won Jobs
+                            - link [ref=f56e567]
+                      - cell "Published" [ref=f56e570]
+                      - cell [ref=f56e575]:
+                        - paragraph [ref=f56e576] [cursor=pointer]: "0"
+                      - cell [ref=f56e577]:
+                        - paragraph [ref=f56e578] [cursor=pointer]: "0"
+                      - cell [ref=f56e579]:
+                        - paragraph [ref=f56e580]: Jul 27 2026, 1:38 PM
+                      - cell [ref=f56e581]:
+                        - paragraph [ref=f56e582]: Jul 12 2026, 4:12 PM
+                      - cell [ref=f56e583]:
+                        - generic [ref=f56e584] [cursor=pointer]
+                      - cell [ref=f56e588]:
+                        - button "Workflow list actions" [ref=f56e589] [cursor=pointer]
+                    - row [ref=f56e593]:
+                      - cell [ref=f56e594]:
+                        - checkbox [ref=f56e595] [cursor=pointer]
+                      - cell [ref=f56e602]:
+                        - link [ref=f56e603]:
+                          - generic [ref=f56e606] [cursor=pointer]:
+                            - text: 05. Long-Term Nurture
+                            - link [ref=f56e607]
+                      - cell "Published" [ref=f56e610]
+                      - cell [ref=f56e615]:
+                        - paragraph [ref=f56e616] [cursor=pointer]: "0"
+                      - cell [ref=f56e617]:
+                        - paragraph [ref=f56e618] [cursor=pointer]: "0"
+                      - cell [ref=f56e619]:
+                        - paragraph [ref=f56e620]: Jul 27 2026, 1:38 PM
+                      - cell [ref=f56e621]:
+                        - paragraph [ref=f56e622]: Jul 12 2026, 4:23 PM
+                      - cell [ref=f56e623]:
+                        - generic [ref=f56e624] [cursor=pointer]
+                      - cell [ref=f56e628]:
+                        - button "Workflow list actions" [ref=f56e629] [cursor=pointer]
+                    - row [ref=f56e633]:
+                      - cell [ref=f56e634]:
+                        - checkbox [ref=f56e635] [cursor=pointer]
+                      - cell [ref=f56e642]:
+                        - link [ref=f56e643]:
+                          - generic [ref=f56e646] [cursor=pointer]:
+                            - text: 06. Stale Lead Alert
+                            - link [ref=f56e647]
+                      - cell "Published" [ref=f56e650]
+                      - cell [ref=f56e655]:
+                        - paragraph [ref=f56e656] [cursor=pointer]: "0"
+                      - cell [ref=f56e657]:
+                        - paragraph [ref=f56e658] [cursor=pointer]: "0"
+                      - cell [ref=f56e659]:
+                        - paragraph [ref=f56e660]: Jul 27 2026, 1:39 PM
+                      - cell [ref=f56e661]:
+                        - paragraph [ref=f56e662]: Jul 12 2026, 4:50 PM
+                      - cell [ref=f56e663]:
+                        - generic [ref=f56e664] [cursor=pointer]
+                      - cell [ref=f56e668]:
+                        - button "Workflow list actions" [ref=f56e669] [cursor=pointer]
+                    - row [ref=f56e673]:
+                      - cell [ref=f56e674]:
+                        - checkbox [ref=f56e675] [cursor=pointer]
+                      - cell [ref=f56e682]:
+                        - link [ref=f56e683]:
+                          - generic [ref=f56e686] [cursor=pointer]:
+                            - text: 07. No-Show Recovery
+                            - link [ref=f56e687]
+                      - cell "Published" [ref=f56e690]
+                      - cell [ref=f56e695]:
+                        - paragraph [ref=f56e696] [cursor=pointer]: "0"
+                      - cell [ref=f56e697]:
+                        - paragraph [ref=f56e698] [cursor=pointer]: "0"
+                      - cell [ref=f56e699]:
+                        - paragraph [ref=f56e700]: Jul 27 2026, 1:40 PM
+                      - cell [ref=f56e701]:
+                        - paragraph [ref=f56e702]: Jul 12 2026, 3:29 PM
+                      - cell [ref=f56e703]:
+                        - generic [ref=f56e704] [cursor=pointer]
+                      - cell [ref=f56e708]:
+                        - button "Workflow list actions" [ref=f56e709] [cursor=pointer]
+                    - row [ref=f56e713]:
+                      - cell [ref=f56e714]:
+                        - checkbox [ref=f56e715] [cursor=pointer]
+                      - cell [ref=f56e722]:
+                        - link [ref=f56e723]:
+                          - generic [ref=f56e726] [cursor=pointer]:
+                            - text: 08. Quote Follow-Up
+                            - link [ref=f56e727]
+                      - cell "Published" [ref=f56e730]
+                      - cell [ref=f56e735]:
+                        - paragraph [ref=f56e736] [cursor=pointer]: "0"
+                      - cell [ref=f56e737]:
+                        - paragraph [ref=f56e738] [cursor=pointer]: "0"
+                      - cell [ref=f56e739]:
+                        - paragraph [ref=f56e740]: Jul 27 2026, 1:41 PM
+                      - cell [ref=f56e741]:
+                        - paragraph [ref=f56e742]: Jul 13 2026, 2:11 AM
+                      - cell [ref=f56e743]:
+                        - generic [ref=f56e744] [cursor=pointer]
+                      - cell [ref=f56e748]:
+                        - button "Workflow list actions" [ref=f56e749] [cursor=pointer]
+                    - row [ref=f56e753]:
+                      - cell [ref=f56e754]:
+                        - checkbox [ref=f56e755] [cursor=pointer]
+                      - cell [ref=f56e762]:
+                        - link [ref=f56e763]:
+                          - generic [ref=f56e766] [cursor=pointer]:
+                            - text: 09. Uncalled Lead Escalation - 30 Min
+                            - link [ref=f56e767]
+                      - cell "Published" [ref=f56e770]
+                      - cell [ref=f56e775]:
+                        - paragraph [ref=f56e776] [cursor=pointer]: "0"
+                      - cell [ref=f56e777]:
+                        - paragraph [ref=f56e778] [cursor=pointer]: "0"
+                      - cell [ref=f56e779]:
+                        - paragraph [ref=f56e780]: Jul 27 2026, 1:41 PM
+                      - cell [ref=f56e781]:
+                        - paragraph [ref=f56e782]: Jul 13 2026, 2:26 AM
+                      - cell [ref=f56e783]:
+                        - generic [ref=f56e784] [cursor=pointer]
+                      - cell [ref=f56e788]:
+                        - button "Workflow list actions" [ref=f56e789] [cursor=pointer]
+                    - row [ref=f56e793]:
+                      - cell [ref=f56e794]:
+                        - checkbox [ref=f56e795] [cursor=pointer]
+                      - cell [ref=f56e802]:
+                        - link [ref=f56e803]:
+                          - generic [ref=f56e806] [cursor=pointer]:
+                            - text: 10. Post-Job - Referral & Annual Check-Up
+                            - link [ref=f56e807]
+                      - cell "Published" [ref=f56e810]
+                      - cell [ref=f56e815]:
+                        - paragraph [ref=f56e816] [cursor=pointer]: "0"
+                      - cell [ref=f56e817]:
+                        - paragraph [ref=f56e818] [cursor=pointer]: "0"
+                      - cell [ref=f56e819]:
+                        - paragraph [ref=f56e820]: Jul 27 2026, 1:43 PM
+                      - cell [ref=f56e821]:
+                        - paragraph [ref=f56e822]: Jul 13 2026, 2:40 AM
+                      - cell [ref=f56e823]:
+                        - generic [ref=f56e824] [cursor=pointer]
+                      - cell [ref=f56e828]:
+                        - button "Workflow list actions" [ref=f56e829] [cursor=pointer]
+              - generic [ref=f56e837]:
+                - button "Previous" [ref=f56e839]
+                - generic [ref=f56e841] [cursor=pointer]: "1"
+                - generic [ref=f56e842] [cursor=pointer]: "2"
+                - button "Next" [ref=f56e844] [cursor=pointer]
+                - generic [ref=f56e848] [cursor=pointer]:
+                  - generic [ref=f56e849]: 10 / page
+                  - img "loading" [ref=f56e851]
+      - log [ref=f56e14]

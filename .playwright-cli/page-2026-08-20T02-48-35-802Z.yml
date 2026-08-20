@@ -1,0 +1,79 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e28]:
+    - generic [ref=e29]:
+      - button "Open navigation" [ref=e196]: ☰
+      - generic [ref=e30]:
+        - generic [ref=e31]: Jupiter · Sales
+        - generic [ref=e32]: /
+        - strong [ref=e33]: Today
+      - generic [ref=e34]:
+        - button "Notifications" [ref=e36] [cursor=pointer]: ◌
+        - button "User profile" [ref=e38] [cursor=pointer]: JP
+    - main [ref=e39]:
+      - region [ref=e542]:
+        - generic [ref=e41]:
+          - paragraph [ref=e42]: YOUR WORK
+          - heading "Make the next right move" [level=1] [ref=e543]
+          - paragraph [ref=e44]: 2 customers are waiting on you. Record a real outcome, then keep the follow-up visible.
+        - group "Prototype scenario" [ref=e45]:
+          - button "Branch manager" [ref=e46] [cursor=pointer]
+          - button "Salesperson" [active] [ref=e47] [cursor=pointer]
+          - button "Corporate" [ref=e48] [cursor=pointer]
+      - region "Branch status" [ref=e49]:
+        - article [ref=e50]:
+          - generic [ref=e51]: At-risk revenue
+          - strong [ref=e52]: $34,700
+          - generic [ref=e53]: ↑ $18,400 needs action
+        - article [ref=e54]:
+          - generic [ref=e55]: Human response SLA
+          - strong [ref=e56]: 100%
+          - generic [ref=e57]: 5-minute business-hours target
+      - region [ref=e480]:
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - paragraph [ref=e70]: OWNED WORK
+            - heading "Revenue risk queue 2" [level=2] [ref=e481]
+          - button "View states" [ref=e72] [cursor=pointer]
+        - generic "Queue filters" [ref=e73]:
+          - button "All 2" [ref=e482] [cursor=pointer]:
+            - text: All
+            - generic [ref=e75]: "2"
+          - button "Mine 2" [ref=e544] [cursor=pointer]:
+            - text: Mine
+            - generic [ref=e77]: "2"
+          - button "Due now 2" [ref=e484] [cursor=pointer]:
+            - text: Due now
+            - generic [ref=e79]: "2"
+          - button "Payment 0" [ref=e485] [cursor=pointer]:
+            - text: Payment
+            - generic [ref=e81]: "0"
+        - generic [ref=e86]:
+          - button "Open Evan Li; No human attempt; owner You; next action Make first contact; 3 min left; priority critical" [ref=e545] [cursor=pointer]:
+            - generic [ref=e546]:
+              - generic [ref=e547]: "1"
+              - generic [ref=e548]:
+                - generic [ref=e549]: Evan Li
+                - generic [ref=e550]: 84 Seagate Drive · Jupiter
+                - generic [ref=e551]: No human attempt
+            - generic [ref=e552]:
+              - generic [ref=e553]: JP
+              - text: You
+            - generic [ref=e554]:
+              - text: Make first contact
+              - generic [ref=e555]: 3 min left
+          - button "Open Carlos Ortiz; Proposal needs follow-up; owner You; next action Review open questions; Due today; priority high" [ref=e556] [cursor=pointer]:
+            - generic [ref=e557]:
+              - generic [ref=e558]: "2"
+              - generic [ref=e559]:
+                - generic [ref=e560]: Carlos Ortiz
+                - generic [ref=e561]: 12 Coralberry Ct · Jupiter
+                - generic [ref=e562]: Proposal needs follow-up
+            - generic [ref=e563]:
+              - generic [ref=e564]: JP
+              - text: You
+            - generic [ref=e565]:
+              - text: Review open questions
+              - generic [ref=e566]: Due today
+  - status [ref=e478]: Scenario updated — mock data only.

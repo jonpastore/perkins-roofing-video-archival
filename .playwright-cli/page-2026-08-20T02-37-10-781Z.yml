@@ -1,0 +1,98 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e29]:
+    - generic [ref=e30]:
+      - button "Open navigation" [ref=e188]: ☰
+      - generic [ref=e31]:
+        - generic [ref=e32]: Jupiter · Sales
+        - generic [ref=e33]: /
+        - strong [ref=e34]: Today
+      - generic [ref=e35]:
+        - button "Notifications" [ref=e37] [cursor=pointer]: ◌
+        - button "User profile" [ref=e39] [cursor=pointer]: JP
+    - main [ref=e40]:
+      - region [ref=e189]:
+        - generic [ref=e42]:
+          - paragraph [ref=e43]: YOUR WORK
+          - heading "Make the next right move" [level=1] [ref=e190]
+          - paragraph [ref=e45]: Two customers are waiting on you. A human attempt prevents the first SLA breach.
+        - group "Prototype scenario" [ref=e46]:
+          - button "Branch manager" [ref=e47] [cursor=pointer]
+          - button "Salesperson" [ref=e48] [cursor=pointer]
+          - button "Corporate" [ref=e49] [cursor=pointer]
+      - region "Branch status" [ref=e50]:
+        - article [ref=e51]:
+          - generic [ref=e52]: At-risk revenue
+          - strong [ref=e53]: $34,700
+          - generic [ref=e54]: ↑ $18,400 needs action
+        - article [ref=e55]:
+          - generic [ref=e56]: Human response SLA
+          - strong [ref=e57]: 100%
+          - generic [ref=e58]: 5-minute business-hours target
+        - article [ref=e59]:
+          - generic [ref=e60]: Inspections today
+          - strong [ref=e61]: "3"
+          - generic [ref=e62]: 2 awaiting outcome
+      - generic [ref=e67]:
+        - region [ref=e271]:
+          - generic [ref=e69]:
+            - generic [ref=e70]:
+              - paragraph [ref=e71]: OWNED WORK
+              - heading "Revenue risk queue 1" [level=2] [ref=e272]
+            - button "Show empty state" [ref=e357] [cursor=pointer]
+          - generic "Queue filters" [ref=e74]:
+            - button "All 1" [ref=e273] [cursor=pointer]:
+              - text: All
+              - generic [ref=e76]: "1"
+            - button "Mine 1" [ref=e274] [cursor=pointer]:
+              - text: Mine
+              - generic [ref=e78]: "1"
+            - button "Due now 1" [ref=e275] [cursor=pointer]:
+              - text: Due now
+              - generic [ref=e80]: "1"
+            - button "Payment 0" [ref=e195] [cursor=pointer]:
+              - text: Payment
+              - generic [ref=e82]: "0"
+          - generic [ref=e358]:
+            - generic [ref=e359]: "!"
+            - heading "GHL activity is delayed" [level=3] [ref=e360]
+            - paragraph [ref=e361]: Queue order is based on the last verified event. Retry sync or open the customer record before acting.
+            - button "Retry sync" [active] [ref=e362] [cursor=pointer]
+        - complementary [ref=e287]:
+          - generic [ref=e155]:
+            - generic [ref=e363]:
+              - paragraph [ref=e364]: CUSTOMER & PROPERTY
+              - heading "Carlos Ortiz" [level=2] [ref=e365]
+              - paragraph [ref=e366]: 12 Coralberry Ct · Jupiter
+              - generic [ref=e367]: Proposal needs follow-up
+            - generic [ref=e368]:
+              - heading "What matters now" [level=3] [ref=e369]
+              - generic [ref=e370]:
+                - generic [ref=e371]:
+                  - generic [ref=e372]: Potential revenue
+                  - strong [ref=e373]: $21,300
+                - generic [ref=e374]:
+                  - generic [ref=e375]: Owner
+                  - strong [ref=e376]: You
+                - generic [ref=e377]:
+                  - generic [ref=e378]: Lifecycle
+                  - strong [ref=e379]: Proposal sent 5 days ago
+                - generic [ref=e380]:
+                  - generic [ref=e381]: Next action
+                  - strong [ref=e382]: Review open questions
+            - generic [ref=e383]:
+              - heading "Activity & sync" [level=3] [ref=e384]
+              - generic [ref=e385]:
+                - generic [ref=e386]:
+                  - text: Proposal viewed twice
+                  - generic [ref=e387]: Yesterday
+                - generic [ref=e388]:
+                  - text: Personal call logged
+                  - generic [ref=e389]: 3 days ago
+                - generic [ref=e390]:
+                  - text: No response since
+                  - generic [ref=e391]: now
+            - generic [ref=e392]:
+              - button "Log a human attempt" [ref=e393] [cursor=pointer]
+              - button "Open customer record" [ref=e394] [cursor=pointer]

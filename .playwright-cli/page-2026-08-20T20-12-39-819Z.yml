@@ -1,0 +1,194 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e32]:
+    - generic [ref=e33]:
+      - button "Open navigation" [ref=e214]: ☰
+      - generic [ref=e34]:
+        - generic [ref=e35]: Jupiter Branch
+        - generic [ref=e36]: /
+        - strong [ref=e37]: Today
+      - generic [ref=e38]:
+        - button "Notifications" [ref=e40] [cursor=pointer]: ◌
+        - button "User profile" [ref=e42] [cursor=pointer]: JP
+    - main [ref=e43]:
+      - region [ref=e44]:
+        - generic [ref=e45]:
+          - paragraph [ref=e46]: BRANCH OPERATIONS
+          - heading "Protect today’s revenue" [level=1] [ref=e47]
+          - paragraph [ref=e48]: 7 items need attention in Jupiter. Start with the accepted job waiting on its required deposit.
+        - group [ref=e49]:
+          - 'generic "Review scenario: Branch manager" [ref=e50] [cursor=pointer]'
+      - region "Branch status" [ref=e51]:
+        - article [ref=e52]:
+          - generic [ref=e53]: At-risk revenue
+          - strong [ref=e54]: $42,600
+          - generic [ref=e55]: ↑ $18,400 needs action
+        - article [ref=e56]:
+          - generic [ref=e57]: Human response SLA
+          - strong [ref=e58]: 92%
+          - generic [ref=e59]: 5-minute business-hours target
+      - generic [ref=e68]:
+        - region [ref=e69]:
+          - generic [ref=e70]:
+            - generic [ref=e71]:
+              - paragraph [ref=e72]: OWNED WORK
+              - heading "Revenue risk queue 7" [level=2] [ref=e73]
+            - button "Preview states" [ref=e74] [cursor=pointer]
+          - generic "Queue filters" [ref=e75]:
+            - button "All 7" [pressed] [ref=e76] [cursor=pointer]:
+              - text: All
+              - generic [ref=e77]: "7"
+            - button "Mine 3" [ref=e78] [cursor=pointer]:
+              - text: Mine
+              - generic [ref=e79]: "3"
+            - button "Due now 6" [ref=e80] [cursor=pointer]:
+              - text: Due now
+              - generic [ref=e81]: "6"
+            - button "Payment 2" [ref=e82] [cursor=pointer]:
+              - text: Payment
+              - generic [ref=e83]: "2"
+          - generic [ref=e88]:
+            - button "Open Marisol Martinez; Accepted — payment pending; owner Sam R.; next action Call about required deposit; 37 min overdue; priority critical" [ref=e215] [cursor=pointer]:
+              - generic [ref=e216]:
+                - generic [ref=e217]: "1"
+                - generic [ref=e218]:
+                  - generic [ref=e219]: Marisol Martinez
+                  - generic [ref=e220]: 1426 Seabrook Way · Jupiter
+                  - generic [ref=e221]: Accepted — payment pending
+              - generic [ref=e222]:
+                - generic [ref=e223]: SR
+                - text: Sam R.
+              - generic [ref=e224]:
+                - text: Call about required deposit
+                - generic [ref=e225]: 37 min overdue
+            - button "Open Evan Li; No human attempt; owner You; next action Make first contact; 3 min left; priority critical" [ref=e226] [cursor=pointer]:
+              - generic [ref=e227]:
+                - generic [ref=e228]: "2"
+                - generic [ref=e229]:
+                  - generic [ref=e230]: Evan Li
+                  - generic [ref=e231]: 84 Seagate Drive · Jupiter
+                  - generic [ref=e232]: No human attempt
+              - generic [ref=e233]:
+                - generic [ref=e234]: JP
+                - text: You
+              - generic [ref=e235]:
+                - text: Make first contact
+                - generic [ref=e236]: 3 min left
+            - button "Open Heather Douglas; Appointment cancelled; owner Tara M.; next action Offer a new time; Due in 18 min; priority high" [ref=e237] [cursor=pointer]:
+              - generic [ref=e238]:
+                - generic [ref=e239]: "3"
+                - generic [ref=e240]:
+                  - generic [ref=e241]: Heather Douglas
+                  - generic [ref=e242]: 311 Ocean Dunes Rd · Juno
+                  - generic [ref=e243]: Appointment cancelled
+              - generic [ref=e244]:
+                - generic [ref=e245]: TM
+                - text: Tara M.
+              - generic [ref=e246]:
+                - text: Offer a new time
+                - generic [ref=e247]: Due in 18 min
+            - button "Open Carlos Ortiz; Proposal needs follow-up; owner You; next action Review open questions; Due today; priority high" [ref=e248] [cursor=pointer]:
+              - generic [ref=e249]:
+                - generic [ref=e250]: "4"
+                - generic [ref=e251]:
+                  - generic [ref=e252]: Carlos Ortiz
+                  - generic [ref=e253]: 12 Coralberry Ct · Jupiter
+                  - generic [ref=e254]: Proposal needs follow-up
+              - generic [ref=e255]:
+                - generic [ref=e256]: JP
+                - text: You
+              - generic [ref=e257]:
+                - text: Review open questions
+                - generic [ref=e258]: Due today
+            - button "Open Ruth Bennett; No-show recovery; owner Jared C.; next action Rebook inspection; Due today; priority high" [ref=e259] [cursor=pointer]:
+              - generic [ref=e260]:
+                - generic [ref=e261]: "5"
+                - generic [ref=e262]:
+                  - generic [ref=e263]: Ruth Bennett
+                  - generic [ref=e264]: 708 Loxahatchee Dr · Tequesta
+                  - generic [ref=e265]: No-show recovery
+              - generic [ref=e266]:
+                - generic [ref=e267]: JC
+                - text: Jared C.
+              - generic [ref=e268]:
+                - text: Rebook inspection
+                - generic [ref=e269]: Due today
+            - button "Open Diana Moore; Connected, not booked; owner Sam R.; next action Confirm inspection time; Tomorrow; priority medium" [ref=e270] [cursor=pointer]:
+              - generic [ref=e271]:
+                - generic [ref=e272]: "6"
+                - generic [ref=e273]:
+                  - generic [ref=e274]: Diana Moore
+                  - generic [ref=e275]: 19 Atlantic Ave · Palm Beach
+                  - generic [ref=e276]: Connected, not booked
+              - generic [ref=e277]:
+                - generic [ref=e278]: SR
+                - text: Sam R.
+              - generic [ref=e279]:
+                - text: Confirm inspection time
+                - generic [ref=e280]: Tomorrow
+            - button "Open Charlotte Anne Montgomery-Smythe; Policy review required; owner You; next action Open payment review; Due today; priority high" [ref=e281] [cursor=pointer]:
+              - generic [ref=e282]:
+                - generic [ref=e283]: "7"
+                - generic [ref=e284]:
+                  - generic [ref=e285]: Charlotte Anne Montgomery-Smythe
+                  - generic [ref=e286]: 2147 North County Road 211, Building B · Palm Beach Gardens
+                  - generic [ref=e287]: Policy review required
+              - generic [ref=e288]:
+                - generic [ref=e289]: JP
+                - text: You
+              - generic [ref=e290]:
+                - text: Open payment review
+                - generic [ref=e291]: Due today
+        - dialog [ref=e292]:
+          - generic [ref=e167]:
+            - button "Back to revenue risk queue" [ref=e293]: ← Back to queue
+            - generic [ref=e294]:
+              - paragraph [ref=e295]: CUSTOMER & PROPERTY
+              - heading "Charlotte Anne Montgomery-Smythe" [active] [level=2] [ref=e296]
+              - paragraph [ref=e297]: 2147 North County Road 211, Building B · Palm Beach Gardens
+              - paragraph [ref=e298]: "Canonical person · Current operational relationship: Jupiter Branch"
+              - paragraph [ref=e299]: Cross-branch associations require an authorized, audited link.
+              - generic [ref=e300]: Policy review required
+            - generic [ref=e301]:
+              - heading "What matters now" [level=3] [ref=e302]
+              - generic [ref=e303]:
+                - generic [ref=e304]:
+                  - generic [ref=e305]: Potential revenue
+                  - strong [ref=e306]: $38,975.42 contract
+                - generic [ref=e307]:
+                  - generic [ref=e308]: Owner
+                  - strong [ref=e309]: You
+                - generic [ref=e310]:
+                  - generic [ref=e311]: Lifecycle
+                  - strong [ref=e312]: PR-1061 · signed yesterday
+                - generic [ref=e313]:
+                  - generic [ref=e314]: Next action
+                  - strong [ref=e315]: Open payment review
+                - generic [ref=e316]:
+                  - generic [ref=e317]: Required deposit
+                  - strong [ref=e318]: $3,897.54 required · evidence received
+                - generic [ref=e319]:
+                  - generic [ref=e320]: Payment status
+                  - strong [ref=e321]: Policy review required · no eligibility decision
+            - generic [ref=e322]:
+              - heading "Activity & sync" [level=3] [ref=e323]
+              - generic [ref=e324]:
+                - generic [ref=e325]:
+                  - text: Provider payment evidence received
+                  - generic [ref=e326]: Yesterday · payment provider
+                - generic [ref=e327]:
+                  - text: Configured policy is unavailable
+                  - generic [ref=e328]: Today · app
+                - generic [ref=e329]:
+                  - text: Commercial action blocked for review
+                  - generic [ref=e330]: Now · app
+            - generic [ref=e331]:
+              - heading "Automated outreach" [level=3] [ref=e332]
+              - generic [ref=e333]:
+                - strong [ref=e334]: Perkins Roofing — Jupiter Team
+                - generic [ref=e335]: Approved team sender · template provenance is retained with the communication event.
+            - generic [ref=e336]:
+              - button "Open payment review" [ref=e337] [cursor=pointer]
+              - button "View payment evidence" [ref=e338] [cursor=pointer]
+              - paragraph [ref=e339]: Only an authorized review may resolve this state. No customer outreach or commercial handoff is initiated here.

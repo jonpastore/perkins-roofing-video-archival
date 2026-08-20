@@ -1,0 +1,195 @@
+- generic [ref=e1]:
+  - link [ref=e209] [cursor=pointer]:
+    - /url: "#main"
+    - text: Skip to work queue
+  - generic [ref=e26]:
+    - generic [ref=e27]:
+      - button [ref=e210]: ☰
+      - generic [ref=e28]:
+        - generic [ref=e29]: Jupiter Branch
+        - generic [ref=e30]: /
+        - strong [ref=e31]: Today
+      - generic [ref=e32]:
+        - button [ref=e211] [cursor=pointer]: ◌
+        - button [ref=e212] [cursor=pointer]: JP
+    - main [ref=e37]:
+      - region [ref=e213]:
+        - generic [ref=e39]:
+          - paragraph [ref=e40]: BRANCH OPERATIONS
+          - heading [level=1] [ref=e214]: Protect today’s revenue
+          - paragraph [ref=e42]: 7 items need attention in Jupiter. Start with the accepted job waiting on its required deposit.
+        - group [ref=e43]:
+          - generic [ref=e215] [cursor=pointer]: "Review scenario: Branch manager"
+      - region [ref=e216]:
+        - article [ref=e46]:
+          - generic [ref=e47]: At-risk revenue
+          - strong [ref=e48]: $42,600
+          - generic [ref=e49]: ↑ $18,400 needs action
+        - article [ref=e50]:
+          - generic [ref=e51]: Human response SLA
+          - strong [ref=e52]: 92%
+          - generic [ref=e53]: 5-minute business-hours target
+      - generic [ref=e62]:
+        - region [ref=e217]:
+          - generic [ref=e64]:
+            - generic [ref=e65]:
+              - paragraph [ref=e66]: OWNED WORK
+              - heading [level=2] [ref=e218]: Revenue risk queue 7
+            - button [ref=e219] [cursor=pointer]: Preview states
+          - generic [ref=e220]:
+            - button [pressed] [ref=e221] [cursor=pointer]:
+              - text: All
+              - generic [ref=e71]: "7"
+            - button [ref=e222] [cursor=pointer]:
+              - text: Mine
+              - generic [ref=e73]: "3"
+            - button [ref=e223] [cursor=pointer]:
+              - text: Due now
+              - generic [ref=e75]: "6"
+            - button [ref=e224] [cursor=pointer]:
+              - text: Payment
+              - generic [ref=e77]: "2"
+          - generic [ref=e82]:
+            - button [ref=e225] [cursor=pointer]:
+              - generic [ref=e226]:
+                - generic [ref=e227]: "1"
+                - generic [ref=e228]:
+                  - generic [ref=e229]: Marisol Martinez
+                  - generic [ref=e230]: 1426 Seabrook Way · Jupiter
+                  - generic [ref=e231]: Accepted — payment pending
+              - generic [ref=e232]:
+                - generic [ref=e233]: SR
+                - text: Sam R.
+              - generic [ref=e234]:
+                - text: Call about required deposit
+                - generic [ref=e235]: 37 min overdue
+            - button [ref=e236] [cursor=pointer]:
+              - generic [ref=e237]:
+                - generic [ref=e238]: "2"
+                - generic [ref=e239]:
+                  - generic [ref=e240]: Evan Li
+                  - generic [ref=e241]: 84 Seagate Drive · Jupiter
+                  - generic [ref=e242]: No human attempt
+              - generic [ref=e243]:
+                - generic [ref=e244]: JP
+                - text: You
+              - generic [ref=e245]:
+                - text: Make first contact
+                - generic [ref=e246]: 3 min left
+            - button [ref=e247] [cursor=pointer]:
+              - generic [ref=e248]:
+                - generic [ref=e249]: "3"
+                - generic [ref=e250]:
+                  - generic [ref=e251]: Heather Douglas
+                  - generic [ref=e252]: 311 Ocean Dunes Rd · Juno
+                  - generic [ref=e253]: Appointment cancelled
+              - generic [ref=e254]:
+                - generic [ref=e255]: TM
+                - text: Tara M.
+              - generic [ref=e256]:
+                - text: Offer a new time
+                - generic [ref=e257]: Due in 18 min
+            - button [ref=e258] [cursor=pointer]:
+              - generic [ref=e259]:
+                - generic [ref=e260]: "4"
+                - generic [ref=e261]:
+                  - generic [ref=e262]: Carlos Ortiz
+                  - generic [ref=e263]: 12 Coralberry Ct · Jupiter
+                  - generic [ref=e264]: Proposal needs follow-up
+              - generic [ref=e265]:
+                - generic [ref=e266]: JP
+                - text: You
+              - generic [ref=e267]:
+                - text: Review open questions
+                - generic [ref=e268]: Due today
+            - button [ref=e269] [cursor=pointer]:
+              - generic [ref=e270]:
+                - generic [ref=e271]: "5"
+                - generic [ref=e272]:
+                  - generic [ref=e273]: Ruth Bennett
+                  - generic [ref=e274]: 708 Loxahatchee Dr · Tequesta
+                  - generic [ref=e275]: No-show recovery
+              - generic [ref=e276]:
+                - generic [ref=e277]: JC
+                - text: Jared C.
+              - generic [ref=e278]:
+                - text: Rebook inspection
+                - generic [ref=e279]: Due today
+            - button [ref=e280] [cursor=pointer]:
+              - generic [ref=e281]:
+                - generic [ref=e282]: "6"
+                - generic [ref=e283]:
+                  - generic [ref=e284]: Diana Moore
+                  - generic [ref=e285]: 19 Atlantic Ave · Palm Beach
+                  - generic [ref=e286]: Connected, not booked
+              - generic [ref=e287]:
+                - generic [ref=e288]: SR
+                - text: Sam R.
+              - generic [ref=e289]:
+                - text: Confirm inspection time
+                - generic [ref=e290]: Tomorrow
+            - button [ref=e291] [cursor=pointer]:
+              - generic [ref=e292]:
+                - generic [ref=e293]: "7"
+                - generic [ref=e294]:
+                  - generic [ref=e295]: Charlotte Anne Montgomery-Smythe
+                  - generic [ref=e296]: 2147 North County Road 211, Building B · Palm Beach Gardens
+                  - generic [ref=e297]: Policy review required
+              - generic [ref=e298]:
+                - generic [ref=e299]: JP
+                - text: You
+              - generic [ref=e300]:
+                - text: Open payment review
+                - generic [ref=e301]: Due today
+        - dialog [ref=e302]:
+          - generic [ref=e161]:
+            - button "Back to revenue risk queue" [ref=e303]: ← Back to queue
+            - generic [ref=e304]:
+              - paragraph [ref=e305]: CUSTOMER & PROPERTY
+              - heading "Charlotte Anne Montgomery-Smythe" [active] [level=2] [ref=e306]
+              - paragraph [ref=e307]: 2147 North County Road 211, Building B · Palm Beach Gardens
+              - paragraph [ref=e308]: "Canonical person · Current operational relationship: Jupiter Branch"
+              - paragraph [ref=e309]: Cross-branch associations require an authorized, audited link.
+              - generic [ref=e310]: Policy review required
+            - generic [ref=e311]:
+              - heading "What matters now" [level=3] [ref=e312]
+              - generic [ref=e313]:
+                - generic [ref=e314]:
+                  - generic [ref=e315]: Potential revenue
+                  - strong [ref=e316]: $38,975.42 contract
+                - generic [ref=e317]:
+                  - generic [ref=e318]: Owner
+                  - strong [ref=e319]: You
+                - generic [ref=e320]:
+                  - generic [ref=e321]: Lifecycle
+                  - strong [ref=e322]: PR-1061 · signed yesterday
+                - generic [ref=e323]:
+                  - generic [ref=e324]: Next action
+                  - strong [ref=e325]: Open payment review
+                - generic [ref=e326]:
+                  - generic [ref=e327]: Required deposit
+                  - strong [ref=e328]: $3,897.54 required · evidence received
+                - generic [ref=e329]:
+                  - generic [ref=e330]: Payment status
+                  - strong [ref=e331]: Policy review required · no eligibility decision
+            - generic [ref=e332]:
+              - heading "Activity & sync" [level=3] [ref=e333]
+              - generic [ref=e334]:
+                - generic [ref=e335]:
+                  - text: Provider payment evidence received
+                  - generic [ref=e336]: Yesterday · payment provider
+                - generic [ref=e337]:
+                  - text: Configured policy is unavailable
+                  - generic [ref=e338]: Today · app
+                - generic [ref=e339]:
+                  - text: Commercial action blocked for review
+                  - generic [ref=e340]: Now · app
+            - generic [ref=e341]:
+              - heading "Automated outreach" [level=3] [ref=e342]
+              - generic [ref=e343]:
+                - strong [ref=e344]: Perkins Roofing — Jupiter Team
+                - generic [ref=e345]: Approved team sender · template provenance is retained with the communication event.
+            - generic [ref=e346]:
+              - button "Open payment review" [ref=e347] [cursor=pointer]
+              - button "View payment evidence" [ref=e348] [cursor=pointer]
+              - paragraph [ref=e349]: Only an authorized review may resolve this state. No customer outreach or commercial handoff is initiated here.

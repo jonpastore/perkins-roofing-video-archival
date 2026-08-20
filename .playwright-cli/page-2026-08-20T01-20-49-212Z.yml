@@ -1,0 +1,240 @@
+- iframe [active] [ref=f53e18]:
+  - generic [active] [ref=f56e1]:
+    - generic [ref=f56e15]:
+      - list:
+        - listitem:
+          - link "Skip to main content" [ref=f56e16] [cursor=pointer]:
+            - /url: "#main"
+      - generic [ref=f56e860]:
+        - generic [ref=f56e861]:
+          - generic [ref=f56e862]:
+            - generic [ref=f56e863]:
+              - button "Workflows list" [ref=f56e864] [cursor=pointer]
+              - button "Toggle sidebar" [ref=f56e869] [cursor=pointer]
+            - paragraph [ref=f56e874]:
+              - button [ref=f56e875] [cursor=pointer]:
+                - heading "Workflow name" [level=1] [ref=f56e877]: 01. FB Lead - Speed to Lead & Nurture
+            - generic [ref=f56e881]:
+              - generic:
+                - group
+              - generic [ref=f56e883]:
+                - button "Recent changes" [ref=f56e885] [cursor=pointer]:
+                  - img "Recent changes" [ref=f56e887]
+                - button "Undo" [disabled] [ref=f56e889]
+                - button "Redo" [disabled] [ref=f56e893]
+              - button "Save workflow button" [disabled] [ref=f56e899]:
+                - generic [ref=f56e900]: Saved
+          - generic [ref=f56e905]:
+            - generic [ref=f56e910] [cursor=pointer]:
+              - generic [ref=f56e911]: Advanced builder
+              - img "loading" [ref=f56e913]
+            - tablist [ref=f56e926]:
+              - tab "Builder" [selected] [ref=f56e928] [cursor=pointer]:
+                - paragraph [ref=f56e930]: Builder
+              - tab "Settings" [ref=f56e933] [cursor=pointer]:
+                - paragraph [ref=f56e935]: Settings
+              - tab "Enrollment history" [ref=f56e938] [cursor=pointer]:
+                - paragraph [ref=f56e940]: Enrollment history
+              - tab "Execution logs" [ref=f56e943] [cursor=pointer]:
+                - paragraph [ref=f56e945]: Execution logs
+            - generic [ref=f56e947]:
+              - button "Test workflow" [ref=f56e948] [cursor=pointer]
+              - generic [ref=f56e950]:
+                - paragraph [ref=f56e951]: Draft
+                - switch "Toggle draft publish workflow" [checked] [ref=f56e952]:
+                  - generic [ref=f56e953] [cursor=pointer]
+                - paragraph [ref=f56e955]: Publish
+        - generic [ref=f56e958]:
+          - generic [ref=f56e961]:
+            - button [ref=f56e962] [cursor=pointer]
+            - button [ref=f56e966] [cursor=pointer]
+            - button [ref=f56e970] [cursor=pointer]
+            - button [ref=f56e974] [cursor=pointer]
+            - button [ref=f56e978] [cursor=pointer]
+            - button [ref=f56e982] [cursor=pointer]
+            - button [ref=f56e986] [cursor=pointer]
+            - button [ref=f56e990] [cursor=pointer]
+          - main [ref=f56e1000]:
+            - generic [ref=f56e1004]:
+              - generic [ref=f56e1006]:
+                - generic:
+                  - img:
+                    - button "Edge from f20d28f4-58d4-4cb4-bea7-fbb90e1902a7 to ffdbe4d4-d333-49a8-a7ca-214a31b105e0" [ref=f56e1007]
+                  - img:
+                    - button "Edge from ffdbe4d4-d333-49a8-a7ca-214a31b105e0 to d01bbffe-0e2b-407d-bf5e-fb0e90c9147f" [ref=f56e1014]
+                  - img:
+                    - button "Edge from d01bbffe-0e2b-407d-bf5e-fb0e90c9147f to 8e9758c7-e1fc-4bdd-b2c7-bf8f9002effb" [ref=f56e1019]
+                  - img:
+                    - button "Edge from 8e9758c7-e1fc-4bdd-b2c7-bf8f9002effb to 1f3556a5-354e-427a-aac7-0773afed00b7" [ref=f56e1024]
+                  - img:
+                    - button "Edge from 1f3556a5-354e-427a-aac7-0773afed00b7 to b99a5b80-7e70-4e9b-a70f-554d500a843b" [ref=f56e1029]
+                  - img:
+                    - button "Edge from b99a5b80-7e70-4e9b-a70f-554d500a843b to 163ca568-3b1c-40e7-9e5b-348a38fdd26b" [ref=f56e1034]
+                  - img:
+                    - button "Edge from 163ca568-3b1c-40e7-9e5b-348a38fdd26b to e282228c-0c36-41e0-b144-bce5930a1bc9" [ref=f56e1039]
+                  - img:
+                    - button "Edge from e282228c-0c36-41e0-b144-bce5930a1bc9 to a9a7b428-018c-4475-b240-b954561394b2" [ref=f56e1044]
+                  - img:
+                    - button "Edge from a9a7b428-018c-4475-b240-b954561394b2 to 8d80080a-509b-4147-960c-153d1254b651" [ref=f56e1049]
+                  - img:
+                    - button "Edge from 8d80080a-509b-4147-960c-153d1254b651 to 030e080e-52aa-4cfe-8624-e5a4a4a5f615" [ref=f56e1054]
+                  - img:
+                    - button "Edge from 030e080e-52aa-4cfe-8624-e5a4a4a5f615 to 2f52625c-51b8-4a7e-97e3-45af0143c1a0" [ref=f56e1059]
+                  - img:
+                    - button "Edge from 2f52625c-51b8-4a7e-97e3-45af0143c1a0 to 7f4e9536-33c5-417c-9a14-b5a3a632f9a2" [ref=f56e1064]
+                  - img:
+                    - button "Edge from 7f4e9536-33c5-417c-9a14-b5a3a632f9a2 to aeaf05f6-af87-4b03-a583-309dec0e897f" [ref=f56e1069]
+                  - img:
+                    - button "Edge from f20d28f4-58d4-4cb4-bea7-fbb90e1902a7 to 09b10c23-88fd-4dcd-9f81-a4dd64079ed1" [ref=f56e1074]
+                  - img:
+                    - button "Edge from 09b10c23-88fd-4dcd-9f81-a4dd64079ed1 to 1ebfbc87-d08f-44d3-9988-96db56b67891" [ref=f56e1081]
+                  - img:
+                    - button "Edge from 1ebfbc87-d08f-44d3-9988-96db56b67891 to 35ba74d0-202e-479c-9125-9ec65bb9d192" [ref=f56e1086]
+                  - img:
+                    - button "Edge from ZPaRVeXZpiCG4pakZdNN to f20d28f4-58d4-4cb4-bea7-fbb90e1902a7" [ref=f56e1091]
+                  - generic:
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                    - generic:
+                      - button
+                  - generic:
+                    - button [ref=f56e1096]:
+                      - generic "Trigger Node Facebook Lead Form Submitted" [ref=f56e1098]:
+                        - generic "Node name" [ref=f56e1107]: Facebook Lead Form Submitted
+                    - button [ref=f56e1110]:
+                      - generic "Action Node Renter Check" [ref=f56e1112]:
+                        - generic [ref=f56e1119]:
+                          - generic "Node name" [ref=f56e1120]: Renter Check
+                          - paragraph [ref=f56e1122]: (Default Path)
+                        - button [ref=f56e1123]
+                        - button [ref=f56e1124]
+                    - button [ref=f56e1125]:
+                      - generic "Action Node Homeowner - continue" [ref=f56e1127]:
+                        - generic [ref=f56e1128]:
+                          - generic [ref=f56e1132]:
+                            - paragraph [ref=f56e1135]:
+                              - generic [ref=f56e1139]: and
+                            - list [ref=f56e1140]:
+                              - listitem [ref=f56e1141]: If "Homeowner" does not contain "rent"
+                          - generic "Node name" [ref=f56e1143]: Homeowner - continue
+                        - button [ref=f56e1145]
+                        - button [ref=f56e1146]
+                    - button [ref=f56e1147]:
+                      - generic "Action Node Add Tag" [ref=f56e1149]:
+                        - generic "Node name" [ref=f56e1158]: Add Tag
+                        - button [ref=f56e1160]
+                        - button [ref=f56e1161]
+                    - button [ref=f56e1162]:
+                      - generic "Action Node Create or update opportunity" [ref=f56e1164]:
+                        - generic "Node name" [ref=f56e1172]: Create or update opportunity
+                        - button [ref=f56e1174]
+                        - button [ref=f56e1175]
+                    - button [ref=f56e1176]:
+                      - generic "Action Node SMS 1 - Instant Speed to Lead" [ref=f56e1178]:
+                        - generic "Node name" [ref=f56e1187]: SMS 1 - Instant Speed to Lead
+                        - button [ref=f56e1189]
+                        - button [ref=f56e1190]
+                    - button [ref=f56e1191]:
+                      - generic "Action Node Internal Notification" [ref=f56e1193]:
+                        - generic "Node name" [ref=f56e1201]: Internal Notification
+                        - button [ref=f56e1203]
+                        - button [ref=f56e1204]
+                    - button [ref=f56e1205]:
+                      - generic "Action Node Email 1 - Instant Welcome & Booking" [ref=f56e1207]:
+                        - generic "Node name" [ref=f56e1216]: Email 1 - Instant Welcome & Booking
+                        - button [ref=f56e1218]
+                        - button [ref=f56e1219]
+                    - button [ref=f56e1220]:
+                      - generic "Action Node Wait 1 Hour" [ref=f56e1222]:
+                        - generic "Node name" [ref=f56e1230]: Wait 1 Hour
+                        - button [ref=f56e1232]
+                        - button [ref=f56e1233]
+                    - button [ref=f56e1234]:
+                      - generic "Action Node SMS 2 - 1 Hour Follow-Up" [ref=f56e1236]:
+                        - generic "Node name" [ref=f56e1245]: SMS 2 - 1 Hour Follow-Up
+                        - button [ref=f56e1247]
+                        - button [ref=f56e1248]
+                    - button [ref=f56e1249]:
+                      - generic "Action Node Wait 1 Day" [ref=f56e1251]:
+                        - generic "Node name" [ref=f56e1259]: Wait 1 Day
+                        - button [ref=f56e1261]
+                        - button [ref=f56e1262]
+                    - button [ref=f56e1263]:
+                      - generic "Action Node Email 2 - Day 1 Value & Proof" [ref=f56e1265]:
+                        - generic "Node name" [ref=f56e1274]: Email 2 - Day 1 Value & Proof
+                        - button [ref=f56e1276]
+                        - button [ref=f56e1277]
+                    - button [ref=f56e1278]:
+                      - generic "Action Node Wait 2 Days" [ref=f56e1280]:
+                        - generic "Node name" [ref=f56e1288]: Wait 2 Days
+                        - button [ref=f56e1290]
+                        - button [ref=f56e1291]
+                    - button [ref=f56e1292]:
+                      - generic "Action Node SMS 3 - Day 3 Final Nudge" [ref=f56e1294]:
+                        - generic "Node name" [ref=f56e1303]: SMS 3 - Day 3 Final Nudge
+                        - button [ref=f56e1305]
+                        - button [ref=f56e1306]
+                    - button [ref=f56e1307]:
+                      - generic "Action Node Add Tag - Long Term Nurture" [ref=f56e1309]:
+                        - generic "Node name" [ref=f56e1318]: Add Tag - Long Term Nurture
+                        - button [ref=f56e1320]:
+                          - button [ref=f56e1322] [cursor=pointer]:
+                            - button "Add action" [ref=f56e1323]
+                        - button [ref=f56e1325]
+                    - button [ref=f56e1326]:
+                      - generic "Action Node None" [ref=f56e1328]:
+                        - generic [ref=f56e1329]:
+                          - generic [ref=f56e1332]:
+                            - paragraph [ref=f56e1334]:
+                              - generic [ref=f56e1338]: None
+                            - paragraph [ref=f56e1339]: When none of the conditions are met
+                          - generic "Node name" [ref=f56e1341]: None
+                        - button [ref=f56e1343]
+                        - button [ref=f56e1344]
+                    - button [ref=f56e1345]:
+                      - generic "Action Node SMS - Renter Polite Reply" [ref=f56e1347]:
+                        - generic "Node name" [ref=f56e1356]: SMS - Renter Polite Reply
+                        - button [ref=f56e1358]
+                        - button [ref=f56e1359]
+                    - button [ref=f56e1360]:
+                      - generic "Action Node Add Tag - Renter DNC" [ref=f56e1362]:
+                        - generic "Node name" [ref=f56e1371]: Add Tag - Renter DNC
+                        - button [ref=f56e1373]:
+                          - button [ref=f56e1375] [cursor=pointer]:
+                            - button "Add action" [ref=f56e1376]
+                        - button [ref=f56e1378]
+              - button "Add" [ref=f56e1384] [cursor=pointer]
+              - generic [ref=f56e1389]:
+                - button [ref=f56e1390] [cursor=pointer]
+                - button [ref=f56e1394] [cursor=pointer]
+                - button [ref=f56e1398] [cursor=pointer]
+                - button [ref=f56e1402] [cursor=pointer]
+                - button [ref=f56e1406] [cursor=pointer]
+              - button [ref=f56e1412] [cursor=pointer]
+    - log [ref=f56e14]

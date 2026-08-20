@@ -1,0 +1,145 @@
+- generic [ref=e1542]:
+  - complementary [ref=e1543]:
+    - button "Collapse sidebar" [ref=e1545] [cursor=pointer]:
+      - generic [ref=e1546]: 
+    - generic [ref=e1548]:
+      - img "agency logo" [ref=e1550]
+      - generic [ref=e1551] [cursor=pointer]:
+        - generic [ref=e1559]:
+          - generic [ref=e1560]: Perkins Roofing
+          - generic [ref=e1561]: Jupiter, FL
+        - generic [ref=e1562]:
+          - generic [ref=e1563]: 
+          - generic [ref=e1564]: 
+      - generic [ref=e1565]:
+        - generic [ref=e1567] [cursor=pointer]:
+          - generic [ref=e1568]: Search
+          - generic "Press Ctrl + K to open" [ref=e1572]: ctrlK
+        - img "Quick actions icon" [ref=e1575] [cursor=pointer]
+      - navigation "header" [ref=e1577]:
+        - link "Ask AI Ask AI" [ref=e1578] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/ask-ai
+          - img "Ask AI" [ref=e1579]
+          - generic [ref=e1580]: Ask AI
+        - link "Launchpad icon Launchpad" [ref=e1581] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/launchpad
+          - img "Launchpad icon" [ref=e1582]
+          - generic [ref=e1583]: Launchpad
+        - link "Dashboard icon Dashboard" [ref=e1584] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/dashboard
+          - img "Dashboard icon" [ref=e1585]
+          - generic [ref=e1586]: Dashboard
+        - link "Conversations icon Conversations" [ref=e1587] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/conversations/conversations
+          - img "Conversations icon" [ref=e1588]
+          - generic [ref=e1589]: Conversations
+        - link "Calendars icon Calendars" [ref=e1590] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/calendars/view
+          - img "Calendars icon" [ref=e1591]
+          - generic [ref=e1592]: Calendars
+        - link "Contacts icon Contacts" [ref=e1593] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/contacts/smart_list/All
+          - img "Contacts icon" [ref=e1594]
+          - generic [ref=e1595]: Contacts
+        - link "Opportunities icon Opportunities" [ref=e1596] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/opportunities/list
+          - img "Opportunities icon" [ref=e1597]
+          - generic [ref=e1598]: Opportunities
+        - link "Payments icon Payments" [ref=e1599] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/payments/invoices
+          - img "Payments icon" [ref=e1600]
+          - generic [ref=e1601]: Payments
+        - paragraph [ref=e1603]
+        - link "AI Agents icon AI Agents" [ref=e1604] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/ai-agents/getting-started
+          - img "AI Agents icon" [ref=e1605]
+          - generic [ref=e1606]: AI Agents
+        - link "Marketing icon Marketing" [ref=e1607] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/marketing/social-planner
+          - img "Marketing icon" [ref=e1608]
+          - generic [ref=e1609]: Marketing
+        - link "Automation icon Automation" [active] [ref=e1610] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/workflows
+          - img "Automation icon" [ref=e1611]
+          - generic [ref=e1612]: Automation
+        - link "Sites icon Sites" [ref=e1613] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/funnels-websites/funnels
+          - img "Sites icon" [ref=e1614]
+          - generic [ref=e1615]: Sites
+        - link "Memberships icon Memberships" [ref=e1616] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/memberships/client-portal/dashboard
+          - img "Memberships icon" [ref=e1617]
+          - generic [ref=e1618]: Memberships
+        - link "Media Storage icon Media Storage" [ref=e1619] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/media-storage
+          - img "Media Storage icon" [ref=e1620]
+          - generic [ref=e1621]: Media Storage
+        - link "Reputation icon Reputation" [ref=e1622] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/reputation/overview
+          - img "Reputation icon" [ref=e1623]
+          - generic [ref=e1624]: Reputation
+        - link "Reporting icon Reporting" [ref=e1625] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/reporting/reports
+          - img "Reporting icon" [ref=e1626]
+          - generic [ref=e1627]: Reporting
+        - link "App Marketplace icon App Marketplace" [ref=e1628] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/integration
+          - img "App Marketplace icon" [ref=e1629]
+          - generic [ref=e1630]: App Marketplace
+      - navigation "footer" [ref=e1632]:
+        - link "Settings icon Settings" [ref=e1633] [cursor=pointer]:
+          - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/settings/company
+          - img "Settings icon" [ref=e1634]
+          - generic [ref=e1635]: Settings
+  - banner [ref=e1636]:
+    - region "Notification Banner" [ref=e1637]:
+      - generic [ref=e1638]:
+        - generic [ref=e1639]:
+          - button "Previous notification" [disabled] [ref=e1640]
+          - generic [ref=e1643]: 1/1
+          - button "Next notification" [disabled] [ref=e1644]
+        - generic [ref=e1647]:
+          - region [ref=e1649]: "Summer of AI: $100K in cash prizes. Your division. Your clients."
+          - button "Check your standing" [ref=e1651] [cursor=pointer]
+      - button "Close notification" [ref=e1652] [cursor=pointer]
+    - generic [ref=e1656]:
+      - generic [ref=e2572]:
+        - button "automation What's new Automation updates" [ref=e2573] [cursor=pointer]:
+          - img "automation" [ref=e2574]
+          - generic [ref=e2575]: What's new
+          - generic [ref=e2576]: Automation updates
+        - superscript [ref=e2577]
+      - generic "Report Translation Issue"
+      - button "Voice Calling" [ref=e1662] [cursor=pointer]
+      - button "Ask AI Assistant" [ref=e1665] [cursor=pointer]:
+        - generic [ref=e1670]: Ask AI
+      - button "View Changelog" [ref=e1672] [cursor=pointer]:
+        - generic [ref=e1673]: 
+      - button "View Notifications" [ref=e1676] [cursor=pointer]:
+        - generic [ref=e1677]: 
+        - generic [ref=e1678]: Notifications
+      - button "Access Help & Support" [ref=e1679] [cursor=pointer]:
+        - generic [ref=e1680]: "?"
+        - generic [ref=e1681]: Support
+      - generic [ref=e1682]:
+        - button "Open Profile Menu" [ref=e1683] [cursor=pointer]:
+          - generic [ref=e1684]: JP
+        - text: 
+    - generic [ref=e2578]:
+      - heading "Automation" [level=1] [ref=e2579]
+      - link "Workflows" [ref=e2580] [cursor=pointer]:
+        - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/workflows
+      - link "Overview" [ref=e2582] [cursor=pointer]:
+        - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/overview
+        - generic [ref=e2583]:
+          - text: Overview
+          - generic [ref=e2584]: Beta
+      - link "Global Workflow Settings" [ref=e2586] [cursor=pointer]:
+        - /url: /v2/location/uAcRp1kPSxq3AbeUlZ1j/automation/workflows/settings
+        - generic [ref=e2587]:
+          - img "Global Workflow Settings" [ref=e2588]
+          - text: Global Workflow Settings
+  - iframe [ref=e2592]:
+    - generic [ref=f6e1]:
+      - img "loading" [ref=f6e8]
+      - log [ref=f6e14]

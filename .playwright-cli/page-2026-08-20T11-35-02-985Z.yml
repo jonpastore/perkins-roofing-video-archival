@@ -1,0 +1,128 @@
+- generic [ref=f2e2]:
+  - complementary [ref=f2e3]:
+    - img "Perkins Roofing Corp." [ref=f2e4]
+    - paragraph [ref=f2e5]: PLATFORM OPERATIONS
+    - link "Overview" [ref=f2e6] [cursor=pointer]:
+      - /url: "#"
+    - link "Readiness & health" [ref=f2e7] [cursor=pointer]:
+      - /url: "#"
+    - link "Integrations" [ref=f2e8] [cursor=pointer]:
+      - /url: "#"
+    - link "Processing queue" [ref=f2e9] [cursor=pointer]:
+      - /url: "#"
+    - link "Logs & audit" [ref=f2e10] [cursor=pointer]:
+      - /url: "#"
+    - link "Usage & cost" [ref=f2e11] [cursor=pointer]:
+      - /url: "#"
+    - paragraph [ref=f2e12]: ADMIN
+    - link "Branches & access" [ref=f2e13] [cursor=pointer]:
+      - /url: "#"
+    - link "Pricing & templates" [ref=f2e14] [cursor=pointer]:
+      - /url: "#"
+  - main [ref=f2e15]:
+    - generic [ref=f2e16]:
+      - generic [ref=f2e17]: Corporate / Platform Operations
+      - generic [ref=f2e18]: Restricted to authorized administrators
+    - generic [ref=f2e19]:
+      - paragraph [ref=f2e20]: PLATFORM OPERATIONS · MOCK DATA
+      - heading "Keep system health and remediation visible without putting it on branch Today" [level=1] [ref=f2e21]
+      - paragraph [ref=f2e22]: A consequential preservation prototype for current Status, readiness, connection, legacy-data and diagnostic capabilities. A green summary never replaces per-service evidence.
+      - generic [ref=f2e23]:
+        - article [ref=f2e24]:
+          - generic [ref=f2e25]: Readiness gates
+          - generic [ref=f2e26]: 14 / 16
+          - text: 2 require action
+        - article [ref=f2e27]:
+          - generic [ref=f2e28]: Integrations
+          - generic [ref=f2e29]: 6 / 7
+          - text: 1 needs reconnect
+        - article [ref=f2e30]:
+          - generic [ref=f2e31]: Processing queue
+          - generic [ref=f2e32]: "3"
+          - text: 1 retryable failure
+        - article [ref=f2e33]:
+          - generic [ref=f2e34]: 24h spend
+          - generic [ref=f2e35]: $84.21
+          - text: Within alert range
+      - generic [ref=f2e36]:
+        - generic [ref=f2e37]:
+          - generic [ref=f2e38]:
+            - heading "Readiness and integration exceptions" [level=2] [ref=f2e39]
+            - generic [ref=f2e40]:
+              - generic [ref=f2e41]:
+                - generic [ref=f2e42]:
+                  - text: Knowify accounting sync
+                  - generic [ref=f2e43]: Last confirmed 9:42 AM · invoices delayed · raw record retained
+                - generic [ref=f2e44]: RECONNECT
+              - generic [ref=f2e45]:
+                - generic [ref=f2e46]:
+                  - text: Proposal reminder job
+                  - generic [ref=f2e47]: Retryable failure at 9:18 AM · no reminder replayed yet
+                - generic [ref=f2e48]: RETRY
+              - generic [ref=f2e49]:
+                - generic [ref=f2e50]:
+                  - text: Production readiness
+                  - generic [ref=f2e51]: DMARC and billing-export checks need remediation
+                - generic [ref=f2e52]: 2 BLOCKERS
+              - generic [ref=f2e53]:
+                - generic [ref=f2e54]:
+                  - text: GHL lifecycle sync
+                  - generic [ref=f2e55]: Healthy summary; record-level conflicts remain visible in sales work
+                - generic [ref=f2e56]: HEALTHY
+              - generic [ref=f2e57]:
+                - generic [ref=f2e58]:
+                  - text: CompanyCam ingestion
+                  - generic [ref=f2e59]: Webhook verified 8:56 AM · no backlog
+                - generic [ref=f2e60]: HEALTHY
+            - button "Open selected remediation" [ref=f2e61]
+            - button "Run permitted health checks" [ref=f2e62]
+          - generic [ref=f2e63]:
+            - heading "Recent restricted audit events" [level=2] [ref=f2e64]
+            - table [ref=f2e65]:
+              - rowgroup [ref=f2e66]:
+                - row [ref=f2e67]:
+                  - columnheader "Time" [ref=f2e68]
+                  - columnheader "Actor" [ref=f2e69]
+                  - columnheader "Action" [ref=f2e70]
+                  - columnheader "Result" [ref=f2e71]
+              - rowgroup [ref=f2e72]:
+                - row [ref=f2e73]:
+                  - cell "10:02" [ref=f2e74]
+                  - cell "Tim P." [ref=f2e75]
+                  - cell "Viewed Miami branch exceptions" [ref=f2e76]
+                  - cell "Allowed" [ref=f2e77]
+                - row [ref=f2e78]:
+                  - cell "9:42" [ref=f2e79]
+                  - cell "System" [ref=f2e80]
+                  - cell "Knowify sync" [ref=f2e81]
+                  - cell "Retryable failure" [ref=f2e82]
+                - row [ref=f2e83]:
+                  - cell "9:18" [ref=f2e84]
+                  - cell "System" [ref=f2e85]
+                  - cell "Proposal reminder job" [ref=f2e86]
+                  - cell "Failed safely" [ref=f2e87]
+        - complementary [ref=f2e88]:
+          - generic [ref=f2e89]:
+            - heading "Data-source health" [level=2] [ref=f2e90]
+            - generic [ref=f2e91]:
+              - generic [ref=f2e92]:
+                - generic [ref=f2e93]:
+                  - text: Knowify
+                  - generic [ref=f2e94]: OAuth reconnect required
+                - generic [ref=f2e95]: ACTION
+              - generic [ref=f2e96]:
+                - generic [ref=f2e97]:
+                  - text: WordPress
+                  - generic [ref=f2e98]: Last publish 8:21 AM
+                - generic [ref=f2e99]: OK
+              - generic [ref=f2e100]:
+                - generic [ref=f2e101]:
+                  - text: YouTube
+                  - generic [ref=f2e102]: Archive KPI poll 8:45 AM
+                - generic [ref=f2e103]: OK
+              - generic [ref=f2e104]:
+                - generic [ref=f2e105]:
+                  - text: GCP / GCS
+                  - generic [ref=f2e106]: Storage and render checks passed
+                - generic [ref=f2e107]: OK
+          - generic [ref=f2e108]: Security boundary:Secrets, OAuth actions, raw logs, health probes and retries are role-gated. Branch users see only record-relevant status and recovery guidance.

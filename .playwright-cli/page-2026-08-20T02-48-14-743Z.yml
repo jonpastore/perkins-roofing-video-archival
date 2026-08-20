@@ -1,0 +1,190 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "Primary navigation" [ref=e4]:
+      - img "Perkins Roofing Corp." [ref=e6]
+      - button "Current workspace" [ref=e7]:
+        - generic [ref=e8]: Miami Branch
+        - generic [ref=e9]: ⌄
+      - navigation [ref=e10]:
+        - link "◉ Today 2" [ref=e479] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=e12]: ◉
+          - text: Today
+          - generic [ref=e13]: "2"
+        - link "◇ Pipeline" [ref=e14] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=e15]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=e16] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=e17]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=e18] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=e19]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=e20] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=e21]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=e22] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=e23]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=e24] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=e25]: ▤
+          - text: Reports
+      - generic [ref=e26]: GHL sync healthy
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: Miami Branch
+          - generic [ref=e32]: /
+          - strong [ref=e33]: Today
+        - generic [ref=e34]:
+          - button "Search" [ref=e35] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=e36] [cursor=pointer]: ◌
+          - button "User profile" [ref=e38] [cursor=pointer]: JP
+      - main [ref=e39]:
+        - region [ref=e317]:
+          - generic [ref=e41]:
+            - paragraph [ref=e42]: CORPORATE PORTFOLIO
+            - heading "See branch risk before it costs revenue" [level=1] [ref=e318]
+            - paragraph [ref=e44]: 2 exceptions in Miami. Corporate drill-down is authorized and auditable.
+          - group "Prototype scenario" [ref=e45]:
+            - button "Branch manager" [ref=e46] [cursor=pointer]
+            - button "Salesperson" [ref=e47] [cursor=pointer]
+            - button "Corporate" [ref=e48] [cursor=pointer]
+        - region "Branch status" [ref=e49]:
+          - article [ref=e50]:
+            - generic [ref=e51]: At-risk revenue
+            - strong [ref=e52]: $88,900
+            - generic [ref=e53]: ↑ $18,400 needs action
+          - article [ref=e54]:
+            - generic [ref=e55]: Human response SLA
+            - strong [ref=e56]: 89%
+            - generic [ref=e57]: 5-minute business-hours target
+          - article [ref=e58]:
+            - generic [ref=e59]: Inspections today
+            - strong [ref=e60]: "19"
+            - generic [ref=e61]: 2 awaiting outcome
+          - article [ref=e62]:
+            - generic [ref=e63]: Branch performance
+            - strong [ref=e64]: 3 / 4
+            - generic [ref=e65]: Jupiter is on target
+        - region [ref=e319]:
+          - generic [ref=e320]:
+            - paragraph [ref=e321]: CROSS-BRANCH PRIORITIES
+            - heading "Where corporate needs to intervene" [level=2] [ref=e322]
+          - generic [ref=e323]:
+            - article [ref=e324]:
+              - generic [ref=e325]:
+                - strong [ref=e326]: Jupiter
+                - generic [ref=e327]: On target
+              - paragraph [ref=e328]: 92% response SLA · 1 payment risk
+              - button "View Jupiter exceptions" [ref=e329] [cursor=pointer]
+            - article [ref=e330]:
+              - generic [ref=e331]:
+                - strong [ref=e332]: Miami
+                - generic [ref=e333]: Manager follow-up
+              - paragraph [ref=e334]: 76% response SLA · 2 unattempted leads
+              - button "View Miami exceptions" [active] [ref=e335] [cursor=pointer]
+            - article [ref=e336]:
+              - generic [ref=e337]:
+                - strong [ref=e338]: Naples
+                - generic [ref=e339]: Capacity watch
+              - paragraph [ref=e340]: 89% response SLA · 4 inspections tomorrow
+              - button "View Naples exceptions" [ref=e341] [cursor=pointer]
+        - generic [ref=e66]:
+          - region [ref=e480]:
+            - generic [ref=e68]:
+              - generic [ref=e69]:
+                - paragraph [ref=e70]: OWNED WORK
+                - heading "Revenue risk queue 2" [level=2] [ref=e481]
+              - button "View states" [ref=e72] [cursor=pointer]
+            - generic "Queue filters" [ref=e73]:
+              - button "All 2" [ref=e482] [cursor=pointer]:
+                - text: All
+                - generic [ref=e75]: "2"
+              - button "Mine 0" [ref=e483] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=e77]: "0"
+              - button "Due now 2" [ref=e484] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=e79]: "2"
+              - button "Payment 0" [ref=e485] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=e81]: "0"
+            - generic [ref=e82]:
+              - generic [ref=e83]: Customer & risk
+              - generic [ref=e84]: Owner
+              - generic [ref=e85]: Next action
+            - generic [ref=e86]:
+              - button "Open Ava Reyes; No human attempt; owner Nia P.; next action Make first contact; 8 min overdue; priority critical" [ref=e486] [cursor=pointer]:
+                - generic [ref=e487]:
+                  - generic [ref=e488]: "1"
+                  - generic [ref=e489]:
+                    - generic [ref=e490]: Ava Reyes
+                    - generic [ref=e491]: 88 Bay Harbor Dr · Miami
+                    - generic [ref=e492]: No human attempt
+                - generic [ref=e493]:
+                  - generic [ref=e494]: NP
+                  - text: Nia P.
+                - generic [ref=e495]:
+                  - text: Make first contact
+                  - generic [ref=e496]: 8 min overdue
+              - button "Open Daniel Cho; No human attempt; owner Luis G.; next action Make first contact; Due in 4 min; priority high" [ref=e497] [cursor=pointer]:
+                - generic [ref=e498]:
+                  - generic [ref=e499]: "2"
+                  - generic [ref=e500]:
+                    - generic [ref=e501]: Daniel Cho
+                    - generic [ref=e502]: 230 Coral Gate · Miami
+                    - generic [ref=e503]: No human attempt
+                - generic [ref=e504]:
+                  - generic [ref=e505]: LG
+                  - text: Luis G.
+                - generic [ref=e506]:
+                  - text: Make first contact
+                  - generic [ref=e507]: Due in 4 min
+          - complementary [ref=e508]:
+            - generic [ref=e154]:
+              - generic [ref=e509]:
+                - paragraph [ref=e510]: CUSTOMER & PROPERTY
+                - heading "Ava Reyes" [level=2] [ref=e511]
+                - paragraph [ref=e512]: 88 Bay Harbor Dr · Miami
+                - generic [ref=e513]: No human attempt
+              - generic [ref=e514]:
+                - heading "What matters now" [level=3] [ref=e515]
+                - generic [ref=e516]:
+                  - generic [ref=e517]:
+                    - generic [ref=e518]: Potential revenue
+                    - strong [ref=e519]: $15,200 estimate
+                  - generic [ref=e520]:
+                    - generic [ref=e521]: Owner
+                    - strong [ref=e522]: Nia P.
+                  - generic [ref=e523]:
+                    - generic [ref=e524]: Lifecycle
+                    - strong [ref=e525]: Website lead · 13 min ago
+                  - generic [ref=e526]:
+                    - generic [ref=e527]: Next action
+                    - strong [ref=e528]: Make first contact
+              - generic [ref=e529]:
+                - heading "Activity & sync" [level=3] [ref=e530]
+                - generic [ref=e531]:
+                  - generic [ref=e532]:
+                    - text: Lead captured from website
+                    - generic [ref=e533]: 13 min ago · GHL
+                  - generic [ref=e534]:
+                    - text: Automated acknowledgment sent
+                    - generic [ref=e535]: 12 min ago · GHL
+                  - generic [ref=e536]:
+                    - text: Awaiting human outreach
+                    - generic [ref=e537]: now · app
+              - generic [ref=e538]:
+                - button "Call Ava" [ref=e539] [cursor=pointer]
+                - button "Message / open GHL" [ref=e540] [cursor=pointer]
+                - button "Record human outcome" [ref=e541] [cursor=pointer]
+  - status [ref=e478]: Miami branch exceptions loaded — mock corporate drill-down.

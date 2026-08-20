@@ -1,0 +1,147 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e350] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e26]:
+    - generic [ref=e27]:
+      - button "Open navigation" [ref=e351]: ☰
+      - generic [ref=e28]:
+        - generic [ref=e29]: Jupiter Branch
+        - generic [ref=e30]: /
+        - strong [ref=e31]: Today
+      - generic [ref=e32]:
+        - button "Notifications" [ref=e352] [cursor=pointer]: ◌
+        - button "User profile" [ref=e353] [cursor=pointer]: JP
+    - main [ref=e37]:
+      - region [ref=e354]:
+        - generic [ref=e39]:
+          - paragraph [ref=e40]: BRANCH OPERATIONS
+          - heading "Protect today’s revenue" [level=1] [ref=e355]
+          - paragraph [ref=e42]: 7 items need attention in Jupiter. Start with the accepted job waiting on its required deposit.
+        - group [ref=e43]:
+          - 'generic "Review scenario: Branch manager" [active] [ref=e356] [cursor=pointer]'
+          - group "Prototype review scenario" [ref=e373]:
+            - button "Branch manager preview" [pressed] [ref=e374] [cursor=pointer]
+            - button "Salesperson preview" [ref=e375] [cursor=pointer]
+            - button "Corporate preview" [ref=e376] [cursor=pointer]
+            - button "Platform admin preview" [ref=e377] [cursor=pointer]
+          - paragraph [ref=e378]: Reviewer-only mock-data switcher. Production views are assigned by server-authorized role and scope.
+      - region "Branch status" [ref=e357]:
+        - article [ref=e46]:
+          - generic [ref=e47]: At-risk revenue
+          - strong [ref=e48]: $42,600
+          - generic [ref=e49]: ↑ $18,400 needs action
+        - article [ref=e50]:
+          - generic [ref=e51]: Human response SLA
+          - strong [ref=e52]: 92%
+          - generic [ref=e53]: 5-minute business-hours target
+      - region [ref=e358]:
+        - generic [ref=e64]:
+          - generic [ref=e65]:
+            - paragraph [ref=e66]: OWNED WORK
+            - heading "Revenue risk queue 7" [level=2] [ref=e359]
+          - button "Preview states" [ref=e360] [cursor=pointer]
+        - generic "Queue filters" [ref=e361]:
+          - button "All 7" [pressed] [ref=e362] [cursor=pointer]:
+            - text: All
+            - generic [ref=e71]: "7"
+          - button "Mine 3" [ref=e363] [cursor=pointer]:
+            - text: Mine
+            - generic [ref=e73]: "3"
+          - button "Due now 6" [ref=e364] [cursor=pointer]:
+            - text: Due now
+            - generic [ref=e75]: "6"
+          - button "Payment 2" [ref=e365] [cursor=pointer]:
+            - text: Payment
+            - generic [ref=e77]: "2"
+        - generic [ref=e82]:
+          - button "Open Marisol Martinez; Accepted — payment pending; owner Sam R.; next action Call about required deposit; 37 min overdue; priority critical" [ref=e366] [cursor=pointer]:
+            - generic [ref=e226]:
+              - generic [ref=e227]: "1"
+              - generic [ref=e228]:
+                - generic [ref=e229]: Marisol Martinez
+                - generic [ref=e230]: 1426 Seabrook Way · Jupiter
+                - generic [ref=e231]: Accepted — payment pending
+            - generic [ref=e232]:
+              - generic [ref=e233]: SR
+              - text: Sam R.
+            - generic [ref=e234]:
+              - text: Call about required deposit
+              - generic [ref=e235]: 37 min overdue
+          - button "Open Evan Li; No human attempt; owner You; next action Make first contact; 3 min left; priority critical" [ref=e367] [cursor=pointer]:
+            - generic [ref=e237]:
+              - generic [ref=e238]: "2"
+              - generic [ref=e239]:
+                - generic [ref=e240]: Evan Li
+                - generic [ref=e241]: 84 Seagate Drive · Jupiter
+                - generic [ref=e242]: No human attempt
+            - generic [ref=e243]:
+              - generic [ref=e244]: JP
+              - text: You
+            - generic [ref=e245]:
+              - text: Make first contact
+              - generic [ref=e246]: 3 min left
+          - button "Open Heather Douglas; Appointment cancelled; owner Tara M.; next action Offer a new time; Due in 18 min; priority high" [ref=e368] [cursor=pointer]:
+            - generic [ref=e248]:
+              - generic [ref=e249]: "3"
+              - generic [ref=e250]:
+                - generic [ref=e251]: Heather Douglas
+                - generic [ref=e252]: 311 Ocean Dunes Rd · Juno
+                - generic [ref=e253]: Appointment cancelled
+            - generic [ref=e254]:
+              - generic [ref=e255]: TM
+              - text: Tara M.
+            - generic [ref=e256]:
+              - text: Offer a new time
+              - generic [ref=e257]: Due in 18 min
+          - button "Open Carlos Ortiz; Proposal needs follow-up; owner You; next action Review open questions; Due today; priority high" [ref=e369] [cursor=pointer]:
+            - generic [ref=e259]:
+              - generic [ref=e260]: "4"
+              - generic [ref=e261]:
+                - generic [ref=e262]: Carlos Ortiz
+                - generic [ref=e263]: 12 Coralberry Ct · Jupiter
+                - generic [ref=e264]: Proposal needs follow-up
+            - generic [ref=e265]:
+              - generic [ref=e266]: JP
+              - text: You
+            - generic [ref=e267]:
+              - text: Review open questions
+              - generic [ref=e268]: Due today
+          - button "Open Ruth Bennett; No-show recovery; owner Jared C.; next action Rebook inspection; Due today; priority high" [ref=e370] [cursor=pointer]:
+            - generic [ref=e270]:
+              - generic [ref=e271]: "5"
+              - generic [ref=e272]:
+                - generic [ref=e273]: Ruth Bennett
+                - generic [ref=e274]: 708 Loxahatchee Dr · Tequesta
+                - generic [ref=e275]: No-show recovery
+            - generic [ref=e276]:
+              - generic [ref=e277]: JC
+              - text: Jared C.
+            - generic [ref=e278]:
+              - text: Rebook inspection
+              - generic [ref=e279]: Due today
+          - button "Open Diana Moore; Connected, not booked; owner Sam R.; next action Confirm inspection time; Tomorrow; priority medium" [ref=e371] [cursor=pointer]:
+            - generic [ref=e281]:
+              - generic [ref=e282]: "6"
+              - generic [ref=e283]:
+                - generic [ref=e284]: Diana Moore
+                - generic [ref=e285]: 19 Atlantic Ave · Palm Beach
+                - generic [ref=e286]: Connected, not booked
+            - generic [ref=e287]:
+              - generic [ref=e288]: SR
+              - text: Sam R.
+            - generic [ref=e289]:
+              - text: Confirm inspection time
+              - generic [ref=e290]: Tomorrow
+          - button "Open Charlotte Anne Montgomery-Smythe; Policy review required; owner You; next action Open payment review; Due today; priority high" [ref=e372] [cursor=pointer]:
+            - generic [ref=e292]:
+              - generic [ref=e293]: "7"
+              - generic [ref=e294]:
+                - generic [ref=e295]: Charlotte Anne Montgomery-Smythe
+                - generic [ref=e296]: 2147 North County Road 211, Building B · Palm Beach Gardens
+                - generic [ref=e297]: Policy review required
+            - generic [ref=e298]:
+              - generic [ref=e299]: JP
+              - text: You
+            - generic [ref=e300]:
+              - text: Open payment review
+              - generic [ref=e301]: Due today

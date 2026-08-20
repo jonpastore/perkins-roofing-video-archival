@@ -1,0 +1,148 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "Primary navigation" [ref=e4]:
+      - img "Perkins Roofing Corp." [ref=e6]
+      - button "Current workspace" [ref=e7]:
+        - generic [ref=e8]: Jupiter Branch
+        - generic [ref=e9]: ⌄
+      - navigation [ref=e10]:
+        - link "◉ Today 7" [ref=e11] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=e12]: ◉
+          - text: Today
+          - generic [ref=e13]: "7"
+        - link "◇ Pipeline" [ref=e14] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=e15]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=e16] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=e17]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=e18] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=e19]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=e20] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=e21]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=e22] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=e23]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=e24] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=e25]: ▤
+          - text: Reports
+      - generic [ref=e26]: Queue current
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - generic [ref=e31]: Jupiter Branch
+          - generic [ref=e32]: /
+          - strong [ref=e33]: Today
+        - generic [ref=e34]:
+          - button "Search" [ref=e35] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=e36] [cursor=pointer]: ◌
+          - button "User profile" [ref=e38] [cursor=pointer]: JP
+      - main [ref=e39]:
+        - region [ref=e40]:
+          - generic [ref=e41]:
+            - paragraph [ref=e42]: BRANCH OPERATIONS
+            - heading "Protect today’s revenue" [level=1] [ref=e43]
+            - paragraph [ref=e44]: 7 items need attention in Jupiter. Start with the accepted job waiting on its required deposit.
+          - group "Prototype scenario" [ref=e45]:
+            - button "Branch manager" [ref=e46] [cursor=pointer]
+            - button "Salesperson" [ref=e47] [cursor=pointer]
+            - button "Corporate" [ref=e48] [cursor=pointer]
+        - region "Branch status" [ref=e49]:
+          - article [ref=e50]:
+            - generic [ref=e51]: At-risk revenue
+            - strong [ref=e52]: $42,600
+            - generic [ref=e53]: ↑ $18,400 needs action
+          - article [ref=e54]:
+            - generic [ref=e55]: Human response SLA
+            - strong [ref=e56]: 92%
+            - generic [ref=e57]: 5-minute business-hours target
+          - article [ref=e58]:
+            - generic [ref=e59]: Inspections today
+            - strong [ref=e60]: "7"
+            - generic [ref=e61]: 2 awaiting outcome
+          - article [ref=e62]:
+            - generic [ref=e63]: Branch performance
+            - strong [ref=e64]: 3 / 4
+            - generic [ref=e65]: Jupiter is on target
+        - generic [ref=e66]:
+          - region [ref=e67]:
+            - generic [ref=e68]:
+              - generic [ref=e69]:
+                - paragraph [ref=e70]: OWNED WORK
+                - heading "Revenue risk queue 7" [level=2] [ref=e71]
+              - button "Show integration error" [active] [ref=e205] [cursor=pointer]
+            - generic "Queue filters" [ref=e73]:
+              - button "All 7" [pressed] [ref=e74] [cursor=pointer]:
+                - text: All
+                - generic [ref=e75]: "7"
+              - button "Mine 3" [ref=e76] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=e77]: "3"
+              - button "Due now 6" [ref=e78] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=e79]: "6"
+              - button "Payment 2" [ref=e80] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=e81]: "2"
+            - generic [ref=e82]:
+              - generic [ref=e83]: Customer & risk
+              - generic [ref=e84]: Owner
+              - generic [ref=e85]: Next action
+            - generic [ref=e207]:
+              - heading "Refreshing risk queue…" [level=3] [ref=e208]
+              - paragraph [ref=e209]: Keeping the last confirmed action context while GHL activity is checked.
+          - complementary [ref=e164]:
+            - generic [ref=e165]:
+              - generic [ref=e210]:
+                - paragraph [ref=e211]: CUSTOMER & PROPERTY
+                - heading "Marisol Martinez" [level=2] [ref=e212]
+                - paragraph [ref=e213]: 1426 Seabrook Way · Jupiter
+                - generic [ref=e214]: Accepted — payment pending
+              - generic [ref=e215]:
+                - heading "What matters now" [level=3] [ref=e216]
+                - generic [ref=e217]:
+                  - generic [ref=e218]:
+                    - generic [ref=e219]: Potential revenue
+                    - strong [ref=e220]: $18,400 contract
+                  - generic [ref=e221]:
+                    - generic [ref=e222]: Owner
+                    - strong [ref=e223]: Sam R.
+                  - generic [ref=e224]:
+                    - generic [ref=e225]: Lifecycle
+                    - strong [ref=e226]: PR-1048 · signed 9:12 AM
+                  - generic [ref=e227]:
+                    - generic [ref=e228]: Next action
+                    - strong [ref=e229]: Call about required deposit
+                  - generic [ref=e230]:
+                    - generic [ref=e231]: Required deposit
+                    - strong [ref=e232]: $1,840 required · link delivered
+                  - generic [ref=e233]:
+                    - generic [ref=e234]: Payment status
+                    - strong [ref=e235]: Awaiting provider confirmation · verified 9:13 AM
+              - generic [ref=e236]:
+                - heading "Activity & sync" [level=3] [ref=e237]
+                - generic [ref=e238]:
+                  - generic [ref=e239]:
+                    - text: Proposal accepted
+                    - generic [ref=e240]: 9:12 AM · app
+                  - generic [ref=e241]:
+                    - text: Deposit link delivered
+                    - generic [ref=e242]: 9:13 AM · GHL
+                  - generic [ref=e243]:
+                    - text: No payment confirmation yet
+                    - generic [ref=e244]: 9:13 AM · payment provider
+              - generic [ref=e245]:
+                - button "Call Marisol" [ref=e246] [cursor=pointer]
+                - button "Message / open GHL" [ref=e247] [cursor=pointer]
+                - button "Record human outcome" [ref=e248] [cursor=pointer]

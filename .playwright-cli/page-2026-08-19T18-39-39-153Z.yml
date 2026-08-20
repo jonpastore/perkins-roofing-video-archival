@@ -1,0 +1,287 @@
+- generic [ref=e943]:
+  - complementary [ref=e944]:
+    - button "Collapse sidebar" [ref=e946] [cursor=pointer]:
+      - generic [ref=e947]: 
+    - generic [ref=e949]:
+      - img "agency logo" [ref=e951]
+      - generic [ref=e952] [cursor=pointer]:
+        - generic [ref=e953]: Click here to switch
+        - generic [ref=e962]:
+          - generic [ref=e963]: 
+          - generic [ref=e964]: 
+      - navigation "header" [ref=e966]:
+        - link " Get Free AI" [ref=e967] [cursor=pointer]:
+          - /url: /ai-employee-promo
+          - generic [ref=e968]: 
+          - generic [ref=e970]: Get Free AI
+        - link "AI Suite icon AI Suite New" [ref=e971] [cursor=pointer]:
+          - /url: /ai-suite
+          - img "AI Suite icon" [ref=e972]
+          - generic [ref=e973]: AI Suite
+          - generic [ref=e974]: New
+        - link "Ask AI Ask AI" [ref=e975] [cursor=pointer]:
+          - /url: /ask-ai-agency
+          - img "Ask AI" [ref=e976]
+          - generic [ref=e977]: Ask AI
+        - link "Launchpad icon Launchpad" [ref=e978] [cursor=pointer]:
+          - /url: /agency_launchpad
+          - img "Launchpad icon" [ref=e979]
+          - generic [ref=e980]: Launchpad
+        - link "Agency Dashboard icon Agency Dashboard" [ref=e981] [cursor=pointer]:
+          - /url: /agency_dashboard
+          - img "Agency Dashboard icon" [ref=e982]
+          - generic [ref=e983]: Agency Dashboard
+        - link " SaaS Configurator" [ref=e984] [cursor=pointer]:
+          - /url: /saas_dashboard
+          - generic [ref=e985]: 
+          - generic [ref=e987]: SaaS Configurator
+        - link "Prospecting icon Prospecting" [ref=e988] [cursor=pointer]:
+          - /url: /prospecting
+          - img "Prospecting icon" [ref=e989]
+          - generic [ref=e990]: Prospecting
+        - link "Sub-Accounts icon Sub-Accounts" [ref=e991] [cursor=pointer]:
+          - /url: /sub-accounts
+          - img "Sub-Accounts icon" [ref=e992]
+          - generic [ref=e993]: Sub-Accounts
+        - link "Account Snapshots icon Account Snapshots" [ref=e994] [cursor=pointer]:
+          - /url: /snapshots
+          - img "Account Snapshots icon" [ref=e995]
+          - generic [ref=e996]: Account Snapshots
+        - link "Reselling icon Reselling" [ref=e997] [cursor=pointer]:
+          - /url: /reselling
+          - img "Reselling icon" [ref=e998]
+          - generic [ref=e999]: Reselling
+        - link "Add-Ons icon Add-Ons" [ref=e1000] [cursor=pointer]:
+          - /url: /marketplace
+          - img "Add-Ons icon" [ref=e1001]
+          - generic [ref=e1002]: Add-Ons
+        - link " Affiliate Portal" [ref=e1003] [cursor=pointer]:
+          - /url: /affiliate_portal/terms-and-conditions
+          - generic [ref=e1004]: 
+          - generic [ref=e1006]: Affiliate Portal
+        - link " Template Library" [ref=e1007] [cursor=pointer]:
+          - /url: /template-library-admin
+          - generic [ref=e1008]: 
+          - generic [ref=e1010]: Template Library
+        - link "Partners icon Partners" [ref=e1011] [cursor=pointer]:
+          - /url: /partners
+          - img "Partners icon" [ref=e1012]
+          - generic [ref=e1013]: Partners
+        - link " University" [ref=e1014] [cursor=pointer]:
+          - /url: /university
+          - generic [ref=e1015]: 
+          - generic [ref=e1017]: University
+        - link "SaaS Education icon SaaS Education" [ref=e1018] [cursor=pointer]:
+          - /url: /saas_education
+          - img "SaaS Education icon" [ref=e1019]
+          - generic [ref=e1020]: SaaS Education
+        - link "GHL Swag icon GHL Swag" [ref=e1021] [cursor=pointer]:
+          - /url: /ghl-swag
+          - img "GHL Swag icon" [ref=e1022]
+          - generic [ref=e1023]: GHL Swag
+        - link "Ideas icon Ideas" [ref=e1024] [cursor=pointer]:
+          - /url: /ideas
+          - img "Ideas icon" [ref=e1025]
+          - generic [ref=e1026]: Ideas
+        - link "Mobile App icon Mobile App New" [ref=e1027] [cursor=pointer]:
+          - /url: /mobile-app-customiser
+          - img "Mobile App icon" [ref=e1028]
+          - generic [ref=e1029]: Mobile App
+          - generic [ref=e1030]: New
+        - link " Desktop App New" [ref=e1031] [cursor=pointer]:
+          - /url: /desktop-whitelabel-app
+          - generic [ref=e1032]: 
+          - generic [ref=e1034]: Desktop App
+          - generic [ref=e1035]: New
+        - link "App Marketplace icon App Marketplace" [ref=e1036] [cursor=pointer]:
+          - /url: /integration
+          - img "App Marketplace icon" [ref=e1037]
+          - generic [ref=e1038]: App Marketplace
+        - link "WAVV Admin" [ref=e1103] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - navigation "footer" [ref=e1044]:
+        - link "Settings icon Settings" [ref=e1045] [cursor=pointer]:
+          - /url: /settings/profile
+          - img "Settings icon" [ref=e1046]
+          - generic [ref=e1047]: Settings
+  - banner [ref=e1048]:
+    - region "Notification Banner" [ref=e1049]:
+      - generic [ref=e1050]:
+        - generic [ref=e1051]:
+          - button "Previous notification" [disabled] [ref=e1052]
+          - generic [ref=e1055]: 1/1
+          - button "Next notification" [disabled] [ref=e1056]
+        - generic [ref=e1059]:
+          - region [ref=e1061]: "Summer of AI: $100K in cash prizes. Your division. Your clients."
+          - button "Check your standing" [ref=e1063] [cursor=pointer]
+      - button "Close notification" [ref=e1064] [cursor=pointer]
+    - generic [ref=e1068]:
+      - generic "Report Translation Issue"
+      - button "Ask AI Assistant" [ref=e1069] [cursor=pointer]:
+        - generic [ref=e1074]: Ask AI
+      - button "View Changelog" [ref=e1076] [cursor=pointer]:
+        - generic [ref=e1077]: 
+      - button "View Notifications" [ref=e1080] [cursor=pointer]:
+        - generic [ref=e1081]: 
+        - generic [ref=e1082]: Notifications
+      - button "Access Help & Support" [ref=e1083] [cursor=pointer]:
+        - generic [ref=e1084]: "?"
+        - generic [ref=e1085]: Support
+      - generic [ref=e1086]:
+        - button "Open Profile Menu" [ref=e1087] [cursor=pointer]:
+          - generic [ref=e1088]: JP
+        - text: 
+  - generic [ref=e1105]:
+    - generic [ref=e1108]:
+      - generic [ref=e1109]:
+        - button "Switch to account" [ref=e1110] [cursor=pointer]
+        - generic [ref=e1113]: Perkins Roofing
+      - generic [ref=e1114]:
+        - link [ref=e1115] [cursor=pointer]:
+          - /url: /location/uAcRp1kPSxq3AbeUlZ1j/dashboard
+          - button "Switch to Sub-Account" [ref=e1116]
+        - button "Actions" [ref=e1118] [cursor=pointer]
+    - generic [ref=e1124]:
+      - generic [ref=e1129]:
+        - generic [ref=e1130]: Basic Details
+        - generic [ref=e1134]: SaaS
+        - generic [ref=e1139]: Features and Limits
+        - generic [ref=e1144]: Rebilling
+        - generic [ref=e1149]: Reselling
+        - generic [ref=e1154]: Marketplace
+        - generic [ref=e1159]: Advanced Settings
+        - generic [ref=e1164]: Calendar Settings
+      - generic [ref=e1172]:
+        - generic [ref=e1173]:
+          - generic "Account" [ref=e1175]:
+            - generic [ref=e1178]:
+              - generic [ref=e1179]:
+                - generic [ref=e1180]:
+                  - generic [ref=e1182]:
+                    - generic [ref=e1183]:
+                      - generic [ref=e1184]: First Name
+                      - generic [ref=e1185]: "*"
+                    - textbox "First Name" [ref=e1190]: Tim
+                  - generic [ref=e1193]:
+                    - generic [ref=e1194]:
+                      - generic [ref=e1195]: Last Name
+                      - generic [ref=e1196]: "*"
+                    - textbox "Last Name" [ref=e1201]: Kanak
+                - generic [ref=e1203]:
+                  - generic [ref=e1204]:
+                    - generic [ref=e1205]: Email
+                    - generic [ref=e1206]: "*"
+                  - textbox "Email" [ref=e1211]: tim@perkinsroofing.net
+                - generic [ref=e1213]:
+                  - generic [ref=e1214]: Phone Number
+                  - textbox "Phone Number" [ref=e1220]: (561) 559-7663
+              - button "Save" [disabled] [ref=e1222]
+          - generic [ref=e1225]:
+            - generic [ref=e1227]:
+              - generic [ref=e1228]: Tasks
+              - generic [ref=e1232]:
+                - generic [ref=e1238]:
+                  - textbox "Search" [ref=e1239]
+                  - generic: Search
+                - button "Create Task" [ref=e1242] [cursor=pointer]
+            - generic [ref=e1249]:
+              - table [ref=e1251]:
+                - rowgroup [ref=e1257]:
+                  - row [ref=e1258]:
+                    - columnheader [ref=e1259]
+                    - columnheader [ref=e1260]
+                    - columnheader [ref=e1261]
+                    - columnheader [ref=e1262]
+              - generic [ref=e1263]: No Data
+        - generic [ref=e1271]:
+          - generic "General Information" [ref=e1273]:
+            - generic [ref=e1276]:
+              - generic [ref=e1277]:
+                - generic [ref=e1278]:
+                  - generic [ref=e1279]:
+                    - generic [ref=e1280]: Business Name
+                    - generic [ref=e1281]: "*"
+                  - textbox "Business Name" [ref=e1286]: Perkins Roofing
+                - generic [ref=e1288]:
+                  - generic [ref=e1289]: Street Address
+                  - textbox "Street Address" [ref=e1295]: 15658 Alexander Run
+                - generic [ref=e1297]:
+                  - generic [ref=e1298]:
+                    - generic [ref=e1299]: City
+                    - textbox "City" [ref=e1305]: Jupiter
+                  - generic [ref=e1307]:
+                    - generic [ref=e1308]:
+                      - generic [ref=e1309]: Country
+                      - generic [ref=e1310]: "*"
+                    - generic "United States" [ref=e1314] [cursor=pointer]:
+                      - textbox [ref=e1315]
+                      - img "loading" [ref=e1316]
+                - generic [ref=e1324]:
+                  - generic [ref=e1325]:
+                    - generic [ref=e1326]: Zip / Postal Code
+                    - textbox "Zip / Postal Code" [ref=e1332]: "33478"
+                  - generic [ref=e1334]:
+                    - generic [ref=e1335]: State / Prov / Region
+                    - textbox "State / Prov / Region" [ref=e1341]: FL
+                - generic [ref=e1343]:
+                  - generic [ref=e1344]: Website
+                  - textbox "Website" [ref=e1350]: https://perkinsroofing.net/
+                - generic [ref=e1352]:
+                  - generic [ref=e1353]: Time Zone
+                  - generic "GMT-04:00 US/Eastern (EDT)" [ref=e1358] [cursor=pointer]:
+                    - textbox [ref=e1359]
+                    - img "loading" [ref=e1360]
+                - generic [ref=e1368]: Social Links
+                - generic [ref=e1369]:
+                  - generic [ref=e1380]:
+                    - textbox "https://www.facebook.com" [ref=e1381]
+                    - generic: https://www.facebook.com
+                  - generic [ref=e1390]:
+                    - textbox "https://plus.google.com" [ref=e1391]
+                    - generic: https://plus.google.com
+                  - generic [ref=e1403]:
+                    - textbox "https://www.linkedin.com" [ref=e1404]
+                    - generic: https://www.linkedin.com
+                  - generic [ref=e1413]:
+                    - textbox "https://foursquare.com" [ref=e1414]
+                    - generic: https://foursquare.com
+                  - generic [ref=e1415]:
+                    - img "Twitter" [ref=e1418]
+                    - generic [ref=e1422]:
+                      - textbox "https://x.com" [ref=e1423]
+                      - generic: https://x.com
+                  - generic [ref=e1432]:
+                    - textbox "https://www.yelp.com" [ref=e1433]
+                    - generic: https://www.yelp.com
+                  - generic [ref=e1447]:
+                    - textbox "https://www.instagram.com" [ref=e1448]
+                    - generic: https://www.instagram.com
+                  - generic [ref=e1458]:
+                    - textbox "https://www.youtube.com" [ref=e1459]
+                    - generic: https://www.youtube.com
+                  - generic [ref=e1469]:
+                    - textbox "https://www.pinterest.com" [ref=e1470]
+                    - generic: https://www.pinterest.com
+                  - generic [ref=e1479]:
+                    - textbox "https://rss.com" [ref=e1480]
+                    - generic: https://rss.com
+                  - generic [ref=e1493]:
+                    - textbox "https://www.google.com/maps" [ref=e1494]
+                    - generic: https://www.google.com/maps
+              - button "Save" [disabled] [ref=e1495]
+          - generic [ref=e1498]:
+            - generic [ref=e1500]:
+              - generic [ref=e1501]: Notes
+              - generic [ref=e1505]:
+                - generic [ref=e1511]:
+                  - textbox "Search" [ref=e1512]
+                  - generic: Search
+                - button "Create Note" [ref=e1515] [cursor=pointer]
+            - generic [ref=e1522]:
+              - table [ref=e1524]:
+                - rowgroup [ref=e1529]:
+                  - row [ref=e1530]:
+                    - columnheader [ref=e1531]
+                    - columnheader [ref=e1532]
+                    - columnheader [ref=e1533]
+              - generic [ref=e1534]: No Data

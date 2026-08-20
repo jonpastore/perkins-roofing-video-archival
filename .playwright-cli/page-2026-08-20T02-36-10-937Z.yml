@@ -1,0 +1,217 @@
+- generic [active] [ref=f1e1]:
+  - link "Skip to work queue" [ref=f1e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f1e3]:
+    - complementary "Primary navigation" [ref=f1e4]:
+      - img "Perkins Roofing Corp." [ref=f1e6]
+      - button "Current workspace" [ref=f1e7]:
+        - text: Jupiter Branch
+        - generic [ref=f1e8]: ⌄
+      - navigation [ref=f1e9]:
+        - link "◉ Today 6" [ref=f1e10] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=f1e11]: ◉
+          - text: Today
+          - generic [ref=f1e12]: "6"
+        - link "◇ Pipeline" [ref=f1e13] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=f1e14]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=f1e15] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=f1e16]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=f1e17] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=f1e18]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=f1e19] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=f1e20]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=f1e21] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=f1e22]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=f1e23] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=f1e24]: ▤
+          - text: Reports
+      - generic [ref=f1e25]: GHL sync healthy
+    - generic [ref=f1e27]:
+      - generic [ref=f1e28]:
+        - generic [ref=f1e29]:
+          - generic [ref=f1e30]: Jupiter Branch
+          - generic [ref=f1e31]: /
+          - strong [ref=f1e32]: Today
+        - generic [ref=f1e33]:
+          - button "Search" [ref=f1e34] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=f1e35] [cursor=pointer]: ◌
+          - button "User profile" [ref=f1e37] [cursor=pointer]: JP
+      - main [ref=f1e38]:
+        - region [ref=f1e39]:
+          - generic [ref=f1e40]:
+            - paragraph [ref=f1e41]: BRANCH OPERATIONS
+            - heading "Protect today’s revenue" [level=1] [ref=f1e42]
+            - paragraph [ref=f1e43]: Six items need attention in Jupiter. Start with the accepted job waiting on its deposit.
+          - group "Prototype scenario" [ref=f1e44]:
+            - button "Branch manager" [ref=f1e45] [cursor=pointer]
+            - button "Salesperson" [ref=f1e46] [cursor=pointer]
+            - button "Corporate" [ref=f1e47] [cursor=pointer]
+        - region "Branch status" [ref=f1e48]:
+          - article [ref=f1e49]:
+            - generic [ref=f1e50]: At-risk revenue
+            - strong [ref=f1e51]: $42,600
+            - generic [ref=f1e52]: ↑ $18,400 needs action
+          - article [ref=f1e53]:
+            - generic [ref=f1e54]: Human response SLA
+            - strong [ref=f1e55]: 92%
+            - generic [ref=f1e56]: 5-minute business-hours target
+          - article [ref=f1e57]:
+            - generic [ref=f1e58]: Inspections today
+            - strong [ref=f1e59]: "7"
+            - generic [ref=f1e60]: 2 awaiting outcome
+          - article [ref=f1e61]:
+            - generic [ref=f1e62]: Branch performance
+            - strong [ref=f1e63]: 3 / 4
+            - generic [ref=f1e64]: Jupiter is on target
+        - generic [ref=f1e65]:
+          - region [ref=f1e66]:
+            - generic [ref=f1e67]:
+              - generic [ref=f1e68]:
+                - paragraph [ref=f1e69]: OWNED WORK
+                - heading "Revenue risk queue 6" [level=2] [ref=f1e70]
+              - button "View states" [ref=f1e71] [cursor=pointer]
+            - generic "Queue filters" [ref=f1e72]:
+              - button "All 6" [ref=f1e73] [cursor=pointer]:
+                - text: All
+                - generic [ref=f1e74]: "6"
+              - button "Mine 2" [ref=f1e75] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=f1e76]: "2"
+              - button "Due now 5" [ref=f1e77] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=f1e78]: "5"
+              - button "Payment 1" [ref=f1e79] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=f1e80]: "1"
+            - generic [ref=f1e81]:
+              - generic [ref=f1e82]: Customer & risk
+              - generic [ref=f1e83]: Owner
+              - generic [ref=f1e84]: Next action
+            - generic [ref=f1e85]:
+              - button "Open Marisol Martinez, Accepted — payment pending" [ref=f1e86] [cursor=pointer]:
+                - generic [ref=f1e87]:
+                  - generic [ref=f1e88]: "1"
+                  - generic [ref=f1e89]:
+                    - generic [ref=f1e90]: Marisol Martinez
+                    - generic [ref=f1e91]: 1426 Seabrook Way · Jupiter
+                    - generic [ref=f1e92]: Accepted — payment pending
+                - generic [ref=f1e93]:
+                  - generic [ref=f1e94]: SR
+                  - text: Sam R.
+                - generic [ref=f1e95]:
+                  - text: Call about deposit
+                  - generic [ref=f1e96]: 37 min overdue
+              - button "Open Evan Li, No human attempt" [ref=f1e97] [cursor=pointer]:
+                - generic [ref=f1e98]:
+                  - generic [ref=f1e99]: "2"
+                  - generic [ref=f1e100]:
+                    - generic [ref=f1e101]: Evan Li
+                    - generic [ref=f1e102]: 84 Seagate Drive · Jupiter
+                    - generic [ref=f1e103]: No human attempt
+                - generic [ref=f1e104]:
+                  - generic [ref=f1e105]: JP
+                  - text: You
+                - generic [ref=f1e106]:
+                  - text: Make first contact
+                  - generic [ref=f1e107]: 3 min left
+              - button "Open Heather Douglas, Appointment cancelled" [ref=f1e108] [cursor=pointer]:
+                - generic [ref=f1e109]:
+                  - generic [ref=f1e110]: "3"
+                  - generic [ref=f1e111]:
+                    - generic [ref=f1e112]: Heather Douglas
+                    - generic [ref=f1e113]: 311 Ocean Dunes Rd · Juno
+                    - generic [ref=f1e114]: Appointment cancelled
+                - generic [ref=f1e115]:
+                  - generic [ref=f1e116]: TM
+                  - text: Tara M.
+                - generic [ref=f1e117]:
+                  - text: Offer a new time
+                  - generic [ref=f1e118]: Due in 18 min
+              - button "Open Carlos Ortiz, Proposal needs follow-up" [ref=f1e119] [cursor=pointer]:
+                - generic [ref=f1e120]:
+                  - generic [ref=f1e121]: "4"
+                  - generic [ref=f1e122]:
+                    - generic [ref=f1e123]: Carlos Ortiz
+                    - generic [ref=f1e124]: 12 Coralberry Ct · Jupiter
+                    - generic [ref=f1e125]: Proposal needs follow-up
+                - generic [ref=f1e126]:
+                  - generic [ref=f1e127]: JP
+                  - text: You
+                - generic [ref=f1e128]:
+                  - text: Review open questions
+                  - generic [ref=f1e129]: Due today
+              - button "Open Ruth Bennett, No-show recovery" [ref=f1e130] [cursor=pointer]:
+                - generic [ref=f1e131]:
+                  - generic [ref=f1e132]: "5"
+                  - generic [ref=f1e133]:
+                    - generic [ref=f1e134]: Ruth Bennett
+                    - generic [ref=f1e135]: 708 Loxahatchee Dr · Tequesta
+                    - generic [ref=f1e136]: No-show recovery
+                - generic [ref=f1e137]:
+                  - generic [ref=f1e138]: JC
+                  - text: Jared C.
+                - generic [ref=f1e139]:
+                  - text: Rebook inspection
+                  - generic [ref=f1e140]: Due today
+              - button "Open Diana Moore, Connected, not booked" [ref=f1e141] [cursor=pointer]:
+                - generic [ref=f1e142]:
+                  - generic [ref=f1e143]: "6"
+                  - generic [ref=f1e144]:
+                    - generic [ref=f1e145]: Diana Moore
+                    - generic [ref=f1e146]: 19 Atlantic Ave · Palm Beach
+                    - generic [ref=f1e147]: Connected, not booked
+                - generic [ref=f1e148]:
+                  - generic [ref=f1e149]: SR
+                  - text: Sam R.
+                - generic [ref=f1e150]:
+                  - text: Confirm inspection time
+                  - generic [ref=f1e151]: Tomorrow
+          - complementary [ref=f1e152]:
+            - generic [ref=f1e153]:
+              - generic [ref=f1e154]:
+                - paragraph [ref=f1e155]: CUSTOMER & PROPERTY
+                - heading "Marisol Martinez" [level=2] [ref=f1e156]
+                - paragraph [ref=f1e157]: 1426 Seabrook Way · Jupiter
+                - generic [ref=f1e158]: Accepted — payment pending
+              - generic [ref=f1e159]:
+                - heading "What matters now" [level=3] [ref=f1e160]
+                - generic [ref=f1e161]:
+                  - generic [ref=f1e162]:
+                    - generic [ref=f1e163]: Potential revenue
+                    - strong [ref=f1e164]: $18,400
+                  - generic [ref=f1e165]:
+                    - generic [ref=f1e166]: Owner
+                    - strong [ref=f1e167]: Sam R.
+                  - generic [ref=f1e168]:
+                    - generic [ref=f1e169]: Lifecycle
+                    - strong [ref=f1e170]: PR-1048 · signed 9:12 AM
+                  - generic [ref=f1e171]:
+                    - generic [ref=f1e172]: Next action
+                    - strong [ref=f1e173]: Call about deposit
+              - generic [ref=f1e174]:
+                - heading "Activity & sync" [level=3] [ref=f1e175]
+                - generic [ref=f1e176]:
+                  - generic [ref=f1e177]:
+                    - text: Proposal accepted
+                    - generic [ref=f1e178]: 9:12 AM
+                  - generic [ref=f1e179]:
+                    - text: Deposit link sent
+                    - generic [ref=f1e180]: 9:13 AM
+                  - generic [ref=f1e181]:
+                    - text: No payment confirmation yet
+                    - generic [ref=f1e182]: now
+              - generic [ref=f1e183]:
+                - button "Log a human attempt" [ref=f1e184] [cursor=pointer]
+                - button "Open customer record" [ref=f1e185] [cursor=pointer]

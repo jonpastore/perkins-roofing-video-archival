@@ -1,0 +1,46 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "Primary navigation" [ref=e4]:
+      - img "Perkins Roofing Corp." [ref=e6]
+      - button "Current workspace" [ref=e7]:
+        - generic [ref=e8]: Platform Admin
+        - generic [ref=e9]: ⌄
+      - navigation [ref=e10]:
+        - link "⚙ Platform operations" [ref=e214] [cursor=pointer]:
+          - /url: platform-operations.html
+          - generic [ref=e215]: ⚙
+          - text: Platform operations
+      - generic [ref=e24]: Platform status current
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - generic [ref=e28]:
+          - generic [ref=e29]: Platform Admin
+          - generic [ref=e30]: /
+          - strong [ref=e31]: Platform Operations
+        - generic [ref=e32]:
+          - button "Search" [ref=e33] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=e34] [cursor=pointer]: ◌
+          - button "User profile" [ref=e36] [cursor=pointer]: JP
+      - main [ref=e37]:
+        - region [ref=e216]:
+          - generic [ref=e39]:
+            - paragraph [ref=e40]: PLATFORM OPERATIONS
+            - heading "Keep product operations safe and observable" [level=1] [ref=e217]
+            - paragraph [ref=e42]: Review platform health and restricted remediation. Customer data requires an explicit audited support scope.
+          - group [ref=e43]:
+            - 'generic "Review scenario: Platform admin" [ref=e218] [cursor=pointer]'
+            - group "Prototype review scenario" [ref=e208]:
+              - button "Branch manager preview" [ref=e209] [cursor=pointer]
+              - button "Salesperson preview" [ref=e210] [cursor=pointer]
+              - button "Corporate preview" [ref=e211] [cursor=pointer]
+              - button "Platform admin preview" [active] [pressed] [ref=e212] [cursor=pointer]
+            - paragraph [ref=e213]: Reviewer-only mock-data switcher. Production views are assigned by server-authorized role and scope.
+        - generic [ref=e219]:
+          - paragraph [ref=e220]: RESTRICTED WORKSPACE
+          - heading "Platform Operations is isolated from customer work" [level=2] [ref=e221]
+          - paragraph [ref=e222]: This reviewer-only role preview intentionally withholds branch queues and customer records. Platform access requires an audited support scope before any operational customer data is available.
+          - link "Open Platform Operations prototype" [ref=e223] [cursor=pointer]:
+            - /url: platform-operations.html
+  - status [ref=e224]: Platform-admin navigation preview loaded — mock data only.

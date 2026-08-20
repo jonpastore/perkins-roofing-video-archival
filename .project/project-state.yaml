@@ -1,0 +1,127 @@
+mode: brownfield
+phase: ux-verification-and-delivery-planning-complete-awaiting-implementation-authorization
+baselines:
+  {
+    requirements: draft_reconciled,
+    domain: draft_reconciled,
+    ux: direction-a-v5-approved,
+    trd: draft_reconciled,
+    security: draft_reconciled,
+    verification: direction-a-v5-implementation-verification-planned,
+    delivery: direction-a-v5-delivery-planned,
+  }
+approvals:
+  { requirements: false, design: true, implementation: false, release: false }
+next:
+  {
+    skill: delivery-planning,
+    phase: await-product-owner-implementation-authorization-package,
+  }
+workstreams:
+  system_design_review:
+    status: deferred_by_user_scope
+    reason: UX-focused engagement
+    findings_preserved: true
+    implementation_ready: false
+    production_ready: false
+  product_uiux_review:
+    status: approved
+    objective: Design and validate a substantially improved Perkins Roofing UX while preserving current capabilities and known business constraints.
+    candidate: Direction A hybrid
+    prototype: .ux-review/prototype/
+    readiness: approved_97
+    implementation_authorization: pending_product_owner
+  ios_current_build_verification:
+    status: preserved_parallel_evidence_lane
+    note: Not a UX blocker unless a verified runtime fact materially changes a user-visible design decision.
+blockers:
+  - id: EXT-GL-01
+    impact: high
+    status: external_access_required
+    evidence: A prior automation trace exposed the GHL password. Rotation is required before any further account inspection; then read-only mapping is required before Perkins-specific IDs, fields, stages and workflow compatibility can be verified.
+    owner: product owner / authorized account operator
+    affected_artifacts: [docs/requirements/ghl-lifecycle-integration-trd.md]
+  - id: EXT-GL-04
+    impact: high
+    status: external_evidence_required
+    evidence: Repository discovery identifies app-native ledger and Knowify imported receivables records, but no authenticated payment-provider/account contract suitable for Won/handoff transitions.
+    owner: finance owner / authorized provider operator
+    affected_artifacts: [docs/requirements/ghl-lifecycle-integration-trd.md]
+  - id: EXT-GL-02
+    impact: high
+    status: external_authorization_required
+    evidence: Renewed GHL discovery requires an approved least-privilege OAuth/private-integration method, scopes, installed locations, log access and non-production webhook evidence; some of these may change external account state and are not authorized by read-only login access alone.
+    owner: product owner / authorized GHL account operator
+    affected_artifacts: [docs/requirements/ghl-lifecycle-integration-trd.md]
+  - id: EXT-GL-05
+    impact: high
+    status: legal_privacy_validation_required
+    evidence: The 30-day/one-year/seven-year engineering baseline is not a legal-compliance claim; legal basis, jurisdictional application, backup/restore, hold and data-subject obligations require validation before production.
+    owner: legal/privacy owner
+    affected_artifacts: [.devsecops-review/ghl-lifecycle-design-readiness.md]
+  - id: EXT-GL-06
+    impact: medium
+    status: pre_production_external_configuration
+    evidence: Approved contractual/legal/business policy values and notice content must be supplied before production configuration; this does not block system design.
+    owner: authorized business/contractual policy owner
+    affected_artifacts: [docs/requirements/ghl-lifecycle-integration-trd.md]
+  - id: EXT-GL-07
+    impact: high
+    status: implementation_contract_evidence_required
+    evidence: Remote handoff destination, authorization, acknowledgement, idempotency, retry and compensation contract is required before remote dispatch.
+    owner: authorized downstream-system operator
+    affected_artifacts: [docs/requirements/ghl-lifecycle-integration-trd.md]
+assumptions:
+  - id: ASM-GL-01
+    impact: medium
+    status: supported
+    evidence: prior owner decision and current UX artifacts define corporate-plus-per-branch GHL topology; account-specific IDs are not inferred.
+    owner: requirements engineering
+    affected_artifacts: [docs/requirements/ghl-lifecycle-integration-ddd.md]
+contradictions: []
+verification:
+  first_party_coverage: unmeasured
+  differential_coverage: unmeasured
+  critical_paths: partial
+  flaky_critical: unknown
+  contract_tests: planned
+  resilience: planned
+  implementation_evidence_gate: 79
+  implementation_evidence_gate_note: Historical GHL lifecycle implementation-readiness cap; it is not UX design readiness.
+readiness:
+  system_design:
+    {
+      score: 92,
+      status: deferred_by_user_scope,
+      cycle: 2,
+      iteration: 6,
+      findings_preserved: true,
+    }
+  ux_design:
+    {
+      score: 97,
+      status: approved,
+      cycle: 1,
+      iteration: 5,
+      artifact: .project/reviews/perkins-uiux-direction-a-v5.md,
+    }
+  implementation:
+    {
+      status: blocked,
+      cap: 79,
+      blockers: [EXT-GL-01, EXT-GL-02, EXT-GL-04, EXT-GL-07],
+    }
+  production_release:
+    {
+      status: blocked,
+      blockers:
+        [
+          EXT-GL-01,
+          EXT-GL-02,
+          EXT-GL-04,
+          EXT-GL-05,
+          EXT-GL-06,
+          EXT-GL-07,
+          current-build-runtime-evidence,
+        ],
+    }

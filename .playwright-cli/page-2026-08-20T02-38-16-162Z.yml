@@ -1,0 +1,124 @@
+- generic [ref=f1e1]:
+  - link "Skip to work queue" [ref=f1e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=f1e27]:
+    - generic [ref=f1e28]:
+      - button "Open navigation" [ref=f1e373]: ☰
+      - generic [ref=f1e29]:
+        - generic [ref=f1e30]: Jupiter · Sales
+        - generic [ref=f1e31]: /
+        - strong [ref=f1e32]: Today
+      - generic [ref=f1e33]:
+        - button "Notifications" [ref=f1e35] [cursor=pointer]: ◌
+        - button "User profile" [ref=f1e37] [cursor=pointer]: JP
+    - main [ref=f1e38]:
+      - region [ref=f1e612]:
+        - generic [ref=f1e40]:
+          - paragraph [ref=f1e41]: YOUR WORK
+          - heading "Make the next right move" [level=1] [ref=f1e613]
+          - paragraph [ref=f1e43]: Two customers are waiting on you. A human attempt prevents the first SLA breach.
+        - group "Prototype scenario" [ref=f1e44]:
+          - button "Branch manager" [ref=f1e45] [cursor=pointer]
+          - button "Salesperson" [active] [ref=f1e46] [cursor=pointer]
+          - button "Corporate" [ref=f1e47] [cursor=pointer]
+      - region "Branch status" [ref=f1e48]:
+        - article [ref=f1e49]:
+          - generic [ref=f1e50]: At-risk revenue
+          - strong [ref=f1e51]: $34,700
+          - generic [ref=f1e52]: ↑ $18,400 needs action
+        - article [ref=f1e53]:
+          - generic [ref=f1e54]: Human response SLA
+          - strong [ref=f1e55]: 100%
+          - generic [ref=f1e56]: 5-minute business-hours target
+        - article [ref=f1e57]:
+          - generic [ref=f1e58]: Inspections today
+          - strong [ref=f1e59]: "3"
+          - generic [ref=f1e60]: 2 awaiting outcome
+      - generic [ref=f1e65]:
+        - region [ref=f1e614]:
+          - generic [ref=f1e67]:
+            - generic [ref=f1e68]:
+              - paragraph [ref=f1e69]: OWNED WORK
+              - heading "Revenue risk queue 2" [level=2] [ref=f1e615]
+            - button "View states" [ref=f1e71] [cursor=pointer]
+          - generic "Queue filters" [ref=f1e72]:
+            - button "All 2" [ref=f1e616] [cursor=pointer]:
+              - text: All
+              - generic [ref=f1e74]: "2"
+            - button "Mine 2" [ref=f1e75] [cursor=pointer]:
+              - text: Mine
+              - generic [ref=f1e76]: "2"
+            - button "Due now 1" [ref=f1e617] [cursor=pointer]:
+              - text: Due now
+              - generic [ref=f1e78]: "1"
+            - button "Payment 0" [ref=f1e618] [cursor=pointer]:
+              - text: Payment
+              - generic [ref=f1e80]: "0"
+          - generic [ref=f1e85]:
+            - button "Open Evan Li, No human attempt" [ref=f1e619] [cursor=pointer]:
+              - generic [ref=f1e620]:
+                - generic [ref=f1e621]: "1"
+                - generic [ref=f1e622]:
+                  - generic [ref=f1e623]: Evan Li
+                  - generic [ref=f1e624]: 84 Seagate Drive · Jupiter
+                  - generic [ref=f1e625]: No human attempt
+              - generic [ref=f1e626]:
+                - generic [ref=f1e627]: JP
+                - text: You
+              - generic [ref=f1e628]:
+                - text: Make first contact
+                - generic [ref=f1e629]: 3 min left
+            - button "Open Carlos Ortiz, Attempted — follow-up due" [ref=f1e630] [cursor=pointer]:
+              - generic [ref=f1e631]:
+                - generic [ref=f1e632]: "2"
+                - generic [ref=f1e633]:
+                  - generic [ref=f1e634]: Carlos Ortiz
+                  - generic [ref=f1e635]: 12 Coralberry Ct · Jupiter
+                  - generic [ref=f1e636]: Attempted — follow-up due
+              - generic [ref=f1e637]:
+                - generic [ref=f1e638]: JP
+                - text: You
+              - generic [ref=f1e639]:
+                - text: Review open questions
+                - generic [ref=f1e640]: Follow up tomorrow
+        - complementary [ref=f1e396]:
+          - generic [ref=f1e153]:
+            - generic [ref=f1e641]:
+              - paragraph [ref=f1e642]: CUSTOMER & PROPERTY
+              - heading "Carlos Ortiz" [level=2] [ref=f1e643]
+              - paragraph [ref=f1e644]: 12 Coralberry Ct · Jupiter
+              - generic [ref=f1e645]: Attempted — follow-up due
+            - generic [ref=f1e646]:
+              - heading "What matters now" [level=3] [ref=f1e647]
+              - generic [ref=f1e648]:
+                - generic [ref=f1e649]:
+                  - generic [ref=f1e650]: Potential revenue
+                  - strong [ref=f1e651]: $21,300
+                - generic [ref=f1e652]:
+                  - generic [ref=f1e653]: Owner
+                  - strong [ref=f1e654]: You
+                - generic [ref=f1e655]:
+                  - generic [ref=f1e656]: Lifecycle
+                  - strong [ref=f1e657]: Proposal sent 5 days ago
+                - generic [ref=f1e658]:
+                  - generic [ref=f1e659]: Next action
+                  - strong [ref=f1e660]: Review open questions
+            - generic [ref=f1e661]:
+              - heading "Activity & sync" [level=3] [ref=f1e662]
+              - generic [ref=f1e663]:
+                - generic [ref=f1e664]:
+                  - text: Human outreach attempt logged
+                  - generic [ref=f1e665]: just now
+                - generic [ref=f1e666]:
+                  - text: Proposal viewed twice
+                  - generic [ref=f1e667]: Yesterday
+                - generic [ref=f1e668]:
+                  - text: Personal call logged
+                  - generic [ref=f1e669]: 3 days ago
+                - generic [ref=f1e670]:
+                  - text: No response since
+                  - generic [ref=f1e671]: now
+            - generic [ref=f1e672]:
+              - button "Log a human attempt" [ref=f1e673] [cursor=pointer]
+              - button "Open customer record" [ref=f1e674] [cursor=pointer]
+  - status [ref=f1e309]: Scenario updated — mock data only.

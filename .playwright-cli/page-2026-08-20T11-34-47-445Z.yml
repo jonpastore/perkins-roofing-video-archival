@@ -1,0 +1,110 @@
+- generic [ref=f1e2]:
+  - complementary [ref=f1e3]:
+    - img "Perkins Roofing Corp." [ref=f1e4]
+    - paragraph [ref=f1e5]: SALES WORK
+    - link "Today" [ref=f1e6] [cursor=pointer]:
+      - /url: "#"
+    - link "Customers" [ref=f1e7] [cursor=pointer]:
+      - /url: "#"
+    - link "Estimates" [ref=f1e8] [cursor=pointer]:
+      - /url: "#"
+    - link "Proposals" [ref=f1e9] [cursor=pointer]:
+      - /url: "#"
+    - link "Invoices & payments" [ref=f1e10] [cursor=pointer]:
+      - /url: "#"
+    - paragraph [ref=f1e11]: REFERENCE
+    - link "Knowledge" [ref=f1e12] [cursor=pointer]:
+      - /url: "#"
+  - main [ref=f1e13]:
+    - generic [ref=f1e14]:
+      - generic [ref=f1e15]: Jupiter Branch / Sales work / Estimate
+      - generic [ref=f1e16]: Pricing v24 · active
+    - generic [ref=f1e17]:
+      - paragraph [ref=f1e18]: ESTIMATE WORKSPACE · MOCK DATA
+      - heading "Estimate with the property, measurement and pricing evidence in view" [level=1] [ref=f1e19]
+      - paragraph [ref=f1e20]: "A consequential preservation prototype: complex quote work remains a dedicated workflow, while the customer/property record and proposal lifecycle stay connected."
+      - generic [ref=f1e21]:
+        - generic [ref=f1e23]:
+          - generic [ref=f1e24]:
+            - generic [ref=f1e25]:
+              - strong [ref=f1e26]: Marisol Martinez
+              - text: 1426 Seabrook Way · Jupiter · Customer since Aug 2026
+            - generic [ref=f1e27]: "Proposal risk: payment pending"
+          - heading "Roofing estimate" [level=2] [ref=f1e28]
+          - generic [ref=f1e29]:
+            - generic [ref=f1e30]:
+              - generic [ref=f1e31]: Job mode
+              - generic [ref=f1e32]: Reroof
+            - generic [ref=f1e33]:
+              - generic [ref=f1e34]: Rate region
+              - generic [ref=f1e35]: Palm Beach
+            - generic [ref=f1e36]:
+              - generic [ref=f1e37]: Install days
+              - generic [ref=f1e38]: 4 suggested
+          - heading "Measured scope" [level=3] [ref=f1e39]
+          - generic [ref=f1e40]:
+            - generic [ref=f1e41]:
+              - generic [ref=f1e42]: Roof geometry
+              - generic [ref=f1e43]: 31.4 squares
+              - generic [ref=f1e44]: 6/12 pitch
+              - generic [ref=f1e45]: Roofr · 10:21 AM
+            - generic [ref=f1e46]:
+              - generic [ref=f1e47]: Detail
+              - generic [ref=f1e48]: 56 LF valleys
+              - generic [ref=f1e49]: 142 LF ridges
+              - generic [ref=f1e50]: "Confidence: review"
+            - generic [ref=f1e51]:
+              - generic [ref=f1e52]: Conditions
+              - generic [ref=f1e53]: HVHZ zone
+              - generic [ref=f1e54]: "Salt-water: yes"
+              - generic [ref=f1e55]: Source retained
+          - generic [ref=f1e56]: One measurement input needs estimator confirmation before a proposal can be generated. Parsed values remain reviewable; no imported value silently overwrites another source.
+          - heading "Package and pricing" [level=3] [ref=f1e57]
+          - generic [ref=f1e58]:
+            - generic [ref=f1e59]:
+              - generic [ref=f1e60]: Perkins Preferred
+              - generic [ref=f1e61]: Materials $10,340
+              - generic [ref=f1e62]: Labor $5,226
+              - generic [ref=f1e63]: Margin target 34%
+            - generic [ref=f1e64]:
+              - generic [ref=f1e65]: Optional gutter package
+              - generic [ref=f1e66]: 6" K-style
+              - generic [ref=f1e67]: $1,240
+              - generic [ref=f1e68]: Selected
+            - generic [ref=f1e69]:
+              - generic [ref=f1e70]: Discounts & tax
+              - generic [ref=f1e71]: Veteran $500
+              - generic [ref=f1e72]: Tax $1,094
+              - generic [ref=f1e73]: Branch policy applied
+          - button "Save priced estimate" [ref=f1e74]
+          - button "View price build-up" [ref=f1e75]
+        - complementary [ref=f1e76]:
+          - generic [ref=f1e77]:
+            - heading "Estimate context" [level=2] [ref=f1e78]
+            - generic [ref=f1e79]:
+              - generic [ref=f1e80]:
+                - generic [ref=f1e81]:
+                  - text: Customer & contacts
+                  - generic [ref=f1e82]: 2 contacts · preferred phone and email
+                - generic [ref=f1e83]: READY
+              - generic [ref=f1e84]:
+                - generic [ref=f1e85]:
+                  - text: Property history
+                  - generic [ref=f1e86]: 1 previous measurement · no duplicate property
+                - generic [ref=f1e87]: READY
+              - generic [ref=f1e88]:
+                - generic [ref=f1e89]:
+                  - text: Pricing version
+                  - generic [ref=f1e90]: Jupiter v24 · effective Aug 18
+                - generic [ref=f1e91]: LOCKED
+              - generic [ref=f1e92]:
+                - generic [ref=f1e93]:
+                  - text: Scope template
+                  - generic [ref=f1e94]: Reroof / tile · editable before save
+                - generic [ref=f1e95]: APPLIED
+              - generic [ref=f1e96]:
+                - generic [ref=f1e97]:
+                  - text: Proposal action
+                  - generic [ref=f1e98]: Creates draft only; sending remains explicit
+                - generic [ref=f1e99]: NEXT
+          - generic [ref=f1e100]: Administration remains separate.Rate versions, templates, incentives and branch policy are configured in restricted Admin; this workspace displays the active, attributable version.

@@ -1,0 +1,161 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "Primary navigation" [ref=e4]:
+      - img "Perkins Roofing Corp." [ref=e6]
+      - button "Current workspace" [ref=e7]:
+        - generic [ref=e8]: Jupiter Branch
+        - generic [ref=e9]: ⌄
+      - navigation [ref=e10]:
+        - link "◉ Today 7" [ref=e11] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=e12]: ◉
+          - text: Today
+          - generic [ref=e13]: "7"
+        - link "◇ Pipeline" [ref=e14] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=e15]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=e16] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=e17]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=e18] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=e19]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=e20] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=e21]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=e22] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=e23]: "?"
+          - text: Knowledge
+        - link "▤ Reports" [ref=e24] [cursor=pointer]:
+          - /url: "#reports"
+          - generic [ref=e25]: ▤
+          - text: Reports
+      - generic [ref=e26]: Queue current
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - button "Close navigation" [expanded] [active] [ref=e394]: ☰
+        - generic [ref=e30]:
+          - generic [ref=e31]: Jupiter Branch
+          - generic [ref=e32]: /
+          - strong [ref=e33]: Today
+        - generic [ref=e34]:
+          - button "Notifications" [ref=e36] [cursor=pointer]: ◌
+          - button "User profile" [ref=e38] [cursor=pointer]: JP
+      - main [ref=e39]:
+        - region [ref=e40]:
+          - generic [ref=e41]:
+            - paragraph [ref=e42]: BRANCH OPERATIONS
+            - heading "Protect today’s revenue" [level=1] [ref=e43]
+            - paragraph [ref=e44]: 2 items need attention in Jupiter. Payment decisions stay blocked until their status is clear.
+          - group "Prototype scenario" [ref=e45]:
+            - button "Branch manager" [ref=e46] [cursor=pointer]
+            - button "Salesperson" [ref=e47] [cursor=pointer]
+            - button "Corporate" [ref=e48] [cursor=pointer]
+        - region "Branch status" [ref=e49]:
+          - article [ref=e50]:
+            - generic [ref=e51]: At-risk revenue
+            - strong [ref=e52]: $42,600
+            - generic [ref=e53]: ↑ $18,400 needs action
+          - article [ref=e54]:
+            - generic [ref=e55]: Human response SLA
+            - strong [ref=e56]: 92%
+            - generic [ref=e57]: 5-minute business-hours target
+        - generic [ref=e66]:
+          - region [ref=e205]:
+            - generic [ref=e68]:
+              - generic [ref=e69]:
+                - paragraph [ref=e70]: OWNED WORK
+                - heading "Revenue risk queue 2" [level=2] [ref=e206]
+              - button "Preview states" [ref=e72] [cursor=pointer]
+            - generic "Queue filters" [ref=e73]:
+              - button "All 7" [ref=e74] [cursor=pointer]:
+                - text: All
+                - generic [ref=e75]: "7"
+              - button "Mine 3" [ref=e76] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=e77]: "3"
+              - button "Due now 6" [ref=e78] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=e79]: "6"
+              - button "Payment 2" [pressed] [ref=e80] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=e81]: "2"
+            - generic [ref=e86]:
+              - button "Open Marisol Martinez; Accepted — payment pending; owner Sam R.; next action Call about required deposit; 37 min overdue; priority critical" [ref=e332] [cursor=pointer]:
+                - generic [ref=e333]:
+                  - generic [ref=e334]: "1"
+                  - generic [ref=e335]:
+                    - generic [ref=e336]: Marisol Martinez
+                    - generic [ref=e337]: 1426 Seabrook Way · Jupiter
+                    - generic [ref=e338]: Accepted — payment pending
+                - generic [ref=e339]:
+                  - generic [ref=e340]: SR
+                  - text: Sam R.
+                - generic [ref=e341]:
+                  - text: Call about required deposit
+                  - generic [ref=e342]: 37 min overdue
+              - button "Open Charlotte Anne Montgomery-Smythe; Policy review required; owner You; next action Open payment review; Due today; priority high" [ref=e343] [cursor=pointer]:
+                - generic [ref=e344]:
+                  - generic [ref=e345]: "2"
+                  - generic [ref=e346]:
+                    - generic [ref=e347]: Charlotte Anne Montgomery-Smythe
+                    - generic [ref=e348]: 2147 North County Road 211, Building B · Palm Beach Gardens
+                    - generic [ref=e349]: Policy review required
+                - generic [ref=e350]:
+                  - generic [ref=e351]: JP
+                  - text: You
+                - generic [ref=e352]:
+                  - text: Open payment review
+                  - generic [ref=e353]: Due today
+          - complementary [ref=e291]:
+            - generic [ref=e165]:
+              - button "Back to revenue risk queue" [ref=e354]: ← Back to queue
+              - generic [ref=e355]:
+                - paragraph [ref=e356]: CUSTOMER & PROPERTY
+                - heading "Charlotte Anne Montgomery-Smythe" [level=2] [ref=e357]
+                - paragraph [ref=e358]: 2147 North County Road 211, Building B · Palm Beach Gardens
+                - generic [ref=e359]: Policy review required
+              - generic [ref=e360]:
+                - heading "What matters now" [level=3] [ref=e361]
+                - generic [ref=e362]:
+                  - generic [ref=e363]:
+                    - generic [ref=e364]: Potential revenue
+                    - strong [ref=e365]: $38,975.42 contract
+                  - generic [ref=e366]:
+                    - generic [ref=e367]: Owner
+                    - strong [ref=e368]: You
+                  - generic [ref=e369]:
+                    - generic [ref=e370]: Lifecycle
+                    - strong [ref=e371]: PR-1061 · signed yesterday
+                  - generic [ref=e372]:
+                    - generic [ref=e373]: Next action
+                    - strong [ref=e374]: Open payment review
+                  - generic [ref=e375]:
+                    - generic [ref=e376]: Required deposit
+                    - strong [ref=e377]: $3,897.54 required · evidence received
+                  - generic [ref=e378]:
+                    - generic [ref=e379]: Payment status
+                    - strong [ref=e380]: Policy review required · no eligibility decision
+              - generic [ref=e381]:
+                - heading "Activity & sync" [level=3] [ref=e382]
+                - generic [ref=e383]:
+                  - generic [ref=e384]:
+                    - text: Provider payment evidence received
+                    - generic [ref=e385]: Yesterday · payment provider
+                  - generic [ref=e386]:
+                    - text: Configured policy is unavailable
+                    - generic [ref=e387]: Today · app
+                  - generic [ref=e388]:
+                    - text: Commercial action blocked for review
+                    - generic [ref=e389]: Now · app
+              - generic [ref=e390]:
+                - button "Open payment review" [ref=e391] [cursor=pointer]
+                - button "View payment evidence" [ref=e392] [cursor=pointer]
+                - paragraph [ref=e393]: Only an authorized review may resolve this state. No customer outreach or commercial handoff is initiated here.

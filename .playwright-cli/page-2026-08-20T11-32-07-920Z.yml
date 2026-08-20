@@ -1,0 +1,128 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - img "Perkins Roofing Corp." [ref=e4]
+    - paragraph [ref=e5]: PLATFORM OPERATIONS
+    - link "Overview" [ref=e6] [cursor=pointer]:
+      - /url: "#"
+    - link "Readiness & health" [ref=e7] [cursor=pointer]:
+      - /url: "#"
+    - link "Integrations" [ref=e8] [cursor=pointer]:
+      - /url: "#"
+    - link "Processing queue" [ref=e9] [cursor=pointer]:
+      - /url: "#"
+    - link "Logs & audit" [ref=e10] [cursor=pointer]:
+      - /url: "#"
+    - link "Usage & cost" [ref=e11] [cursor=pointer]:
+      - /url: "#"
+    - paragraph [ref=e12]: ADMIN
+    - link "Branches & access" [ref=e13] [cursor=pointer]:
+      - /url: "#"
+    - link "Pricing & templates" [ref=e14] [cursor=pointer]:
+      - /url: "#"
+  - main [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]: Corporate / Platform Operations
+      - generic [ref=e18]: Restricted to authorized administrators
+    - generic [ref=e19]:
+      - paragraph [ref=e20]: PLATFORM OPERATIONS · MOCK DATA
+      - heading "Keep system health and remediation visible without putting it on branch Today" [level=1] [ref=e21]
+      - paragraph [ref=e22]: A consequential preservation prototype for current Status, readiness, connection, legacy-data and diagnostic capabilities. A green summary never replaces per-service evidence.
+      - generic [ref=e23]:
+        - article [ref=e24]:
+          - generic [ref=e25]: Readiness gates
+          - generic [ref=e26]: 14 / 16
+          - text: 2 require action
+        - article [ref=e27]:
+          - generic [ref=e28]: Integrations
+          - generic [ref=e29]: 6 / 7
+          - text: 1 needs reconnect
+        - article [ref=e30]:
+          - generic [ref=e31]: Processing queue
+          - generic [ref=e32]: "3"
+          - text: 1 retryable failure
+        - article [ref=e33]:
+          - generic [ref=e34]: 24h spend
+          - generic [ref=e35]: $84.21
+          - text: Within alert range
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - generic [ref=e38]:
+            - heading "Readiness and integration exceptions" [level=2] [ref=e39]
+            - generic [ref=e40]:
+              - generic [ref=e41]:
+                - generic [ref=e42]:
+                  - text: Knowify accounting sync
+                  - generic [ref=e43]: Last confirmed 9:42 AM · invoices delayed · raw record retained
+                - generic [ref=e44]: RECONNECT
+              - generic [ref=e45]:
+                - generic [ref=e46]:
+                  - text: Proposal reminder job
+                  - generic [ref=e47]: Retryable failure at 9:18 AM · no reminder replayed yet
+                - generic [ref=e48]: RETRY
+              - generic [ref=e49]:
+                - generic [ref=e50]:
+                  - text: Production readiness
+                  - generic [ref=e51]: DMARC and billing-export checks need remediation
+                - generic [ref=e52]: 2 BLOCKERS
+              - generic [ref=e53]:
+                - generic [ref=e54]:
+                  - text: GHL lifecycle sync
+                  - generic [ref=e55]: Healthy summary; record-level conflicts remain visible in sales work
+                - generic [ref=e56]: HEALTHY
+              - generic [ref=e57]:
+                - generic [ref=e58]:
+                  - text: CompanyCam ingestion
+                  - generic [ref=e59]: Webhook verified 8:56 AM · no backlog
+                - generic [ref=e60]: HEALTHY
+            - button "Open selected remediation" [ref=e61]
+            - button "Run permitted health checks" [ref=e62]
+          - generic [ref=e63]:
+            - heading "Recent restricted audit events" [level=2] [ref=e64]
+            - table [ref=e65]:
+              - rowgroup [ref=e66]:
+                - row [ref=e67]:
+                  - columnheader "Time" [ref=e68]
+                  - columnheader "Actor" [ref=e69]
+                  - columnheader "Action" [ref=e70]
+                  - columnheader "Result" [ref=e71]
+              - rowgroup [ref=e72]:
+                - row [ref=e73]:
+                  - cell "10:02" [ref=e74]
+                  - cell "Tim P." [ref=e75]
+                  - cell "Viewed Miami branch exceptions" [ref=e76]
+                  - cell "Allowed" [ref=e77]
+                - row [ref=e78]:
+                  - cell "9:42" [ref=e79]
+                  - cell "System" [ref=e80]
+                  - cell "Knowify sync" [ref=e81]
+                  - cell "Retryable failure" [ref=e82]
+                - row [ref=e83]:
+                  - cell "9:18" [ref=e84]
+                  - cell "System" [ref=e85]
+                  - cell "Proposal reminder job" [ref=e86]
+                  - cell "Failed safely" [ref=e87]
+        - complementary [ref=e88]:
+          - generic [ref=e89]:
+            - heading "Data-source health" [level=2] [ref=e90]
+            - generic [ref=e91]:
+              - generic [ref=e92]:
+                - generic [ref=e93]:
+                  - text: Knowify
+                  - generic [ref=e94]: OAuth reconnect required
+                - generic [ref=e95]: ACTION
+              - generic [ref=e96]:
+                - generic [ref=e97]:
+                  - text: WordPress
+                  - generic [ref=e98]: Last publish 8:21 AM
+                - generic [ref=e99]: OK
+              - generic [ref=e100]:
+                - generic [ref=e101]:
+                  - text: YouTube
+                  - generic [ref=e102]: Archive KPI poll 8:45 AM
+                - generic [ref=e103]: OK
+              - generic [ref=e104]:
+                - generic [ref=e105]:
+                  - text: GCP / GCS
+                  - generic [ref=e106]: Storage and render checks passed
+                - generic [ref=e107]: OK
+          - generic [ref=e108]: Security boundary:Secrets, OAuth actions, raw logs, health probes and retries are role-gated. Branch users see only record-relevant status and recovery guidance.

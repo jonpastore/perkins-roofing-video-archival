@@ -1,0 +1,266 @@
+- generic [ref=e268]:
+  - complementary [ref=e269]:
+    - button "Collapse sidebar" [ref=e271] [cursor=pointer]:
+      - generic [ref=e272]: 
+    - generic [ref=e274]:
+      - img "agency logo" [ref=e276]
+      - generic [ref=e277] [cursor=pointer]:
+        - generic [ref=e278]: Click here to switch
+        - generic [ref=e287]:
+          - generic [ref=e288]: 
+          - generic [ref=e289]: 
+      - navigation "header" [ref=e291]:
+        - link " Get Free AI" [ref=e292] [cursor=pointer]:
+          - /url: /ai-employee-promo
+          - generic [ref=e293]: 
+          - generic [ref=e295]: Get Free AI
+        - link "AI Suite icon AI Suite New" [ref=e296] [cursor=pointer]:
+          - /url: /ai-suite
+          - img "AI Suite icon" [ref=e297]
+          - generic [ref=e298]: AI Suite
+          - generic [ref=e299]: New
+        - link "Ask AI Ask AI" [ref=e300] [cursor=pointer]:
+          - /url: /ask-ai-agency
+          - img "Ask AI" [ref=e301]
+          - generic [ref=e302]: Ask AI
+        - link "Launchpad icon Launchpad" [ref=e303] [cursor=pointer]:
+          - /url: /agency_launchpad
+          - img "Launchpad icon" [ref=e304]
+          - generic [ref=e305]: Launchpad
+        - link "Agency Dashboard icon Agency Dashboard" [ref=e306] [cursor=pointer]:
+          - /url: /agency_dashboard
+          - img "Agency Dashboard icon" [ref=e307]
+          - generic [ref=e308]: Agency Dashboard
+        - link " SaaS Configurator" [ref=e309] [cursor=pointer]:
+          - /url: /saas_dashboard
+          - generic [ref=e310]: 
+          - generic [ref=e312]: SaaS Configurator
+        - link "Prospecting icon Prospecting" [ref=e313] [cursor=pointer]:
+          - /url: /prospecting
+          - img "Prospecting icon" [ref=e314]
+          - generic [ref=e315]: Prospecting
+        - link "Sub-Accounts icon Sub-Accounts" [ref=e316] [cursor=pointer]:
+          - /url: /sub-accounts
+          - img "Sub-Accounts icon" [ref=e317]
+          - generic [ref=e318]: Sub-Accounts
+        - link "Account Snapshots icon Account Snapshots" [ref=e319] [cursor=pointer]:
+          - /url: /snapshots
+          - img "Account Snapshots icon" [ref=e320]
+          - generic [ref=e321]: Account Snapshots
+        - link "Reselling icon Reselling" [ref=e322] [cursor=pointer]:
+          - /url: /reselling
+          - img "Reselling icon" [ref=e323]
+          - generic [ref=e324]: Reselling
+        - link "Add-Ons icon Add-Ons" [ref=e325] [cursor=pointer]:
+          - /url: /marketplace
+          - img "Add-Ons icon" [ref=e326]
+          - generic [ref=e327]: Add-Ons
+        - link " Affiliate Portal" [ref=e328] [cursor=pointer]:
+          - /url: /affiliate_portal/terms-and-conditions
+          - generic [ref=e329]: 
+          - generic [ref=e331]: Affiliate Portal
+        - link " Template Library" [ref=e332] [cursor=pointer]:
+          - /url: /template-library-admin
+          - generic [ref=e333]: 
+          - generic [ref=e335]: Template Library
+        - link "Partners icon Partners" [ref=e336] [cursor=pointer]:
+          - /url: /partners
+          - img "Partners icon" [ref=e337]
+          - generic [ref=e338]: Partners
+        - link " University" [ref=e339] [cursor=pointer]:
+          - /url: /university
+          - generic [ref=e340]: 
+          - generic [ref=e342]: University
+        - link "SaaS Education icon SaaS Education" [ref=e343] [cursor=pointer]:
+          - /url: /saas_education
+          - img "SaaS Education icon" [ref=e344]
+          - generic [ref=e345]: SaaS Education
+        - link "GHL Swag icon GHL Swag" [ref=e346] [cursor=pointer]:
+          - /url: /ghl-swag
+          - img "GHL Swag icon" [ref=e347]
+          - generic [ref=e348]: GHL Swag
+        - link "Ideas icon Ideas" [ref=e349] [cursor=pointer]:
+          - /url: /ideas
+          - img "Ideas icon" [ref=e350]
+          - generic [ref=e351]: Ideas
+        - link "Mobile App icon Mobile App New" [ref=e352] [cursor=pointer]:
+          - /url: /mobile-app-customiser
+          - img "Mobile App icon" [ref=e353]
+          - generic [ref=e354]: Mobile App
+          - generic [ref=e355]: New
+        - link " Desktop App New" [ref=e356] [cursor=pointer]:
+          - /url: /desktop-whitelabel-app
+          - generic [ref=e357]: 
+          - generic [ref=e359]: Desktop App
+          - generic [ref=e360]: New
+        - link "App Marketplace icon App Marketplace" [ref=e361] [cursor=pointer]:
+          - /url: /integration
+          - img "App Marketplace icon" [ref=e362]
+          - generic [ref=e363]: App Marketplace
+        - link "WAVV Admin" [ref=e364] [cursor=pointer]:
+          - /url: javascript:void(0)
+      - navigation "footer" [ref=e369]:
+        - link "Settings icon Settings" [ref=e370] [cursor=pointer]:
+          - /url: /settings/profile
+          - img "Settings icon" [ref=e371]
+          - generic [ref=e372]: Settings
+  - banner [ref=e373]:
+    - region "Notification Banner" [ref=e374]:
+      - generic [ref=e375]:
+        - generic [ref=e376]:
+          - button "Previous notification" [disabled] [ref=e377]
+          - generic [ref=e380]: 1/1
+          - button "Next notification" [disabled] [ref=e381]
+        - generic [ref=e384]:
+          - region [ref=e386]: "Summer of AI: $100K in cash prizes. Your division. Your clients."
+          - button "Check your standing" [ref=e388] [cursor=pointer]
+      - button "Close notification" [ref=e389] [cursor=pointer]
+    - generic [ref=e393]:
+      - generic "Report Translation Issue"
+      - button "Ask AI Assistant" [ref=e394] [cursor=pointer]:
+        - generic [ref=e399]: Ask AI
+      - button "View Changelog" [ref=e401] [cursor=pointer]:
+        - generic [ref=e402]: 
+      - button "View Notifications" [ref=e405] [cursor=pointer]:
+        - generic [ref=e406]: 
+        - generic [ref=e407]: Notifications
+      - button "Access Help & Support" [ref=e408] [cursor=pointer]:
+        - generic [ref=e409]: "?"
+        - generic [ref=e410]: Support
+      - generic [ref=e411]:
+        - button "Open Profile Menu" [ref=e412] [cursor=pointer]:
+          - generic [ref=e413]: JP
+        - text: 
+    - generic [ref=e416]:
+      - heading "Sub-Accounts" [level=1] [ref=e417]
+      - link "Accounts" [ref=e418] [cursor=pointer]:
+        - /url: /sub-accounts/accounts
+  - generic [ref=e425]:
+    - generic [ref=e426]:
+      - generic [ref=e427]:
+        - heading "Sub-accounts" [level=1] [ref=e429]
+        - generic [ref=e431]:
+          - button "View Scheduled Reports" [ref=e432] [cursor=pointer]
+          - button "Create Sub-Account" [ref=e434] [cursor=pointer]
+          - img [ref=e439] [cursor=pointer]
+      - generic [ref=e442]:
+        - button "All" [ref=e444] [cursor=pointer]
+        - button "Add Smart List" [ref=e450] [cursor=pointer]
+    - generic [ref=e456]:
+      - generic [ref=e457]:
+        - button "Advanced filters" [ref=e458] [cursor=pointer]
+        - button "Jul 19 - Aug 19" [ref=e464] [cursor=pointer]
+        - button "Sort" [ref=e471] [cursor=pointer]
+        - generic [ref=e475]:
+          - generic [ref=e476]:
+            - switch "Show agency sub-accounts only" [ref=e477]:
+              - generic [ref=e478] [cursor=pointer]
+            - generic [ref=e480] [cursor=pointer]: Show agency sub-accounts
+          - generic [ref=e481]:
+            - button "Columns" [ref=e482] [cursor=pointer]
+            - button [disabled] [ref=e485]
+            - button [ref=e488] [cursor=pointer]
+          - generic [ref=e500]:
+            - textbox "Search by Sub-Account" [ref=e501]
+            - generic: Search by Sub-Account
+      - treegrid [ref=e505]:
+        - rowgroup [ref=e506]:
+          - row [ref=e507]:
+            - columnheader "id" [ref=e508] [cursor=pointer]:
+              - checkbox [ref=e509]
+            - columnheader "name" [ref=e517] [cursor=pointer]:
+              - generic [ref=e518]: Name
+            - columnheader "status" [ref=e523] [cursor=pointer]:
+              - generic "Status" [ref=e524]
+            - columnheader "phone" [ref=e527] [cursor=pointer]:
+              - generic "Phone Number" [ref=e528]
+            - columnheader "dateAdded" [ref=e531] [cursor=pointer]:
+              - generic "Date Added" [ref=e532]
+            - columnheader "lastLoginAt" [ref=e535] [cursor=pointer]:
+              - generic "Last Login" [ref=e536]
+            - columnheader "id" [ref=e539] [cursor=pointer]:
+              - group [ref=e540]:
+                - paragraph [ref=e541]:
+                  - generic [ref=e542]: Actions
+        - rowgroup [ref=e545]:
+          - row [ref=e546]:
+            - gridcell [ref=e547]
+            - gridcell [ref=e549]
+            - gridcell [ref=e551]
+            - gridcell [ref=e553]
+            - gridcell [ref=e555]
+            - gridcell [ref=e557]
+            - gridcell [ref=e559]
+          - row [ref=e561]:
+            - gridcell [ref=e562]
+            - gridcell [ref=e564]
+            - gridcell [ref=e566]
+            - gridcell [ref=e568]
+            - gridcell [ref=e570]
+            - gridcell [ref=e572]
+            - gridcell [ref=e574]
+          - row [ref=e576]:
+            - gridcell [ref=e577]
+            - gridcell [ref=e579]
+            - gridcell [ref=e581]
+            - gridcell [ref=e583]
+            - gridcell [ref=e585]
+            - gridcell [ref=e587]
+            - gridcell [ref=e589]
+          - row [ref=e591]:
+            - gridcell [ref=e592]
+            - gridcell [ref=e594]
+            - gridcell [ref=e596]
+            - gridcell [ref=e598]
+            - gridcell [ref=e600]
+            - gridcell [ref=e602]
+            - gridcell [ref=e604]
+          - row [ref=e606]:
+            - gridcell [ref=e607]
+            - gridcell [ref=e609]
+            - gridcell [ref=e611]
+            - gridcell [ref=e613]
+            - gridcell [ref=e615]
+            - gridcell [ref=e617]
+            - gridcell [ref=e619]
+          - row [ref=e621]:
+            - gridcell [ref=e622]
+            - gridcell [ref=e624]
+            - gridcell [ref=e626]
+            - gridcell [ref=e628]
+            - gridcell [ref=e630]
+            - gridcell [ref=e632]
+            - gridcell [ref=e634]
+          - row [ref=e636]:
+            - gridcell [ref=e637]
+            - gridcell [ref=e639]
+            - gridcell [ref=e641]
+            - gridcell [ref=e643]
+            - gridcell [ref=e645]
+            - gridcell [ref=e647]
+            - gridcell [ref=e649]
+          - row [ref=e651]:
+            - gridcell [ref=e652]
+            - gridcell [ref=e654]
+            - gridcell [ref=e656]
+            - gridcell [ref=e658]
+            - gridcell [ref=e660]
+            - gridcell [ref=e662]
+            - gridcell [ref=e664]
+          - row [ref=e666]:
+            - gridcell [ref=e667]
+            - gridcell [ref=e669]
+            - gridcell [ref=e671]
+            - gridcell [ref=e673]
+            - gridcell [ref=e675]
+            - gridcell [ref=e677]
+            - gridcell [ref=e679]
+          - row [ref=e681]:
+            - gridcell [ref=e682]
+            - gridcell [ref=e684]
+            - gridcell [ref=e686]
+            - gridcell [ref=e688]
+            - gridcell [ref=e690]
+            - gridcell [ref=e692]
+            - gridcell [ref=e694]
+  - generic:        

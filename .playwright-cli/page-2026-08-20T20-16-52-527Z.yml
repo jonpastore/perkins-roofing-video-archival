@@ -1,0 +1,244 @@
+- generic [ref=e1]:
+  - link "Skip to work queue" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - generic [ref=e3]:
+    - complementary "Primary navigation" [ref=e4]:
+      - img "Perkins Roofing Corp." [ref=e6]
+      - button "Current workspace" [ref=e7]:
+        - generic [ref=e8]: Jupiter Branch
+        - generic [ref=e9]: ⌄
+      - navigation [ref=e10]:
+        - link "◉ Today 7" [ref=e11] [cursor=pointer]:
+          - /url: "#today"
+          - generic [ref=e12]: ◉
+          - text: Today
+          - generic [ref=e13]: "7"
+        - link "◇ Pipeline" [ref=e14] [cursor=pointer]:
+          - /url: "#pipeline"
+          - generic [ref=e15]: ◇
+          - text: Pipeline
+        - link "◎ Customers" [ref=e16] [cursor=pointer]:
+          - /url: "#customers"
+          - generic [ref=e17]: ◎
+          - text: Customers
+        - link "▣ Sales work" [ref=e18] [cursor=pointer]:
+          - /url: "#sales"
+          - generic [ref=e19]: ▣
+          - text: Sales work
+        - link "◫ Schedule" [ref=e20] [cursor=pointer]:
+          - /url: "#schedule"
+          - generic [ref=e21]: ◫
+          - text: Schedule
+        - link "? Knowledge" [ref=e22] [cursor=pointer]:
+          - /url: "#knowledge"
+          - generic [ref=e23]: "?"
+          - text: Knowledge
+      - generic [ref=e24]: Queue current
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - generic [ref=e28]:
+          - generic [ref=e29]: Jupiter Branch
+          - generic [ref=e30]: /
+          - strong [ref=e31]: Today
+        - generic [ref=e32]:
+          - button "Search" [ref=e33] [cursor=pointer]: ⌕
+          - button "Notifications" [ref=e34] [cursor=pointer]: ◌
+          - button "User profile" [ref=e36] [cursor=pointer]: JP
+      - main [ref=e37]:
+        - region [ref=e38]:
+          - generic [ref=e39]:
+            - paragraph [ref=e40]: BRANCH OPERATIONS
+            - heading "Protect today’s revenue" [level=1] [ref=e41]
+            - paragraph [ref=e42]: 7 items need attention in Jupiter. Start with the accepted job waiting on its required deposit.
+          - group [ref=e43]:
+            - 'generic "Review scenario: Branch manager" [active] [ref=e44] [cursor=pointer]'
+            - group "Prototype review scenario" [ref=e208]:
+              - button "Branch manager preview" [pressed] [ref=e209] [cursor=pointer]
+              - button "Salesperson preview" [ref=e210] [cursor=pointer]
+              - button "Corporate preview" [ref=e211] [cursor=pointer]
+              - button "Platform admin preview" [ref=e212] [cursor=pointer]
+            - paragraph [ref=e213]: Reviewer-only mock-data switcher. Production views are assigned by server-authorized role and scope.
+        - region "Branch status" [ref=e45]:
+          - article [ref=e46]:
+            - generic [ref=e47]: At-risk revenue
+            - strong [ref=e48]: $42,600
+            - generic [ref=e49]: ↑ $18,400 needs action
+          - article [ref=e50]:
+            - generic [ref=e51]: Human response SLA
+            - strong [ref=e52]: 92%
+            - generic [ref=e53]: 5-minute business-hours target
+          - article [ref=e54]:
+            - generic [ref=e55]: Inspections today
+            - strong [ref=e56]: "7"
+            - generic [ref=e57]: 2 awaiting outcome
+          - article [ref=e58]:
+            - generic [ref=e59]: Branch performance
+            - strong [ref=e60]: 3 / 4
+            - generic [ref=e61]: Jupiter is on target
+        - generic [ref=e62]:
+          - region [ref=e63]:
+            - generic [ref=e64]:
+              - generic [ref=e65]:
+                - paragraph [ref=e66]: OWNED WORK
+                - heading "Revenue risk queue 7" [level=2] [ref=e67]
+              - button "Preview states" [ref=e68] [cursor=pointer]
+            - generic "Queue filters" [ref=e69]:
+              - button "All 7" [pressed] [ref=e70] [cursor=pointer]:
+                - text: All
+                - generic [ref=e71]: "7"
+              - button "Mine 3" [ref=e72] [cursor=pointer]:
+                - text: Mine
+                - generic [ref=e73]: "3"
+              - button "Due now 6" [ref=e74] [cursor=pointer]:
+                - text: Due now
+                - generic [ref=e75]: "6"
+              - button "Payment 2" [ref=e76] [cursor=pointer]:
+                - text: Payment
+                - generic [ref=e77]: "2"
+            - generic [ref=e78]:
+              - generic [ref=e79]: Customer & risk
+              - generic [ref=e80]: Owner
+              - generic [ref=e81]: Next action
+            - generic [ref=e82]:
+              - button "Open Marisol Martinez; Accepted — payment pending; owner Sam R.; next action Call about required deposit; 37 min overdue; priority critical" [ref=e83] [cursor=pointer]:
+                - generic [ref=e84]:
+                  - generic [ref=e85]: "1"
+                  - generic [ref=e86]:
+                    - generic [ref=e87]: Marisol Martinez
+                    - generic [ref=e88]: 1426 Seabrook Way · Jupiter
+                    - generic [ref=e89]: Accepted — payment pending
+                - generic [ref=e90]:
+                  - generic [ref=e91]: SR
+                  - text: Sam R.
+                - generic [ref=e92]:
+                  - text: Call about required deposit
+                  - generic [ref=e93]: 37 min overdue
+              - button "Open Evan Li; No human attempt; owner You; next action Make first contact; 3 min left; priority critical" [ref=e94] [cursor=pointer]:
+                - generic [ref=e95]:
+                  - generic [ref=e96]: "2"
+                  - generic [ref=e97]:
+                    - generic [ref=e98]: Evan Li
+                    - generic [ref=e99]: 84 Seagate Drive · Jupiter
+                    - generic [ref=e100]: No human attempt
+                - generic [ref=e101]:
+                  - generic [ref=e102]: JP
+                  - text: You
+                - generic [ref=e103]:
+                  - text: Make first contact
+                  - generic [ref=e104]: 3 min left
+              - button "Open Heather Douglas; Appointment cancelled; owner Tara M.; next action Offer a new time; Due in 18 min; priority high" [ref=e105] [cursor=pointer]:
+                - generic [ref=e106]:
+                  - generic [ref=e107]: "3"
+                  - generic [ref=e108]:
+                    - generic [ref=e109]: Heather Douglas
+                    - generic [ref=e110]: 311 Ocean Dunes Rd · Juno
+                    - generic [ref=e111]: Appointment cancelled
+                - generic [ref=e112]:
+                  - generic [ref=e113]: TM
+                  - text: Tara M.
+                - generic [ref=e114]:
+                  - text: Offer a new time
+                  - generic [ref=e115]: Due in 18 min
+              - button "Open Carlos Ortiz; Proposal needs follow-up; owner You; next action Review open questions; Due today; priority high" [ref=e116] [cursor=pointer]:
+                - generic [ref=e117]:
+                  - generic [ref=e118]: "4"
+                  - generic [ref=e119]:
+                    - generic [ref=e120]: Carlos Ortiz
+                    - generic [ref=e121]: 12 Coralberry Ct · Jupiter
+                    - generic [ref=e122]: Proposal needs follow-up
+                - generic [ref=e123]:
+                  - generic [ref=e124]: JP
+                  - text: You
+                - generic [ref=e125]:
+                  - text: Review open questions
+                  - generic [ref=e126]: Due today
+              - button "Open Ruth Bennett; No-show recovery; owner Jared C.; next action Rebook inspection; Due today; priority high" [ref=e127] [cursor=pointer]:
+                - generic [ref=e128]:
+                  - generic [ref=e129]: "5"
+                  - generic [ref=e130]:
+                    - generic [ref=e131]: Ruth Bennett
+                    - generic [ref=e132]: 708 Loxahatchee Dr · Tequesta
+                    - generic [ref=e133]: No-show recovery
+                - generic [ref=e134]:
+                  - generic [ref=e135]: JC
+                  - text: Jared C.
+                - generic [ref=e136]:
+                  - text: Rebook inspection
+                  - generic [ref=e137]: Due today
+              - button "Open Diana Moore; Connected, not booked; owner Sam R.; next action Confirm inspection time; Tomorrow; priority medium" [ref=e138] [cursor=pointer]:
+                - generic [ref=e139]:
+                  - generic [ref=e140]: "6"
+                  - generic [ref=e141]:
+                    - generic [ref=e142]: Diana Moore
+                    - generic [ref=e143]: 19 Atlantic Ave · Palm Beach
+                    - generic [ref=e144]: Connected, not booked
+                - generic [ref=e145]:
+                  - generic [ref=e146]: SR
+                  - text: Sam R.
+                - generic [ref=e147]:
+                  - text: Confirm inspection time
+                  - generic [ref=e148]: Tomorrow
+              - button "Open Charlotte Anne Montgomery-Smythe; Policy review required; owner You; next action Open payment review; Due today; priority high" [ref=e149] [cursor=pointer]:
+                - generic [ref=e150]:
+                  - generic [ref=e151]: "7"
+                  - generic [ref=e152]:
+                    - generic [ref=e153]: Charlotte Anne Montgomery-Smythe
+                    - generic [ref=e154]: 2147 North County Road 211, Building B · Palm Beach Gardens
+                    - generic [ref=e155]: Policy review required
+                - generic [ref=e156]:
+                  - generic [ref=e157]: JP
+                  - text: You
+                - generic [ref=e158]:
+                  - text: Open payment review
+                  - generic [ref=e159]: Due today
+          - complementary [ref=e160]:
+            - generic [ref=e161]:
+              - generic [ref=e162]:
+                - paragraph [ref=e163]: CUSTOMER & PROPERTY
+                - heading "Marisol Martinez" [level=2] [ref=e164]
+                - paragraph [ref=e165]: 1426 Seabrook Way · Jupiter
+                - paragraph [ref=e166]: "Canonical person · Current operational relationship: Jupiter Branch"
+                - paragraph [ref=e167]: Cross-branch associations require an authorized, audited link.
+                - generic [ref=e168]: Accepted — payment pending
+              - generic [ref=e169]:
+                - heading "What matters now" [level=3] [ref=e170]
+                - generic [ref=e171]:
+                  - generic [ref=e172]:
+                    - generic [ref=e173]: Potential revenue
+                    - strong [ref=e174]: $18,400 contract
+                  - generic [ref=e175]:
+                    - generic [ref=e176]: Owner
+                    - strong [ref=e177]: Sam R.
+                  - generic [ref=e178]:
+                    - generic [ref=e179]: Lifecycle
+                    - strong [ref=e180]: PR-1048 · signed 9:12 AM
+                  - generic [ref=e181]:
+                    - generic [ref=e182]: Next action
+                    - strong [ref=e183]: Call about required deposit
+                  - generic [ref=e184]:
+                    - generic [ref=e185]: Required deposit
+                    - strong [ref=e186]: $1,840 required · link delivered
+                  - generic [ref=e187]:
+                    - generic [ref=e188]: Payment status
+                    - strong [ref=e189]: Payment link delivered 9:13 AM · provider confirmation pending
+              - generic [ref=e190]:
+                - heading "Activity & sync" [level=3] [ref=e191]
+                - generic [ref=e192]:
+                  - generic [ref=e193]:
+                    - text: Proposal accepted
+                    - generic [ref=e194]: 9:12 AM · app
+                  - generic [ref=e195]:
+                    - text: Deposit link delivered
+                    - generic [ref=e196]: 9:13 AM · GHL
+                  - generic [ref=e197]:
+                    - text: No payment confirmation yet
+                    - generic [ref=e198]: 9:13 AM · payment provider
+              - generic [ref=e199]:
+                - heading "Automated outreach" [level=3] [ref=e200]
+                - generic [ref=e201]:
+                  - strong [ref=e202]: Perkins Roofing — Jupiter Team
+                  - generic [ref=e203]: Approved team sender · template provenance is retained with the communication event.
+              - generic [ref=e204]:
+                - button "Call Marisol" [ref=e205] [cursor=pointer]
+                - button "Open CRM conversation" [ref=e206] [cursor=pointer]
+                - button "Record human outcome" [ref=e207] [cursor=pointer]

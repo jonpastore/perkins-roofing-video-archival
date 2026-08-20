@@ -1,0 +1,20 @@
+status: pending_product_owner_implementation_authorization
+approved_ux_baseline: .project/reviews/perkins-uiux-direction-a-v5.md
+delivery_plan: docs/plans/perkins-direction-a-ux-delivery.md
+verification_plan: docs/plans/perkins-direction-a-ux-verification.md
+worktrees: []
+workstreams:
+  - id: PLAN-UX-01
+    status: not_authorized
+  - id: PLAN-UX-02
+    status: not_authorized
+  - id: PLAN-UX-03
+    status: not_authorized
+  - id: PLAN-UX-04
+    status: not_authorized
+  - id: PLAN-UX-05
+    status: deferred_external_contract
+constraints:
+  - Do not create a worktree or write production code until explicit implementation authorization.
+  - Preserve user-owned dirty work; never reset, clean, stash or overwrite it.
+  - Material UX changes require a UX change proposal.

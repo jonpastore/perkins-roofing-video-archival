@@ -1,0 +1,194 @@
+- generic [active] [ref=e1]:
+  - heading "Directory listing for /" [level=1] [ref=e2]
+  - separator [ref=e3]
+  - list [ref=e4]:
+    - listitem [ref=e5]:
+      - link ".claude/" [ref=e6] [cursor=pointer]:
+        - /url: .claude/
+    - listitem [ref=e7]:
+      - link ".coverage" [ref=e8] [cursor=pointer]:
+        - /url: .coverage
+    - listitem [ref=e9]:
+      - link ".coveragerc" [ref=e10] [cursor=pointer]:
+        - /url: .coveragerc
+    - listitem [ref=e11]:
+      - link ".dockerignore" [ref=e12] [cursor=pointer]:
+        - /url: .dockerignore
+    - listitem [ref=e13]:
+      - link ".env" [ref=e14] [cursor=pointer]:
+        - /url: .env
+    - listitem [ref=e15]:
+      - link ".env.knowify-mcp" [ref=e16] [cursor=pointer]:
+        - /url: .env.knowify-mcp
+    - listitem [ref=e17]:
+      - link ".git/" [ref=e18] [cursor=pointer]:
+        - /url: .git/
+    - listitem [ref=e19]:
+      - link ".githooks/" [ref=e20] [cursor=pointer]:
+        - /url: .githooks/
+    - listitem [ref=e21]:
+      - link ".github/" [ref=e22] [cursor=pointer]:
+        - /url: .github/
+    - listitem [ref=e23]:
+      - link ".gitignore" [ref=e24] [cursor=pointer]:
+        - /url: .gitignore
+    - listitem [ref=e25]:
+      - link ".grok/" [ref=e26] [cursor=pointer]:
+        - /url: .grok/
+    - listitem [ref=e27]:
+      - link ".mcp.json" [ref=e28] [cursor=pointer]:
+        - /url: .mcp.json
+    - listitem [ref=e29]:
+      - link ".morpheus/" [ref=e30] [cursor=pointer]:
+        - /url: .morpheus/
+    - listitem [ref=e31]:
+      - link ".morpheus-ek/" [ref=e32] [cursor=pointer]:
+        - /url: .morpheus-ek/
+    - listitem [ref=e33]:
+      - link ".omc/" [ref=e34] [cursor=pointer]:
+        - /url: .omc/
+    - listitem [ref=e35]:
+      - link ".playwright-cli/" [ref=e36] [cursor=pointer]:
+        - /url: .playwright-cli/
+    - listitem [ref=e37]:
+      - link ".pytest_cache/" [ref=e38] [cursor=pointer]:
+        - /url: .pytest_cache/
+    - listitem [ref=e39]:
+      - link ".ruff_cache/" [ref=e40] [cursor=pointer]:
+        - /url: .ruff_cache/
+    - listitem [ref=e41]:
+      - link ".ux-review/" [ref=e42] [cursor=pointer]:
+        - /url: .ux-review/
+    - listitem [ref=e43]:
+      - link ".venv/" [ref=e44] [cursor=pointer]:
+        - /url: .venv/
+    - listitem [ref=e45]:
+      - link "ab-review/" [ref=e46] [cursor=pointer]:
+        - /url: ab-review/
+    - listitem [ref=e47]:
+      - link "adapters/" [ref=e48] [cursor=pointer]:
+        - /url: adapters/
+    - listitem [ref=e49]:
+      - link "AGENTS.md" [ref=e50] [cursor=pointer]:
+        - /url: AGENTS.md
+    - listitem [ref=e51]:
+      - link "ansible/" [ref=e52] [cursor=pointer]:
+        - /url: ansible/
+    - listitem [ref=e53]:
+      - link "api/" [ref=e54] [cursor=pointer]:
+        - /url: api/
+    - listitem [ref=e55]:
+      - link "app/" [ref=e56] [cursor=pointer]:
+        - /url: app/
+    - listitem [ref=e57]:
+      - link "assets/" [ref=e58] [cursor=pointer]:
+        - /url: assets/
+    - listitem [ref=e59]:
+      - link "CLAUDE.md" [ref=e60] [cursor=pointer]:
+        - /url: CLAUDE.md
+    - listitem [ref=e61]:
+      - link "CONTINUATION-2026-08-12-eve.md" [ref=e62] [cursor=pointer]:
+        - /url: CONTINUATION-2026-08-12-eve.md
+    - listitem [ref=e63]:
+      - link "CONTINUATION-2026-08-12-pm.md" [ref=e64] [cursor=pointer]:
+        - /url: CONTINUATION-2026-08-12-pm.md
+    - listitem [ref=e65]:
+      - link "CONTINUATION-2026-08-13.md" [ref=e66] [cursor=pointer]:
+        - /url: CONTINUATION-2026-08-13.md
+    - listitem [ref=e67]:
+      - link "core/" [ref=e68] [cursor=pointer]:
+        - /url: core/
+    - listitem [ref=e69]:
+      - link "degenito-logo.png" [ref=e70] [cursor=pointer]:
+        - /url: degenito-logo.png
+    - listitem [ref=e71]:
+      - link "degenito-mark.png" [ref=e72] [cursor=pointer]:
+        - /url: degenito-mark.png
+    - listitem [ref=e73]:
+      - link "DeGenito-Perkins-Marketing-Management-2026-08.pdf" [ref=e74] [cursor=pointer]:
+        - /url: DeGenito-Perkins-Marketing-Management-2026-08.pdf
+    - listitem [ref=e75]:
+      - link "DeGenito-Perkins-Partnership-Proposal-2026-08.docx" [ref=e76] [cursor=pointer]:
+        - /url: DeGenito-Perkins-Partnership-Proposal-2026-08.docx
+    - listitem [ref=e77]:
+      - link "DeGenito-Perkins-Partnership-Proposal-2026-08.pdf" [ref=e78] [cursor=pointer]:
+        - /url: DeGenito-Perkins-Partnership-Proposal-2026-08.pdf
+    - listitem [ref=e79]:
+      - link "Dockerfile" [ref=e80] [cursor=pointer]:
+        - /url: Dockerfile
+    - listitem [ref=e81]:
+      - link "docs/" [ref=e82] [cursor=pointer]:
+        - /url: docs/
+    - listitem [ref=e83]:
+      - link "evals/" [ref=e84] [cursor=pointer]:
+        - /url: evals/
+    - listitem [ref=e85]:
+      - link "firebase-debug.log" [ref=e86] [cursor=pointer]:
+        - /url: firebase-debug.log
+    - listitem [ref=e87]:
+      - link "infra/" [ref=e88] [cursor=pointer]:
+        - /url: infra/
+    - listitem [ref=e89]:
+      - link "INTERNAL-NOTES.md" [ref=e90] [cursor=pointer]:
+        - /url: INTERNAL-NOTES.md
+    - listitem [ref=e91]:
+      - link "jobs/" [ref=e92] [cursor=pointer]:
+        - /url: jobs/
+    - listitem [ref=e93]:
+      - link "logs/" [ref=e94] [cursor=pointer]:
+        - /url: logs/
+    - listitem [ref=e95]:
+      - link "mockup/" [ref=e96] [cursor=pointer]:
+        - /url: mockup/
+    - listitem [ref=e97]:
+      - link "output/" [ref=e98] [cursor=pointer]:
+        - /url: output/
+    - listitem [ref=e99]:
+      - link "OVERNIGHT-RESULTS.md" [ref=e100] [cursor=pointer]:
+        - /url: OVERNIGHT-RESULTS.md
+    - listitem [ref=e101]:
+      - link "Perkins-Roofing-Proposal.md" [ref=e102] [cursor=pointer]:
+        - /url: Perkins-Roofing-Proposal.md
+    - listitem [ref=e103]:
+      - link "Perkins-Roofing-Proposal.pdf" [ref=e104] [cursor=pointer]:
+        - /url: Perkins-Roofing-Proposal.pdf
+    - listitem [ref=e105]:
+      - link "poc/" [ref=e106] [cursor=pointer]:
+        - /url: poc/
+    - listitem [ref=e107]:
+      - link "PRODUCTION-BUILD-PLAN.md" [ref=e108] [cursor=pointer]:
+        - /url: PRODUCTION-BUILD-PLAN.md
+    - listitem [ref=e109]:
+      - link "prompt.txt" [ref=e110] [cursor=pointer]:
+        - /url: prompt.txt
+    - listitem [ref=e111]:
+      - link "prototype-adversarial-desktop.png" [ref=e112] [cursor=pointer]:
+        - /url: prototype-adversarial-desktop.png
+    - listitem [ref=e113]:
+      - link "prototype-adversarial-mobile.png" [ref=e114] [cursor=pointer]:
+        - /url: prototype-adversarial-mobile.png
+    - listitem [ref=e115]:
+      - link "pyproject.toml" [ref=e116] [cursor=pointer]:
+        - /url: pyproject.toml
+    - listitem [ref=e117]:
+      - link "README.md" [ref=e118] [cursor=pointer]:
+        - /url: README.md
+    - listitem [ref=e119]:
+      - link "scripts/" [ref=e120] [cursor=pointer]:
+        - /url: scripts/
+    - listitem [ref=e121]:
+      - link "setback-widget/" [ref=e122] [cursor=pointer]:
+        - /url: setback-widget/
+    - listitem [ref=e123]:
+      - link "tests/" [ref=e124] [cursor=pointer]:
+        - /url: tests/
+    - listitem [ref=e125]:
+      - link "web/" [ref=e126] [cursor=pointer]:
+        - /url: web/
+    - listitem [ref=e127]:
+      - link "wp-mu-plugin/" [ref=e128] [cursor=pointer]:
+        - /url: wp-mu-plugin/
+    - listitem [ref=e129]:
+      - link "wp-plugin/" [ref=e130] [cursor=pointer]:
+        - /url: wp-plugin/
+  - separator [ref=e131]

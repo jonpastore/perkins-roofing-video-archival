@@ -1,0 +1,230 @@
+.brand {
+  padding: 9px;
+  background: #fff;
+  border-radius: 8px;
+}
+.brand-logo {
+  display: block;
+  width: 166px;
+  height: auto;
+}
+.portfolio-summary {
+  margin: -4px 0 24px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+.platform-preview {
+  margin: 0 0 24px;
+  padding: 22px;
+  border: 1px solid #d7e1ee;
+  border-radius: var(--radius-md);
+  background: #f8fbff;
+}
+.platform-preview h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+}
+.platform-preview > p:not(.eyebrow) {
+  max-width: 620px;
+  margin: 9px 0 15px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.metric-strip[hidden],
+.workspace-grid[hidden],
+.platform-preview[hidden] {
+  display: none;
+}
+.portfolio-summary h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.branch-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.branch-cards article {
+  padding: 13px;
+  border: 1px solid #e3e9f0;
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+.branch-cards article.needs-attention {
+  border-color: #f2c7c1;
+  background: #fff8f7;
+}
+.branch-cards article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.branch-cards span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.branch-cards .good {
+  color: var(--success);
+}
+.branch-cards .urgent {
+  color: var(--danger);
+}
+.branch-cards p {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.branch-cards b {
+  color: var(--ink);
+}
+.branch-cards button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #285897;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.sheet-close {
+  display: none;
+}
+.drawer-close,
+.drawer-scrim {
+  display: none;
+}
+@media (max-width: 640px) {
+  .content {
+    display: flex;
+    flex-direction: column;
+  }
+  .intro {
+    order: 1;
+  }
+  .workspace-grid {
+    order: 2;
+  }
+  .metric-strip {
+    order: 3;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+  .metric-strip article {
+    min-width: 0 !important;
+  }
+  .metric-strip article:nth-child(n + 3) {
+    display: none;
+  }
+  .sidebar {
+    z-index: 20;
+  }
+  .nav-open .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    display: flex;
+    width: min(280px, 84vw);
+    padding: 24px 14px 16px;
+    box-shadow: 12px 0 32px rgba(15, 26, 45, 0.34);
+  }
+  .nav-open .drawer-scrim {
+    position: fixed;
+    inset: 0 0 0 min(280px, 84vw);
+    z-index: 19;
+    display: block;
+    width: auto;
+    border: 0;
+    background: rgba(15, 26, 45, 0.42);
+  }
+  .nav-open .brand {
+    justify-content: flex-start;
+    margin: 0 10px 24px;
+  }
+  .nav-open .brand-logo {
+    width: 166px;
+  }
+  .nav-open .workspace {
+    display: flex;
+    visibility: visible;
+    font-size: 14px;
+  }
+  .nav-open .drawer-close {
+    display: block;
+    width: calc(100% - 20px);
+    margin: 0 10px 12px;
+    border: 1px solid #657795;
+    border-radius: 7px;
+    padding: 9px 11px;
+    background: transparent;
+    color: #fff;
+    text-align: left;
+    font: inherit;
+    font-weight: 800;
+  }
+  .nav-open .nav-item {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 0 11px;
+    font-size: 14px;
+  }
+  .nav-open .nav-item span {
+    font-size: 17px;
+  }
+  .nav-open .sidebar-footer {
+    font-size: 12px;
+    text-align: left;
+  }
+  .nav-open .sync-dot {
+    margin-right: 6px;
+  }
+  .record-panel {
+    display: none;
+  }
+  .record-panel.mobile-open {
+    position: fixed;
+    z-index: 15;
+    inset: 0;
+    display: block;
+    overflow: auto;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+  }
+  .sheet-close {
+    display: block;
+    width: 100%;
+    padding: 13px 15px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    background: #f8fafc;
+    color: #285897;
+    text-align: left;
+    font: inherit;
+    font-weight: 800;
+  }
+  .record-actions {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    box-shadow: 0 -5px 14px rgba(15, 26, 45, 0.08);
+  }
+  .portfolio-summary {
+    padding: 15px;
+  }
+  .branch-cards {
+    display: flex;
+    overflow: auto;
+  }
+  .branch-cards article {
+    min-width: 220px;
+  }
+}
