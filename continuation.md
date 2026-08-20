@@ -102,6 +102,117 @@ The broad architecture/integration consensus is parked by explicit user scope. P
 - `morpheus-ek policy check --target .` passed (reported `cards: 0`, readiness score 80 because no policy-pack coverage was available).
 - No production test suite was run because only documents/control-plane/prototype-baseline state changed; implementation verification remains planned, not evidenced.
 
-## Suggested next prompt
+## Evidence-driven requirements and planning continuation
 
-If authorizing implementation, specify whether all of `PLAN-UX-01` through `PLAN-UX-04` are authorized or which subset/sequence to execute. Otherwise, retain this package unchanged.
+The product owner asked for a no-questions continuation while unavailable.
+Make reversible, documented assumptions and put every genuine unresolved decision
+in a prioritised question register with a recommended default and impact. Do not
+stop to request routine clarification.
+
+### UX decision contract (reconfirm; do not reopen)
+
+Report these values at the beginning of the next session:
+
+```text
+UX baseline: APPROVED
+Frozen artifact: .project/reviews/perkins-uiux-direction-a-v5.md
+UX readiness: 97/100
+Production implementation: NOT YET AUTHORIZED
+System implementation readiness: separately tracked
+Release readiness: separately tracked
+```
+
+Do not repeat broad UX design, requirements discovery, system architecture, or
+consensus work. The parked broad architecture/integration review remains parked.
+The six approved implementation-quality refinements above remain test and work
+package requirements, not design-approval gates. Preserve all frozen Direction A
+v5 capability/data parity, role/data-scope, product language, IA, responsive,
+accessibility, state/interaction, sender identity, master/detail, customer/property,
+staff/manager, and platform-specific capability decisions. Any material departure
+is a UX change proposal; never silently redesign.
+
+### Proposal to canonical development requirements
+
+Locate and process `DeGenito-Perkins-Partnership-Proposal-2026-08.pdf`. Extract
+text with page-level provenance (OCR if needed) and reconcile it with existing
+canonical specifications and requirements rather than creating a duplicate
+requirements system. Map each source requirement to the canonical spec, PRD, TRD,
+DDD, or UIUX artifact; create a new feature artifact only for genuinely separate
+scope.
+
+Record business goals, scope/non-goals, roles, workflows, data, integrations,
+business rules/states, acceptance criteria, technical contracts, security/privacy,
+operational constraints, error cases, observability, rollback, and UX implications.
+The frozen UX baseline controls UX; the proposal is the primary business source.
+Build a source/conflict/assumption matrix with proposal page references.
+
+### Meeting evidence: read-only Gmail and remote Zoom recording
+
+First configure the new Codex session to use the existing local LiteLLM endpoint
+at `http://127.0.0.1:4000`, using the currently supported Codex configuration
+method without overwriting unrelated global settings or exposing credentials.
+Independently confirm LiteLLM connectivity and that `gmail_enhanced_mcp` is
+available. Use that MCP read-only to retrieve today's Zoom meeting notes and
+related proposal/partnership messages. Do not send, delete, label, or otherwise
+change email. Treat notes as clarifying evidence, not an unrecorded override of
+the proposal or approved UX package.
+
+The complete local Zoom recording package was copied intact and checksum-verified
+to Cerberus. Process this remote directory, preserving the source files:
+
+```text
+jon@cerberus-ai:~/projects/perkins-roofing-video-archival/2026-08-20 13.48.04 Review Proposal/
+```
+
+It contains the Zoom conversion segments
+`double_click_to_convert_01.zoom` and `double_click_to_convert_02.zoom`, plus
+`recording.conf`, `zoomver.tag`, `chat.txt`, and temporary audio/video conversion
+files. The source recording must not be overwritten or deleted. Convert/transcribe
+on Cerberus, use speaker labels only where reliable, retain provenance, and do not
+commit raw media, credentials, or unnecessary sensitive transcript content.
+
+Verified SHA-256 values:
+
+```text
+088d8ab2e560160625012e6ed7e68dcf358b153cbaeb7bd653a5e69983a8c5ed  double_click_to_convert_01.zoom
+89a5d3eee234a5cef1bd26b1982f8bb2981bf96f7bfe2d4842f615c67a8d6f43  double_click_to_convert_02.zoom
+```
+
+If LiteLLM, the MCP, PDF, or a required conversion utility is unavailable, record
+the exact blocker and continue every other planning task.
+
+### Reconcile—do not restart—verification and delivery planning
+
+The existing verification matrix and delivery plan are already ready for
+authorization. Validate, reconcile, and extend them for the proposal and meeting
+evidence; do not restart either lifecycle phase. Verification must cover capability
+and data parity, role/data scope, async/no-reload behavior, loading/empty/error/
+stale/duplicate states, master/detail selection, keyboard/focus, WCAG 2.2 AA,
+contrast, 200% scaling, responsive breakpoints, realistic/ugly data, visual
+regression, destructive actions, server-side authorization assumptions, and
+first-party coverage.
+
+Create repository-specific work packages only where justified. For each repository
+state its UX responsibility, required implementation, dependencies/contracts,
+likely files/components, verification duties, worktree/branch ownership, and
+rollout/rollback implications. Classify each as exactly one of:
+
+- `UX IMPLEMENTATION REQUIRED`
+- `IMPLEMENTATION CONTRACT DEPENDENCY`
+- `DEFERRED PRE-PRODUCTION CONFIGURATION`
+- `NO CHANGE REQUIRED`
+
+Do not create work merely because a repository exists, and do not pull deferred
+GHL, payment, legal, or production configuration into scope unless a specific
+approved UX behavior requires it.
+
+### Required stopping condition
+
+Do not modify production code. Commit only validated documentation, traceability,
+plan, and handoff updates; never commit secrets, raw recordings, or credentials.
+Prepare the implementation authorization package, including canonical artifact
+links, proposal/Zoom/Gmail provenance and conflict matrix, complete assumptions,
+prioritised questions with recommended defaults, repository work packages,
+verification obligations, authorization boundaries, and an explicit confirmation
+that no production code was modified. Stop when that package is ready for product
+owner approval.
